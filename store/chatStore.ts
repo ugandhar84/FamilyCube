@@ -243,10 +243,16 @@ async function resolveMessageText(row: DBRow): Promise<string> {
       .eq('device_id', deviceId)
       .maybeSingle();
     if (!keyRow || !row.sender_device_id) return decryptMessage(cipher); // legacy message, no envelope for this device
+    // device_keys is one row per (family, device, member) — a shared
+    // device (parent's phone also used by PIN-switched kids) has one row
+    // per member who's used it, all with the same device_id. Scope by the
+    // message's actual sender too, not just device_id, or this can match
+    // more than one row and .maybeSingle() throws.
     const { data: senderDevice } = await supabase
       .from('device_keys')
       .select('public_key')
       .eq('device_id', row.sender_device_id)
+      .eq('member_id', row.sender_id)
       .maybeSingle();
     if (!senderDevice) return decryptMessage(cipher);
     return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key);

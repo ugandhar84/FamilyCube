@@ -35,6 +35,7 @@ import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { localDateStr, fmtDate } from '@/lib/dates';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
+import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
 
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
@@ -1106,6 +1107,10 @@ export default function ProfileSettingsScreen() {
   const isParent = role === 'parent';
   const isAuthLinked = !!activeMember?.authUserId;
   const familyId = activeMember?.familyId ?? '';
+  // Cheap RLS-scoped self-lookup (app_admins_select_self) — a kid/senior
+  // profile's auth session (if any) simply won't have a matching row, so
+  // this always resolves to false for them; gated below on isParent too.
+  const { isAdmin: isAppAdmin } = useIsAppAdmin();
 
   // Member carousel + inline family tree — same single unified-sheet wiring
   // RosterTab.tsx uses: ONE MemberProfileSheet instance per member, whose
@@ -1507,6 +1512,24 @@ export default function ProfileSettingsScreen() {
             colors={colors} isDark={isDark}
           />
         </View>
+
+        {/* Admin console — hidden entry point. Only rendered for a parent
+            whose auth session is confirmed as a platform admin (app_admins
+            row) via the same useIsAppAdmin() hook the /admin gate itself
+            uses, so a non-admin parent never sees this row AND can't reach
+            the gate by any other path either — see features/admin/_layout.tsx. */}
+        {isParent && isAppAdmin && (
+          <View style={{ marginBottom: 24 }}>
+            <SectionHeader label="Admin" colors={colors} />
+            <Row
+              icon="shield-checkmark-outline"
+              label="Admin Console"
+              subtitle="Analytics, families, feature flags, paywall, broadcast"
+              onPress={() => router.push('/admin')}
+              colors={colors} isDark={isDark}
+            />
+          </View>
+        )}
 
         {/* Sign out — plain, reversible action, distinct from the danger
             zone's "Delete account" below (that's permanent; this just ends

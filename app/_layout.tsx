@@ -186,8 +186,6 @@ function RootNavigator() {
             }
             if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
               destination = '/onboarding';
-            } else if (!profile?.handle) {
-              destination = '/onboarding/handle-picker';
             } else {
               let locked = false;
               try {
@@ -329,9 +327,6 @@ function RootNavigator() {
         } else if (!profile.onboarding_completed) {
           console.log('[PawBond:ProfileCheck] Onboarding not completed, going to onboarding');
           router.replace('/onboarding');
-        } else if (!profile.handle) {
-          console.log('[PawBond:ProfileCheck] No handle yet, showing handle picker');
-          router.replace('/onboarding/handle-picker');
         } else {
           console.log('[PawBond:ProfileCheck] All done, going to home');
           router.replace('/(tabs)');
@@ -510,9 +505,13 @@ function RootNavigator() {
         // fell through to the PawBond-only fallback below with no case of
         // its own, landing on /(tabs)/notifications (a different app's
         // screen) instead of the actual grocery list (live-reported: "it
-        // is going to somewhere"). VaultScreen.tsx's own openFeature deep-
-        // link is the real route into the Grocery tab.
-        router.push({ pathname: '/(tabs)/profile', params: { openFeature: 'grocery' } } as any);
+        // is going to somewhere"). Grocery has its own dedicated route.
+        router.push('/(tabs)/grocery' as any);
+      } else if (data?.type === 'schedule_conflict') {
+        // schedule-conflict-sweep's server-side double-booking push —
+        // lands on the merged Tasks tab, which defaults to its Schedule
+        // segment (see features/tasks/TasksScreen.tsx).
+        router.push('/(tabs)/tasks' as any);
       } else {
         // system, pet_found, and truly unknown types
         console.log('[Notification] Sending to notifications tab for type:', data?.type);
@@ -808,6 +807,19 @@ function RootNavigator() {
         <Stack.Screen name="auth/callback" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="onboarding/index" options={{ animation: 'fade' }} />
         <Stack.Screen name="onboarding/terms" options={{ animation: 'slide_from_right' }} />
+        {/* Swipe-back must be off for the whole family-creation/join flow —
+            router.replace('/(tabs)') at the end of each pops these screens
+            off the stack, but a swipe-back gesture that starts mid-
+            transition can still reveal the (about-to-be-removed) screen
+            underneath for a frame — live-reported: after successfully
+            creating a family and landing on the Hub, a right-swipe still
+            showed "Create My Family / Join with Code" behind it. None of
+            these screens should ever be reachable via back gesture once
+            their own explicit "Back" button/step logic has moved past them. */}
+        <Stack.Screen name="onboarding/family-choice" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/setup-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/join-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/complete-profile" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/add-pet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="pet/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="pet/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />

@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Modal } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, X, Send, Star, ShoppingBag } from 'lucide-react-native';
 import { useChatStore } from '@/store/chatStore';
-import { BRAND } from '../shared';
 import { Meal } from './types';
 import { rm } from './styles';
 
@@ -49,7 +48,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[rm.modal, { backgroundColor: isDark ? colors.background : '#FAF8FF' }]}>
+      <View style={[rm.modal, { backgroundColor: isDark ? colors.background : colors.pinkLight }]}>
         {/* Header */}
         <View style={[rm.header, { borderColor: colors.border }]}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 }}>
@@ -58,7 +57,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
               <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary, lineHeight: 23 }} numberOfLines={3}>
                 {meal.title}
               </Text>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.amber, marginTop: 3 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink, marginTop: 3 }}>
                 {meal.day} · {meal.prep_minutes ?? '?'} min prep
               </Text>
             </View>
@@ -74,14 +73,14 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
             {(meal.kid_friendly_rating ?? 0) > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 {Array.from({ length: meal.kid_friendly_rating! }).map((_, i) => (
-                  <Star key={i} size={13} fill={BRAND.amber} color={BRAND.amber} />
+                  <Star key={i} size={13} fill={colors.pink} color={colors.pink} />
                 ))}
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.amber, marginLeft: 3 }}>Kid Approved</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink, marginLeft: 3 }}>Kid Approved</Text>
               </View>
             )}
             {(meal.dietary_tags ?? []).map(tag => (
-              <View key={tag} style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: BRAND.teal + '20' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.teal }}>{tag}</Text>
+              <View key={tag} style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.teal + '20' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.teal }}>{tag}</Text>
               </View>
             ))}
           </View>
@@ -92,7 +91,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
             <View style={{ gap: 6 }}>
               {meal.ingredients.map((ing, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: BRAND.teal }} />
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teal }} />
                   <Text style={{ fontSize: 14, color: colors.textPrimary, fontWeight: '600' }}>{ing}</Text>
                 </View>
               ))}
@@ -105,7 +104,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
             <View style={{ gap: 10 }}>
               {steps.map((step, i) => (
                 <View key={i} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>{i + 1}</Text>
                   </View>
                   <Text style={{ fontSize: 13, color: colors.textSecondary, flex: 1, lineHeight: 20 }}>{step}</Text>
@@ -118,14 +117,14 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
         {/* Footer buttons */}
         <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16, flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
-            style={[rm.fab, { backgroundColor: cartDone ? BRAND.emerald : BRAND.teal, flex: 1 }]}>
+            style={[rm.fab, { backgroundColor: cartDone ? colors.success : colors.teal, flex: 1 }]}>
             {addingCart
               ? <ActivityIndicator size="small" color="#fff" />
               : cartDone
                 ? <><Check size={15} color="#fff" /><Text style={rm.fabTxt}>Added to Grocery!</Text></>
                 : <><ShoppingBag size={15} color="#fff" /><Text style={rm.fabTxt}>Add to Grocery</Text></>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={shareRecipe} style={[rm.fab, { backgroundColor: BRAND.purple, flex: 1 }]}>
+          <TouchableOpacity onPress={shareRecipe} style={[rm.fab, { backgroundColor: colors.accent, flex: 1 }]}>
             <Send size={15} color="#fff" />
             <Text style={rm.fabTxt}>Share Recipe</Text>
           </TouchableOpacity>

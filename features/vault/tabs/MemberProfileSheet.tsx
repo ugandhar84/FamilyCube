@@ -11,7 +11,7 @@
  * deliberate, narrow exception (native camera/library presentation needs
  * its own sheet). "Minimal" here is about interaction depth — fewer taps,
  * everything consolidated into one place — not visual styling; the badge
- * row / role chips / bordered cards / BRAND colors below are carried over
+ * row / role chips / bordered cards / theme colors below are carried over
  * from the old MemberProfileSheet + EditMemberModal + PinModal unchanged.
  *
  * Role-gating is unchanged from the old 3-modal version: kid/teen/parent
@@ -43,7 +43,6 @@ import { Coins, Flame, Star, Car, Clock, Lock, Pencil, ChevronRight, Mail, Refre
 import { fmtTime } from '@/lib/dates';
 import { roleColor } from './MemberCard';
 import { PhotoPickerSheet } from './RosterTab';
-import { BRAND } from './shared';
 import { RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMember } from '@/store/familyStore';
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -113,7 +112,7 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
   useEffect(() => {
     if (visible) setSection(initialSection ?? 'view');
   }, [visible, initialSection, member.id]);
-  const rc = roleColor(member.role);
+  const rc = roleColor(member.role, colors);
   const isKidOrTeen = member.role === 'kid' || member.role === 'teen';
   const isSenior = member.role === 'senior';
   const roleLabel = member.role === 'senior' ? 'Grandparent' : member.role.charAt(0).toUpperCase() + member.role.slice(1);
@@ -288,8 +287,8 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
 
       {member.inviteStatus === 'pending' && (
         <View style={{ marginTop: 12, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
-          backgroundColor: BRAND.amber + '18', alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.amber }}>Invite pending</Text>
+          backgroundColor: colors.amber + '18', alignSelf: 'flex-start' }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>Invite pending</Text>
         </View>
       )}
 
@@ -303,7 +302,7 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
             <TouchableOpacity onPress={() => onResetPin(member)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
                 borderWidth: 1.5, borderColor: colors.border }}>
-              <KeyRound size={16} color={BRAND.purple} />
+              <KeyRound size={16} color={colors.accent} />
               <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Reset PIN</Text>
               <RefreshCw size={14} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -312,15 +311,15 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
             <TouchableOpacity onPress={handleResendInvite} disabled={resending}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
                 borderWidth: 1.5, borderColor: colors.border, opacity: resending ? 0.6 : 1 }}>
-              <Mail size={16} color={BRAND.teal} />
+              <Mail size={16} color={colors.teal} />
               <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Resend Invite</Text>
               {resending ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <RefreshCw size={14} color={colors.textTertiary} />}
             </TouchableOpacity>
           )}
 
           {inviteResult && 'code' in inviteResult && (
-            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.teal + '50',
-              backgroundColor: BRAND.teal + '10', padding: 14, gap: 10 }}>
+            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: colors.teal + '50',
+              backgroundColor: colors.teal + '10', padding: 14, gap: 10 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
                 New code for {member.name.split(' ')[0]}
               </Text>
@@ -328,7 +327,7 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
                 {inviteResult.code}
               </Text>
               {inviteResult.emailSent && (
-                <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700' }}>✓ Emailed to them</Text>
+                <Text style={{ fontSize: 11, color: colors.teal, fontWeight: '700' }}>✓ Emailed to them</Text>
               )}
               {inviteResult.emailError && (
                 <Text style={{ fontSize: 11, color: colors.textTertiary }}>
@@ -345,14 +344,14 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => shareInviteCode(inviteResult.code)}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 10 }}>
+                    borderRadius: 10, backgroundColor: colors.teal, paddingVertical: 10 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Share</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
           {inviteResult && 'error' in inviteResult && (
-            <Text style={{ fontSize: 12, color: BRAND.rose, fontWeight: '600' }}>{inviteResult.error}</Text>
+            <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600' }}>{inviteResult.error}</Text>
           )}
         </View>
       )}
@@ -360,8 +359,8 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
       {onDelete && isParentViewer && (
         <TouchableOpacity onPress={onRequestRemove}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 16, paddingVertical: 10 }}>
-          <Trash2 size={16} color={BRAND.rose} />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.rose }}>Remove from Family</Text>
+          <Trash2 size={16} color={colors.danger} />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Remove from Family</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -386,9 +385,9 @@ function ConfirmRemoveSection({ member, rc, onCancel, onConfirm, colors, isDark 
     <View>
       <View style={{
         padding: 14, borderRadius: 16, backgroundColor: isDark ? colors.card : '#fff',
-        borderWidth: 1.5, borderColor: BRAND.rose + '50', marginBottom: 4,
+        borderWidth: 1.5, borderColor: colors.danger + '50', marginBottom: 4,
       }}>
-        <Text style={{ fontSize: 15, fontWeight: '800', color: BRAND.rose, marginBottom: 6 }}>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: colors.danger, marginBottom: 6 }}>
           Remove {member.name}?
         </Text>
         <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 14, lineHeight: 18 }}>
@@ -424,7 +423,7 @@ function ConfirmRemoveSection({ member, rc, onCancel, onConfirm, colors, isDark 
             disabled={!matches || removing}
             onPress={async () => { setRemoving(true); await onConfirm(member.id); }}
             style={{ flex: 2, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
-              backgroundColor: BRAND.rose, opacity: (!matches || removing) ? 0.4 : 1 }}>
+              backgroundColor: colors.danger, opacity: (!matches || removing) ? 0.4 : 1 }}>
             {removing ? <ActivityIndicator size="small" color="#fff" />
               : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Remove</Text>}
           </TouchableOpacity>
@@ -503,7 +502,7 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
     backgroundColor: isDark ? colors.card : '#F5F3FF',
   };
 
-  const roleChip = (active: boolean, activeColor: string = BRAND.purple) => ({
+  const roleChip = (active: boolean, activeColor: string = colors.accent) => ({
     borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7,
     backgroundColor: active ? activeColor : 'transparent',
     borderColor: active ? activeColor : colors.border,
@@ -549,7 +548,7 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
         <TouchableOpacity
           onPress={() => setShowPhotoPicker(true)}
           style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: BRAND.purple + '18', borderWidth: 2, borderColor: BRAND.purple, overflow: 'hidden' }}>
+            backgroundColor: colors.accent + '18', borderWidth: 2, borderColor: colors.accent, overflow: 'hidden' }}>
           {currentAvatarPreview ? (
             <Image source={{ uri: currentAvatarPreview }} style={{ width: 60, height: 60 }} />
           ) : (
@@ -567,8 +566,8 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
           <TouchableOpacity key={e}
             onPress={() => { setPickedEmoji(e); setPhotoUri(null); }}
             style={{ width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: pickedEmoji === e ? BRAND.purple + '30' : 'transparent',
-              borderWidth: pickedEmoji === e ? 1.5 : 0, borderColor: BRAND.purple }}>
+              backgroundColor: pickedEmoji === e ? colors.accent + '30' : 'transparent',
+              borderWidth: pickedEmoji === e ? 1.5 : 0, borderColor: colors.accent }}>
             <Text style={{ fontSize: 18 }}>{e}</Text>
           </TouchableOpacity>
         ))}
@@ -601,7 +600,7 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
           const picked = relationship === opt;
           return (
             <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
-              style={roleChip(picked, BRAND.teal)}>
+              style={roleChip(picked, colors.teal)}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: picked ? '#fff' : colors.textSecondary }}>{opt}</Text>
             </TouchableOpacity>
           );
@@ -616,16 +615,16 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
             onPress={() => setHasCar((v: boolean) => !v)}
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
               padding: 12, borderRadius: 12, borderWidth: 1.5,
-              borderColor: hasCar ? BRAND.amber : colors.border,
-              backgroundColor: hasCar ? BRAND.amber + '12' : 'transparent' }}>
+              borderColor: hasCar ? colors.amber : colors.border,
+              backgroundColor: hasCar ? colors.amber + '12' : 'transparent' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Car size={16} color={hasCar ? BRAND.amber : colors.textSecondary} />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: hasCar ? BRAND.amber : colors.textPrimary }}>
+              <Car size={16} color={hasCar ? colors.amber : colors.textSecondary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: hasCar ? colors.amber : colors.textPrimary }}>
                 Can Drive
               </Text>
             </View>
             <View style={{ width: 38, height: 22, borderRadius: 11,
-              backgroundColor: hasCar ? BRAND.amber : colors.border,
+              backgroundColor: hasCar ? colors.amber : colors.border,
               justifyContent: 'center', paddingHorizontal: 2 }}>
               <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
                 alignSelf: hasCar ? 'flex-end' : 'flex-start' }} />
@@ -655,7 +654,7 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
               const picked = linkedParentId === par.id;
               return (
                 <TouchableOpacity key={par.id} onPress={() => { setLinkedParentId(par.id); onLinkParent?.(member.id, par.id); }}
-                  style={roleChip(picked, BRAND.blue)}>
+                  style={roleChip(picked, colors.info)}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: picked ? '#fff' : colors.textSecondary }}>{par.name.split(' ')[0]}</Text>
                 </TouchableOpacity>
               );
@@ -688,7 +687,7 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
           <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleSave} disabled={saving}
-          style={{ flex: 2, borderRadius: 14, paddingVertical: 12, alignItems: 'center', backgroundColor: BRAND.purple }}>
+          style={{ flex: 2, borderRadius: 14, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.accent }}>
           {saving ? <ActivityIndicator size="small" color="#fff" />
             : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>{uploadingPhoto ? 'Uploading…' : 'Save'}</Text>}
         </TouchableOpacity>
@@ -734,7 +733,7 @@ function PinSection({ member, rc, onCancel, onSave, colors, isDark }: {
 
   const inp = {
     borderRadius: 12, borderWidth: 1.5,
-    borderColor: error ? BRAND.rose : colors.border,
+    borderColor: error ? colors.danger : colors.border,
     backgroundColor: isDark ? colors.card : '#F5F3FF', color: colors.textPrimary,
     paddingHorizontal: 13, paddingVertical: 11, textAlign: 'center' as const,
     letterSpacing: 8, fontSize: 22,
@@ -754,7 +753,7 @@ function PinSection({ member, rc, onCancel, onSave, colors, isDark }: {
       <TextInput value={confirm} onChangeText={setConfirm} keyboardType="numeric" secureTextEntry maxLength={6}
         placeholder="••••" placeholderTextColor={colors.textTertiary} style={inp} />
 
-      {error ? <Text style={{ color: BRAND.rose, fontSize: 12, fontWeight: '700', marginTop: 6 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: colors.danger, fontSize: 12, fontWeight: '700', marginTop: 6 }}>{error}</Text> : null}
 
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
         <TouchableOpacity onPress={onCancel}
@@ -762,7 +761,7 @@ function PinSection({ member, rc, onCancel, onSave, colors, isDark }: {
           <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleSave} disabled={saving}
-          style={{ flex: 2, borderRadius: 14, paddingVertical: 12, alignItems: 'center', backgroundColor: BRAND.purple }}>
+          style={{ flex: 2, borderRadius: 14, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.accent }}>
           {saving ? <ActivityIndicator size="small" color="#fff" />
             : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>{member.pin ? 'Update PIN' : 'Set PIN'}</Text>}
         </TouchableOpacity>

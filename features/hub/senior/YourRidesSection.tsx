@@ -19,7 +19,7 @@ export function YourRidesSection({
   myPendingAssignments, myDrivingToday, myClaimedRides, urgentPending,
   active, members, colors, isDark,
   declineId, declineText, setDeclineId, setDeclineText,
-  updateEvent, onEnRoute,
+  updateEvent, onEnRoute, conflictReasons,
 }: {
   myPendingAssignments: FamilyEvent[];
   myDrivingToday: FamilyEvent[];
@@ -30,6 +30,11 @@ export function YourRidesSection({
   setDeclineId: (id: string | null) => void; setDeclineText: (v: string) => void;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   onEnRoute: () => void;
+  // Same assignee-double-booked signal ParentView/KidView/TeenView already
+  // show — SeniorView had zero conflict-detection wiring at all (a
+  // grandparent double-booked as a driver got no warning, unlike every
+  // other role). See detectAssigneeConflicts.ts.
+  conflictReasons?: Map<string, string>;
 }) {
   if (myPendingAssignments.length === 0 && myDrivingToday.length === 0 && myClaimedRides.length === 0) return null;
 
@@ -111,6 +116,7 @@ export function YourRidesSection({
           })}
           {myDrivingToday.map(ev => {
             const kid = members.find(m => m.id === ev.memberId);
+            const conflictReason = conflictReasons?.get(ev.id);
             return (
               <CollapsibleCard key={ev.id} accent={MONEY_GREEN} colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
@@ -125,6 +131,12 @@ export function YourRidesSection({
                     </View>
                   </View>
                 }>
+                {conflictReason && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                    <AlertTriangle size={12} color={colors.danger} />
+                    <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.danger }}>{conflictReason}</Text>
+                  </View>
+                )}
                 {ev.location && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <MapPin size={12} color={colors.textSecondary} />
@@ -151,6 +163,7 @@ export function YourRidesSection({
           {myClaimedRides.map(ev => {
             const kid = members.find(m => m.id === ev.memberId);
             const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : ev.date;
+            const conflictReason = conflictReasons?.get(ev.id);
             return (
               <View key={ev.id} style={{ borderRadius: 14, overflow: 'hidden',
                 backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
@@ -164,6 +177,12 @@ export function YourRidesSection({
                     <Text style={{ fontSize: GP.body, color: colors.textSecondary, marginTop: 2 }}>
                       {kid?.name.split(' ')[0] ?? 'Child'} · {evDay}{ev.time ? ` at ${fmtTime(ev.time)}` : ''}
                     </Text>
+                    {conflictReason && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                        <AlertTriangle size={11} color={colors.danger} />
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.danger }}>{conflictReason}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
                 {/* Only "today" claimed rides got a Can't Make It button before —

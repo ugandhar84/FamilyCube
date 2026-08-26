@@ -64,6 +64,16 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [photoReq,          setPhotoReq]          = useState(quest.photoRequired ?? false);
   const [isAdultTask,       setIsAdultTask]        = useState(quest.isAdultTask ?? false);
   const [inviteGrandparent, setInviteGrandparent] = useState(quest.inviteGrandparents ?? false);
+  // Master-flow spec: grandparent-done work has NO coin field, ever — not
+  // zeroed, absent. AddQuestModal.tsx's coinsDisabled already enforces this
+  // at CREATE time; this edit form had no equivalent, so toggling Invite
+  // Grandparents on for an EXISTING chore left whatever coin amount was
+  // already there in place, and approveChore has no assignee-role check —
+  // a real, live path for a grandparent to be paid coins. Mirrors
+  // AddQuestModal's isAdultTask||inviteGrandparent||assignedToAdultsOnly
+  // shape (no assignedToAdultsOnly concept in this edit form, so just the
+  // two that apply here).
+  const coinsDisabled = isAdultTask || inviteGrandparent;
   const [dueDate,           setDueDate]           = useState<Date>(parseDue);
   // Spec 8.2 — optional tie to a calendar event this quest logistically
   // supports. Display-only, no cascading behavior.
@@ -143,8 +153,13 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
       if (!title.trim()) { setSaving(false); return; }
       patch = {
         title: title.trim(),
-        coins: parseInt(coins) || quest.coins,
-        bonusCoins: parseInt(bonusCoins) || 0,
+        // coinsDisabled (adult task, or Invite Grandparents is on) always
+        // wins on submit, regardless of whatever the coins/bonusCoins
+        // state vars still hold from before the toggle was flipped — the
+        // input being visually disabled only stops NEW typing, it doesn't
+        // retroactively clear a value entered before the toggle changed.
+        coins: coinsDisabled ? 0 : (parseInt(coins) || quest.coins),
+        bonusCoins: coinsDisabled ? 0 : (parseInt(bonusCoins) || 0),
         category,
         difficulty: difficulty || undefined,
         assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
@@ -162,8 +177,8 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
       patch = {
         title: title.trim(),
         description: desc.trim() || undefined,
-        coins: parseInt(coins) || quest.coins,
-        bonusCoins: parseInt(bonusCoins) || 0,
+        coins: coinsDisabled ? 0 : (parseInt(coins) || quest.coins),
+        bonusCoins: coinsDisabled ? 0 : (parseInt(bonusCoins) || 0),
         category,
         difficulty: difficulty || undefined,
         assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
@@ -287,25 +302,34 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </>
               )}
 
-              {/* Coins + Bonus — editable in both modes */}
+              {/* Coins + Bonus — editable in both modes, unless a grandparent
+                  is (or becomes) eligible to do this work — see
+                  coinsDisabled above. */}
               {!isAdultTask && (
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, opacity: coinsDisabled ? 0.4 : 1 }}>
                   <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
                   <TextInput
-                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
-                    keyboardType="number-pad" value={coins} onChangeText={setCoins}
+                    editable={!coinsDisabled}
+                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
+                    keyboardType="number-pad" value={coinsDisabled ? '0' : coins} onChangeText={coinsDisabled ? undefined : setCoins}
                   />
                 </View>
-                <View style={{ width: 90 }}>
+                <View style={{ width: 90, opacity: coinsDisabled ? 0.4 : 1 }}>
                   <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
                   <TextInput
-                    style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                    editable={!coinsDisabled}
+                    style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
                     keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
-                    value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                    value={coinsDisabled ? '' : bonusCoins} onChangeText={coinsDisabled ? undefined : (t => setBonusCoins(t.replace(/[^0-9]/g, '')))}
                   />
                 </View>
               </View>
+              )}
+              {coinsDisabled && inviteGrandparent && !isAdultTask && (
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: -10, marginBottom: 14 }}>
+                  Grandparents aren't paid coins — this is logged and thanked instead.
+                </Text>
               )}
 
               {/* Category — editable in both modes */}

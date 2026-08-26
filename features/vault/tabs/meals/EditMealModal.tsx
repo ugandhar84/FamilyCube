@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Modal, KeyboardAvoidingView, Platform, Keyboard, StyleSheet } from 'react-native';
-import { BRAND } from '../shared';
 import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { em } from './styles';
 
@@ -65,7 +64,7 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
     marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
     borderColor: colors.border, color: colors.textPrimary,
   };
-  const typeColor = MEAL_TYPE_COLOR[type] ?? BRAND.amber;
+  const typeColor = MEAL_TYPE_COLOR[type] ?? colors.amber;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -101,11 +100,11 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
               {showEmoji && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 12, borderRadius: 16,
                   backgroundColor: isDark ? colors.surface : '#F0EEFF',
-                  borderWidth: 1, borderColor: BRAND.purple + '30', marginBottom: 12 }}>
+                  borderWidth: 1, borderColor: colors.accent + '30', marginBottom: 12 }}>
                   {MEAL_EMOJIS.map(e => (
                     <TouchableOpacity key={e} onPress={() => { setEmoji(e); setShowEmoji(false); }}
                       style={{ width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: emoji === e ? BRAND.purple + '25' : 'transparent' }}>
+                        backgroundColor: emoji === e ? colors.accent + '25' : 'transparent' }}>
                       <Text style={{ fontSize: 24 }}>{e}</Text>
                     </TouchableOpacity>
                   ))}
@@ -121,7 +120,7 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
               <Text style={em.label}>Meal Type</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
                 {MEAL_TYPES.map(t => {
-                  const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? BRAND.amber;
+                  const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? colors.amber;
                   const sel = type === t.toLowerCase();
                   return (
                     <TouchableOpacity key={t} onPress={() => setType(t.toLowerCase())}
@@ -146,9 +145,9 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
                     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                       <TouchableOpacity onPress={() => setChefId('')}
                         style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                          backgroundColor: !chefId ? BRAND.teal + '20' : 'transparent',
-                          borderColor: !chefId ? BRAND.teal : colors.border }}>
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: !chefId ? BRAND.teal : colors.textSecondary }}>Anyone</Text>
+                          backgroundColor: !chefId ? colors.teal + '20' : 'transparent',
+                          borderColor: !chefId ? colors.teal : colors.border }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: !chefId ? colors.teal : colors.textSecondary }}>Anyone</Text>
                       </TouchableOpacity>
                       {members.map(m => {
                         const sel = chefId === m.id;
@@ -160,11 +159,11 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
                             style={{ alignItems: 'center', gap: 3 }}>
                             <View style={{ width: 36, height: 36, borderRadius: 18,
                               backgroundColor: avatarBg,
-                              borderWidth: 2.5, borderColor: sel ? BRAND.teal : 'transparent',
+                              borderWidth: 2.5, borderColor: sel ? colors.teal : 'transparent',
                               alignItems: 'center', justifyContent: 'center' }}>
                               <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{initials}</Text>
                             </View>
-                            <Text style={{ fontSize: 9, fontWeight: '700', color: sel ? BRAND.teal : colors.textTertiary }}>
+                            <Text style={{ fontSize: 9, fontWeight: '700', color: sel ? colors.teal : colors.textTertiary }}>
                               {(m.name as string).split(' ')[0]}
                             </Text>
                           </TouchableOpacity>
@@ -195,9 +194,9 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
                   return (
                     <TouchableOpacity key={tag} onPress={() => toggleTag(tag)}
                       style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5,
-                        backgroundColor: sel ? BRAND.teal + '22' : 'transparent',
-                        borderColor: sel ? BRAND.teal : colors.border }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? BRAND.teal : colors.textSecondary }}>{tag}</Text>
+                        backgroundColor: sel ? colors.teal + '22' : 'transparent',
+                        borderColor: sel ? colors.teal : colors.border }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? colors.teal : colors.textSecondary }}>{tag}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -228,7 +227,7 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
               </TouchableOpacity>
               <TouchableOpacity onPress={handleSave} disabled={saving}
                 style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-                  backgroundColor: BRAND.purple, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                  backgroundColor: colors.accent, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
                 {saving
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Changes</Text>}

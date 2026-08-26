@@ -16,15 +16,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Image as ImageIcon, Heart, Trash2, Calendar, Camera, ImagePlus, X, Download, Layers } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from 'expo-router';
 import { todayLocal, fmtDateShort } from '@/lib/dates';
 import { supabase, uploadFamilyMemoryPhoto } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
+import { useUIStore } from '@/store/uiStore';
 import { MediaViewer } from '@/components/MediaComponents';
 import { saveMediaToDevice } from '@/lib/saveMedia';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
-import { EmptyState, BRAND } from './shared';
+import { EmptyState } from './shared';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // Fixed cap instead of PostMedia's dynamic source-ratio sizing — a tall
@@ -170,13 +172,13 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={md.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[md.sheet, { backgroundColor: isDark ? colors.card : '#FAF8FF' }]}>
+          <View style={[md.sheet, { backgroundColor: isDark ? colors.card : colors.accentLight }]}>
             <View style={[md.handle, { backgroundColor: colors.border }]} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
               <Text style={[md.title, { color: colors.textPrimary, flex: 1 }]}>New Memory</Text>
               <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
                 <X size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -191,7 +193,7 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
                       <RNImage source={{ uri: u }} style={{ width: 100, height: 100, borderRadius: 14 }} />
                       <TouchableOpacity onPress={() => removeAt(i)}
                         style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11,
-                          backgroundColor: BRAND.rose, alignItems: 'center', justifyContent: 'center' }}>
+                          backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
                         <X size={12} color="#fff" />
                       </TouchableOpacity>
                     </View>
@@ -203,14 +205,14 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
               {uris.length < 2 && (
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <TouchableOpacity onPress={pickFromLibrary}
-                    style={[md.pickBtn, { borderColor: BRAND.purple + '50', backgroundColor: BRAND.purple + '10' }]}>
-                    <ImagePlus size={20} color={BRAND.purple} />
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>
+                    style={[md.pickBtn, { borderColor: colors.accent + '50', backgroundColor: colors.accent + '10' }]}>
+                    <ImagePlus size={20} color={colors.accent} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.accent }}>
                       {uris.length === 0 ? 'Choose Photo' : 'Add Another'}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={takePhoto}
-                    style={[md.pickBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F5F3FF' }]}>
+                    style={[md.pickBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.card : colors.surface }]}>
                     <Camera size={20} color={colors.textSecondary} />
                     <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>Take Photo</Text>
                   </TouchableOpacity>
@@ -221,19 +223,19 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
                 <Text style={[md.label, { color: colors.textSecondary }]}>Caption</Text>
                 <TextInput value={caption} onChangeText={setCaption}
                   placeholder="What made this moment special?" placeholderTextColor={colors.textTertiary}
-                  style={[md.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border, color: colors.textPrimary, height: 80 }]}
+                  style={[md.inp, { backgroundColor: isDark ? colors.card : colors.surface, borderColor: colors.border, color: colors.textPrimary, height: 80 }]}
                   multiline textAlignVertical="top" />
               </View>
 
               {caption.trim() && uris.length > 0 && (
                 <TouchableOpacity onPress={() => setCaptionOverlay(v => !v)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5,
-                    borderColor: captionOverlay ? BRAND.purple : colors.border,
-                    backgroundColor: captionOverlay ? BRAND.purple + '10' : 'transparent',
+                    borderColor: captionOverlay ? colors.accent : colors.border,
+                    backgroundColor: captionOverlay ? colors.accent + '10' : 'transparent',
                     paddingHorizontal: 12, paddingVertical: 10 }}>
-                  <Layers size={16} color={captionOverlay ? BRAND.purple : colors.textSecondary} />
+                  <Layers size={16} color={captionOverlay ? colors.accent : colors.textSecondary} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: captionOverlay ? BRAND.purple : colors.textPrimary }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: captionOverlay ? colors.accent : colors.textPrimary }}>
                       Show caption on photo
                     </Text>
                     <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 1 }}>
@@ -241,7 +243,7 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
                     </Text>
                   </View>
                   <View style={{ width: 38, height: 22, borderRadius: 11,
-                    backgroundColor: captionOverlay ? BRAND.purple : colors.border,
+                    backgroundColor: captionOverlay ? colors.accent : colors.border,
                     justifyContent: 'center', paddingHorizontal: 2 }}>
                     <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
                       alignSelf: captionOverlay ? 'flex-end' : 'flex-start' }} />
@@ -254,7 +256,7 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
                   <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handlePost}
-                  style={[md.saveBtn, { backgroundColor: BRAND.purple, opacity: uris.length === 0 ? 0.5 : 1 }]}
+                  style={[md.saveBtn, { backgroundColor: colors.accent, opacity: uris.length === 0 ? 0.5 : 1 }]}
                   disabled={posting || uris.length === 0}>
                   {posting
                     ? <CubeSpinner size={18} />
@@ -278,7 +280,13 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
 }) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const hearted = mem.hearted_by?.includes(myId);
-  const heartColor = hearted ? BRAND.rose : colors.textSecondary;
+  const heartColor = hearted ? colors.danger : colors.textSecondary;
+  // Each card picks up the poster's own role color instead of one flat
+  // accent tint for every post — parent posts read sage, kid posts read
+  // amber, teen/senior (no dedicated role token) fall back to accent.
+  const posterColor = poster?.role === 'parent' ? colors.parent
+    : poster?.role === 'kid' ? colors.kid
+    : colors.accent;
   // PostMedia treats photoUrl (singular) and photoUrls (plural) as separate
   // props — its own internal allUrls only uses photoUrls when it has 2+
   // entries, otherwise it falls back to photoUrl. Passing a single-item
@@ -296,13 +304,14 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
 
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 16, borderRadius: 22, overflow: 'hidden',
-      backgroundColor: colors.card, borderWidth: 1.5, borderColor: BRAND.purple + (isDark ? '35' : '25'),
-      shadowColor: BRAND.purple, shadowOpacity: isDark ? 0 : 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 }}>
+      backgroundColor: colors.card, borderWidth: 1.5, borderColor: posterColor + (isDark ? '35' : '25'),
+      shadowColor: posterColor, shadowOpacity: isDark ? 0 : 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 }}>
       {/* Frosted-glass wash, matching the app's established glass-card pattern
           (VaultScreen tiles / MemberCard / SCard) instead of a plain white
           box — keeps this feeling like part of THIS app, not a generic
-          social-media clone. */}
-      <LinearGradient colors={[BRAND.purple + '14', BRAND.purple + '00']}
+          social-media clone. Tinted to the poster's own role color so the
+          feed reads as "who posted" at a glance, not one flat accent wash. */}
+      <LinearGradient colors={[posterColor + '14', posterColor + '00']}
         start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
         style={StyleSheet.absoluteFillObject} pointerEvents="none" />
       {Platform.OS === 'ios' ? (
@@ -314,7 +323,7 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
       {/* Header — avatar + name + date, standing clear of the media below */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 }}>
         <FamilyAvatar name={poster?.name ?? 'Family'} emoji={poster?.emoji} avatarUrl={poster?.avatarUrl}
-          siblings={siblings} size={38} ringColor={BRAND.purple} ringWidth={1.5} />
+          siblings={siblings} size={38} ringColor={posterColor} ringWidth={1.5} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
             {poster?.name?.split(' ')[0] ?? 'Family'}
@@ -340,7 +349,7 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
           see who, mem.hearted_by already stores the member ids). */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 12 }}>
         <TouchableOpacity onPress={onHeart} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Heart size={22} color={heartColor} fill={hearted ? BRAND.rose : 'transparent'} />
+          <Heart size={22} color={heartColor} fill={hearted ? colors.danger : 'transparent'} />
         </TouchableOpacity>
         {mem.hearts > 0 && (
           <TouchableOpacity
@@ -358,7 +367,7 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
                 return (
                   <View key={id} style={{ marginLeft: i > 0 ? -8 : 0, borderRadius: 12, borderWidth: 2, borderColor: colors.card }}>
                     <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
-                      siblings={siblings} size={20} ringColor={BRAND.rose} ringWidth={1} />
+                      siblings={siblings} size={20} ringColor={colors.danger} ringWidth={1} />
                   </View>
                 );
               })}
@@ -379,7 +388,7 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
             {mem.description}
           </Text>
           {!captionExpanded && (mem.description?.length ?? 0) > 90 && (
-            <Text style={{ fontSize: 12, color: BRAND.purple, marginTop: 2, fontWeight: '700' }}>more</Text>
+            <Text style={{ fontSize: 12, color: posterColor, marginTop: 2, fontWeight: '700' }}>more</Text>
           )}
         </TouchableOpacity>
       )}
@@ -390,7 +399,9 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
 
 // ─── MemoriesTab ────────────────────────────────────────────────────────────────
 
-export default function MemoriesTab({ colors, isDark, readOnly = false }: { colors: any; isDark: boolean; readOnly?: boolean }) {
+export default function MemoriesTab({ colors, isDark, readOnly = false }: {
+  colors: any; isDark: boolean; readOnly?: boolean;
+}) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
   const myId = activeMemberId ?? members[0]?.id ?? '';
@@ -398,6 +409,24 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: { colo
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
+
+  // Shared FAB's Memories-tab "+" face (app/(tabs)/_layout.tsx) fires this
+  // one-shot flag instead of opening Ask Cube — same pattern
+  // TasksScreen.tsx uses for openTaskComposerRequested.
+  const openMemoryComposerRequested = useUIStore(s => s.openMemoryComposerRequested);
+  useEffect(() => {
+    if (openMemoryComposerRequested) {
+      useUIStore.getState().setOpenMemoryComposerRequested(false);
+      setShowModal(true);
+    }
+  }, [openMemoryComposerRequested]);
+
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().openMemoryComposerRequested) {
+      useUIStore.getState().setOpenMemoryComposerRequested(false);
+      setShowModal(true);
+    }
+  }, []));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -490,19 +519,6 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: { colo
 
   return (
     <>
-      {/* Header — plain, on the canvas, not boxed like a settings card */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 12 }}>
-        <ImageIcon size={16} color={BRAND.purple} />
-        <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>Family Memories</Text>
-        {!readOnly && (
-          <TouchableOpacity onPress={() => setShowModal(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.purple,
-              borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>+ Post</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
       {memories.length === 0 ? (
         <View style={{ paddingHorizontal: 16 }}>
           <EmptyState Icon={ImageIcon} label="Post your first family memory" colors={colors} />

@@ -132,7 +132,9 @@ export default function HubScreen() {
         onBellPress={() => setNotifPanelOpen(true)}
         // GP's bottom nav swaps Profile/Apps for Memories — this is their
         // only remaining path to settings/PIN, since the tab is gone.
-        onSettingsPress={isSenior ? () => router.push('/profile') : undefined}
+        // /profile (VaultScreen) no longer exists — profile-settings is the
+        // real settings/PIN screen.
+        onSettingsPress={isSenior ? () => router.push('/profile-settings') : undefined}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

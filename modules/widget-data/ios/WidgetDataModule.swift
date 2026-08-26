@@ -2,11 +2,19 @@ import ExpoModulesCore
 import WidgetKit
 import BackgroundTasks
 
-private let kWidgetRefreshTaskId = "com.pawbond.ios.widget-refresh"
+private let kWidgetRefreshTaskId = "com.familycube.ios.widget-refresh"
 
 public class WidgetDataModule: Module {
-    private let appGroup = "group.com.pawbond.ios"
+    private let appGroup = "group.com.familycube.ios"
     private let fileName = "widget_data.json"
+    // Single widget kind (FamilyCubeWidget in targets/widget/PawBondWidget.swift
+    // — the .swift filename is stale, the actual `kind:` string is what
+    // matters here and is what this must match). Was two different,
+    // never-actually-declared kind strings ("PawBondWidget"/
+    // "PawBondMediumWidget") — small/medium are variants of ONE
+    // StaticConfiguration kind, not two separate widgets, so reloading a
+    // kind that was never registered was silently a no-op.
+    private let widgetKind = "FamilyCubeWidget"
 
     public func definition() -> ModuleDefinition {
         Name("WidgetData")
@@ -28,8 +36,7 @@ public class WidgetDataModule: Module {
             }
             let fileURL = containerURL.appendingPathComponent(self.fileName)
             try data.write(to: fileURL, options: .atomic)
-            WidgetCenter.shared.reloadTimelines(ofKind: "PawBondWidget")
-            WidgetCenter.shared.reloadTimelines(ofKind: "PawBondMediumWidget")
+            WidgetCenter.shared.reloadTimelines(ofKind: self.widgetKind)
         }
 
         // clearWidget() — removes the JSON file and reloads (shows disabled state)
@@ -38,42 +45,7 @@ public class WidgetDataModule: Module {
                 .containerURL(forSecurityApplicationGroupIdentifier: self.appGroup) else { return }
             let fileURL = containerURL.appendingPathComponent(self.fileName)
             try? FileManager.default.removeItem(at: fileURL)
-            WidgetCenter.shared.reloadTimelines(ofKind: "PawBondWidget")
-            WidgetCenter.shared.reloadTimelines(ofKind: "PawBondMediumWidget")
-        }
-
-        // saveAvatarToGroup(petId, url) — downloads a pet avatar and saves it to the
-        // App Group container so the widget extension can load it without network access.
-        AsyncFunction("saveAvatarToGroup") { (petId: String, urlString: String) throws -> String in
-            guard let containerURL = FileManager.default
-                .containerURL(forSecurityApplicationGroupIdentifier: self.appGroup) else {
-                throw NSError(domain: "WidgetData", code: 3,
-                              userInfo: [NSLocalizedDescriptionKey: "App Group not found"])
-            }
-            guard let url = URL(string: urlString) else {
-                throw NSError(domain: "WidgetData", code: 4,
-                              userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
-            }
-            let fileName = "avatar_\(petId).jpg"
-            let fileURL = containerURL.appendingPathComponent(fileName)
-            // ExpoModulesCore AsyncFunction closures are not Swift async contexts,
-            // so use URLSession dataTask + semaphore instead of async/await.
-            let semaphore = DispatchSemaphore(value: 0)
-            var downloadedData: Data?
-            var downloadError: Error?
-            URLSession.shared.dataTask(with: url) { data, _, error in
-                downloadedData = data
-                downloadError = error
-                semaphore.signal()
-            }.resume()
-            semaphore.wait()
-            if let error = downloadError { throw error }
-            guard let data = downloadedData else {
-                throw NSError(domain: "WidgetData", code: 5,
-                              userInfo: [NSLocalizedDescriptionKey: "No data received from URL"])
-            }
-            try data.write(to: fileURL, options: .atomic)
-            return fileName
+            WidgetCenter.shared.reloadTimelines(ofKind: self.widgetKind)
         }
 
         // scheduleBackgroundRefresh() — registers a BGAppRefreshTask so the widget

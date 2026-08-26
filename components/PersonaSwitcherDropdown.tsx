@@ -272,16 +272,12 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
             }}>
               {!pinTarget && (
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
                   borderBottomWidth: 1, borderBottomColor: colors.border,
                 }}>
                   <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
                     Select Family Profile
                   </Text>
-                  <View style={{ backgroundColor: colors.primaryLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.primary }}>Kinfolk OS</Text>
-                  </View>
                 </View>
               )}
 

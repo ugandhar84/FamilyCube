@@ -394,33 +394,181 @@ export function AlertBanner({
         );
       })}
 
-      {conflictEvents.map(ev => {
-        const reason = conflictReasons?.get(ev.id);
-        return (
-        <View key={ev.id} style={{
-          backgroundColor: isDark ? colors.warning + '14' : colors.warningLight,
-          borderRadius: 16, borderWidth: 1.5, borderColor: colors.warning + '60', overflow: 'hidden',
-        }}>
-          <View style={{ backgroundColor: colors.warning, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-            <AlertTriangle size={15} color="#fff" />
-            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
-              {reason ?? 'Schedule Conflict'} — {ev.title}
-            </Text>
-            <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.9)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
-          </View>
-          <View style={{ padding: 14, gap: 8 }}>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              {reason ?? 'This event overlaps with another commitment.'}  Review in Schedule to resolve.
-            </Text>
-            <Pressable onPress={() => router.push('/(tabs)/calendar')}
-              style={{ backgroundColor: colors.warning, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Calendar size={13} color="#fff" />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open Schedule</Text>
-            </Pressable>
-          </View>
+      {(() => {
+        // Was one card PER CONFLICTED EVENT — ParentView's own conflict
+        // detection deliberately sets the SAME reason string on both sides
+        // of a pair (e.g. case B, "Priya assigned to 2 events", set on
+        // both event ids so either one being viewed alone still explains
+        // itself). Rendered raw, that produced 2 near-identical banner
+        // cards for what a parent experiences as ONE problem
+        // (live-reported: "we should have a unique alarm"). Group by that
+        // reason string instead — same string means same conflict
+        // cluster, regardless of which of the 4 detection cases produced
+        // it — and list every event in the cluster on one card.
+        const groups = new Map<string, FamilyEvent[]>();
+        for (const ev of conflictEvents) {
+          const reason = conflictReasons?.get(ev.id) ?? 'Schedule Conflict';
+          const bucket = groups.get(reason);
+          if (bucket) bucket.push(ev); else groups.set(reason, [ev]);
+        }
+        return Array.from(groups.entries()).map(([reason, evs]) => (
+          <ConflictClusterCard
+            key={reason} reason={reason} events={evs}
+            members={members} colors={colors} isDark={isDark}
+            activeName={activeName} updateEvent={updateEvent}
+          />
+        ));
+      })()}
+    </View>
+  );
+}
+
+// ─── ConflictClusterCard ────────────────────────────────────────────────────
+// One card per conflict cluster (grouped by reason string in AlertBanner
+// above). Two real resolutions, not just "go look at it yourself":
+//   - Reassign ONE of the conflicting events to Me or another parent —
+//     the same reassign_event RPC / notifyTakeover path EventDetailSheet's
+//     own DriverChipRow uses, so this doesn't diverge from that already-
+//     correct flow.
+//   - Dismiss — the conflict isn't actually a problem (e.g. the same
+//     parent doing two nearby drop-offs at the same time, which a plain
+//     <30-minute-overlap heuristic can't tell apart from a real
+//     double-booking). Persists conflictAcknowledged on every event in
+//     the cluster so it stays dismissed rather than reappearing on
+//     reload or for another parent viewing the same Hub.
+function ConflictClusterCard({ reason, events, members, colors, isDark, activeName, updateEvent }: {
+  reason: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  activeName?: string;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+}) {
+  const [reassigning, setReassigning] = useState<string | null>(null); // event id currently showing its chip row
+  const [dismissing, setDismissing] = useState(false);
+  const viewerMember = members.find(m => m.name === activeName);
+
+  const doReassign = (ev: FamilyEvent, name: string) => {
+    const { assigneeRole } = deriveEventActions(
+      ev,
+      { id: viewerMember?.id ?? '', name: activeName ?? '', role: viewerMember?.role ?? 'parent', hasCar: viewerMember?.hasCar },
+      { isPast: false },
+    );
+    notifyTakeover(ev, name, members, activeName);
+    const targetMember = members.find(m => m.name === name);
+    if (targetMember) {
+      supabase.rpc('reassign_event', {
+        p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
+      }).then(({ error }: { error: any }) => {
+        if (error) { console.warn('[ConflictClusterCard] reassign_event failed', error.message); return; }
+        showToast(`Assigned to ${name.split(' ')[0]} ✓`);
+      });
+    } else {
+      updateEvent(ev.id, assigneeRole === 'driver'
+        ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+        : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
+      showToast(`Assigned to ${name.split(' ')[0]} ✓`);
+    }
+    setReassigning(null);
+  };
+
+  const dismiss = () => {
+    setDismissing(true);
+    for (const ev of events) updateEvent(ev.id, { conflictAcknowledged: true });
+    showToast('Conflict dismissed ✓');
+  };
+
+  // Opens this one event to the Grandparent/Teen pool instead of directly
+  // reassigning to a specific person — same isOpenToGrandparents/
+  // isOpenToTeens flags DriverChipRow's own onOpenPool sets elsewhere, so
+  // it shows up in SeniorView/TeenView's existing open-pool sections the
+  // same way any other open ride does.
+  const openPool = (ev: FamilyEvent, kind: 'gp' | 'teen') => {
+    updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
+    showToast(kind === 'gp' ? 'Opened to Grandparents ✓' : 'Opened to Teens ✓');
+    setReassigning(null);
+  };
+
+  if (dismissing) return null;
+
+  return (
+    <View style={{
+      backgroundColor: isDark ? colors.warning + '14' : colors.warningLight,
+      borderRadius: 16, borderWidth: 1.5, borderColor: colors.warning + '60', overflow: 'hidden',
+    }}>
+      <View style={{ backgroundColor: colors.warning, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+        <AlertTriangle size={15} color="#fff" />
+        <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+          {reason}
+        </Text>
+      </View>
+      <View style={{ padding: 14, gap: 10 }}>
+        {events.map(ev => {
+          const assignee = eventAssignee(ev);
+          const excludeName = assignee.name; // whoever's currently double-booked on THIS event
+          const otherParents = members.filter(m => m.role === 'parent' && m.name !== excludeName && m.name !== activeName);
+          const viewerIsExcluded = activeName === excludeName;
+          // Same allowGpTeen gate DriverChipRow uses elsewhere — a Work
+          // event never offers Grandparent/Teen as a resolution.
+          const allowGpTeen = ev.category !== 'Work';
+          return (
+            <View key={ev.id} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>{ev.title}</Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
+              </View>
+              {reassigning === ev.id ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {!viewerIsExcluded && activeName && (
+                    <Pressable onPress={() => doReassign(ev, activeName)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.parent }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Me</Text>
+                    </Pressable>
+                  )}
+                  {otherParents.map(m => (
+                    <Pressable key={m.id} onPress={() => doReassign(ev, m.name)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
+                    </Pressable>
+                  ))}
+                  {allowGpTeen && (
+                    <Pressable onPress={() => openPool(ev, 'gp')}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.warning, backgroundColor: colors.warning + '18' }}>
+                      <Users size={13} color={colors.warningDark} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Grandparent</Text>
+                    </Pressable>
+                  )}
+                  {allowGpTeen && (
+                    <Pressable onPress={() => openPool(ev, 'teen')}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.warning, backgroundColor: colors.warning + '18' }}>
+                      <Backpack size={13} color={colors.warningDark} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Teen</Text>
+                    </Pressable>
+                  )}
+                  <Pressable onPress={() => setReassigning(null)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Cancel</Text>
+                  </Pressable>
+                </ScrollView>
+              ) : (
+                <Pressable onPress={() => setReassigning(ev.id)} style={{ alignSelf: 'flex-start' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warningDark, textDecorationLine: 'underline' }}>
+                    Reassign this one
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+          <Pressable onPress={() => router.push('/(tabs)/tasks')}
+            style={{ backgroundColor: colors.warning, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Calendar size={13} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open Schedule</Text>
+          </Pressable>
+          <Pressable onPress={dismiss}
+            style={{ borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1.5, borderColor: colors.border }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
+          </Pressable>
         </View>
-        );
-      })}
+      </View>
     </View>
   );
 }
@@ -478,15 +626,36 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   // distinct "open/pending" outline style instead, since nobody has
   // actually committed yet.
   const assignee = eventAssignee(ev);
-  const initialPicked = assignee.name
+  // Never seed picked to excludeName's own id — this row is specifically
+  // "reassign away from excludeName" (the currently-assigned driver
+  // backing out, or being overridden by a different parent), so the
+  // current assignee is deliberately absent from the chip list below
+  // (otherParents filters them out). Confirmed live crash: seeding picked
+  // to the excluded assignee's id showed no chip highlighted (since they
+  // never render as a chip) but still rendered an active Confirm button
+  // whose lookup in otherParents came back empty, throwing instead of
+  // just not matching.
+  const initialPicked = assignee.name && assignee.name !== excludeName
     ? (assignee.name === activeName ? 'me' : members.find(m => m.name === assignee.name && m.role === 'parent')?.id ?? null)
     : null;
   const [picked, setPicked] = useState<string | null>(initialPicked);
   const [reason, setReason] = useState('');
   const viewer = members.find(m => m.name === activeName);
-  const viewerCanDrive = !!viewer && viewer.hasCar !== false && viewer.name !== excludeName;
+  // Deliberately NOT gated on viewer.hasCar — members.hasCar defaults to
+  // false in the DB for any parent who was never routed through the one
+  // profile-edit sheet that seeds it true for new parents
+  // (MemberProfileSheet.tsx:461's `?? (initialRole === 'parent')` only
+  // applies at creation time there, not as a blanket default elsewhere —
+  // familyStore.ts's own row mapping defaults it to false for everyone).
+  // That silently hid "Me" for any such parent (live-reported: "the
+  // non-assigned parent wants to override the ride... it's not showing
+  // me as an option"). A parent who's opened this exact reassignment row
+  // has already shown intent to potentially drive; only excludeName (the
+  // person being reassigned away from) should ever be excluded from
+  // "Me," not an unrelated, easy-to-never-set profile flag.
+  const viewerCanDrive = !!viewer && viewer.name !== excludeName;
   const otherParents = members.filter(m =>
-    m.role === 'parent' && m.hasCar !== false && m.name !== excludeName && m.name !== activeName
+    m.role === 'parent' && m.name !== excludeName && m.name !== activeName
   );
   const gpOpen = !!ev.isOpenToGrandparents && !assignee.name;
   const teenOpen = !!ev.isOpenToTeens && !assignee.name;
@@ -534,16 +703,29 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
                 maxLength={120} multiline />
             </View>
           </View>
-          <Pressable
-            onPress={() => {
-              const name = picked === 'me' ? activeName! : otherParents.find(m => m.id === picked)!.name;
-              onAssign(name, reason.trim());
-            }}
-            style={{ backgroundColor: colors.parent, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-              Confirm {picked === 'me' ? 'Me' : otherParents.find(m => m.id === picked)?.name.split(' ')[0]}
-            </Text>
-          </Pressable>
+          {(() => {
+            // picked can end up pointing at a parent who's no longer in
+            // otherParents (excludeName changed, they lost hasCar, a stale
+            // initialPicked seeded from an assignee whose name no longer
+            // resolves to a current parent member) — confirmed live as a
+            // crash: the old code force-unwrapped this lookup with `!`,
+            // so an unresolved picked threw "Cannot read property 'name'
+            // of undefined" instead of just not matching anything. Resolve
+            // once, and simply don't render Confirm if it doesn't resolve
+            // — the chip row itself will no longer show that id selected
+            // either, so this recovers silently rather than crashing.
+            const resolvedName = picked === 'me' ? activeName : otherParents.find(m => m.id === picked)?.name;
+            if (!resolvedName) return null;
+            return (
+              <Pressable
+                onPress={() => onAssign(resolvedName, reason.trim())}
+                style={{ backgroundColor: colors.parent, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
+                  Confirm {picked === 'me' ? 'Me' : resolvedName.split(' ')[0]}
+                </Text>
+              </Pressable>
+            );
+          })()}
         </>
       )}
     </View>
@@ -1165,6 +1347,27 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
           timeStyle="boxed" showCategory showLocation
           showHelperStatus isViewerParent={isViewerParent}
         />
+        {/* Conflict badge was only ever visible inside the detail sheet
+            (tap-to-open) — nothing on the card itself signaled a problem
+            at a glance, for either the parent OR a kid whose ride is part
+            of the conflicted pair (live direction: show this on the
+            actual Today's Timeline cards, not just the ride banner).
+            Pressable so it opens the same detail sheet as the card
+            itself, not just decorative. */}
+        {!!conflictReason && (
+          <Pressable onPress={() => setSheetOpen(true)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4,
+              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+              backgroundColor: isDark ? colors.warning + '20' : colors.warningLight,
+              alignSelf: 'flex-start',
+            }}>
+            <AlertTriangle size={11} color={colors.warningDark} />
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warningDark }}>
+              {conflictReason}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {sheetOpen && (

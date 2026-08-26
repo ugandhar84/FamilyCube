@@ -1,10 +1,14 @@
 // FamilyCube — Edge Function: delete-account
 // Self-service "Delete account" for an auth-linked member (Profile's danger
-// zone — features/profile). Soft-deletes: profiles.deleted_at = now(). Data
-// is kept for 7 days; logging back in within that window restores
-// everything automatically (see app/_layout.tsx's onAuthStateChange/
-// getSession soft-delete-restore branch). member-purge-sweep permanently
-// removes anything past 7 days.
+// zone — features/profile), AND the admin console's "Delete user" action
+// (features/admin/screens/users.tsx). Soft-deletes: profiles.deleted_at =
+// now(). Data is kept for 7 days; logging back in within that window
+// restores everything automatically (see app/_layout.tsx's
+// onAuthStateChange/getSession soft-delete-restore branch).
+// member-purge-sweep permanently removes anything past 7 days. Same
+// underlying mechanism for both callers — an admin-triggered delete isn't
+// a separate, parallel deletion path with its own cleanup logic to keep in
+// sync, it's this same function with a different, admin-gated caller check.
 //
 // Adapted from PawBond's own delete-account function (same profiles.
 // deleted_at column, same JWT-validate-then-soft-delete shape) — window
@@ -59,9 +63,23 @@ serve(async (req) => {
 
     const { user_id } = await req.json() as { user_id: string };
     if (!user_id) return json({ error: 'user_id required' }, 400);
-    if (user_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Self-delete is always allowed. Deleting a DIFFERENT account is only
+    // allowed for a platform admin (app_admins row) — same check every
+    // other admin write path in this schema uses, just done here in JS
+    // since this function runs with the service-role key rather than the
+    // caller's own session.
+    if (user_id !== user.id) {
+      const { data: adminRow } = await db
+        .from('app_admins')
+        .select('auth_user_id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      if (!adminRow) return json({ error: 'Forbidden' }, 403);
+      console.log(`[delete-account] admin=${user.id} deleting target=${user_id}`);
+    }
 
     // ── 2. Soft-delete: stamp deleted_at on profiles ─────────────────────────
     const { error: softDeleteErr } = await db

@@ -296,7 +296,15 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
 export async function stopBackgroundLocationTracking(): Promise<void> {
   if (!getTaskManager()) return;
   const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-  if (started) await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+  if (started) {
+    // A dev-client rebuild/reinstall can leave hasStartedLocationUpdatesAsync
+    // reporting true from a previous native binary's task registration that
+    // no longer exists in this one — stopLocationUpdatesAsync then throws
+    // "Task ... not found" instead of just being a no-op. Either way the
+    // task isn't running anymore, so swallow it rather than let it become
+    // an uncaught rejection.
+    await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+  }
   setBackgroundLocationMemberId(null);
 }
 

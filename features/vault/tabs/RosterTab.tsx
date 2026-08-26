@@ -10,7 +10,7 @@ import * as Clipboard from 'expo-clipboard';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import AppBottomSheet from '@/components/AppBottomSheet';
-import { SCard, CardHeader, StatusPill, BRAND } from './shared';
+import { SCard, CardHeader, StatusPill } from './shared';
 import { FamilyTreeView } from './FamilyTreeView';
 import { MemberProfileSheet } from './MemberProfileSheet';
 import { saveMemberEdit } from './memberActions';
@@ -69,8 +69,8 @@ export function PhotoPickerSheet({
     <AppBottomSheet visible={visible} onClose={onClose} minHeight="40%" maxHeight="65%" title="">
       <View style={{ alignItems: 'center', paddingTop: 4, paddingBottom: 20 }}>
         <View style={{ width: 84, height: 84, borderRadius: 42, overflow: 'hidden',
-          backgroundColor: BRAND.purple + '18', alignItems: 'center', justifyContent: 'center',
-          borderWidth: 2, borderColor: BRAND.purple }}>
+          backgroundColor: colors.accent + '18', alignItems: 'center', justifyContent: 'center',
+          borderWidth: 2, borderColor: colors.accent }}>
           {avatarUri
             ? <Image source={{ uri: avatarUri }} style={{ width: 84, height: 84 }} />
             : <Text style={{ fontSize: 36 }}>{avatarEmoji ?? '👤'}</Text>}
@@ -85,8 +85,8 @@ export function PhotoPickerSheet({
             {i > 0 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />}
             <TouchableOpacity onPress={opt.onPress}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, backgroundColor: isDark ? colors.card : '#fff' }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: BRAND.purple + '18', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={opt.icon} size={19} color={BRAND.purple} />
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.accent + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={opt.icon} size={19} color={colors.accent} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{opt.label}</Text>
@@ -101,11 +101,11 @@ export function PhotoPickerSheet({
             <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
             <TouchableOpacity onPress={onRemove}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, backgroundColor: isDark ? colors.card : '#fff' }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: BRAND.rose + '18', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="trash" size={18} color={BRAND.rose} />
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.danger + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="trash" size={18} color={colors.danger} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: BRAND.rose }}>Remove photo</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.danger }}>Remove photo</Text>
                 <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Revert to the emoji avatar</Text>
               </View>
             </TouchableOpacity>
@@ -320,8 +320,8 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
 
   if (loading) return (
     <SCard colors={colors} isDark={isDark}>
-      <CardHeader Icon={Users} iconColor={BRAND.purple} title="Family Roster" colors={colors} />
-      <ActivityIndicator color={BRAND.purple} style={{ marginVertical: 24 }} />
+      <CardHeader Icon={Users} iconColor={colors.accent} title="Family Roster" colors={colors} />
+      <ActivityIndicator color={colors.accent} style={{ marginVertical: 24 }} />
     </SCard>
   );
 
@@ -331,10 +331,10 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
           card boundary), matching the reference mock's flat layout ── */}
       <View style={{ gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Users size={16} color={BRAND.purple} />
+          <Users size={16} color={colors.accent} />
           <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>Family Tree</Text>
-          <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>{members.length}</Text>
+          <View style={{ backgroundColor: colors.accent + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent }}>{members.length}</Text>
           </View>
         </View>
         <FamilyTreeView
@@ -351,11 +351,11 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       {isParent && (
         <SCard colors={colors} isDark={isDark}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <CardHeader Icon={Mail} iconColor={BRAND.teal} title="Invite Codes"
-              badge={`${invites.filter(i => i.status === 'pending').length} active`} badgeColor={BRAND.teal}
+            <CardHeader Icon={Mail} iconColor={colors.teal} title="Invite Codes"
+              badge={`${invites.filter(i => i.status === 'pending').length} active`} badgeColor={colors.teal}
               colors={colors} />
             <TouchableOpacity onPress={load}>
-              <I.Refresh c={BRAND.teal} />
+              <I.Refresh c={colors.teal} />
             </TouchableOpacity>
           </View>
 
@@ -367,7 +367,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
 
           {invites.map(inv => {
             const isPending = inv.status === 'pending';
-            const ic = isPending ? BRAND.teal : inv.status === 'accepted' ? BRAND.emerald : colors.textTertiary;
+            const ic = isPending ? colors.teal : inv.status === 'accepted' ? colors.success : colors.textTertiary;
             return (
               <View key={inv.id} style={[r.inviteRow, {
                 borderColor: ic + '50',
@@ -381,8 +381,8 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
                     {isPending && (
                       <TouchableOpacity onPress={() => copyCode(inv.code)}>
                         {copied === inv.code
-                          ? <I.Check c={BRAND.emerald} />
-                          : <I.Copy c={BRAND.teal} />}
+                          ? <I.Check c={colors.success} />
+                          : <I.Copy c={colors.teal} />}
                       </TouchableOpacity>
                     )}
                   </View>
@@ -397,8 +397,8 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
                 </View>
                 {isPending && (
                   <TouchableOpacity onPress={() => revokeInvite(inv.id)}
-                    style={[r.iconBtn, { borderColor: BRAND.rose + '50', backgroundColor: BRAND.rose + '10' }]}>
-                    <I.Trash c={BRAND.rose} />
+                    style={[r.iconBtn, { borderColor: colors.danger + '50', backgroundColor: colors.danger + '10' }]}>
+                    <I.Trash c={colors.danger} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -406,11 +406,11 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
           })}
 
           <TouchableOpacity onPress={createInvite} disabled={creating}
-            style={[r.inviteBtn, { borderColor: BRAND.teal + '60', backgroundColor: BRAND.teal + '10' }]}>
+            style={[r.inviteBtn, { borderColor: colors.teal + '60', backgroundColor: colors.teal + '10' }]}>
             {creating
-              ? <ActivityIndicator size="small" color={BRAND.teal} />
-              : <><I.UserPlus c={BRAND.teal} />
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.teal }}>Create Invite Code</Text></>}
+              ? <ActivityIndicator size="small" color={colors.teal} />
+              : <><I.UserPlus c={colors.teal} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: colors.teal }}>Create Invite Code</Text></>}
           </TouchableOpacity>
         </SCard>
       )}

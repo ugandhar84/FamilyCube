@@ -3,6 +3,13 @@ import { LucideIcon, Check, Clock } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 
+// Legacy "PawBond"-era hardcoded palette — no longer used by this file's own
+// components (SCard/CardHeader/AddBtn/etc. below all take `colors` from
+// useTheme() instead) or by any tab under features/vault/tabs/*.tsx directly.
+// Still imported by several sub-screen files under health/ and meals/
+// (features/vault/tabs/health/*.tsx, features/vault/tabs/meals/*.tsx) that
+// haven't been migrated to useTheme() yet — kept here until those call
+// sites are updated too, so removing it doesn't break their build.
 export const BRAND = {
   purple:  '#7C3AED',
   teal:    '#14B8A6',
@@ -55,7 +62,7 @@ export function CardHeader({ Icon, iconColor, title, badge, badgeColor, colors, 
   badge?: string; badgeColor?: string; colors: any;
   onAction?: () => void; actionLabel?: string;
 }) {
-  const ic = iconColor ?? BRAND.purple;
+  const ic = iconColor ?? colors.accent;
   return (
     <View style={[sh.cardHeaderRow, { justifyContent: 'space-between' }]}>
       <View style={[sh.cardHeaderRow, { flex: 1 }]}>
@@ -110,8 +117,8 @@ export function MemberAvatar({ name, color, size = 40 }: {
   );
 }
 
-export function AddBtn({ label, onPress, color }: { label: string; onPress: () => void; color?: string }) {
-  const c = color ?? BRAND.purple;
+export function AddBtn({ label, onPress, color }: { label: string; onPress: () => void; color: string }) {
+  const c = color;
   return (
     <TouchableOpacity onPress={onPress}
       style={[sh.addBtn, { borderColor: c + '60', backgroundColor: c + '10' }]}>

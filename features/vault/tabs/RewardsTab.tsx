@@ -6,7 +6,7 @@ import {
 import { Gift, Plus, Coins, ChevronRight, X, Check, Trash2 } from 'lucide-react-native';
 import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
-import { SCard, CardHeader, MemberAvatar, StatusPill, AddBtn, EmptyState, BRAND } from './shared';
+import { SCard, CardHeader, MemberAvatar, StatusPill, AddBtn, EmptyState } from './shared';
 import { TYPO } from '@/constants/theme';
 
 const CAT_EMOJI: Record<string, string> = {
@@ -63,10 +63,10 @@ function RewardModal({ visible, onClose, onSave, initial, colors, isDark }: {
               {CATEGORIES.map(c => (
                 <TouchableOpacity key={c} onPress={() => setCategory(c)}
                   style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5,
-                    borderColor: category === c ? BRAND.purple : colors.border,
-                    backgroundColor: category === c ? BRAND.purple + '18' : 'transparent' }}>
+                    borderColor: category === c ? colors.accent : colors.border,
+                    backgroundColor: category === c ? colors.accent + '18' : 'transparent' }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700',
-                    color: category === c ? BRAND.purple : colors.textSecondary }}>
+                    color: category === c ? colors.accent : colors.textSecondary }}>
                     {CAT_EMOJI[c]} {c}
                   </Text>
                 </TouchableOpacity>
@@ -74,7 +74,7 @@ function RewardModal({ visible, onClose, onSave, initial, colors, isDark }: {
             </ScrollView>
 
             <TouchableOpacity onPress={handleSave}
-              style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: BRAND.purple }}>
+              style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: colors.accent }}>
               <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>
                 {initial ? 'Save Changes' : 'Add Reward'}
               </Text>
@@ -101,13 +101,13 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
   return (
     <View style={{ gap: 12 }}>
       {/* Summary row */}
-      <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
-        <CardHeader Icon={Gift} iconColor={BRAND.purple} title="Rewards Store" colors={colors}
+      <SCard colors={colors} isDark={isDark} accent={colors.accent}>
+        <CardHeader Icon={Gift} iconColor={colors.accent} title="Rewards Store" colors={colors}
           onAction={() => setShowAdd(true)} actionLabel="Add" />
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
           <View style={{ flex: 1, backgroundColor: isDark ? '#1A1030' : '#F5F3FF', borderRadius: 14,
-            padding: 12, borderWidth: 1, borderColor: BRAND.purple + '25', alignItems: 'center' }}>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: BRAND.purple }}>{rewards.length}</Text>
+            padding: 12, borderWidth: 1, borderColor: colors.accent + '25', alignItems: 'center' }}>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: colors.accent }}>{rewards.length}</Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Rewards</Text>
           </View>
           <View style={{ flex: 1, backgroundColor: isDark ? '#2D2008' : '#FFFBEB', borderRadius: 14,
@@ -132,8 +132,8 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
         {(['catalog', 'kids'] as const).map(t => (
           <TouchableOpacity key={t} onPress={() => setTab(t)}
             style={{ flex: 1, paddingVertical: 9, borderRadius: 14, alignItems: 'center',
-              borderWidth: 1.5, backgroundColor: tab === t ? BRAND.purple : 'transparent',
-              borderColor: tab === t ? BRAND.purple : colors.border }}>
+              borderWidth: 1.5, backgroundColor: tab === t ? colors.accent : 'transparent',
+              borderColor: tab === t ? colors.accent : colors.border }}>
             <Text style={{ fontSize: TYPO.body, fontWeight: '800',
               color: tab === t ? '#fff' : colors.textSecondary }}>
               {t === 'catalog' ? '🎁 Catalog' : '👧 Kids Balances'}
@@ -144,7 +144,7 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
 
       {/* Catalog */}
       {tab === 'catalog' && (
-        <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
+        <SCard colors={colors} isDark={isDark} accent={colors.accent}>
           {rewards.length === 0
             ? <EmptyState Icon={Gift} label="No rewards yet" colors={colors} />
             : rewards.map((r: any, i: number) => (
@@ -177,14 +177,14 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
 
       {/* Kids balances */}
       {tab === 'kids' && (
-        <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
+        <SCard colors={colors} isDark={isDark} accent={colors.accent}>
           {kids.length === 0
             ? <EmptyState Icon={Coins} label="No kids yet" colors={colors} />
             : kids.map((kid, i) => (
               <View key={kid.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
                 paddingVertical: 12, borderBottomWidth: i < kids.length - 1 ? 1 : 0,
                 borderBottomColor: colors.border }}>
-                <MemberAvatar name={kid.name} color={BRAND.purple} size={40} />
+                <MemberAvatar name={kid.name} color={colors.accent} size={40} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
                     {kid.name}
@@ -194,7 +194,7 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
                       backgroundColor: colors.border, overflow: 'hidden' }}>
                       <View style={{ height: '100%', borderRadius: 3,
                         width: `${Math.min((kid.coins / 500) * 100, 100)}%`,
-                        backgroundColor: BRAND.purple }} />
+                        backgroundColor: colors.accent }} />
                     </View>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
                       {kid.coins} / 500
@@ -202,8 +202,8 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
                   </View>
                 </View>
                 <View style={{ backgroundColor: isDark ? '#1A1030' : '#F5F3FF', borderRadius: 10,
-                  paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: BRAND.purple + '30' }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: BRAND.purple }}>
+                  paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.accent + '30' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.accent }}>
                     🪙 {kid.coins}
                   </Text>
                 </View>

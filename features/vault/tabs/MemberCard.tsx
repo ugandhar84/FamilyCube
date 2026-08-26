@@ -11,7 +11,6 @@ import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { BRAND } from './shared';
 import type { FamilyMember } from '@/store/familyStore';
 
 // Every call site (FamilyTreeView's renderCard, Profile's carousel .map())
@@ -44,8 +43,8 @@ function memberPropsEqual(prev: { m: FamilyMember; isActive: boolean; isParentVi
   return true;
 }
 
-export const roleColor = (role: string) =>
-  role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : role === 'teen' ? BRAND.amber : BRAND.emerald;
+export const roleColor = (role: string, colors: any) =>
+  role === 'parent' ? colors.accent : role === 'senior' ? colors.info : role === 'teen' ? colors.amber : colors.success;
 
 const I = {
   Lock: ({ c }: { c: string }) => <Svg width={10} height={10} viewBox="0 0 24 24"><Path d="M3 11h18v11H3zM7 11V7a5 5 0 0 1 10 0v4" stroke={c} strokeWidth={2.5} fill="none" strokeLinecap="round"/></Svg>,
@@ -77,7 +76,7 @@ function MemberCardImpl({ m, isActive, isParentViewer, colors, isDark, siblings,
   /** Long-press — parents only, opens the edit modal. */
   onLongPress: () => void; onPinPress: () => void;
 }) {
-  const rc = roleColor(m.role);
+  const rc = roleColor(m.role, colors);
   const hasPin = !!m.pin;
   const baseLabel = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
   const subtitle = isActive ? 'You' : (sidePrefix ? `${sidePrefix} ${baseLabel}` : baseLabel);
@@ -169,7 +168,7 @@ function CarouselMemberCardImpl({ m, isActive, isParentViewer, colors, isDark, o
   /** Long-press — parents only, opens the edit modal. */
   onLongPress: () => void; onPinPress: () => void;
 }) {
-  const rc = roleColor(m.role);
+  const rc = roleColor(m.role, colors);
   const hasPin = !!m.pin;
   const label = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
 

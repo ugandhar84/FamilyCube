@@ -3,19 +3,22 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   TextInput, ScrollView, Alert,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import {
   FolderOpen, Search, SlidersHorizontal, Lock, X, AlertCircle, RefreshCw,
   Download, CheckSquare,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
-import { SCard, CardHeader, EmptyState, BRAND } from './shared';
+import { useUIStore } from '@/store/uiStore';
+import { EmptyState } from './shared';
 import RecordCard    from '../records/RecordCard';
 import AiReviewSheet from '../records/AiReviewSheet';
 import AddRecordModal from '../records/AddRecordModal';
+import RecordsFilterSheet from '../records/RecordsFilterSheet';
 import { encryptAnalysis, decryptAnalysis, isEncryptedBlob } from '../records/recordsCrypto';
 import { downloadSingle, downloadZip } from '../records/recordsDownload';
-import { MedRecord, AiAnalysis, RecordForm, TAGS, memberColor } from '../records/types';
+import { MedRecord, AiAnalysis, RecordForm } from '../records/types';
 import type * as DocumentPicker from 'expo-document-picker';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
@@ -36,6 +39,26 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 
   // ── Modal / action state ─────────────────────────────────────────────────────
   const [showAdd,     setShowAdd]     = useState(false);
+
+  // Shared FAB's family-health-tab "+" face (app/(tabs)/_layout.tsx) fires
+  // this one-shot flag instead of opening Ask Cube — same pattern
+  // TasksScreen.tsx/MemoriesTab.tsx/HealthTab.tsx use. HealthRecordsScreen
+  // mounts only one of HealthTab/RecordsTab at a time (segmented switch),
+  // so both safely consume the same flag without conflicting.
+  const openHealthRecordsComposerRequested = useUIStore(s => s.openHealthRecordsComposerRequested);
+  useEffect(() => {
+    if (openHealthRecordsComposerRequested) {
+      useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      setShowAdd(true);
+    }
+  }, [openHealthRecordsComposerRequested]);
+
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().openHealthRecordsComposerRequested) {
+      useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      setShowAdd(true);
+    }
+  }, []));
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [pending,     setPending]     = useState<Record<string, AiAnalysis>>({});
   const [notMedical,  setNotMedical]  = useState<Record<string, string>>({});
@@ -267,71 +290,71 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 
   // ── Guards ────────────────────────────────────────────────────────────────────
   if (!familyId || familyId === 'family-1') return (
-    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
-      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors} />
+    <View style={{ padding: 16 }}>
       <EmptyState Icon={Lock} label="Sign in and join a family vault to access medical records" colors={colors} />
-    </SCard>
+    </View>
   );
 
   if (loading) return (
-    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
-      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
-        onAction={() => setShowAdd(true)} actionLabel="Upload" />
-      <ActivityIndicator color={BRAND.teal} style={{ marginVertical: 24 }} />
-    </SCard>
+    <View style={{ padding: 16 }}>
+      <ActivityIndicator color={colors.teal} style={{ marginVertical: 24 }} />
+    </View>
   );
 
   if (loadError) return (
-    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
-      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
-        onAction={() => setShowAdd(true)} actionLabel="Upload" />
+    <View style={{ padding: 16 }}>
       <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
-        <AlertCircle size={28} color={BRAND.rose} />
+        <AlertCircle size={28} color={colors.danger} />
         <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>{loadError}</Text>
         <TouchableOpacity onPress={load}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: BRAND.teal + '15',
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.teal + '15',
             borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}>
-          <RefreshCw size={13} color={BRAND.teal} />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.teal }}>Retry</Text>
+          <RefreshCw size={13} color={colors.teal} />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal }}>Retry</Text>
         </TouchableOpacity>
       </View>
-    </SCard>
+    </View>
   );
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
-      <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
-        <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records"
-          badge={`${records.length}`} badgeColor={BRAND.teal} colors={colors}
-          onAction={() => setShowAdd(true)} actionLabel="Upload" />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, marginBottom: 2 }}>
-          <Lock size={10} color={BRAND.teal} />
-          <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.teal }}>
-            AES-256 encrypted · per-member vault · analysis locked with family key
+      <View style={{ padding: 16 }}>
+        {/* No "Medical Records" title/header here — the outer screen
+            header and Health/Immunizations/Records switch above this
+            already say "Records" (live-reported as redundant). Record
+            count + encryption notice share one row instead. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 }}>
+            <Lock size={10} color={colors.teal} />
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }} numberOfLines={1}>
+              AES-256 encrypted · per-member vault
+            </Text>
+          </View>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: colors.teal }}>
+            {records.length} {records.length === 1 ? 'record' : 'records'}
           </Text>
         </View>
 
         {/* Download / selection bar — appears when records are selected */}
         {selectable && (
-          <View style={[r.downloadBar, { backgroundColor: BRAND.teal + '15', borderColor: BRAND.teal + '40' }]}>
+          <View style={[r.downloadBar, { backgroundColor: colors.teal + '15', borderColor: colors.teal + '40' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <CheckSquare size={14} color={BRAND.teal} />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.teal }}>
+              <CheckSquare size={14} color={colors.teal} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.teal }}>
                 {selectedIds.size} selected
               </Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity onPress={clearSelection}
                 style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-                  borderWidth: 1, borderColor: BRAND.teal + '60' }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.teal }}>Clear</Text>
+                  borderWidth: 1, borderColor: colors.teal + '60' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Clear</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleDownload} disabled={downloading}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                   paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8,
-                  backgroundColor: BRAND.teal, opacity: downloading ? 0.65 : 1 }}>
+                  backgroundColor: colors.teal, opacity: downloading ? 0.65 : 1 }}>
                 {downloading
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Download size={13} color="#fff" />}
@@ -359,56 +382,19 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
               </TouchableOpacity>
             ) : null}
           </View>
-          <TouchableOpacity onPress={() => setShowFilter(f => !f)}
+          <TouchableOpacity onPress={() => setShowFilter(true)}
             style={[r.filterBtn, {
-              borderColor: activeFilters > 0 ? BRAND.teal : colors.border,
-              backgroundColor: activeFilters > 0 ? BRAND.teal + '15' : (isDark ? colors.surface : '#F1F5F9'),
+              borderColor: activeFilters > 0 ? colors.teal : colors.border,
+              backgroundColor: activeFilters > 0 ? colors.teal + '15' : (isDark ? colors.surface : '#F1F5F9'),
             }]}>
-            <SlidersHorizontal size={15} color={activeFilters > 0 ? BRAND.teal : colors.textTertiary} />
+            <SlidersHorizontal size={15} color={activeFilters > 0 ? colors.teal : colors.textTertiary} />
             {activeFilters > 0 && (
-              <View style={r.filterBadge}>
+              <View style={[r.filterBadge, { backgroundColor: colors.teal }]}>
                 <Text style={{ fontSize: 9, fontWeight: '900', color: '#fff' }}>{activeFilters}</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
-
-        {/* Filter panel */}
-        {showFilter && (
-          <View style={[r.filterPanel, { backgroundColor: isDark ? colors.surface : '#F8F5FF', borderColor: colors.border }]}>
-            <Text style={[r.filterLabel, { color: colors.textTertiary }]}>MEMBER</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', gap: 7, marginBottom: 10 }}>
-                {[{ id: 'all', name: 'All' }, ...members].map((m, i) => {
-                  const sel = filterMember === m.id;
-                  const c   = m.id === 'all' ? '#64748B' : memberColor(i - 1);
-                  return (
-                    <TouchableOpacity key={m.id} onPress={() => setFilterMember(m.id)}
-                      style={[r.chip, { backgroundColor: sel ? c + '20' : 'transparent', borderColor: sel ? c : colors.border }]}>
-                      <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? c : colors.textTertiary }}>
-                        {m.name.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-            <Text style={[r.filterLabel, { color: colors.textTertiary }]}>CATEGORY</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-              {[{ id: 'all', label: 'All', color: '#64748B' }, ...TAGS].map(t => {
-                const sel = filterTag === t.id;
-                return (
-                  <TouchableOpacity key={t.id} onPress={() => setFilterTag(t.id)}
-                    style={[r.chip, { backgroundColor: sel ? t.color + '20' : 'transparent', borderColor: sel ? t.color : colors.border }]}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? t.color : colors.textTertiary }}>
-                      {t.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        )}
 
         {/* List */}
         {filtered.length === 0 ? (
@@ -441,7 +427,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           </View>
         )}
 
-      </SCard>
+      </View>
 
       {/* Upload modal */}
       <AddRecordModal
@@ -450,6 +436,16 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         onSave={addRecord}
         colors={colors} isDark={isDark}
         members={members} activeMemberId={activeMemberId}
+      />
+
+      {/* Filter sheet — was an inline expanding panel, now a real bottom
+          sheet matching HealthFilterSheet.tsx's own pattern. */}
+      <RecordsFilterSheet
+        visible={showFilter}
+        onClose={() => setShowFilter(false)}
+        colors={colors} isDark={isDark} members={members}
+        filterMember={filterMember} setFilterMember={setFilterMember}
+        filterTag={filterTag} setFilterTag={setFilterTag}
       />
 
       {/* AI review sheet */}
@@ -472,7 +468,7 @@ const r = StyleSheet.create({
   filterBtn:   { width: 42, height: 42, borderRadius: 12, borderWidth: 1.5, alignItems: 'center',
                  justifyContent: 'center', position: 'relative' },
   filterBadge: { position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: 8,
-                 backgroundColor: BRAND.teal, alignItems: 'center', justifyContent: 'center' },
+                 alignItems: 'center', justifyContent: 'center' },
   filterPanel: { borderRadius: 14, borderWidth: 1, padding: 12, marginTop: 8 },
   filterLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8, marginBottom: 7 },
   chip:        { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },

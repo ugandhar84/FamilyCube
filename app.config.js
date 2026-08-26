@@ -3,7 +3,7 @@ const IS_EAS = !!process.env.EAS_BUILD;
 /** @type {import('expo/config').ExpoConfig} */
 const config = {
   name: "FamilyCube",
-  slug: "family-cube",
+  slug: "familycube",
   version: "1.0.0",
   // Base value only — the actual per-idiom split (phone portrait-only, iPad
   // all orientations) lives in ios.infoPlist below.
@@ -213,7 +213,7 @@ const config = {
   extra: {
     router: {},
     eas: {
-      projectId: "75404fcd-d3a5-4f5d-bcb2-465fb6009ede",
+      projectId: "6c9a2b2c-44d1-40cf-9310-5dc37687be14",
     },
   },
   owner: "peopleontechs-team",

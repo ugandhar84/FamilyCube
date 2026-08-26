@@ -33,7 +33,7 @@ function rideState(rideCountdown: number, confirmed: boolean) {
 
 // Full-width "your ride is coming" banner — separate from the hero card's own
 // mini countdown so it stays visible even after scrolling past the hero.
-export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
+export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent, driverDispatched, conflictReason }: {
   ev: FamilyEvent; rideCountdown: number; colors: any; isDark: boolean;
   active: FamilyMember; members: FamilyMember[];
   onConfirmPickup: (ev: FamilyEvent) => void;
@@ -47,6 +47,21 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
   // seamlessly carries through counting → here → overdue → confirmed.
   onSendDriverLate?: (ev: FamilyEvent) => void;
   lateNudgeSent?: Record<string, boolean>;
+  // Whether tripStore has an ACTIVE trip (dispatched, not yet completed)
+  // for this ride's driver — the real Pick-up Radar signal, not just the
+  // scheduled clock. Master-flow audit finding: this banner previously
+  // derived "here"/"overdue" purely from rideCountdown, so it could say
+  // "HERE!" purely because the clock hit zero regardless of whether the
+  // driver ever tapped Dispatch, and couldn't reflect an early dispatch
+  // either. Passing the real signal lets the copy be accurate in both
+  // directions without changing the underlying state machine's shape.
+  driverDispatched?: boolean;
+  // Same assignee-double-booked signal ParentView/KidNeedsYouSection
+  // already show — SeniorView (the only real consumer of this banner
+  // besides TeenView) had no conflict-detection wiring at all until this
+  // fix. Purely informational — no reassign action here, same as
+  // KidNeedsYouSection's own use of this signal.
+  conflictReason?: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -56,11 +71,19 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
   if (state === 'stale' && !confirmed) return null; // nothing left to say, no dismiss needed — it's just gone
 
   const rideHere   = state === 'here';
-  const isOverdue  = state === 'overdue';
+  // A genuinely dispatched driver is never "overdue" from the kid's point
+  // of view, even if the clock says the scheduled time passed — they're
+  // actively en route, which is a materially different (less alarming)
+  // situation than "scheduled time passed, nobody's said anything."
+  const isOverdue  = state === 'overdue' && !driverDispatched;
+  // Dispatched but not yet in the clock-based "here" window — the one
+  // genuinely NEW state this fix adds, distinct from both the plain
+  // countdown and "HERE!" so the copy doesn't claim arrival prematurely.
+  const onTheWay   = !!driverDispatched && !confirmed && !rideHere;
   const canDismiss = rideCountdown <= -30 || confirmed;
 
-  const Icon = confirmed ? Check : isOverdue ? AlertTriangle : rideHere ? PartyPopper : Car;
-  const iconColor = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : rideHere ? '#6EE7B7' : MONEY_GREEN;
+  const Icon = confirmed ? Check : isOverdue ? AlertTriangle : (rideHere || onTheWay) ? PartyPopper : Car;
+  const iconColor = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : (rideHere || onTheWay) ? '#6EE7B7' : MONEY_GREEN;
 
   // Was ev.helper?.split(' ')[0] everywhere — undefined for every
   // driverName-based kid ride request (KidRequestModal's own shape), so
@@ -73,6 +96,8 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
     ? `Pickup confirmed — you're all set`
     : isOverdue
       ? `${driverFirst ?? 'Your ride'} hasn't arrived yet`
+      : onTheWay
+        ? `${driverFirst ?? 'Your ride'} is on the way!`
       : rideHere
         ? `${driverFirst ?? 'Your ride'} is HERE!`
         : rideCountdown <= 15
@@ -112,6 +137,15 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
           )}
         </View>
 
+        {!confirmed && conflictReason && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <AlertTriangle size={12} color={isOverdue ? '#fff' : colors.danger} />
+            <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: isOverdue ? '#fff' : colors.danger }}>
+              {conflictReason}
+            </Text>
+          </View>
+        )}
+
         {/* Was split across two different states with two different
             labels ("Not here yet" while 'here', "Alert my parent" once
             'overdue') — confusing and inconsistent. Simplified per direct
@@ -120,7 +154,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
             overdue), same two buttons throughout — a kid should never
             have to wait for the app to decide something's "overdue"
             before they're allowed to say so themselves. */}
-        {!confirmed && (rideHere || isOverdue) && (
+        {!confirmed && (rideHere || isOverdue || onTheWay) && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx]`); onConfirmPickup(ev); }}
               style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>

@@ -2,12 +2,11 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, StyleSheet, Alert,
-  Modal, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker    from 'expo-image-picker';
-import { X, Lock, Shield, FileText, Camera, Image, FolderOpen } from 'lucide-react-native';
-import { BRAND } from '../tabs/shared';
+import { Lock, Shield, FileText, Camera, Image, FolderOpen, X } from 'lucide-react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
 
 interface Props {
@@ -100,183 +99,161 @@ export default function AddRecordModal({
     onClose();
   };
 
-  const cardBg = colors.card;
-  const inp = [s.inp, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border, color: colors.textPrimary }];
+  const inp = [s.inp, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '92%', backgroundColor: colors.card }}>
-
-            {/* Drag handle */}
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
-
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <Text style={{ flex: 1, fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Upload Medical Record</Text>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16 }}>
-            {/* Vault notice */}
-            <View style={[s.vaultBadge, { backgroundColor: BRAND.teal + '12', marginHorizontal: 0 }]}>
-              <Shield size={12} color={BRAND.teal} />
-              <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700', flex: 1 }}>
-                Encrypted · protected by your family vault · never shared externally
-              </Text>
-            </View>
-
-              {/* Member picker */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>For *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {members.map((m, i) => {
-                      const sel = selMember === m.id;
-                      const c   = memberColor(i);
-                      return (
-                        <TouchableOpacity key={m.id} onPress={() => setSelMember(m.id)}
-                          style={[s.chip, { backgroundColor: sel ? c + '25' : 'transparent', borderColor: sel ? c : colors.border }]}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? c : colors.textSecondary }}>
-                            {m.name.split(' ')[0]}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-                {showErr('member') && <Text style={s.err}>{errors.member}</Text>}
-              </View>
-
-              {/* Title */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Document Title *</Text>
-                <TextInput value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))}
-                  placeholder="e.g. Annual Blood Panel, Discharge Summary"
-                  placeholderTextColor={colors.textTertiary} style={inp} />
-                {showErr('title') && <Text style={s.err}>{errors.title}</Text>}
-              </View>
-
-              {/* Category */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Category</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {TAGS.map(t => {
-                    const sel   = form.tag === t.id;
-                    const TIcon = t.Icon;
-                    return (
-                      <TouchableOpacity key={t.id} onPress={() => setForm(f => ({ ...f, tag: t.id }))}
-                        style={[s.chip, {
-                          backgroundColor: sel ? t.color + '20' : 'transparent',
-                          borderColor: sel ? t.color : colors.border,
-                          flexDirection: 'row', alignItems: 'center', gap: 5,
-                        }]}>
-                        <TIcon size={12} color={sel ? t.color : colors.textTertiary} />
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? t.color : colors.textSecondary }}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Date */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Record Date</Text>
-                <TextInput value={form.record_date}
-                  onChangeText={v => setForm(f => ({ ...f, record_date: v }))}
-                  placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
-              </View>
-
-              {/* File — 3 source options */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>
-                  Attach File <Text style={{ fontWeight: '400' }}>— enables AI analysis</Text>
-                </Text>
-
-                {file ? (
-                  // Chosen file row
-                  <View style={[s.fileRow, { backgroundColor: BRAND.teal + '10', borderColor: BRAND.teal + '50' }]}>
-                    <FileText size={15} color={BRAND.teal} />
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.teal, flex: 1 }} numberOfLines={1}>
-                      {file.name}
-                    </Text>
-                    {file.size != null && (
-                      <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtSize(file.size)}</Text>
-                    )}
-                    <TouchableOpacity onPress={() => setFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <X size={14} color={BRAND.teal} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  // Source picker buttons
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity onPress={pickFromCamera} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
-                      <Camera size={18} color={colors.textSecondary} />
-                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Camera</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={pickFromLibrary} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
-                      <Image size={18} color={colors.textSecondary} />
-                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Photos</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={pickFromFiles} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
-                      <FolderOpen size={18} color={colors.textSecondary} />
-                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Files</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
-                  <Lock size={10} color={colors.textTertiary} />
-                  <Text style={{ fontSize: 10, color: colors.textTertiary }}>
-                    Encrypted at rest · accessible only within your vault
-                  </Text>
-                </View>
-              </View>
-
-              {/* Notes */}
-              <View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
-                <TextInput value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))}
-                  placeholder="Any context about this document…"
-                  placeholderTextColor={colors.textTertiary}
-                  style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
-              </View>
-            </ScrollView>
-
-            {/* Fixed footer */}
-            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-              <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} disabled={saving}
-                style={[s.saveBtn, { backgroundColor: BRAND.teal, opacity: saving ? 0.65 : 1 }]}>
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Upload Medical Record"
+      accentColor={colors.teal}
+      minHeight="60%"
+      maxHeight="92%"
+      footer={
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave} disabled={saving}
+            style={[s.saveBtn, { backgroundColor: colors.teal, opacity: saving ? 0.65 : 1 }]}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      }
+    >
+      {/* Vault notice */}
+      <View style={[s.vaultBadge, { backgroundColor: colors.teal + '12' }]}>
+        <Shield size={12} color={colors.teal} />
+        <Text style={{ fontSize: 11, color: colors.teal, fontWeight: '700', flex: 1 }}>
+          Encrypted · protected by your family vault · never shared externally
+        </Text>
+      </View>
+
+      {/* Member picker */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>For *</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {members.map((m, i) => {
+              const sel = selMember === m.id;
+              const c   = memberColor(i);
+              return (
+                <TouchableOpacity key={m.id} onPress={() => setSelMember(m.id)}
+                  style={[s.chip, { backgroundColor: sel ? c + '25' : 'transparent', borderColor: sel ? c : colors.border }]}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? c : colors.textSecondary }}>
+                    {m.name.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+        {showErr('member') && <Text style={[s.err, { color: colors.danger }]}>{errors.member}</Text>}
+      </View>
+
+      {/* Title */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>Document Title *</Text>
+        <TextInput value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))}
+          placeholder="e.g. Annual Blood Panel, Discharge Summary"
+          placeholderTextColor={colors.textTertiary} style={inp} />
+        {showErr('title') && <Text style={[s.err, { color: colors.danger }]}>{errors.title}</Text>}
+      </View>
+
+      {/* Category */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>Category</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {TAGS.map(t => {
+            const sel   = form.tag === t.id;
+            const TIcon = t.Icon;
+            return (
+              <TouchableOpacity key={t.id} onPress={() => setForm(f => ({ ...f, tag: t.id }))}
+                style={[s.chip, {
+                  backgroundColor: sel ? t.color + '20' : 'transparent',
+                  borderColor: sel ? t.color : colors.border,
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
+                }]}>
+                <TIcon size={12} color={sel ? t.color : colors.textTertiary} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? t.color : colors.textSecondary }}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Date */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>Record Date</Text>
+        <TextInput value={form.record_date}
+          onChangeText={v => setForm(f => ({ ...f, record_date: v }))}
+          placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
+      </View>
+
+      {/* File — 3 source options */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>
+          Attach File <Text style={{ fontWeight: '400' }}>— enables AI analysis</Text>
+        </Text>
+
+        {file ? (
+          // Chosen file row
+          <View style={[s.fileRow, { backgroundColor: colors.teal + '10', borderColor: colors.teal + '50' }]}>
+            <FileText size={15} color={colors.teal} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal, flex: 1 }} numberOfLines={1}>
+              {file.name}
+            </Text>
+            {file.size != null && (
+              <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtSize(file.size)}</Text>
+            )}
+            <TouchableOpacity onPress={() => setFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={14} color={colors.teal} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Source picker buttons
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={pickFromCamera} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+              <Camera size={18} color={colors.textSecondary} />
+              <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickFromLibrary} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+              <Image size={18} color={colors.textSecondary} />
+              <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Photos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickFromFiles} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+              <FolderOpen size={18} color={colors.textSecondary} />
+              <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Files</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
+          <Lock size={10} color={colors.textTertiary} />
+          <Text style={{ fontSize: 10, color: colors.textTertiary }}>
+            Encrypted at rest · accessible only within your vault
+          </Text>
+        </View>
+      </View>
+
+      {/* Notes */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
+        <TextInput value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))}
+          placeholder="Any context about this document…"
+          placeholderTextColor={colors.textTertiary}
+          style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
+      </View>
+    </AppBottomSheet>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 10, maxHeight: '92%' },
-  handle:     { width: 40, height: 4, borderRadius: 2 },
-  headerRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                paddingHorizontal: 20, paddingVertical: 10 },
-  closeBtn:   { padding: 8, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)' },
-  vaultBadge: { marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center',
+  vaultBadge: { flexDirection: 'row', alignItems: 'center',
                 gap: 7, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   label:      { fontSize: 12, fontWeight: '700', marginBottom: 5 },
   inp:        { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
@@ -287,9 +264,7 @@ const s = StyleSheet.create({
   srcBtn:     { alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
                 paddingVertical: 14, borderStyle: 'dashed' },
   srcLabel:   { fontSize: 11, fontWeight: '800' },
-  footer:     { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14,
-                borderTopWidth: StyleSheet.hairlineWidth },
   cancelBtn:  { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
   saveBtn:    { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
-  err:        { fontSize: 11, fontWeight: '700', color: '#F43F5E', marginTop: 4, marginLeft: 2 },
+  err:        { fontSize: 11, fontWeight: '700', marginTop: 4, marginLeft: 2 },
 });

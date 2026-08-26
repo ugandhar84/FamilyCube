@@ -109,6 +109,17 @@ type NotifType =
   | 'reward_decision'
   | 'kid_request'
   | 'kid_request_decision'
+  | 'schedule_conflict'
+  // Master-flow spec, two of the still-missing nudge timings, added by
+  // chore-deadline-notifier: a pooled/open chore unclaimed with under 30
+  // minutes to its due time gets one urgent broadcast to the whole
+  // eligible pool plus a parent alert; a parent-approval-pending chore
+  // (kid-proposed, GP redo-dispute, etc.) unanswered near its own cutoff
+  // gets one nudge, escalating to the co-parent if still unanswered past
+  // the cutoff.
+  | 'pool_unclaimed_urgent'
+  | 'approval_cutoff_nudge'
+  | 'approval_cutoff_escalated'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -127,6 +138,8 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
   kid_request: 'requests', kid_request_decision: 'requests',
+  schedule_conflict: 'family',
+  pool_unclaimed_urgent: 'chores', approval_cutoff_nudge: 'chores', approval_cutoff_escalated: 'chores',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -422,6 +435,58 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
           : `Your request was declined${p.note ? `: ${p.note}` : ''}`,
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
+    case 'schedule_conflict':
+      // p.reason mirrors ParentView.tsx's own conflict-reason strings
+      // (e.g. "Priya assigned to 2 events") — same wording client-side and
+      // server-side so a parent isn't confused seeing different language
+      // in the push vs. the Hub banner for the same conflict.
+      return {
+        title: '⚠️ Schedule Conflict',
+        body: (p.reason as string) ?? 'Two of your events overlap — check your schedule.',
+        sound: 'default',
+        data: { type: 'schedule_conflict', eventIds: p.eventIds },
+      };
+
+    case 'pool_unclaimed_urgent':
+      // p.forParent distinguishes the pool broadcast copy (to eligible
+      // grandparents/teens: "come claim this") from the parent alert copy
+      // ("nobody's taken this yet, cover it or bump the time") — same
+      // event, two different audiences, two different asks.
+      return p.forParent
+        ? {
+            title: '⚠️ Still Unclaimed',
+            body: `Nobody's taken "${p.questTitle}" yet — due in ${p.minutesUntilDue}min. Cover it yourself, or move the time?`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          }
+        : {
+            title: '🙋 Needed Soon',
+            body: `"${p.questTitle}" is still open — due in ${p.minutesUntilDue}min!`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          };
+    case 'approval_cutoff_nudge':
+      return {
+        title: '📋 Waiting on Your Yes or No',
+        body: `"${p.questTitle}" needs your approval — due in ${p.minutesUntilDue}min.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'approval_cutoff_escalated':
+      // Two audiences again: the co-parent picking it up, and (soft, no
+      // sound) the original parent + asker being told it moved.
+      return p.forCoParent
+        ? {
+            title: '📋 Needs Your Approval',
+            body: `${p.originalParentName ?? 'The other parent'} hasn't answered "${p.questTitle}" in time — it's yours to approve or decline now.`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          }
+        : {
+            title: '📋 Sent to the Other Parent',
+            body: `"${p.questTitle}" wasn't answered in time — ${p.coParentName ?? 'the other parent'} can approve it now.`,
+            data: { screen: 'Quests', questId: p.questId },
+          };
 
     case 'custom':
     default:

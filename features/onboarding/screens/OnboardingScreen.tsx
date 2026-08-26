@@ -19,94 +19,101 @@ const { width, height } = Dimensions.get('window');
 
 // ─── Slide data — one per real Family Cube feature (see the 7-tab layout in
 // CLAUDE.md), illustrated with our own SVG scenes (OnboardingIllos.tsx)
-// instead of stock photography.
-const SLIDES = [
-  {
-    key: 'welcome',
-    illustration: IlloWelcome,
-    gradientColors: ['#9261C7', '#C4A0EC'] as [string, string],
-    chip: 'CONNECT · ORGANIZE · CARE · GROW',
-    title: 'One family.\nOne cube.',
-    sub: 'Everyone in your household — parents, kids, teens, grandparents — in one place, sharing one home base.',
-    btnColor: '#9261C7',
-    btnLabel: "Let's go",
-  },
-  {
-    key: 'quests',
-    illustration: IlloHealth,
-    gradientColors: ['#F5A623', '#FCD34D'] as [string, string],
-    chip: 'Quests',
-    title: 'Chores become\nquests worth doing.',
-    sub: 'Assign, claim, and approve chores together. Every completed quest earns real coins toward real rewards.',
-    btnColor: '#F5A623',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'schedule',
-    illustration: IlloReminders,
-    gradientColors: ['#3B82F6', '#93C5FD'] as [string, string],
-    chip: 'Schedule',
-    title: 'Never miss\nwhat matters.',
-    sub: 'One shared calendar for practices, pickups, and appointments — everyone sees the same day.',
-    btnColor: '#3B82F6',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'chat',
-    illustration: IlloAIHealth,
-    gradientColors: ['#F04E98', '#F9A8D4'] as [string, string],
-    chip: 'Chat',
-    title: 'Talk like\na family again.',
-    sub: 'A group chat just for your household — reactions, photos, and no strangers scrolling past.',
-    btnColor: '#F04E98',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'gps',
-    illustration: IlloSocial,
-    gradientColors: ['#00BBA4', '#5EEAD4'] as [string, string],
-    chip: 'GPS',
-    title: 'Know they\nmade it home.',
-    sub: 'See where everyone is on one family map — peace of mind without checking in every ten minutes.',
-    btnColor: '#00BBA4',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'store',
-    illustration: IlloPlaydates,
-    gradientColors: ['#FCD34D', '#F5A623'] as [string, string],
-    chip: 'Store',
-    title: 'Coins earned.\nRewards claimed.',
-    sub: 'Kids cash in quest coins for real rewards parents set — screen time, treats, or something bigger.',
-    btnColor: '#F5A623',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'askcube',
-    illustration: IlloAI,
-    gradientColors: ['#9261C7', '#B98EDB'] as [string, string],
-    chip: 'Ask Cube',
-    title: 'Your family\'s\nsmart assistant.',
-    sub: 'Ask Cube helps schedule events, assign chores, and answer "what\'s happening today?" in seconds.',
-    btnColor: '#9261C7',
-    btnLabel: 'Next',
-  },
-  {
-    key: 'getstarted',
-    illustration: IlloGetStarted,
-    gradientColors: ['#9261C7', '#F04E98'] as [string, string],
-    chip: 'Ready when you are',
-    title: 'Let\'s build your\nfamily cube.',
-    sub: '30 seconds to create your family or join one — then everyone\'s in the same place.',
-    btnColor: '#9261C7',
-    btnLabel: 'Begin',
-  },
-];
+// instead of stock photography. Built from useTheme() inside the component
+// below (not a module-level const) so each slide's accent maps to the
+// actual current brand token for its feature — primary for Welcome/Ask
+// Cube/Get Started, amber for Quests/Store (ORGANIZE), teal for GPS
+// (CONNECT), pink/accent for Chat/Care — instead of fixed hex literals.
+function buildSlides(colors: any) {
+  return [
+    {
+      key: 'welcome',
+      illustration: IlloWelcome,
+      gradientColors: [colors.primary, colors.primaryLight] as [string, string],
+      chip: 'CONNECT · ORGANIZE · CARE · GROW',
+      title: 'One family.\nOne cube.',
+      sub: 'Everyone in your household — parents, kids, teens, grandparents — in one place, sharing one home base.',
+      btnColor: colors.primary,
+      btnLabel: "Let's go",
+    },
+    {
+      key: 'quests',
+      illustration: IlloHealth,
+      gradientColors: [colors.amber, colors.amberLight] as [string, string],
+      chip: 'Quests',
+      title: 'Chores become\nquests worth doing.',
+      sub: 'Assign, claim, and approve chores together. Every completed quest earns real coins toward real rewards.',
+      btnColor: colors.amber,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'schedule',
+      illustration: IlloReminders,
+      gradientColors: [colors.teal, colors.tealLight] as [string, string],
+      chip: 'Schedule',
+      title: 'Never miss\nwhat matters.',
+      sub: 'One shared calendar for practices, pickups, and appointments — everyone sees the same day.',
+      btnColor: colors.teal,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'chat',
+      illustration: IlloAIHealth,
+      gradientColors: [colors.pink, colors.pinkLight] as [string, string],
+      chip: 'Chat',
+      title: 'Talk like\na family again.',
+      sub: 'A group chat just for your household — reactions, photos, and no strangers scrolling past.',
+      btnColor: colors.pink,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'gps',
+      illustration: IlloSocial,
+      gradientColors: [colors.teal, colors.tealLight] as [string, string],
+      chip: 'GPS',
+      title: 'Know they\nmade it home.',
+      sub: 'See where everyone is on one family map — peace of mind without checking in every ten minutes.',
+      btnColor: colors.teal,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'store',
+      illustration: IlloPlaydates,
+      gradientColors: [colors.amberLight, colors.amber] as [string, string],
+      chip: 'Store',
+      title: 'Coins earned.\nRewards claimed.',
+      sub: 'Kids cash in quest coins for real rewards parents set — screen time, treats, or something bigger.',
+      btnColor: colors.amber,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'askcube',
+      illustration: IlloAI,
+      gradientColors: [colors.primary, colors.accent] as [string, string],
+      chip: 'Ask Cube',
+      title: 'Your family\'s\nsmart assistant.',
+      sub: 'Ask Cube helps schedule events, assign chores, and answer "what\'s happening today?" in seconds.',
+      btnColor: colors.primary,
+      btnLabel: 'Next',
+    },
+    {
+      key: 'getstarted',
+      illustration: IlloGetStarted,
+      gradientColors: [colors.primary, colors.pink] as [string, string],
+      chip: 'Ready when you are',
+      title: 'Let\'s build your\nfamily cube.',
+      sub: '30 seconds to create your family or join one — then everyone\'s in the same place.',
+      btnColor: colors.primary,
+      btnLabel: 'Begin',
+    },
+  ];
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
   const { colors, isDark } = useTheme();
+  const SLIDES = buildSlides(colors);
   const [index, setIndex] = useState(0);
   const illoScrollRef  = useRef<ScrollView>(null);
   const cardScrollRef  = useRef<ScrollView>(null);

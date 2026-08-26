@@ -17,6 +17,7 @@ import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { localToday, hoursUntilEvent, useCountdown } from './hubUtils';
+import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
@@ -57,6 +58,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   onCloseComposer: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
+  // Same assignee-double-booked signal HubTimelineSection already computes
+  // internally below — this view's own separate KidRideBanner call needs
+  // it passed in directly too, since that banner isn't rendered BY
+  // HubTimelineSection.
+  const conflictReasons = detectAssigneeConflicts(events);
   const familyIdForRides = (active as any).familyId as string | undefined;
   // eventStore's `events` is a single-day cache tied to whatever date the
   // Calendar tab last selected — a pickup/ride pool scoped to it silently
@@ -346,6 +352,12 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           active={active} members={members}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+          // Real Pick-up Radar signal, not just the clock — master-flow
+          // audit finding, see KidRideBanner.tsx's driverDispatched doc.
+          driverDispatched={!!activeTrips?.some(t =>
+            t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+          )}
+          conflictReason={conflictReasons.get(confirmedRide.id)}
         />
       )}
 

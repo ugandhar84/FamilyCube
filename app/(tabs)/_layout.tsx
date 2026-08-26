@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import {
   View, Text, StyleSheet, Pressable, Animated, Easing,
 } from 'react-native';
@@ -11,6 +11,7 @@ import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
+import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -27,6 +28,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   profile:  'apps-outline',
   memories: 'images-outline',
   gps:      'radio-outline',
+  store:    'gift-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
@@ -35,6 +37,7 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   profile:  'apps',
   memories: 'images',
   gps:      'radio',
+  store:    'gift',
 };
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
@@ -48,12 +51,19 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // router.push('/(tabs)/quests' | '/(tabs)/calendar') deep link (push
 // notification taps, Ask Cube proposal cards, etc.) keeps resolving instead
 // of crashing, until those call sites are migrated to '/(tabs)/tasks'.
+// 'profile'/Apps removed from the bar — AppsQuickAccessPills (Hub's own
+// pill row, right below the header) already deep-links straight into every
+// feature that grid held (School/Health/Grocery/Meals/Ledger/Memories/
+// Records), so the tab was a redundant second hop to the same
+// destinations. The '/(tabs)/profile' ROUTE stays registered below (not in
+// this array) since the pills still navigate to it — only the always-
+// visible tab-bar entry point is gone.
 const TABS_DEFAULT = [
   { name: 'index',    label: 'Hub'    },
   { name: 'tasks',    label: 'Tasks'  },
+  { name: 'store',    label: 'Store'  },
   { name: 'chat',     label: 'Chat'   },
   { name: 'gps',      label: 'FindFam' },
-  { name: 'profile',  label: 'Apps'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
@@ -123,6 +133,12 @@ function CustomTabBar({ state, navigation }: any) {
   const { members, activeMemberId } = useFamilyStore();
   const activeRole = members.find(m => m.id === activeMemberId)?.role;
   const isSenior = activeRole === 'senior';
+  // Pending redemption count — parent-only signal (only a parent approves
+  // a kid's coin redemption); a kid/teen/senior sees the Store tab with no
+  // badge even if redemptions happen to be pending, same as Chat's badge
+  // logic only counting UNREAD (not "any message exists").
+  const pendingRedemptions = useRewardStore(s => s.redemptions).filter(r => r.status === 'pending').length;
+  const showStoreBadge = activeRole === 'parent' && pendingRedemptions > 0;
   // FindFam (gps) is now in TABS_DEFAULT for everyone except senior
   // (who gets Memories in that slot instead) — kid/teen/parent all share
   // the same bar shape now that kids also get direct FindFam access.
@@ -200,6 +216,7 @@ function CustomTabBar({ state, navigation }: any) {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
           const showBadge = name === 'chat' && hasUnreadChat;
+          const showStoreCount = name === 'store' && showStoreBadge;
 
           return (
             <Pressable
@@ -222,6 +239,11 @@ function CustomTabBar({ state, navigation }: any) {
                 />
                 {showBadge && (
                   <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />
+                )}
+                {showStoreCount && (
+                  <View style={[styles.countBadge, { backgroundColor: colors.danger }]}>
+                    <Text style={styles.countBadgeText}>{pendingRedemptions > 9 ? '9+' : pendingRedemptions}</Text>
+                  </View>
                 )}
               </View>
               <Text style={[
@@ -256,6 +278,10 @@ export default function TabLayout() {
   // state.index] is synchronous and authoritative.
   const activeTabName = useUIStore(s => s.activeTabName);
   const onChatTab = activeTabName === 'chat';
+  // Grocery has its own dedicated "+" (add item) FAB in the same bottom-
+  // right position — the shared Ask Cube sparkle would otherwise stack
+  // directly on top of it. Same treatment as Chat below.
+  const onGroceryTab = activeTabName === 'grocery';
   // One shared FAB (not two separate ones) swaps between Ask Cube
   // (sparkle, every tab except Chat/Tasks) and Tasks' own smart-create
   // entry point (+, Tasks tab only) — same physical button, same position.
@@ -266,9 +292,49 @@ export default function TabLayout() {
   // "+" stuck showing on Hub/Apps after visiting Chat). Plain conditional
   // icon render instead — no animation, but always correct.
   const onTasksTab = activeTabName === 'tasks';
+  // Store and FindFam (gps) both have their own focused, full-screen
+  // purposes (redeem/approve perks; check the family map) where a
+  // household-wide AI assistant launcher is off-topic clutter, same
+  // reasoning as Chat/Grocery above — just without a replacement FAB of
+  // their own, so the button simply disappears rather than swapping icon.
+  const onStoreTab = activeTabName === 'store';
+  const onGpsTab = activeTabName === 'gps';
+  // Memories gets the same treatment as Tasks — shared FAB morphs to "+"
+  // and posts a memory instead of opening Ask Cube, rather than being
+  // hidden. Posting a memory isn't parent-only the way Ask Cube is, so
+  // this is read outside the `activeMember?.role === 'parent'` gate below
+  // (see the FAB render's own comment for how that split plays out).
+  const onMemoriesTab = activeTabName === 'memories';
+  // Health & Records' own "+ Add" affordances are already parent(-only-
+  // visible) inside HealthRecordsList.tsx/RecordsTab.tsx (kidView hides
+  // them) — unlike Memories, this one stays INSIDE the parent-only gate
+  // below rather than being a carved-out exception, so a kid/teen/senior
+  // viewing this screen still just gets the FAB hidden (same as Store/
+  // FindFam), not a "+" they can't actually use.
+  const onFamilyHealthTab = activeTabName === 'family-health';
+  const healthRecordsActiveSegment = useUIStore(s => s.healthRecordsActiveSegment);
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
+
+  // Defensive reset: fullBleedScreenActive is only ever legitimately set
+  // true by GpsTab.tsx/HealthTab.tsx while their own Vault sub-screen is
+  // open (client-side state inside VaultScreen — activeTabName stays
+  // 'profile'/'apps' the whole time, no route change fires). If either
+  // screen's cleanup effect doesn't run — abrupt unmount, a navigation
+  // reset instead of a normal pop, anything React's effect cleanup
+  // doesn't cover — the flag can get stuck true and permanently hide the
+  // shared FAB on every tab, with no way to clear it short of a full app
+  // relaunch. This codebase has already hit the sibling class of this bug
+  // once (see onTasksTab's own comment above, "+ stuck showing on
+  // Hub/Apps"). Since neither legitimate setter corresponds to an
+  // activeTabName change, forcing it false whenever the focused TAB
+  // itself changes is always safe — it can't fight a screen that's still
+  // genuinely full-bleed, because that screen never changes activeTabName
+  // while it's open.
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(false);
+  }, [activeTabName]);
 
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
@@ -276,6 +342,18 @@ export default function TabLayout() {
     if (!eventsLoaded) loadEvents();
     if (!questsLoaded) loadQuests();
   }, []);
+
+  // A signed-in account can reach /(tabs) with terms_accepted/
+  // onboarding_completed=true (set the moment they accept terms) but with
+  // no family ever created or joined — e.g. they backed out of Setup/
+  // JoinFamilyScreen after accepting terms. Every tab screen assumes an
+  // active member exists, so without this redirect the app renders a blank
+  // screen behind the tab bar instead of sending them back to finish setup.
+  useEffect(() => {
+    if (familyLoaded && members.length === 0) {
+      router.replace('/onboarding');
+    }
+  }, [familyLoaded, members.length]);
 
   // Prefetch the default chat channel at tab-shell mount, same as Hub/
   // Tasks' own stores above — Chat's ENTIRE data pipeline (message fetch,
@@ -315,62 +393,99 @@ export default function TabLayout() {
         <Tabs.Screen name="index"    />
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
-        <Tabs.Screen name="store"    options={{ href: null }} />
+        <Tabs.Screen name="store"    />
         {/* FindFam — in TABS_DEFAULT for everyone except senior (Memories
             takes that slot instead); registered without href:null like
             every other visible tab, same pattern already used for
             'memories' (senior-only) — role-based visibility is handled
             entirely by which TABS array CustomTabBar renders. */}
         <Tabs.Screen name="gps"      />
-        <Tabs.Screen name="profile"  />
         {/* Superseded by 'tasks' (merged Quests + Schedule) — kept registered,
             not in the visible bar, so old deep links still resolve. */}
         <Tabs.Screen name="quests"   options={{ href: null }} />
         <Tabs.Screen name="calendar" options={{ href: null }} />
         {/* Hidden routes — not in tab bar */}
         <Tabs.Screen name="grocery"              options={{ href: null }} />
+        <Tabs.Screen name="meals"                options={{ href: null }} />
+        <Tabs.Screen name="school"               options={{ href: null }} />
         <Tabs.Screen name="notifications"        options={{ href: null }} />
         <Tabs.Screen name="care"                 options={{ href: null }} />
         <Tabs.Screen name="memories"             options={{ href: null }} />
         <Tabs.Screen name="health"               options={{ href: null }} />
+        {/* Family Health & Records combined (one screen, segmented switch)
+            — distinct from 'health' above and /health/records, both PET
+            features (usePetStore, embedded in care/CareScreen.tsx and
+            HealthQuickActions.tsx respectively) that already own those
+            route names as separate, still-live screens. */}
+        <Tabs.Screen name="family-health"        options={{ href: null }} />
         <Tabs.Screen name="journal"              options={{ href: null }} />
         <Tabs.Screen name="all-notifications"    options={{ href: null }} />
       </Tabs>
 
-      {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Tasks;
-          morphs in place into Tasks' own "+" (opens SmartTaskComposer via
-          the one-shot openTaskComposerRequested flag TasksScreen consumes)
-          the moment the Tasks tab is focused. One physical button, one
-          position, crossfading icon — not two separate FABs swapping in
-          and out. Parent-only: Ask Cube can act broadly across the
-          household (grocery, meals, chores, schedule) on the parent's
-          behalf, which isn't something a kid/teen/GP account should be
-          able to trigger; Tasks' own "+" for kid/teen still uses its own
-          separate role-gated logic inside TasksScreen, unaffected by this
-          parent-only gate. */}
-      {activeMember?.role === 'parent' && (
+      {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Grocery/
+          Store/FindFam/Tasks/Memories/Health & Records; morphs in place
+          into Tasks' own "+" (opens SmartTaskComposer via the one-shot
+          openTaskComposerRequested flag TasksScreen consumes), Memories'
+          own "+" (openMemoryComposerRequested, MemoriesTab consumes), or
+          Health & Records' own "+" (openHealthRecordsComposerRequested,
+          HealthTab/RecordsTab each consume it for whichever segment is
+          mounted) depending on which is focused. One physical button, one
+          position, crossfading icon — not separate FABs swapping in and
+          out. Ask Cube itself (the sparkle face, Tasks' "+", and Health &
+          Records' "+") stays parent-only — Ask Cube can act broadly across
+          the household on the parent's behalf, which isn't something a
+          kid/teen/GP account should trigger, Tasks' kid/teen creation path
+          uses its own separate header buttons instead of this shared
+          button, and Health & Records' own add-medication/add-record
+          controls are already parent(-visible)-only inside
+          HealthRecordsList.tsx/RecordsTab.tsx (kidView hides them) — so a
+          kid/teen there correctly just gets the FAB hidden, same as Store/
+          FindFam. Memories' "+" is the one exception carved out of the
+          gate below — posting a memory isn't a parent-only action the way
+          Ask Cube is. */}
+      {(activeMember?.role === 'parent' || onMemoriesTab) && (
         <>
           {/* Hidden on the Chat tab — a second AI entry point on top of the
               family's own messaging surface was redundant/confusing there.
               If it's already open when the user navigates to Chat, leave it
               open rather than yanking it away mid-conversation — only the
-              launcher button hides. */}
-          {!onChatTab && !fullBleedScreenActive && (
-            <Pressable
-              onPress={() => {
-                if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
-                else setAskCubeOpen(true);
-              }}
-              style={{
-                position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
-                width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary,
-                alignItems: 'center', justifyContent: 'center',
-                shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
-                elevation: 6,
-              }}>
-              {onTasksTab ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
-            </Pressable>
-          )}
+              launcher button hides. Also hidden on Grocery — that screen
+              has its own dedicated "+" (add item) FAB in the same
+              bottom-right spot, and stacking the sparkle directly on top
+              of it was redundant/confusing the same way. Also hidden on
+              Store and FindFam — both are focused, single-purpose screens
+              (redeem/approve perks; check the family map) where a
+              household-wide AI launcher doesn't add anything and just
+              clutters the corner. */}
+          {!onChatTab && !onGroceryTab && !onStoreTab && !onGpsTab && !fullBleedScreenActive
+            && (activeMember?.role === 'parent' || onMemoriesTab) && (() => {
+            // Health & Records has its own inner segmented switch (Health/
+            // Immunizations/Records) nested inside one route — the FAB
+            // tracks that too, not just which top-level route is focused,
+            // so it visually matches whichever segment is actually showing
+            // (danger-red for Health, teal for Immunizations or Records).
+            const fabColor = onFamilyHealthTab
+              ? (healthRecordsActiveSegment === 'health' ? colors.danger : colors.teal)
+              : colors.primary;
+            return (
+              <Pressable
+                onPress={() => {
+                  if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
+                  else if (onMemoriesTab) useUIStore.getState().setOpenMemoryComposerRequested(true);
+                  else if (onFamilyHealthTab) useUIStore.getState().setOpenHealthRecordsComposerRequested(true);
+                  else setAskCubeOpen(true);
+                }}
+                style={{
+                  position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
+                  width: 52, height: 52, borderRadius: 26, backgroundColor: fabColor,
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: fabColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+                  elevation: 6,
+                }}>
+                {(onTasksTab || onMemoriesTab || onFamilyHealthTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
+              </Pressable>
+            );
+          })()}
           <AskCubeChat
             visible={askCubeOpen}
             onClose={() => setAskCubeOpen(false)}
@@ -426,5 +541,23 @@ const styles = StyleSheet.create({
     borderRadius: 4.5,
     borderWidth: 1.5,
     borderColor: '#fff',
+  },
+  countBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
   },
 });

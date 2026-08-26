@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert, TextInput } from 'react-native';
 import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand, PartyPopper, Clock3 } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
+import { parseDbTime } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
@@ -720,8 +721,13 @@ export function ChoreReviewSection({
     // conversation, only to clear a settled approval you've already seen.
     if (c.disputeStatus) return true;
     if ((c.reviewAckIds ?? []).includes(active.id)) return false;
-    const t = c.approvedAt ? new Date(c.approvedAt).getTime() : 0;
-    return t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
+    // Was raw new Date(c.approvedAt) — Postgres timestamps
+    // ("2026-08-24 19:53:09+00") return NaN from RN's JS engine, which
+    // silently dropped every recently-approved chore with that shape out
+    // of this section entirely (same root cause as the celebration-replay
+    // bug found live this session). parseDbTime normalizes it first.
+    const t = c.approvedAt ? parseDbTime(c.approvedAt).getTime() : 0;
+    return Number.isFinite(t) && t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
   });
   const disputeBadgeCount = recentlyApproved.filter(c =>
     c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,

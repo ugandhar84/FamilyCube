@@ -12,6 +12,7 @@ import { withinLast24h } from '@/lib/dates';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent, useCountdown } from './hubUtils';
+import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { driverLabelByName } from '@/lib/format';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
@@ -166,6 +167,27 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)
   )[0];
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+  // Real Pick-up Radar signal, not just the scheduled clock — master-flow
+  // audit finding: the ride banner previously derived "here"/"overdue"
+  // purely from rideCountdown, so it could say a ride was overdue while
+  // the driver was actually already en route, or say "HERE!" purely
+  // because the clock hit zero regardless of whether Dispatch was ever
+  // tapped. See KidRideBanner.tsx's driverDispatched prop (same fix,
+  // TeenView/SeniorView use that component directly; KidView's own
+  // NeedsYouRideRow inside KidNeedsYouSection.tsx duplicates its state
+  // machine and needs the same signal passed in separately).
+  const confirmedRideDispatched = !!confirmedRide && !!activeTrips?.some(t =>
+    t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+  );
+  // Same "driver double-booked" signal ParentView shows the parent —
+  // a kid whose ride's driver is also assigned to a different event at
+  // roughly the same time deserves to know too, not just the parent
+  // (live direction: "conflicted kids should also show the symbol with
+  // ride conflict"). Computed over ALL events (not just this kid's own),
+  // since the conflict is about the DRIVER's schedule, which spans events
+  // that may not even involve this kid.
+  const assigneeConflicts = detectAssigneeConflicts(events);
+  const confirmedRideConflict = confirmedRide ? assigneeConflicts.get(confirmedRide.id) : undefined;
 
   // A driver has been named but hasn't confirmed yet — the gap between
   // "nobody's looked at my request" (myPendingRides below, already
@@ -335,12 +357,18 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     else submitQuest(q.id, undefined, active.id);
   };
 
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const recentReplies = myRequests.filter(r =>
     ['approved', 'declined'].includes(r.status) &&
     ['permission', 'question', 'medication', 'checkin', 'tutor', 'cheer'].includes(r.type) &&
-    r.respondedAt && !dismissedIds.has(r.id) &&
-    new Date(r.respondedAt).getTime() > cutoff
+    !dismissedIds.has(r.id) &&
+    // Was a raw `new Date(r.respondedAt).getTime() > cutoff` — Postgres
+    // timestamps ("2026-08-24 19:53:09+00") return NaN from a raw new
+    // Date() on RN's JS engine, and NaN > cutoff is always false, so this
+    // silently excluded every reply with that shape no matter how recent
+    // (same root cause as the celebration-replay bug this session).
+    // withinLast24h already normalizes via parseDbTime and handles the
+    // null/NaN cases — no need to hand-roll the cutoff math here too.
+    withinLast24h(r.respondedAt)
   );
 
   return (
@@ -374,6 +402,8 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
           declinedQuests={declinedQuests} approvedQuests={approvedQuests}
           cheersForMe={cheersForMe} recentReplies={recentReplies}
           confirmedRide={confirmedRide} rideCountdown={rideCountdown}
+          confirmedRideConflict={confirmedRideConflict}
+          confirmedRideDispatched={confirmedRideDispatched}
           awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
           active={active} members={members} colors={colors} isDark={isDark}
           dismissedIds={dismissedIds} onDismiss={dismissItem}

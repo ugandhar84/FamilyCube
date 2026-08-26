@@ -16,6 +16,12 @@ export const ILLO_H = Math.round(height * 0.52);
 
 export type IlloProps = { isDark: boolean };
 
+// These illustrations always render on OnboardingScreen.tsx's own colored
+// gradient backdrop (isDark is always passed false), not on colors.background
+// — so accent fills below are the brand primary's light-mode hex directly
+// (constants/colors.ts's colors.primary), not a useTheme() token.
+const BRAND_PRIMARY = '#DF613C';
+
 // ── Slide 1: Welcome — a family of silhouettes under one roof ───────────────
 export const IlloWelcome = React.memo(function IlloWelcome({ isDark }: IlloProps) {
   const bg0 = isDark ? '#241A3D' : '#F0E8FA';
@@ -33,7 +39,7 @@ export const IlloWelcome = React.memo(function IlloWelcome({ isDark }: IlloProps
       <Ellipse cx="195" cy="205" rx="130" ry="40" fill={shadow} />
 
       {/* Roof over the group — literal "one household" framing */}
-      <Path d="M100 95 L195 40 L290 95 L275 95 L195 55 L115 95 Z" fill="#9261C7" />
+      <Path d="M100 95 L195 40 L290 95 L275 95 L195 55 L115 95 Z" fill={BRAND_PRIMARY} />
 
       {/* Parent */}
       <Circle cx="150" cy="140" r="22" fill="#00BBA4" />
@@ -53,7 +59,7 @@ export const IlloWelcome = React.memo(function IlloWelcome({ isDark }: IlloProps
 
       <Circle cx="70" cy="90" r="5" fill="#F5A623" opacity={0.5} />
       <Circle cx="320" cy="100" r="4" fill="#00BBA4" opacity={0.5} />
-      <Circle cx="330" cy="140" r="3" fill="#9261C7" opacity={0.4} />
+      <Circle cx="330" cy="140" r="3" fill={BRAND_PRIMARY} opacity={0.4} />
       <Circle cx="60" cy="150" r="3" fill="#F04E98" opacity={0.4} />
     </Svg>
   );
@@ -131,7 +137,7 @@ export const IlloReminders = React.memo(function IlloSchedule({ isDark }: IlloPr
       <Rect x="126" y="175" width="50" height="7" rx="3.5" fill={isDark ? '#20304F' : '#E3ECFB'} />
 
       <Circle cx="70" cy="90" r="5" fill="#3B82F6" opacity={0.35} />
-      <Circle cx="325" cy="80" r="4" fill="#9261C7" opacity={0.4} />
+      <Circle cx="325" cy="80" r="4" fill={BRAND_PRIMARY} opacity={0.4} />
       <Circle cx="330" cy="150" r="3" fill="#00BBA4" opacity={0.4} />
     </Svg>
   );
@@ -161,7 +167,7 @@ export const IlloAIHealth = React.memo(function IlloChat({ isDark }: IlloProps) 
       <Rect x="130" y="121" width="128" height="30" rx="15" fill="#F04E98" />
       <Rect x="144" y="131" width="98" height="9" rx="4.5" fill="rgba(255,255,255,0.75)" />
 
-      <Circle cx="118" cy="180" r="16" fill="#9261C7" />
+      <Circle cx="118" cy="180" r="16" fill={BRAND_PRIMARY} />
       <Rect x="140" y="166" width="150" height="30" rx="15" fill={card} />
       <Rect x="154" y="176" width="112" height="9" rx="4.5" fill={isDark ? '#3A2A38' : '#F5D6E8'} />
       <Circle cx="272" cy="199" r="9" fill="#F5A623" />
@@ -270,7 +276,7 @@ export const IlloAI = React.memo(function IlloAskCube({ isDark }: IlloProps) {
       <Ellipse cx="195" cy="205" rx="140" ry="40" fill={isDark ? '#251840' : '#E4D6F7'} />
 
       {/* Cube face, simplified */}
-      <Path d="M195 45 L245 70 L245 120 L195 145 L145 120 L145 70 Z" fill="#9261C7" />
+      <Path d="M195 45 L245 70 L245 120 L195 145 L145 120 L145 70 Z" fill={BRAND_PRIMARY} />
       <Path d="M195 45 L245 70 L195 95 L145 70 Z" fill="#C4A0EC" />
       <Circle cx="170" cy="105" r="4" fill="white" />
       <Circle cx="195" cy="115" r="4" fill="white" />
@@ -282,7 +288,7 @@ export const IlloAI = React.memo(function IlloAskCube({ isDark }: IlloProps) {
       <Rect x="138" y="172" width="110" height="8" rx="4" fill={isDark ? '#3A2C50' : '#E4D6F7'} />
       <Rect x="138" y="185" width="80" height="8" rx="4" fill={isDark ? '#2E2340' : '#EFE6FA'} />
 
-      <Circle cx="70" cy="90" r="5" fill="#9261C7" opacity={0.4} />
+      <Circle cx="70" cy="90" r="5" fill={BRAND_PRIMARY} opacity={0.4} />
       <Circle cx="330" cy="90" r="4" fill="#F04E98" opacity={0.4} />
       <Circle cx="320" cy="150" r="3" fill="#00BBA4" opacity={0.4} />
     </Svg>
@@ -305,14 +311,14 @@ export const IlloGetStarted = React.memo(function IlloGetStarted({ isDark }: Ill
       <Rect width="390" height="240" fill="url(#gs-bg)" />
       <Ellipse cx="195" cy="205" rx="130" ry="40" fill={shadow} />
 
-      <Path d="M195 55 L255 85 L255 145 L195 175 L135 145 L135 85 Z" fill="#9261C7" />
+      <Path d="M195 55 L255 85 L255 145 L195 175 L135 145 L135 85 Z" fill={BRAND_PRIMARY} />
       <Path d="M195 55 L255 85 L195 115 L135 85 Z" fill="#C4A0EC" />
       <Path d="M135 85 L195 115 L195 175 L135 145 Z" fill="#7C4EAD" />
 
       <Circle cx="80" cy="70" r="6" fill="#F5A623" />
       <Rect x="300" y="60" width="10" height="10" rx="2" fill="#00BBA4" transform="rotate(20 305 65)" />
       <Circle cx="320" cy="120" r="5" fill="#F04E98" />
-      <Rect x="60" y="140" width="9" height="9" rx="2" fill="#9261C7" transform="rotate(-15 64 144)" />
+      <Rect x="60" y="140" width="9" height="9" rx="2" fill={BRAND_PRIMARY} transform="rotate(-15 64 144)" />
       <Circle cx="90" cy="180" r="4" fill="#F5A623" opacity={0.7} />
       <Circle cx="310" cy="170" r="4" fill="#00BBA4" opacity={0.7} />
     </Svg>

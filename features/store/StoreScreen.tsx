@@ -65,13 +65,13 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
   onAdd: (s: AiSuggestion) => void; onClose: () => void; colors: any; isDark: boolean;
 }) {
   return (
-    <View style={{ backgroundColor: isDark ? '#1A1035' : '#F5F3FF',
-      borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 14 }}>
+    <View style={{ backgroundColor: colors.pinkLight,
+      borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 14, borderRadius: 18, marginBottom: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 16, marginBottom: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 16 }}>✨</Text>
-          <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#C4B5FD' : '#5B21B6' }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.accent }}>
             AI Perk Suggestions
           </Text>
         </View>
@@ -90,14 +90,14 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
             <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
               {s.title}
             </Text>
-            <Text style={{ fontSize: 10, fontWeight: '900', color: '#F5A623', marginBottom: 4 }}>
+            <Text style={{ fontSize: 10, fontWeight: '900', color: colors.amber, marginBottom: 4 }}>
               {s.cost} 🪙
             </Text>
             <Text style={{ fontSize: 10, color: colors.textSecondary, marginBottom: 8, lineHeight: 14 }}>
               {s.reason}
             </Text>
             <Pressable onPress={() => onAdd(s)}
-              style={{ backgroundColor: isDark ? '#5B21B6' : '#7C3AED',
+              style={{ backgroundColor: colors.accent,
                 borderRadius: 10, paddingVertical: 6, alignItems: 'center',
                 flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
               <Text style={{ fontSize: 12 }}>⚡</Text>
@@ -112,7 +112,7 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, onDelete, isGoal, onToggleGoal }: {
+function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, isGoal, onToggleGoal }: {
   reward: Reward; myCoins: number; isKid: boolean; isParent: boolean;
   // Was isKid-only, so teen and senior roles — both of whom earn coins
   // elsewhere in the app with nowhere else to spend them — got a
@@ -120,14 +120,18 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
   // full-app per-role audit, Critical for both roles).
   canRedeemSelf: boolean;
   colors: any; isDark: boolean;
-  onRedeem: (r: Reward) => void; onEdit: (r: Reward) => void; onDelete: (r: Reward) => void;
+  onRedeem: (r: Reward) => void; onEdit: (r: Reward) => void;
   isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
   const canRedeem = canRedeemSelf && myCoins >= reward.cost;
+  const accent = colors.amber;
   return (
-    <View style={[s.perkCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.textPrimary, overflow: 'hidden' }]}>
+    <Pressable
+      onLongPress={isParent ? () => onEdit(reward) : undefined}
+      delayLongPress={350}
+      style={[s.perkCard, { backgroundColor: colors.card, borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
       <LinearGradient
-        colors={[colors.primary + '0C', colors.primary + '00']}
+        colors={[accent + '22', accent + '00']}
         start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
         style={StyleSheet.absoluteFillObject}
         pointerEvents="none"
@@ -140,21 +144,14 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
         backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
 
-      {/* Parent actions */}
-      {isParent && (
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginBottom: 6 }}>
-          <Pressable onPress={() => onEdit(reward)}
-            style={{ padding: 5, borderRadius: 8, backgroundColor: colors.surface }}>
-            <Ionicons name="pencil" size={13} color={colors.textSecondary} />
-          </Pressable>
-          <Pressable onPress={() => onDelete(reward)}
-            style={{ padding: 5, borderRadius: 8, backgroundColor: colors.danger + '20' }}>
-            <Ionicons name="trash" size={13} color={colors.danger} />
-          </Pressable>
-        </View>
-      )}
-
-      <Text style={{ fontSize: 30, marginBottom: 6 }}>{reward.emoji ?? '🎁'}</Text>
+      {/* Icon circle — matches VaultScreen's Tile treatment (icon-in-a-
+          tinted-circle) instead of a bare floating emoji, so Store's cards
+          read as the same "glossy tile" family as every Apps-grid tile. */}
+      <View style={{ width: 44, height: 44, borderRadius: 14, marginBottom: 8,
+        backgroundColor: accent + '30', borderWidth: 1, borderColor: accent + '50',
+        alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 22 }}>{reward.emoji ?? '🎁'}</Text>
+      </View>
       <CategoryBadge category={reward.category} isDark={isDark} />
       <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
         {reward.title}
@@ -186,12 +183,16 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
             </Pressable>
           )}
         </>
-      ) : !isParent ? (
+      ) : isParent ? (
+        <Text style={{ fontSize: 9, color: colors.textTertiary, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
+          Hold to edit
+        </Text>
+      ) : (
         <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
           Not available for your role
         </Text>
-      ) : null}
-    </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -200,9 +201,9 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
 const CATEGORIES = ['Treats', 'Experiences', 'Screen Time', 'Privileges', 'Special'];
 const EMOJIS = ['🎮','🎬','🍕','🎂','🏖️','🎪','📱','🛍️','🎁','⭐','🏆','🎵','🎨','🎯','🚀'];
 
-function PerkModal({ visible, editing, colors, onClose, onSave }: {
+function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
   visible: boolean; editing?: Reward | null; colors: any;
-  onClose: () => void; onSave: (data: any) => void;
+  onClose: () => void; onSave: (data: any) => void; onDelete?: (r: Reward) => void;
 }) {
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
@@ -303,13 +304,20 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
 
             {/* Fixed footer */}
             <View style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 10 }}>
               <Pressable onPress={submit}
                 style={[s.submitBtn, { backgroundColor: name.trim() ? colors.teal : colors.border }]}>
                 <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
                   {editing ? 'Save Changes' : 'Publish Perk to Family Store'}
                 </Text>
               </Pressable>
+              {editing && onDelete && (
+                <Pressable onPress={() => onDelete(editing)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
+                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                  <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>Delete Perk</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
@@ -452,30 +460,21 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>
 
-        {/* ── Page title row ── */}
+        {/* ── Page title row ── AI Perks/Add Perk moved down next to the
+            perks grid itself (below), so this top row stays a plain title +
+            balance and doesn't compete with Redemptions/Approvals/Piggy
+            Banks for attention right under the header. */}
         <View style={[s.header, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
           <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
             Family Perks Store
           </Text>
-          {canRedeemSelf ? (
+          {canRedeemSelf && (
             <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
-                Balance: <Text style={{ color: '#F5A623', fontWeight: '900' }}>{myCoins} 🪙</Text>
+                Balance: <Text style={{ color: colors.amber, fontWeight: '900' }}>{myCoins} 🪙</Text>
               </Text>
             </View>
-          ) : isParent ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => setShowAiPanel(v => !v)}
-                style={[s.createBtn, { backgroundColor: showAiPanel ? '#5B21B6' : '#7C3AED' }]}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
-              </Pressable>
-              <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
-                style={[s.createBtn, { backgroundColor: colors.teal }]}>
-                <Ionicons name="add" size={14} color="#fff" />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
-              </Pressable>
-            </View>
-          ) : null}
+          )}
         </View>
 
         {/* ── My Redemptions ── redeeming was fire-and-forget (a one-time
@@ -525,16 +524,6 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             </View>
           );
         })()}
-
-        {/* ── AI Panel ── */}
-        {isParent && showAiPanel && (
-          <AiPerksPanel
-            onAdd={handleAddAiSuggestion}
-            onClose={() => setShowAiPanel(false)}
-            colors={colors}
-            isDark={isDark}
-          />
-        )}
 
         {/* ── Pending Approvals ── a reward with requiresApproval:true
             created a real, fully-implemented Redemption record (pending →
@@ -604,9 +593,28 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                 return (
                   <View key={kid.id} style={{
                     flexGrow: 1, minWidth: '46%', borderRadius: 18, padding: 16, alignItems: 'center',
-                    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+                    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.teal + (isDark ? '55' : '40'),
+                    shadowColor: colors.teal, shadowOpacity: 0.1, shadowRadius: 10,
+                    shadowOffset: { width: 0, height: 4 }, elevation: 3, overflow: 'hidden',
                   }}>
-                    <Text style={{ fontSize: 32, marginBottom: 6 }}>{kid.emoji ?? '🙂'}</Text>
+                    <LinearGradient
+                      colors={[colors.teal + '20', colors.teal + '00']}
+                      start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+                      style={StyleSheet.absoluteFillObject}
+                      pointerEvents="none"
+                    />
+                    {Platform.OS === 'ios' ? (
+                      <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+                    ) : (
+                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+                    )}
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
+                    <View style={{ width: 52, height: 52, borderRadius: 16, marginBottom: 8,
+                      backgroundColor: colors.teal + '25', borderWidth: 1, borderColor: colors.teal + '45',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 26 }}>{kid.emoji ?? '🙂'}</Text>
+                    </View>
                     <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 }}>
                       {kid.name.split(' ')[0]}
                     </Text>
@@ -653,6 +661,29 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         )}
 
         <View style={{ padding: 12 }}>
+          {isParent && (
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              <Pressable onPress={() => setShowAiPanel(v => !v)}
+                style={[s.createBtn, { backgroundColor: showAiPanel ? colors.accent : colors.accent + 'CC' }]}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
+              </Pressable>
+              <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
+                style={[s.createBtn, { backgroundColor: colors.teal }]}>
+                <Ionicons name="add" size={14} color="#fff" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {isParent && showAiPanel && (
+            <AiPerksPanel
+              onAdd={handleAddAiSuggestion}
+              onClose={() => setShowAiPanel(false)}
+              colors={colors}
+              isDark={isDark}
+            />
+          )}
+
           <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
             Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
           </Text>
@@ -674,7 +705,6 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                   isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}
-                  onDelete={handleDelete}
                   isGoal={isKid && activeMember?.goalRewardId === r.id}
                   onToggleGoal={isKid ? (target) => {
                     if (!activeMember) return;
@@ -698,6 +728,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           else addReward?.({ available: true, requiresApproval: true,
             createdAt: new Date().toISOString(), ...data } as any);
         }}
+        onDelete={r => { setShowCreate(false); setEditing(null); handleDelete(r); }}
       />
 
       <JarPickerModal

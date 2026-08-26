@@ -1,22 +1,33 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Animated, Alert } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Pill, Check } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useUIStore } from '@/store/uiStore';
-import { SCard, CardHeader, BRAND } from './shared';
+import { SCard, CardHeader } from './shared';
 import { ParsedMedication, ParsedVaccine } from '../usePrescriptionScanner';
 
-import { Medication, Vaccine, FREQ_LABELS, CAT_COLORS, today, MedForm, VaxForm } from './health/types';
+import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, MedForm, VaxForm } from './health/types';
 import AddMedModal from './health/AddMedModal';
 import AddVaxModal from './health/AddVaxModal';
 import HealthAiAssistant from './health/HealthAiAssistant';
+import HealthSearchBar from './health/HealthSearchBar';
 import ScanReviewSheet from './health/ScanReviewSheet';
 import HealthFilterSheet, { MedFilters, VaxFilters } from './health/HealthFilterSheet';
 import HealthRecordsList from './health/HealthRecordsList';
 
-export default function HealthTab({ colors, isDark, kidView = false }: { colors: any; isDark: boolean; kidView?: boolean }) {
+export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab }: {
+  colors: any; isDark: boolean; kidView?: boolean;
+  // Controlled from HealthRecordsScreen.tsx — that screen owns ONE 3-way
+  // switch (Medications/Immunizations/Records) instead of this component
+  // also owning its own separate inner Medications/Immunizations switch,
+  // which previously stacked two switches on one screen (live-reported as
+  // confusing/"worse design"). Falls back to local state so this component
+  // still works if ever rendered without a controller.
+  healthTab?: 'meds' | 'vax'; setHealthTab?: (t: 'meds' | 'vax') => void;
+}) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -28,8 +39,19 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
   const [showMedModal, setShowMedModal] = useState(false);
   const [showVaxModal, setShowVaxModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [healthTab, setHealthTab] = useState<'meds' | 'vax'>('meds');
+  const [localHealthTab, setLocalHealthTab] = useState<'meds' | 'vax'>('meds');
+  const effectiveHealthTab = healthTab ?? localHealthTab;
+  const effectiveSetHealthTab = setHealthTab ?? setLocalHealthTab;
   const [showFilterSheet, setShowFilterSheet] = useState(false);
+
+  // Lets the shared FAB (app/(tabs)/_layout.tsx) tint itself teal for
+  // Immunizations vs. the Health-danger-red default, tracking this inner
+  // segmented switch — not just which route/screen is focused. Set on
+  // mount too (not just on change) so the FAB is correctly colored the
+  // instant this screen becomes focused, before any tap changes healthTab.
+  useEffect(() => {
+    useUIStore.getState().setHealthRecordsActiveSegment(effectiveHealthTab === 'vax' ? 'immunizations' : 'health');
+  }, [effectiveHealthTab]);
 
   // ── Medication filters (default: active = ongoing, all members) ──────────────
   const [medSearch, setMedSearch]         = useState('');
@@ -76,12 +98,26 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
   const [scanning, setScanning] = useState(false);
 
+  // Shared FAB's family-health-tab "+" face (app/(tabs)/_layout.tsx) fires
+  // this one-shot flag instead of opening Ask Cube — same pattern
+  // TasksScreen.tsx/MemoriesTab.tsx use. Replaces the old
+  // fullBleedScreenActive hide (Health's own CubeAI banner vs. Ask Cube's
+  // sparkle competing) — that's moot now since the shared FAB no longer
+  // shows the sparkle face on this route at all.
+  const openHealthRecordsComposerRequested = useUIStore(s => s.openHealthRecordsComposerRequested);
   useEffect(() => {
-    // Health has its own CubeAI Health Assistant banner — the global Ask
-    // Cube FAB stacked on top of it read as two competing AI entry points.
-    useUIStore.getState().setFullBleedScreenActive(true);
-    return () => useUIStore.getState().setFullBleedScreenActive(false);
-  }, []);
+    if (openHealthRecordsComposerRequested) {
+      useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      if (effectiveHealthTab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
+    }
+  }, [openHealthRecordsComposerRequested, effectiveHealthTab]);
+
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().openHealthRecordsComposerRequested) {
+      useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      if (effectiveHealthTab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
+    }
+  }, [effectiveHealthTab]));
 
   const openScanSheet = (mode: 'rx' | 'vaccine') => {
     setScanMode(mode);
@@ -404,11 +440,11 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
   };
 
   const resetFilters = () => {
-    if (healthTab === 'meds') {
+    if (effectiveHealthTab === 'meds') {
       setDraftMed({ search: '', members: [], categories: [], status: 'active',
         ongoing: true, frequencies: [], refillSoon: false, escalationOnly: false });
     } else {
-      setDraftVax({ search: '', members: [], status: 'all', dueSoonDays: 30 });
+      setDraftVax({ search: '', members: [], status: 'pending', dueSoonDays: 30 });
     }
   };
 
@@ -425,7 +461,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
   const memberName  = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const memberColor = (id: string) => {
     const m = members.find(mb => mb.id === id);
-    return m?.role === 'parent' ? BRAND.purple : m?.role === 'senior' ? BRAND.blue : BRAND.emerald;
+    return m?.role === 'parent' ? colors.accent : m?.role === 'senior' ? colors.info : colors.success;
   };
 
   // ── Active filter count for badge ────────────────────────────────────────────
@@ -445,7 +481,14 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
 
   const vaxActiveFilterCount = useMemo(() => {
     let n = 0;
-    if (vaxStatusFilter !== 'all') n++;
+    // 'pending' is the real default (see vaxStatusFilter's own useState
+    // above) — was checking against 'all' here, which isn't the default,
+    // so a completely untouched screen showed "1 active filter" / a
+    // "Pending · Clear all" chip as if the user had picked something
+    // (live-reported: "what is that pending clear all, should only
+    // appear when actual filters apply"). Mirrors medActiveFilterCount's
+    // own pattern just above (medStatusFilter !== 'active', its default).
+    if (vaxStatusFilter !== 'pending') n++;
     if (vaxMemberFilter.length) n++;
     if (vaxSearch) n++;
     return n;
@@ -504,11 +547,11 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
   if (loadError) return (
     <SCard colors={colors} isDark={isDark} accent={colors.primary}>
       <CardHeader Icon={Pill} iconColor={colors.primary} title="Health Tracker" colors={colors} />
-      <View style={{ backgroundColor: BRAND.rose + '15', borderRadius: 12, padding: 14, marginTop: 12, gap: 10 }}>
-        <Text style={{ color: BRAND.rose, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>{loadError}</Text>
+      <View style={{ backgroundColor: colors.danger + '15', borderRadius: 12, padding: 14, marginTop: 12, gap: 10 }}>
+        <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>{loadError}</Text>
         <TouchableOpacity
           onPress={load}
-          style={{ alignSelf: 'center', backgroundColor: BRAND.rose, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8 }}
+          style={{ alignSelf: 'center', backgroundColor: colors.danger, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8 }}
         >
           <Text style={{ color: colors.textInverse, fontSize: 13, fontWeight: '800' }}>Retry</Text>
         </TouchableOpacity>
@@ -536,16 +579,16 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
           </View>
         ) : activeMeds.map(med => {
           const isTaken = med.taken_date === todayStr;
-          const catColor = CAT_COLORS[med.category] ?? colors.primary;
+          const catColor = getCatColors(colors)[med.category] ?? colors.primary;
           return (
             <View key={med.id} style={{
               borderRadius: 20, overflow: 'hidden',
               borderWidth: 1.5,
-              borderColor: isTaken ? BRAND.emerald + '50' : catColor + '30',
+              borderColor: isTaken ? colors.success + '50' : catColor + '30',
               backgroundColor: colors.card,
             }}>
               {/* Color stripe */}
-              <View style={{ height: 4, backgroundColor: isTaken ? BRAND.emerald : catColor }} />
+              <View style={{ height: 4, backgroundColor: isTaken ? colors.success : catColor }} />
               <View style={{ padding: 16, gap: 10 }}>
                 {/* Med name + category */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -562,9 +605,9 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                     </Text>
                   </View>
                   {isTaken && (
-                    <View style={{ backgroundColor: BRAND.emerald + '18', borderRadius: 10,
-                      paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: BRAND.emerald + '40' }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.emerald }}>✓ Done</Text>
+                    <View style={{ backgroundColor: colors.success + '18', borderRadius: 10,
+                      paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.success + '40' }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.success }}>✓ Done</Text>
                     </View>
                   )}
                 </View>
@@ -583,13 +626,13 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                   style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                     paddingVertical: 13, borderRadius: 14,
-                    backgroundColor: isTaken ? BRAND.emerald + '15' : catColor,
+                    backgroundColor: isTaken ? colors.success + '15' : catColor,
                     borderWidth: isTaken ? 1.5 : 0,
-                    borderColor: isTaken ? BRAND.emerald + '50' : 'transparent',
+                    borderColor: isTaken ? colors.success + '50' : 'transparent',
                   }}>
-                  <Check size={16} color={isTaken ? BRAND.emerald : colors.textInverse} />
+                  <Check size={16} color={isTaken ? colors.success : colors.textInverse} />
                   <Text style={{ fontSize: 15, fontWeight: '900',
-                    color: isTaken ? BRAND.emerald : colors.textInverse }}>
+                    color: isTaken ? colors.success : colors.textInverse }}>
                     {isTaken ? 'Marked as Taken' : 'Mark as Taken'}
                   </Text>
                 </TouchableOpacity>
@@ -603,27 +646,56 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
 
   return (
     <>
-      {/* ── AI Health Assistant — collapsed pill that slides open inline (Quest pattern) ── */}
-      {!kidView && (
-        <HealthAiAssistant
-          colors={colors}
-          isDark={isDark}
-          aiOpen={aiOpen}
-          toggleAiOpen={toggleAiOpen}
-          aiSlideAnim={aiSlideAnim}
-          scanning={scanning}
-          onScanRx={() => openScanSheet('rx')}
-          onScanVaccine={() => openScanSheet('vaccine')}
-          aiQuery={aiQuery}
-          setAiQuery={setAiQuery}
-          aiLoading={aiLoading}
-          aiResult={aiResult}
-          setAiResult={setAiResult}
-          aiShared={aiShared}
-          setAiShared={setAiShared}
-          askAI={askAI}
-          shareAiToChat={shareAiToChat}
-        />
+      {/* ── AI Health Assistant + Search — same row when the AI pill is
+          collapsed, so the two don't stack with a dead gap between them
+          (live-reported). Once the AI pill is tapped open, its tool row
+          needs the full width, so search drops below it instead of being
+          squeezed. Kids have no AI pill at all — search then just takes
+          the full row on its own. ── */}
+      <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: aiOpen ? 'wrap' : 'nowrap' }}>
+        {!kidView && (
+          <View style={aiOpen ? { width: '100%' } : undefined}>
+            <HealthAiAssistant
+              colors={colors}
+              isDark={isDark}
+              aiOpen={aiOpen}
+              toggleAiOpen={toggleAiOpen}
+              aiSlideAnim={aiSlideAnim}
+              scanning={scanning}
+              onScanRx={() => openScanSheet('rx')}
+              onScanVaccine={() => openScanSheet('vaccine')}
+              aiQuery={aiQuery}
+              setAiQuery={setAiQuery}
+              aiLoading={aiLoading}
+              aiResult={aiResult}
+              setAiResult={setAiResult}
+              aiShared={aiShared}
+              setAiShared={setAiShared}
+              askAI={askAI}
+              shareAiToChat={shareAiToChat}
+            />
+          </View>
+        )}
+        {!aiOpen && (
+          <HealthSearchBar
+            colors={colors} isDark={isDark} healthTab={effectiveHealthTab}
+            medSearch={medSearch} setMedSearch={setMedSearch}
+            vaxSearch={vaxSearch} setVaxSearch={setVaxSearch}
+            medActiveFilterCount={medActiveFilterCount} vaxActiveFilterCount={vaxActiveFilterCount}
+            openFilterSheet={openFilterSheet}
+          />
+        )}
+      </View>
+      {aiOpen && (
+        <View style={{ marginTop: -6, marginBottom: 14 }}>
+          <HealthSearchBar
+            colors={colors} isDark={isDark} healthTab={effectiveHealthTab}
+            medSearch={medSearch} setMedSearch={setMedSearch}
+            vaxSearch={vaxSearch} setVaxSearch={setVaxSearch}
+            medActiveFilterCount={medActiveFilterCount} vaxActiveFilterCount={vaxActiveFilterCount}
+            openFilterSheet={openFilterSheet}
+          />
+        </View>
       )}
 
       {/* ── Medications + Immunizations (unified) ───── */}
@@ -635,8 +707,8 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
         vaxes={vaxes}
         filteredMeds={filteredMeds}
         filteredVaxes={filteredVaxes}
-        healthTab={healthTab}
-        setHealthTab={setHealthTab}
+        healthTab={effectiveHealthTab}
+        setHealthTab={effectiveSetHealthTab}
         medSearch={medSearch}
         setMedSearch={setMedSearch}
         vaxSearch={vaxSearch}
@@ -696,7 +768,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
         colors={colors}
         isDark={isDark}
         members={members}
-        healthTab={healthTab}
+        healthTab={effectiveHealthTab}
         draftMed={draftMed}
         setDraftMed={setDraftMed}
         draftVax={draftVax}

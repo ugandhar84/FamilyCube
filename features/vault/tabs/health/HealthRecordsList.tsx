@@ -1,10 +1,10 @@
-import { View, Text, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import {
   Pill, Syringe, Trash2, Check, Clock, ChevronDown, ChevronUp,
-  User, Calendar, AlertCircle, X, RefreshCw, SlidersHorizontal,
+  User, Calendar, AlertCircle, RefreshCw,
 } from 'lucide-react-native';
-import { SCard, CardHeader, StatusPill, MemberAvatar, AddBtn, EmptyState, BRAND } from '../shared';
-import { Medication, Vaccine, FREQ_LABELS, CAT_COLORS, today } from './types';
+import { StatusPill, MemberAvatar, EmptyState } from '../shared';
+import { Medication, Vaccine, FREQ_LABELS, getCatColors, today } from './types';
 import { hf, h } from './styles';
 
 export default function HealthRecordsList({
@@ -47,134 +47,63 @@ export default function HealthRecordsList({
   deleteVax: (id: string) => void;
   load: () => void;
 }) {
+  const catColors = getCatColors(colors);
   return (
-    <SCard colors={colors} isDark={isDark} accent={colors.primary}>
-      {/* ── Card header row ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ flex: 1 }}>
-          <CardHeader
-            Icon={healthTab === 'meds' ? Pill : Syringe}
-            iconColor={healthTab === 'meds' ? colors.primary : BRAND.teal}
-            title="Health Records"
-            colors={colors}
-          />
-        </View>
-        <TouchableOpacity onPress={load} style={{ padding: 8 }}>
+    <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+      {/* Flat — no card shell/title/tab-switcher here; "Health & Records"
+          and the Medications/Immunizations/Records 3-way switch already
+          live in the screen header above this (HealthRecordsScreen.tsx) —
+          this component previously duplicated a SECOND Medications/
+          Immunizations switch here, stacking two switches on one screen
+          (live-reported as confusing). Result count + refresh share one
+          row instead of the count sitting far below the refresh icon with
+          a dead gap between them (live-reported). No paddingTop here —
+          HealthTab.tsx's own AI-pill/search row above this already ends
+          with marginBottom, and HealthRecordsScreen.tsx's ScrollView
+          already has paddingTop — stacking a third top padding here on
+          top of both left a large dead gap before "X of Y" (live-reported). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>
+          {healthTab === 'meds'
+            ? `${filteredMeds.length} of ${meds.length} medications`
+            : `${filteredVaxes.length} of ${vaxes.length} immunizations`}
+        </Text>
+        <TouchableOpacity onPress={load} style={{ padding: 8, margin: -8 }}>
           <RefreshCw size={14} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
-
-      {/* ── Inner tab switcher — hidden for kids (Medications only) ── */}
-      {!kidView && (
-      <View style={[hf.innerTabRow, { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border }]}>
-        {([
-          { id: 'meds', label: 'Medications',   Icon: Pill,    color: colors.primary, count: meds.length },
-          { id: 'vax',  label: 'Immunizations', Icon: Syringe, color: BRAND.teal,   count: vaxes.length },
-        ] as const).map(t => (
-          <TouchableOpacity key={t.id} onPress={() => setHealthTab(t.id)}
-            style={[hf.innerTab, { backgroundColor: healthTab === t.id ? t.color : 'transparent', borderRadius: 10 }]}>
-            <t.Icon size={13} color={healthTab === t.id ? '#fff' : colors.textSecondary} />
-            <Text style={{ fontSize: 12, fontWeight: '800', color: healthTab === t.id ? '#fff' : colors.textSecondary }}>
-              {t.label}
-            </Text>
-            <View style={[hf.tabBadge, { backgroundColor: healthTab === t.id ? 'rgba(255,255,255,0.3)' : colors.border }]}>
-              <Text style={{ fontSize: 10, fontWeight: '900', color: healthTab === t.id ? '#fff' : colors.textTertiary }}>
-                {t.count}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-      )}
-
-      {/* ── Search bar + filter icon ── */}
-      {(() => {
-        const activeCount = healthTab === 'meds' ? medActiveFilterCount : vaxActiveFilterCount;
-        const accentColor = healthTab === 'meds' ? colors.primary : BRAND.teal;
-        const placeholder = healthTab === 'meds' ? 'Search medications…' : 'Search vaccines…';
-        const currentSearch = healthTab === 'meds' ? medSearch : vaxSearch;
-        const setSearch = healthTab === 'meds'
-          ? (v: string) => setMedSearch(v)
-          : (v: string) => setVaxSearch(v);
-        return (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
-            <View style={[hf.searchRow, { flex: 1, borderColor: colors.border,
-              backgroundColor: isDark ? colors.card : (healthTab === 'meds' ? '#F5F3FF' : '#F0FDFA80') }]}>
-              <TextInput
-                value={currentSearch} onChangeText={setSearch}
-                placeholder={placeholder} placeholderTextColor={colors.textTertiary}
-                style={[hf.searchInput, { color: colors.textPrimary }]}
-              />
-              {currentSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}>
-                  <X size={14} color={colors.textTertiary} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Filter icon button with active-count badge */}
-            <TouchableOpacity onPress={openFilterSheet}
-              style={[hf.filterIconBtn, {
-                borderColor: activeCount ? accentColor : colors.border,
-                backgroundColor: activeCount ? accentColor + '15' : 'transparent',
-              }]}>
-              <SlidersHorizontal size={17} color={activeCount ? accentColor : colors.textSecondary} />
-              {activeCount > 0 && (
-                <View style={[hf.filterBadge, { backgroundColor: accentColor }]}>
-                  <Text style={{ fontSize: 9, fontWeight: '900', color: colors.textInverse }}>{activeCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
-      })()}
-
-      {/* ── Add button — pinned right below search, not just at the end of
-          a potentially long list, so it's reachable without scrolling. ── */}
-      {!kidView && (
-        <TouchableOpacity
-          onPress={() => healthTab === 'meds' ? setShowMedModal(true) : setShowVaxModal(true)}
-          style={[hf.topAddBtn, {
-            backgroundColor: healthTab === 'meds' ? colors.primary : BRAND.teal,
-            marginTop: 10,
-          }]}>
-          <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>
-            {healthTab === 'meds' ? '+ Add Medication' : '+ Log Vaccine'}
-          </Text>
-        </TouchableOpacity>
-      )}
 
       {/* ── Active-filter pill summary (compact, dismissable) ── */}
       {healthTab === 'meds' && medActiveFilterCount > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
             {medStatusFilter !== 'active' && (
-              <View style={[hf.activePill, { borderColor: colors.primary + '60', backgroundColor: colors.primary + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary, textTransform: 'capitalize' }}>{medStatusFilter}</Text>
+              <View style={[hf.activePill, { borderColor: colors.danger + '60', backgroundColor: colors.danger + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger, textTransform: 'capitalize' }}>{medStatusFilter}</Text>
               </View>
             )}
             {medMemberFilter.map(id => (
-              <View key={id} style={[hf.activePill, { borderColor: BRAND.blue + '60', backgroundColor: BRAND.blue + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{memberName(id)}</Text>
+              <View key={id} style={[hf.activePill, { borderColor: colors.info + '60', backgroundColor: colors.info + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.info }}>{memberName(id)}</Text>
               </View>
             ))}
             {medCatFilter.map(cat => (
-              <View key={cat} style={[hf.activePill, { borderColor: (CAT_COLORS[cat] ?? colors.primary) + '60', backgroundColor: (CAT_COLORS[cat] ?? colors.primary) + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: CAT_COLORS[cat] ?? colors.primary, textTransform: 'capitalize' }}>{cat}</Text>
+              <View key={cat} style={[hf.activePill, { borderColor: (catColors[cat] ?? colors.danger) + '60', backgroundColor: (catColors[cat] ?? colors.danger) + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: catColors[cat] ?? colors.danger, textTransform: 'capitalize' }}>{cat}</Text>
               </View>
             ))}
             {medRefillSoon && (
-              <View style={[hf.activePill, { borderColor: colors.primary + '60', backgroundColor: colors.primary + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Refill Soon</Text>
+              <View style={[hf.activePill, { borderColor: colors.danger + '60', backgroundColor: colors.danger + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>Refill Soon</Text>
               </View>
             )}
             {medEscalationOnly && (
-              <View style={[hf.activePill, { borderColor: colors.primary + '60', backgroundColor: colors.primary + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Escalation</Text>
+              <View style={[hf.activePill, { borderColor: colors.danger + '60', backgroundColor: colors.danger + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>Escalation</Text>
               </View>
             )}
             <TouchableOpacity onPress={clearMedFilters}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>Clear all</Text>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.danger }}>Clear all</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -183,31 +112,24 @@ export default function HealthRecordsList({
       {healthTab === 'vax' && vaxActiveFilterCount > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-            {vaxStatusFilter !== 'all' && (
-              <View style={[hf.activePill, { borderColor: BRAND.teal + '60', backgroundColor: BRAND.teal + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.teal, textTransform: 'capitalize' }}>
+            {vaxStatusFilter !== 'pending' && (
+              <View style={[hf.activePill, { borderColor: colors.teal + '60', backgroundColor: colors.teal + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.teal, textTransform: 'capitalize' }}>
                   {vaxStatusFilter === 'due_soon' ? `Due ≤${vaxDueSoonDays}d` : vaxStatusFilter}
                 </Text>
               </View>
             )}
             {vaxMemberFilter.map(id => (
-              <View key={id} style={[hf.activePill, { borderColor: BRAND.blue + '60', backgroundColor: BRAND.blue + '12' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{memberName(id)}</Text>
+              <View key={id} style={[hf.activePill, { borderColor: colors.info + '60', backgroundColor: colors.info + '12' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.info }}>{memberName(id)}</Text>
               </View>
             ))}
             <TouchableOpacity onPress={clearVaxFilters}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>Clear all</Text>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.danger }}>Clear all</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
       )}
-
-      {/* ── Result count line ── */}
-      <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700', marginTop: 10 }}>
-        {healthTab === 'meds'
-          ? `${filteredMeds.length} of ${meds.length} medications`
-          : `${filteredVaxes.length} of ${vaxes.length} immunizations`}
-      </Text>
 
       {/* Med list */}
       {healthTab === 'meds' && (filteredMeds.length === 0
@@ -216,13 +138,13 @@ export default function HealthRecordsList({
           const isTakenToday = med.taken_date === today();
           const overdue     = isOverdue(med);
           const expanded    = expandedId === med.id;
-          const catColor    = CAT_COLORS[med.category] ?? colors.primary;
+          const catColor    = catColors[med.category] ?? colors.danger;
           const mc          = memberColor(med.member_id);
 
           return (
             <View key={med.id} style={[h.medCard, {
-              backgroundColor: isDark ? colors.card + 'CC' : '#F5F3FF80',
-              borderColor: isTakenToday ? BRAND.emerald + '60' : colors.border,
+              backgroundColor: isDark ? colors.card + 'CC' : colors.surface,
+              borderColor: isTakenToday ? colors.success + '60' : colors.border,
               opacity: med.is_active === false ? 0.55 : 1,
             }]}>
               <TouchableOpacity onPress={() => setExpandedId(expanded ? null : med.id)}>
@@ -248,8 +170,8 @@ export default function HealthRecordsList({
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 6 }}>
                     {expanded ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
-                    {isTakenToday && <StatusPill label="Taken" color={BRAND.emerald} Icon={Check} />}
-                    {!isTakenToday && overdue && <StatusPill label="Overdue" color={BRAND.rose} Icon={AlertCircle} />}
+                    {isTakenToday && <StatusPill label="Taken" color={colors.success} Icon={Check} />}
+                    {!isTakenToday && overdue && <StatusPill label="Overdue" color={colors.danger} Icon={AlertCircle} />}
                     {!med.is_active && <StatusPill label="Inactive" color={colors.textTertiary} />}
                   </View>
                 </View>
@@ -307,13 +229,13 @@ export default function HealthRecordsList({
                     {/* Kids can mark taken; parents/seniors get all controls */}
                     <TouchableOpacity onPress={() => markTaken(med)}
                       style={[h.actionBtn, {
-                        borderColor: isTakenToday ? BRAND.emerald + '60' : colors.primary + '60',
-                        backgroundColor: isTakenToday ? BRAND.emerald + '15' : colors.primary + '10',
+                        borderColor: isTakenToday ? colors.success + '60' : colors.danger + '60',
+                        backgroundColor: isTakenToday ? colors.success + '15' : colors.danger + '10',
                         flex: 1,
                       }]}>
-                      <Check size={14} color={isTakenToday ? BRAND.emerald : colors.primary} />
+                      <Check size={14} color={isTakenToday ? colors.success : colors.danger} />
                       <Text style={{ fontSize: 12, fontWeight: '800',
-                        color: isTakenToday ? BRAND.emerald : colors.primary }}>
+                        color: isTakenToday ? colors.success : colors.danger }}>
                         {isTakenToday ? 'Taken Today' : 'Mark Taken'}
                       </Text>
                     </TouchableOpacity>
@@ -321,17 +243,17 @@ export default function HealthRecordsList({
                       <>
                         <TouchableOpacity onPress={() => toggleMedActive(med)}
                           style={[h.actionBtn, {
-                            borderColor: med.is_active ? colors.primary + '60' : BRAND.emerald + '60',
-                            backgroundColor: med.is_active ? colors.primary + '10' : BRAND.emerald + '10',
+                            borderColor: med.is_active ? colors.danger + '60' : colors.success + '60',
+                            backgroundColor: med.is_active ? colors.danger + '10' : colors.success + '10',
                           }]}>
                           <Text style={{ fontSize: 11, fontWeight: '800',
-                            color: med.is_active ? colors.primary : BRAND.emerald }}>
+                            color: med.is_active ? colors.danger : colors.success }}>
                             {med.is_active ? 'Deactivate' : 'Reactivate'}
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => deleteMed(med.id)}
-                          style={[h.actionBtn, { borderColor: BRAND.rose + '50', backgroundColor: BRAND.rose + '10' }]}>
-                          <Trash2 size={14} color={BRAND.rose} />
+                          style={[h.actionBtn, { borderColor: colors.danger + '50', backgroundColor: colors.danger + '10' }]}>
+                          <Trash2 size={14} color={colors.danger} />
                         </TouchableOpacity>
                       </>
                     )}
@@ -343,27 +265,25 @@ export default function HealthRecordsList({
         })
       )}
 
-      {healthTab === 'meds' && !kidView && <AddBtn label="Add Medication" onPress={() => setShowMedModal(true)} color={colors.primary} />}
-
       {!kidView && healthTab === 'vax' && (filteredVaxes.length === 0
         ? <EmptyState Icon={Syringe} label={vaxes.length === 0 ? 'No vaccine records yet' : 'No results — adjust filters'} colors={colors} />
         : filteredVaxes.map(vax => {
           const mc = memberColor(vax.member_id);
           return (
             <View key={vax.id} style={[h.medCard, {
-              backgroundColor: isDark ? colors.card + 'CC' : '#F0FDFA80',
-              borderColor: vax.done ? BRAND.teal + '60' : colors.border,
+              backgroundColor: isDark ? colors.card + 'CC' : colors.tealLight,
+              borderColor: vax.done ? colors.teal + '60' : colors.border,
             }]}>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                <View style={[h.pillIcon, { backgroundColor: BRAND.teal + '20' }]}>
-                  <Syringe size={16} color={BRAND.teal} />
+                <View style={[h.pillIcon, { backgroundColor: colors.teal + '20' }]}>
+                  <Syringe size={16} color={colors.teal} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>
                     {vax.title}
                   </Text>
                   {vax.vaccine_type && (
-                    <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700', marginTop: 2 }}>
+                    <Text style={{ fontSize: 11, color: colors.teal, fontWeight: '700', marginTop: 2 }}>
                       {vax.vaccine_type.toUpperCase()}
                     </Text>
                   )}
@@ -378,12 +298,12 @@ export default function HealthRecordsList({
                     </View>
                     {vax.next_due_date && (
                       <View style={h.detailRow}>
-                        <Clock size={11} color={BRAND.amber} />
-                        <Text style={[h.detailText, { color: BRAND.amber }]}>Next: {vax.next_due_date}</Text>
+                        <Clock size={11} color={colors.amber} />
+                        <Text style={[h.detailText, { color: colors.amber }]}>Next: {vax.next_due_date}</Text>
                       </View>
                     )}
                     {vax.series_total > 1 && (
-                      <StatusPill label={`Dose ${vax.series_current}/${vax.series_total}`} color={BRAND.blue} />
+                      <StatusPill label={`Dose ${vax.series_current}/${vax.series_total}`} color={colors.info} />
                     )}
                   </View>
                   {vax.administered_by && (
@@ -396,14 +316,14 @@ export default function HealthRecordsList({
                 <View style={{ alignItems: 'flex-end', gap: 8 }}>
                   <TouchableOpacity onPress={() => toggleVax(vax)}
                     style={[h.pillIcon, {
-                      backgroundColor: vax.done ? BRAND.teal + '20' : colors.card,
+                      backgroundColor: vax.done ? colors.teal + '20' : colors.card,
                       borderWidth: 1.5,
-                      borderColor: vax.done ? BRAND.teal + '60' : colors.border,
+                      borderColor: vax.done ? colors.teal + '60' : colors.border,
                     }]}>
-                    <Check size={14} color={vax.done ? BRAND.teal : colors.textTertiary} />
+                    <Check size={14} color={vax.done ? colors.teal : colors.textTertiary} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => deleteVax(vax.id)}>
-                    <Trash2 size={14} color={BRAND.rose + 'AA'} />
+                    <Trash2 size={14} color={colors.danger + 'AA'} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -412,7 +332,6 @@ export default function HealthRecordsList({
         })
       )}
 
-      {!kidView && healthTab === 'vax' && <AddBtn label="Log Vaccine" onPress={() => setShowVaxModal(true)} color={BRAND.teal} />}
-    </SCard>
+    </View>
   );
 }

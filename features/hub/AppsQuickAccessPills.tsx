@@ -1,8 +1,11 @@
 /**
  * AppsQuickAccessPills — horizontal pill row below the Hub header for
- * jumping straight into an Apps (Family Vault) feature, e.g. Health or
- * Records, without going through the Apps tab's own grid first. Deep-links
- * via /(tabs)/profile?openFeature=<id>, which VaultScreen reads on mount.
+ * jumping straight into a feature, e.g. Health or Records, without going
+ * through any shared launcher screen first. Each pill routes straight to
+ * its own dedicated screen (PILL_ROUTES below) — the old
+ * /(tabs)/profile?openFeature=<id> pattern (VaultScreen's shared overlay)
+ * is gone; every feature already has (or, for School, now has) its own
+ * standalone route.
  *
  * Each member can pin/reorder their own pills (long-press "Edit" opens
  * PillOrderSheet, real drag-and-drop) — saved to members.pillOrder,
@@ -16,7 +19,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { BookOpen, Heart, ShoppingCart, ChefHat, Coins, Image as ImageIcon, FolderOpen, Gift, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
+import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
@@ -44,16 +47,32 @@ export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
 // no longer needed as a Hub pill too. 'roster' removed — the family tree/
 // member management surface it opened is already reachable from Profile's
 // own "See full family tree" link, so this was a duplicate entry point.
+// 'store'/Perks removed — Store is now its own bottom-nav tab (app/(tabs)/
+// _layout.tsx), so keeping it here too was a redundant second entry point
+// to the exact same screen. 'grocery'/'meals' removed — both are now Hub
+// quick-action tiles (ParentQuickActions.tsx) with their own dedicated
+// routes, so a pill here would be a third entry point to the same two
+// pages. 'ledger' removed — covered by the Store tab's Kids' Piggy Banks
+// section, the one place a parent already checks kids' balances. 'records'
+// folded into 'health' — both point at HealthRecordsScreen.tsx's combined
+// Health/Records segmented switch, one destination instead of two closely
+// related ones.
 const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid'] },
-  { id: 'grocery',  label: 'Grocery',  Icon: ShoppingCart, roles: ['parent'] },
-  { id: 'meals',    label: 'Meals',    Icon: ChefHat,      roles: ['parent'] },
-  { id: 'ledger',   label: 'Ledger',   Icon: Coins,        roles: ['parent', 'kid'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'senior'] },
-  { id: 'records',  label: 'Records',  Icon: FolderOpen,   roles: ['parent'] },
-  { id: 'store',    label: 'Perks',    Icon: Gift,         roles: ['parent', 'kid'] },
 ];
+
+// Each pill's real destination — all under the (tabs) group (each a hidden
+// Tabs.Screen). 'health' here means the combined FAMILY Health & Records
+// screen, routed to 'family-health' — NOT the bare 'health' path, which is
+// a PET feature (usePetStore, embedded in care/CareScreen.tsx) that already
+// owns that route name as a separate, still-live screen.
+const PILL_ROUTES: Record<PillId, string> = {
+  school: '/(tabs)/school', health: '/(tabs)/family-health', records: '/(tabs)/family-health',
+  meals: '/(tabs)/meals', memories: '/(tabs)/memories', ledger: '/(tabs)/store',
+  grocery: '/(tabs)/grocery', store: '/(tabs)/store',
+};
 
 function orderPills(available: typeof PILLS, savedOrder: string[] | undefined) {
   if (!savedOrder || savedOrder.length === 0) return available;
@@ -298,7 +317,7 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
           const { light, deep } = PILL_COLORS[p.id];
           return (
             <TouchableOpacity key={p.id} activeOpacity={0.75}
-              onPress={() => router.push({ pathname: '/(tabs)/profile', params: { openFeature: p.id } } as any)}
+              onPress={() => router.push(PILL_ROUTES[p.id] as any)}
               onLongPress={() => setEditing(true)}
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,

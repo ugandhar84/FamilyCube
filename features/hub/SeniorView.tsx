@@ -20,6 +20,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
 import { withinLast24h } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
+import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 
 import { GroupBand } from './senior/seniorTheme';
 import { EmergencySosCard } from './senior/EmergencySosCard';
@@ -65,6 +66,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   onCloseComposer: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
+  // Same assignee-double-booked signal ParentView/KidView/TeenView already
+  // show — was entirely missing here (master-flow audit finding). Computed
+  // over ALL events, not just this GP's own, since the conflict is about
+  // the DRIVER's whole schedule, which may span events this senior isn't
+  // otherwise involved in.
+  const conflictReasons = detectAssigneeConflicts(events);
   const sendMessage = useChatStore(s => s.sendMessage);
   // Scenarios 9.2/9.3 — caregiver mode: if a parent has granted this GP
   // temporary approval access, isActiveApprover flips true and the review
@@ -831,6 +838,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           active={active} members={members}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+          // Real Pick-up Radar signal, not just the clock — master-flow
+          // audit finding, see KidRideBanner.tsx's driverDispatched doc.
+          driverDispatched={!!activeTrips?.some(t =>
+            t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+          )}
+          conflictReason={conflictReasons.get(confirmedRide.id)}
         />
       )}
 
@@ -854,6 +867,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         declineId={declineId} declineText={declineText}
         setDeclineId={setDeclineId} setDeclineText={setDeclineText}
         updateEvent={updateEvent} onEnRoute={onEnRoute}
+        conflictReasons={conflictReasons}
       />
 
       <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={removeMed} colors={colors} isDark={isDark} active={active} />

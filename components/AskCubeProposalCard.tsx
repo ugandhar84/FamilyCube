@@ -37,7 +37,7 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   event:        { label: 'Event draft',      icon: Calendar,      accent: 'primary' },
   quest:        { label: 'Quest draft',      icon: ClipboardList, accent: 'kid' },
   grocery:      { label: 'Grocery draft',    icon: ShoppingCart,  accent: 'teal' },
-  meal:         { label: 'Meal draft',       icon: ChefHat,       accent: 'amber' },
+  meal:         { label: 'Meal draft',       icon: ChefHat,       accent: 'pink' },
   update_event: { label: 'Update draft',     icon: Clock,         accent: 'primary' },
   update_chore: { label: 'Update draft',     icon: Clock,         accent: 'kid' },
   redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },

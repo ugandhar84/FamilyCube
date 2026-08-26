@@ -70,9 +70,10 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
     // Kid requests are reviewed inline on the parent Hub (ActionNeededSection),
     // there's no dedicated Requests screen/tab to deep-link into further.
     case 'Requests': return '/(tabs)';
-    // Geofence/battery alerts are about a member's location — same
-    // openFeature deep link FamilyRadarSection's own "view on map" already uses.
-    case 'Hearth':   return '/(tabs)/profile?openFeature=gps';
+    // Geofence/battery alerts are about a member's location — FindFam is
+    // its own dedicated tab (app/(tabs)/gps.tsx), same route
+    // FamilyRadarSection's own "view on map" uses.
+    case 'Hearth':   return '/(tabs)/gps';
     default: break;
   }
   // Fall back on the notification `type` itself when no screen hint is set.
@@ -83,16 +84,16 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
   if (type === 'chat_message') return '/(tabs)/chat';
   if (type.startsWith('kid_request')) return '/(tabs)';
   if (type === 'geofence_exit' || type === 'geofence_arrive' || type === 'low_battery') {
-    return '/(tabs)/profile?openFeature=gps';
+    return '/(tabs)/gps';
   }
   if (type === 'help_requested' || type === 'help_resolved') return '/(tabs)';
-  // Grocery trip/proximity alerts — no dedicated tab, deep-links into
-  // VaultScreen's Apps grid the same way app/_layout.tsx's push-tap
-  // listener does. Was missing here entirely, so tapping one of these rows
-  // from the in-app notification panel (as opposed to the OS push banner)
-  // silently did nothing (live-reported).
+  // Grocery trip/proximity alerts — Grocery has its own dedicated route
+  // (app/(tabs)/grocery.tsx), same one app/_layout.tsx's push-tap listener
+  // uses. Was missing here entirely, so tapping one of these rows from the
+  // in-app notification panel (as opposed to the OS push banner) silently
+  // did nothing (live-reported).
   if (type === 'shopping_trip_started' || type === 'store_proximity') {
-    return '/(tabs)/profile?openFeature=grocery';
+    return '/(tabs)/grocery';
   }
   // No specific deep link known for this type — fall back to the Hub
   // rather than doing nothing at all when tapped (live-reported: tapping a

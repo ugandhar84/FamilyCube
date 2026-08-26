@@ -32,7 +32,7 @@
  * right under that card, driven into whichever screen is active via
  * externalSearchQuery.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -183,6 +183,25 @@ export default function TasksScreen() {
   // Set by the shared FAB in app/(tabs)/_layout.tsx when tapped while
   // showing its Tasks-tab "+" face — opens SmartTaskComposer directly
   // (parent/teen path only; the shared FAB itself is parent-role-gated).
+  //
+  // A plain useFocusEffect-only subscription missed the common case: the
+  // FAB is tapped while ALREADY on the Tasks tab, which doesn't fire a
+  // focus event at all (the screen never lost focus), so the flag just
+  // sat unconsumed in the store until the next unrelated focus change —
+  // confirmed live: tapping the FAB did nothing, then the composer
+  // "auto-opened" on returning from another tab. Subscribing directly to
+  // the store reacts to the flag changing regardless of focus state;
+  // useFocusEffect stays as a backstop for the flag having been set while
+  // this screen wasn't mounted at all (e.g. set from a route that isn't
+  // Tasks, then the user navigates here directly).
+  const openTaskComposerRequested = useUIStore(s => s.openTaskComposerRequested);
+  useEffect(() => {
+    if (openTaskComposerRequested) {
+      useUIStore.getState().setOpenTaskComposerRequested(false);
+      setShowComposer(true);
+    }
+  }, [openTaskComposerRequested]);
+
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);

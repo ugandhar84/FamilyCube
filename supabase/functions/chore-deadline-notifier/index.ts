@@ -27,6 +27,21 @@
 // staying set — see the update below, which clears it) so a repeat cron
 // run doesn't re-fire the same release.
 //
+// ADDED (master-flow audit, 2 more previously-missing spec nudges):
+//   - Pool-unclaimed urgent broadcast: an open (is_pool=true, status='todo',
+//     unassigned) chore due within 30 minutes gets one broadcast to every
+//     grandparent/teen it's actually open to, plus a parent alert.
+//   - Approval-cutoff nudge → co-parent escalation: a chore sitting at
+//     pending_parent_approval (GP-created quest) or pending_kid_proposal
+//     (kid's own proposal) with no due_date of its own gets a fixed
+//     24-hour cutoff from created_at instead — nudges the parent(s) at the
+//     15-hour mark, escalates to whichever OTHER parent hasn't been
+//     nudged yet at the 24-hour mark (families with only one parent never
+//     escalate — there's nowhere to send it).
+// Both use the same one-shot-per-threshold guard pattern as the check-in/
+// auto-release pair above (a dedicated *_notified_at column, checked and
+// set so a 15-minute cron doesn't re-fire the same nudge every run).
+//
 // Cron schedule (Supabase Dashboard → Edge Functions → Schedule):
 //   every 15 minutes: */15 * * * *
 //
@@ -55,6 +70,16 @@ const AUTO_RELEASE_GRACE_MIN = 5;
 // "ghosted" — parents get told directly, separate from (and later than)
 // the check-in/auto-release pair above.
 const GHOST_STUCK_HOURS = 4;
+// A pooled/unclaimed chore due within this many minutes gets the "nobody's
+// taken this yet" urgent broadcast. Matches the spec's "+30min before due"
+// rule.
+const POOL_URGENT_WINDOW_MIN = 30;
+// A chore awaiting its first parent yes/no (pending_parent_approval /
+// pending_kid_proposal) has no due_date of its own, so this pair measures
+// from created_at instead: nudge the parent(s) partway through a 24h
+// window, escalate to the co-parent if still unanswered at the full 24h.
+const ORIGINATION_APPROVAL_WINDOW_HOURS = 24;
+const ORIGINATION_APPROVAL_NUDGE_HOURS = 15;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -78,7 +103,7 @@ serve(async (req) => {
     // ── Fetch chores that need attention ──────────────────────────────────
     let choreQuery = supabase
       .from('chore_tasks')
-      .select('id, title, base_points, coins_reward, status, due_date, due_time, assigned_to_id, claimed_at, is_pool, family_id')
+      .select('id, title, base_points, coins_reward, status, due_date, due_time, assigned_to_id, claimed_at, is_pool, family_id, invite_grandparents, is_open_to_teens, pool_urgent_notified_at')
       .in('status', ['todo', 'in_progress'])
       .lte('due_date', today)
       .not('due_date', 'is', null);
@@ -87,8 +112,23 @@ serve(async (req) => {
     const { data: chores, error: cErr } = await choreQuery;
     if (cErr) throw new Error(`Chore fetch failed: ${cErr.message}`);
 
+    // ── Fetch chores awaiting their FIRST parent yes/no (master-flow step
+    // 2 — distinct from the pending_approval reviewed-work cutoff
+    // chore-auto-approve already handles). No due_date of their own, so
+    // the 24h cutoff is measured from created_at instead.
+    let originationQuery = supabase
+      .from('chore_tasks')
+      .select('id, title, family_id, created_at, origination_approval_nudge_at, origination_approval_escalated_at')
+      .in('status', ['pending_parent_approval', 'pending_kid_proposal']);
+    if (familyId) originationQuery = originationQuery.eq('family_id', familyId);
+    const { data: originationChores, error: oErr } = await originationQuery;
+    if (oErr) throw new Error(`Origination-approval fetch failed: ${oErr.message}`);
+
     // ── Fetch members for push token resolution ───────────────────────────
-    const familyIds = [...new Set((chores ?? []).map((c: any) => c.family_id).filter(Boolean))];
+    const familyIds = [...new Set([
+      ...(chores ?? []).map((c: any) => c.family_id),
+      ...(originationChores ?? []).map((c: any) => c.family_id),
+    ].filter(Boolean))];
     const { data: members } = await supabase
       .from('members')
       .select('id, name, role, family_id, expo_push_token')
@@ -121,11 +161,29 @@ serve(async (req) => {
       id ? (tokensByMemberId[id] ?? []) : [];
 
     const parentTokensByFamily: Record<string, string[]> = {};
+    // Per-PARENT (not just blobbed by family) — the origination-approval
+    // escalation needs to nudge parent A first, then push the SAME chore
+    // to every OTHER parent B/C once the cutoff passes, which a flat
+    // family-wide token list can't distinguish.
+    const parentsByFamily: Record<string, { id: string; tokens: string[] }[]> = {};
     for (const m of (members ?? [])) {
       if (m.role === 'parent') {
-        const t = tokensByMemberId[m.id];
-        if (t?.length) (parentTokensByFamily[m.family_id] ??= []).push(...t);
+        const t = tokensByMemberId[m.id] ?? [];
+        if (t.length) (parentTokensByFamily[m.family_id] ??= []).push(...t);
+        (parentsByFamily[m.family_id] ??= []).push({ id: m.id, tokens: t });
       }
+    }
+    // Pool-eligible tokens per family, split by grandparent/teen — used by
+    // the pool-unclaimed urgent broadcast, which only pushes to whichever
+    // pool(s) a given chore is actually open to (invite_grandparents /
+    // is_open_to_teens), never a blanket "everyone."
+    const gpTokensByFamily: Record<string, string[]> = {};
+    const teenTokensByFamily: Record<string, string[]> = {};
+    for (const m of (members ?? [])) {
+      const t = tokensByMemberId[m.id];
+      if (!t?.length) continue;
+      if (m.role === 'grandparent' || m.role === 'senior') (gpTokensByFamily[m.family_id] ??= []).push(...t);
+      if (m.role === 'teenager' || m.role === 'teen') (teenTokensByFamily[m.family_id] ??= []).push(...t);
     }
 
     const notifications: { type: string; choreTitle: string; to: string; dryRun: boolean }[] = [];
@@ -167,6 +225,27 @@ serve(async (req) => {
           await fire('deadline_overdue', kidTokens, c.family_id, { questTitle: c.title, questId: c.id, daysOverdue });
           if (shouldEscalateToParent) {
             await fire('deadline_overdue', parentTokens, c.family_id, { questTitle: c.title, questId: c.id, daysOverdue, kidName: assignee?.name ?? 'A kid' }, { soft: true });
+          }
+        }
+        continue;
+      }
+
+      // ── status=todo, pooled, still unclaimed, due within 30min — master-
+      // flow "Nobody took it, time is close": urgent broadcast to the
+      // pool(s) it's actually open to, plus a parent alert. One-shot via
+      // pool_urgent_notified_at so this doesn't refire every 15-min tick
+      // while it stays unclaimed; a fresh claim (status flips away from
+      // 'todo') naturally stops this branch from matching again.
+      if (c.status === 'todo' && c.is_pool && !c.assigned_to_id && !c.pool_urgent_notified_at) {
+        if (daysOverdue === 0 && minutesUntilDue >= 0 && minutesUntilDue <= POOL_URGENT_WINDOW_MIN) {
+          const poolTokens = [
+            ...(c.invite_grandparents ? (gpTokensByFamily[c.family_id] ?? []) : []),
+            ...(c.is_open_to_teens ? (teenTokensByFamily[c.family_id] ?? []) : []),
+          ];
+          await fire('pool_unclaimed_urgent', poolTokens, c.family_id, { questTitle: c.title, questId: c.id, minutesUntilDue: Math.round(minutesUntilDue) });
+          await fire('pool_unclaimed_urgent', parentTokens, c.family_id, { questTitle: c.title, questId: c.id, minutesUntilDue: Math.round(minutesUntilDue), forParent: true }, { soft: true });
+          if (!dryRun) {
+            await supabase.from('chore_tasks').update({ pool_urgent_notified_at: new Date().toISOString() }).eq('id', c.id).is('pool_urgent_notified_at', null);
           }
         }
         continue;
@@ -221,7 +300,44 @@ serve(async (req) => {
       }
     }
 
-    return json({ ok: true, swept: (chores ?? []).length, notifications, auto_released: released, dryRun });
+    // ── Master-flow "Parent never answered in time" (origination) ─────────
+    // A GP-sponsored quest or a kid's own proposal awaiting the FIRST
+    // parent yes/no — distinct from chore-auto-approve's own reviewed-work
+    // cutoff. Nudges the family's parent(s) at the 15h mark; escalates at
+    // 24h by re-pushing to every parent (in a single-parent family there's
+    // nobody else to escalate to, so the escalation push is a no-op there
+    // — the nudge at 15h already reached the only parent there is).
+    let escalatedCount = 0;
+    for (const c of (originationChores ?? [])) {
+      const hoursSinceCreated = (now - new Date(c.created_at).getTime()) / 3_600_000;
+      const parents = parentsByFamily[c.family_id] ?? [];
+      const allParentTokens = parents.flatMap(p => p.tokens);
+
+      if (!c.origination_approval_escalated_at && hoursSinceCreated >= ORIGINATION_APPROVAL_WINDOW_HOURS) {
+        await fire('approval_cutoff_escalated', allParentTokens, c.family_id, { questTitle: c.title, questId: c.id, forCoParent: true });
+        escalatedCount++;
+        if (!dryRun) {
+          await supabase.from('chore_tasks')
+            .update({ origination_approval_escalated_at: new Date().toISOString() })
+            .eq('id', c.id)
+            .is('origination_approval_escalated_at', null);
+        }
+        continue;
+      }
+
+      if (!c.origination_approval_nudge_at && hoursSinceCreated >= ORIGINATION_APPROVAL_NUDGE_HOURS) {
+        const minutesUntilDue = Math.round((ORIGINATION_APPROVAL_WINDOW_HOURS - hoursSinceCreated) * 60);
+        await fire('approval_cutoff_nudge', allParentTokens, c.family_id, { questTitle: c.title, questId: c.id, minutesUntilDue });
+        if (!dryRun) {
+          await supabase.from('chore_tasks')
+            .update({ origination_approval_nudge_at: new Date().toISOString() })
+            .eq('id', c.id)
+            .is('origination_approval_nudge_at', null);
+        }
+      }
+    }
+
+    return json({ ok: true, swept: (chores ?? []).length, origination_swept: (originationChores ?? []).length, escalated: escalatedCount, notifications, auto_released: released, dryRun });
 
   } catch (e: any) {
     console.error('[chore-deadline-notifier]', e);

@@ -9,8 +9,10 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import { useCelebrationStore } from '@/store/celebrationStore';
 import { fmtTime, hoursUntilEvent } from '../hubUtils';
+import { parseDbTime } from '@/lib/dates';
 import { eventAssignee } from '@/store/eventStore';
 import { driverLabelByName } from '@/lib/format';
+import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
@@ -95,22 +97,38 @@ function rideState(rideCountdown: number, confirmed: boolean) {
   return 'stale' as const;
 }
 
-function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
+function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent, conflictReason, driverDispatched }: {
   ev: FamilyEvent; rideCountdown: number; colors: any; isDark: boolean;
   active: FamilyMember; members: FamilyMember[];
   onConfirmPickup: (ev: FamilyEvent) => void;
   onDismiss: (evId: string) => void;
   onSendDriverLate?: (ev: FamilyEvent) => void;
   lateNudgeSent?: Record<string, boolean>;
+  // Same assignee-double-booked signal ParentView shows a parent — the
+  // kid's driver is also assigned to a different event around the same
+  // time. Purely informational here (no reassign action — that's a
+  // parent-only decision), just so the kid isn't blindsided if the ride
+  // ends up late/needs a swap.
+  conflictReason?: string;
+  // Real Pick-up Radar signal (an active, undispatched-yet trip exists
+  // for this ride's driver), not just the scheduled clock — same
+  // master-flow-audit fix as KidRideBanner.tsx's own driverDispatched
+  // prop (Teen/Senior use that component directly; this row duplicates
+  // its state machine for Kid, so needs the signal passed in separately).
+  driverDispatched?: boolean;
 }) {
   const confirmed = !!ev.pickupConfirmedAt;
   const state = rideState(rideCountdown, confirmed);
   if (state === 'stale' && !confirmed) return null; // nothing left to say, no dismiss needed — it's just gone
 
   const rideHere   = state === 'here';
-  const isOverdue  = state === 'overdue';
+  // A genuinely dispatched driver is never "overdue" — they're actively
+  // en route, a materially less alarming situation than the clock alone
+  // passing with nobody having said anything.
+  const isOverdue  = state === 'overdue' && !driverDispatched;
+  const onTheWay   = !!driverDispatched && !confirmed && !rideHere;
 
-  const Icon = confirmed ? Check : isOverdue ? AlertTriangle : rideHere ? PartyPopper : Car;
+  const Icon = confirmed ? Check : isOverdue ? AlertTriangle : (rideHere || onTheWay) ? PartyPopper : Car;
   const accent = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : MONEY_GREEN;
   const tone: 'flat' | 'solid' = (isOverdue || rideHere) ? 'solid' : 'flat';
 
@@ -119,6 +137,8 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
     ? `Pickup confirmed — you're all set`
     : isOverdue
       ? `${driverFirst ?? 'Your ride'} hasn't arrived yet`
+      : onTheWay
+        ? `${driverFirst ?? 'Your ride'} is on the way!`
       : rideHere
         ? `${driverFirst ?? 'Your ride'} is HERE!`
         : rideCountdown <= 15
@@ -140,7 +160,15 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
       // lose anything — the ride itself is still on Timeline/Schedule.
       onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidNeedsYouSection ride row" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(ev.id); }}
     >
-      {!confirmed && (rideHere || isOverdue) && (
+      {!confirmed && conflictReason && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <AlertTriangle size={12} color={tone === 'solid' ? '#fff' : colors.danger} />
+          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: tone === 'solid' ? '#fff' : colors.danger }}>
+            {conflictReason}
+          </Text>
+        </View>
+      )}
+      {!confirmed && (rideHere || isOverdue || onTheWay) && (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidNeedsYouSection.tsx]`); onConfirmPickup(ev); }}
             style={{ flex: 1, backgroundColor: tone === 'solid' ? 'rgba(255,255,255,0.9)' : MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
@@ -167,7 +195,7 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
 // up space on a quiet day.
 export function KidNeedsYouSection({
   declinedRides, pendingRides, declinedQuests, approvedQuests, cheersForMe, recentReplies,
-  confirmedRide, rideCountdown, awaitingDriverRide, activeTrips,
+  confirmedRide, rideCountdown, confirmedRideConflict, confirmedRideDispatched, awaitingDriverRide, activeTrips,
   active, members, colors, isDark, dismissedIds, onDismiss,
   onConfirmPickup, onSendDriverLate, lateNudgeSent,
 }: {
@@ -176,6 +204,13 @@ export function KidNeedsYouSection({
   cheersForMe: { quest: Quest; cheer: QuestCheer }[];
   recentReplies: any[];
   confirmedRide: FamilyEvent | undefined; rideCountdown: number | null;
+  // Assignee-double-booked reason (e.g. "Priya assigned to 2 events") if
+  // confirmedRide's driver is also on another event around the same time
+  // — see detectAssigneeConflicts.ts, shared with ParentView's own
+  // conflict detection.
+  confirmedRideConflict?: string;
+  // Real Pick-up Radar signal — see NeedsYouRideRow's own doc comment.
+  confirmedRideDispatched?: boolean;
   awaitingDriverRide: FamilyEvent | undefined;
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
   members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
@@ -197,28 +232,58 @@ export function KidNeedsYouSection({
   // a single list row. Fires once per genuinely congratulatory item the kid
   // hasn't already seen: a cheer landing, a chore/quest getting approved,
   // or a permission request getting approved (declines/other reply types
-  // don't celebrate — nothing to celebrate there). celebratedKeys tracks
-  // what's already played THIS session so re-renders while a row is still
-  // visible (un-dismissed) don't replay it, and so anything already
-  // dismissed in an earlier session never plays again on login.
+  // don't celebrate — nothing to celebrate there).
+  //
+  // celebratedKeys alone used to be the ONLY guard — an in-memory ref that
+  // resets to empty on every fresh mount (app relaunch, or re-entering
+  // this profile), so anything still un-dismissed replayed its
+  // celebration every single time, even with nothing new to celebrate
+  // (live-reported: "even there is no latest approvals or good news then
+  // animation still playing"). Fixed with a real watermark:
+  // active.lastCelebrationSeenAt, persisted to members — only an item
+  // whose own timestamp (approvedAt/cheer.at/respondedAt) is NEWER than
+  // the watermark celebrates; anything older is treated as already seen
+  // regardless of dismiss state. celebratedKeys stays as the within-
+  // session guard (avoids a double-trigger from a re-render before the
+  // watermark write round-trips), the watermark is what survives a
+  // restart.
   const celebratedKeys = useRef<Set<string>>(new Set());
   const approvedPermissionReplies = recentReplies.filter(r => r.status === 'approved' && r.type === 'permission');
+  const seenWatermark = active.lastCelebrationSeenAt ? parseDbTime(active.lastCelebrationSeenAt).getTime() : 0;
   useEffect(() => {
-    const freshKeys = [
-      ...filteredCheersForMe.map(({ quest, cheer }) => `cheer-${quest.id}-${cheer.memberId}`),
-      ...filteredApprovedQuests.map(q => `quest-approved-${q.id}`),
-      ...approvedPermissionReplies.map(r => `reply-${r.id}`),
+    const freshItems = [
+      ...filteredCheersForMe.map(({ quest, cheer }) => ({ key: `cheer-${quest.id}-${cheer.memberId}`, at: cheer.at })),
+      ...filteredApprovedQuests.map(q => ({ key: `quest-approved-${q.id}`, at: q.approvedAt })),
+      ...approvedPermissionReplies.map(r => ({ key: `reply-${r.id}`, at: r.respondedAt })),
     ];
-    for (const key of freshKeys) {
-      if (!celebratedKeys.current.has(key)) {
-        celebratedKeys.current.add(key);
-        useCelebrationStore.getState().trigger();
-      }
+    let played = false;
+    for (const { key, at } of freshItems) {
+      if (celebratedKeys.current.has(key)) continue;
+      // Postgres sends timestamps as "2026-08-24 19:53:09.967932+00" (space
+      // separator, 2-digit UTC offset) — new Date() on React Native's JS
+      // engine returns NaN for that exact shape. NaN <= anything is always
+      // false in JS, so the "already seen" skip below silently never fired
+      // for ANY item with this timestamp shape — confirmed live, itemMs=NaN
+      // on every single quest-approved item, which is why the watermark
+      // fix never actually stopped the replay. parseDbTime (lib/dates.ts)
+      // is this codebase's existing, already-correct normalizer for
+      // exactly this shape — use it instead of trusting the raw string.
+      const itemMs = at ? parseDbTime(at).getTime() : 0;
+      const validItemMs = Number.isFinite(itemMs) ? itemMs : 0;
+      if (validItemMs <= seenWatermark) continue; // already seen in an earlier session, even if never dismissed
+      celebratedKeys.current.add(key);
+      useCelebrationStore.getState().trigger();
+      played = true;
+    }
+    if (played) {
+      const nowIso = new Date().toISOString();
+      useFamilyStore.getState().updateMember(active.id, { lastCelebrationSeenAt: nowIso });
     }
   }, [
     filteredCheersForMe.map(({ quest, cheer }) => `${quest.id}-${cheer.memberId}`).join(','),
     filteredApprovedQuests.map(q => q.id).join(','),
     approvedPermissionReplies.map(r => r.id).join(','),
+    seenWatermark,
   ]);
 
   const showConfirmedRide = !!confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedIds.has(confirmedRide.id);
@@ -239,6 +304,8 @@ export function KidNeedsYouSection({
           onConfirmPickup={onConfirmPickup}
           onDismiss={(id) => onDismiss(id)}
           onSendDriverLate={onSendDriverLate} lateNudgeSent={lateNudgeSent}
+          conflictReason={confirmedRideConflict}
+          driverDispatched={confirmedRideDispatched}
         />
       )}
 
@@ -316,8 +383,10 @@ export function KidNeedsYouSection({
         const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
         let timeAgo = '';
         if (r.respondedAt) {
-          const diffMins = Math.floor((Date.now() - new Date(r.respondedAt).getTime()) / 60000);
-          timeAgo = diffMins < 60 ? `${diffMins}m ago` : diffMins < 1440 ? `${Math.floor(diffMins / 60)}h ago` : `${Math.floor(diffMins / 1440)}d ago`;
+          const diffMins = Math.floor((Date.now() - parseDbTime(r.respondedAt).getTime()) / 60000);
+          if (Number.isFinite(diffMins)) {
+            timeAgo = diffMins < 60 ? `${diffMins}m ago` : diffMins < 1440 ? `${Math.floor(diffMins / 60)}h ago` : `${Math.floor(diffMins / 1440)}d ago`;
+          }
         }
         return (
           <NeedsYouRow key={r.id} Icon={ReplyIcon} accent={accent} colors={colors} isDark={isDark}

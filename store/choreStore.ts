@@ -2506,9 +2506,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // reimbursement data attached auto-completes instantly (status straight
   // to 'auto_approved', the same terminal "done and paid" status the
   // parent-self-assign auto-complete path already uses — see submitChore's
-  // isSelfAssignedByParent branch above) and pays out immediately via the
-  // same awardPoints call approveChore uses, plus a lightweight informational
-  // ping to parents (not an approval request). A submission that DOES carry
+  // isSelfAssignedByParent branch above), with a lightweight informational
+  // ping to parents (not an approval request) — never a coin payout, since
+  // a grandparent doing the work never earns coins (master-flow spec: "no
+  // coin field at all" for GP/parent tasks). A submission that DOES carry
   // receipt/reimbursement data still routes to 'pending_approval' for real
   // parent review, unchanged from before.
   submitGPErrandReceipt: (choreId, opts) => {
@@ -2526,17 +2527,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         reviewedAt:  now,
         submittedAt: now,
       });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) {
-        // Same wallet-selection rule every other payout site in this file
-        // uses — a plain inviteGrandparents errand (not GP-sponsored, no
-        // categoryType: 'grandparent_quest') must pay mainCoins, the kid's
-        // real spendable/Spend-Save-Give-split balance. Hardcoding 'gpCoins'
-        // here misrouted a common case into a separate GP-only ledger the
-        // Store tab doesn't reflect and skipped the jar split entirely.
-        const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-        get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
-      }
+      // Master-flow spec audit finding: this function is only ever called
+      // from SeniorView.tsx (features/hub/SeniorView.tsx:333,359,923) —
+      // chore.assignedToId here is always the grandparent submitting their
+      // own errand, never a kid/teen. Coins/stars exist ONLY when a kid or
+      // teen does the work; a grandparent-done task has no coin field at
+      // all, not a zeroed one. This branch previously called awardPoints
+      // regardless, paying real coins into the GP's own mainCoins/gpCoins
+      // wallet — a direct spec violation, confirmed live as a real bug,
+      // not just a UI gap. Removed entirely: a GP errand with no receipt
+      // is logged and thanked (the chat ping below), never paid.
       // Informational-only ping to parents — mirrors the sponsor-notification
       // pattern (chatStore.sendMessage via require()-based cross-store call)
       // approveChore already uses for GP-sponsored quests, just addressed to
@@ -2877,6 +2877,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           console.warn(`[choreStore] requestRedo RPC rejected ${choreId} — likely a concurrent approval landed first or authorization failed:`, error.message);
         }
       });
+
+    // Master-flow audit finding: every other chore-lifecycle transition
+    // (approve, decline, GP-offer accept/decline) fires a notification —
+    // requestRedo/requestGrandparentRedo were the one silent gap. Uses
+    // quest_reopened — the edge function already had this exact case
+    // built ("🔄 Another Chance! ... give it another try") with zero
+    // callers anywhere in the client, which is exactly what a redo
+    // request means (still workable, not a hard decline).
+    if (chore.familyId && chore.assignedToId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_reopened',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId: chore.familyId,
+          assigneeId: chore.assignedToId,
+          coins: chore.coinsReward,
+        },
+      }).catch(e => console.warn('[choreStore] requestRedo quest_reopened notify', e?.message));
+    }
   },
 
   // Same shape as requestRedo, but for a grandparent's own completion review
@@ -2898,6 +2918,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       reviewedById:    grandparentId,
       redoCount:       newRedoCount,
     });
+
+    // Same notification gap fix as requestRedo above — master-flow audit
+    // finding, this sibling function had it too.
+    if (chore.familyId && chore.assignedToId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_reopened',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId: chore.familyId,
+          assigneeId: chore.assignedToId,
+          coins: chore.coinsReward,
+        },
+      }).catch(e => console.warn('[choreStore] requestGrandparentRedo quest_reopened notify', e?.message));
+    }
   },
 
   cheerChore: (choreId, fromMemberId, opts) => {

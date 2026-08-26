@@ -879,9 +879,20 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents))
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
+        // Was checking only memberId/memberIds (the event's SUBJECT) —
+        // never helper/driverName (who's actually ASSIGNED, e.g. a teen
+        // who claimed an open ride pool). A teen's own claimed ride never
+        // matched here, so it silently vanished from their default "My
+        // Schedule" view even though the claim itself wrote correctly
+        // (live-reported: "teen's schedule tab in tasks is not showing
+        // that entry"). Same helper/driverName OR already applied to the
+        // senior-visibility gate directly above — this mirrors it into
+        // the scoping gate it was never propagated to.
         (isParent || scheduleFilter === 'all' ||
           e.memberId === activeMemberId ||
           e.memberIds?.includes(activeMemberId ?? '') ||
+          (e.helper && e.helper === activeMemberName) ||
+          (e.driverName && e.driverName === activeMemberName) ||
           (!e.memberId && !e.memberIds?.length)) &&
         matchesMemberFilter(e) &&
         matchesSearch(e))
@@ -935,10 +946,13 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       // toggle in Week/Agenda showed "My Schedule" selected while every
       // sibling's event stayed fully visible underneath, a false promise of
       // scoping (QA sweep, kid-role audit, Critical). Same rule dayEvents
-      // already applies.
+      // already applies. Also missing helper/driverName (see dayEvents'
+      // identical gate above for the teen-claimed-ride bug this closes).
       (isParent || scheduleFilter === 'all' ||
         e.memberId === activeMemberId ||
         e.memberIds?.includes(activeMemberId ?? '') ||
+        (e.helper && e.helper === activeMemberName) ||
+        (e.driverName && e.driverName === activeMemberName) ||
         (!e.memberId && !e.memberIds?.length)) &&
       matchesMemberFilter(e) &&
       matchesSearch(e)

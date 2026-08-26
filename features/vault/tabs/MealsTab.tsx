@@ -10,7 +10,6 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { BRAND } from './shared';
 
 import {
   Meal, AiDayOptions, AiMealResult,
@@ -300,8 +299,8 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
 
   if (loading) return (
     <View>
-      <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={BRAND.amber} colors={colors} />
-      <ActivityIndicator color={BRAND.amber} style={{ marginVertical: 24 }} />
+      <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={colors.pink} colors={colors} />
+      <ActivityIndicator color={colors.pink} style={{ marginVertical: 24 }} />
     </View>
   );
 
@@ -330,22 +329,22 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
       {/* ── Weekly Plan Grid (flat) ─────────────────────────────── */}
       {aiLoading && (
         <View style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <ActivityIndicator color={BRAND.purple} size="small" />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.purple }}>CubeAI is crafting your week plan…</Text>
+          <ActivityIndicator color={colors.accent} size="small" />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.accent }}>CubeAI is crafting your week plan…</Text>
         </View>
       )}
 
       <View>
         <FlatSectionHeader
-          Icon={ChefHat} title="Week Plan" accent={BRAND.amber} colors={colors}
+          Icon={ChefHat} title="Week Plan" accent={colors.pink} colors={colors}
           badge={`Wk of ${curWeek}`}
-          onAction={load} actionIcon={<RefreshCw size={14} color={BRAND.amber} />}
+          onAction={load} actionIcon={<RefreshCw size={14} color={colors.pink} />}
         />
 
         {/* Nutrition tip */}
         {tip && (
-          <View style={{ borderRadius: 12, backgroundColor: BRAND.teal + '15', borderWidth: 1, borderColor: BRAND.teal + '30', padding: 10, marginBottom: 8 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? BRAND.teal : '#0F766E', lineHeight: 18 }}>💡 {tip}</Text>
+          <View style={{ borderRadius: 12, backgroundColor: colors.teal + '15', borderWidth: 1, borderColor: colors.teal + '30', padding: 10, marginBottom: 8 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.teal, lineHeight: 18 }}>💡 {tip}</Text>
           </View>
         )}
 
@@ -372,11 +371,11 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
               <TouchableOpacity onPress={addAllToCart} disabled={addedCart}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 12, paddingVertical: 10, borderWidth: 1,
-                  borderColor: addedCart ? BRAND.emerald + '50' : BRAND.teal + '50',
-                  backgroundColor: addedCart ? BRAND.emerald + '12' : BRAND.teal + '12' }}>
+                  borderColor: addedCart ? colors.success + '50' : colors.teal + '50',
+                  backgroundColor: addedCart ? colors.success + '12' : colors.teal + '12' }}>
                 {addedCart
-                  ? <><Check size={13} color={BRAND.emerald} /><Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.emerald }}>Added to Grocery!</Text></>
-                  : <><ShoppingBag size={13} color={BRAND.teal} /><Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.teal }}>Add All to Grocery</Text></>}
+                  ? <><Check size={13} color={colors.success} /><Text style={{ fontSize: 13, fontWeight: '800', color: colors.success }}>Added to Grocery!</Text></>
+                  : <><ShoppingBag size={13} color={colors.teal} /><Text style={{ fontSize: 13, fontWeight: '800', color: colors.teal }}>Add All to Grocery</Text></>}
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -386,9 +385,9 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1,
-                  borderColor: BRAND.purple + '50', backgroundColor: BRAND.purple + '12' }}>
-                <MessageSquare size={13} color={BRAND.purple} />
-                <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>Share</Text>
+                  borderColor: colors.accent + '50', backgroundColor: colors.accent + '12' }}>
+                <MessageSquare size={13} color={colors.accent} />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: colors.accent }}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -3,7 +3,6 @@ import {
   KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { X } from 'lucide-react-native';
-import { BRAND } from '../shared';
 import { MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { em } from './styles';
 
@@ -50,9 +49,9 @@ export default function AddMealSheet({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <TouchableOpacity onPress={() => setAddShowEmoji(v => !v)}
                   style={{ width: 46, height: 46, borderRadius: 14,
-                    backgroundColor: (MEAL_TYPE_COLOR[addType] ?? BRAND.amber) + '20',
+                    backgroundColor: (MEAL_TYPE_COLOR[addType] ?? colors.amber) + '20',
                     alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 1.5, borderColor: (MEAL_TYPE_COLOR[addType] ?? BRAND.amber) + '40' }}>
+                    borderWidth: 1.5, borderColor: (MEAL_TYPE_COLOR[addType] ?? colors.amber) + '40' }}>
                   <Text style={{ fontSize: 26 }}>{addEmoji}</Text>
                 </TouchableOpacity>
                 <View>
@@ -60,7 +59,7 @@ export default function AddMealSheet({
                     Add Meal — {addDay}
                   </Text>
                   <Text style={{ fontSize: 11, fontWeight: '700',
-                    color: MEAL_TYPE_COLOR[addType] ?? BRAND.amber,
+                    color: MEAL_TYPE_COLOR[addType] ?? colors.amber,
                     textTransform: 'capitalize', marginTop: 1 }}>
                     {addType} · tap emoji to change
                   </Text>
@@ -80,11 +79,11 @@ export default function AddMealSheet({
               {addShowEmoji && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 12, borderRadius: 16,
                   backgroundColor: isDark ? colors.surface : '#F0EEFF',
-                  borderWidth: 1, borderColor: BRAND.purple + '30', marginBottom: 12 }}>
+                  borderWidth: 1, borderColor: colors.accent + '30', marginBottom: 12 }}>
                   {MEAL_EMOJIS.map(e => (
                     <TouchableOpacity key={e} onPress={() => { setAddEmoji(e); setAddShowEmoji(false); }}
                       style={{ width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: addEmoji === e ? BRAND.purple + '25' : 'transparent' }}>
+                        backgroundColor: addEmoji === e ? colors.accent + '25' : 'transparent' }}>
                       <Text style={{ fontSize: 24 }}>{e}</Text>
                     </TouchableOpacity>
                   ))}
@@ -104,7 +103,7 @@ export default function AddMealSheet({
               <Text style={em.label}>Meal Type</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
                 {MEAL_TYPES.map(t => {
-                  const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? BRAND.amber;
+                  const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? colors.amber;
                   const sel = addType === t.toLowerCase();
                   return (
                     <TouchableOpacity key={t} onPress={() => setAddType(t.toLowerCase())}
@@ -129,10 +128,10 @@ export default function AddMealSheet({
                     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                       <TouchableOpacity onPress={() => setAddChefId('')}
                         style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                          backgroundColor: !addChefId ? BRAND.teal + '20' : 'transparent',
-                          borderColor: !addChefId ? BRAND.teal : colors.border }}>
+                          backgroundColor: !addChefId ? colors.teal + '20' : 'transparent',
+                          borderColor: !addChefId ? colors.teal : colors.border }}>
                         <Text style={{ fontSize: 12, fontWeight: '800',
-                          color: !addChefId ? BRAND.teal : colors.textSecondary }}>Anyone</Text>
+                          color: !addChefId ? colors.teal : colors.textSecondary }}>Anyone</Text>
                       </TouchableOpacity>
                       {members.map(m => {
                         const sel = addChefId === m.id;
@@ -144,12 +143,12 @@ export default function AddMealSheet({
                             style={{ alignItems: 'center', gap: 3 }}>
                             <View style={{ width: 36, height: 36, borderRadius: 18,
                               backgroundColor: avatarBg,
-                              borderWidth: 2.5, borderColor: sel ? BRAND.teal : 'transparent',
+                              borderWidth: 2.5, borderColor: sel ? colors.teal : 'transparent',
                               alignItems: 'center', justifyContent: 'center' }}>
                               <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{initials}</Text>
                             </View>
                             <Text style={{ fontSize: 9, fontWeight: '700',
-                              color: sel ? BRAND.teal : colors.textTertiary }}>
+                              color: sel ? colors.teal : colors.textTertiary }}>
                               {(m.name as string).split(' ')[0]}
                             </Text>
                           </TouchableOpacity>
@@ -181,9 +180,9 @@ export default function AddMealSheet({
                     <TouchableOpacity key={tag}
                       onPress={() => setAddDietTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
                       style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5,
-                        backgroundColor: sel ? BRAND.teal + '22' : 'transparent',
-                        borderColor: sel ? BRAND.teal : colors.border }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? BRAND.teal : colors.textSecondary }}>{tag}</Text>
+                        backgroundColor: sel ? colors.teal + '22' : 'transparent',
+                        borderColor: sel ? colors.teal : colors.border }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? colors.teal : colors.textSecondary }}>{tag}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -221,7 +220,7 @@ export default function AddMealSheet({
               </TouchableOpacity>
               <TouchableOpacity onPress={addManualMeal} disabled={!addTitle.trim()}
                 style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-                  backgroundColor: BRAND.purple, opacity: addTitle.trim() ? 1 : 0.4 }}>
+                  backgroundColor: colors.accent, opacity: addTitle.trim() ? 1 : 0.4 }}>
                 <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Add Meal</Text>
               </TouchableOpacity>
             </View>

@@ -10,10 +10,12 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
+import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
+import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { decodeRideLate } from './KidModals';
 import { TodayView, GreetingHeader } from './TodayView';
 import { useChoreStore } from '@/store/choreStore';
@@ -74,6 +76,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
+  // Unified "Add Task" quick-action tile opens this first — same
+  // SmartTaskComposer/"just describe it" entry point the Tasks tab's FAB
+  // uses. Its own "adjust in full form" handoff falls through to the
+  // existing showAddTask/showAddEvent manual modals below via the same
+  // addPrefill state HouseholdBacklog's voice-intake handoff already uses.
+  const [showTaskComposer, setShowTaskComposer] = useState(false);
   // Quick-action entry points go through the Speak it/Type it chooser first
   // (matching the existing pet-appointment voice flow) — HouseholdBacklog's
   // own "add task" trigger below still opens the manual quest form directly,
@@ -164,22 +172,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     }
   }
 
-  // B: helper/driver double-booked (same assignee name, <30 min, not
-  // rejected, non-Work). Was raw e.helper-only — missed a conflict between
-  // two driverName-paired (rideRequired) events, or one of each pair,
-  // since only eventAssignee() checks both field pairs.
-  const timedHelperEvents = upcomingEvents.filter(e => !!e.time && !!eventAssignee(e).name && eventAssignee(e).status !== 'rejected');
-  for (let i = 0; i < timedHelperEvents.length; i++) {
-    for (let j = i + 1; j < timedHelperEvents.length; j++) {
-      const a = timedHelperEvents[i], b = timedHelperEvents[j];
-      const aName = eventAssignee(a).name, bName = eventAssignee(b).name;
-      if (aName !== bName) continue;
-      if (minutesBetween(a.time!, b.time!) < 30) {
-        const label = `${aName!.split(' ')[0]} assigned to 2 events`;
-        if (!conflictReasons.has(a.id)) conflictReasons.set(a.id, label);
-        if (!conflictReasons.has(b.id)) conflictReasons.set(b.id, label);
-      }
-    }
+  // B: helper/driver double-booked — extracted to detectAssigneeConflicts.ts
+  // so KidView can surface the same signal on a kid's own ride banner
+  // (their driver being double-booked matters to them too, not just the
+  // parent). Was raw e.helper-only — missed a conflict between two
+  // driverName-paired (rideRequired) events, or one of each pair, since
+  // only eventAssignee() checks both field pairs.
+  for (const [id, label] of detectAssigneeConflicts(upcomingEvents)) {
+    if (!conflictReasons.has(id)) conflictReasons.set(id, label);
   }
 
   // C: family event vs. Work event overlap — only for upcoming work events too
@@ -228,7 +228,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     }));
 
   const conflictEventIds = new Set(conflictReasons.keys());
-  const conflictEvents   = todayEvents.filter(e => e.conflict || conflictEventIds.has(e.id));
+  // conflictAcknowledged lets a parent dismiss a conflict that isn't
+  // actually a problem (e.g. the same parent doing two nearby drop-offs
+  // at the same time) — see AlertBanner's Dismiss action. Excluded here so
+  // a dismissed cluster stops counting toward showBanner too, not just
+  // rendering hidden.
+  const conflictEvents = todayEvents.filter(e =>
+    (e.conflict || conflictEventIds.has(e.id)) && !e.conflictAcknowledged
+  );
 
   // Escalation: driver CONFIRMED, scheduled time already passed by 5+ min,
   // but no trip was ever dispatched for this pickup — a case neither
@@ -549,19 +556,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         />
       )}
 
-      {/* Entry point for the new persistent Family Settings screen — invite
-          members by email or share the join code, anytime (not just once
-          during onboarding). */}
-      <Pressable
-        onPress={() => router.push('/family-settings' as any)}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end',
-          marginHorizontal: 16, marginBottom: 8 }}>
-        <Ionicons name="people" size={13} color={colors.textTertiary} />
-        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>Family Settings</Text>
-      </Pressable>
-
       <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
-        onAddQuest={() => setShowAddTask(true)} onAddEvent={() => setShowAddEvent(true)} />
+        onAddTask={() => setShowTaskComposer(true)} />
 
       <TodayView
         colors={colors}
@@ -688,6 +684,27 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         target={pushbackSheet} colors={colors} isDark={isDark}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
+      />
+
+      {/* Unified "Add Task" quick-action entry point — same
+          SmartTaskComposer the Tasks tab's own FAB opens. Its "adjust in
+          full form" handoff falls through to the AddQuestModal/
+          AddEventModal pair right below via the same addPrefill state the
+          voice-intake handoff already uses, so there's one shared manual
+          fallback, not a second parallel pair of modals. */}
+      <SmartTaskComposer
+        visible={showTaskComposer}
+        members={members}
+        activeMemberId={active.id}
+        familyId={(active as any).familyId ?? ''}
+        onClose={() => setShowTaskComposer(false)}
+        onCreated={() => setShowTaskComposer(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowTaskComposer(false);
+          setAddPrefill(prefill);
+          if (kind === 'quest') setShowAddTask(true);
+          else setShowAddEvent(true);
+        }}
       />
 
       <AddQuestModal

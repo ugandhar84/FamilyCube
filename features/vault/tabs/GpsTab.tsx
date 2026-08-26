@@ -20,7 +20,7 @@ import { useUIStore } from '@/store/uiStore';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus } from '@/lib/locationTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { CardHeader, StatusPill, MemberAvatar, BRAND } from './shared';
+import { CardHeader, StatusPill, MemberAvatar } from './shared';
 
 type LocStatus = 'at_home' | 'at_school' | 'at_work' | 'in_transit' | 'at_activity';
 
@@ -62,13 +62,13 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const STATUS_COLORS: Record<LocStatus, string> = {
-  at_home:     BRAND.teal,
-  at_school:   BRAND.blue,
-  at_work:     BRAND.purple,
-  in_transit:  BRAND.amber,
-  at_activity: BRAND.emerald,
-};
+const statusColors = (colors: any): Record<LocStatus, string> => ({
+  at_home:     colors.teal,
+  at_school:   colors.info,
+  at_work:     colors.accent,
+  in_transit:  colors.amber,
+  at_activity: colors.success,
+});
 
 // Speed-based movement badge — same rough heuristic Life360-style apps use
 // under the hood (no separate motion-activity API on either platform is
@@ -246,7 +246,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   };
 
   const roleColor = (role: string) =>
-    role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : BRAND.emerald;
+    role === 'parent' ? colors.accent : role === 'senior' ? colors.info : colors.success;
 
   const fmtTime = (iso: string) => {
     try {
@@ -554,7 +554,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         {/* Floating header, over the map — no boxed card, translucent pills like Apple Maps */}
         <View style={g.mapHeaderOverlay}>
           <View style={g.mapHeaderChip}>
-            <Radio size={14} color={BRAND.teal} />
+            <Radio size={14} color={colors.teal} />
             <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textPrimary, marginLeft: 6 }}>Family Radar</Text>
           </View>
           <View style={g.mapHeaderChip}>
@@ -568,13 +568,13 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         <TouchableOpacity onPress={toggleTracking} disabled={togglingTrack} style={g.trackFab}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <View style={[g.trackFabInner, {
-            backgroundColor: tracking ? BRAND.teal : (isDark ? colors.card : '#fff'),
+            backgroundColor: tracking ? colors.teal : (isDark ? colors.card : '#fff'),
           }]}>
             {togglingTrack
               ? <CubeSpinner size={16} />
               : tracking
                 ? <LocateFixed size={18} color="#fff" />
-                : <Navigation size={18} color={BRAND.teal} />}
+                : <Navigation size={18} color={colors.teal} />}
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -627,7 +627,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
               </Text>
             </View>
             <Switch value={shareExactAddress} onValueChange={toggleExactAddress}
-              trackColor={{ false: colors.border, true: BRAND.teal }} thumbColor="#fff" />
+              trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
           </View>
         )}
 
@@ -650,7 +650,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 </Text>
                 {isLive ? (
                   <TouchableOpacity onPress={() => openDirections(loc.lat!, loc.lng!, loc.address || loc.name)} hitSlop={{ top: 4, bottom: 4 }}>
-                    <Text style={{ fontSize: 12, color: BRAND.teal, fontWeight: '600', marginTop: 2, textDecorationLine: 'underline' }} numberOfLines={1}>
+                    <Text style={{ fontSize: 12, color: colors.teal, fontWeight: '600', marginTop: 2, textDecorationLine: 'underline' }} numberOfLines={1}>
                       {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
                     </Text>
                   </TouchableOpacity>
@@ -669,17 +669,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                     const { label, Icon } = MOVEMENT_META[movement];
                     return (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                        <Icon size={10} color={BRAND.blue} />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{label}</Text>
+                        <Icon size={10} color={colors.info} />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.info }}>{label}</Text>
                       </View>
                     );
                   })()}
                   {isLive && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                       {loc.is_charging
-                        ? <Zap size={10} color={BRAND.amber} />
-                        : <Battery size={10} color={loc.battery_level > 30 ? colors.textTertiary : BRAND.rose} />}
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: loc.battery_level > 30 ? colors.textTertiary : BRAND.rose }}>
+                        ? <Zap size={10} color={colors.amber} />
+                        : <Battery size={10} color={loc.battery_level > 30 ? colors.textTertiary : colors.danger} />}
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: loc.battery_level > 30 ? colors.textTertiary : colors.danger }}>
                         {loc.battery_level}%
                       </Text>
                     </View>
@@ -693,7 +693,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
               <TouchableOpacity onPress={() => refreshMyLocation(loc.member_id)} disabled={isRefreshing}
                 style={g.refreshBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 {isRefreshing
-                  ? <ActivityIndicator size="small" color={BRAND.teal} />
+                  ? <ActivityIndicator size="small" color={colors.teal} />
                   : <RefreshCw size={16} color={colors.textTertiary} />}
               </TouchableOpacity>
             </TouchableOpacity>
@@ -712,7 +712,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 {historyFor?.name}'s Location Today
               </Text>
               <TouchableOpacity onPress={() => setHistoryFor(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: BRAND.teal }}>Done</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>Done</Text>
               </TouchableOpacity>
             </View>
             <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: 10 }}>
@@ -736,7 +736,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                         {new Date(h.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
-                    <View style={g.historyDot} />
+                    <View style={[g.historyDot, { backgroundColor: colors.teal }]} />
                     <Text style={{ fontSize: 13, color: colors.textSecondary, flex: 1, marginLeft: 10 }} numberOfLines={1}>
                       {h.address ?? `${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}`}
                     </Text>
@@ -781,5 +781,5 @@ const g = StyleSheet.create({
   historySheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 32, maxHeight: '75%' },
   historyRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 9 },
   historyTimeCol: { width: 62 },
-  historyDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: BRAND.teal },
+  historyDot:   { width: 6, height: 6, borderRadius: 3 },
 });

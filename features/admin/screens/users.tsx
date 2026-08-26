@@ -1,316 +1,336 @@
-import { showAlert } from '@/components/AppAlert';
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
-import {
-  View, Text, TouchableOpacity, StyleSheet,
-  Alert, TextInput,  Modal, Platform,
-} from 'react-native';
-import { FlashList, FlashListRef } from '@shopify/flash-list';
+// Admin Users screen — searchable/filterable roster of every signed-up
+// account, with when they joined, onboarding status, family, and
+// subscription tier. Backed by admin_list_users(), is_app_admin()-gated.
+// Block/unblock (real Supabase Auth ban) and delete (soft-delete, 7-day
+// grace period, same mechanism as self-service account deletion) actions
+// live behind a per-row action sheet.
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AppDateTimePicker from '@/components/AppDateTimePicker';
-import LazyImage from '@/components/LazyImage';
-import {
-  getAdminUsers, setUserAdmin,
-  type AdminUserRow, type UserFilter, type UserSort,
-} from '@/lib/db/admin';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLoader from '@/components/PawBondLoader';
-import { TYPO } from '@/constants/theme';
+import { TYPO, RADIUS } from '@/constants/theme';
+import { showAlert } from '@/components/AppAlert';
+import AppBottomSheet from '@/components/AppBottomSheet';
+import { getAdminUsers, setUserBlocked, deleteUserAccount, type AdminUserRow, type AdminUserFilter } from '@/lib/db/admin';
 
-type UserRow = AdminUserRow;
-type Filter  = UserFilter;
-type Sort    = UserSort;
-
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'new7d',     label: 'New 7d' },
+const FILTERS: { key: AdminUserFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'new7d', label: 'New (7d)' },
   { key: 'onboarded', label: 'Onboarded' },
-  { key: 'consented', label: 'AI Consent' },
-  { key: 'admin',     label: 'Admin' },
+  { key: 'not_onboarded', label: 'Stuck' },
+  { key: 'admin', label: 'Admins' },
+  { key: 'blocked', label: 'Blocked' },
 ];
 
-function fmtDate(s: string) { return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }); }
+const PAGE_SIZE = 50;
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return '';
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+const TIER_COLOR: Record<string, string> = { free: '', pro: 'parent', ultimate: 'accent' };
+
+function UserRow({ user, colors, onPress }: { user: AdminUserRow; colors: any; onPress: () => void }) {
+  const tierKey = user.subscriptionTier && TIER_COLOR[user.subscriptionTier];
+  const blocked = !!user.blockedAt;
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={{
+        paddingVertical: 12, paddingHorizontal: 14,
+        borderRadius: RADIUS.md, backgroundColor: colors.card,
+        borderWidth: 1, borderColor: blocked ? colors.danger + '55' : colors.border, marginBottom: 8, gap: 6,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+          {user.fullName || user.email || 'Unnamed'}
+        </Text>
+        {blocked && (
+          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.full, backgroundColor: colors.danger + '22' }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.danger }}>Blocked</Text>
+          </View>
+        )}
+        {user.isAdmin && (
+          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.full, backgroundColor: colors.primaryLight }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.primary }}>Admin</Text>
+          </View>
+        )}
+        {tierKey && (
+          <View style={{
+            paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.full,
+            backgroundColor: tierKey === 'parent' ? colors.tealLight : colors.pinkLight,
+          }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors[tierKey] }}>
+              {user.subscriptionTier}
+            </Text>
+          </View>
+        )}
+        <Ionicons name="ellipsis-horizontal" size={16} color={colors.textTertiary} />
+      </View>
+      {user.email && user.fullName && (
+        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }} numberOfLines={1}>{user.email}</Text>
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <Ionicons
+          name={user.onboardingCompleted ? 'checkmark-circle' : 'time-outline'}
+          size={13}
+          color={user.onboardingCompleted ? colors.parent : colors.kid}
+        />
+        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+          {user.onboardingCompleted ? 'Onboarded' : 'Onboarding incomplete'} · joined {timeAgo(user.createdAt)}
+          {user.familyName ? ` · ${user.familyName}` : ''}
+          {user.memberRole ? ` (${user.memberRole})` : ''}
+          {user.otherFamilyCount > 0 ? ` · +${user.otherFamilyCount} more ${user.otherFamilyCount === 1 ? 'family' : 'families'}` : ''}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 export default function UsersScreen() {
-  const { colors, isDark } = useTheme();
-  const listRef    = useRef<FlashListRef<any>>(null);
-  const loadedOnce = useRef(false);
-  const searchRef  = useRef('');
+  const { colors } = useTheme();
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<AdminUserFilter>('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [users, setUsers]       = useState<UserRow[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [showGoTop, setShowGoTop] = useState(false);
-  const [search, setSearch]     = useState('');
-  const [filter, setFilter]     = useState<Filter>('all');
-  const [sort, setSort]         = useState<Sort>('newest');
-  const [offset, setOffset]     = useState(0);
-  const [hasMore, setHasMore]   = useState(true);
-  // Date range
-  const [fromDate, setFromDate] = useState<Date | null>(null);
-  const [toDate,   setToDate]   = useState<Date | null>(null);
-  const [datePick, setDatePick] = useState<'from' | 'to' | null>(null);
-  const [tempDate, setTempDate] = useState(new Date());
+  const [selected, setSelected] = useState<AdminUserRow | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const load = useCallback(async (reset = false, silent = false) => {
-    const off = reset ? 0 : offset;
-    if (!silent && !loadedOnce.current) setLoading(true);
+  const load = useCallback(async (opts: { reset?: boolean; refresh?: boolean } = {}) => {
+    const { reset = true, refresh = false } = opts;
+    if (refresh) setRefreshing(true);
+    else if (reset) setLoading(true);
     try {
-      const { users: enriched, hasMore: more } = await getAdminUsers({
-        filter, sort, search: searchRef.current, fromDate, toDate, offset: off,
-      });
-      setUsers(reset ? enriched : prev => [...prev, ...enriched]);
-      setOffset(off + 30);
-      setHasMore(more);
+      const rows = await getAdminUsers({ search, filter, offset: 0, limit: PAGE_SIZE });
+      setUsers(rows);
+      setHasMore(rows.length === PAGE_SIZE);
     } catch (e: any) {
-      showAlert('Error', e.message);
+      showAlert("Couldn't load users", e?.message ?? 'Something went wrong.');
     } finally {
       setLoading(false);
-      loadedOnce.current = true;
+      setRefreshing(false);
     }
-  }, [offset, filter, sort, fromDate, toDate]);
+  }, [search, filter]);
 
-  useEffect(() => { load(true); }, [filter, sort, fromDate, toDate]);
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => load(), search ? 300 : 0);
+    return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, filter]);
 
-  useFocusEffect(useCallback(() => {
-    if (loadedOnce.current) load(true, true);
-  }, [load]));
-
-  const onSearch = (text: string) => {
-    setSearch(text);
-    searchRef.current = text;
-    load(true);
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const rows = await getAdminUsers({ search, filter, offset: users.length, limit: PAGE_SIZE });
+      setUsers(prev => [...prev, ...rows]);
+      setHasMore(rows.length === PAGE_SIZE);
+    } catch (e: any) {
+      showAlert("Couldn't load more", e?.message ?? 'Something went wrong.');
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
-  const toggleAdmin = async (user: UserRow) => {
-    const next = !user.is_admin;
+  const closeSheet = () => { if (!actionLoading) setSelected(null); };
+
+  const toggleBlock = () => {
+    if (!selected) return;
+    const willBlock = !selected.blockedAt;
     showAlert(
-      next ? 'Grant Admin?' : 'Revoke Admin?',
-      `${user.full_name ?? 'This user'} will ${next ? 'gain' : 'lose'} admin access.`,
+      willBlock ? `Block ${selected.fullName || selected.email || 'this user'}?` : `Unblock this user?`,
+      willBlock
+        ? 'They will be signed out and unable to sign back in until unblocked.'
+        : 'They will be able to sign in again.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', style: next ? 'default' : 'destructive', onPress: async () => {
-          try {
-            await setUserAdmin(user.id, next);
-            setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_admin: next } : u));
-          } catch (e: any) {
-            showAlert('Error', e.message);
-          }
-        }},
-      ]
+        {
+          text: willBlock ? 'Block' : 'Unblock', style: willBlock ? 'destructive' : 'default',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              await setUserBlocked(selected.authUserId, willBlock);
+              setSelected(null);
+              await load({ refresh: true });
+            } catch (e: any) {
+              showAlert("Couldn't update", e?.message ?? 'Something went wrong.');
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ],
     );
   };
 
-  const card = isDark ? '#1E1A2E' : '#FFFFFF';
-  const sub  = isDark ? '#9A8FC0' : '#8A7FAA';
-  const inp  = isDark ? '#2A2242' : '#F4F0FF';
-
-  const hasDateFilter = !!(fromDate || toDate);
-
-  const renderUser = ({ item: u }: { item: UserRow }) => (
-    <View style={[s.userCard, { backgroundColor: card }]}>
-      <View style={s.userRow}>
-        {u.avatar_url
-          ? <LazyImage uri={u.avatar_url} style={s.avatar} />
-          : <View style={[s.avatar, { backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center' }]}>
-              <Text style={{ fontSize: TYPO.heading, fontWeight: '700', color: colors.primary }}>
-                {(u.full_name ?? '?')[0]?.toUpperCase()}
-              </Text>
-            </View>
-        }
-        <View style={{ flex: 1, gap: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={[s.userName, { color: colors.textPrimary }]} numberOfLines={1}>{u.full_name ?? 'No name'}</Text>
-            {u.is_admin && <View style={[s.adminBadge, { backgroundColor: colors.primary }]}><Text style={s.adminText}>ADMIN</Text></View>}
-          </View>
-          <Text style={[s.userMeta, { color: sub }]}>
-            Joined {fmtDate(u.created_at)} · {u.pet_count} pet{u.pet_count !== 1 ? 's' : ''} · {u.family_count} links
-          </Text>
-          <View style={s.pillRow}>
-            {u.onboarding_completed && <Pill label="Onboarded" color="#16A34A" />}
-            {u.ai_mood_consent      && <Pill label="AI Consent" color="#7C5CBF" />}
-            {!u.onboarding_completed && <Pill label="Pending setup" color="#E8A320" />}
-          </View>
-        </View>
-        <TouchableOpacity onPress={() => toggleAdmin(u)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name={u.is_admin ? 'shield-checkmark' : 'shield-outline'} size={22} color={u.is_admin ? colors.primary : sub} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const confirmDelete = () => {
+    if (!selected) return;
+    showAlert(
+      `Delete ${selected.fullName || selected.email || 'this account'}?`,
+      "This starts a 7-day grace period, same as self-service deletion — the account is restored automatically if they log back in within 7 days, then permanently removed.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              await deleteUserAccount(selected.authUserId);
+              setSelected(null);
+              await load({ refresh: true });
+            } catch (e: any) {
+              showAlert("Couldn't delete", e?.message ?? 'Something went wrong.');
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
-
-      {/* Search bar */}
-      <View style={[s.searchBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={[s.searchInner, { backgroundColor: inp, borderRadius: 12 }]}>
-          <Ionicons name="search-outline" size={16} color={sub} />
+      <View style={{ padding: 16, paddingBottom: 0 }}>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: colors.inputBg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.inputBorder,
+          paddingHorizontal: 12, marginBottom: 12,
+        }}>
+          <Ionicons name="search" size={16} color={colors.textTertiary} />
           <TextInput
-            style={[s.searchInput, { color: colors.textPrimary }]}
-            placeholder="Search by name…" placeholderTextColor={sub}
-            value={search} onChangeText={onSearch}
-            returnKeyType="search"
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search name or email"
+            placeholderTextColor={colors.placeholder}
+            style={{ flex: 1, paddingVertical: 10, fontSize: TYPO.body, color: colors.textPrimary }}
+            autoCapitalize="none"
           />
-          {search ? (
-            <TouchableOpacity onPress={() => onSearch('')}>
-              <Ionicons name="close-circle" size={16} color={sub} />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7}>
+              <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
             </TouchableOpacity>
-          ) : null}
+          )}
         </View>
-        {/* Sort button */}
-        <TouchableOpacity
-          style={[s.sortBtn, { backgroundColor: inp }]}
-          onPress={() => {
-            const next: Sort[] = ['newest', 'oldest', 'az'];
-            setSort(s => next[(next.indexOf(s) + 1) % next.length]);
-          }}
-        >
-          <Ionicons name="swap-vertical" size={16} color={colors.primary} />
-          <Text style={[s.sortText, { color: colors.primary }]}>
-            {sort === 'newest' ? 'Newest' : sort === 'oldest' ? 'Oldest' : 'A–Z'}
-          </Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Filter chips + date range */}
-      <View style={[s.filterBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <FlashList
-          horizontal showsHorizontalScrollIndicator={false}
-          data={FILTERS}
-          keyExtractor={f => f.key}
-          contentContainerStyle={{ paddingHorizontal: 12, gap: 8, paddingVertical: 8 }}
-          renderItem={({ item: f }) => {
-            const active = filter === f.key;
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+          {FILTERS.map(f => {
+            const selectedFilter = filter === f.key;
             return (
               <TouchableOpacity
+                key={f.key}
                 onPress={() => setFilter(f.key)}
-                style={[s.chip, { backgroundColor: active ? colors.primary : inp, borderColor: active ? colors.primary : 'transparent' }]}
+                activeOpacity={0.7}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full,
+                  backgroundColor: selectedFilter ? colors.primary : colors.card,
+                  borderWidth: 1, borderColor: selectedFilter ? colors.primary : colors.border,
+                }}
               >
-                <Text style={[s.chipText, { color: active ? '#fff' : sub }]}>{f.label}</Text>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: selectedFilter ? '#fff' : colors.textSecondary }}>
+                  {f.label}
+                </Text>
               </TouchableOpacity>
             );
-          }}
-          ListFooterComponent={
-            <View style={{ flexDirection: 'row', gap: 8, paddingLeft: 4 }}>
-              <TouchableOpacity
-                onPress={() => { setTempDate(fromDate ?? new Date()); setDatePick('from'); }}
-                style={[s.chip, { backgroundColor: fromDate ? colors.primary + '22' : inp, borderColor: fromDate ? colors.primary : 'transparent' }]}
-              >
-                <Ionicons name="calendar-outline" size={13} color={fromDate ? colors.primary : sub} />
-                <Text style={[s.chipText, { color: fromDate ? colors.primary : sub }]}>
-                  {fromDate ? `From ${fmtDate(fromDate.toISOString())}` : 'From date'}
-                </Text>
-                {fromDate && <TouchableOpacity onPress={() => setFromDate(null)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-                  <Ionicons name="close-circle" size={12} color={colors.primary} />
-                </TouchableOpacity>}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { setTempDate(toDate ?? new Date()); setDatePick('to'); }}
-                style={[s.chip, { backgroundColor: toDate ? colors.primary + '22' : inp, borderColor: toDate ? colors.primary : 'transparent' }]}
-              >
-                <Ionicons name="calendar-outline" size={13} color={toDate ? colors.primary : sub} />
-                <Text style={[s.chipText, { color: toDate ? colors.primary : sub }]}>
-                  {toDate ? `To ${fmtDate(toDate.toISOString())}` : 'To date'}
-                </Text>
-                {toDate && <TouchableOpacity onPress={() => setToDate(null)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-                  <Ionicons name="close-circle" size={12} color={colors.primary} />
-                </TouchableOpacity>}
-              </TouchableOpacity>
-            </View>
-          }
-        />
+          })}
+        </ScrollView>
       </View>
 
-      <FlashList
-        ref={listRef}
-        data={users}
-        keyExtractor={u => u.id}
-        renderItem={renderUser}
-        style={{ flex: 1 }}
-        bounces={false}
-        overScrollMode="never"
-        contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 32 }}
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-        onEndReached={() => hasMore && !loading && load()}
-        onEndReachedThreshold={0.3}
-        onScroll={e => setShowGoTop(e.nativeEvent.contentOffset.y > 300)}
-        scrollEventThrottle={16}
-        ListFooterComponent={loading ? <View style={{ alignItems: 'center', padding: 20 }}><PawBondLoader size={36} isDark={isDark} /></View> : null}
-        ListEmptyComponent={!loading ? (
-          <View style={s.empty}>
-            <Text style={{ fontSize: 36 }}>👤</Text>
-            <Text style={[s.emptyText, { color: sub }]}>No users found</Text>
-            {hasDateFilter && <Text style={[s.emptySub, { color: sub }]}>Try clearing the date filter</Text>}
-          </View>
-        ) : null}
-      />
-
-      {/* Date pickers */}
-      <AppDateTimePicker
-        visible={datePick !== null}
-        value={tempDate}
-        mode="date"
-        maximumDate={new Date()}
-        accent={colors.primary}
-        onCancel={() => setDatePick(null)}
-        onConfirm={(d) => {
-          if (datePick === 'from') setFromDate(d); else setToDate(d);
-          setDatePick(null);
-        }}
-      />
-      {showGoTop && (
-        <TouchableOpacity
-          onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
-          style={{ position: 'absolute', bottom: 24, right: 20, width: 44, height: 44, borderRadius: 22,
-            backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 6 }}>
-          <Ionicons name="chevron-up" size={22} color="#fff" />
-        </TouchableOpacity>
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 60 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load({ refresh: true })} tintColor={colors.primary} />}
+          onScroll={({ nativeEvent }) => {
+            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 200) loadMore();
+          }}
+          scrollEventThrottle={200}
+        >
+          {users.length === 0 ? (
+            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', marginTop: 40 }}>
+              No users match this search.
+            </Text>
+          ) : (
+            <>
+              {users.map(u => <UserRow key={u.authUserId} user={u} colors={colors} onPress={() => setSelected(u)} />)}
+              {loadingMore && <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />}
+            </>
+          )}
+        </ScrollView>
       )}
+
+      <AppBottomSheet
+        visible={!!selected}
+        onClose={closeSheet}
+        title={selected?.fullName || selected?.email || 'User'}
+        subtitle={selected?.email && selected?.fullName ? selected.email : undefined}
+      >
+        {selected && (
+          <View style={{ gap: 10 }}>
+            {selected.isAdmin ? (
+              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 8 }}>
+                This account is a platform admin — block/delete actions are disabled here to prevent locking out an admin by mistake.
+              </Text>
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={toggleBlock}
+                  disabled={actionLoading}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                    paddingVertical: 13, paddingHorizontal: 14, borderRadius: RADIUS.md,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Ionicons
+                    name={selected.blockedAt ? 'lock-open-outline' : 'ban-outline'}
+                    size={18}
+                    color={selected.blockedAt ? colors.parent : colors.kid}
+                  />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                    {selected.blockedAt ? 'Unblock user' : 'Block user'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={confirmDelete}
+                  disabled={actionLoading}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                    paddingVertical: 13, paddingHorizontal: 14, borderRadius: RADIUS.md,
+                    backgroundColor: colors.danger + '15',
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.danger }}>Delete account</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {actionLoading && <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 4 }} />}
+          </View>
+        )}
+      </AppBottomSheet>
     </SafeAreaView>
   );
 }
-
-function Pill({ label, color }: { label: string; color: string }) {
-  return (
-    <View style={[s.pill, { backgroundColor: color + '18' }]}>
-      <Text style={[s.pillText, { color }]}>{label}</Text>
-    </View>
-  );
-}
-
-const s = StyleSheet.create({
-  searchBar:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  searchInner: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8 },
-  searchInput: { flex: 1, fontSize: TYPO.body },
-  sortBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  sortText:    { fontSize: TYPO.body, fontWeight: '700' },
-  filterBar:   { borderBottomWidth: StyleSheet.hairlineWidth },
-  chip:        { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
-  chipText:    { fontSize: TYPO.body, fontWeight: '600' },
-  userCard:    { borderRadius: 16, padding: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 1 }, shadowRadius: 5, elevation: 2 },
-  userRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar:      { width: 48, height: 48, borderRadius: 24 },
-  userName:    { fontSize: TYPO.body, fontWeight: '700', flex: 1 },
-  userMeta:    { fontSize: TYPO.body },
-  pillRow:     { flexDirection: 'row', gap: 5, marginTop: 4, flexWrap: 'wrap' },
-  pill:        { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  pillText:    { fontSize: TYPO.body, fontWeight: '700' },
-  adminBadge:  { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  adminText:   { fontSize: TYPO.body, fontWeight: '800', color: '#fff', letterSpacing: 0.4 },
-  empty:       { alignItems: 'center', marginTop: 60, gap: 8 },
-  emptyText:   { fontSize: TYPO.body, fontWeight: '600' },
-  emptySub:    { fontSize: TYPO.body },
-});
-
-const dp = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  sheet:   { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: Platform.OS === 'ios' ? 34 : 16 },
-  handle:  { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
-  header:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  title:   { fontSize: TYPO.subheading, fontWeight: '700' },
-  cancel:  { fontSize: TYPO.body },
-  done:    { fontSize: TYPO.body, fontWeight: '700' },
-});

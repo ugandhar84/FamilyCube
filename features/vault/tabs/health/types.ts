@@ -1,5 +1,4 @@
 import { todayLocal } from '@/lib/dates';
-import { BRAND } from '../shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,10 +51,16 @@ export interface Vaccine {
 export const FREQ_LABELS: Record<string, string> = {
   daily: 'Daily', twice_daily: '2× Daily', weekly: 'Weekly', as_needed: 'As Needed',
 };
-export const CAT_COLORS: Record<string, string> = {
-  prescription: BRAND.purple, otc: BRAND.teal, vitamin: BRAND.emerald,
-  supplement: BRAND.amber, other: BRAND.blue,
-};
+// Was a static object built from the hardcoded PawBond-era BRAND palette
+// (BRAND.purple/teal/emerald/amber/blue) — a module-level const can't read
+// useTheme(), so callers each need `colors` in scope to build the real,
+// theme-aware mapping.
+export function getCatColors(colors: any): Record<string, string> {
+  return {
+    prescription: colors.accent, otc: colors.teal, vitamin: colors.success,
+    supplement: colors.amber, other: colors.info,
+  };
+}
 
 export const today = () => todayLocal();
 
@@ -164,7 +169,7 @@ export const aStyles = StyleSheet.create({
   sectionLabel:  { fontSize: 11, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
   inp:           { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
                    fontSize: 14, fontWeight: '600' },
-  chipSmall:     { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
+  chipSmall:     { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 8, paddingVertical: 4 },
   suggPill:      { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
                    paddingHorizontal: 12, paddingVertical: 6 },
 
@@ -185,8 +190,10 @@ export const aStyles = StyleSheet.create({
   cancelBtn:     { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
   saveBtn:       { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
 
-  // Validation error text
-  errText:       { fontSize: 11, fontWeight: '700', color: BRAND.rose, marginTop: 4, marginLeft: 2 },
+  // Validation error text — no `color` here (was BRAND.rose, a module-
+  // level const with no useTheme() access); callers apply colors.danger
+  // inline via a style array instead.
+  errText:       { fontSize: 11, fontWeight: '700', marginTop: 4, marginLeft: 2 },
 
   // Kept for legacy (filter toggles in sheet use hf.toggle)
   memberChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,

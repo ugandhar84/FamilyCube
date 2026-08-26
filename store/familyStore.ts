@@ -131,6 +131,12 @@ export interface FamilyMember {
   // date before they've even seen the app). Optional/nullable indefinitely;
   // skipping it is a real, supported choice, not a temporary gap.
   dateOfBirth?: string;
+  // Watermark for the Kid Hub's full-screen celebration (approved chore/
+  // quest, cheer received, permission approved) — only an item newer than
+  // this plays, so relaunching the app or re-entering this profile never
+  // replays a celebration for something already seen. Bumped to now()
+  // whenever a celebration actually plays — see KidNeedsYouSection.tsx.
+  lastCelebrationSeenAt?: string;
   // Hub's quick-access pill row (Radar/School/Health/Ledger/...), in the
   // order this member wants them. Only the ids the member chose to
   // show/pin are listed — anything not in here still falls back to
@@ -277,6 +283,7 @@ function fromRow(row: any): FamilyMember {
     goalRewardId:       row.goal_reward_id ?? undefined,
     email:              row.email ?? undefined,
     dateOfBirth:        row.date_of_birth ?? undefined,
+    lastCelebrationSeenAt: row.last_celebration_seen_at ?? undefined,
     pillOrder:          row.pill_order ?? undefined,
     storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
     authUserId:         row.auth_user_id ?? undefined,
@@ -318,6 +325,7 @@ function toRow(m: FamilyMember) {
     // linked_parent_id, GP dispatch prefs, etc.) — the root cause behind a
     // whole string of "X isn't saving" reports this session.
     pin:   m.pin ?? null,
+    last_celebration_seen_at: m.lastCelebrationSeenAt ?? null,
     has_car: m.hasCar ?? false,
     ride_earnings_per_run: m.rideEarningsPerRun ?? 50,
     grocery_earnings_per_run: m.groceryEarningsPerRun ?? 30,

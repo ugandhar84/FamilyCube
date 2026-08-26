@@ -27,13 +27,15 @@ const f = StyleSheet.create({
 // to kid/teen roles + self only; the propose_kid_chore RPC also rejects a
 // parent/senior target server-side.
 export function KidChoreProposalModal({ visible, onClose, active, members, familyId }: {
-  visible: boolean; onClose: () => void; active: FamilyMember; members: FamilyMember[]; familyId: string;
+  visible: boolean; onClose: () => void; active: FamilyMember | undefined | null; members: FamilyMember[]; familyId: string;
 }) {
   const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
-  const [forId, setForId] = useState(active.id);
+  const [forId, setForId] = useState(active?.id ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!active) return null;
 
   const pickableMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const accent = BRAND.purple;

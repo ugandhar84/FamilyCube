@@ -85,7 +85,7 @@ export function FamilyRadarSection({ members, colors, isDark }: {
       title="Family Radar"
       accent={colors.teal}
       badge={liveCount} badgeLabel="Live" badgeColor={colors.teal}
-      seeAll={() => router.push({ pathname: '/(tabs)/profile', params: { openFeature: 'gps' } } as any)}
+      seeAll={() => router.push('/(tabs)/gps' as any)}
       seeAllLabel="Open Map"
       collapsible defaultExpanded={false}
       colors={colors} isDark={isDark}>

@@ -27,7 +27,7 @@ export const hf = StyleSheet.create({
   sheetHeaderBtn: { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7 },
 
   // Filter sheet sections
-  fsSection:      { gap: 10 },
+  fsSection:      { gap: 10, marginBottom: 20 },
   fsSectionTitle: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
   fsPill:         { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7 },
   fsMemberChip:   { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5,

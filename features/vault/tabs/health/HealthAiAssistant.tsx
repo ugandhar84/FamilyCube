@@ -1,7 +1,6 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Animated } from 'react-native';
 import { Check, Stethoscope, Send, MessageSquare, ScanLine, Syringe, X } from 'lucide-react-native';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
-import { BRAND } from '../shared';
 import { h } from './styles';
 
 const QUICK_PROMPTS = [
@@ -52,19 +51,19 @@ export default function HealthAiAssistant({
           >
             <View style={{
               width: 24, height: 24, borderRadius: 8,
-              backgroundColor: colors.primary + '18',
+              backgroundColor: colors.accent + '18',
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Stethoscope size={14} color={colors.primary} />
+              <Stethoscope size={14} color={colors.accent} />
             </View>
             {!aiOpen && (
               <>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.primary }}>CubeAI Health</Text>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.accent }}>CubeAI Health</Text>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success }} />
-                {(aiLoading || scanning) && <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 2 }} />}
+                {(aiLoading || scanning) && <ActivityIndicator size="small" color={colors.accent} style={{ marginLeft: 2 }} />}
               </>
             )}
-            {aiOpen && <X size={13} color={colors.primary} />}
+            {aiOpen && <X size={13} color={colors.accent} />}
           </TouchableOpacity>
 
           {/* ── Tool row — all three inline in one row, sliding in from the pill ── */}
@@ -82,13 +81,13 @@ export default function HealthAiAssistant({
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 5,
                   paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
-                  backgroundColor: scanning ? colors.primary : colors.primary + '18',
-                  borderWidth: 1, borderColor: colors.primary + (scanning ? '' : '40'),
+                  backgroundColor: scanning ? colors.accent : colors.accent + '18',
+                  borderWidth: 1, borderColor: colors.accent + (scanning ? '' : '40'),
                 }}>
                 {scanning
                   ? <ActivityIndicator size="small" color={colors.textInverse} />
-                  : <ScanLine size={13} color={colors.primary} />}
-                <Text style={{ fontSize: 11, fontWeight: '800', color: scanning ? colors.textInverse : colors.primary }}>Scan Rx</Text>
+                  : <ScanLine size={13} color={colors.accent} />}
+                <Text style={{ fontSize: 11, fontWeight: '800', color: scanning ? colors.textInverse : colors.accent }}>Scan Rx</Text>
               </TouchableOpacity>
 
               {/* Scan Vaccine */}
@@ -99,11 +98,11 @@ export default function HealthAiAssistant({
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 5,
                   paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
-                  backgroundColor: BRAND.teal + '18',
-                  borderWidth: 1, borderColor: BRAND.teal + '40',
+                  backgroundColor: colors.teal + '18',
+                  borderWidth: 1, borderColor: colors.teal + '40',
                 }}>
-                <Syringe size={13} color={BRAND.teal} />
-                <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.teal }}>Scan Vaccine</Text>
+                <Syringe size={13} color={colors.teal} />
+                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.teal }}>Scan Vaccine</Text>
               </TouchableOpacity>
 
               {/* Ask AI */}
@@ -113,11 +112,11 @@ export default function HealthAiAssistant({
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 5,
                   paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
-                  backgroundColor: colors.primary + '18',
-                  borderWidth: 1, borderColor: colors.primary + '40',
+                  backgroundColor: colors.accent + '18',
+                  borderWidth: 1, borderColor: colors.accent + '40',
                 }}>
-                <MessageSquare size={13} color={colors.primary} />
-                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>Ask AI</Text>
+                <MessageSquare size={13} color={colors.accent} />
+                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent }}>Ask AI</Text>
               </TouchableOpacity>
             </Animated.View>
           )}
@@ -133,10 +132,10 @@ export default function HealthAiAssistant({
                 <TouchableOpacity key={p} onPress={() => askAI(p)}
                   style={{
                     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
-                    backgroundColor: colors.primary + '14',
-                    borderWidth: 1, borderColor: colors.primary + '35',
+                    backgroundColor: colors.accent + '14',
+                    borderWidth: 1, borderColor: colors.accent + '35',
                   }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>{p}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent }}>{p}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -160,7 +159,7 @@ export default function HealthAiAssistant({
               onSubmitEditing={() => askAI()}
             />
             <TouchableOpacity onPress={() => askAI()} disabled={aiLoading || !aiQuery.trim()}
-              style={[h.aiSendBtn, { backgroundColor: colors.primary, opacity: aiQuery.trim() ? 1 : 0.35 }]}>
+              style={[h.aiSendBtn, { backgroundColor: colors.accent, opacity: aiQuery.trim() ? 1 : 0.35 }]}>
               {aiLoading ? <ActivityIndicator size="small" color={colors.textInverse} /> : <Send size={16} color={colors.textInverse} />}
             </TouchableOpacity>
           </View>
@@ -169,14 +168,14 @@ export default function HealthAiAssistant({
           {(aiLoading || aiResult) ? (
             <View style={{
               borderRadius: 14, borderWidth: 1,
-              borderColor: colors.primary + '35',
-              backgroundColor: colors.primary + '12',
+              borderColor: colors.accent + '35',
+              backgroundColor: colors.accent + '12',
               padding: 14,
             }}>
               {aiLoading
                 ? <View style={{ alignItems: 'center', paddingVertical: 8, gap: 8 }}>
-                    <ActivityIndicator color={colors.primary} />
-                    <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>Consulting Health AI…</Text>
+                    <ActivityIndicator color={colors.accent} />
+                    <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '700' }}>Consulting Health AI…</Text>
                   </View>
                 : <>
                     <TouchableOpacity
@@ -187,19 +186,19 @@ export default function HealthAiAssistant({
                         alignItems: 'center', justifyContent: 'center',
                         backgroundColor: colors.card,
                       }}>
-                      <X size={13} color={colors.primary} />
+                      <X size={13} color={colors.accent} />
                     </TouchableOpacity>
                     <View style={{ paddingRight: 24 }}>
                       <AskCubeMessageText content={aiResult} color={colors.textPrimary}
-                        urgentColor={BRAND.rose} soonColor={BRAND.amber} />
+                        urgentColor={colors.danger} soonColor={colors.amber} />
                     </View>
                     <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
                       {aiShared
-                        ? <View style={[h.sharedBtn, { backgroundColor: BRAND.emerald }]}>
+                        ? <View style={[h.sharedBtn, { backgroundColor: colors.success }]}>
                             <Check size={13} color={colors.textInverse} />
                             <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Posted to Family Chat</Text>
                           </View>
-                        : <TouchableOpacity onPress={shareAiToChat} style={[h.sharedBtn, { backgroundColor: colors.primary }]}>
+                        : <TouchableOpacity onPress={shareAiToChat} style={[h.sharedBtn, { backgroundColor: colors.accent }]}>
                             <MessageSquare size={13} color={colors.textInverse} />
                             <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Share with Family</Text>
                           </TouchableOpacity>}

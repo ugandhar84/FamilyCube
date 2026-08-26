@@ -38,32 +38,62 @@ serve(async (req) => {
       return json({ error: 'Unauthorized' }, 401, corsHeaders);
     }
 
-    // Check if user is admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single();
+    // Check if user is a platform admin (app_admins allowlist, seeded
+    // manually — see supabase/migrations/20260925090000_create_admin_console.sql).
+    // Not profiles.is_admin — that column belongs to the unrelated, removed
+    // PawBond template admin section.
+    const { data: adminRow } = await supabase
+      .from('app_admins')
+      .select('auth_user_id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
 
-    if (!profile?.is_admin) {
+    if (!adminRow) {
       console.error('[send-broadcast] ❌ User is not admin');
       return json({ error: 'Only admins can send broadcasts' }, 403, corsHeaders);
     }
 
-    const { title, body } = await req.json();
+    const { title, body, audience } = await req.json();
 
     if (!title || !body) {
       return json({ error: 'title and body required' }, 400, corsHeaders);
     }
 
-    console.log('[send-broadcast] 📝 Message:', { title, body });
+    // audience: 'all' (default) or 'parents' — parents-only is for
+    // paywall/upsell nudges that shouldn't reach a kid's device.
+    const targetParentsOnly = audience === 'parents';
+    console.log('[send-broadcast] 📝 Message:', { title, body, audience: audience ?? 'all' });
 
-    // Get all users with push tokens
-    console.log('[send-broadcast] 👥 Fetching all push tokens...');
-    const { data: tokens } = await supabase
-      .from('push_tokens')
-      .select('token')
-      .like('token', 'ExponentPushToken%');
+    let tokens: { token: string }[] | null;
+    if (targetParentsOnly) {
+      // Resolve parent auth_user_ids first, then their push tokens — two
+      // queries (push_tokens.user_id has no FK to members, only to
+      // profiles) rather than a cross-schema join.
+      console.log('[send-broadcast] 👥 Fetching parent push tokens...');
+      const { data: parentMembers } = await supabase
+        .from('members')
+        .select('auth_user_id')
+        .eq('role', 'parent')
+        .not('auth_user_id', 'is', null);
+      const parentAuthIds = [...new Set((parentMembers ?? []).map((m: any) => m.auth_user_id).filter(Boolean))];
+      if (parentAuthIds.length === 0) {
+        tokens = [];
+      } else {
+        const { data } = await supabase
+          .from('push_tokens')
+          .select('token')
+          .in('user_id', parentAuthIds)
+          .like('token', 'ExponentPushToken%');
+        tokens = data;
+      }
+    } else {
+      console.log('[send-broadcast] 👥 Fetching all push tokens...');
+      const { data } = await supabase
+        .from('push_tokens')
+        .select('token')
+        .like('token', 'ExponentPushToken%');
+      tokens = data;
+    }
 
     console.log('[send-broadcast] ✅ Found', tokens?.length ?? 0, 'recipients');
 
@@ -78,7 +108,7 @@ serve(async (req) => {
       sound: 'default',
       title,
       body,
-      data: { type: 'broadcast' },
+      data: { type: 'broadcast', audience: targetParentsOnly ? 'parents' : 'all' },
       priority: 'high',
       channelId: 'default',
     }));
@@ -113,6 +143,7 @@ serve(async (req) => {
       title,
       body,
       recipient_count: tokens.length,
+      audience: targetParentsOnly ? 'parents' : 'all',
       sent_at: new Date().toISOString(),
     });
 

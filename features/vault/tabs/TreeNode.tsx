@@ -1,6 +1,5 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { BRAND } from './shared';
 import type { FamilyMember } from '@/store/familyStore';
 
 const I = {
@@ -12,8 +11,8 @@ const I = {
 export const NODE_W = 76;
 export const NODE_GAP = 14;
 
-export const roleColor = (role: string) =>
-  role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : role === 'teen' ? BRAND.amber : BRAND.emerald;
+export const roleColor = (role: string, colors: any) =>
+  role === 'parent' ? colors.accent : role === 'senior' ? colors.info : role === 'teen' ? colors.amber : colors.success;
 
 // familyStore's fromRow can produce m.emoji === '' (DB stores avatar as an
 // empty string rather than null for members who never picked one) — `??`
@@ -25,7 +24,7 @@ export function TreeNode({ m, isActive, isParentViewer, colors, isDark, onLongPr
   m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean;
   onLongPress: () => void; onPinPress: () => void;
 }) {
-  const rc = roleColor(m.role);
+  const rc = roleColor(m.role, colors);
   const hasPin = !!m.pin;
   return (
     <TouchableOpacity activeOpacity={0.85} onLongPress={onLongPress} delayLongPress={500}
@@ -46,8 +45,8 @@ export function TreeNode({ m, isActive, isParentViewer, colors, isDark, onLongPr
         {m.name.split(' ')[0]}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
-        {hasPin ? <I.Lock c={BRAND.emerald} /> : null}
-        {m.role === 'teen' && m.hasCar ? <I.Car c={BRAND.amber} /> : null}
+        {hasPin ? <I.Lock c={colors.success} /> : null}
+        {m.role === 'teen' && m.hasCar ? <I.Car c={colors.amber} /> : null}
         {(isParentViewer || isActive) && (
           <TouchableOpacity onPress={onPinPress} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
             <I.Key c={colors.textTertiary} />

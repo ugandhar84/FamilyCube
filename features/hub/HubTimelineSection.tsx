@@ -6,6 +6,7 @@ import { TYPO } from '@/constants/theme';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
 import { isEventSensitive } from '@/store/eventStore';
+import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -27,6 +28,16 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
   const allNames = members.map(m => m.name);
   const today = localDateStr(new Date());
   const now = new Date();
+  // Same assignee-double-booked signal ParentView/TodayView show a
+  // parent — computed over ALL events (not just belongsToMe-filtered
+  // ones below), since the conflict is about the DRIVER/helper's own
+  // schedule, which may span an event that doesn't itself belong to this
+  // viewer. Was entirely missing here — TimelineCard already supported a
+  // conflictReason prop (TodayView passes it), but this kid/teen/senior
+  // timeline never computed or passed one at all (live direction: kids
+  // whose ride is conflicted should see the same badge on their own
+  // Today's Timeline card).
+  const conflictReasons = useMemo(() => detectAssigneeConflicts(events), [events]);
 
   const belongsToMe = (e: FamilyEvent) => {
     const hasAnyAssignee = !!e.memberId || !!e.memberIds?.length;
@@ -120,6 +131,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
               colors={colors} isDark={isDark}
               updateEvent={updateEvent} activeName={active.name}
               isFirst={idx === 0} isLast={idx === upcoming.length - 1}
+              conflictReason={conflictReasons.get(ev.id)}
             />
           ))}
 

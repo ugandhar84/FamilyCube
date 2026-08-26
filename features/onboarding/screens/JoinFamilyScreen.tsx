@@ -4,23 +4,29 @@
  */
 import { useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Image,
   ScrollView, Alert, ActivityIndicator, Dimensions, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadMemberAvatar } from '@/lib/supabase';
 import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole } from '@/store/familyStore';
 import { registerForPushNotifications } from '@/lib/notifications';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
+import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
+import { showAlert } from '@/components/AppAlert';
+import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
 const AVATARS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
-const COLORS  = ['#9261C7','#10B981','#F59E0B','#EF4444','#3B82F6','#EC4899','#14B8A6','#8B5CF6'];
+// Member's own profile-color choice — a genuine swatch picker, not app
+// chrome (CLAUDE.md's explicit exception). Built from useTheme() inside the
+// component below so it leads with the actual current brand primary.
 const ROLES   = [
   { value: 'kid',         label: 'Kid',          emoji: '🧒', desc: 'Complete quests & earn coins' },
   { value: 'parent',      label: 'Parent',        emoji: '👩', desc: 'Manage quests & approve tasks' },
@@ -30,28 +36,28 @@ const ROLES   = [
 type Step = 'code' | 'profile' | 'pin' | 'confirm';
 
 // ─── Invite-code step icon — an envelope holding a key, since this step is
-// literally "someone handed you a key to their family." Teal (CONNECT).
-function InviteCodeSvg() {
+// literally "someone handed you a key to their family." Sage (CONNECT).
+function InviteCodeSvg({ colors }: { colors: any }) {
   return (
     <Svg width="88" height="88" viewBox="0 0 88 88">
-      <Circle cx="44" cy="44" r="44" fill="#D6F5F1" />
-      <Path d="M20 32 h48 a4 4 0 0 1 4 4 v20 a4 4 0 0 1 -4 4 h-48 a4 4 0 0 1 -4 -4 v-20 a4 4 0 0 1 4 -4 Z" fill="#00BBA4" />
-      <Path d="M18 34 L44 52 L70 34" stroke="#D6F5F1" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <Circle cx="44" cy="26" r="8" fill="#F5A623" />
-      <Rect x="42" y="26" width="10" height="4" rx="2" fill="#F5A623" />
-      <Circle cx="44" cy="26" r="3.4" fill="#D6F5F1" />
+      <Circle cx="44" cy="44" r="44" fill={colors.tealLight} />
+      <Path d="M20 32 h48 a4 4 0 0 1 4 4 v20 a4 4 0 0 1 -4 4 h-48 a4 4 0 0 1 -4 -4 v-20 a4 4 0 0 1 4 -4 Z" fill={colors.teal} />
+      <Path d="M18 34 L44 52 L70 34" stroke={colors.tealLight} strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="44" cy="26" r="8" fill={colors.amber} />
+      <Rect x="42" y="26" width="10" height="4" rx="2" fill={colors.amber} />
+      <Circle cx="44" cy="26" r="3.4" fill={colors.tealLight} />
     </Svg>
   );
 }
 
-// ─── PIN step icon — a padlock in brand purple, matched to the app's own
-// PIN-entry treatment (components/PinEntryModal.tsx) rather than a generic lock.
-function PinLockSvg() {
+// ─── PIN step icon — a padlock in the brand primary color, matched to the
+// app's own PIN-entry treatment (components/PinEntryModal.tsx).
+function PinLockSvg({ colors }: { colors: any }) {
   return (
     <Svg width="88" height="88" viewBox="0 0 88 88">
-      <Circle cx="44" cy="44" r="44" fill="#F0E8FA" />
-      <Path d="M31 40 V32 a13 13 0 0 1 26 0 v8" stroke="#9261C7" strokeWidth="5" fill="none" strokeLinecap="round" />
-      <Rect x="21" y="40" width="46" height="30" rx="8" fill="#9261C7" />
+      <Circle cx="44" cy="44" r="44" fill={colors.primaryLight} />
+      <Path d="M31 40 V32 a13 13 0 0 1 26 0 v8" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" />
+      <Rect x="21" y="40" width="46" height="30" rx="8" fill={colors.primary} />
       <Circle cx="38" cy="55" r="3.4" fill="#fff" />
       <Circle cx="50" cy="55" r="3.4" fill="#fff" opacity="0.5" />
       <Circle cx="44" cy="55" r="3.4" fill="#fff" opacity="0.8" />
@@ -60,25 +66,27 @@ function PinLockSvg() {
 }
 
 // ─── Profile-step avatar preview — reflects the picker's live avatar/color,
-// not a static icon.
-function ProfileSvg({ avatar, color }: { avatar: string; color: string }) {
+// not a static icon. Shows the picked photo in place of the emoji when set.
+function ProfileSvg({ avatar, color, photoUri, onPress }: { avatar: string; color: string; photoUri?: string | null; onPress?: () => void }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 90, height: 90,
-      borderRadius: 45, backgroundColor: color + '22', borderWidth: 3, borderColor: color }}>
-      <Text style={{ fontSize: 44 }}>{avatar}</Text>
-    </View>
+    <TouchableOpacity disabled={!onPress} onPress={onPress} style={{ alignItems: 'center', justifyContent: 'center', width: 90, height: 90,
+      borderRadius: 45, backgroundColor: color + '22', borderWidth: 3, borderColor: color, overflow: 'hidden' }}>
+      {photoUri
+        ? <Image source={{ uri: photoUri }} style={{ width: 90, height: 90 }} />
+        : <Text style={{ fontSize: 44 }}>{avatar}</Text>}
+    </TouchableOpacity>
   );
 }
 
 // ─── Step indicator ────────────────────────────────────────────────────────────
-function StepDots({ step }: { step: Step }) {
+function StepDots({ step, colors }: { step: Step; colors: any }) {
   const steps: Step[] = ['code', 'profile', 'pin'];
   return (
     <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', marginBottom: 28 }}>
       {steps.map((s, i) => (
         <View key={s} style={{
           width: s === step ? 24 : 8, height: 8, borderRadius: 4,
-          backgroundColor: s === step ? '#9261C7' : steps.indexOf(step) > i ? '#C4A0EC' : '#E0E0E0',
+          backgroundColor: s === step ? colors.primary : steps.indexOf(step) > i ? colors.primaryLight : colors.border,
         }} />
       ))}
     </View>
@@ -87,11 +95,14 @@ function StepDots({ step }: { step: Step }) {
 
 export default function JoinFamilyScreen() {
   const { colors, isDark } = useTheme();
+  const COLORS = [colors.primary, colors.teal, colors.amber, colors.pink, colors.danger];
   const [step, setStep]         = useState<Step>('code');
   const [code, setCode]         = useState('');
   const [name, setName]         = useState('');
   const [avatar, setAvatar]     = useState('🧒');
-  const [color, setColor]       = useState('#9261C7');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
+  const [color, setColor]       = useState(colors.primary);
   const [role, setRole]         = useState<string>('kid');
   // Purely descriptive (shown on the family tree/roster card, same as
   // RosterTab's own relationship editor) — never a permission gate, role
@@ -101,6 +112,7 @@ export default function JoinFamilyScreen() {
   const [relationship, setRelationship] = useState<string | undefined>(undefined);
   const [pin, setPin]           = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
+  const [pinStage, setPinStage] = useState<'create' | 'confirm'>('create');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
   const [familyName, setFamilyName] = useState('');
@@ -132,6 +144,7 @@ export default function JoinFamilyScreen() {
   const handleProfileNext = () => {
     if (!name.trim()) { setError('Enter your name'); return; }
     setError('');
+    setPinStage('create');
     setStep('pin');
   };
 
@@ -188,16 +201,30 @@ export default function JoinFamilyScreen() {
       // Save PIN and relationship — join-family itself doesn't accept
       // relationship, same pattern PIN already used: set locally right
       // after the row exists rather than threading one more field through
-      // the edge function. Photo + DOB are intentionally NOT collected
-      // here — see CompleteProfileScreen, shown once after this flow ends.
-      await supabase.from('members').update({ pin, relationship: relationship ?? null }).eq('id', data.memberId);
+      // the edge function. If a photo was picked, upload it now (memberId/
+      // familyId only exist after join-family returns) and let it win over
+      // the emoji the edge function already stored.
+      let avatarValue = data.member.avatar as string;
+      if (photoUri) {
+        try {
+          avatarValue = await uploadMemberAvatar(data.familyId, data.member.id, photoUri);
+        } catch (e: any) {
+          console.warn('[JoinFamilyScreen] avatar upload failed, keeping emoji', e?.message);
+        }
+      }
+      await supabase.from('members').update({
+        pin, relationship: relationship ?? null,
+        ...(photoUri && avatarValue !== data.member.avatar ? { avatar: avatarValue } : {}),
+      }).eq('id', data.memberId);
 
       // Load member into familyStore and set active
+      const isPhotoUrl = avatarValue.startsWith('http');
       const member = {
         id:         data.member.id,
         name:       data.member.name,
         role:       data.member.role as any,
-        avatar:     data.member.avatar,
+        emoji:      isPhotoUrl ? undefined : avatarValue,
+        avatarUrl:  isPhotoUrl ? avatarValue : undefined,
         color:      data.member.color,
         coins:           data.member.coins,
         mainCoins:       data.member.coins,
@@ -226,6 +253,32 @@ export default function JoinFamilyScreen() {
     }
   };
 
+  // Close the picker sheet fully before launching the native camera/library
+  // UI — same deliberate ordering as ProfileSettingsScreen.tsx's own
+  // pickPhoto (stacking a second native picker on a still-visible RN
+  // <Modal> sheet is a known iOS freeze/deadlock).
+  const pickPhoto = async (fromCamera: boolean) => {
+    setShowPhotoPicker(false);
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      showAlert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to set a profile photo.`);
+      return;
+    }
+    try {
+      await showPickerLoading(fromCamera ? 'Waiting for camera…' : 'Opening library…');
+      const result = fromCamera
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      hidePickerLoading();
+      if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
+    } catch (e: any) {
+      hidePickerLoading();
+      showAlert(`Could not open ${fromCamera ? 'camera' : 'library'}`, e?.message);
+    }
+  };
+
   const bg = colors.background;
   const card = colors.card ?? colors.surface;
 
@@ -242,12 +295,12 @@ export default function JoinFamilyScreen() {
               </TouchableOpacity>
             )}
 
-            {step !== 'confirm' && <StepDots step={step} />}
+            {step !== 'confirm' && <StepDots step={step} colors={colors} />}
 
             {/* ── STEP 1: Enter Code ─────────────────────────────────────────── */}
             {step === 'code' && (
               <View style={s.center}>
-                <InviteCodeSvg />
+                <InviteCodeSvg colors={colors} />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Enter Invite Code</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Ask a parent for the invite code shown in their Family Settings.
@@ -278,8 +331,13 @@ export default function JoinFamilyScreen() {
             {step === 'profile' && (
               <View>
                 <View style={s.center}>
-                  <ProfileSvg avatar={avatar} color={color} />
+                  <ProfileSvg avatar={avatar} color={color} photoUri={photoUri} onPress={() => setShowPhotoPicker(true)} />
                   <Text style={[s.title, { color: colors.textPrimary }]}>Create Your Profile</Text>
+                  <TouchableOpacity onPress={() => setShowPhotoPicker(true)}>
+                    <Text style={{ color: colors.primary, fontWeight: '700', fontSize: TYPO.caption, marginTop: -4, marginBottom: 8 }}>
+                      📷 Use a photo instead
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
                 {/* Name */}
@@ -299,7 +357,7 @@ export default function JoinFamilyScreen() {
                   {ROLES.map(r => (
                     <TouchableOpacity
                       key={r.value}
-                      style={[s.roleCard, { backgroundColor: card, borderColor: role === r.value ? '#9261C7' : colors.border ?? '#E0E0E0', borderWidth: role === r.value ? 2 : 1 }]}
+                      style={[s.roleCard, { backgroundColor: card, borderColor: role === r.value ? colors.primary : colors.border ?? '#E0E0E0', borderWidth: role === r.value ? 2 : 1 }]}
                       onPress={() => { setRole(r.value); setRelationship(undefined); }}
                     >
                       <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
@@ -327,8 +385,8 @@ export default function JoinFamilyScreen() {
                           return (
                             <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
                               style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1.5,
-                                backgroundColor: picked ? '#9261C7' : card,
-                                borderColor: picked ? '#9261C7' : colors.border ?? '#E0E0E0' }}>
+                                backgroundColor: picked ? colors.primary : card,
+                                borderColor: picked ? colors.primary : colors.border ?? '#E0E0E0' }}>
                               <Text style={{ fontSize: 13, fontWeight: '700', color: picked ? '#fff' : colors.textSecondary }}>{opt}</Text>
                             </TouchableOpacity>
                           );
@@ -365,7 +423,7 @@ export default function JoinFamilyScreen() {
                 </View>
 
                 {error ? <Text style={s.error}>{error}</Text> : null}
-                <TouchableOpacity style={[s.btn, { backgroundColor: '#9261C7' }]} onPress={handleProfileNext}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary }]} onPress={handleProfileNext}>
                   <Text style={s.btnText}>Next — Set Your PIN</Text>
                 </TouchableOpacity>
               </View>
@@ -374,28 +432,56 @@ export default function JoinFamilyScreen() {
             {/* ── STEP 3: Set PIN ────────────────────────────────────────────── */}
             {step === 'pin' && (
               <View style={s.center}>
-                <PinLockSvg />
+                <PinLockSvg colors={colors} />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Set Your PIN</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Your 4-digit PIN protects your profile when switching members on a shared device.
                 </Text>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Create PIN</Text>
-                <PinDots value={pin} />
-                <PinPad value={pin} onChange={setPin} />
-
-                {pin.length === 4 && (
+                {pinStage === 'create' ? (
                   <>
-                    <Text style={[s.label, { color: colors.textSecondary, marginTop: 20 }]}>Confirm PIN</Text>
-                    <PinDots value={pinConfirm} />
-                    <PinPad value={pinConfirm} onChange={setPinConfirm} />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Create PIN</Text>
+                    <PinDots value={pin} colors={colors} />
+                    <PinPad
+                      value={pin}
+                      colors={colors}
+                      onChange={v => {
+                        setPin(v);
+                        if (v.length === 4) setPinStage('confirm');
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Confirm PIN</Text>
+                    <PinDots value={pinConfirm} colors={colors} />
+                    <PinPad
+                      value={pinConfirm}
+                      colors={colors}
+                      onChange={v => {
+                        setPinConfirm(v);
+                        if (v.length === 4) {
+                          if (v !== pin) {
+                            setError('PINs do not match — try again');
+                            setPin('');
+                            setPinConfirm('');
+                            setPinStage('create');
+                          } else {
+                            setError('');
+                          }
+                        }
+                      }}
+                    />
+                    <TouchableOpacity onPress={() => { setPinConfirm(''); setPinStage('create'); }}>
+                      <Text style={[s.backText, { color: colors.textSecondary, marginTop: 12 }]}>← Re-enter PIN</Text>
+                    </TouchableOpacity>
                   </>
                 )}
 
                 {error ? <Text style={s.error}>{error}</Text> : null}
 
-                {pin.length === 4 && pinConfirm.length === 4 && (
+                {pin.length === 4 && pinConfirm.length === 4 && pin === pinConfirm && (
                   <TouchableOpacity
-                    style={[s.btn, { backgroundColor: '#9261C7', marginTop: 20 }]}
+                    style={[s.btn, { backgroundColor: colors.primary, marginTop: 20 }]}
                     onPress={handleJoin}
                     disabled={loading}
                   >
@@ -412,11 +498,11 @@ export default function JoinFamilyScreen() {
                 <Text style={{ fontSize: 36, marginTop: -8, marginBottom: 4 }}>🎉</Text>
                 <Text style={[s.title, { color: colors.textPrimary }]}>You're in!</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
-                  Welcome to <Text style={{ color: '#9261C7', fontWeight: '700' }}>{familyName}</Text>!{'\n'}
+                  Welcome to <Text style={{ color: colors.primary, fontWeight: '700' }}>{familyName}</Text>!{'\n'}
                   You joined as <Text style={{ fontWeight: '700' }}>{name}</Text> {avatar}
                 </Text>
                 <TouchableOpacity
-                  style={[s.btn, { backgroundColor: '#9261C7', marginTop: 32 }]}
+                  style={[s.btn, { backgroundColor: colors.primary, marginTop: 32 }]}
                   onPress={() => router.replace('/onboarding/complete-profile')}
                 >
                   <Text style={s.btnText}>Let's Go →</Text>
@@ -427,19 +513,25 @@ export default function JoinFamilyScreen() {
           </ScrollView>
         </SafeAreaView>
       </View>
+      <PhotoPickerSheet
+        visible={showPhotoPicker} onClose={() => setShowPhotoPicker(false)}
+        onTakePhoto={() => pickPhoto(true)} onChooseLibrary={() => pickPhoto(false)}
+        onRemove={photoUri ? () => { setShowPhotoPicker(false); setPhotoUri(null); } : undefined}
+        avatarUri={photoUri} avatarEmoji={avatar} name={name || undefined}
+        colors={colors} isDark={isDark} />
     </KeyboardAvoidingView>
   );
 }
 
 // ─── PIN dot indicator ────────────────────────────────────────────────────────
-function PinDots({ value }: { value: string }) {
+function PinDots({ value, colors }: { value: string; colors: any }) {
   return (
     <View style={{ flexDirection: 'row', gap: 14, justifyContent: 'center', marginVertical: 14 }}>
       {[0, 1, 2, 3].map(i => (
         <View key={i} style={{
           width: 18, height: 18, borderRadius: 9,
-          backgroundColor: i < value.length ? '#9261C7' : 'transparent',
-          borderWidth: 2, borderColor: '#9261C7',
+          backgroundColor: i < value.length ? colors.primary : 'transparent',
+          borderWidth: 2, borderColor: colors.primary,
         }} />
       ))}
     </View>
@@ -447,7 +539,7 @@ function PinDots({ value }: { value: string }) {
 }
 
 // ─── PIN numpad ───────────────────────────────────────────────────────────────
-function PinPad({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function PinPad({ value, onChange, colors }: { value: string; onChange: (v: string) => void; colors: any }) {
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
   return (
     <View style={s.pad}>
@@ -456,14 +548,14 @@ function PinPad({ value, onChange }: { value: string; onChange: (v: string) => v
       ) : (
         <TouchableOpacity
           key={i}
-          style={s.padKey}
+          style={[s.padKey, { backgroundColor: colors.primaryLight }]}
           onPress={() => {
             if (k === '⌫') onChange(value.slice(0, -1));
             else if (value.length < 4) onChange(value + k);
           }}
           disabled={value.length === 4 && k !== '⌫'}
         >
-          <Text style={s.padKeyText}>{k}</Text>
+          <Text style={[s.padKeyText, { color: colors.primary }]}>{k}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -495,7 +587,7 @@ const s = StyleSheet.create({
   btnText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
   error:        { color: '#EF4444', fontSize: 13, textAlign: 'center', marginTop: 8 },
   pad:          { flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center', gap: 12, marginTop: 4 },
-  padKey:       { width: 68, height: 68, borderRadius: 34, backgroundColor: '#F0E8FA', alignItems: 'center', justifyContent: 'center' },
+  padKey:       { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
   padEmpty:     { width: 68, height: 68 },
-  padKeyText:   { fontSize: 22, fontWeight: '700', color: '#9261C7' },
+  padKeyText:   { fontSize: 22, fontWeight: '700' },
 });

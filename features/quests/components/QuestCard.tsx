@@ -4,7 +4,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort, fmtDateTime, parseLocalDate, parseTimeInput } from '@/lib/dates';
+import { fmtDateShort, fmtDateTime, parseLocalDate, parseTimeInput, parseDbTime } from '@/lib/dates';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
@@ -285,11 +285,17 @@ export function QuestCard({
               like kid's chores" is asking for. */}
           {isDoneCard && (q.claimedAt || q.submittedAt) && (
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
-              {q.claimedAt && `Claimed ${new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {/* Was raw new Date(ts) — Postgres timestamps ("2026-08-24
+                  19:53:09+00") return Invalid Date from RN's JS engine,
+                  which toLocaleDateString/toLocaleTimeString then render
+                  as the literal text "Invalid Date" (same root cause as
+                  the celebration-replay bug found live this session).
+                  parseDbTime normalizes the shape before parsing. */}
+              {q.claimedAt && `Claimed ${parseDbTime(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
               {q.claimedAt && q.submittedAt ? ' → ' : ''}
-              {q.submittedAt && `Submitted ${new Date(q.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {q.submittedAt && `Submitted ${parseDbTime(q.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
               {q.submittedAt && (q as any).approvedAt ? ' → ' : ''}
-              {(q as any).approvedAt && `Done ${new Date((q as any).approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {(q as any).approvedAt && `Done ${parseDbTime((q as any).approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
             </Text>
           )}
           {/* Cheer indicator — previously nothing anywhere showed whether a
@@ -425,11 +431,11 @@ export function QuestCard({
         {q.participants.length <= 1 && (!!q.assignedToId || q.claimedAt || q.submittedAt || (q as any).approvedAt || (q as any).declinedAt) && (
           isDoneCard && (q as any).approvedAt ? (
             <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2, marginBottom: 6 }}>
-              {q.claimedAt && `Claimed ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {q.claimedAt && `Claimed ${parseDbTime(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
               {q.claimedAt && (q.submittedAt || (q as any).approvedAt) ? ' → ' : ''}
-              {q.submittedAt && `Submitted ${new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {q.submittedAt && `Submitted ${parseDbTime(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
               {q.submittedAt && (q as any).approvedAt ? ' → ' : ''}
-              {(q as any).approvedAt && `Approved ${new Date((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {(q as any).approvedAt && `Approved ${parseDbTime((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
             </Text>
           ) : (
             <QuestStepper
@@ -703,8 +709,18 @@ export function QuestCard({
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{pm.name}</Text>
                     <Text style={{ fontSize: TYPO.micro + 1, color: pStatusColor }}>{pStatusLabel}</Text>
                   </View>
-                  {/* Per-kid actions for parent/senior */}
-                  {isParentOrSenior && p.status === 'pending_approval' && (
+                  {/* Approve/decline/reopen a kid's submission is a PARENT-ONLY
+                      action — a grandparent's only rights on someone else's
+                      quest are claim/pass/can't-make-it (master-flow spec).
+                      Was isParentOrSenior, which showed these controls to a
+                      grandparent on ANY multi-kid quest card regardless of
+                      who created/sponsored it — confirmed live, not
+                      GP-sponsored-only. The client-side canApprove() check
+                      downstream already no-ops a GP's tap, but a visible
+                      button that silently does nothing is still wrong; see
+                      also the bounty_claims RLS fix that closes the
+                      matching server-side gap. */}
+                  {isParent && p.status === 'pending_approval' && (
                     <View style={{ flexDirection: 'row', gap: 6 }}>
                       <TouchableOpacity
                         style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger }}
@@ -720,7 +736,7 @@ export function QuestCard({
                       </TouchableOpacity>
                     </View>
                   )}
-                  {isParentOrSenior && p.status === 'declined' && (
+                  {isParent && p.status === 'declined' && (
                     <TouchableOpacity
                       style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
                       onPress={() => reopenParticipant(q.id, p.memberId, activeMember?.id)}

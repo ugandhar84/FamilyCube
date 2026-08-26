@@ -1,6 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Trash2, BookOpen, Plus, Pencil } from 'lucide-react-native';
-import { BRAND } from '../shared';
 import { Meal, MEAL_TYPE_COLOR } from './types';
 import { dc } from './styles';
 
@@ -12,7 +11,7 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
   colors: any; isDark: boolean;
 }) {
   const isToday = new Date().toLocaleDateString('en-US', { weekday: 'short' }) === day;
-  const accentColor = isToday ? BRAND.purple : BRAND.amber;
+  const accentColor = isToday ? colors.accent : colors.pink;
 
   return (
     <View style={{ marginTop: 10 }}>
@@ -22,8 +21,8 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 13, fontWeight: '900', color: accentColor, letterSpacing: 0.5 }}>{day}</Text>
           {isToday && (
-            <View style={{ borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: BRAND.purple + '20' }}>
-              <Text style={{ fontSize: 9, fontWeight: '800', color: BRAND.purple, letterSpacing: 0.5 }}>TODAY</Text>
+            <View style={{ borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.accent + '20' }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: colors.accent, letterSpacing: 0.5 }}>TODAY</Text>
             </View>
           )}
         </View>
@@ -37,7 +36,7 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
       {meals.length > 0 && (
         <View>
           {meals.map((meal, idx) => {
-            const typeColor = MEAL_TYPE_COLOR[meal.type?.toLowerCase()] ?? BRAND.amber;
+            const typeColor = MEAL_TYPE_COLOR[meal.type?.toLowerCase()] ?? colors.amber;
             return (
               <View key={meal.id} style={{
                 flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -69,7 +68,7 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
                       <Text style={{ fontSize: 10, color: colors.textTertiary }}>⏱ {meal.prep_minutes}m</Text>
                     ) : null}
                     {meal.ai_generated ? (
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.purple }}>✨ AI</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.accent }}>✨ AI</Text>
                     ) : null}
                   </View>
                 </View>
@@ -77,14 +76,14 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
                 {/* Actions */}
                 <View style={{ flexDirection: 'row', gap: 2 }}>
                   <TouchableOpacity onPress={() => onRecipe(meal)} style={dc.iconBtn}>
-                    <BookOpen size={14} color={BRAND.purple} />
+                    <BookOpen size={14} color={colors.accent} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => onEdit(meal)} style={dc.iconBtn}>
                     <Pencil size={14} color={colors.textSecondary} />
                   </TouchableOpacity>
                   {onDelete && (
                     <TouchableOpacity onPress={() => onDelete(meal)} style={dc.iconBtn}>
-                      <Trash2 size={14} color={BRAND.rose + 'AA'} />
+                      <Trash2 size={14} color={colors.danger + 'AA'} />
                     </TouchableOpacity>
                   )}
                 </View>

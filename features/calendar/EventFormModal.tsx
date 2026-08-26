@@ -377,7 +377,12 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   // by" option once Grandparents Welcome is on — picking one while the
   // toggle reads "Off · private between parents only" was a direct
   // contradiction (see AddQuestModal's same suggestion-then-lock pattern).
-  const adults = members.filter(m => m.role === 'parent' || (m.role === 'senior' && openToGrandparents));
+  // Same teen-inclusion gap fixed in the edit form's own `adults` below —
+  // kept symmetric so a prefilled/pre-assigned teen driver on the create
+  // form doesn't hit the identical "picker shows nothing selected" bug.
+  const adults = members.filter(m =>
+    m.role === 'parent' || (m.role === 'senior' && openToGrandparents) || (m.role === 'teen' && openToTeens)
+  );
   // Show all family members in "For" picker; exclude the selected helper so one person isn't in both roles
   const forMembers = members.filter(m => m.id !== helperId);
 
@@ -1369,8 +1374,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editTeenOpen,  setEditTeenOpen]  = useState(event.isOpenToTeens ?? false);
   const [editRideCoins, setEditRideCoins] = useState(event.rideCoins != null ? String(event.rideCoins) : '');
   // Same reveal-on-opt-in as the create form — a GP only appears as a
-  // directly-pickable accompany/drive option once Grandparents Welcome is on.
-  const adults = members.filter(m => m.role === 'parent' || (m.role === 'senior' && editGPOpen));
+  // directly-pickable accompany/drive option once Grandparents Welcome is
+  // on, and likewise a teen once Teens Welcome is on. Without the teen
+  // half of this, editDriverId correctly resolved to a teen who'd already
+  // claimed an open ride pool (members.find below searches the full
+  // members array, not this filtered list) but the picker itself never
+  // included that teen as an option — so nothing rendered as selected and
+  // the ride looked unassigned from the parent's edit view even though it
+  // wasn't (live-reported: "assigned to picker is not showing as teen
+  // already assigned person").
+  const adults = members.filter(m =>
+    m.role === 'parent' || (m.role === 'senior' && editGPOpen) || (m.role === 'teen' && editTeenOpen)
+  );
 
   // Drive assignment — separate from the tutor/escort/coach (`helper`) once
   // that's already filled in (e.g. by the kid naming an external tutor).

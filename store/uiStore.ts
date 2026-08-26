@@ -15,6 +15,25 @@ interface UIState {
   // it. A one-shot signal, not persistent state.
   openTaskComposerRequested: boolean;
   setOpenTaskComposerRequested: (v: boolean) => void;
+  // Same one-shot pattern as openTaskComposerRequested above, for the
+  // shared FAB's Memories-tab "+" face — MemoriesTab reads it once on
+  // focus to open ComposeMemoryModal, then clears it immediately.
+  openMemoryComposerRequested: boolean;
+  setOpenMemoryComposerRequested: (v: boolean) => void;
+  // Same one-shot pattern, for the shared FAB's family-health-tab "+" face.
+  // HealthRecordsScreen's two segments (Health/Records) are never both
+  // mounted at once, so both HealthTab and RecordsTab safely consume this
+  // same flag — whichever segment is actually showing opens its own add
+  // modal (AddMedModal / AddRecordModal) and clears the flag.
+  openHealthRecordsComposerRequested: boolean;
+  setOpenHealthRecordsComposerRequested: (v: boolean) => void;
+  // Live-updated (not one-shot) by HealthRecordsScreen/HealthTab so the
+  // shared FAB's own background color in app/(tabs)/_layout.tsx can track
+  // which inner segment (Health/Medications vs. Immunizations) is actually
+  // selected — Health & Records has its OWN segmented switch nested inside
+  // one route, which activeTabName (route-level only) can't see.
+  healthRecordsActiveSegment: 'health' | 'records' | 'immunizations';
+  setHealthRecordsActiveSegment: (v: 'health' | 'records' | 'immunizations') => void;
   // The currently-focused bottom-tab route name, written by CustomTabBar
   // (app/(tabs)/_layout.tsx) from React Navigation's own `state` prop —
   // the authoritative, synchronous source. TabLayout reads this instead of
@@ -31,6 +50,12 @@ export const useUIStore = create<UIState>((set) => ({
   setFullBleedScreenActive: (active) => set({ fullBleedScreenActive: active }),
   openTaskComposerRequested: false,
   setOpenTaskComposerRequested: (v) => set({ openTaskComposerRequested: v }),
+  openMemoryComposerRequested: false,
+  setOpenMemoryComposerRequested: (v) => set({ openMemoryComposerRequested: v }),
+  openHealthRecordsComposerRequested: false,
+  setOpenHealthRecordsComposerRequested: (v) => set({ openHealthRecordsComposerRequested: v }),
+  healthRecordsActiveSegment: 'health',
+  setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),
   activeTabName: undefined,
   setActiveTabName: (name) => set({ activeTabName: name }),
 }));

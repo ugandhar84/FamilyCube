@@ -24,24 +24,19 @@ export type FeatureFlagKey =
   | 'gamification'         // XP / levels / coins / daily quests / leaderboard
   | 'daily_quests'         // Daily quest panel (sub-feature of gamification)
   | 'leaderboard'          // Weekly leaderboard (sub-feature of gamification)
-  | 'cuteness_arena'       // Weekly bracket vote (sub-feature of gamification)
-  | 'pet_report_card'      // Monthly auto-generated shareable stat card
   | 'seasonal_events'      // Time-limited holiday challenges
   | 'rewards_marketplace' // Partner coupons redeemable with coins
-  | 'sponsored_ads'       // Sponsored partner listings on home screen
   | 'per_device_e2e'      // Multi-device chat encryption envelope (see lib/chatCrypto.ts)
-  | 'store_proximity_reminders'; // Geofence a pinned store location, notify when nearby with pending items on that store's list
+  | 'store_proximity_reminders' // Geofence a pinned store location, notify when nearby with pending items on that store's list
+  | 'home_screen_widgets'; // iOS home-screen widgets (small/medium, role-based content) — not yet built, flag reserved ahead of the native work
 
 /** Default state when no remote override exists. All OFF until you're ready. */
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   gamification:        true,
   daily_quests:        false,
   leaderboard:         false,
-  cuteness_arena:      false,
-  pet_report_card:     false,
   seasonal_events:     false,
   rewards_marketplace: false,
-  sponsored_ads:       true,
   // Real per-device public-key (X25519 ECDH) encryption for chat + location,
   // replacing the legacy shared-family-passcode-key scheme — both envelopes
   // were fully built, just gated off. Enabled per explicit request
@@ -49,6 +44,7 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   // this default only matters before that first remote fetch resolves).
   per_device_e2e:      true,
   store_proximity_reminders: false,
+  home_screen_widgets: false,
 };
 
 /**

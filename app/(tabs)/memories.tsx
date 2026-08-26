@@ -1,1 +1,1 @@
-export { default } from '@/features/memories/screens/MemoriesScreen';
+export { default } from '@/features/vault/tabs/MemoriesScreen';

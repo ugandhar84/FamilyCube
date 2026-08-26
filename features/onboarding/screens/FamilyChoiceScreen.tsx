@@ -16,74 +16,74 @@ import Svg, { Circle, Path, Rect, G, Ellipse, Polygon } from 'react-native-svg';
 const { width } = Dimensions.get('window');
 
 // ─── Hero SVG — family silhouette ─────────────────────────────────────────────
-function FamilyHeroSvg() {
+function FamilyHeroSvg({ colors }: { colors: any }) {
   return (
     <Svg width={width * 0.82} height={220} viewBox="0 0 340 220">
       {/* Sky gradient backdrop */}
-      <Ellipse cx="170" cy="200" rx="160" ry="28" fill="#E8D5FA" opacity="0.6" />
+      <Ellipse cx="170" cy="200" rx="160" ry="28" fill={colors.pinkLight} opacity="0.6" />
 
       {/* House */}
-      <Rect x="110" y="110" width="120" height="90" rx="4" fill="#C4A0EC" />
-      <Polygon points="100,115 170,60 240,115" fill="#9261C7" />
+      <Rect x="110" y="110" width="120" height="90" rx="4" fill={colors.accent} opacity="0.5" />
+      <Polygon points="100,115 170,60 240,115" fill={colors.primary} />
       {/* Door */}
-      <Rect x="150" y="155" width="40" height="45" rx="6" fill="#6A3FA0" />
-      <Circle cx="183" cy="178" r="3" fill="#E8D5FA" />
+      <Rect x="150" y="155" width="40" height="45" rx="6" fill={colors.navy} opacity="0.55" />
+      <Circle cx="183" cy="178" r="3" fill={colors.pinkLight} />
       {/* Windows */}
-      <Rect x="120" y="128" width="30" height="25" rx="4" fill="#F0E8FA" />
-      <Rect x="190" y="128" width="30" height="25" rx="4" fill="#F0E8FA" />
+      <Rect x="120" y="128" width="30" height="25" rx="4" fill={colors.primaryLight} />
+      <Rect x="190" y="128" width="30" height="25" rx="4" fill={colors.primaryLight} />
       {/* Window panes */}
-      <Rect x="134" y="128" width="2" height="25" fill="#C4A0EC" />
-      <Rect x="120" y="140" width="30" height="2" fill="#C4A0EC" />
-      <Rect x="204" y="128" width="2" height="25" fill="#C4A0EC" />
-      <Rect x="190" y="140" width="30" height="2" fill="#C4A0EC" />
+      <Rect x="134" y="128" width="2" height="25" fill={colors.accent} />
+      <Rect x="120" y="140" width="30" height="2" fill={colors.accent} />
+      <Rect x="204" y="128" width="2" height="25" fill={colors.accent} />
+      <Rect x="190" y="140" width="30" height="2" fill={colors.accent} />
 
-      {/* Parent left */}
-      <Circle cx="68" cy="90" r="18" fill="#F59E0B" />
-      <Path d="M45 200 Q68 140 91 200" fill="#F59E0B" opacity="0.9" />
-      {/* Parent right */}
-      <Circle cx="272" cy="90" r="18" fill="#10B981" />
-      <Path d="M249 200 Q272 140 295 200" fill="#10B981" opacity="0.9" />
+      {/* Parent left — sage (CONNECT) */}
+      <Circle cx="68" cy="90" r="18" fill={colors.teal} />
+      <Path d="M45 200 Q68 140 91 200" fill={colors.teal} opacity="0.9" />
+      {/* Parent right — amber (ORGANIZE) */}
+      <Circle cx="272" cy="90" r="18" fill={colors.amber} />
+      <Path d="M249 200 Q272 140 295 200" fill={colors.amber} opacity="0.9" />
 
-      {/* Kid center */}
-      <Circle cx="170" cy="50" r="14" fill="#9261C7" />
-      <Path d="M152 200 Q170 155 188 200" fill="#9261C7" opacity="0.9" />
+      {/* Kid center — terracotta (primary) */}
+      <Circle cx="170" cy="50" r="14" fill={colors.primary} />
+      <Path d="M152 200 Q170 155 188 200" fill={colors.primary} opacity="0.9" />
 
-      {/* Grandparent small */}
-      <Circle cx="310" cy="115" r="12" fill="#EC4899" />
-      <Path d="M297 200 Q310 165 323 200" fill="#EC4899" opacity="0.9" />
+      {/* Grandparent small — lavender (CARE) */}
+      <Circle cx="310" cy="115" r="12" fill={colors.pink} />
+      <Path d="M297 200 Q310 165 323 200" fill={colors.pink} opacity="0.9" />
 
       {/* Stars */}
-      <Circle cx="30" cy="30" r="3" fill="#9261C7" opacity="0.5" />
-      <Circle cx="50" cy="18" r="2" fill="#F59E0B" opacity="0.6" />
-      <Circle cx="300" cy="25" r="3" fill="#10B981" opacity="0.5" />
-      <Circle cx="320" cy="40" r="2" fill="#EC4899" opacity="0.6" />
-      <Circle cx="15" cy="55" r="2" fill="#9261C7" opacity="0.4" />
+      <Circle cx="30" cy="30" r="3" fill={colors.primary} opacity="0.5" />
+      <Circle cx="50" cy="18" r="2" fill={colors.amber} opacity="0.6" />
+      <Circle cx="300" cy="25" r="3" fill={colors.teal} opacity="0.5" />
+      <Circle cx="320" cy="40" r="2" fill={colors.pink} opacity="0.6" />
+      <Circle cx="15" cy="55" r="2" fill={colors.primary} opacity="0.4" />
 
       {/* Connecting arcs */}
-      <Path d="M86 88 Q130 70 156 58" stroke="#9261C7" strokeWidth="2" fill="none" strokeDasharray="4,4" opacity="0.5" />
-      <Path d="M254 88 Q210 70 184 58" stroke="#9261C7" strokeWidth="2" fill="none" strokeDasharray="4,4" opacity="0.5" />
+      <Path d="M86 88 Q130 70 156 58" stroke={colors.primary} strokeWidth="2" fill="none" strokeDasharray="4,4" opacity="0.5" />
+      <Path d="M254 88 Q210 70 184 58" stroke={colors.primary} strokeWidth="2" fill="none" strokeDasharray="4,4" opacity="0.5" />
     </Svg>
   );
 }
 
 // ─── Card SVG icons ────────────────────────────────────────────────────────────
-function CreateFamilySvg() {
+function CreateFamilySvg({ colors }: { colors: any }) {
   return (
     <Svg width="52" height="52" viewBox="0 0 52 52">
-      <Circle cx="26" cy="26" r="26" fill="#F0E8FA" />
-      <Circle cx="26" cy="18" r="8" fill="#9261C7" />
-      <Path d="M10 44 Q26 30 42 44" fill="#9261C7" opacity="0.8" />
-      <Circle cx="38" cy="30" r="6" fill="#C4A0EC" />
+      <Circle cx="26" cy="26" r="26" fill={colors.primaryLight} />
+      <Circle cx="26" cy="18" r="8" fill={colors.primary} />
+      <Path d="M10 44 Q26 30 42 44" fill={colors.primary} opacity="0.8" />
+      <Circle cx="38" cy="30" r="6" fill={colors.accent} />
       <Path d="M36 38 H40 M38 36 V40" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
     </Svg>
   );
 }
 
-function JoinCodeSvg() {
+function JoinCodeSvg({ colors }: { colors: any }) {
   return (
     <Svg width="52" height="52" viewBox="0 0 52 52">
-      <Circle cx="26" cy="26" r="26" fill="#E8F5E9" />
-      <Rect x="13" y="18" width="26" height="20" rx="4" fill="#10B981" />
+      <Circle cx="26" cy="26" r="26" fill={colors.tealLight} />
+      <Rect x="13" y="18" width="26" height="20" rx="4" fill={colors.teal} />
       <Rect x="17" y="23" width="6" height="6" rx="2" fill="#fff" />
       <Rect x="25" y="23" width="6" height="6" rx="2" fill="#fff" />
       <Rect x="17" y="31" width="6" height="3" rx="1.5" fill="rgba(255,255,255,0.5)" />
@@ -103,7 +103,7 @@ export default function FamilyChoiceScreen() {
 
         {/* Hero */}
         <View style={s.heroWrap}>
-          <FamilyHeroSvg />
+          <FamilyHeroSvg colors={colors} />
         </View>
 
         {/* Headline */}
@@ -118,34 +118,34 @@ export default function FamilyChoiceScreen() {
         <View style={s.cards}>
           {/* Create family */}
           <TouchableOpacity
-            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: '#9261C7' }]}
+            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.primary }]}
             activeOpacity={0.85}
             onPress={() => router.push('/onboarding/setup-family')}
           >
-            <CreateFamilySvg />
+            <CreateFamilySvg colors={colors} />
             <View style={s.cardText}>
               <Text style={[s.cardTitle, { color: colors.textPrimary }]}>Create My Family</Text>
               <Text style={[s.cardDesc, { color: colors.textSecondary }]}>
                 I'm a parent — set up our family and invite members
               </Text>
             </View>
-            <Text style={s.arrow}>→</Text>
+            <Text style={[s.arrow, { color: colors.primary }]}>→</Text>
           </TouchableOpacity>
 
           {/* Join with code */}
           <TouchableOpacity
-            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: '#10B981' }]}
+            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.teal }]}
             activeOpacity={0.85}
             onPress={() => router.push('/onboarding/join-family')}
           >
-            <JoinCodeSvg />
+            <JoinCodeSvg colors={colors} />
             <View style={s.cardText}>
               <Text style={[s.cardTitle, { color: colors.textPrimary }]}>Join with Code</Text>
               <Text style={[s.cardDesc, { color: colors.textSecondary }]}>
                 I have an invite code from a parent
               </Text>
             </View>
-            <Text style={s.arrow}>→</Text>
+            <Text style={[s.arrow, { color: colors.teal }]}>→</Text>
           </TouchableOpacity>
         </View>
 
@@ -172,5 +172,5 @@ const s = StyleSheet.create({
   cardText:  { flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 3 },
   cardDesc:  { fontSize: 13, lineHeight: 18, opacity: 0.75 },
-  arrow:     { fontSize: 20, color: '#9261C7' },
+  arrow:     { fontSize: 20 },
 });

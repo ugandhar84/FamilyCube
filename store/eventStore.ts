@@ -68,6 +68,11 @@ export interface FamilyEvent {
   subject?: string;
   coachName?: string;
   conflict?: boolean;
+  // A parent dismissed a scheduling-conflict alert for this event as not
+  // actually a problem (e.g. the same parent doing two nearby drop-offs
+  // at the same time) — see AlertBanner's Dismiss action. Distinct from
+  // `conflict` above (a separate, currently client-unwritten column).
+  conflictAcknowledged?: boolean;
   approvalPending?: boolean;
   isOpenToGrandparents?: boolean;
   grandparentPassedIds?: string[];  // seniors who tapped Pass — hidden from their feed
@@ -472,6 +477,7 @@ export function fromRow(row: any): FamilyEvent {
     dropLocation:      row.drop_location ?? undefined,
     approvalPending:        row.approval_pending ?? false,
     conflict:               row.conflict ?? false,
+    conflictAcknowledged:   row.conflict_acknowledged ?? false,
     isOpenToGrandparents:   row.is_open_to_grandparents ?? false,
     grandparentPassedIds:   row.grandparent_passed_ids ?? [],
     isOpenToTeens:          row.is_open_to_teens ?? false,
@@ -529,6 +535,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     drop_location:         ev.dropLocation ?? null,
     approval_pending:           ev.approvalPending ?? false,
     conflict:                   ev.conflict ?? false,
+    conflict_acknowledged:      ev.conflictAcknowledged ?? false,
     is_open_to_grandparents:    ev.isOpenToGrandparents ?? false,
     grandparent_passed_ids:     ev.grandparentPassedIds ?? [],
     is_open_to_teens:           ev.isOpenToTeens ?? false,
@@ -583,7 +590,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   declineReason: 'helper_decline_reason', declinedBy: 'helper_declined_by',
   doctorName: 'doctor_name', subject: 'subject', coachName: 'coach_name',
   pickupLocation: 'pickup_location', dropLocation: 'drop_location',
-  approvalPending: 'approval_pending', conflict: 'conflict',
+  approvalPending: 'approval_pending', conflict: 'conflict', conflictAcknowledged: 'conflict_acknowledged',
   isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids',
   isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
   driverName: 'driver_name', driverStatus: 'driver_status',

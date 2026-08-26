@@ -1,19 +1,42 @@
 import { requireNativeModule } from 'expo-modules-core';
 
-export interface WidgetPet {
-  name: string;
-  emoji: string;
-  accentHex: string;
-  streakDays: number;
-  careProgress: number;   // 0.0 – 1.0
-  nextApptTitle?: string | null;
-  nextApptDate?: string | null;
-  avatarFileName?: string | null; // local filename in App Group container
+// Role-based iOS home-screen widget payload — replaces the old PawBond
+// pet-shaped WidgetPet[]/WidgetPayload (name/emoji/careProgress/nextAppt),
+// none of which exists in Family Cube's real data model. Two distinct
+// content shapes, matching the two ways a person actually wants a glance
+// at this app: a parent wants the household's state, a kid/teen/senior
+// wants their own.
+export interface WidgetParentSummary {
+  familyName: string;
+  memberCount: number;
+  pendingApprovals: number;  // chores sitting at pending_approval, awaiting this parent's review
+  eventsToday: number;
+  unreadMessages: number;
+  nextEventTitle?: string | null;   // family's next upcoming event (any member), not just this parent's own
+  nextEventTime?: string | null;    // pre-formatted, e.g. "Today · 4:30 PM"
 }
 
+export interface WidgetMemberSummary {
+  memberName: string;
+  memberEmoji: string;
+  pendingQuests: number;
+  coins: number;
+  streak: number;
+  nextEventTitle?: string | null;
+  nextEventTime?: string | null;  // pre-formatted, e.g. "Today · 4:30 PM"
+}
+
+// Flat discriminator (kind) + two optional, mutually-exclusive summary
+// fields — deliberately NOT a nested discriminated union. Swift's
+// JSONDecoder handles "decode whichever of these two optional fields is
+// present" trivially; decoding a nested `{ kind, data }` polymorphic
+// shape requires hand-written Decodable conformance for little benefit
+// here, since there are only ever two shapes.
 export interface WidgetPayload {
   enabled: boolean;
-  pets: WidgetPet[];
+  kind?: 'parent' | 'member';
+  parentSummary?: WidgetParentSummary;
+  memberSummary?: WidgetMemberSummary;
   lastSyncedAt?: string; // ISO timestamp — lets widget show "Updated Xm ago"
 }
 
@@ -32,7 +55,7 @@ function mod() {
   return _mod;
 }
 
-/** Write pet data to App Group and reload widget timelines. No-ops on Android or simulator. */
+/** Write the active member's role-based summary to the App Group and reload widget timelines. No-ops on Android or simulator. */
 export async function syncWidget(payload: WidgetPayload): Promise<void> {
   const m = mod();
   if (!m) {
@@ -51,23 +74,11 @@ export async function syncWidget(payload: WidgetPayload): Promise<void> {
   }
 }
 
-/** Clear the App Group and reset the widget to its disabled state. */
+/** Clear the App Group and reset the widget to its disabled state (e.g. signed out). */
 export async function clearWidget(): Promise<void> {
   const m = mod();
   if (!m) return;
   try { await m.clearWidget(); } catch {}
-}
-
-/** Download a pet avatar and save it to the App Group container. Returns the filename. */
-export async function saveAvatarToGroup(petId: string, url: string): Promise<string | null> {
-  const m = mod();
-  if (!m) return null;
-  try {
-    return await m.saveAvatarToGroup(petId, url);
-  } catch (e: any) {
-    if (__DEV__) console.warn('[widget-data] saveAvatarToGroup failed:', e?.message);
-    return null;
-  }
 }
 
 /** Schedule a BGAppRefreshTask so the widget updates even when the app is in the background. */

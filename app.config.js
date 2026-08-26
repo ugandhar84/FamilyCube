@@ -14,11 +14,11 @@ const config = {
   newArchEnabled: true,
   splash: {
     resizeMode: "cover",
-    backgroundColor: "#6C5CE7",
+    backgroundColor: "#FDFBF7",
     image: "./assets/splash-gradient-light.png",
     dark: {
       image: "./assets/splash-gradient-dark.png",
-      backgroundColor: "#1A0E3D",
+      backgroundColor: "#12141C",
     },
   },
   ios: {
@@ -34,10 +34,10 @@ const config = {
     splash: {
       image: "./assets/splash-gradient-light.png",
       resizeMode: "cover",
-      backgroundColor: "#6C5CE7",
+      backgroundColor: "#FDFBF7",
       dark: {
         image: "./assets/splash-gradient-dark.png",
-        backgroundColor: "#1A0E3D",
+        backgroundColor: "#12141C",
       },
     },
     icon: {
@@ -96,7 +96,7 @@ const config = {
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#6C5CE7",
+      backgroundColor: "#FDFBF7",
     },
     package: "com.familycube.android",
     permissions: [
@@ -195,7 +195,7 @@ const config = {
       "expo-notifications",
       {
         icon: "./assets/notification-icon.png",
-        color: "#6C5CE7",
+        color: "#CD7B57",
         androidMode: "default",
         androidCollapsedTitle: "Family Cube",
       },

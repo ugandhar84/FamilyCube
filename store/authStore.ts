@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase';
 import type { Session, User } from '@supabase/supabase-js';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { usePreferenceStore } from '@/store/preferenceStore';
-import { usePetStore } from '@/store/petStore';
 import { clearWeatherCache } from '@/lib/weather';
 import { resetAppSettingsSubscription } from '@/lib/hooks/useAppSettings';
 import { useNotifStore } from '@/store/notifStore';
@@ -223,7 +222,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ session: null, user: null, profile: null, loading: false });
     useSubscriptionStore.getState().reset();
     usePreferenceStore.getState().reset();
-    usePetStore.getState().reset();
     useNotifStore.getState().reset();
     // Critical: familyStore caches members/activeMemberId under fixed
     // (non-user-scoped) AsyncStorage keys, and derives which family to

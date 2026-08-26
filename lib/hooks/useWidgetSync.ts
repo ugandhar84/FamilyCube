@@ -1,10 +1,9 @@
 /**
  * useWidgetSync — keeps the iOS home screen widget in sync with live app
- * data. Was 100% PawBond (usePetStore, checklist, feedingLogs, moodLogs,
- * appointments table) — none of that exists in Family Cube's real schema,
- * so the widget silently never had real data even before the App Group
- * entitlement gap. Rebuilt against the real stores, role-based per the
- * currently active member:
+ * data. The original PawBond version tracked pet care data that was never
+ * part of Family Cube's real schema, so the widget silently never had real
+ * data even before the App Group entitlement gap. Rebuilt against the real
+ * stores, role-based per the currently active member:
  *   - Parent: household name, member count, pending-approval count
  *     (the one thing a parent actually glances at this widget for),
  *     today's event count, unread messages, and the family's next

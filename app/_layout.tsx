@@ -17,7 +17,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
 import { useAuthStore, invalidateProfileCache } from '@/store/authStore';
-import { usePetStore } from '@/store/petStore';
 import { useWidgetSync } from '@/lib/hooks/useWidgetSync';
 import { savePushToken, saveTokenToMember, addNotificationResponseListener, addNotificationReceivedListener, registerNotificationCategories } from '@/lib/notifications';
 import { todayLocal } from '@/lib/dates';
@@ -185,6 +184,22 @@ function RootNavigator() {
               }
             }
             if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
+              // Diagnostic: onboarding was reported as re-triggering for an
+              // already-onboarded user multiple times — logging the exact
+              // gate values here (rather than guessing) since a re-loop
+              // despite completing Terms/family-setup repeatedly points at
+              // either a failed/never-applied onboarding_completed UPDATE,
+              // an RLS-denied read masquerading as "not onboarded" via
+              // profileErr, or session.user.id mismatching the row that was
+              // actually updated.
+              console.warn('[FamilyCube:OnboardingGate] routing to /onboarding', {
+                userId: session.user.id,
+                profileErr: profileErr?.message,
+                profileErrCode: (profileErr as any)?.code,
+                terms_accepted: profile?.terms_accepted,
+                onboarding_completed: profile?.onboarding_completed,
+                profileFound: !!profile,
+              });
               destination = '/onboarding';
             } else {
               let locked = false;
@@ -335,7 +350,6 @@ function RootNavigator() {
         // unsubscribeFromSubChanges();  // subscription not active in this version
         // Wipe all user-specific data from stores immediately so the next user
         // (or the same user logging in to a different account) never sees stale data.
-        usePetStore.getState().reset();
         invalidateProfileCache();
         queryClient.clear();
         // Pass signedOut=1 so the login screen shows the Face ID button but
@@ -417,88 +431,8 @@ function RootNavigator() {
         return;
       }
 
-      // Helper: switch active pet context before navigating.
-      // For bundled multi-pet notifications skip the switch — let the user pick.
-      const switchPet = (petId: string | undefined) => {
-        if (!petId) return;
-        const { pets } = usePetStore.getState();
-        if (pets.some(p => p.id === petId)) usePetStore.getState().setActivePet(petId);
-      };
-      // Always set pet context from notification data.
-      // Single pet: sets it directly. Multi-pet bundle: sets the primary pet_id;
-      // the destination screen (e.g. Care > Today) shows all pets regardless.
-      const switchPetIfSingle = (data: any) => switchPet(data?.pet_id);
-
-      if (data?.type === 'appointment_complete_prompt' && data?.appointment_id) {
-        switchPet(data.pet_id);
-        showAlert(
-          'Mark appointment complete?',
-          'Tap Complete to update the appointment status in your records.',
-          [
-            { text: 'Later', style: 'cancel' },
-            { text: 'Mark Complete', onPress: async () => {
-              const { error } = await supabase
-                .from('appointments')
-                .update({ status: 'completed' })
-                .eq('id', data.appointment_id);
-              if (error) {
-                showAlert('Error', 'Could not update appointment. Please try again.');
-                return;
-              }
-              router.push('/health/appointments');
-            }},
-          ]
-        );
-      } else if (data?.type === 'feeding_reminder' && response?.actionIdentifier === 'fed_action') {
-        // "✓ Fed" action tapped — log the meal silently without opening the app
-        const petId = data?.pet_id;
-        const meal  = data?.meal ?? 'meal';
-        if (petId && activeSession?.user?.id) {
-          const logRow = {
-            pet_id: petId,
-            fed_by: activeSession.user.id,
-            meal_type: meal,
-            food_type: null,
-            amount_grams: null,
-            date: todayLocal(),
-            fed_at: new Date().toISOString(),
-          };
-          supabase.from('feeding_logs').insert(logRow).then(({ error, data: inserted }) => {
-            if (error) { console.warn('[PawBond:FedAction] insert failed', error.message); return; }
-            if (inserted) usePetStore.getState().fetchFeedingLogs(petId, logRow.date).catch(() => {});
-          });
-        }
-      } else if (data?.type === 'feeding_reminder' || data?.type === 'walk_reminder') {
-        switchPetIfSingle(data);
-        router.push({ pathname: '/(tabs)/care', params: { section: 'today' } } as any);
-      } else if (data?.type === 'mood_reminder' || data?.type === 'mood_scan_ready') {
-        switchPet(data?.pet_id);
-        router.push('/ai/mood-camera');
-      } else if (data?.type === 'symptom_scan_ready') {
-        switchPet(data?.pet_id);
-        router.push('/ai/symptom-scan');
-      } else if (data?.type === 'vaccine_reminder') {
-        switchPet(data?.pet_id);
-        router.push('/health/vaccines');
-      } else if (data?.type === 'appointment_reminder') {
-        switchPet(data?.pet_id);
-        router.push('/health/appointments');
-      } else if (data?.type === 'chat_message') {
+      if (data?.type === 'chat_message') {
         router.push('/(tabs)/chat' as any);
-      } else if (data?.type === 'follow') {
-        if (data?.actor_pet_id) {
-          router.push({ pathname: '/pet/[id]', params: { id: data.actor_pet_id } } as any);
-        } else {
-          router.push('/(tabs)/notifications' as any);
-        }
-      } else if (['medication_reminder', 'med_missed_dose', 'med_monthly_nudge', 'med_monthly_followup'].includes(data?.type)) {
-        switchPet(data?.pet_id);
-        router.push('/health/medications');
-      } else if (['birthday_notif', 'memorial_notif'].includes(data?.type)) {
-        switchPet(data?.pet_id);
-        router.push({ pathname: '/(tabs)/care', params: { section: 'notes' } } as any);
-      } else if (data?.type === 'daily_tip') {
-        router.push({ pathname: '/(tabs)/care', params: { section: 'today' } } as any);
       } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
         // Family Cube grocery notifications (notify-shopping-trip-started
         // edge function / storeGeofencing.ts's local proximity reminder) —
@@ -820,14 +754,8 @@ function RootNavigator() {
         <Stack.Screen name="onboarding/setup-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/join-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/complete-profile" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
-        <Stack.Screen name="onboarding/add-pet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="pet/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="pet/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="health/appointments" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="health/weights" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile-settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile-settings/terms" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="pet/card" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="call-alert" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
       </Stack>

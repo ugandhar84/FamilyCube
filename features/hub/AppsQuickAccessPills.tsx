@@ -69,10 +69,8 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
 ];
 
 // Each pill's real destination — all under the (tabs) group (each a hidden
-// Tabs.Screen). 'health' here means the combined FAMILY Health & Records
-// screen, routed to 'family-health' — NOT the bare 'health' path, which is
-// a PET feature (usePetStore, embedded in care/CareScreen.tsx) that already
-// owns that route name as a separate, still-live screen.
+// Tabs.Screen). 'health' means the combined FAMILY Health & Records screen,
+// routed to 'family-health'.
 const PILL_ROUTES: Record<PillId, string> = {
   school: '/(tabs)/school', health: '/(tabs)/family-health', records: '/(tabs)/family-health',
   meals: '/(tabs)/meals', memories: '/(tabs)/memories', ledger: '/(tabs)/store',

@@ -1,18 +1,8 @@
 /**
  * Real Family Cube admin data layer — replaces the entirely-unmodified
- * PawBond template version of this file (queried `pets`, `social_posts`,
- * `pet_family`, `sponsored_listings`, `mood_logs`, `feeding_logs`,
- * `grooming_logs`, `pet_products`, `daily_checklist`, none of which are
- * part of Family Cube's real schema — see features/admin's own history).
- * The only remaining consumers of the OLD file's exports were themselves
- * unmodified PawBond leftovers (features/pet/screens/EditPetScreen.tsx,
- * features/onboarding/screens/AddPetScreen.tsx, features/admin/screens/*)
- * — none reachable from the real 7-tab Family Cube app (no Pets tab exists
- * per CLAUDE.md's 7-tab list). The old admin screens under features/admin
- * were removed outright (dead, PawBond-shaped). EditPetScreen/AddPetScreen
- * were left in place — out of scope for this task — so getSpeciesEnabled
- * is kept below as a thin compatibility shim purely so those two untouched
- * files keep compiling; it is NOT part of the new admin console's surface.
+ * PawBond template version of this file, which queried tables that are not
+ * part of Family Cube's real schema. The pet-tracking feature that was the
+ * last consumer of those exports has since been removed outright.
  *
  * This file backs the new admin console (features/admin):
  *   - lightweight family/member stats for the admin home screen
@@ -383,25 +373,4 @@ export async function setFeaturePaywallAssignment(featureKey: string, groupId: s
       { onConflict: 'feature_key' },
     );
   if (error) throw new Error(error.message);
-}
-
-// ── Legacy compatibility shim ────────────────────────────────────────────────
-// getSpeciesEnabled reads app_config's 'species_enabled' key — an unrelated,
-// pre-existing PawBond concept (which pet species show in the add/edit-pet
-// forms). Kept only so features/pet/screens/EditPetScreen.tsx and
-// features/onboarding/screens/AddPetScreen.tsx — untouched, out-of-scope
-// PawBond leftovers with no reachable route in the real Family Cube app —
-// keep compiling. Do not build new admin-console features on this.
-export type SpeciesEnabledMap = Record<string, boolean>;
-
-export async function getSpeciesEnabled(): Promise<SpeciesEnabledMap> {
-  const { data, error } = await supabase
-    .from('app_config')
-    .select('value')
-    .eq('key', 'species_enabled')
-    .single();
-  if (error || !data) {
-    return { dog: true, cat: true, rabbit: true, horse: true, bird: true, fish: false, hamster: true, turtle: true, other: true };
-  }
-  return data.value as SpeciesEnabledMap;
 }

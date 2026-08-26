@@ -3,12 +3,8 @@ import { useFocusEffect } from 'expo-router';
 import { format, parseISO, isToday, isYesterday, isThisWeek, differenceInCalendarDays } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { markNotificationsRead, markNotificationsUnread, deleteNotifications, markAllNotificationsRead } from '@/lib/db';
-import { upsertChecklistItem, insertFeedingLog } from '@/lib/db/daily';
 import { useNotifStore } from '@/store/notifStore';
-import { usePetStore } from '@/store/petStore';
-import { useShallow } from 'zustand/react/shallow';
 import { useRouter } from 'expo-router';
-import { savePetNote } from '@/lib/db/journal';
 import { ALERT_NAV } from '@/features/social/components/NotifCard';
 import type { NotificationLog } from '@/lib/types';
 
@@ -31,12 +27,10 @@ function dateGroup(iso: string): string {
 export function useNotificationsData(
   user: any,
   hiddenTypes: Set<string>,
-  petFilter: string,
   listRef: React.RefObject<any>,
   dateFilter: string = 'all',
 ) {
   const router = useRouter();
-  const { pets } = usePetStore(useShallow(s => ({ pets: s.pets })));
   const cachedNotifs   = useNotifStore(s => s.notifications);
   const markCachedRead = useNotifStore(s => s.markCachedRead);
 
@@ -104,8 +98,7 @@ export function useNotificationsData(
   const ORDER = ['Today','Yesterday','This Week','This Month'];
 
   const availableGroups = useMemo(() => {
-    let list = notifs.filter(n => !hiddenTypes.has(n.type));
-    if (petFilter !== 'all') list = list.filter(n => (n.data as any)?.pet_id === petFilter);
+    const list = notifs.filter(n => !hiddenTypes.has(n.type));
     const seen = new Set<string>();
     for (const n of list) seen.add(dateGroup(n.created_at));
     return [...seen].sort((a, b) => {
@@ -113,18 +106,17 @@ export function useNotificationsData(
       if (ai !== -1 && bi !== -1) return ai - bi;
       return ai !== -1 ? -1 : bi !== -1 ? 1 : 0;
     });
-  }, [notifs, petFilter, hiddenTypes]);
+  }, [notifs, hiddenTypes]);
 
   const sections = useMemo(() => {
     let list = notifs.filter(n => !hiddenTypes.has(n.type));
-    if (petFilter !== 'all') list = list.filter(n => (n.data as any)?.pet_id === petFilter);
     if (dateFilter !== 'all') list = list.filter(n => dateGroup(n.created_at) === dateFilter);
     const groups: Record<string, NotificationLog[]> = {};
     for (const n of list) { const g = dateGroup(n.created_at); (groups[g] ??= []).push(n); }
     return Object.keys(groups)
       .sort((a, b) => { const ai = ORDER.indexOf(a), bi = ORDER.indexOf(b); if (ai !== -1 && bi !== -1) return ai - bi; return ai !== -1 ? -1 : bi !== -1 ? 1 : 0; })
       .map(k => ({ title: k, data: groups[k] }));
-  }, [notifs, petFilter, dateFilter, hiddenTypes]);
+  }, [notifs, dateFilter, hiddenTypes]);
 
   const allIds = useMemo(() => sections.flatMap(s => s.data.map(n => n.id)), [sections]);
 
@@ -176,84 +168,16 @@ export function useNotificationsData(
 
   const openNotif = useCallback((item: NotificationLog) => {
     if (!item.read && !readIds.has(item.id)) markRead([item.id]);
-    if (item.type === 'lost_alert' || item.type === 'pet_found') {
-      toggleExpanded(item.id);
+    if (ALERT_NAV[item.type]) {
+      router.push(ALERT_NAV[item.type] as any);
     } else {
-      const d = item.data as any;
-      if (d?.pet_id) usePetStore.getState().setActivePet(d.pet_id);
-      if (item.type === 'feeding_reminder' || item.type === 'walk_reminder') {
-        router.push({ pathname: '/(tabs)/care', params: { section: 'daily' } } as any);
-      } else if (item.type === 'birthday_notif' || item.type === 'memorial_notif') {
-        router.push({ pathname: '/(tabs)/care', params: { section: 'notes' } } as any);
-      } else if (d?.actor_pet_id && (item.type === 'follow' || ['post_like', 'post_comment', 'post_comment_reply', 'mention', 'new_post'].includes(item.type))) {
-        // Legacy social notification row (feature removed) — the actor pet
-        // profile is still a live, reachable screen, so route there instead
-        // of into the deleted post/social-notifications screens.
-        router.push({ pathname: '/pet/[id]', params: { id: d.actor_pet_id } } as any);
-      } else if (ALERT_NAV[item.type]) {
-        router.push(ALERT_NAV[item.type] as any);
-      } else {
-        router.push('/(tabs)/notifications' as any);
-      }
+      router.push('/(tabs)/notifications' as any);
     }
   }, [readIds, router]);
 
-  // Tracks in-flight care actions to prevent double-taps producing duplicate writes
-  const pendingCareIds = useRef<Set<string>>(new Set());
-
-  const handleCareAction = useCallback(async (item: NotificationLog, markDoneInline: boolean) => {
-    if (pendingCareIds.current.has(item.id)) return;
-
-    if (!item.read && !readIds.has(item.id)) markRead([item.id]);
-    const petId = (item.data as any)?.pet_id ?? pets[0]?.id;
-    if (petId) usePetStore.getState().setActivePet(petId);
-
-    if (!markDoneInline || item.type === 'mood_reminder') {
-      router.push(item.type === 'mood_reminder'
-        ? '/ai/mood-camera' as any
-        : { pathname: '/(tabs)/care', params: { section: 'today' } } as any);
-      return;
-    }
-
-    if (!petId || !user?.id) return;
-
-    pendingCareIds.current.add(item.id);
-    // Remove from local state AND DB immediately so it never comes back on the next load()
-    removeNotifs([item.id]);
-
-    try {
-      const notifDate  = parseISO(item.created_at);
-      const isOldNotif = !isToday(notifDate);
-      const today      = format(new Date(), 'yyyy-MM-dd');
-      if (isOldNotif) {
-        const dayLabel = format(notifDate, 'EEE MMM d');
-        const activity = item.type === 'walk_reminder' ? 'walk' : 'feeding';
-        await savePetNote(petId, user.id, `${activity === 'walk' ? '🦮' : '🍽️'} ${activity.charAt(0).toUpperCase() + activity.slice(1)} logged (from missed reminder on ${dayLabel})`);
-      } else if (item.type === 'walk_reminder') {
-        await upsertChecklistItem({ pet_id: petId, date: today, type: 'walk', label: 'Walk', completed: true, completed_by: user.id, completed_at: new Date().toISOString() });
-      } else if (item.type === 'feeding_reminder') {
-        const h = new Date().getHours();
-        const meal_type = h < 11 ? 'breakfast' : h < 15 ? 'lunch' : 'dinner';
-        // Guard: only insert if no feeding log for this pet/date/meal already exists
-        const { count } = await supabase
-          .from('feeding_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('pet_id', petId)
-          .eq('date', today)
-          .eq('meal_type', meal_type);
-        if ((count ?? 0) === 0) {
-          await insertFeedingLog({ pet_id: petId, fed_by: user.id, meal_type, date: today, fed_at: new Date().toISOString() });
-        }
-      }
-    } catch { /* care write failed — notification already removed, that's fine */ }
-    finally {
-      pendingCareIds.current.delete(item.id);
-    }
-  }, [readIds, pets, user?.id, router, markRead, removeNotifs]);
-
   return {
     notifs, readIds, expandedIds, loading, refreshing, setRefreshing,
-    sections, flatItems, allIds, unreadCount, pets, availableGroups,
-    load, markRead, markUnread, removeNotifs, markAllRead, openNotif, handleCareAction,
+    sections, flatItems, allIds, unreadCount, availableGroups,
+    load, markRead, markUnread, removeNotifs, markAllRead, openNotif,
   };
 }

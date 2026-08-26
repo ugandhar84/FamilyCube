@@ -118,31 +118,17 @@ export interface NotifCardProps {
   selecting: boolean;
   colors: any;
   isDark: boolean;
-  pets: any[];
   onPress: (i: NotificationLog) => void;
   onLongPress: (i: NotificationLog) => void;
-  onViewProfile: (petId: string) => void;
-  onCareAction: (item: NotificationLog, markDone: boolean) => void;
 }
 
 export const NotifCard = React.memo(function NotifCard({
   item, isRead, isSelected, isExpanded, selecting,
-  colors, isDark, pets, onPress, onLongPress, onViewProfile, onCareAction,
+  colors, isDark, onPress, onLongPress,
 }: NotifCardProps) {
-  const meta           = TYPE_META[item.type] ?? TYPE_META.system;
-  const alertData      = item.data as any;
-  const petId          = alertData?.pet_id;
-  const pet            = pets.find(p => p.id === petId);
-  const isPetAlert     = item.type === 'lost_alert' || item.type === 'pet_found';
-  const isMedAlert     = item.type === 'medication_reminder' || item.type === 'med_missed_dose'
-                      || item.type === 'med_monthly_nudge'   || item.type === 'med_monthly_followup';
-  const isHealthCard   = isMedAlert || item.type === 'appointment_reminder'
-                      || item.type === 'appointment_complete_prompt' || item.type === 'vaccine_reminder';
-  const isCareReminder = item.type === 'walk_reminder' || item.type === 'feeding_reminder' || item.type === 'mood_reminder';
-  const singlePet      = pets.length === 1;
-  const alertPetName   = alertData?.pet_name ?? pet?.name ?? null;
-  const petAccent      = pet?.accent_color ?? meta.tint;
-  const scaleAnim      = useRef(new Animated.Value(1)).current;
+  const meta      = TYPE_META[item.type] ?? TYPE_META.system;
+  const alertData = item.data as any;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const onPressIn  = () => Animated.spring(scaleAnim, { toValue: 0.975, useNativeDriver: true, speed: 50 }).start();
   const onPressOut = () => Animated.spring(scaleAnim, { toValue: 1,     useNativeDriver: true, speed: 50 }).start();
@@ -181,7 +167,7 @@ export const NotifCard = React.memo(function NotifCard({
               </View>
             ) : (
               <View style={{ position: 'relative', flexShrink: 0 }}>
-                <View style={[nc.avatarRing, { borderColor: petAccent + '70' }]}>
+                <View style={[nc.avatarRing, { borderColor: meta.tint + '70' }]}>
                   <View style={[nc.iconCircle, { backgroundColor: meta.tint + '20' }]}>
                     <Text style={nc.iconEmoji}>{meta.icon}</Text>
                   </View>
@@ -193,9 +179,6 @@ export const NotifCard = React.memo(function NotifCard({
             {/* Content */}
             <View style={nc.content}>
               <View style={nc.row1}>
-                {alertPetName ? (
-                  <Text style={[nc.subjectName, { color: petAccent }]} numberOfLines={1}>{alertPetName}</Text>
-                ) : null}
                 <View style={[nc.typeChip, { backgroundColor: meta.tint + '18' }]}>
                   <Text style={[nc.typeChipText, { color: meta.tint }]}>{meta.label}</Text>
                 </View>
@@ -210,116 +193,11 @@ export const NotifCard = React.memo(function NotifCard({
               </Text>
               {!!item.body && (
                 <Text style={[nc.body, { color: colors.textSecondary }]}
-                  numberOfLines={isHealthCard || isCareReminder || (isPetAlert && isExpanded) ? undefined : 2}>
+                  numberOfLines={isExpanded ? undefined : 2}>
                   {item.body}
                 </Text>
               )}
 
-              {/* Care CTA */}
-              {isCareReminder && (
-                <View style={nc.actionRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={e => { (e as any).stopPropagation?.(); onCareAction(item, singlePet); }}
-                    style={[nc.actionPill, { backgroundColor: meta.tint + '18', borderColor: meta.tint + '40' }]}>
-                    <Ionicons name={singlePet ? 'checkmark-circle-outline' : 'arrow-forward-circle-outline'} size={13} color={meta.tint} />
-                    <Text style={[nc.actionPillText, { color: meta.tint }]}>
-                      {singlePet ? (item.type === 'mood_reminder' ? 'Scan Now' : 'Mark Done') : 'View in Care'}
-                    </Text>
-                    {!singlePet && <Ionicons name="arrow-forward" size={12} color={meta.tint} />}
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Health CTA */}
-              {isHealthCard && (
-                <View style={nc.actionRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={e => { (e as any).stopPropagation?.(); onPress(item); }}
-                    style={[nc.actionPill, { backgroundColor: meta.tint + '18', borderColor: meta.tint + '40' }]}>
-                    <Ionicons
-                      name={isMedAlert ? 'medical-outline' : item.type === 'vaccine_reminder' ? 'shield-checkmark-outline' : 'calendar-outline'}
-                      size={13} color={meta.tint} />
-                    <Text style={[nc.actionPillText, { color: meta.tint }]}>
-                      {item.type === 'med_missed_dose'                ? 'Log medication now'
-                       : item.type === 'med_monthly_nudge'           ? 'Log monthly med'
-                       : item.type === 'med_monthly_followup'        ? 'Confirm dose given'
-                       : item.type === 'medication_reminder'         ? 'Log medication'
-                       : item.type === 'appointment_complete_prompt' ? 'Mark as complete'
-                       : item.type === 'appointment_reminder'        ? 'View appointment'
-                       : 'View vaccine'}
-                    </Text>
-                    <Ionicons name="arrow-forward" size={12} color={meta.tint} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Lost pet chips */}
-              {isPetAlert && (!!alertData?.reward_amount || !!alertData?.contact_phone) && (
-                <View style={nc.infoRow}>
-                  {!!alertData?.reward_amount && (
-                    <View style={nc.infoChip}>
-                      <Ionicons name="cash-outline" size={11} color="#B45309" />
-                      <Text style={[nc.infoChipText, { color: '#B45309' }]}>${alertData.reward_amount} reward</Text>
-                    </View>
-                  )}
-                  {!!alertData?.contact_phone && (
-                    <TouchableOpacity
-                      onPress={e => { e.stopPropagation(); Linking.openURL(`tel:${alertData.contact_phone}`); }}
-                      style={[nc.infoChip, { backgroundColor: meta.tint + '15' }]}
-                    >
-                      <Ionicons name="call-outline" size={11} color={meta.tint} />
-                      <Text style={[nc.infoChipText, { color: meta.tint, textDecorationLine: 'underline' }]}>
-                        {alertData.contact_phone}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {/* Expanded lost/found detail panel */}
-              {isPetAlert && isExpanded && (
-                <View style={[nc.expandPanel, { borderTopColor: isDark ? '#3A2A5A' : '#E8E3F5' }]}>
-                  {(!!alertData?.last_seen_address || (!!alertData?.lat && !!alertData?.lng)) && (
-                    <View style={nc.expandRow}>
-                      <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-                      <Text style={[nc.expandText, { color: colors.textSecondary }]}>
-                        {alertData.last_seen_address ?? `Near ${Number(alertData.lat).toFixed(4)}, ${Number(alertData.lng).toFixed(4)}`}
-                      </Text>
-                    </View>
-                  )}
-                  {!!(alertData?.pet_species || alertData?.pet_breed) && (
-                    <View style={nc.expandRow}>
-                      <Ionicons name="paw-outline" size={13} color={colors.textSecondary} />
-                      <Text style={[nc.expandText, { color: colors.textSecondary }]}>
-                        {[alertData.pet_species, alertData.pet_breed].filter(Boolean).join(' · ')}
-                      </Text>
-                    </View>
-                  )}
-                  {!!alertData?.pet_microchip && (
-                    <View style={nc.expandRow}>
-                      <Ionicons name="hardware-chip-outline" size={13} color={colors.textSecondary} />
-                      <Text style={[nc.expandText, { color: colors.textSecondary }]}>Microchip: {alertData.pet_microchip}</Text>
-                    </View>
-                  )}
-                  {!!alertData?.found_details && (
-                    <View style={nc.expandRow}>
-                      <Ionicons name="search-outline" size={13} color={colors.textSecondary} />
-                      <Text style={[nc.expandText, { color: colors.textSecondary }]}>{alertData.found_details}</Text>
-                    </View>
-                  )}
-                  <TouchableOpacity
-                    disabled={!petId}
-                    onPress={e => { e.stopPropagation(); onViewProfile(petId); }}
-                    style={[nc.profileBtn, { backgroundColor: meta.tint + '18', borderColor: meta.tint + '40' }]}
-                  >
-                    <Ionicons name="paw" size={14} color={meta.tint} />
-                    <Text style={[nc.profileBtnText, { color: meta.tint }]}>View their profile</Text>
-                    <Ionicons name="arrow-forward" size={13} color={meta.tint} />
-                  </TouchableOpacity>
-                </View>
-              )}
             </View>
 
             {/* Right: time + indicator */}
@@ -327,12 +205,9 @@ export const NotifCard = React.memo(function NotifCard({
               <Text style={[nc.timeText, { color: colors.textSecondary }]}>{timeLabel(item.created_at)}</Text>
               {!isRead
                 ? <View style={[nc.unreadDot, { backgroundColor: meta.tint }]} />
-                : isPetAlert
-                  ? <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={isDark ? '#4A3A6A' : '#C4B5E0'} />
-                  : isHealthCard ? null
-                  : ALERT_NAV[item.type]
-                    ? <Ionicons name="chevron-forward" size={12} color={isDark ? '#4A3A6A' : '#C4B5E0'} />
-                    : null
+                : ALERT_NAV[item.type]
+                  ? <Ionicons name="chevron-forward" size={12} color={isDark ? '#4A3A6A' : '#C4B5E0'} />
+                  : null
               }
             </View>
           </View>
@@ -353,7 +228,6 @@ export const nc = StyleSheet.create({
   checkbox:       { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   content:        { flex: 1, gap: 4 },
   row1:           { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
-  subjectName:    { fontSize: TYPO.body, fontWeight: '800' },
   typeChip:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   typeChipText:   { fontSize: TYPO.body, fontWeight: '700', letterSpacing: 0.2 },
   title:          { fontSize: TYPO.body, lineHeight: 19 },

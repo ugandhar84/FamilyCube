@@ -412,16 +412,9 @@ export default function TabLayout() {
         <Tabs.Screen name="meals"                options={{ href: null }} />
         <Tabs.Screen name="school"               options={{ href: null }} />
         <Tabs.Screen name="notifications"        options={{ href: null }} />
-        <Tabs.Screen name="care"                 options={{ href: null }} />
         <Tabs.Screen name="memories"             options={{ href: null }} />
-        <Tabs.Screen name="health"               options={{ href: null }} />
-        {/* Family Health & Records combined (one screen, segmented switch)
-            — distinct from 'health' above and /health/records, both PET
-            features (usePetStore, embedded in care/CareScreen.tsx and
-            HealthQuickActions.tsx respectively) that already own those
-            route names as separate, still-live screens. */}
+        {/* Family Health & Records combined (one screen, segmented switch) */}
         <Tabs.Screen name="family-health"        options={{ href: null }} />
-        <Tabs.Screen name="journal"              options={{ href: null }} />
         <Tabs.Screen name="all-notifications"    options={{ href: null }} />
       </Tabs>
 

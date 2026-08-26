@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
-import { rescheduleAllMedNotifications } from '@/lib/rescheduleNotifications';
 
 function cityName(tz: string): string {
   // "America/New_York" → "New York", "Europe/London" → "London"
@@ -71,8 +70,6 @@ export default function TravelBanner() {
       .from('profiles')
       .update({ home_timezone: currentTz, timezone: currentTz })
       .eq('id', user.id);
-    // Reschedule local med notifications so they fire at the right local time
-    rescheduleAllMedNotifications(user.id).catch(() => {});
     setUpdating(false);
     // Clear dismiss key so banner shows again if they travel again
     if (currentTz) await AsyncStorage.removeItem(dismissKey(currentTz));

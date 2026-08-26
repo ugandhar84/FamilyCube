@@ -6,10 +6,7 @@ import {
 import { FlashList, FlashListRef } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
-import { usePetStore } from '@/store/petStore';
-import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@/lib/ThemeContext';
 import { RADIUS, TYPO} from '@/constants/theme';
 import PawBondLoader from '@/components/PawBondLoader';
@@ -25,25 +22,20 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
   const router             = useRouter();
   const { colors, isDark } = useTheme();
   const { user }           = useAuthStore();
-  const { fetchPets }      = usePetStore(useShallow(s => ({ fetchPets: s.fetchPets })));
-  const params = useLocalSearchParams<{ petId?: string }>();
 
-  // SOS/lost-pet alerts and the Connect (family/social) surface were removed —
-  // always hide any pre-existing notification_logs rows of those types rather
-  // than gating on the (now similarly dead) sos_enabled/connect_family_enabled flags.
+  // SOS/lost-pet alerts, the pet feature, and the Connect (family/social)
+  // surface were removed — always hide any pre-existing notification_logs
+  // rows of those types.
   const hiddenTypes = useMemo(() => new Set<string>(['lost_alert', 'pet_found', 'invite', 'family_update']), []);
 
-  const [petFilter,  setPetFilter]  = useState(params.petId ?? 'all');
   const [dateFilter, setDateFilter] = useState('all');
-  useEffect(() => { setPetFilter(params.petId ?? 'all'); }, [params.petId]);
 
   const listRef = useRef<FlashListRef<any>>(null);
   const sel     = useNotifSelection();
-  const d       = useNotificationsData(user, hiddenTypes, petFilter, listRef, dateFilter);
+  const d       = useNotificationsData(user, hiddenTypes, listRef, dateFilter);
 
   const isAllSelected = sel.selected.size === d.allIds.length && d.allIds.length > 0;
 
-  useEffect(() => { if (user?.id) fetchPets(user.id); }, [user?.id]);
   useEffect(() => { onUnreadChange?.(d.unreadCount); }, [d.unreadCount, onUnreadChange]);
 
   // Handlers that wire selection + data
@@ -56,10 +48,6 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
     sel.setSelecting(true);
     sel.setSelected(new Set([item.id]));
   }, []);
-
-  const handleViewProfile = useCallback((petId: string) => {
-    router.push(`/pet/card?id=${petId}`);
-  }, [router]);
 
   const selHasUnread = [...sel.selected].some(id => { const n = d.notifs.find(n => n.id === id); return n && !n.read && !d.readIds.has(id); });
   const selHasRead   = [...sel.selected].some(id => { const n = d.notifs.find(n => n.id === id); return n && (n.read || d.readIds.has(id)); });
@@ -92,28 +80,6 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
               )}
             </View>
           </View>
-        )}
-
-        {/* Pet filter pills — only when user has more than one pet */}
-        {d.pets.length > 1 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-            {[{ id: 'all', name: 'All Pets', emoji: '🐾' }, ...d.pets].map(p => {
-              const active = petFilter === p.id;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  onPress={() => setPetFilter(active ? 'all' : p.id)}
-                  activeOpacity={0.75}
-                  style={[styles.filterChip, active
-                    ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                    : { backgroundColor: isDark ? '#1A1030' : '#F3F0FF', borderColor: isDark ? '#2A1F48' : '#DDD6FE' }]}
-                >
-                  <Text style={styles.filterIcon}>{p.emoji ?? '🐾'}</Text>
-                  <Text style={[styles.filterLabel, { color: active ? '#fff' : colors.textSecondary }]}>{p.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         )}
 
         {/* Date group filter — only when notifications span multiple groups */}
@@ -177,11 +143,8 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
                 selecting={sel.selecting}
                 colors={colors}
                 isDark={isDark}
-                pets={d.pets}
                 onPress={handlePress}
                 onLongPress={handleLongPress}
-                onViewProfile={handleViewProfile}
-                onCareAction={d.handleCareAction}
               />
             );
           }}

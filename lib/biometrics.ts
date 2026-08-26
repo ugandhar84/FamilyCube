@@ -28,6 +28,26 @@ export async function isLocked(): Promise<boolean> {
   return (await AsyncStorage.getItem(LOCKED_KEY)) === '1';
 }
 
+// Set immediately after a successful Face ID/session restore (LoginScreen's
+// biometricLogin, LockScreen's unlock) — read once family members have
+// actually loaded (see (tabs)/_layout.tsx's own effect) to reset
+// activeMemberId back to the real signed-in account's own member profile.
+// Whoever was PIN-switched to as the active member before the app closed
+// is NOT necessarily who's coming back via Face ID (reported live: locked
+// while on a PIN-less kid's profile, relaunched via Face ID, landed
+// directly in that kid's account instead of the real auth-owner's).
+const PENDING_OWNER_RESET_KEY = '@familycube_pending_owner_reset';
+
+export async function markPendingOwnerReset(): Promise<void> {
+  await AsyncStorage.setItem(PENDING_OWNER_RESET_KEY, '1');
+}
+
+export async function consumePendingOwnerReset(): Promise<boolean> {
+  const pending = (await AsyncStorage.getItem(PENDING_OWNER_RESET_KEY)) === '1';
+  if (pending) await AsyncStorage.removeItem(PENDING_OWNER_RESET_KEY);
+  return pending;
+}
+
 // ── Hardware & enrollment check ──────────────────────────────────
 
 export async function isBiometricAvailable(): Promise<boolean> {

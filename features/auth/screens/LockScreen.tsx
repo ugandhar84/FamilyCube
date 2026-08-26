@@ -74,8 +74,9 @@ export default function LockScreen() {
     // restore it) — without this, boot's getSession() gate would keep
     // treating this valid-but-locked session as "locked" on every future
     // cold launch, permanently stuck on this screen.
-    const { setLocked } = await import('@/lib/biometrics');
+    const { setLocked, markPendingOwnerReset } = await import('@/lib/biometrics');
     await setLocked(false);
+    await markPendingOwnerReset();
     setBusy(false);
     inFlight.current = false;
     router.replace('/(tabs)');

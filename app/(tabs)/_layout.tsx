@@ -377,6 +377,7 @@ export default function TabLayout() {
   // infinite loop. A plain useRef (not module state) still gets a fresh
   // guard on a genuine new mount of this component.
   const hasSession = useAuthStore(s => !!s.session);
+  const authUserId = useAuthStore(s => s.session?.user?.id);
   const familyLoadStatus = useFamilyStore(s => s.familyLoadStatus);
   const redirectedToOnboarding = useRef(false);
   useEffect(() => {
@@ -386,6 +387,22 @@ export default function TabLayout() {
       router.replace('/onboarding');
     }
   }, [hasSession, familyLoadStatus, members.length]);
+
+  // Consumes the one-shot flag LoginScreen/LockScreen set right after a
+  // successful Face ID/session restore. Whoever was PIN-switched to as the
+  // active member before the app closed is NOT necessarily who's coming
+  // back via Face ID — reset activeMemberId to the real signed-in account's
+  // own member profile once members have actually loaded (reported live:
+  // locked while on a PIN-less kid's profile, relaunched via Face ID,
+  // landed directly in that kid's account instead of the real auth-owner's).
+  useEffect(() => {
+    if (familyLoadStatus !== 'confirmed' || !authUserId || members.length === 0) return;
+    import('@/lib/biometrics').then(async ({ consumePendingOwnerReset }) => {
+      if (!(await consumePendingOwnerReset())) return;
+      const owner = members.find(m => m.authUserId === authUserId);
+      if (owner) useFamilyStore.getState().setActiveMember(owner.id);
+    });
+  }, [familyLoadStatus, authUserId, members]);
 
   // Prefetch the default chat channel at tab-shell mount, same as Hub/
   // Tasks' own stores above — Chat's ENTIRE data pipeline (message fetch,

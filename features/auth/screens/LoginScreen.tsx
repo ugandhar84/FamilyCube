@@ -84,8 +84,9 @@ export default function LoginScreen() {
     // sign-out), so just reveal the app. Zero token gymnastics → always works.
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
-      const { setLocked } = await import('@/lib/biometrics');
+      const { setLocked, markPendingOwnerReset } = await import('@/lib/biometrics');
       await setLocked(false);
+      await markPendingOwnerReset();
       setBioLoading(false);
       router.replace('/(tabs)');
       return;
@@ -103,8 +104,9 @@ export default function LoginScreen() {
         showAlert('Session expired', 'Please sign in with your password once to re-enable Face ID.');
         return;
       }
-      const { setLocked } = await import('@/lib/biometrics');
+      const { setLocked, markPendingOwnerReset } = await import('@/lib/biometrics');
       await setLocked(false);
+      await markPendingOwnerReset();
       return; // SIGNED_IN handles navigation
     }
     setBioLoading(false);

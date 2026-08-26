@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { TYPO } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
@@ -18,22 +19,44 @@ import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
 
 // ─── Category config ──────────────────────────────────────────────────────────
+// Each category maps to a brand token (not raw hex) so the badge always
+// agrees with PerkCard's icon-chip accent for the same category — Treats/
+// amber, Experiences/lavender, Screen Time/info-blue, Privileges/sage,
+// Special/danger.
 
-const CAT_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  Treats:      { label: '🟡 Treats',      bg: '#FEF3C7', text: '#92400E' },
-  Experiences: { label: '🟣 Experiences', bg: '#EDE9FE', text: '#5B21B6' },
-  'Screen Time':{ label: '🔵 Screen Time', bg: '#DBEAFE', text: '#1E40AF' },
-  Privileges:  { label: '🟢 Privileges',  bg: '#D1FAE5', text: '#065F46' },
-  Special:     { label: '⭐ Special',      bg: '#FEE2E2', text: '#991B1B' },
+const CAT_LABELS: Record<string, string> = {
+  Treats:        '🟡 Treats',
+  Experiences:   '🟣 Experiences',
+  'Screen Time': '🔵 Screen Time',
+  Privileges:    '🟢 Privileges',
+  Special:       '⭐ Special',
 };
 
-function CategoryBadge({ category, isDark }: { category?: string; isDark: boolean }) {
-  const cfg = CAT_CONFIG[category ?? 'Special'] ?? CAT_CONFIG.Special;
+// 'Special' is the catch-all most user-created perks end up tagged as (no
+// dedicated category fits), so a fixed color for it made a grid of mostly-
+// Special perks look like one repeated card. Special (and anything
+// unmapped) instead cycles through the brand palette by grid position —
+// real categories (Treats/Experiences/Screen Time/Privileges) stay fixed
+// since those already carry distinct meaning.
+const SPECIAL_CYCLE = ['danger', 'accent', 'teal', 'amber'] as const;
+
+function categoryAccent(category: string | undefined, colors: any, index = 0): string {
+  const map: Record<string, string> = {
+    Treats: colors.amber, Experiences: colors.accent, 'Screen Time': colors.info,
+    Privileges: colors.teal,
+  };
+  if (category && map[category]) return map[category];
+  return colors[SPECIAL_CYCLE[index % SPECIAL_CYCLE.length]];
+}
+
+function CategoryBadge({ category, index = 0, colors, isDark }: { category?: string; index?: number; colors: any; isDark: boolean }) {
+  const accent = categoryAccent(category, colors, index);
+  const label = CAT_LABELS[category ?? 'Special'] ?? CAT_LABELS.Special;
   return (
     <View style={{ alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : cfg.bg, marginBottom: 6 }}>
-      <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#E2E8F0' : cfg.text, letterSpacing: 0.3 }}>
-        {cfg.label}
+      backgroundColor: isDark ? accent + '28' : accent + '20', marginBottom: 6 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? colors.textPrimary : accent, letterSpacing: 0.3 }}>
+        {label}
       </Text>
     </View>
   );
@@ -86,7 +109,7 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
             borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 12,
             shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 }}>
             <Text style={{ fontSize: 26, marginBottom: 4 }}>{s.emoji}</Text>
-            <CategoryBadge category={s.category} isDark={isDark} />
+            <CategoryBadge category={s.category} colors={colors} isDark={isDark} />
             <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
               {s.title}
             </Text>
@@ -112,8 +135,8 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, isGoal, onToggleGoal }: {
-  reward: Reward; myCoins: number; isKid: boolean; isParent: boolean;
+function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, isGoal, onToggleGoal }: {
+  reward: Reward; index?: number; myCoins: number; isKid: boolean; isParent: boolean;
   // Was isKid-only, so teen and senior roles — both of whom earn coins
   // elsewhere in the app with nowhere else to spend them — got a
   // permanently-disabled card with no redeem action at all (QA sweep,
@@ -124,7 +147,10 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
   isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
   const canRedeem = canRedeemSelf && myCoins >= reward.cost;
-  const accent = colors.amber;
+  // Each category gets its own brand tint instead of every card defaulting
+  // to amber — see categoryAccent() — so the grid reads as distinct
+  // categories at a glance instead of one repeated tan tile.
+  const accent = categoryAccent(reward.category, colors, index);
   return (
     <Pressable
       onLongPress={isParent ? () => onEdit(reward) : undefined}
@@ -132,21 +158,23 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
       style={[s.perkCard, { backgroundColor: isDark ? accent + '20' : accent + '1E', borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
 
       {/* Icon circle — solid-tint chip matching the Hub quick-action tiles'
-          bold "badge" treatment, not a bare floating emoji on a wash. */}
+          bold "badge" treatment, not a bare floating emoji on a wash.
+          ~85% opacity rather than fully solid — a 44px block at full
+          opacity on every card read as a heavy dark square. */}
       <View style={{ width: 44, height: 44, borderRadius: 14, marginBottom: 8,
-        backgroundColor: accent,
+        backgroundColor: accent + 'D9',
         alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 22 }}>{reward.emoji ?? '🎁'}</Text>
       </View>
-      <CategoryBadge category={reward.category} isDark={isDark} />
-      <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
+      <CategoryBadge category={reward.category} index={index} colors={colors} isDark={isDark} />
+      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
         {reward.title}
       </Text>
-      <Text style={{ fontSize: 10, fontWeight: '900', color: colors.amber, marginBottom: 4 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.amber, marginBottom: 4 }}>
         {reward.cost} Coins 🪙
       </Text>
       {reward.description ? (
-        <Text style={{ fontSize: 10, color: colors.textTertiary, lineHeight: 14, marginBottom: 4 }}>
+        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, lineHeight: 14, marginBottom: 4 }}>
           {reward.description}
         </Text>
       ) : null}
@@ -155,7 +183,7 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
         <>
           <Pressable onPress={() => onRedeem(reward)} disabled={!canRedeem}
             style={[s.redeemBtn, { backgroundColor: canRedeem ? colors.teal : colors.border, marginTop: 8 }]}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: canRedeem ? colors.textInverse : colors.textTertiary }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: canRedeem ? colors.textInverse : colors.textTertiary }}>
               {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myCoins} more 🪙`}
             </Text>
           </Pressable>
@@ -163,18 +191,18 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
             <Pressable onPress={() => onToggleGoal(reward)}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
               <Ionicons name={isGoal ? 'star' : 'star-outline'} size={13} color={isGoal ? colors.amber : colors.textTertiary} />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: isGoal ? colors.amber : colors.textTertiary }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isGoal ? colors.amber : colors.textTertiary }}>
                 {isGoal ? 'My Goal' : 'Set as My Goal'}
               </Text>
             </Pressable>
           )}
         </>
       ) : isParent ? (
-        <Text style={{ fontSize: 9, color: colors.textTertiary, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
+        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
           Hold to edit
         </Text>
       ) : (
-        <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
+        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
           Not available for your role
         </Text>
       )}
@@ -686,8 +714,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             </View>
           ) : (
             <View style={s.grid}>
-              {rewards.map(r => (
-                <PerkCard key={r.id} reward={r} myCoins={myCoins}
+              {rewards.map((r, i) => (
+                <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins}
                   isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}

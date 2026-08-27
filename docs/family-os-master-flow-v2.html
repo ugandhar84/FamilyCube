@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Family OS — Master Flow v2 (Real-World Hardened)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.8/dist/mermaid.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .mermaid .node rect, .mermaid .node polygon { cursor: pointer; transition: all .2s ease; }
+    .mermaid .node:hover rect, .mermaid .node:hover polygon { filter: brightness(1.25); }
+    .step-chip { font-variant-numeric: tabular-nums; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col selection:bg-amber-500 selection:text-slate-950">
+
+<header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-50 shadow-xl backdrop-blur-md bg-opacity-95">
+  <div class="max-w-[1600px] mx-auto flex flex-wrap justify-between items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-indigo-600 to-emerald-500 flex items-center justify-center text-xl shadow-lg shadow-indigo-500/20">👪</div>
+      <div>
+        <h1 class="font-extrabold text-lg text-white tracking-tight">Family OS — Master Flow v2</h1>
+        <p class="text-xs text-slate-400">7 crisp steps · plain-English buttons · every real-world exit covered: can't make it, reassign, no-show, nobody claims, partial, dispute</p>
+      </div>
+    </div>
+    <nav class="flex bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs font-semibold overflow-x-auto">
+      <button id="nav-mermaid" onclick="switchTab('mermaid')" class="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold shadow whitespace-nowrap"><i class="fa-solid fa-diagram-project mr-1.5"></i> Master Flow</button>
+      <button id="nav-gaps" onclick="switchTab('gaps')" class="px-4 py-2 rounded-xl text-slate-400 hover:text-white whitespace-nowrap"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i> Gap Register (27)</button>
+      <button id="nav-desktop" onclick="switchTab('desktop')" class="px-4 py-2 rounded-xl text-slate-400 hover:text-white whitespace-nowrap"><i class="fa-solid fa-desktop mr-1.5"></i> Live Simulator</button>
+      <button id="nav-matrix" onclick="switchTab('matrix')" class="px-4 py-2 rounded-xl text-slate-400 hover:text-white whitespace-nowrap"><i class="fa-solid fa-table-list mr-1.5"></i> Role & Action Matrix</button>
+    </nav>
+  </div>
+</header>
+
+<main class="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 space-y-6">
+
+  <!-- ============ TAB 1: MASTER FLOW ============ -->
+  <section id="tab-mermaid" class="space-y-6">
+    <div class="bg-indigo-950/40 border border-indigo-500/30 p-4 rounded-3xl flex flex-wrap justify-between items-center gap-4 text-xs shadow-lg">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">⚡</span>
+        <div>
+          <p class="font-bold text-indigo-200 text-sm">Seven steps, and every way a real family falls off them</p>
+          <p class="text-slate-400">Click a node — or pick a state — to see who acts, what the button says in plain English, and where it lands next.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="text-slate-400 font-semibold">Inspect state:</label>
+        <select id="state-select" onchange="inspectState(this.value)" class="bg-slate-950 border border-amber-500/40 text-amber-400 font-bold px-3 py-2 rounded-xl focus:outline-none">
+          <optgroup label="Happy path">
+            <option value="STEP1_CREATED">Step 1 — Someone asks or offers</option>
+            <option value="STEP2_APPROVAL">Step 2 — Parent says yes or no</option>
+            <option value="STEP3_OPEN">Step 3 — Open to helpers</option>
+            <option value="STEP4_TAKEN">Step 4 — Someone takes it</option>
+            <option value="STEP5_DOING">Step 5 — Work happens</option>
+            <option value="STEP6_CHECK">Step 6 — Parent checks the work</option>
+            <option value="STEP7_PAID">Step 7 — Paid out</option>
+          </optgroup>
+          <optgroup label="Real-world exits (new)">
+            <option value="X_CANT_MAKE_IT">Can't make it — reason + what next</option>
+            <option value="X_REASSIGN">Handed to a specific person</option>
+            <option value="X_NOBODY">Nobody took it, time is close</option>
+            <option value="X_NOSHOW">Gone quiet — still on?</option>
+            <option value="X_PARTIAL">Only part of it got done</option>
+            <option value="X_LATER">Asked for a later time</option>
+            <option value="X_CANCELLED">No longer needed</option>
+            <option value="X_REDO">Not done right — try again</option>
+            <option value="X_DISPUTE">Kid disagrees — second parent decides</option>
+            <option value="X_APPROVAL_LAPSED">Parent never answered in time</option>
+            <option value="X_RACE">Two people tapped at once</option>
+            <option value="X_SWAP">Kid-to-kid swap</option>
+          </optgroup>
+          <optgroup label="Rules">
+            <option value="R_TIME_BINDING">Time-critical vs flexible — UI separation</option>
+            <option value="R_NUDGES">Nudge actions and escalation</option>
+            <option value="R_ASKER_EDIT">The asker's own edit window</option>
+            <option value="R_ASK_CHANGE">Asker wants a change after approval</option>
+            <option value="R_GP_PERMS">Grandparent permissions — what they can edit</option>
+            <option value="R_GP_SPONSOR">When a GP sponsors a bounty</option>
+            <option value="R_GP_RECEIPTS">GP receipts and reimbursement</option>
+            <option value="R_COINS">Who gets coins (and who doesn't)</option>
+            <option value="R_EDIT">What a parent can still change</option>
+            <option value="R_ROUTING">Open it to grandparents or teens</option>
+            <option value="R_REACCEPT">Terms changed after someone took it</option>
+          </optgroup>
+          <optgroup label="Parents' lane">
+            <option value="P2P_VAULT">Parents' private vault — how it works</option>
+            <option value="P2P_TAKEN">Mom or Dad has it</option>
+            <option value="P2P_CANT">Parent can't make it — over to you</option>
+            <option value="TEEN_SELF">Teen's own calendar (free/busy only)</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
+        <div class="flex justify-between items-center text-xs border-b border-slate-800 pb-3">
+          <span class="font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-diagram-project text-amber-400"></i> Master flow — happy path in amber, real-world exits in rose</span>
+        </div>
+        <div id="mermaid-container" class="overflow-x-auto flex justify-center py-4 min-h-[560px]">
+          <pre class="mermaid">
+flowchart TD
+    S1["STEP 1 · Someone asks or offers"] --> KID["Kid asks<br/>ride, supplies, help"]
+    S1 --> TEEN["Teen offers<br/>drive, tutor, grocery run"]
+    S1 --> PAR["Parent assigns<br/>chore or bounty"]
+    S1 --> GP["Grandparent sponsors<br/>bonus stars"]
+    S1 --> P2P["Parents' private vault<br/>Mom and Dad only"]
+    S1 --> SELF["Teen's own calendar<br/>free/busy shown, details hidden"]
+
+    KID --> S2{{"STEP 2 · Parent says yes or no"}}
+    TEEN --> S2
+    KID -->|"Fix a typo, change the time"| KID
+    KID -->|"Never mind, take it down"| WITHDRAWN["Withdrawn by the asker<br/>nobody was told, nothing to explain"]
+    TEEN -->|"Change or withdraw the offer"| TEEN
+    S2 -->|"Approved — asker can no longer edit"| S3
+    S3 -->|"Asker wants a change now"| ASKCHANGE["Asks a parent for the change<br/>parent decides, helper is told"]
+    ASKCHANGE --> S3
+    GP --> PAR
+    S2 -->|Yes, send it out| S3
+    S2 -->|No, with a reason| ARCH["Turned down<br/>reason shown to the asker"]
+    S2 -->|"No answer by cutoff"| LAPSE["⏰ Nobody answered<br/>nudge, then parent covers"]
+    LAPSE --> S2
+
+    PAR --> S3["STEP 3 · Open to helpers<br/>grandparents and teens pools"]
+    S3 --> S4["STEP 4 · Someone takes it<br/>locked to one helper, coins held"]
+    S3 -->|"Nobody took it, time is close"| NOBODY["⚠️ Still open<br/>parent covers or bumps it"]
+    NOBODY --> S3
+    S3 -->|"Two taps at once"| RACE["First tap wins<br/>second sees: already taken"]
+    RACE --> S3
+
+    S4 --> S5["STEP 5 · Work happens"]
+    S4 -->|"🚫 I can't make it"| CANT
+    S5 -->|"🚫 Something went wrong"| CANT
+    S5 -->|"Gone quiet past the time"| NOSHOW["👀 Still on?<br/>no answer, auto-release"]
+    NOSHOW --> CANT
+
+    CANT["CAN'T MAKE IT<br/>pick a reason, then pick what happens"]
+    CANT -->|Put it back| S3
+    CANT -->|Hand to a person| S4
+    CANT -->|Ask for a later time| S2
+    CANT -->|Cancel it| CANCEL["Cancelled<br/>everyone told, coins released"]
+
+    S3 -->|"Parent edits time, coins, who it's open to"| S3
+    S4 -->|"Parent edits after it's taken"| REACCEPT["Terms changed<br/>helper accepts again or hands it back"]
+    REACCEPT --> S4
+
+    S5 --> S6["STEP 6 · Parent checks the work"]
+    S5 -->|"Only part of it done"| PART["Partly done<br/>split the reward"]
+    PART --> S6
+    S6 -->|Looks good| COINGATE{{"Who actually did it?"}}
+    COINGATE -->|Kid or teen| S7["STEP 7 · Paid out<br/>coins and stars to the wallet"]
+    COINGATE -->|Grandparent or parent| S7B["Logged and thanked<br/>no coins — coins are a kid and teen thing"]
+    S6 -->|"Not done right, try again"| REDO["Try again<br/>max 2 rounds"]
+    REDO --> S5
+    REDO -->|"Kid disagrees"| DISPUTE["Second parent decides"]
+    DISPUTE --> S6
+
+    P2P --> PA["PARENTS' LANE · Step A<br/>Mom or Dad takes it<br/>no approval, no coins"]
+    PA --> PB["PARENTS' LANE · Step B<br/>Work happens"]
+    PB --> S7B
+    PA -->|"🚫 I can't make it"| PCANT["Can't make it<br/>reason, then what next"]
+    PB -->|"Something came up"| PCANT
+    PB -->|"Quiet past the time"| PNUDGE["👀 Still on?"]
+    PNUDGE --> PCANT
+    PCANT -->|"Over to you"| PA
+    PCANT -->|"Ask for a later time"| PA
+    PCANT -->|"Drop it"| CANCEL
+    SELF --> S7B
+
+    classDef step fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#fff;
+    classDef origin fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#fff;
+    classDef exit fill:#881337,stroke:#f43f5e,stroke-width:2px,color:#fff;
+    classDef done fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff;
+
+    class S1,S2,S3,S4,S5,S6,PA,PB step;
+    class KID,TEEN,PAR,GP,P2P,SELF origin;
+    class CANT,NOBODY,NOSHOW,PART,REDO,DISPUTE,LAPSE,RACE,CANCEL,ARCH,PCANT,PNUDGE,REACCEPT,WITHDRAWN,ASKCHANGE exit;
+    class S7,S7B done;
+          </pre>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl flex flex-col justify-between">
+        <div class="space-y-4">
+          <div id="inspector-badge" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider step-chip">Step 1</div>
+          <div>
+            <h3 id="inspector-title" class="text-base font-bold text-white">Someone asks or offers</h3>
+            <p id="inspector-desc" class="text-xs text-slate-300 mt-1 leading-relaxed"></p>
+          </div>
+          <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2 text-xs">
+            <p class="font-bold text-rose-400 uppercase text-[10px] tracking-wider"><i class="fa-solid fa-triangle-exclamation mr-1"></i> What goes wrong here in real life</p>
+            <p id="inspector-problem" class="text-slate-300"></p>
+          </div>
+          <div class="space-y-2 text-xs">
+            <p class="font-bold text-indigo-400 uppercase text-[10px] tracking-wider"><i class="fa-solid fa-bolt mr-1"></i> What the buttons say</p>
+            <div id="inspector-actions" class="space-y-2"></div>
+          </div>
+          <div class="space-y-2 text-xs">
+            <p class="font-bold text-indigo-400 uppercase text-[10px] tracking-wider"><i class="fa-solid fa-user-gear mr-1"></i> Who can do what</p>
+            <div id="inspector-roles" class="space-y-1.5"></div>
+          </div>
+        </div>
+        <div id="inspector-footer" class="text-[11px] text-slate-500 bg-slate-950 p-3 rounded-xl border border-slate-800/80 mt-4">Tap a button to see the message the family actually receives.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB 2: GAP REGISTER ============ -->
+  <section id="tab-gaps" class="space-y-6 hidden">
+    <div class="bg-rose-950/30 border border-rose-500/30 p-4 rounded-3xl text-xs">
+      <p class="font-bold text-rose-200 text-sm">27 gaps found between the old flow and how families actually behave</p>
+      <p class="text-slate-400 mt-1">The old flow had exactly one escape hatch: a claimed helper releasing back to the pool. Everything below had no exit — the task would sit stuck, or a person would be blamed for something the software never gave them a way to say.</p>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl overflow-x-auto">
+      <table class="w-full text-left border-collapse text-xs">
+        <thead>
+          <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider bg-slate-950/60">
+            <th class="p-3 w-8">#</th>
+            <th class="p-3">What happens in a real house</th>
+            <th class="p-3">Where the old flow stopped</th>
+            <th class="p-3">What v2 adds</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/80" id="gap-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TAB 3: SIMULATOR ============ -->
+  <section id="tab-desktop" class="space-y-6 hidden">
+    <div class="bg-indigo-950/40 border border-indigo-500/30 p-4 rounded-3xl flex flex-wrap justify-between items-center gap-4 text-xs shadow-lg">
+      <div>
+        <p class="font-bold text-indigo-200 text-sm">Live simulator — try breaking it</p>
+        <p class="text-slate-400">Claim a task, then hit "I can't make it". Pick a reason, then choose what happens to it. Watch every screen update.</p>
+      </div>
+      <button onclick="resetAllState()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl border border-slate-700"><i class="fa-solid fa-rotate-right mr-1.5"></i> Reset</button>
+    </div>
+
+    <div id="toast-banner" class="hidden bg-emerald-950/90 border border-emerald-500/60 p-4 rounded-2xl text-xs text-emerald-200 shadow-2xl flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-xl">🔔</span>
+        <div>
+          <p class="font-bold text-emerald-300 text-sm" id="toast-title">Done</p>
+          <p class="text-slate-300" id="toast-desc"></p>
+        </div>
+      </div>
+      <span class="bg-emerald-500 text-slate-950 text-[10px] font-black px-3 py-1 rounded-full uppercase">Synced</span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div class="bg-slate-900 border border-indigo-500/40 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between min-h-[620px]">
+        <div class="space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <span class="font-extrabold text-sm text-indigo-400 flex items-center gap-2"><span>👩🏻‍🦰</span> Parent</span>
+            <span class="text-[10px] bg-indigo-950 text-indigo-300 px-2.5 py-1 rounded-full border border-indigo-500/30 font-mono">Inbox + vault</span>
+          </div>
+          <div id="parent-screen-stream" class="space-y-3"></div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 space-y-2">
+          <button onclick="openCreateSheet()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Create a task</button>
+          <button onclick="parentPostChore('citizenship')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2 rounded-xl text-xs border border-slate-700"><i class="fa-solid fa-broom mr-1"></i> Post a citizenship chore (0 coins)</button>
+          <button onclick="parentPostChore('bounty')" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs"><i class="fa-solid fa-coins mr-1"></i> Post a bounty (25 coins)</button>
+          <button onclick="parentPostGpTask()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl text-xs"><i class="fa-solid fa-hands-holding mr-1"></i> Ask the grandparents (no coins)</button>
+          <button onclick="parentCreatePrivateTask()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded-xl text-xs"><i class="fa-solid fa-lock mr-1"></i> Add something for us two</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between min-h-[620px]">
+        <div class="space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <span class="font-extrabold text-sm text-amber-400 flex items-center gap-2"><span>🧒🏽</span> Kid &amp; teen</span>
+            <span id="kid-stars-badge" class="text-[10px] bg-amber-950 text-amber-300 px-2.5 py-1 rounded-full border border-amber-500/30 font-mono">⭐ 135</span>
+          </div>
+          <div id="kid-screen-stream" class="space-y-3"></div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 space-y-2">
+          <button onclick="teenSubmitOffering()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs"><i class="fa-solid fa-hand-holding-heart mr-1"></i> Offer to help</button>
+          <button onclick="teenAddSelfSchedule()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 rounded-xl text-xs border border-slate-700"><i class="fa-solid fa-user-shield mr-1"></i> Add to my own calendar</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-blue-500/40 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between min-h-[620px]">
+        <div class="space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <span class="font-extrabold text-sm text-blue-400 flex items-center gap-2"><span>👴🏼</span> Grandpa Joe</span>
+            <span class="text-[10px] bg-blue-950 text-blue-300 px-2.5 py-1 rounded-full border border-blue-500/30 font-mono">GP pool</span>
+          </div>
+          <div id="paternal-screen-stream" class="space-y-3"></div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-500">Take a task, or say you can't make it — no guilt, no explanation owed beyond the reason chip.</div>
+      </div>
+
+      <div class="bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between min-h-[620px]">
+        <div class="space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <span class="font-extrabold text-sm text-emerald-400 flex items-center gap-2"><span>🧑</span> Alex (teen)</span>
+            <span class="text-[10px] bg-emerald-950 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-500/30 font-mono">Teens pool</span>
+          </div>
+          <div id="maternal-screen-stream" class="space-y-3"></div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-500">Driving and tutoring runs. Same escape hatch as everyone else.</div>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+      <p class="font-bold text-slate-300 text-xs uppercase tracking-wider mb-3"><i class="fa-solid fa-clock-rotate-left text-amber-400 mr-1.5"></i> What happened, in order</p>
+      <div id="audit-log" class="space-y-1.5 text-[11px] max-h-56 overflow-y-auto"></div>
+    </div>
+  </section>
+
+  <!-- ============ TAB 4: MATRIX ============ -->
+  <section id="tab-matrix" class="space-y-6 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
+      <div class="border-b border-slate-800 pb-3">
+        <h2 class="text-base font-bold text-white">Who can do what, and what the button says</h2>
+        <p class="text-xs text-slate-400">Every row names the control in the words the person reading it would use.</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider bg-slate-950/60">
+              <th class="p-3">Situation</th>
+              <th class="p-3">Parent sees</th>
+              <th class="p-3">Kid / teen sees</th>
+              <th class="p-3">Grandparent sees</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/80" id="matrix-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
+
+  const ROSTER = ['Mom', 'Dad', 'Alex (teen)', 'Maya (9)', 'Grandpa Joe', 'Grandma Rose'];
+
+  const REASONS = [
+    { id: 'clash',   label: 'Something came up' },
+    { id: 'unwell',  label: 'Not feeling well' },
+    { id: 'noride',  label: 'No car / no ride' },
+    { id: 'time',    label: 'Need more time' },
+    { id: 'help',    label: 'Too hard, need help' },
+    { id: 'unsafe',  label: 'Not safe right now' }
+  ];
+
+  const GAPS = [
+    ['1','A kid is sick or has an exam on chore day','Parent-assigned chores went straight to execution — no way to say no','"I can\'t do this today" with a reason, then reschedule or reassign'],
+    ['2','Grandpa\'s car breaks down halfway to pickup','Release only existed before work started','"Something went wrong" available during the task too, with an urgent re-broadcast'],
+    ['3','Parent already knows who should take it instead','Release dumped the task blindly back into the pool','Hand it to a named person — goes straight to their screen as a pending handoff'],
+    ['4','Nobody claims the ride and pickup is in 20 minutes','Task sat open forever with no escalation','Cutoff timer — "Nobody took this" — parent covers it or moves the time'],
+    ['5','Helper claimed it, then went silent and never showed','No no-show concept at all','Check-in nudge before the time; no answer auto-releases and alerts the parent'],
+    ['6','Kid did the dishes but not the trash','Binary approve-or-redo only','"Part of it is done" — split the reward, remainder reopens'],
+    ['7','Kid got a lift from a friend, ride no longer needed','No cancel path once approved','"Not needed anymore" from the creator, at any point before payout — helper is told and thanked'],
+    ['8','Parent never opens the approval inbox before the event','Requests could sit pending past the event','Approval cutoff — nudge — auto-escalate to the other parent'],
+    ['9','Kid insists the work was done properly','Redo could loop forever with no arbitration','Max 2 redo rounds, then the second parent decides'],
+    ['10','Two helpers tap Claim at the same second','Undefined — both could think they had it','First tap wins; the second sees "already taken" and stays in the pool'],
+    ['11','Grandparent funded a bounty that never got done','Stars pledged with no refund path','Coins held when claimed, released on payout, returned on cancel'],
+    ['12','A chore is scheduled over the teen\'s private plans','Teen calendar was fully hidden, so clashes were invisible','Free/busy shows as a grey block — the parent sees "busy", never the detail'],
+    ['13','Mom said she\'d call the plumber, then forgot','The parents\' lane ran create → completed with no exit at all','Full parents\' lane: take it, hand it over, re-time it, drop it, plus a quiet-past-the-time nudge'],
+    ['14','A coin reward sits on a task Grandpa is doing','Coins were a property of every task','Coins exist only where a kid or teen does the work. Grandparent and parent tasks have no coin field at all'],
+    ['15','Parent drops a claimed bounty from 25 coins to 10','Edits after a claim silently rewrote the deal','Terms freeze on claim. Any change goes back to the helper: still fine, or hand it back — no reason needed'],
+    ['16','Nobody in the teens pool is taking the ride','Routing was fixed at creation — you had to delete and re-post','Welcome-grandparents and welcome-teens toggles a parent can flip while it\'s unassigned, keeping the history'],
+    ['17','Maya typed 4am instead of 4pm on her ride request','Requests were read-only the second they were sent','The asker owns it until a parent answers: edit or take it down freely, no notification, no trace'],
+    ['18','Maya wants to move the time after Grandpa cleared his afternoon','No path — either the kid edits and burns the helper, or is stranded','After approval the button becomes "ask for a change": parent decides, helper is told and can hand it back cleanly'],
+    ['19','Grandpa Joe claims a task and decides he does not like the coins','Grandparents could edit — and would, burning the whole system','Grandparents have NO edit rights except on their own sponsored bounties. They claim, pass, or can\'t-make-it. Parents reassign.'],
+    ['20','Grandpa wants to widen a task to include his wife','Grandparents could toggle routing','Grandparents have no routing or edit controls. If nobody claims it, a parent widens it.'],
+    ['21','A GP sponsors a bounty and sees the "welcome grandparents" toggle on their own task','Routing toggles showed on every task, including ones GPs created','When a GP sponsors a bounty, hide the grandparent toggle — they are the creator, not in the pool'],
+    ['22','One GP claimed a ride, the other GP sees it and also taps Claim','Pools were fully shared with no claiming lock','Once a GP claims it, it disappears from all other GPs\' pools. If that GP later drops it, it goes back into the GP pool, not to teens or open-for-everyone'],
+    ['23','A GP does the grocery run and spent $40 of their own money','No way to track actual expenses spent','GP chores can have optional receipt upload. If they bought stuff for the chore, they submit the receipt. Parent approves reimbursement — separate from coins earned'],
+    ['24','Maya asks for a 3pm pickup but Mom never opens the inbox','No nudge to Mom, no escalation to Dad','Approval cutoff fires a nudge. If still no answer, auto-escalates to the other parent with a bold flag'],
+    ['25','Chore to "organize the garage sometime this month" sits at the top of the inbox next to "pick up at 3pm today"','No way to separate flexible from time-critical','Time-critical tasks (has a deadline within 24h) show in "Today & Urgent". Flexible chores live in "Backlog". Same task, different visibility.'],
+    ['26','It\'s 2:50pm and nobody has claimed the 3pm pickup','The pool was open, but no nudge told anyone time is short','Cutoff timer at +30min before due time fires a nudge to the pool and alert to parents'],
+    ['27','Helper claimed the task and pickup is in 20min but they haven\'t started','No check-in before the time','Nudge fires 15min before due: "Still on?" Silence for 5min auto-releases and alerts parent as urgent']
+  ];
+
+  const MATRIX = [
+    ['Helper can\'t make it','"Grandpa Joe can\'t make it — school pickup, 3pm. Take it back, or send it to someone?"','"Your ride needs a new driver"','"I can\'t make it" → reason → what happens next'],
+    ['Nobody claims it','"Nobody took the 3pm pickup. Cover it yourself or move the time?"','"Still looking for a driver"','Task shows an urgent flag in the pool'],
+    ['Kid can\'t do a chore','"Maya says she can\'t do trash today — exam. Move it, or give it to Alex?"','"I can\'t do this today" → reason','—'],
+    ['Only part is done','"Dishes done, trash not. Pay part and reopen the rest?"','"I finished part of it"','Remainder reappears in the pool'],
+    ['Work looks wrong','"Not done right — try again" with a note','"Try again" note, or "I did do it — ask Dad"','—'],
+    ['Editing before anyone takes it','Change wording, time, coins, who it\'s open to, who it\'s assigned to','Sees the current version only','Sees the current version only · if they sponsored it, can edit the coins only'],
+    ['Editing after someone takes it','"Change the terms" — sends it back for them to accept','"Still fine" or "that doesn\'t work — hand it back"','Same two answers, no reason needed'],
+    ['Reassigning when someone drops it','Can send it back to the pool or to a named person','N/A — doesn\'t have this right','N/A — doesn\'t have this right'],
+    ['When a GP sponsors a task','"Welcome grandparents" toggle is hidden (they created it, aren\'t in the pool)','They see it in the pool without the GP toggle','The teen toggle still shows so a parent can widen it'],
+    ['When one GP claims it','Removed from all other GPs\' pools immediately','Removed from the teens pool if it\'s there','If they drop it later, it goes back to the GP pool, not to teens or open-for-everyone'],
+    ['Out-of-pocket expenses','Grandparent submits receipt with what they bought','Shows: amount, what, date — parent approves or asks for clarification','Separate from coins earned. Receipt reimbursement is direct.'],
+    ['Opening it up wider','Toggles: welcome grandparents, welcome teens','It appears or disappears from their pool','It appears or disappears from their pool'],
+    ['Parents\' private vault','Create, take, hand over, re-time, drop. No approval, no coins, no sign-off','Hidden entirely','Hidden entirely'],
+    ['A parent can\'t make it','"Over to you" · "Can we move it?" · "Let\'s drop it" · "Park it"','Hidden entirely','Hidden entirely'],
+    ['Teen\'s own calendar','Shows as a grey busy block, no detail','Full detail, private','Hidden entirely'],
+    ['Time-critical (within 24h)','Shows in "Today & Urgent" with ⏰ badge','Shows in "Today & Urgent" with ⏰ badge','Shows in their pool with urgent flag'],
+    ['Flexible task (later)','Shows in "Backlog", moves to urgent 24h before due','Shows in "Backlog", moves to urgent 24h before','Shows in their pool, no urgency yet'],
+    ['Parent approval at cutoff risk','Gets nudge. If silent, co-parent escalated','—','Waiting on parent\'s approval'],
+    ['Pool time-critical +30min before','Urgency flag, nudge to both pools','Nudge received','"Time-critical, nobody claimed it" flag'],
+    ['Helper claimed, +15min before','—','Check-in nudge: "Still on?" 5min silence auto-releases','—'],
+    ['Asker\'s time-critical at approval risk','Nudge to asker: "Still waiting on your parents"','Nudge received if waiting','—']
+  ];
+</script>
+</body>
+</html>

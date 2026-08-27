@@ -16,6 +16,7 @@ import GoogleIcon from '@/components/GoogleIcon';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useTheme } from '@/lib/ThemeContext';
 import { useAuthStore } from '@/store/authStore';
+import { useFamilyStore } from '@/store/familyStore';
 import { markPendingTermsAcceptance } from '@/lib/biometrics';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import { RADIUS, SPACING , TYPO } from '@/constants/theme';
@@ -85,6 +86,15 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
+    // Same cross-identity reset as LoginScreen.tsx's handleLogin — this
+    // device may already hold a DIFFERENT identity's cached familyStore
+    // state (e.g. someone joined a family via invite code here first,
+    // anonymously, then this screen is used to create a brand-new
+    // account without ever signing out of that first identity). Without
+    // this, SetupFamilyScreen's own "does this auth user already have a
+    // family" check, and every screen after it, could read stale cached
+    // members/activeMemberId left over from the OTHER identity.
+    await useFamilyStore.getState().reset();
     let data: Awaited<ReturnType<typeof supabase.auth.signUp>>['data'] | undefined;
     let error: Awaited<ReturnType<typeof supabase.auth.signUp>>['error'] | undefined;
     try {
@@ -150,6 +160,8 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
+    // Same cross-identity reset as handleSignup's own — see its comment.
+    await useFamilyStore.getState().reset();
     try {
       if (Platform.OS === 'ios') {
         const credential = await AppleAuthentication.signInAsync({
@@ -208,6 +220,8 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
+    // Same cross-identity reset as handleSignup's own — see its comment.
+    await useFamilyStore.getState().reset();
     const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
     const redirectUri = (Platform.OS === 'android' && isExpoGo)
       ? 'exp://127.0.0.1:8081/--/auth/callback'

@@ -16,6 +16,7 @@ import * as Linking from 'expo-linking';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
+import { useFamilyStore } from '@/store/familyStore';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import {
   isBiometricEnabled, isBiometricAvailable, getBiometricLabel,
@@ -152,6 +153,22 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
+    // Critical: this device may currently hold an ANOTHER identity's
+    // cached familyStore state — e.g. someone joined a family via invite
+    // code (an anonymous session) on this exact device, then later logged
+    // in here with a real account, without ever tapping Sign Out first
+    // (live-reported: this exact sequence). signInWithPassword swaps the
+    // underlying Supabase session, but familyStore's own AsyncStorage
+    // cache (members list + activeMemberId) is untouched by that — it
+    // silently carries over whichever member was active under the OLD
+    // session. The real symptom: a member (e.g. a kid) genuinely PIN-
+    // switched to under the NEW session ends up sending every request
+    // under a stale/wrong x-active-member-id header, since
+    // debugFetch reads familyStore live and it was never reset for this
+    // new identity. Clear it BEFORE the new session takes effect so the
+    // next family sync starts clean, exactly as authStore.signOut()
+    // already does for the normal sign-out path.
+    await useFamilyStore.getState().reset();
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
@@ -168,6 +185,11 @@ export default function LoginScreen() {
 
   const handleAppleLogin = async () => {
     setLoading(true);
+    // Same cross-identity reset as handleLogin's own — see its comment for
+    // the exact incident this closes (an anonymous invite-code session's
+    // cached familyStore state surviving into a real-account login on the
+    // same device, with no Sign Out in between).
+    await useFamilyStore.getState().reset();
     try {
       if (Platform.OS === 'ios') {
         // Native Apple Sign In on iOS
@@ -220,6 +242,8 @@ export default function LoginScreen() {
 
   const handleGoogleLogin = async () => {
     setLoading(true);
+    // Same cross-identity reset as handleLogin's own — see its comment.
+    await useFamilyStore.getState().reset();
     try {
       // iOS: ASWebAuthenticationSession intercepts any scheme automatically → use app scheme
       // Android Expo Go: familycube:// not registered as intent filter → use exp:// so

@@ -212,7 +212,7 @@ function normalizeDmChannelId(channelId: string, senderId: string): string {
 // Ensures one exists — upsert so concurrent first-messages from both sides
 // of a brand new DM don't race into a duplicate-key error.
 const _ensuredDmChannels = new Set<string>();
-async function ensureDmChannelRow(channelId: string, memberAId: string, memberBId: string): Promise<void> {
+async function ensureDmChannelRow(channelId: string, memberAId: string, memberBId?: string): Promise<void> {
   if (!channelId.startsWith('dm_') || _ensuredDmChannels.has(channelId)) return;
   try {
     // Check-then-insert, not upsert(ignoreDuplicates) — confirmed via
@@ -226,16 +226,27 @@ async function ensureDmChannelRow(channelId: string, memberAId: string, memberBI
 
     const { useFamilyStore } = require('./familyStore');
     const members: any[] = useFamilyStore.getState().members;
+    // memberBId is only trustworthy when the caller passed a raw recipient
+    // id (see sendMessage's otherPartyHint comment) — when it's absent,
+    // derive the other party by finding which OTHER family member's id is
+    // actually embedded in this channel's id string. Safe against ids
+    // containing underscores (a plain split('_') isn't) since this tests
+    // each real candidate id as a whole substring rather than guessing
+    // where the delimiter falls.
+    const resolvedOtherId = memberBId ?? members.find(m => m.id !== memberAId && channelId.includes(m.id))?.id;
     const memberA = members.find(m => m.id === memberAId);
-    const memberB = members.find(m => m.id === memberBId);
+    const memberB = members.find(m => m.id === resolvedOtherId);
     const familyId = memberA?.familyId ?? memberB?.familyId;
-    if (!familyId) return;
+    if (!familyId || !resolvedOtherId) {
+      console.warn('[chatStore] ensureDmChannelRow: could not resolve other party for', channelId);
+      return;
+    }
     const { error } = await supabase.from('chat_channels').insert({
       id: channelId,
       family_id: familyId,
       type: 'direct',
       name: memberB?.name ?? memberA?.name ?? 'Direct Message',
-      member_ids: [memberAId, memberBId],
+      member_ids: [memberAId, resolvedOtherId],
       icon: '💬',
     });
     // A duplicate-key error means another device won the race and
@@ -792,9 +803,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // chat_messages RLS requires channel_id to already exist in
     // chat_channels — a brand new DM pair has no such row yet under the
     // new composite id, so ensure one before writing the message itself.
+    //
+    // Real, pre-existing bug found here: this used to branch on
+    // `channelId !== originalChannelArg` to decide DM vs group — which is
+    // WRONG whenever the caller already passes a ready-made dm_<a>_<b> id
+    // (exactly what ChatScreen.tsx always does — every one of its 4 call
+    // sites passes its own already-composite `channelId` state, never a
+    // raw recipient id). In that case normalizeDmChannelId's short-circuit
+    // (`channelId.startsWith('dm_')`) returns it UNCHANGED, so
+    // channelId === originalChannelArg was true, silently routing every
+    // DM sent from the actual Chat screen into ensureGroupChannelRow —
+    // which immediately no-ops for any non-group id — meaning
+    // ensureDmChannelRow was NEVER called for a genuinely brand-new DM
+    // pair started from ChatScreen itself. Only worked at all for pairs
+    // that happened to already have a chat_channels row from some OTHER
+    // caller (the ~51 sendMessage(recipientId, ...) call sites elsewhere
+    // in the app, which DO pass a raw id and correctly hit the DM branch
+    // the old way) — explaining why some members' DMs worked and a
+    // never-previously-notified member's (Raja's) never did. Branch on
+    // whether the FINAL id is a dm_ id, period — regardless of whether
+    // normalization actually changed anything.
     let dbChannelId = channelId;
-    if (channelId !== originalChannelArg) {
-      await ensureDmChannelRow(channelId, senderId, originalChannelArg);
+    if (channelId.startsWith('dm_')) {
+      // originalChannelArg is only the real OTHER-party id when the caller
+      // passed a raw recipient id (normalizeDmChannelId then built
+      // channelId from it). When the caller already passed a ready-made
+      // dm_<a>_<b> id (ChatScreen.tsx, every call site), originalChannelArg
+      // === channelId — the whole composite string, not a real member id —
+      // so ensureDmChannelRow must derive the other party from the
+      // channel's own stored member_ids instead of trusting this argument
+      // blindly (a plain '_' split is unsafe: some legacy member ids
+      // themselves contain underscores, e.g. 'm_1786235893879').
+      const otherPartyHint = originalChannelArg !== channelId ? originalChannelArg : undefined;
+      await ensureDmChannelRow(channelId, senderId, otherPartyHint);
     } else {
       await ensureGroupChannelRow(channelId, senderId);
       // For the 5 fixed group channels only, the actual chat_channels/

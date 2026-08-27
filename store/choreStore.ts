@@ -2502,7 +2502,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!chore) return;
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
-        ...c, assignedToId: undefined, isPool: false, claimedAt: undefined,
+        ...c, assignedToId: undefined,
+        // Matches the RPC's own guard (20260927150000_fix_later_date_orphan.sql)
+        // — was hardcoded false, leaving the chore optimistically invisible
+        // in the pool until the next resync overwrote it, even though the
+        // server-side fix already makes it reappear immediately. Adult-only
+        // tasks still stay out of the kid/teen pool.
+        isPool: c.categoryType !== 'parent_only_quest', claimedAt: undefined,
         rejectionReason: reason ?? c.rejectionReason, declinedAt: new Date().toISOString(),
         pendingLaterDate: newDate, pendingLaterReason: reason,
         pendingLaterRequestedBy: byMemberId, pendingLaterRequestedAt: new Date().toISOString(),

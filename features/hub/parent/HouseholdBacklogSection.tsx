@@ -155,7 +155,8 @@ export function HouseholdBacklogSection({
                   // Recall action when this viewer is actually who assigned it.
                   return (
                     <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={isDark}
-                      onRecall={a.status === 'PENDING' && a.assignedBy === active.id ? () => recallParentQuest(a.id, active.id) : undefined} />
+                      onRecall={a.status === 'PENDING' && a.assignedBy === active.id ? () => recallParentQuest(a.id, active.id) : undefined}
+                      onRespond={onRespond} />
                   );
                 })}
               </View>

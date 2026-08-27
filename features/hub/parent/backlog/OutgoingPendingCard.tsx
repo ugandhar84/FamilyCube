@@ -18,9 +18,17 @@ import type { FamilyMember } from '@/store/familyStore';
 // place a delegator was told who they're waiting on with no way to
 // actually remind that person, noticed while confirming today's
 // reassignment-visibility fix looked right in the app.
-export function OutgoingPendingCard({ a, chore, members, active, colors, isDark, onRecall }: {
+export function OutgoingPendingCard({ a, chore, members, active, colors, isDark, onRecall, onRespond }: {
   a: ParentQuestAssignment; chore: ChoreTask; members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
   onRecall?: () => void;
+  // QA exploratory finding — once a delegation bounces (PARKED, not yet
+  // locked), the RPC happily accepts a counter-pushback from the assigner
+  // (respond_to_parent_quest has no assignedBy/assignedTo asymmetry), but
+  // this card never offered a button to do it — only Nudge. The assignee's
+  // own DirectPendingCard already has this exact "Respond" affordance;
+  // mirroring it here closes the gap rather than leaving the assigner with
+  // no in-app way to continue a negotiation they're a full party to.
+  onRespond?: (assignmentId: string, choreTitle: string, assignedBy: string, assignedTo: string) => void;
 }) {
   const [isExp, setExp] = useState(false);
   const assignee = members.find(m => m.id === a.assignedTo);
@@ -80,6 +88,15 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
             <MessageCircle size={13} color={colors.warning} />
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Nudge</Text>
           </Pressable>
+          {isBounced && onRespond && (
+            <Pressable
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Respond" on "${chore.title}" bounced by ${assignee?.name ?? 'partner'} (id=${a.id}) → onRespond`); onRespond(a.id, chore.title, a.assignedBy, a.assignedTo); }}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                borderRadius: 10, borderWidth: 1, borderColor: colors.primary + '60', paddingVertical: 8 }}>
+              <MessageCircle size={13} color={colors.primary} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>Respond</Text>
+            </Pressable>
+          )}
           {onRecall && (
             <Pressable
               onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Recall" on "${chore.title}" from ${assignee?.name ?? 'partner'} (id=${a.id}) [features/hub/parent/backlog/OutgoingPendingCard.tsx:79]`); Alert.alert(

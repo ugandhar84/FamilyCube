@@ -915,7 +915,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!chore) return null;
             return (
               <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={isDark}
-                onRecall={a.status === 'PENDING' ? () => { logAction('Recall', `recallParentQuest(${a.id})`, { targetId: a.choreId, targetTitle: chore.title, at: '828' }); recallParentQuest(a.id, active.id); } : undefined} />
+                onRecall={a.status === 'PENDING' && a.assignedBy === active.id ? () => { logAction('Recall', `recallParentQuest(${a.id})`, { targetId: a.choreId, targetTitle: chore.title, at: '828' }); recallParentQuest(a.id, active.id); } : undefined}
+                onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })} />
             );
           })}
           {myLockedItems.map(a => {

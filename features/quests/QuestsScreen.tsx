@@ -1062,7 +1062,8 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                 if (!chore) return null;
                 return (
                   <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={activeMember!} colors={colors} isDark={isDark}
-                    onRecall={a.status === 'PENDING' ? () => recallParentQuest(a.id, activeMember!.id) : undefined} />
+                    onRecall={a.status === 'PENDING' && a.assignedBy === activeMember!.id ? () => recallParentQuest(a.id, activeMember!.id) : undefined}
+                    onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })} />
                 );
               })}
 

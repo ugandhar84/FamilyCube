@@ -2575,6 +2575,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // flash the chore as gone for anyone unauthorized to remove it; wait for
   // the RPC's real answer instead.
   cancelChore: async (choreId, byMemberId) => {
+    // QA exploratory finding — cancel_chore was a silent hard delete: the
+    // holder of a claimed chore got zero notice it was cancelled out from
+    // under them, unlike every other "this chore left your hands" path
+    // (handoff decline, terms-change reject) which at least reopens it
+    // visibly. Capture the pre-cancel assignee before the row is gone, same
+    // pattern acceptGPOffer/declineGrandparentQuest already use for their
+    // own notifications.
+    const chore = get().chores.find(c => c.id === choreId);
     const { data, error } = await supabase.rpc('cancel_chore', { p_chore_id: choreId, p_by_member_id: byMemberId });
     if (error) {
       console.warn('[choreStore] cancelChore RPC failed', error.message);
@@ -2583,6 +2591,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     set(s => ({ chores: s.chores.filter(c => c.id !== choreId) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    if (chore?.assignedToId && chore.assignedToId !== byMemberId) {
+      try {
+        const { useChatStore } = require('./chatStore');
+        useChatStore.getState().sendMessage(chore.assignedToId, byMemberId,
+          `🗑️ "${chore.title}" was cancelled — no longer needed, thanks anyway.`);
+      } catch (e) {
+        console.warn('[choreStore] cancelChore notification failed', e);
+      }
+    }
     return true;
   },
 
@@ -5037,9 +5054,30 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // vanished from their view the moment it got parked.
   getMyLockedItems: (memberId) => {
     const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
-    return get().parentAssignments.filter(a =>
-      (a.assignedTo === memberId || a.assignedBy === memberId) && a.isLocked && !systemBIds.has(a.choreId)
-    );
+    // QA exploratory finding — a co-parent could see a delegation to a
+    // senior/GP while it was merely pending/parked (getMyOutgoingPending's
+    // own household-broadcast widening below), then lost all visibility the
+    // instant it locked — exactly the moment a stuck negotiation most needs
+    // a second adult's attention. Mirrors getMyOutgoingPending's identical
+    // widening rule: only for another PARENT (never a senior/GP peeking at
+    // someone else's), and only when the target is a third-party senior,
+    // not the co-parent's own direct handoff (System-A's getMyDirectPending
+    // already covers that).
+    const myRole = (() => {
+      try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === memberId)?.role; }
+      catch { return null; }
+    })();
+    const assigneeRole = (id: string) => {
+      try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === id)?.role; }
+      catch { return null; }
+    };
+    return get().parentAssignments.filter(a => {
+      if (!a.isLocked || systemBIds.has(a.choreId)) return false;
+      if (a.assignedTo === memberId || a.assignedBy === memberId) return true;
+      if (myRole !== 'parent') return false;
+      const targetRole = assigneeRole(a.assignedTo);
+      return targetRole === 'senior' && a.assignedTo !== memberId;
+    });
   },
 
   // getMyAccepted removed — respondToParentQuest's ACCEPT branch always

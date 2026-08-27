@@ -209,9 +209,23 @@ export async function sendVoipPush(
       ? await sendApnsVoip(t.token, payload)
       : await sendFcmDataMessage(t.token, payload);
 
-    if (result.ok) sent++;
-    else if (result.error?.includes('not configured')) { skipped++; errors.push(result.error); }
-    else { failed++; if (result.error) errors.push(result.error); }
+    // Was silent on both success and failure except via the returned
+    // `errors` array — invisible unless the caller happened to win the
+    // race against the next cron tick to read the HTTP response before
+    // the log row claimed it, which repeated live testing showed is
+    // effectively never (the per-minute cron always wins). Logging here
+    // instead makes the actual APNs/FCM result visible in the dashboard's
+    // function logs regardless of timing.
+    if (result.ok) {
+      sent++;
+      console.log('[call-reminder-sweeper] push sent', { platform: t.platform, tokenPrefix: t.token.slice(0, 8) });
+    } else if (result.error?.includes('not configured')) {
+      skipped++; errors.push(result.error);
+      console.warn('[call-reminder-sweeper] push skipped, not configured', { platform: t.platform });
+    } else {
+      failed++; if (result.error) errors.push(result.error);
+      console.error('[call-reminder-sweeper] push failed', { platform: t.platform, tokenPrefix: t.token.slice(0, 8), error: result.error });
+    }
   }
 
   return { sent, failed, skipped, errors };

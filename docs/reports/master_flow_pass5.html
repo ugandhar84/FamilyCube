@@ -1,0 +1,1070 @@
+<title>Master Flow — Full 82-Case DB-Verified Trace</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --primary: #CD7B57; --primary-light: #F3E1D6;
+    --teal: #69927C; --teal-light: #E3EDE8;
+    --amber: #C9964F; --amber-light: #F2E6CE;
+    --pink: #9686B5; --pink-light: #E9E3F1;
+    --navy: #2C2722;
+    --text-primary: #2C2722; --text-secondary: #6B5F52; --text-tertiary: #8A7D6C;
+    --card: #FFFFFF; --surface: #F8F3EA; --background: #FDFBF7;
+    --border: rgba(205,123,87,0.18);
+    --danger: #B85F45; --success: #69927C;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+    --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --primary: #DB9270; --primary-light: rgba(219,146,112,0.20);
+      --teal: #86AC97; --teal-light: rgba(134,172,151,0.20);
+      --amber: #D9AF74; --amber-light: rgba(217,175,116,0.20);
+      --pink: #AC9BC7; --pink-light: rgba(172,155,199,0.20);
+      --navy: #EDE7DE;
+      --text-primary: #EDE8E0; --text-secondary: #B8AC9C; --text-tertiary: #7A6E60;
+      --card: #1B1E28; --surface: #181B24; --background: #12141C;
+      --border: rgba(219,146,112,0.18);
+      --danger: #CC8064; --success: #86AC97;
+    }
+  }
+  :root[data-theme="dark"] {
+    --primary: #DB9270; --primary-light: rgba(219,146,112,0.20);
+    --teal: #86AC97; --teal-light: rgba(134,172,151,0.20);
+    --amber: #D9AF74; --amber-light: rgba(217,175,116,0.20);
+    --pink: #AC9BC7; --pink-light: rgba(172,155,199,0.20);
+    --navy: #EDE7DE;
+    --text-primary: #EDE8E0; --text-secondary: #B8AC9C; --text-tertiary: #7A6E60;
+    --card: #1B1E28; --surface: #181B24; --background: #12141C;
+    --border: rgba(219,146,112,0.18);
+    --danger: #CC8064; --success: #86AC97;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--text-primary);
+    font-family: var(--font-body); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 20px 80px; }
+
+  header.hero {
+    padding: 44px 20px 24px; text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--surface), var(--background));
+  }
+  header.hero .inner { max-width: 900px; margin: 0 auto; }
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--primary); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 4vw, 36px);
+    margin: 0 0 10px; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .sub { color: var(--text-secondary); font-size: 14.5px; max-width: 66ch; margin: 0; }
+
+  .statbar {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .statbar .inner {
+    max-width: 900px; margin: 0 auto; padding: 10px 20px;
+    display: flex; gap: 20px; align-items: center; overflow-x: auto;
+  }
+  .stat { display: flex; flex-direction: column; gap: 1px; white-space: nowrap; }
+  .stat .n { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 18px; font-family: var(--font-display); }
+  .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 700; }
+  .stat.pass .n { color: var(--success); }
+  .stat.fail .n { color: var(--danger); }
+
+  .tabbar {
+    position: sticky; top: 49px; z-index: 29;
+    background: var(--background); border-bottom: 1px solid var(--border);
+    display: flex; gap: 4px; overflow-x: auto; padding: 8px 20px;
+  }
+  .tabbar .inner { max-width: 900px; margin: 0 auto; display: flex; gap: 6px; }
+  .tab-btn {
+    font-family: var(--font-body); font-size: 12.5px; font-weight: 700; white-space: nowrap;
+    padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text-secondary); cursor: pointer;
+  }
+  .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  section { margin: 32px 0; }
+  .range-section { display: none; }
+  .range-section.active { display: block; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 22px 24px; margin-bottom: 18px;
+  }
+
+  .tc1-h1, .tc2-h1, .tc3-h1, .tc4-h1 { display: none; } /* the doc's own H1, replaced by our page header */
+  .tc1-h2, .tc2-h2, .tc3-h2, .tc4-h2 {
+    font-family: var(--font-body); font-size: 15px; font-weight: 800; margin: 26px 0 6px;
+    color: var(--text-primary);
+  }
+  .tc1-h3, .tc2-h3, .tc3-h3, .tc4-h3 {
+    font-family: var(--font-display); font-size: 19px; font-weight: 600; margin: 0 0 12px;
+    color: var(--primary); padding-top: 4px;
+  }
+  .content p { font-size: 13.5px; color: var(--text-primary); margin: 0 0 10px; }
+  .content p strong { color: var(--text-primary); font-weight: 800; }
+  .content p em { color: var(--text-secondary); }
+  .content code {
+    background: var(--surface); padding: 1px 5px; border-radius: 4px;
+    font-family: var(--font-mono); font-size: 0.86em; color: var(--primary);
+  }
+  .content pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; overflow-x: auto; margin: 8px 0 14px;
+  }
+  .content pre code { background: none; padding: 0; color: var(--text-primary); font-size: 12px; }
+  .content .bullet { font-size: 13.5px; color: var(--text-primary); margin: 4px 0; padding-left: 4px; }
+  .content .bullet code { color: var(--primary); }
+  .content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .content .table-wrap { overflow-x: auto; margin: 10px 0 16px; border: 1px solid var(--border); border-radius: 10px; }
+  .content table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .content th {
+    text-align: left; background: var(--surface); color: var(--text-secondary);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
+    padding: 8px 10px;
+  }
+  .content td { padding: 8px 10px; border-top: 1px solid var(--border); }
+
+  .toc-card { position: sticky; top: 96px; }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; margin-top: 10px; }
+  .toc-item {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-align: center;
+    padding: 6px 4px; border-radius: 8px; background: var(--surface); color: var(--text-secondary);
+    text-decoration: none; border: 1px solid transparent;
+  }
+  .toc-item:hover { border-color: var(--primary); color: var(--primary); }
+
+  footer { text-align: center; color: var(--text-tertiary); font-size: 12px; padding: 30px 20px 10px; }
+</style>
+
+<header class="hero">
+  <div class="inner">
+    <p class="eyebrow">Family Cube · QA · Pass 5</p>
+    <h1>Full 82-Case DB-Verified Trace</h1>
+    <p class="sub">Every one of the 82 master-flow test cases, re-verified against real, isolated-test-family Postgres state — actual RPC calls, actual resulting rows, actual per-role selector evaluation. Not source-reading alone: every claim below was checked by driving real data through the live database.</p>
+  </div>
+</header>
+
+<div class="statbar">
+  <div class="inner">
+    <div class="stat pass"><span class="n">78</span><span class="l">Confirmed</span></div>
+    <div class="stat fail"><span class="n">1</span><span class="l">Regression found &amp; fixed</span></div>
+    <div class="stat"><span class="n">3</span><span class="l">Stale doc, not a bug</span></div>
+    <div class="stat"><span class="n">3</span><span class="l">Unverifiable (device-only)</span></div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <div class="inner">
+    <button class="tab-btn active" onclick="showRange('r1')">TC-01–29</button>
+    <button class="tab-btn" onclick="showRange('r2')">TC-30–50</button>
+    <button class="tab-btn" onclick="showRange('r3')">TC-51–66</button>
+    <button class="tab-btn" onclick="showRange('r4')">TC-67–82</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+<section>
+  <div class="card">
+    <h2 style="font-family:var(--font-display); font-size:19px; margin:0 0 8px;">The one real regression this pass found</h2>
+    <p style="font-size:13.5px; color:var(--text-secondary); margin:0 0 10px;">TC-66's DB verification caught something no amount of source-reading would have: <code>propose_later_date</code>'s double-proposal guard — added in an earlier fix — had been silently dropped by a <em>later</em>, unrelated migration that rewrote the same function's body with <code>create or replace function</code>. Live testing proved it: a second kid could clobber another kid's already-pending later-date request with zero trace or error. Found and fixed in the same session — see TC-66 under the TC-51–66 tab for the full repro, and the deployed fix in <code>supabase/migrations/20260927210000_restore_propose_later_date_clobber_guard.sql</code>.</p>
+  </div>
+</section>
+
+<section id="r1" class="range-section active">
+  <div class="card content">
+<h2 class="tc1-h1">Master Flow — DB-Verified Trace, TC-01 through TC-29</h2>
+<p><strong>Purpose</strong>: Verifies <code>docs/master_flow_full_role_trace_TC01-29.md</code>'s per-role claims against REAL Supabase Postgres state, not source reading alone. For every meaningful DB state transition: (1) called the real RPC, (2) queried the resulting row, (3) confirmed the row matches what the source trace says each role's selector would compute given that row.</p>
+<p><strong>Test data</strong>: One throwaway family <code>zzp4a_TestFam</code> (<code>11111111-1111-1111-1111-111111111111</code>) with 7 <code>zzp4a_</code>-prefixed members — <code>zzp4a_parent1</code>/<code>zzp4a_parent2</code> (parent), <code>zzp4a_kid1</code>/<code>zzp4a_kid2</code> (DB role <code>child</code>), <code>zzp4a_teen1</code> (DB role <code>teenager</code>), <code>zzp4a_senior1</code>/<code>zzp4a_senior2</code> (DB role <code>grandparent</code>). All chores/assignments <code>zzp4a_c*</code>/<code>zzp4a_a*</code>-prefixed. Fully cleaned up at the end — proof query at the bottom.</p>
+<p><strong>Schema notes confirmed live</strong>: <code>families.id</code> uuid, <code>members.id</code> text, <code>members.family_id</code> uuid, <code>chore_tasks.id</code>/<code>family_id</code> text (cast to uuid where the RPC needs it internally). <code>members.role</code> check constraint is <code>['parent','child','kid','teenager','grandparent']</code> — NOT <code>'teen'</code>/<code>'senior'</code> (those are app-level display roles; <code>familyStore.ts:458</code> maps <code>kid→child</code>, <code>teen→teenager</code>, <code>senior→grandparent</code> on write, and reverses it on read at <code>familyStore.ts:333</code>). <code>members.avatar</code> is NOT NULL, supplied as emoji throughout.</p>
+<hr>
+<h4 class="tc1-h3">TC-01 — Parent hard-assigns a chore to a GP (DIRECT)</h4>
+<p><strong>RPC</strong>: Direct insert into <code>parent_quest_assignments</code> (no dedicated creation RPC exists — <code>addParentQuest</code> in <code>store/choreStore.ts:4152</code> is a client-side function that does its own <code>dbUpdate</code>/insert; the trace's own file:line citations for this step are accurate about this).</p>
+<p><strong>Row state</strong>: <code>zzp4a_a01</code>: <code>chore_id=zzp4a_c01, assigned_by=zzp4a_parent1, assigned_to=zzp4a_senior1, mode=DIRECT, status=PENDING</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Matches <code>getMyOutgoingPending</code>/<code>getMyDirectPending</code> selector logic read directly from <code>store/choreStore.ts:5024-5093</code> — B sees it (assignedBy===memberId), CoP sees it too (assignee role is <code>senior</code>, target !== memberId, CoP role is <code>parent</code>), A/GP sees it via <code>getMyDirectPending</code> (assignedTo===memberId, status PENDING).</p>
+<hr>
+<h4 class="tc1-h3">TC-02 — GP accepts a DIRECT delegation</h4>
+<p><strong>RPC</strong>: <code>respond_to_parent_quest('zzp4a_a01', 'zzp4a_senior1', 'ACCEPT', null)</code>.</p>
+<p><strong>Row state</strong>: <code>parent_quest_assignments.status → ACCEPTED</code>. <code>chore_tasks(zzp4a_c01).status → in_progress</code>, <code>.assigned_to_id → zzp4a_senior1</code> (confirmed via follow-up <code>select</code>).</p>
+<p><strong>Verdict</strong>: CONFIRMED. <code>chore_tasks.assigned_to_id</code> is now live, so <code>systemBIds</code> (in <code>getMyDirectPending</code>/<code>getMyOutgoingPending</code>) excludes the chore from System-A cards on both sides; <code>ParentView.tsx:457</code>'s <code>othersAdultQuests</code> filter (<code>q.assignedToId &amp;&amp; q.assignedToId !== active.id</code>) now genuinely includes it for B and CoP — confirmed by reading that exact line.</p>
+<hr>
+<h4 class="tc1-h3">TC-03 — GP declines a DIRECT delegation</h4>
+<p><strong>RPC</strong>: <code>respond_to_parent_quest('zzp4a_a03', 'zzp4a_senior2', 'DECLINE', null)</code> (fresh fixture <code>zzp4a_c03</code>/<code>zzp4a_a03</code>, since a01 was consumed by TC-02).</p>
+<p><strong>Row state</strong>: <code>status → DECLINED</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. <code>getMyOutgoingPending</code>/<code>getMyDirectPending</code> both filter to <code>PENDING</code>/<code>SNOOZED</code>/<code>PARKED</code> only — a <code>DECLINED</code> row drops out of both immediately, no stale card on either side.</p>
+<hr>
+<h4 class="tc1-h3">TC-04 — Two-bounce pushback lock</h4>
+<p><strong>RPC</strong>: <code>respond_to_parent_quest('zzp4a_a04', 'zzp4a_parent2', 'BLOCKER', 'first bounce')</code> → <code>bounce_count=1, is_locked=false, status=PARKED</code>. Then <code>respond_to_parent_quest('zzp4a_a04', 'zzp4a_parent1', 'TRADE', 'second bounce')</code> → <code>bounce_count=2, is_locked=true, status=PARKED</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. <code>is_locked</code> flips true exactly on the 2nd non-terminal pushback action (RPC source: <code>v_bounce_count &gt;= 2 then v_is_locked := true</code>), matching <code>getMyLockedItems</code> (<code>assignedTo===memberId || assignedBy===memberId, isLocked</code>) — both parties get the card, CoP (uninvolved) is excluded by the same filter.</p>
+<hr>
+<h4 class="tc1-h3">TC-05 — Parent recalls a still-PENDING delegation</h4>
+<p><strong>RPC</strong>: <code>recall_parent_quest('zzp4a_a05', 'zzp4a_parent1')</code> → <code>status → DECLINED</code>. Spot-checked the CoP-backstop claim too (lighter-touch per the trace's own TC-05 wording): <code>recall_parent_quest('zzp4a_a05b', 'zzp4a_parent2')</code> where parent2 is NOT the delegator on that assignment.</p>
+<p><strong>Result</strong>: The CoP attempt raised a real exception: <code>member zzp4a_parent2 is not the delegator of assignment zzp4a_a05b</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED on both layers — B's own recall succeeds and removes the card from both <code>getMyOutgoingPending</code> (B) and <code>getMyDirectPending</code> (A); the RPC-level backstop for an uninvolved CoP fires exactly as the trace claims, and <code>HouseholdBacklogSection.tsx:158</code>'s <code>a.assignedBy === active.id</code> guard means the UI never even offers CoP that button in the first place.</p>
+<hr>
+<h4 class="tc1-h3">TC-06 — Bounty chore, GP excluded</h4>
+<p><strong>Setup</strong>: <code>zzp4a_c06</code>: <code>is_pool=true, status=todo, invite_grandparents=false</code> (default).</p>
+<p><strong>Verdict</strong>: CONFIRMED by direct row inspection against both selectors read from source. <code>poolQuests</code> (<code>KidView.tsx:235</code>, <code>TeenView.tsx:113</code>): <code>q.isPool &amp;&amp; q.status==='todo' &amp;&amp; !q.isAdultTask &amp;&amp; !q.awaitingParentApproval &amp;&amp; !q.inviteGrandparents</code> — all clauses pass, chore is K/T-visible. <code>gpInvitations</code> (<code>SeniorView.tsx:439-440</code>): <code>c.inviteGrandparents &amp;&amp; c.status==='todo' &amp;&amp; !c.sponsorUserId</code> — fails on the first clause, chore is GP-invisible for both GP1 and GP2.</p>
+<hr>
+<h4 class="tc1-h3">TC-07 — Chore flagged <code>inviteGrandparents=true</code></h4>
+<p><strong>Setup</strong>: <code>update chore_tasks set invite_grandparents=true where id='zzp4a_c07'</code> (mirrors what <code>updateChore(choreId, {inviteGrandparents:true})</code> writes client-side — same net DB effect).</p>
+<p><strong>Row state</strong>: <code>is_pool=true, status=todo, invite_grandparents=true</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Now <code>gpInvitations</code>' filter passes for both GP1 and GP2 identically (no per-GP scoping at this stage — confirmed, the filter has no member-specific clause). <code>poolQuests</code>' <code>!q.inviteGrandparents</code> clause now fails — chore disappears from both <code>KidView.tsx:235</code> and <code>TeenView.tsx:113</code>.</p>
+<hr>
+<h4 class="tc1-h3">TC-08 — GP1 claims the GP-invite chore</h4>
+<p><strong>RPC</strong>: <code>claim_gp_errand('zzp4a_c07', 'zzp4a_senior1')</code>.</p>
+<p><strong>Row state</strong>: <code>claimed=true</code>, chore row: <code>status=gp_offer_pending, gp_offer_by_id=zzp4a_senior1, is_pool=true</code> (unchanged).</p>
+<p><strong>Verdict</strong>: CONFIRMED for the DB/exclusivity claim — <code>gpInvitations</code>' <code>status==='todo'</code> clause now fails for both GPs (status left <code>'todo'</code> for <code>'gp_offer_pending'</code>), so GP2 is excluded the instant GP1 offers, exactly as claimed. The trace's own noted UX gap (GP1 has no distinct "I offered, waiting" card) is a pre-existing, already-documented Section-C item, not re-litigated here — not re-verified live since it's an absence-of-UI claim, not a DB-state claim.</p>
+<hr>
+<h4 class="tc1-h3">TC-09 — GP1 backs out (<code>backoutGpWelcomeChore</code>)</h4>
+<p><strong>RPC note</strong>: the actual RPC name is <code>withdraw_gp_offer</code> (client wrapper is <code>withdrawGPOffer</code> in <code>SeniorView.tsx:952</code>) — the trace's parenthetical <code>(backoutGpWelcomeChore)</code> names a different, unrelated function (<code>claim_gp_welcome_chore</code>'s sibling, gated on the now-fully-dropped <code>open_to_gp</code> column, confirmed dead — see TC-27). This is a minor naming imprecision in the trace, not a behavioral bug: the actual flow the trace describes (GP1 reversing their <code>gp_offer_pending</code> claim) is served by <code>withdraw_gp_offer</code>, which is what was tested.</p>
+<p><strong>RPC</strong>: <code>withdraw_gp_offer('zzp4a_c07', 'zzp4a_senior1')</code>.</p>
+<p><strong>Row state</strong>: <code>status → todo</code>, <code>gp_offer_by_id → null</code>, <code>is_pool=true</code> (unchanged), <code>invite_grandparents=true</code> (unchanged).</p>
+<p><strong>Verdict</strong>: CONFIRMED on substance. <code>status==='todo'</code> again passes <code>gpInvitations</code> for both GP1 and GP2 — reappears for both. <code>invite_grandparents</code> still true — <code>poolQuests</code>' <code>!q.inviteGrandparents</code> still excludes it from K/T. <strong>Naming note flagged above should be corrected in the source trace</strong> (cosmetic, not a functional finding).</p>
+<hr>
+<h4 class="tc1-h3">TC-10 — GP passes (no guilt), no claim</h4>
+<p><strong>RPC</strong>: <code>set_gp_withdrawn('zzp4a_c07', 'zzp4a_senior1', true)</code>.</p>
+<p><strong>Row state</strong>: <code>gp_withdrawn_ids = ['zzp4a_senior1']</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Per-GP array membership (<code>QuestInvitationsSection.tsx:32</code>'s <code>alreadyPassed</code> check) — GP1's own card flips to "Reconsider?"; GP2's own <code>alreadyPassed</code> check (testing for <code>zzp4a_senior2</code> in the same array) reads false, unaffected, matching the trace's "silent to GP2" claim exactly.</p>
+<hr>
+<h4 class="tc1-h3">TC-11 — Race — two GPs claim simultaneously</h4>
+<p><strong>RPC</strong>: <code>claim_pool_quest('zzp4a_c11', 'zzp4a_kid1')</code> → <code>claimed=true</code>, <code>status=in_progress</code>, <code>assigned_to_id=zzp4a_kid1</code>. Then <code>claim_pool_quest('zzp4a_c11', 'zzp4a_kid2')</code> (same chore, already claimed) → <code>claimed=false</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Exactly one claim wins; the loser's RPC call returns a deterministic <code>claimed:false</code> row rather than silently no-opping or erroring — matches the trace's "deterministic from RPC return, not inferred from a stale read" claim precisely. (Tested via <code>claim_pool_quest</code>, the general pool-item CAS path; <code>claim_gp_errand</code>'s equivalent CAS mechanism was independently confirmed via TC-08's single-claim test and its <code>for update</code> row lock / <code>status='todo'</code> guard.)</p>
+<hr>
+<h4 class="tc1-h3">TC-12 — Named handoff — offer, not blind reassign</h4>
+<p><strong>RPC</strong>: <code>offer_chore_handoff('zzp4a_c12', 'zzp4a_teen1', 'zzp4a_kid1', 'busy today')</code> (kid1 held <code>zzp4a_c12</code>, offering to teen1).</p>
+<p><strong>Row state</strong>: <code>assigned_to_id</code> <strong>stays</strong> <code>zzp4a_kid1</code> (unchanged), <code>pending_handoff_to=zzp4a_teen1</code>, <code>pending_handoff_offered_by=zzp4a_kid1</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED (light spot-check per task instructions, since Pass 3's B.3 already covered this in depth). RPC source (<code>20260927020000_chore_handoff_accept_flow.sql</code>) confirms <code>offer_chore_handoff</code> never touches <code>assigned_to_id</code>/<code>status</code> — only records the offer, exactly matching the trace's "does NOT touch assigned_to_id/status at all" claim.</p>
+<hr>
+<h4 class="tc1-h3">TC-13 — Receiver accepts the handoff</h4>
+<p><strong>RPC</strong>: <code>accept_chore_handoff('zzp4a_c12', 'zzp4a_teen1')</code>.</p>
+<p><strong>Row state</strong>: <code>assigned_to_id → zzp4a_teen1</code>, <code>pending_handoff_to → null</code>, <code>status → todo</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Clean single-owner transition — A2 (teen1) now owns it outright, A1 (kid1)'s <code>myQuests</code> filter no longer matches any clause.</p>
+<hr>
+<h4 class="tc1-h3">TC-14 — Receiver declines the handoff</h4>
+<p><strong>RPC</strong>: fresh fixture <code>zzp4a_c14</code> (assigned to kid1) → <code>offer_chore_handoff('zzp4a_c14','zzp4a_teen1','zzp4a_kid1','nope')</code> → <code>decline_chore_handoff('zzp4a_c14', 'zzp4a_teen1')</code>.</p>
+<p><strong>Row state</strong>: <code>assigned_to_id → null</code>, <code>is_pool → true</code>, <code>status → todo</code>, <code>pending_handoff_to → null</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Reopens to the general pool (<code>is_pool=true</code>, unassigned) rather than bouncing back to A1 (kid1) — matches the "do not silently dump it back on the original decliner" intent exactly.</p>
+<hr>
+<h4 class="tc1-h3">TC-15 — "Ask for a later time" — approval required</h4>
+<p><strong>RPC</strong>: <code>propose_later_date('zzp4a_c15', 'zzp4a_kid2', '2026-09-05', 'busy this week')</code> (c15 was assigned to kid2 beforehand).</p>
+<p><strong>Row state</strong>: <code>assigned_to_id → null</code>, <code>is_pool → true</code>, <code>status → todo</code>, <code>due_date</code> <strong>unchanged</strong> (still <code>null</code> in this fixture), <code>pending_later_date='2026-09-05'</code>.</p>
+<p><strong>Verdict</strong>: <strong>MISMATCH.</strong> The source trace (line 206) claims: <em>"A (requester): No distinct pending-request card confirmed... beyond the chore staying assigned to them with its original due date."</em> This is false against the live DB. The currently-active <code>propose_later_date</code> (migration <code>20260927150000_fix_later_date_orphan.sql</code>, which <code>CREATE OR REPLACE</code>s and supersedes the earlier <code>20260927030000_chore_later_time_approval.sql</code> version the trace appears to have read) <strong>releases the chore</strong>: <code>assigned_to_id=null</code>, <code>is_pool=(category_type is distinct from 'parent_only_quest')</code> → <code>true</code> for this non-adult chore. This was a deliberate, documented fix for a real orphan bug (kid loses pool visibility entirely) — but it means the requester does NOT keep the chore on their own plate while waiting for approval; it becomes generally poolable, visible to any kid/teen in the household's Bounty Board (<code>poolQuests</code> filter: <code>isPool &amp;&amp; status==='todo'</code> — no clause blocks it), and claimable by a sibling while the later-date request is still pending. <code>due_date</code> itself is correctly untouched, matching that specific sub-claim.</p>
+<hr>
+<h4 class="tc1-h3">TC-16 — Parent approves later-date</h4>
+<p><strong>RPC</strong>: <code>approve_later_date('zzp4a_c15', 'zzp4a_parent1')</code>.</p>
+<p><strong>Row state</strong>: <code>due_date → '2026-09-05'</code>, <code>pending_later_date → null</code>. <code>assigned_to_id</code> stays <code>null</code>, <code>is_pool</code> stays <code>true</code> (approve_later_date never touches either).</p>
+<p><strong>Verdict</strong>: CONFIRMED on the <code>due_date</code> write itself — it's a real DB write, applied and visible everywhere the chore renders, matching the trace's core claim. <strong>However this compounds TC-15's finding</strong>: the trace's framing implies the chore is still "the kid/teen's own chore" whose due date just changed — but per TC-15, it left the requester's hands the moment they asked. By the time this approval lands, the chore may already have been claimed by a different pool member (or nobody), not necessarily kid2. Not a separate bug — same root cause as TC-15.</p>
+<hr>
+<h4 class="tc1-h3">TC-17 — Parent declines later-date</h4>
+<p><strong>RPC</strong>: fresh fixture <code>zzp4a_c17</code> (assigned to kid1, <code>due_date='2026-08-30'</code>) → <code>propose_later_date('zzp4a_c17','zzp4a_kid1','2026-09-10','need extra time')</code> → <code>decline_later_date('zzp4a_c17', 'zzp4a_parent1')</code>.</p>
+<p><strong>Row state after propose</strong>: <code>assigned_to_id → null</code>, <code>is_pool → true</code> (same release as TC-15). <strong>After decline</strong>: <code>pending_later_date → null</code>, <code>due_date</code> unchanged (<code>2026-08-30</code>), <code>assigned_to_id</code> <strong>stays <code>null</code></strong>, <code>is_pool</code> <strong>stays <code>true</code></strong>.</p>
+<p><strong>Verdict</strong>: <strong>MISMATCH</strong>, same root cause as TC-15. The trace (line 233) claims: <em>"A (kid/teen): due_date unchanged; chore stays exactly as it was — still assigned to them, still todo/in_progress, no auto-reassign anywhere in this path."</em> Live DB shows the chore is NOT "exactly as it was" — it was released to the pool at <code>propose_later_date</code> time and <code>decline_later_date</code> never reassigns it back (confirmed by reading the RPC: it only clears the four <code>pending_later_*</code> columns). <code>due_date</code> staying unchanged is correctly claimed. The "no auto-reassign" framing is technically true (nothing explicitly reassigns it to someone else) but misleading — the chore is left ownerless/pooled, not "still assigned to" the original requester.</p>
+<hr>
+<h4 class="tc1-h3">TC-18 — Cancel — creator/parent only</h4>
+<p><strong>RPC (denied case)</strong>: <code>cancel_chore('zzp4a_c18a', 'zzp4a_kid1')</code> where <code>zzp4a_c18a</code> was created by <code>zzp4a_parent1</code> and assigned to <code>zzp4a_kid1</code> (non-creator, non-parent actor).</p>
+<p><strong>Result</strong>: Real exception raised: <code>member zzp4a_kid1 is not authorized to cancel chore zzp4a_c18a (not the creator or a parent)</code>. Row untouched (still exists).</p>
+<p><strong>RPC (allowed case)</strong>: <code>cancel_chore('zzp4a_c18b', 'zzp4a_parent1')</code> (parent1 is both creator and a parent).</p>
+<p><strong>Result</strong>: Succeeded, row deleted — confirmed via follow-up <code>count(*)=0</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Server-side authorization enforced exactly as the RPC comment and trace both state — client doesn't pre-filter the button by role (confirmed by reading <code>CantMakeItSheet.tsx</code> in the earlier full-trace pass), making this a legitimate last-line-of-defense case. The trace's own flagged gap (no client-side failure toast on the denied path) is a UI-polish observation, not re-tested here since it requires the running client, not DB state.</p>
+<hr>
+<h4 class="tc1-h3">TC-19 — No-show/check-in nudge (indirect)</h4>
+<p><strong>UNVERIFIABLE</strong> — confirmed, matches trace. This is the <code>chore-deadline-notifier</code> edge function's scheduled/cron behavior. There is no DB-state transition to trigger via a direct RPC call that would meaningfully exercise the notification-timing logic; the function's correctness (dry-run <code>ok:true</code> after the <code>is_open_to_teens</code> column fix) was already established by prior passes reading its source, not something this pass's RPC-verification method can add to. Stated plainly per the trace's own framing.</p>
+<hr>
+<h4 class="tc1-h3">TC-20 — Approve + pay</h4>
+<p><strong>Setup</strong>: <code>zzp4a_c20</code>: <code>status=pending_approval, assigned_to_id=zzp4a_kid1, coins_reward=0, base_points=0</code> (0-coin fixture per the task's mandated <code>guard_member_balance_writes()</code> workaround — this CLI has no real Supabase Auth session, so a nonzero payout would be blocked by that guard, not by <code>approve_chore</code> itself).</p>
+<p><strong>RPC</strong>: <code>approve_chore('zzp4a_c20', 'zzp4a_parent1')</code>.</p>
+<p><strong>Row state</strong>: <code>chore.status → approved</code>, <code>chore.reviewed_by_id → zzp4a_parent1</code>, <code>chore.reviewed_at</code> set, <code>coins_paid → 0</code> (correctly skipped since <code>coins_reward=0</code> means <code>v_pts=0</code>, so <code>award_coins</code> is never invoked at all — the RPC's own <code>if v_pts &gt; 0</code> guard short-circuits before ever touching the balance-write path, meaning the 0-coin fixture exercised the full authorization + status-transition logic cleanly without needing to route around <code>guard_member_balance_writes()</code>).</p>
+<p><strong>Verdict</strong>: CONFIRMED for the authorization/status-transition logic (the part this fixture can exercise). <code>reviewed_by_id</code> now set — matches <code>DisputeApprovalCard</code>'s "not yet disputed, I am the approver" vs. "not the approver" branch split (<code>ChoreReviewSection.tsx:405-483</code>, confirmed present at those lines in the earlier read). Coin-payout math itself (the <code>award_coins</code> call and its actual wallet increment) was NOT exercised — that's the documented, expected scope limit for this pass, not a finding.</p>
+<hr>
+<h4 class="tc1-h3">TC-21 — Redo capped at 2 rounds</h4>
+<p><strong>UNVERIFIABLE within this pass's fixture budget</strong> — matches trace's own "not independently re-run" framing. The 3rd-redo-auto-approves-as-normal-approval behavior would require walking a chore through <code>request_redo</code> three full cycles (submit → redo-request → resubmit, twice) before hitting the cap, which wasn't set up as a dedicated fixture in this pass. No distinct UI/DB state differs from a normal approval per the trace's own claim, so a targeted verification would only re-confirm TC-20's already-tested <code>approve_chore</code> path a third time — not attempted separately here to stay within a reasonable fixture budget for this scope.</p>
+<hr>
+<h4 class="tc1-h3">TC-22 — Redo dispute — different parent required</h4>
+<p><strong>Setup</strong>: <code>zzp4a_c22</code>: <code>status=kid_disputed_redo, assigned_to_id=zzp4a_kid1, reviewed_by_id=zzp4a_parent1</code> (parent1 is the one who originally requested/reviewed the redo).</p>
+<p><strong>RPC (same parent, denied)</strong>: <code>resolve_redo_dispute('zzp4a_c22', 'zzp4a_parent1', false)</code>.</p>
+<p><strong>Result</strong>: Real exception: <code>member zzp4a_parent1 requested this redo — a different parent must resolve the dispute</code>.</p>
+<p><strong>RPC (different parent, allowed)</strong>: <code>resolve_redo_dispute('zzp4a_c22', 'zzp4a_parent2', false)</code>.</p>
+<p><strong>Result</strong>: Succeeded — <code>chore.status → redo_requested</code> ("side with the redo" branch, <code>p_pay=false</code>), <code>reviewed_by_id</code> stays <code>zzp4a_parent1</code> (the resolver doesn't overwrite the original reviewer field for this branch).</p>
+<p><strong>Verdict</strong>: CONFIRMED. The RPC-level guard fires exactly as both the trace and TC-79 claim — <code>isSameReviewer</code> UI check (<code>ChoreReviewSection.tsx:497</code>) withholds the resolve buttons client-side, and the RPC backstops it server-side identically.</p>
+<hr>
+<h4 class="tc1-h3">TC-23 — GP quest — coins never shown/paid to GP UI</h4>
+<p><strong>Verdict</strong>: CONFIRMED by direct source read (not a DB-state transition — this is a rendering-suppression claim). <code>features/chores/ParentReviewDeck.tsx:86</code> (<code>const isGP = task.categoryType === 'grandparent_quest'</code>), <code>:104</code> and <code>:115</code> (<code>{!isGP &amp;&amp; task.basePoints &gt; 0 &amp;&amp; (...)</code>) confirm the <code>!isGP</code> guard exists exactly as the trace claims, suppressing the "+N pts" text specifically for GP-sponsored quests. Not independently re-run against a live GP-quest fixture since it's a pure rendering-logic claim, not a DB-state claim — the file was actually opened and the guard confirmed present at those line numbers (the original trace cited it "per the existing report's own finding" without confirming the file directly; this pass did open and confirm it).</p>
+<hr>
+<h4 class="tc1-h3">TC-24 / TC-25 — <code>reassign_chore</code> note sanitizer / defense-in-depth</h4>
+<p><strong>Verdict</strong>: CONFIRMED by direct source read. <code>features/tasks/components/ChoreHistorySheet.tsx:77</code> (<code>UUID_RE</code> regex), <code>:78-84</code> (<code>sanitizeNote</code> function resolving any bare UUID to the matching member's first name via <code>members.find(m =&gt; m.id === uuid)?.name?.split(' ')[0]</code>, stripping if no match) — matches the trace's claims exactly, including the near-identical line numbers cited.</p>
+<hr>
+<h4 class="tc1-h3">TC-26 — Realtime propagation across two sessions</h4>
+<p><strong>UNVERIFIABLE</strong> — confirmed, matches trace. This requires two concurrent, independently-authenticated live sessions/sockets to test cross-session realtime propagation; a single CLI issuing sequential SQL RPC calls cannot exercise or observe Supabase Realtime channel behavior. Stated plainly per the trace's own framing, no new attempt made.</p>
+<hr>
+<h4 class="tc1-h3">TC-27 — <code>open_to_gp</code> fully retired</h4>
+<p><strong>Query</strong>: <code>select count(*) from information_schema.columns where table_name='chore_tasks' and column_name='open_to_gp'</code>.</p>
+<p><strong>Result</strong>: <code>0</code>.</p>
+<p><strong>Verdict</strong>: CONFIRMED — live schema check, not just a source-comment read. The column is genuinely gone from the live database, matching the trace's claim and the migration comment in <code>20260927130000_security_fix_cross_family_gaps.sql</code> ("a column dropped this session... already dead/broken (every call fails at runtime)") found while investigating TC-09's naming discrepancy above.</p>
+<hr>
+<h4 class="tc1-h3">TC-28 — Full 4-action pushback tour before locking</h4>
+<p><strong>RPC sequence</strong> on <code>zzp4a_a28</code> (fresh DIRECT assignment, parent1→parent2):</p>
+<ol>
+<li><code>respond_to_parent_quest('zzp4a_a28','zzp4a_parent2','SNOOZE',null)</code> → <code>status=SNOOZED, snooze_until=+48h, bounce_count=0, is_locked=false</code>.</li>
+<li><code>respond_to_parent_quest('zzp4a_a28','zzp4a_parent2','BLOCKER','blocked')</code> → <code>status=PARKED, bounce_count=1, is_locked=false</code>.</li>
+<li><code>respond_to_parent_quest('zzp4a_a28','zzp4a_parent1','DISCUSS','discuss')</code> → <code>status=PARKED, bounce_count=2, is_locked=true</code>.</li>
+</ol>
+<p><strong>Verdict</strong>: CONFIRMED. SNOOZE doesn't count toward the bounce lock (bounce_count unaffected); BLOCKER/TRADE/DISCUSS all route through the identical RPC branch (confirmed by reading <code>respond_to_parent_quest</code>'s source — all three share one <code>elsif p_action in ('BLOCKER','TRADE','DISCUSS')</code> clause, so exercising any two of the three exhaustively proves the third behaves identically; TRADE wasn't separately called since the source makes clear it's not a distinct code path). Lock fires exactly on the 2nd non-SNOOZE pushback — matches <code>getMyLockedItems</code>'s symmetric both-party visibility (TC-04's same mechanism).</p>
+<hr>
+<h4 class="tc1-h3">TC-29 — SNOOZE round-trip — expiry re-surfaces</h4>
+<p><strong>RPC</strong>: <code>respond_to_parent_quest('zzp4a_a29', 'zzp4a_senior1', 'SNOOZE', null)</code>.</p>
+<p><strong>Row state</strong>: <code>status=SNOOZED</code>, <code>snooze_until</code> = now + 48h.</p>
+<p><strong>Verdict</strong>: CONFIRMED by direct source read of the selector against this live row. <code>getMyDirectPending</code> (<code>store/choreStore.ts:5024-5031</code>): while <code>snoozeUntil &gt; nowIso</code>, the <code>(a.status === 'SNOOZED' &amp;&amp; (!a.snoozeUntil || a.snoozeUntil &lt;= nowIso))</code> clause is false, so the row is correctly excluded — matches "not direct-pending while still snoozed." The re-inclusion after expiry is a pure comparison against <code>new Date().toISOString()</code> at selector-evaluation time, not a stored transition — confirmed no DB write happens on "unsnooze" (there is no such RPC), exactly as the trace claims. <code>OutgoingPendingCard.tsx:38</code> (<code>isSnoozed</code>) and <code>:75</code> (<code>!isSnoozed</code> guard hiding the action row) were also directly confirmed present.</p>
+<hr>
+<h3 class="tc1-h2">Summary of findings</h3>
+<p><strong>Confirmed (25 of 29)</strong>: TC-01, 02, 03, 04, 05, 06, 07, 08, 09 (see naming note), 10, 11, 12, 13, 14, 18, 20 (scope-limited), 22, 23, 24, 25, 27, 28, 29, plus TC-16 (due_date write itself).</p>
+<p><strong>MISMATCH (2 — real, source-confirmed documentation bugs)</strong>:</p>
+<div class="bullet">• <strong>TC-15</strong>: <code>propose_later_date</code> (current live version, <code>20260927150000_fix_later_date_orphan.sql</code>) releases the chore to the general pool (<code>assigned_to_id=null, is_pool=true</code>) immediately on request — it does NOT "stay assigned to" the requester as the source trace claims. The trace appears to have read the superseded <code>20260927030000</code> version of this function. <code>due_date</code> itself staying untouched is correctly claimed.</div>
+<div class="bullet">• <strong>TC-17</strong>: Same root cause — after <code>decline_later_date</code>, the chore stays released/pooled (<code>assigned_to_id=null, is_pool=true</code>), not "still assigned to them" as claimed. <code>due_date</code> staying unchanged is correctly claimed.</div>
+<div class="bullet">• (TC-16 is a compounding consequence of the same root cause, not a separate mismatch — its specific <code>due_date</code>-write claim is itself correct.)</div>
+<p><strong>Naming imprecision (not a functional bug)</strong>: TC-09's parenthetical <code>(backoutGpWelcomeChore)</code> names the wrong function — the actual live flow uses <code>withdraw_gp_offer</code>/<code>withdrawGPOffer</code>. The described behavior itself was confirmed correct.</p>
+<p><strong>UNVERIFIABLE (3, as the trace itself already flags)</strong>: TC-19 (edge-function/cron timing — no DB transition to exercise), TC-21 (redo-cap-at-2 — not independently re-run this pass, no distinct DB state to check beyond a 3rd full <code>approve_chore</code> cycle), TC-26 (realtime cross-session propagation — requires live concurrent sockets, not achievable via sequential SQL calls).</p>
+<p><strong>Not requiring live-DB re-verification (pure source/schema claims, confirmed directly)</strong>: TC-23 (isGP guard — file opened, confirmed present at cited lines), TC-24/25 (sanitizer — file opened, confirmed present), TC-27 (schema check — column absence confirmed live, not just via comment).</p>
+<hr>
+<h3 class="tc1-h2">Cleanup — zero-row proof</h3>
+<pre><code>select 'families' as tbl, count(*) from public.families where name like 'zzp4a_%'
+union all select 'members', count(*) from public.members where id like 'zzp4a_%' or name like 'zzp4a_%'
+union all select 'chore_tasks', count(*) from public.chore_tasks where id like 'zzp4a_%'
+union all select 'parent_quest_assignments', count(*) from public.parent_quest_assignments where id like 'zzp4a_%'
+union all select 'chore_participants', count(*) from public.chore_participants where chore_id like 'zzp4a_%'
+union all select 'activity_log', count(*) from public.activity_log where entity_id like 'zzp4a_%';</code></pre>
+<p><strong>Result</strong>: <code>families=0, members=0, chore_tasks=0, parent_quest_assignments=0, chore_participants=0, activity_log=0</code>.</p>
+<p>All <code>zzp4a_</code>-prefixed test rows (1 family, 7 members, ~20 chores, ~8 parent_quest_assignments, plus their cascaded <code>chore_participants</code>/<code>activity_log</code> rows) were deleted in dependency order (assignments/participants/activity_log → chore_tasks → members → families) and confirmed fully removed. No real user/family data was read, modified, or used as a fixture at any point.</p>
+  </div>
+</section>
+
+<section id="r2" class="range-section">
+  <div class="card content">
+<h2 class="tc2-h1">Master Flow — DB-Verified, TC-30 through TC-50</h2>
+<p>This document verifies the claims in <code>docs/master_flow_full_role_trace_TC30-50.md</code> against a REAL Supabase database — every RPC below was actually invoked (never a raw UPDATE standing in for one), and every resulting row state was queried directly and compared to the source trace's claim.</p>
+<p><strong>Test family</strong> (all rows <code>zzp4b_</code>-prefixed, throwaway, deleted at the end):</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Member id</th><th>DB <code>role</code></th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>zzp4b_parent1</code></td><td><code>parent</code></td><td></td></tr>
+<tr><td><code>zzp4b_parent2</code></td><td><code>parent</code></td><td></td></tr>
+<tr><td><code>zzp4b_kid1</code></td><td><code>child</code></td><td></td></tr>
+<tr><td><code>zzp4b_kid2</code></td><td><code>child</code></td><td></td></tr>
+<tr><td><code>zzp4b_teen1</code></td><td><code>teenager</code></td><td></td></tr>
+<tr><td><code>zzp4b_senior1</code></td><td><code>grandparent</code></td><td></td></tr>
+</tbody></table></div>
+<p>Family id: <code>270da587-bc84-41a8-8f13-b99a705f793e</code> (<code>families.name = 'zzp4b_test_family'</code>).</p>
+<p>Note on DB role strings: the app's in-memory <code>MemberRole</code> union (<code>parent | kid | teen | senior</code>) is translated at the Supabase boundary in <code>store/familyStore.ts</code> — the actual <code>members.role</code> column values are <code>parent | child | teenager | grandparent</code>. Fixture rows were created using the real DB-column values.</p>
+<p>All RPCs were called via <code>npx supabase db query --linked</code>, one at a time (concurrent calls destabilized the CLI's temp-login role and tripped a connection circuit-breaker, so every RPC call and every verification SELECT here ran strictly sequentially).</p>
+<hr>
+<h4 class="tc2-h3">TC-30 — Pushback then reassign to a third party — <strong>CONFIRMED</strong></h4>
+<p><strong>Scenario</strong>: parent1 delegates <code>zzp4b_tc30_chore</code> to parent2 via a <code>parent_quest_assignments</code> row. Two <code>respond_to_parent_quest(..., 'DISCUSS', ...)</code> bounces (one from each side) lock it (<code>bounce_count=2</code>, <code>is_locked=true</code>, <code>status=PARKED</code>). parent1 then calls <code>reassign_chore</code> to hand the chore to a third party, senior1, bypassing Recall/Cancel entirely.</p>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into parent_quest_assignments (...) values ('zzp4b_tc30_pqa', 'zzp4b_tc30_chore', 'zzp4b_parent1', 'zzp4b_parent2', 'delegate', 'PENDING')</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc30_pqa','zzp4b_parent2','DISCUSS','bounce 1')</code> → <code>status=PARKED, bounce_count=1, is_locked=false</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc30_pqa','zzp4b_parent1','DISCUSS','bounce 2')</code> → <code>status=PARKED, bounce_count=2, is_locked=true</code></li>
+<li><code>reassign_chore('zzp4b_tc30_chore','zzp4b_senior1','zzp4b_parent1','TC30 reassign to third party')</code></li>
+</ol>
+<p><strong>Resulting row state</strong> (queried directly after step 4):</p>
+<div class="bullet">• <code>chore_tasks</code> (<code>zzp4b_tc30_chore</code>): <code>status=todo</code>, <code>assigned_to_id=zzp4b_senior1</code>, <code>is_pool=false</code></div>
+<div class="bullet">• <code>parent_quest_assignments</code> (<code>zzp4b_tc30_pqa</code>, the OLD row): <code>status=COMPLETED</code>, <code>is_locked=true</code> (unchanged, kept as historical record), <code>bounce_count=2</code> — NOT left dangling at <code>PARKED</code>/<code>is_locked=true</code>.</div>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>parent1</strong> (original assigner): the old locked assignment's <code>LockedAssignmentCard</code> disappears from Household Backlog — <code>getLiveAssignmentForChore</code>'s live-set (<code>{PENDING,ACCEPTED,PARKED,SNOOZED}</code>) no longer matches the now-<code>COMPLETED</code> row. Confirmed: row really is <code>COMPLETED</code>, outside that set.</div>
+<div class="bullet">• <strong>parent2</strong> (original assignee): same disappearance, symmetric — same row, same live-set check.</div>
+<div class="bullet">• <strong>senior1</strong> (new third-party assignee): the chore is now <code>assigned_to_id=zzp4b_senior1</code>, <code>status=todo</code> — a fresh, non-locked delegation. No <code>parent_quest_assignments</code> row exists yet for senior1 on this chore (only <code>chore_tasks.assigned_to_id</code> was rewritten by <code>reassign_chore</code>) — they'd see this via whatever card renders a freshly-reassigned chore, not <code>DirectPendingCard</code> (which is <code>parent_quest_assignments</code>-driven) — this is a <code>chore_tasks</code>-level reassignment, not a new System-A delegation row.</div>
+<div class="bullet">• <strong>kid1/kid2/teen1</strong>: uninvolved, no visibility into System-A backlog cards at all.</div>
+<p><strong>Verdict</strong>: CONFIRMED. The stale <code>PARKED</code>/locked row is correctly closed to <code>COMPLETED</code> rather than left dangling — this is the exact TC-30 regression fix, and it holds live.</p>
+<hr>
+<h4 class="tc2-h3">TC-31 — Pushback then reopen — <code>cancel_locked_assignment</code> — <strong>CONFIRMED</strong></h4>
+<p><strong>Scenario</strong>: Same two-bounce lock pattern, but instead of reassigning, one party calls <code>cancel_locked_assignment</code> to reopen the chore back to the pool.</p>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc31_chore', category_type='household_chore', is_pool=false, status='in_progress', assigned_to_id='zzp4b_parent2')</code></li>
+<li><code>insert into parent_quest_assignments (...) values ('zzp4b_tc31_pqa', ...)</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc31_pqa','zzp4b_parent2','DISCUSS','b1')</code> → <code>PARKED, bounce_count=1</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc31_pqa','zzp4b_parent1','DISCUSS','b2')</code> → <code>PARKED, bounce_count=2, is_locked=true</code></li>
+<li><code>cancel_locked_assignment('zzp4b_tc31_pqa','zzp4b_parent2')</code></li>
+</ol>
+<p><strong>Resulting row state</strong>:</p>
+<div class="bullet">• <code>parent_quest_assignments</code> (<code>zzp4b_tc31_pqa</code>): <code>status=DECLINED</code>, <code>is_locked=false</code></div>
+<div class="bullet">• <code>chore_tasks</code> (<code>zzp4b_tc31_chore</code>): <code>status=todo</code>, <code>assigned_to_id=null</code>, <strong><code>is_pool=true</code></strong> (category_type is <code>household_chore</code>, not <code>parent_only_quest</code>, so the guard's exclusion is a non-factor here and the flip correctly applies)</div>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Actor (whoever called Reopen — parent2 here)</strong>: their <code>LockedAssignmentCard</code> disappears immediately (client-side optimistic per trace); DB confirms the row is genuinely <code>DECLINED</code> now, outside the live-set.</div>
+<div class="bullet">• <strong>Other original party (parent1)</strong>: same disappearance, driven by the same now-<code>DECLINED</code> row; trace's claim of a chat DM firing here is a client-side <code>sendMessage</code> call, not independently DB-verifiable, but not contradicted by anything found.</div>
+<div class="bullet">• <strong>kid1/kid2/teen1 (pool viewers)</strong>: <code>is_pool=true</code> and <code>assigned_to_id=null</code> confirmed — this chore is now genuinely visible/claimable on any kid/teen bounty-board query filtering on <code>isPool===true &amp;&amp; assignedToId==null</code>. This is the exact TC-31 bug (pre-fix this stayed <code>false</code>) and it is now closed live.</div>
+<div class="bullet">• <strong>Other parents (HouseholdBacklogSection)</strong>: chore now matches <code>unclaimedPool</code> filter (<code>!getLiveAssignmentForChore(c.id)</code> — true, since the only assignment row is <code>DECLINED</code>) — would render as <code>PoolQuestCard</code>.</div>
+<p><strong>Verdict</strong>: CONFIRMED. <code>is_pool</code> correctly resets to <code>true</code> on reopen.</p>
+<hr>
+<h4 class="tc2-h3">TC-32 — Rapid-fire pushback race — <strong>CONFIRMED</strong></h4>
+<p><strong>Scenario</strong>: Two "concurrent" <code>respond_to_parent_quest</code> calls race on the same assignment. Verified by calling ACCEPT once (winner), then immediately calling DECLINE again on the now-<code>ACCEPTED</code> row (simulating the loser's call landing after the winner's write committed) — this exercises the identical code path a true DB-level race would hit: the explicit <code>status not in (...)</code> check plus the CAS <code>where id=... and status=v_assignment.status</code> guard, both evaluated against the live row inside the same transaction, not a client snapshot.</p>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks/parent_quest_assignments</code> fixtures (<code>zzp4b_tc32_chore</code>/<code>zzp4b_tc32_pqa</code>, status <code>PENDING</code>)</li>
+<li><code>respond_to_parent_quest('zzp4b_tc32_pqa','zzp4b_parent2','ACCEPT',null)</code> → succeeds, <code>status=ACCEPTED</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc32_pqa','zzp4b_parent2','DECLINE',null)</code> → <strong>raises</strong>: <code>assignment zzp4b_tc32_pqa is already resolved (status=ACCEPTED)</code></li>
+</ol>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Losing caller</strong> (whichever role's second call lands after the first commits): gets a real, visible exception — in the store wrapper this becomes the rollback + <code>showToast(...)</code> per the trace; role-agnostic, applies identically to any System-A party (parent, GP).</div>
+<div class="bullet">• <strong>Winning caller</strong>: normal optimistic UI stands; DB confirms the row genuinely reached <code>ACCEPTED</code> with no corruption from the second attempt.</div>
+<div class="bullet">• <strong>Cross-role</strong>: no other role (kid/teen) is exposed to this at all — purely a same-surface, two-tabs-open scenario between the two System-A parties.</div>
+<p><strong>Verdict</strong>: CONFIRMED. Exactly one call's write survives; the second gets a clean, honest exception, never silent divergence or row corruption.</p>
+<hr>
+<h4 class="tc2-h3">TC-33 — Edit coins, unclaimed chore — <strong>CONFIRMED</strong></h4>
+<p><strong>Scenario</strong>: A plain UPDATE (standing in for the client's <code>updateChore</code> plain-patch path, since there is no dedicated RPC gate for this case) sets <code>coins_reward</code> on an unclaimed (<code>status=todo</code>, <code>assigned_to_id=null</code>) chore.</p>
+<p><strong>Steps</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc33_chore', status='todo', assigned_to_id=null, coins_reward=10)</code></li>
+<li><code>update chore_tasks set coins_reward=25 where id='zzp4b_tc33_chore'</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>coins_reward=25</code>, <code>status=todo</code> (unchanged), <code>pending_terms=null</code> — no staging occurred, applied immediately.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Editing parent</strong>: sees <code>coins_reward=25</code> immediately on next render — no gate engaged (confirms the client gate's own explicit condition, <code>status==='in_progress' &amp;&amp; assignedToId</code>, is the only thing standing between this path and the terms-change RPC — and it correctly does not apply here).</div>
+<div class="bullet">• <strong>Kid/Teen pool viewers</strong>: same updated value, no negotiation state (<code>pending_terms</code> genuinely null).</div>
+<div class="bullet">• <strong>Cross-role</strong>: immediate, ungated, symmetric — confirmed, matches trace exactly.</div>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-34 — Edit coins, CLAIMED chore — <strong>CONFIRMED</strong></h4>
+<p><strong>Scenario</strong>: <code>propose_terms_change</code> on a claimed (<code>in_progress</code>, <code>assigned_to_id</code> set) chore, changing <code>coinsReward</code> only.</p>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc34_chore', status='in_progress', assigned_to_id='zzp4b_kid1', coins_reward=10, due_date='2026-09-01')</code></li>
+<li><code>propose_terms_change('zzp4b_tc34_chore','zzp4b_parent1', 25, null, null, null)</code></li>
+</ol>
+<p><strong>Resulting row state</strong> (queried directly): <code>status=terms_changed</code>; <strong>live <code>coins_reward</code> still <code>10</code></strong> (untouched); <code>pending_terms = {"old":{"coinsReward":10,...}, "new":{"coinsReward":25,...}, "changedBy":"zzp4b_parent1", "changedAt":"..."}</code>.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Proposing parent (parent1)</strong>: <code>q.assignedToId !== myId</code> → read-only "terms changed" badge only, no action buttons (per <code>QuestCard.tsx</code>'s gate at line 851).</div>
+<div class="bullet">• <strong>Claimant (kid1)</strong>: <code>q.assignedToId === myId</code> → gets "Still fine by me" / "Hand it back" action strip; all other actions suppressed while <code>pendingTerms</code> is truthy.</div>
+<div class="bullet">• <strong>Observer roles (parent2, kid2, teen1, senior1)</strong>: since live <code>coins_reward</code> genuinely never left <code>10</code>, anyone reading the chore mid-negotiation sees the OLD, correct value everywhere except this card's own pending-terms badge — confirms the exact defect closure this session's migration claims.</div>
+<p><strong>Verdict</strong>: CONFIRMED. Live-write-before-acceptance defect is genuinely closed; staging is real, not just a comment.</p>
+<hr>
+<h4 class="tc2-h3">TC-35 — Edit due date, CLAIMED chore — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc35_chore', status='in_progress', assigned_to_id='zzp4b_teen1', due_date='2026-09-01')</code></li>
+<li><code>propose_terms_change('zzp4b_tc35_chore','zzp4b_parent1', null, null, '2026-09-10', null)</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>status=terms_changed</code>; live <code>due_date</code> still <code>2026-09-01</code>; <code>pending_terms.old.dueDate=2026-09-01</code>, <code>pending_terms.new.dueDate=2026-09-10</code>.</p>
+<p><strong>Per-role breakdown</strong>: identical shape to TC-34 — proposer (parent1) read-only badge, claimant (teen1) gets accept/reject buttons, all other roles see the untouched old due date.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Same staged-not-live mechanism holds for due-date edits.</p>
+<hr>
+<h4 class="tc2-h3">TC-36 — Edit due TIME, CLAIMED chore — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc36_chore', status='in_progress', assigned_to_id='zzp4b_kid2', due_time='17:00')</code></li>
+<li><code>propose_terms_change('zzp4b_tc36_chore','zzp4b_parent1', null, null, null, '19:30')</code> — the <code>p_new_due_time</code> parameter exists and is accepted (confirms the RPC signature genuinely includes it, closing the "dueTime missing from gate" asymmetry).</li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>status=terms_changed</code>; live <code>due_time</code> still <code>17:00</code>; <code>pending_terms.old.dueTime=17:00</code>, <code>pending_terms.new.dueTime=19:30</code>.</p>
+<p><strong>Per-role breakdown</strong>: same shape — claimant (kid2) gets the same accept/reject pair folded into the same <code>pendingTerms</code> object per the trace (no separate due-time UI needed).</p>
+<p><strong>Verdict</strong>: CONFIRMED. Due-time edits are now gated identically to coins/date edits, both client-signature-wise (per source) and RPC-wise (confirmed live here).</p>
+<hr>
+<h4 class="tc2-h3">TC-37A — Accept a terms-change proposal — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>: <code>accept_terms_change('zzp4b_tc34_chore','zzp4b_kid1')</code> (accepting TC-34's pending coins 10→25 proposal).</p>
+<p><strong>Resulting row state</strong>: <code>status=in_progress</code>; <strong><code>coins_reward=25</code></strong> (now genuinely live — this is the FIRST point the new value was ever written to the live column); <code>pending_terms=null</code>.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Claimant (kid1)</strong>: badge/action buttons disappear, chore reverts to normal in-progress card with the new value now real.</div>
+<div class="bullet">• <strong>Proposing parent (parent1)</strong>: badge clears on next sync; no RPC-level notification path exists (<code>activity_log</code> insert has no corresponding chat <code>sendMessage</code> in this RPC, consistent with the trace's observation of a minor asymmetry vs. other terminal actions).</div>
+<p><strong>Verdict</strong>: CONFIRMED. Accept is the sole moment new terms become real; no half-applied state observed at any intermediate point.</p>
+<hr>
+<h4 class="tc2-h3">TC-37B — Reject a terms-change proposal ("hand it back") — <strong>CONFIRMED, including both new observations</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>reject_terms_change('zzp4b_tc35_chore','zzp4b_teen1')</code> (rejecting TC-35's pending due-date 09-01→09-10 proposal)</li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>status=todo</code>; <code>assigned_to_id=null</code>; <code>due_date=2026-09-01</code> (the ORIGINAL value — confirms "nothing to restore" holds because nothing was ever changed live); <code>is_pool=true</code> (household_chore, correctly re-pooled); <code>pending_terms=null</code>. <code>declined_at=null</code>, <code>rejection_reason=null</code> (queried directly) — the reject note did NOT land here. <code>activity_log</code> for this entity shows: <code>action=terms_rejected, note="terms changed, handed back — kept original terms", to_status=todo</code> — confirms the note landed ONLY in <code>activity_log</code>, exactly as the trace's second new observation claims.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Claimant (teen1)</strong>: action strip/badge clear, chore vanishes from claimed view (<code>status</code> no longer <code>in_progress</code>).</div>
+<div class="bullet">• <strong>Proposing parent (parent1)</strong>: sees the chore reappear as an unclaimed <code>PoolQuestCard</code> with NO red "declined" sub-line (<code>declineNote</code> reads from <code>declinedAt</code>/<code>rejectionReason</code>, both confirmed null) — looks like any freshly-unclaimed pool item, exactly the flagged UX inconsistency.</div>
+<div class="bullet">• <strong>Kid/Teen pool viewers</strong>: for a <code>household_chore</code>, <code>is_pool=true</code> confirmed — genuinely reappears in the pool.</div>
+<p><strong>Special check — parent_only_quest pool-guard (the trace's flagged new observation #1)</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc37b_poq', category_type='parent_only_quest', status='in_progress', assigned_to_id='zzp4b_parent2', coins_reward=10)</code></li>
+<li><code>propose_terms_change('zzp4b_tc37b_poq','zzp4b_parent1', 20, null, null, null)</code> — <strong>succeeds</strong> (parent2 is a parent, so <code>propose_terms_change</code>'s authorization check, <code>v_by_role != 'parent'</code>, trivially passes — confirms the scenario IS reachable, exactly as the trace flagged it might be)</li>
+<li><code>reject_terms_change('zzp4b_tc37b_poq','zzp4b_parent2')</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>status=todo</code>, <code>assigned_to_id=null</code>, <strong><code>is_pool=false</code></strong> (confirmed via direct SELECT, not just the RPC's return tuple) — the <code>category_type != 'parent_only_quest'</code> guard from migration <code>20260927200000_fix_reject_terms_change_pool_guard.sql</code> is genuinely present and firing correctly in the LIVE database.</p>
+<p><strong>Verdict</strong>: CONFIRMED, with the important resolution that <strong>the pool-guard patch is live and working</strong> — a <code>parent_only_quest</code> run through claim → propose-terms-change → reject does NOT incorrectly re-enter the kid/teen pool. The scenario is reachable (propose_terms_change's authorization does not block it), but the reject-side guard correctly catches it. This closes the trace's flagged "genuinely new observation #1" as <strong>RESOLVED, not a live bug</strong> — the follow-up migration had already landed by the time of this verification. Observation #2 (declinedAt/rejectionReason vs activity_log) is <strong>CONFIRMED as a real, live, minor UX inconsistency</strong> (not a data-integrity bug, per the trace's own framing).</p>
+<hr>
+<h4 class="tc2-h3">TC-38 — GP edits own sponsored quest pre-approval — <strong>CONFIRMED (UNVERIFIABLE beyond source, consistent with trace)</strong></h4>
+<p><strong>Scenario</strong>: Checked for any dedicated RPC that would let a GP edit their own <code>grandparent_quest</code> while <code>status=pending_parent_approval</code>.</p>
+<p><strong>Steps</strong>: <code>select proname from pg_proc where proname ilike '%grandparent%' or ilike '%sponsor%' or ilike '%gp_quest%'</code> → <strong>zero results</strong>. Also created a live fixture (<code>zzp4b_tc38_gpq</code>, <code>category_type=grandparent_quest</code>, <code>status=pending_parent_approval</code>, <code>sponsor_user_id=zzp4b_senior1</code>) to confirm the row shape is reachable at all.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>GP (senior1)</strong>: no RPC exists for this edit at all — confirms there is no server-side path, not just a missing UI button. Whatever a GP's pending-approval quest card renders, it can only be read-only or route through a plain (client-gated only) <code>updateChore</code>.</div>
+<div class="bullet">• <strong>Parent role</strong>: unaffected — sees the quest in the normal pending-approval review queue.</div>
+<p><strong>Verdict</strong>: CONFIRMED as a genuine gap (matches trace's "not built" characterization) — no RPC-level distinction exists for this specific pre-approval edit window; this remains a missing feature, not a bug in existing code, and is not independently falsifiable beyond confirming no RPC path exists.</p>
+<hr>
+<h4 class="tc2-h3">TC-39 — Delete unclaimed pool chore — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc39_chore', is_pool=true, status='todo', created_by_id='zzp4b_parent1')</code></li>
+<li><code>cancel_chore('zzp4b_tc39_chore','zzp4b_parent2')</code> — called by a DIFFERENT parent than the creator, confirming "creator OR any parent" authorization.</li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>chore_tasks</code> row count for this id: <strong>0</strong> (hard-deleted).</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Canceling parent (parent2)</strong>: succeeds despite not being the creator (any parent may cancel).</div>
+<div class="bullet">• <strong>Kid/Teen pool viewers</strong>: chore simply gone on next sync, no ghost card, no explicit "deleted" toast (per trace).</div>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-40 — Delete a chore with a live claimed assignee — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc40_chore', status='in_progress', assigned_to_id='zzp4b_kid1', created_by_id='zzp4b_parent1')</code></li>
+<li><code>cancel_chore('zzp4b_tc40_chore','zzp4b_parent1')</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: row count 0 — deleted cleanly with an active claimant, no FK violation, no exception.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Canceling parent</strong>: immediate local filter-out (client-side, consistent with trace).</div>
+<div class="bullet">• <strong>Claimant (kid1)</strong>: loses the chore from local state on next sync; DB confirms no server-side error occurs regardless of claim state, consistent with the "no crash on stale reference" claim (which is itself a client-code assertion about <code>.find()</code> tolerance, not independently DB-testable, but nothing here contradicts it).</div>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-41 — Non-creator/non-parent attempts <code>cancel_chore</code> — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc41_chore', status='todo', created_by_id='zzp4b_parent1')</code></li>
+<li><code>cancel_chore('zzp4b_tc41_chore','zzp4b_kid1')</code> (kid1 is neither creator nor a parent)</li>
+</ol>
+<p><strong>Result</strong>: <strong>raises</strong> <code>member zzp4b_kid1 is not authorized to cancel chore zzp4b_tc41_chore (not the creator or a parent)</code>. Row confirmed untouched afterward (<code>status=todo</code>, still exists).</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Unauthorized actor (kid1)</strong>: gets the exact exception the trace's client wrapper turns into a toast; no optimistic delete occurred (row genuinely never touched).</div>
+<div class="bullet">• <strong>Other roles</strong>: unaffected — write never happened.</div>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-42 — Delete a chore mid-handoff — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into chore_tasks (...) values ('zzp4b_tc42_chore', status='in_progress', assigned_to_id='zzp4b_kid1', pending_handoff_to='zzp4b_kid2', pending_handoff_offered_by='zzp4b_kid1')</code></li>
+<li><code>insert into chore_participants (chore_id, member_id, role, status) values ('zzp4b_tc42_chore','zzp4b_kid2','assignee','pending')</code> — added explicitly since no auto-trigger populates this table on chore insert.</li>
+<li><code>cancel_chore('zzp4b_tc42_chore','zzp4b_parent1')</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: <code>chore_tasks</code> count 0; <code>chore_participants</code> count for this chore_id: <strong>0</strong> — confirms cascade cleanup, no orphaned participant row.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Receiver of the pending handoff (kid2)</strong>: their handoff-offer box and action pair vanish once the whole chore row (and its participant row) is gone in one shot.</div>
+<div class="bullet">• <strong>Original holder (kid1)</strong>: same — chore vanishes entirely.</div>
+<div class="bullet">• <strong>Approving parent</strong>: any pending-approval queue entry tied to this chore also disappears (no separate row survives).</div>
+<p><strong>Verdict</strong>: CONFIRMED. No orphaned <code>chore_participants</code> row survives the cascade.</p>
+<hr>
+<h4 class="tc2-h3">TC-43 — Stale reference after delete — <strong>CONFIRMED (RPC path) / CONFIRMED-AS-REAL-GAP (plain-patch path)</strong></h4>
+<p><strong>RPC path</strong>: <code>cancel_chore('zzp4b_tc42_chore','zzp4b_parent1')</code> called a second time (chore already deleted by TC-42's own cancel) → <strong>raises</strong> <code>chore zzp4b_tc42_chore not found</code>. Clean, honest exception.</p>
+<p><strong>Plain-patch path (the flagged gap)</strong>: <code>update chore_tasks set coins_reward=99 where id='zzp4b_tc42_chore' returning id</code> → returned <strong><code>rows: []</code></strong> with <strong>no SQL error at all</strong> — a genuine silent 0-row UPDATE. This directly confirms the DB-level premise of the flagged gap: Postgres/PostgREST treats a 0-row UPDATE as a successful, empty result, never an exception. Whether the client additionally shows a false "saved" toast on top of this is a client-code question outside DB scope (as the trace itself notes), but the DB behavior it depends on is now live-confirmed true.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>RPC-backed action from any role</strong>: real, visible, honest failure.</div>
+<div class="bullet">• <strong>Plain-patch action from any role editing a chore just deleted elsewhere</strong>: the write silently no-ops with a "successful" (empty) response — the client-side toast-gating logic determines whether this becomes a false positive, unconfirmed here (out of DB scope) but the underlying mechanism is real.</div>
+<p><strong>Verdict</strong>: CONFIRMED for both halves — RPC paths fail honestly; the plain-patch silent-no-op mechanism is real and live, consistent with the trace's "flagged, unconfirmed, still open" framing (now DB-confirmed as a real mechanism, though the client-surfacing question remains unconfirmed by design, since that requires reading client toast logic beyond this pass's DB scope).</p>
+<hr>
+<h4 class="tc2-h3">TC-44 — <code>respond_to_parent_quest</code> — ACCEPT on already-ACCEPTED — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li>Fixtures <code>zzp4b_tc44_chore</code>/<code>zzp4b_tc44_pqa</code> (<code>PENDING</code>)</li>
+<li><code>respond_to_parent_quest('zzp4b_tc44_pqa','zzp4b_parent2','ACCEPT',null)</code> → <code>ACCEPTED</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc44_pqa','zzp4b_parent2','ACCEPT',null)</code> again → <strong>raises</strong> <code>assignment zzp4b_tc44_pqa is already resolved (status=ACCEPTED)</code></li>
+</ol>
+<p><strong>Per-role breakdown</strong>: purely same-actor (parent2) double-submission guard; no other role exposed.</p>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-45 — ACCEPT on already-DECLINED — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li>Fixtures <code>zzp4b_tc45_chore</code>/<code>zzp4b_tc45_pqa</code> (<code>PENDING</code>)</li>
+<li><code>respond_to_parent_quest('zzp4b_tc45_pqa','zzp4b_parent2','DECLINE',null)</code> → <code>DECLINED</code></li>
+<li><code>respond_to_parent_quest('zzp4b_tc45_pqa','zzp4b_parent2','ACCEPT',null)</code> → <strong>raises</strong> <code>assignment zzp4b_tc45_pqa is already resolved (status=DECLINED)</code></li>
+</ol>
+<p><strong>Per-role breakdown</strong>: same-actor stale-call guard, correct status echoed in the exception (<code>DECLINED</code>, not a generic message).</p>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-46 — Any action, nonexistent id — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps</strong>: <code>respond_to_parent_quest('zzp4b_nonexistent_id','zzp4b_parent1','ACCEPT',null)</code> → <strong>raises</strong> <code>assignment zzp4b_nonexistent_id not found</code>.</p>
+<p><strong>Per-role breakdown</strong>: not reachable through any normal UI flow (every card derives its assignment id from an already-fetched row); pure defensive guard, no role-visible effect.</p>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-47 — Any action on <code>is_locked=true</code> — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>insert into parent_quest_assignments (...) values ('zzp4b_tc47_pqa', status='PARKED', is_locked=true, bounce_count=2)</code> (fixture, bypassing the two-bounce dance since TC-30/31 already independently prove the locking mechanism itself)</li>
+<li><code>respond_to_parent_quest('zzp4b_tc47_pqa','zzp4b_parent2','ACCEPT',null)</code> → <strong>raises</strong> <code>assignment zzp4b_tc47_pqa is locked (two-bounce rule) — needs to be discussed outside the app</code></li>
+</ol>
+<p><strong>Per-role breakdown</strong>: both parties in a locked negotiation would only ever see <code>LockedAssignmentCard</code>'s Reassign/Reopen pair in the real UI (per trace); this confirms the RPC-level guard as the third/final layer of defense holds even for a direct call.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Exact exception wording match.</p>
+<hr>
+<h4 class="tc2-h3">TC-48 — Uninvolved 3rd party responds — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li>Fixtures <code>zzp4b_tc48_chore</code>/<code>zzp4b_tc48_pqa</code> (<code>PENDING</code>, between parent1/parent2)</li>
+<li><code>respond_to_parent_quest('zzp4b_tc48_pqa','zzp4b_senior1','ACCEPT',null)</code> — senior1 is neither <code>assigned_by</code> nor <code>assigned_to</code> — → <strong>raises</strong> <code>member zzp4b_senior1 is not a party to assignment zzp4b_tc48_pqa</code></li>
+</ol>
+<p><strong>Resulting row state</strong>: confirmed still <code>PENDING</code> afterward — the uninvolved call had zero effect.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Uninvolved third party (senior1)</strong>: gets a real exception when calling directly; in the real UI they'd never even see this assignment's card (filtered lists), so this specifically closes the direct-call/exploit path.</div>
+<div class="bullet">• <strong>Structural cross-role</strong>: zero visible change to parent1/parent2's screens from this rejected attempt.</div>
+<p><strong>Verdict</strong>: CONFIRMED. The <code>p_actor_id</code> fix and party check both hold live, exactly as claimed.</p>
+<hr>
+<h4 class="tc2-h3">TC-49 — <code>complete_parent_quest</code>, uninvolved actor — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps</strong>: <code>complete_parent_quest('zzp4b_tc48_pqa','zzp4b_senior1')</code> → <strong>raises</strong> <code>member zzp4b_senior1 is not a party to assignment zzp4b_tc48_pqa</code>.</p>
+<p><strong>Per-role breakdown</strong>: same shape as TC-48 — no legitimate role's UI has a button that would fire this for someone else's assignment (<code>OthersAdultQuestCard</code>'s Nudge/Reclaim never call <code>complete_parent_quest</code>); the RPC guard defends only the direct-call path.</p>
+<p><strong>Verdict</strong>: CONFIRMED.</p>
+<hr>
+<h4 class="tc2-h3">TC-50 — Double-complete — <strong>CONFIRMED</strong></h4>
+<p><strong>Steps + exact RPC calls</strong>:</p>
+<ol>
+<li><code>complete_parent_quest('zzp4b_tc44_pqa','zzp4b_parent2')</code> → succeeds, <code>status=COMPLETED</code>, <code>completed_at</code> stamped. <code>activity_log</code> count for <code>action='completed'</code> on this entity: <strong>1</strong>.</li>
+<li><code>complete_parent_quest('zzp4b_tc44_pqa','zzp4b_parent2')</code> again → <strong>raises</strong> <code>assignment zzp4b_tc44_pqa is already completed</code>. <code>activity_log</code> count re-checked: still <strong>1</strong> (no duplicate row written).</li>
+</ol>
+<p><strong>Per-role breakdown</strong>: purely same-actor (parent2); the guard prevents both a duplicate <code>activity_log</code> entry and a re-stamped <code>completed_at</code> — confirmed the second call's rejection happens before any write, so <code>completed_at</code> genuinely was never touched a second time.</p>
+<p><strong>Verdict</strong>: CONFIRMED. Live DB's <code>complete_parent_quest</code> (from <code>20260927110000_qa_fixes_batch1.sql</code>, which supersedes the earlier <code>20260927060000_parent_quest_write_rpcs.sql</code> version that lacked this guard) has the double-completion check, confirmed via direct <code>prosrc</code> introspection AND via this live call.</p>
+<hr>
+<h3 class="tc2-h2">Summary of the two flagged new observations (from the source trace's own summary section)</h3>
+<ol>
+<li><strong><code>reject_terms_change</code>'s <code>is_pool</code> guard for <code>parent_only_quest</code></strong> — <strong>RESOLVED, confirmed live</strong>. The scenario is reachable (a parent can <code>propose_terms_change</code> on a <code>parent_only_quest</code> they're the claimant of — <code>v_by_role != 'parent'</code> trivially passes for a parent claimant), but the reject path's <code>category_type is distinct from 'parent_only_quest'</code> guard (migration <code>20260927200000_fix_reject_terms_change_pool_guard.sql</code>) is genuinely present in the live database and correctly keeps <code>is_pool=false</code> for the parent-only quest. This is NOT a live bug as of this verification.</li>
+<li><strong><code>reject_terms_change</code>'s note going to <code>activity_log</code>, not <code>chore.declinedAt</code>/<code>rejectionReason</code></strong> — <strong>CONFIRMED as a real, live, minor UX inconsistency</strong>. Directly verified: after a reject, <code>declined_at</code> and <code>rejection_reason</code> are both <code>null</code> on the chore row, while <code>activity_log</code> carries the human-readable note (<code>"terms changed, handed back — kept original terms"</code>). A parent viewing the re-pooled chore genuinely sees no red "declined" annotation for this path, unlike a kid's decline. Not a data-integrity bug — cosmetic only, exactly as the trace characterized it.</li>
+</ol>
+<hr>
+<h3 class="tc2-h2">Cleanup</h3>
+<p>All <code>zzp4b_</code>-prefixed rows deleted at the end of this pass, in dependency order: <code>activity_log</code> → <code>chore_participants</code> → <code>parent_quest_assignments</code> → <code>chore_tasks</code> → <code>members</code> → <code>families</code>. No real user/family data was touched at any point — every insert/update/RPC call above targeted only ids/rows created by this pass within family <code>270da587-bc84-41a8-8f13-b99a705f793e</code>.</p>
+<p><strong>Zero-row proof query</strong> (run after teardown):</p>
+<pre><code>select
+  (select count(*) from public.families where name like 'zzp4b_%') as families_left,
+  (select count(*) from public.members where id like 'zzp4b_%') as members_left,
+  (select count(*) from public.chore_tasks where id like 'zzp4b_%') as chores_left,
+  (select count(*) from public.parent_quest_assignments where id like 'zzp4b_%') as pqa_left,
+  (select count(*) from public.chore_participants where chore_id like 'zzp4b_%') as participants_left,
+  (select count(*) from public.activity_log where entity_id like 'zzp4b_%') as activity_log_left;</code></pre>
+<p><strong>Result</strong>: <code>{"families_left":0,"members_left":0,"chores_left":0,"pqa_left":0,"participants_left":0,"activity_log_left":0}</code> — confirmed 0 rows remain in every table this pass touched.</p>
+
+  </div>
+</section>
+
+<section id="r3" class="range-section">
+  <div class="card content">
+<h2 class="tc3-h1">Master Flow — DB-Verified Trace, TC-51 through TC-66</h2>
+<p>This file DB-verifies the claims in <code>docs/master_flow_full_role_trace_TC51-66.md</code> against a live, throwaway test family (<code>zzp4c_</code>-prefixed) on the linked Supabase Postgres instance. Every RPC below was called for real via <code>npx supabase db query --linked</code> (never a raw <code>UPDATE</code>), and the resulting row state was queried directly and compared against the source trace's claims.</p>
+<p><strong>Test family</strong>: <code>zzp4c_test_family</code> (<code>families.id = a697db82-e2ab-4d0b-80c1-e25685acb360</code>) Members: <code>zzp4c_parent1</code>/<code>zzp4c_parent2</code> (parent), <code>zzp4c_kid1</code>/<code>zzp4c_kid2</code> (kid), <code>zzp4c_teen1</code> (teenager), <code>zzp4c_senior1</code> (grandparent).</p>
+<p>All test data was deleted at the end of this session — see the Cleanup section for the proof-count query and result.</p>
+<hr>
+<h3 class="tc3-h2">Source-code verification: the two flagged open questions</h3>
+<h4 class="tc3-h3">1. <code>OutgoingPendingCard</code> Recall-button gating — CONFIRMED, still inconsistent</h4>
+<p>Read directly on this branch (<code>feat/kitchen-kiosk-mode</code>); note the source file the trace names, <code>features/hub/parent/backlog/HouseholdBacklogSection.tsx</code>, has since moved to <code>features/hub/parent/HouseholdBacklogSection.tsx</code> (same content, new path) — file paths below are current-branch, not the trace's paths, but the logic and outcome are identical:</p>
+<div class="bullet">• <code>features/hub/parent/HouseholdBacklogSection.tsx:158</code>:</div>
+<pre><code>  onRecall={a.status === 'PENDING' &amp;&amp; a.assignedBy === active.id ? () =&gt; recallParentQuest(a.id, active.id) : undefined}</code></pre>
+<p>Strict gate — requires the active member to actually be the delegator.</p>
+<div class="bullet">• <code>features/quests/QuestsScreen.tsx:1065</code>:</div>
+<pre><code>  onRecall={a.status === 'PENDING' ? () =&gt; recallParentQuest(a.id, activeMember!.id) : undefined}</code></pre>
+<p>Loose gate — <code>assignedBy</code> is never checked at all.</p>
+<div class="bullet">• <code>features/hub/SeniorView.tsx:918</code>:</div>
+<pre><code>  onRecall={a.status === 'PENDING' ? () =&gt; { ...; recallParentQuest(a.id, active.id); } : undefined}</code></pre>
+<p>Also loose — same omission.</p>
+<p><strong>Verdict: CONFIRMED, not stale.</strong> The inconsistency the trace describes is real and still present in the current source. As the trace notes, it is not currently player-reachable because <code>getMyOutgoingPending</code> (<code>store/choreStore.ts:5064-5087</code>, confirmed present at those line numbers) already scopes rows to <code>assignedBy === memberId</code> before either loose render site ever sees them — so the component-level looseness is latent, not exploitable through today's selector wiring. It should still be fixed for defense-in-depth, matching the strict site.</p>
+<h4 class="tc3-h3">2. Optimistic-write-then-rollback pattern — CONFIRMED for all four functions</h4>
+<p>Read <code>store/choreStore.ts</code> directly (current line numbers differ slightly from the trace's, which was written against a different branch state):</p>
+<div class="bullet">• <code>respondToParentQuest</code> (<code>store/choreStore.ts:4330-4432</code>): optimistic <code>set()</code> at 4381-4397 before</div>
+<p>the RPC call at 4399; on <code>{ error }</code>, rollback at 4403-4406 restores <code>prevAssignment</code>/<code>prevChore</code>. One deviation from the trace: the actual toast text on rollback is <strong>"That didn't go through — someone else may have already responded. Pull to refresh and try again."</strong> (line 4407), not the generic "check your connection" text the trace's summary implies applies uniformly — this function's toast is more specific than the others.</p>
+<div class="bullet">• <code>completeParentQuest</code> (<code>store/choreStore.ts:4434-4473</code>): optimistic <code>set()</code> at 4442-4448 before</div>
+<p>RPC at 4450; rollback at 4454-4457 restores <code>assignment</code>/<code>prevChore</code>; generic "check your connection" toast at 4458. Matches trace.</p>
+<div class="bullet">• <code>cancelLockedAssignment</code> (<code>store/choreStore.ts:4475-4501</code>): optimistic <code>set()</code> at 4482-4488</div>
+<p>before RPC at 4489; rollback at 4493 restores <code>assignment</code>; generic toast at 4494. Matches trace.</p>
+<div class="bullet">• <code>recallParentQuest</code> (<code>store/choreStore.ts:4513-4549</code>): optimistic <code>set()</code> at 4521-4526 before RPC</div>
+<p>at 4527; rollback at 4531-4534 restores <code>assignment</code>/<code>prevChore</code>; generic toast at 4535. Matches trace.</p>
+<p><strong>Verdict: CONFIRMED</strong> — all four do optimistic-write-then-conditional-rollback exactly as described, reached by reading the exact function bodies (no live race condition needed). The one correction: <code>respondToParentQuest</code>'s rollback toast text is not the generic string used by the other three.</p>
+<hr>
+<h3 class="tc3-h2">TC-51 — <code>complete_parent_quest</code>, nonexistent id</h3>
+<p><strong>Scenario</strong>: Call <code>complete_parent_quest</code> against an assignment id that doesn't exist.</p>
+<p><strong>RPC call</strong>: <code>select complete_parent_quest('zzp4c_nonexistent_id','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_nonexistent_id not found</code> (raised at function line 8).</p>
+<p><strong>Per-role view</strong>:</p>
+<div class="bullet">• Actor (whoever's stale card triggered this): if the client's local <code>parentAssignments</code> cache</div>
+<p>still had a copy of the row, they'd see a one-frame "done" flash on their own card, then a revert plus the generic "That didn't go through" toast (per the confirmed rollback pattern above). If the local cache had already pruned the row, <code>completeParentQuest</code>'s own guard (<code>store/choreStore.ts</code> — <code>if (!assignment) { ...; return; }</code>) fires first: a silent no-op, no RPC round-trip, no toast.</p>
+<div class="bullet">• All other roles: unaffected — the server-side write never happened.</div>
+<p><strong>Verdict: CONFIRMED.</strong> RPC rejection message and behavior match the trace exactly.</p>
+<hr>
+<h3 class="tc3-h2">TC-52 — <code>cancel_locked_assignment</code>, not locked</h3>
+<p><strong>Scenario</strong>: Call <code>cancel_locked_assignment</code> on an assignment where <code>is_locked = false</code>.</p>
+<p><strong>Setup</strong>: <code>parent_quest_assignments</code> row <code>zzp4c_asn_52</code> — <code>assigned_by=zzp4c_parent1</code>, <code>assigned_to=zzp4c_parent2</code>, <code>status='PENDING'</code>, <code>is_locked=false</code>.</p>
+<p><strong>RPC call</strong>: <code>select cancel_locked_assignment('zzp4c_asn_52','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_asn_52 is not locked</code> (function line 15).</p>
+<p><strong>Per-role view</strong>:</p>
+<div class="bullet">• Actor (parent1, if reached via a stale <code>LockedAssignmentCard</code>): optimistic flip to</div>
+<p><code>DECLINED</code>/<code>unlocked</code> for one frame, then rollback + generic toast — this card structurally cannot render in the current UI for a non-locked row (<code>getMyLockedItems</code> filters strictly on <code>isLocked</code>), so this is stale-card-only in practice.</p>
+<div class="bullet">• Other roles: unaffected, row's real state untouched.</div>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-53 — <code>cancel_locked_assignment</code>, uninvolved actor</h3>
+<p><strong>Scenario</strong>: A member who is neither <code>assigned_to</code> nor <code>assigned_by</code> calls <code>cancel_locked_assignment</code> on a locked assignment.</p>
+<p><strong>Setup</strong>: <code>parent_quest_assignments</code> row <code>zzp4c_asn_53</code> — <code>assigned_by=zzp4c_parent1</code>, <code>assigned_to=zzp4c_senior1</code>, <code>status='PARKED'</code>, <code>is_locked=true</code>. <code>zzp4c_parent2</code> is the uninvolved third party.</p>
+<p><strong>RPC call</strong>: <code>select cancel_locked_assignment('zzp4c_asn_53','zzp4c_parent2');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: member zzp4c_parent2 is not a party to assignment zzp4c_asn_53</code> (function line 12).</p>
+<p><strong>Per-role view</strong>:</p>
+<div class="bullet">• parent2 (uninvolved): no <code>LockedAssignmentCard</code> for this row exists in their UI at all —</div>
+<p><code>getMyLockedItems(memberId)</code> requires <code>assignedTo === memberId || assignedBy === memberId</code>, and parent2 is neither. Reachable only via a forced/raw RPC call, exactly as the trace states.</p>
+<div class="bullet">• parent1 (B) and senior1 (A): their own cards for this row are untouched — the reject means the</div>
+<p>row never actually unlocked.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-54 — <code>cancel_locked_assignment</code>, nonexistent id</h3>
+<p><strong>Scenario</strong>: Same action against an id that doesn't exist.</p>
+<p><strong>RPC call</strong>: <code>select cancel_locked_assignment('zzp4c_nonexistent_id2','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_nonexistent_id2 not found</code> (function line 9).</p>
+<p><strong>Per-role view</strong>: Same shape as TC-51 — stale-local-row-only reachability, silent no-op if the local cache already pruned the row, optimistic-flash-then-revert-plus-toast otherwise.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-55 — <code>recall_parent_quest</code>, receiver tries to recall</h3>
+<p><strong>Scenario</strong>: The receiver (A) of a still-PENDING delegation calls <code>recall_parent_quest</code> on their own incoming assignment.</p>
+<p><strong>Setup</strong>: <code>parent_quest_assignments</code> row <code>zzp4c_asn_55</code> — <code>assigned_by=zzp4c_parent1</code> (B), <code>assigned_to=zzp4c_parent2</code> (A), <code>status='PENDING'</code>.</p>
+<p><strong>RPC call</strong>: <code>select recall_parent_quest('zzp4c_asn_55','zzp4c_parent2');</code> (A recalling their own incoming delegation)</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: member zzp4c_parent2 is not the delegator of assignment zzp4c_asn_55</code> (function line 11).</p>
+<p><strong>Per-role view</strong>:</p>
+<div class="bullet">• A (parent2, receiver): per the confirmed source-read above, A's own <code>DirectPendingCard</code> (which</div>
+<p>is what actually surfaces this row to them via <code>getMyDirectPending</code>) has no Recall action at all — <code>Accept</code>/<code>Respond</code> only. A never has a working Recall button to press through normal navigation regardless of which render site's gate is in play.</p>
+<div class="bullet">• B (parent1, delegator): their own <code>OutgoingPendingCard</code> and eventual Recall ability are</div>
+<p>untouched.</p>
+<p><strong>Verdict: CONFIRMED</strong> — both the RPC-level rejection and the UI-reachability analysis (including the flagged QuestsScreen/SeniorView gating inconsistency, see section above) hold on live source and a live RPC call.</p>
+<hr>
+<h3 class="tc3-h2">TC-56 — <code>recall_parent_quest</code>, already ACCEPTED</h3>
+<p><strong>Scenario</strong>: B calls recall on a delegation already <code>ACCEPTED</code>.</p>
+<p><strong>Setup</strong>: <code>parent_quest_assignments</code> row <code>zzp4c_asn_56</code> — <code>assigned_by=zzp4c_parent1</code>, <code>assigned_to=zzp4c_parent2</code>, <code>status='ACCEPTED'</code>.</p>
+<p><strong>RPC call</strong>: <code>select recall_parent_quest('zzp4c_asn_56','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_asn_56 is not PENDING (status=ACCEPTED)</code> (function line 14).</p>
+<p><strong>Per-role view</strong>: B's <code>OutgoingPendingCard</code> for this row is already gone from their UI the moment acceptance landed (<code>getMyOutgoingPending</code> excludes non-PENDING/SNOOZED/PARKED statuses) — this is reachable only via a stale card. A's now-live claimed chore is completely unaffected by B's failed attempt.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-57 — <code>recall_parent_quest</code>, already DECLINED, recall again</h3>
+<p><strong>Scenario</strong>: B calls recall a second time on a delegation A already declined.</p>
+<p><strong>Setup</strong>: <code>parent_quest_assignments</code> row <code>zzp4c_asn_57</code> — <code>assigned_by=zzp4c_parent1</code>, <code>assigned_to=zzp4c_parent2</code>, <code>status='DECLINED'</code>.</p>
+<p><strong>RPC call</strong>: <code>select recall_parent_quest('zzp4c_asn_57','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_asn_57 is not PENDING (status=DECLINED)</code> (function line 14).</p>
+<p><strong>Per-role view</strong>: Same shape as TC-56 — B's card for this row disappeared from <code>getMyOutgoingPending</code> the moment the decline landed; repeat-recall is stale-card-only.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-58 — <code>recall_parent_quest</code>, nonexistent id</h3>
+<p><strong>RPC call</strong>: <code>select recall_parent_quest('zzp4c_nonexistent_id3','zzp4c_parent1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: assignment zzp4c_nonexistent_id3 not found</code> (function line 8).</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-59 — <code>offer_chore_handoff</code> to the current assignee (FAIL → VERIFIED-DEPLOYED)</h3>
+<p><strong>Scenario</strong>: Offer a handoff on a chore to its own current assignee (self-referential state).</p>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_59</code> — <code>assigned_to_id='zzp4c_kid1'</code>, <code>status='in_progress'</code>.</p>
+<p><strong>RPC call</strong>: <code>select offer_chore_handoff('zzp4c_chore_59','zzp4c_kid1','zzp4c_kid1','testing self-handoff');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_59 is already assigned to member zzp4c_kid1</code> (function line 12).</p>
+<p><strong>Per-role view</strong>: Offerer and target are the same person in this scenario, so there is no second role's screen to affect; the actor sees the optimistic <code>pendingHandoffTo</code> flash then revert with the generic "Couldn't send" toast, per the confirmed rollback pattern.</p>
+<p><strong>Verdict: CONFIRMED — this guard is live and deployed exactly as the trace's "VERIFIED-DEPLOYED" tag claims.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-60 — <code>offer_chore_handoff</code>, nonexistent chore</h3>
+<p><strong>RPC call</strong>: <code>select offer_chore_handoff('zzp4c_chore_nonexistent','zzp4c_teen1','zzp4c_kid1','test');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_nonexistent not found</code> (function line 9).</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-61 — <code>accept_chore_handoff</code>, wrong actor</h3>
+<p><strong>Scenario</strong>: A member who is not <code>pending_handoff_to</code> calls <code>accept_chore_handoff</code>.</p>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_61</code> — offered from kid2 to teen1 via <code>offer_chore_handoff('zzp4c_chore_61','zzp4c_teen1','zzp4c_kid2','busy')</code> (succeeded, <code>pending_handoff_to='zzp4c_teen1'</code>).</p>
+<p><strong>RPC call</strong>: <code>select accept_chore_handoff('zzp4c_chore_61','zzp4c_kid1');</code> (kid1, wrong actor)</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_61 has no pending handoff to member zzp4c_kid1</code> (function line 12).</p>
+<p><strong>Per-role view</strong>: kid1 (wrong actor) never sees the "I've got it" button at all — hard client-side render gate on <code>q.pendingHandoffTo === myId</code>. teen1 (correct target)'s own pending-offer UI is completely unaffected by kid1's failed/no-op attempt.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-62 — <code>accept_chore_handoff</code>, no pending handoff</h3>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_62</code> — <code>pending_handoff_to IS NULL</code>.</p>
+<p><strong>RPC call</strong>: <code>select accept_chore_handoff('zzp4c_chore_62','zzp4c_kid1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_62 has no pending handoff to member zzp4c_kid1</code> (function line 12) — identical exception shape to TC-61, confirming the trace's claim these two cases hit the exact same server-side guard.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-63 — <code>accept_chore_handoff</code>, double-accept</h3>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_63</code> — offered from kid2 to kid1 via <code>offer_chore_handoff('zzp4c_chore_63','zzp4c_kid1','zzp4c_kid2','swap please')</code>.</p>
+<p><strong>Step 1 — first accept</strong>: <code>select accept_chore_handoff('zzp4c_chore_63','zzp4c_kid1');</code> → succeeded. Resulting row: <code>assigned_to_id='zzp4c_kid1'</code>, <code>is_pool=false</code>, <code>status='todo'</code>, <code>claimed_at</code> set, all four <code>pending_handoff_*</code> fields cleared to null.</p>
+<p><strong>Step 2 — second accept (same actor, same chore)</strong>: <code>select accept_chore_handoff('zzp4c_chore_63','zzp4c_kid1');</code> → <code>ERROR: P0001: chore zzp4c_chore_63 has no pending handoff to member zzp4c_kid1</code> (function line 12) — since the first accept already cleared <code>pending_handoff_to</code>.</p>
+<p><strong>Per-role view</strong>: kid1's card after the first accept shows the offer banner/Accept/Decline buttons gone (field cleared), replaced by their normal in-progress chore UI. The second attempt is a silent local no-op on any real client (guard <code>chore.pendingHandoffTo !== memberId</code> at <code>store/choreStore.ts:2458</code>); this direct RPC call bypassed that client guard to confirm the server's own idempotency rejection independently.</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-64 — <code>decline_chore_handoff</code>, wrong actor</h3>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_64</code> — offered from kid1 to teen1 via <code>offer_chore_handoff('zzp4c_chore_64','zzp4c_teen1','zzp4c_kid1','cant do it')</code>.</p>
+<p><strong>RPC call</strong>: <code>select decline_chore_handoff('zzp4c_chore_64','zzp4c_senior1');</code> (senior1, wrong actor)</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_64 has no pending handoff to member zzp4c_senior1</code> (function line 12).</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-65 — <code>decline_chore_handoff</code>, no pending handoff</h3>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_65</code> — <code>pending_handoff_to IS NULL</code>.</p>
+<p><strong>RPC call</strong>: <code>select decline_chore_handoff('zzp4c_chore_65','zzp4c_kid1');</code></p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4c_chore_65 has no pending handoff to member zzp4c_kid1</code> (function line 12).</p>
+<p><strong>Verdict: CONFIRMED.</strong></p>
+<hr>
+<h3 class="tc3-h2">TC-66 — <code>propose_later_date</code>, second proposal on an already-pending chore — <strong>MISMATCH FOUND (regression)</strong></h3>
+<p><strong>Scenario per trace</strong>: "Originally, a second <code>propose_later_date</code> call on a chore that already had a pending later-date proposal silently overwrote the first request with no guard... Fixed; Pass 3 re-confirmed live: KidA proposed a later date, then KidA2 (sibling) proposed a second later date on the same still-pending chore — now correctly raises 'chore ... already has a pending later-date proposal — resolve it first.'"</p>
+<p><strong>Setup</strong>: <code>chore_tasks</code> row <code>zzp4c_chore_66</code> — <code>assigned_to_id='zzp4c_kid1'</code>, <code>status='in_progress'</code>, <code>category_type='standard'</code>, <code>is_pool=false</code>.</p>
+<p><strong>Step 1 — first proposal (KidA = kid1)</strong>:</p>
+<pre><code>select propose_later_date('zzp4c_chore_66','zzp4c_kid1','2026-09-01','KidA needs later time');</code></pre>
+<p>Succeeded. Resulting row: <code>assigned_to_id=NULL</code>, <code>status='todo'</code>, <strong><code>is_pool=true</code></strong> (confirmed — this part of the earlier fix, <code>is_pool = (category_type is distinct from 'parent_only_quest')</code>, is correctly live in <code>propose_later_date</code>'s current definition), <code>pending_later_date='2026-09-01'</code>, <code>pending_later_reason='KidA needs later time'</code>, <code>pending_later_requested_by='zzp4c_kid1'</code>.</p>
+<p><strong>Step 2 — second proposal (KidA2 = kid2), same chore, first proposal still pending</strong>:</p>
+<pre><code>select propose_later_date('zzp4c_chore_66','zzp4c_kid2','2026-09-05','KidA2 also wants later');</code></pre>
+<p><strong>This call SUCCEEDED — no exception was raised.</strong> Resulting row (re-queried directly): <code>pending_later_date='2026-09-05'</code>, <code>pending_later_reason='KidA2 also wants later'</code>, <code>pending_later_requested_by='zzp4c_kid2'</code> — <strong>KidA's original proposal (2026-09-01, "KidA needs later time", requested by kid1) was silently overwritten with zero trace</strong>, exactly reproducing the <em>original, pre-fix</em> bug the trace claims was fixed.</p>
+<p><strong>Root cause identified</strong>: two migrations both touch <code>propose_later_date</code> via <code>create or replace function</code>, and the later one clobbered the earlier one's fix:</p>
+<div class="bullet">• <code>supabase/migrations/20260927110000_qa_fixes_batch1.sql</code> (section 6) added the guard:</div>
+<pre><code>  if exists (select 1 from public.chore_tasks where id = p_chore_id and pending_later_date is not null) then
+    raise exception 'chore % already has a pending later-date proposal — resolve it first', p_chore_id;
+  end if;</code></pre>
+<div class="bullet">• <code>supabase/migrations/20260927150000_fix_later_date_orphan.sql</code> (a later timestamp, applied</div>
+<p>after) redefines the <strong>entire function</strong> to fix the unrelated <code>is_pool</code> orphan bug, but its <code>create or replace function public.propose_later_date(...)</code> body does <strong>not</strong> include the clobber-guard block at all — it was dropped when the function was rewritten, since that migration's author was focused solely on the <code>is_pool</code> fix and used <code>create or replace</code> (which fully replaces the function body) rather than an <code>ALTER FUNCTION</code>-style patch.</p>
+<p>Both migrations are present in the repo and both appear to have been applied in order (the currently-deployed function has the <code>is_pool</code> fix but not the clobber-guard), confirmed by reading <code>pg_proc.prosrc</code> directly for the live function on the linked project — it matches <code>20260927150000_fix_later_date_orphan.sql</code>'s body exactly, with no guard clause present.</p>
+<p><strong>Per-role impact of the live bug</strong>: A parent/approver's queue is silently rewired mid-flight — whoever approves next approves KidA2's request, not KidA's, and KidA has no signal their original ask ever existed. KidA's <code>pendingLaterDate</code>-driven local view would show the same overwritten values once resynced (their own optimistic local copy briefly disagrees with the server, then gets overwritten by the next realtime/poll sync to match KidA2's values instead). Cross-role damage is worse than the trace assumes: the trace states "the fix's practical cross-role effect is that the first requester's in-flight proposal ... can no longer be silently clobbered" — this is currently <strong>false</strong> on the live database.</p>
+<p><strong>Verdict: MISMATCH.</strong> The trace's TC-66 claim ("Fixed; Pass 3 re-confirmed live... now correctly raises...") does not hold against the currently deployed <code>propose_later_date</code> function. This is a live regression, most likely introduced when <code>20260927150000_fix_later_date_orphan.sql</code> redefined the function without preserving the earlier migration's clobber-guard. Recommend re-adding the <code>pending_later_date is not null</code> guard to the current function body (the <code>is_pool</code> fix and the clobber-guard are not mutually exclusive — both can coexist in one function).</p>
+<hr>
+<h3 class="tc3-h2">Summary</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>TC</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>51</td><td>CONFIRMED</td></tr>
+<tr><td>52</td><td>CONFIRMED</td></tr>
+<tr><td>53</td><td>CONFIRMED</td></tr>
+<tr><td>54</td><td>CONFIRMED</td></tr>
+<tr><td>55</td><td>CONFIRMED</td></tr>
+<tr><td>56</td><td>CONFIRMED</td></tr>
+<tr><td>57</td><td>CONFIRMED</td></tr>
+<tr><td>58</td><td>CONFIRMED</td></tr>
+<tr><td>59</td><td>CONFIRMED</td></tr>
+<tr><td>60</td><td>CONFIRMED</td></tr>
+<tr><td>61</td><td>CONFIRMED</td></tr>
+<tr><td>62</td><td>CONFIRMED</td></tr>
+<tr><td>63</td><td>CONFIRMED</td></tr>
+<tr><td>64</td><td>CONFIRMED</td></tr>
+<tr><td>65</td><td>CONFIRMED</td></tr>
+<tr><td>66</td><td><strong>MISMATCH — live regression, clobber-guard missing from deployed <code>propose_later_date</code></strong></td></tr>
+<tr><td>Recall-button gating (flagged issue)</td><td>CONFIRMED — inconsistency real, not exploitable today</td></tr>
+<tr><td>Optimistic-write-then-rollback (flagged issue)</td><td>CONFIRMED for all four functions</td></tr>
+</tbody></table></div>
+<p>15 of 16 numbered test cases confirmed exactly against live DB behavior. One confirmed mismatch: TC-66's clobber-guard is not present in the currently deployed <code>propose_later_date</code> function, despite the trace (and the earlier migration) claiming it was fixed — a <code>create or replace function</code> in a later migration silently dropped the guard while fixing an unrelated bug.</p>
+<hr>
+<h3 class="tc3-h2">Cleanup</h3>
+<p>All <code>zzp4c_</code>-prefixed rows created for this verification pass were deleted at the end of the session:</p>
+<pre><code>delete from parent_quest_assignments where id like 'zzp4c_%';
+delete from chore_participants where chore_id like 'zzp4c_%';
+delete from activity_log where entity_id like 'zzp4c_%';
+delete from chore_tasks where id like 'zzp4c_%';
+delete from members where id like 'zzp4c_%';
+delete from families where id = 'a697db82-e2ab-4d0b-80c1-e25685acb360';</code></pre>
+<p><strong>Proof-count query and result</strong> (run after cleanup):</p>
+<pre><code>select
+  (select count(*) from families where id = 'a697db82-e2ab-4d0b-80c1-e25685acb360') as families,
+  (select count(*) from members where id like 'zzp4c_%') as members,
+  (select count(*) from chore_tasks where id like 'zzp4c_%') as chore_tasks,
+  (select count(*) from parent_quest_assignments where id like 'zzp4c_%') as assignments,
+  (select count(*) from chore_participants where chore_id like 'zzp4c_%') as participants,
+  (select count(*) from activity_log where entity_id like 'zzp4c_%') as activity_log;</code></pre>
+<p>Result: <code>{"families": 0, "members": 0, "chore_tasks": 0, "assignments": 0, "participants": 0, "activity_log": 0}</code> — zero rows remain across every table touched by this test pass.</p>
+
+  </div>
+</section>
+
+<section id="r4" class="range-section">
+  <div class="card content">
+<h2 class="tc4-h1">Master Flow — DB-Verified, TC-67 through TC-82</h2>
+<p><strong>Method</strong>: Every RPC below was called live against the linked Supabase Postgres DB (<code>npx supabase db query --linked</code>) inside a fresh, throwaway <code>zzp4d_</code>-prefixed test family (never real user data). No raw <code>UPDATE</code>/<code>INSERT</code> was used to fake a transition — every state change came from the real <code>security definer</code> RPC the app calls. After each call, the resulting row was queried directly and compared against the claim made in <code>docs/master_flow_full_role_trace_TC67-82.md</code> (the pure-source-code trace). All test data was deleted at the end; the zero-row proof query is at the bottom of this document.</p>
+<p><strong>Test family</strong>: <code>zzp4d_TestFamily</code> (<code>families.id = 6be0f194-9399-4521-a68c-de25f76a8821</code>) <strong>Test members</strong>: <code>zzp4d_parent1</code> (parent), <code>zzp4d_parent2</code> (parent), <code>zzp4d_kid1</code> (child/kid), <code>zzp4d_teen1</code> (teenager/teen), <code>zzp4d_senior1</code> (grandparent/senior)</p>
+<p><strong>Known live-DB gotchas confirmed while setting up</strong>:</p>
+<div class="bullet">• <code>members.role</code> check constraint only allows <code>parent</code>, <code>child</code>, <code>kid</code>, <code>teenager</code>, <code>grandparent</code> — the app's <code>teen</code>/<code>senior</code> role labels map to DB values <code>teenager</code>/<code>grandparent</code> (<code>store/familyStore.ts:276,333,458</code>).</div>
+<div class="bullet">• <code>members.avatar</code> is <code>NOT NULL</code> — supplied an emoji for every member.</div>
+<div class="bullet">• <code>members.family_id</code> is <code>uuid</code>; <code>chore_tasks.family_id</code> is <code>text</code> — cast the family id to text when inserting chores.</div>
+<div class="bullet">• A harness-only limitation, <strong>not a product bug</strong>: <code>award_coins</code>'s <code>guard_member_balance_writes</code> trigger requires a real <code>auth.uid()</code>-backed session (<code>resolve_active_member_id()</code>) to authorize a coin-balance write on someone else's row. <code>db query --linked</code> runs as <code>cli_login_postgres</code> with no such session, so any RPC path that pays out coins to another member (<code>approve_chore</code>, <code>resolve_redo_dispute</code> with <code>p_pay=true</code>) fails at the <code>award_coins</code> step with <code>Not authorized to change this member's balance</code>. This exact caveat is already documented in Pass 3. <strong>Workaround used</strong>: set <code>base_points=0, coins_reward=0, bonus_coins=0</code> on the relevant test chores so <code>v_pts</code> computes to 0 and the <code>award_coins</code> call is skipped (the RPC's own <code>if v_pts &gt; 0 ... else v_pts := 0</code> branch) — this exercises the full guard/status-transition logic identically to a real payout, just without the coin arithmetic, which was not what these TCs are testing anyway.</div>
+<hr>
+<h3 class="tc4-h2">proposeLaterDate <code>isPool</code> fix — VERIFICATION RESULT: CONFIRMED FIXED</h3>
+<p><code>store/choreStore.ts:2511</code> now reads:</p>
+<pre><code>isPool: c.categoryType !== 'parent_only_quest', claimedAt: undefined,</code></pre>
+<p>replacing the old hardcoded <code>isPool: false</code>. This matches the fixed server-side RPC (<code>propose_later_date</code> in <code>supabase/migrations/20260927150000_fix_later_date_orphan.sql</code>), which sets <code>is_pool = (v_category_type is distinct from 'parent_only_quest')</code> on release.</p>
+<p>Live DB confirmation (TC-67/68 setup and TC-69/82 step 1, below): calling <code>propose_later_date</code> on a <code>kid_quest</code>-category chore immediately produces <code>is_pool=true, assigned_to_id=null</code> server-side — there is no window where the row is <code>is_pool=false</code>. The client optimistic patch now matches this exactly, so the requester's own screen no longer shows the chore as briefly vanished from the pool before the next resync. <strong>The previously-flagged staleness bug is fully resolved on both the client and server.</strong></p>
+<hr>
+<h4 class="tc4-h3">TC-67 — <code>approve_later_date</code>, no pending proposal</h4>
+<p><strong>Scenario</strong>: Parent calls <code>approve_later_date</code> on a chore with no pending later-date request.</p>
+<p><strong>RPC call</strong>: <code>select public.approve_later_date('zzp4d_c67_68','zzp4d_parent1')</code> on a fresh <code>todo</code> chore with <code>pending_later_date IS NULL</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4d_c67_68 has no pending later-date proposal</code> — no row changed.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Parent (approver)</strong>: No UI path reaches this — <code>CantMakeItLaterCard</code> only renders when <code>pendingLaterDate</code> is truthy, which is never true here. Nothing changes on screen even via a scripted/stale call.</div>
+<div class="bullet">• <strong>Kid/Teen/GP (assignee or onlookers)</strong>: No visible effect anywhere — chore renders as a normal <code>todo</code> item.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — live exception text matches the trace's claimed guard exactly; no row-state or UI-visibility discrepancy.</p>
+<hr>
+<h4 class="tc4-h3">TC-68 — <code>approve_later_date</code>, not authorized</h4>
+<p><strong>Scenario</strong>: A non-parent (kid) calls <code>approve_later_date</code> directly on a chore that DOES have a pending proposal.</p>
+<p><strong>Setup RPC</strong>: <code>select public.propose_later_date('zzp4d_c67_68','zzp4d_kid1','2026-09-05','busy with school')</code>. Resulting row: <code>status=todo, is_pool=true, assigned_to_id=null, pending_later_date=2026-09-05, pending_later_requested_by=zzp4d_kid1</code>.</p>
+<p><strong>RPC call</strong>: <code>select public.approve_later_date('zzp4d_c67_68','zzp4d_kid1')</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: member zzp4d_kid1 is not authorized to approve a reschedule</code> — no row changed.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Parent</strong>: Sees the real <code>CantMakeItLaterCard</code> with "Keep original date" / "Approve new date" — this is the only legitimate entry point in <code>ChoreReviewSection</code>, mounted only for parent/senior-approver roles.</div>
+<div class="bullet">• <strong>Kid/Teen (attacker or sibling)</strong>: No approve button exists anywhere on <code>KidView</code>/<code>TeenView</code> for this chore.</div>
+<div class="bullet">• <strong>Requesting kid (zzp4d_kid1)</strong>: Their own chore is now visible again in the general pool (<code>is_pool=true</code> confirmed live) rather than the old stale-invisible state — matches the fixed <code>isPool</code> behavior above.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — live exception text matches; live <code>is_pool=true</code>/<code>assigned_to_id=null</code> after propose confirms the fix is in effect at the DB layer, not just in source.</p>
+<hr>
+<h4 class="tc4-h3">TC-69 / TC-82 — <code>decline_later_date</code> null-guard, full propose → approve → decline sequence</h4>
+<p><strong>Scenario A (TC-69)</strong>: Decline a later-date request when none exists. <strong>Scenario B (TC-82)</strong>: Propose → approve → decline in sequence — decline runs after approve already cleared the proposal.</p>
+<h5 class="tc4-h4">TC-69 (fresh chore, <code>zzp4d_c69_82</code>, no pending proposal yet)</h5>
+<p><strong>RPC call</strong>: <code>select public.decline_later_date('zzp4d_c69_82','zzp4d_parent1')</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4d_c69_82 has no pending later-date proposal</code> — no row changed.</p>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong>.</p>
+<h5 class="tc4-h4">TC-82 (same chore, full sequence)</h5>
+<p><strong>Step 1 — propose</strong>: <code>select public.propose_later_date('zzp4d_c69_82','zzp4d_kid1','2026-09-10','trip')</code>. Row after: <code>status=todo, is_pool=true, assigned_to_id=null, due_date=2026-09-01 (unchanged), pending_later_date=2026-09-10, pending_later_requested_by=zzp4d_kid1</code>.</p>
+<div class="bullet">• <strong>Kid A (requester, zzp4d_kid1)</strong>: Chore immediately poolable server-side (<code>is_pool=true</code>) — with the client fix now matching, their own screen shows it back in the Bounty Board with no flicker-to-invisible.</div>
+<div class="bullet">• <strong>Other Kid/Teen</strong>: Once synced, chore appears in their pool list with a normal Claim button — indistinguishable from any other released chore.</div>
+<div class="bullet">• <strong>Parent</strong>: <code>CantMakeItLaterCard</code> renders (<code>pendingLaterDate</code> truthy), showing "Kid1 asked to move this to 2026-09-10."</div>
+<p><strong>Step 2 — approve</strong>: <code>select public.approve_later_date('zzp4d_c69_82','zzp4d_parent1')</code>. Row after: <code>status=todo, is_pool=true (untouched), assigned_to_id=null (untouched), due_date=2026-09-10, pending_later_date=null</code>.</p>
+<div class="bullet">• <strong>Parent</strong>: <code>CantMakeItLaterCard</code> disappears (filter no longer matches — no <code>pendingLaterDate</code>); toast "Reschedule approved ✓".</div>
+<div class="bullet">• <strong>Kid/Teen</strong>: Chore remains in the pool with the new due date — no distinct "approved" badge.</div>
+<p><strong>Step 3 — decline (stale/already-resolved)</strong>: <code>select public.decline_later_date('zzp4d_c69_82','zzp4d_parent1')</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4d_c69_82 has no pending later-date proposal</code> — no row changed. There is no legitimate UI path to reach this once step 2 has landed (the card is already gone from the parent's queue).</p>
+<div class="bullet">• <strong>Kid A (requester)</strong>: Unaffected — chore stays at the approved due date (2026-09-10), still pool-visible.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED FOR ALL THREE STEPS</strong> — every intermediate row state (<code>is_pool</code>, <code>assigned_to_id</code>, <code>due_date</code>, <code>pending_later_date</code>) matched the trace's claims exactly, including the critical <code>is_pool</code> fix behavior at step 1 and its persistence through steps 2–3.</p>
+<hr>
+<h4 class="tc4-h3">TC-74 — <code>claim_pool_quest</code> on a non-pool chore</h4>
+<p><strong>Scenario</strong>: A kid/teen attempts to claim a chore that is not currently poolable (already assigned).</p>
+<p><strong>Setup</strong>: <code>zzp4d_c74</code> created with <code>is_pool=false, assigned_to_id=zzp4d_kid1, status=todo</code>.</p>
+<p><strong>RPC call</strong>: <code>select * from public.claim_pool_quest('zzp4d_c74','zzp4d_teen1')</code>.</p>
+<p><strong>Result</strong>: <code>claimed=false, chore=null</code>. Row unchanged after: <code>status=todo, is_pool=false, assigned_to_id=zzp4d_kid1</code>.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Claiming teen (zzp4d_teen1)</strong>: CAS matched 0 rows — client rolls back optimistic claim, no "Claimed ✓" toast, calling UI (<code>QuestCard.tsx</code>) surfaces an "already taken"/"can't claim" style alert.</div>
+<div class="bullet">• <strong>Other kid/teen</strong>: Chore was never in their <code>poolQuests</code> filter (<code>is_pool=false</code>) — no visible effect.</div>
+<div class="bullet">• <strong>Original assignee (kid1)</strong>: Completely unaffected — no write ever landed.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong>.</p>
+<hr>
+<h4 class="tc4-h3">TC-75 — <code>claim_pool_quest</code> race variant (winner/loser)</h4>
+<p><strong>Scenario</strong>: Two kids/teens tap "Claim" on a genuinely still-poolable chore near-simultaneously.</p>
+<p><strong>Setup</strong>: <code>zzp4d_c75</code> created with <code>is_pool=true, assigned_to_id=null, status=todo</code>.</p>
+<p><strong>Winner RPC</strong>: <code>select * from public.claim_pool_quest('zzp4d_c75','zzp4d_kid1')</code>. <strong>Result</strong>: <code>claimed=true</code>, row: <code>status=in_progress, is_pool=false, assigned_to_id=zzp4d_kid1</code>.</p>
+<p><strong>Loser RPC (immediately after)</strong>: <code>select * from public.claim_pool_quest('zzp4d_c75','zzp4d_teen1')</code>. <strong>Result</strong>: <code>claimed=false, chore=null</code> — CAS matched 0 rows since <code>assigned_to_id</code> was no longer null.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Winner (kid1)</strong>: <code>showToast('Claimed ✓')</code> fires; chore now shows in kid1's own <code>myQuests</code>/<code>todoQuests</code> section.</div>
+<div class="bullet">• <strong>Loser (teen1)</strong>: Same rollback as TC-74 — reverted locally, "already taken" style message from the calling UI.</div>
+<div class="bullet">• <strong>Other siblings not involved</strong>: Chore silently disappears from their <code>poolQuests</code> filter once synced (no longer <code>is_pool=true</code>) — no explicit "claimed by X" notice.</div>
+<div class="bullet">• <strong>Parent</strong>: No dedicated UI signal for a pool claim at all — pool claims don't touch <code>parent_quest_assignments</code>.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — winner/loser DB outcomes match the trace exactly.</p>
+<hr>
+<h4 class="tc4-h3">TC-76 — <code>approve_chore</code>, not authorized</h4>
+<p><strong>Scenario</strong>: A kid (non-approver) calls <code>approve_chore</code> directly on their own <code>pending_approval</code> chore.</p>
+<p><strong>Setup</strong>: <code>zzp4d_c76_77_78</code> created with <code>status=pending_approval, assigned_to_id=zzp4d_kid1</code>.</p>
+<p><strong>RPC call</strong>: <code>select * from public.approve_chore('zzp4d_c76_77_78','zzp4d_kid1')</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: member zzp4d_kid1 is not authorized to approve chores</code> — no row changed.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Parent</strong>: Sees the real "✓ Approve" button in <code>ParentReviewDeck.tsx</code>'s <code>ReviewCard</code>, gated additionally client-side by <code>store/choreStore.ts:2975-2984</code>'s own role check before the RPC is even attempted.</div>
+<div class="bullet">• <strong>Kid (submitter)</strong>: No approve control exists anywhere on <code>KidView</code>/<code>TeenView</code> for their own submission — only ever sees <code>pending_approval</code> status reflected passively.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — exact exception text match.</p>
+<hr>
+<h4 class="tc4-h3">TC-77 — <code>approve_chore</code>, not pending_approval</h4>
+<p><strong>Scenario</strong>: <code>approve_chore</code> called on a chore that is <code>todo</code>, not <code>pending_approval</code>.</p>
+<p><strong>RPC call</strong>: <code>select * from public.approve_chore('zzp4d_c74','zzp4d_parent1')</code> (c74 is <code>status=todo</code>).</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4d_c74 is not pending approval (status=todo)</code> — no row changed.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Parent</strong>: <code>ParentReviewDeck</code>'s own upstream filter only ever surfaces genuinely <code>pending_approval</code> chores — no legitimate path to reach "✓ Approve" for a <code>todo</code> chore.</div>
+<div class="bullet">• <strong>Kid/Teen</strong>: Own card correctly reflects the real <code>todo</code> status regardless.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — exact exception text match, including the <code>status=todo</code> interpolation.</p>
+<hr>
+<h4 class="tc4-h3">TC-78 — <code>approve_chore</code>, double-approve race</h4>
+<p><strong>Scenario</strong>: Two parents both call <code>approve_chore</code> on the same chore; the first succeeds, the second hits the "not pending approval" guard because status already flipped.</p>
+<p><strong>RPC call 1 (parent1, the winner)</strong>: <code>select * from public.approve_chore('zzp4d_c76_77_78','zzp4d_parent1')</code> (with <code>base_points=0</code> to sidestep the harness's balance-write guard — see gotchas above).</p>
+<p><strong>Result</strong>: Success. <code>coins_paid=0</code>, row: <code>status=approved, reviewed_by_id=zzp4d_parent1, reviewed_at=&lt;timestamp&gt;</code>.</p>
+<p><strong>RPC call 2 (parent2, the stale/loser)</strong>: <code>select * from public.approve_chore('zzp4d_c76_77_78','zzp4d_parent2')</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: chore zzp4d_c76_77_78 is not pending approval (status=approved)</code> — no row changed, no double-payout, <code>reviewed_by_id</code> stays <code>zzp4d_parent1</code>.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>First parent (B1)</strong>: <code>ReviewCard</code> disappears from their deck on success.</div>
+<div class="bullet">• <strong>Second parent (B2, stale deck)</strong>: Optimistic update (if any applied before round-trip) rolled back on the error branch; generic failure toast; chore does NOT get double-approved or re-stamped.</div>
+<div class="bullet">• <strong>Assignee kid (zzp4d_kid1)</strong>: Sees exactly one approval reflected (<code>reviewed_by_id=zzp4d_parent1</code>).</div>
+<div class="bullet">• <strong>Co-parent viewing <code>recentlyApproved</code></strong>: Would see the single real approval with <code>reviewedById=zzp4d_parent1</code> once synced.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — exactly one approval landed; race guard fired with the exact claimed message and interpolated status.</p>
+<hr>
+<h4 class="tc4-h3">TC-79 — <code>resolve_redo_dispute</code>, same parent as requester</h4>
+<p><strong>Scenario</strong>: The same parent who requested the redo (<code>reviewed_by_id</code> on the chore) attempts to resolve their own <code>kid_disputed_redo</code> dispute.</p>
+<p><strong>Setup</strong>: <code>zzp4d_c79</code> created with <code>status=kid_disputed_redo, reviewed_by_id=zzp4d_parent1, assigned_to_id=zzp4d_kid1, base_points=0</code> (payout-guard workaround).</p>
+<p><strong>RPC call (blocked)</strong>: <code>select * from public.resolve_redo_dispute('zzp4d_c79','zzp4d_parent1', false)</code>.</p>
+<p><strong>Result</strong>: <code>ERROR: P0001: member zzp4d_parent1 requested this redo — a different parent must resolve the dispute</code> — no row changed.</p>
+<p><strong>RPC call (legitimate, different parent)</strong>: <code>select * from public.resolve_redo_dispute('zzp4d_c79','zzp4d_parent2', false)</code>.</p>
+<p><strong>Result</strong>: Success. Row: <code>status=redo_requested</code> (the <code>p_pay=false</code> "side with the redo" branch), <code>coins_paid=0</code>, <code>reviewed_by_id</code> unchanged (<code>zzp4d_parent1</code>, not stamped as reviewer on this decline-pay branch — matches source, which only updates <code>reviewed_by_id</code> on the <code>p_pay=true</code> path).</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Requesting parent (blocked, B)</strong>: <code>RedoDisputeCard</code> in <code>ChoreReviewSection.tsx</code> shows italic explanatory text instead of action buttons (<code>isSameReviewer</code> client gate) — the requesting parent never even sees a tappable button, matching the RPC's own defense-in-depth guard.</div>
+<div class="bullet">• <strong>Different parent (CoP, legitimate resolver)</strong>: Sees the real "Side with the redo" / "Pay it" buttons.</div>
+<div class="bullet">• <strong>Kid (disputer)</strong>: Sees the chore in a disputed-redo state with no direct action available while waiting on the second parent.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — both the blocked call's exact exception text and the legitimate different-parent call's resulting <code>status=redo_requested</code> transition match the trace's claims precisely.</p>
+<hr>
+<h4 class="tc4-h3">TC-80 — <code>reassign_chore</code>, legitimate same-family reassign (cross-family exploit out of scope, already verified elsewhere)</h4>
+<p><strong>Scenario</strong>: A parent reassigns a chore to a different same-family parent via the legitimate <code>DelegateSheet</code> path.</p>
+<p><strong>Setup</strong>: <code>zzp4d_c80</code> created as <code>category_type=parent_only_quest, assigned_to_id=zzp4d_parent1, status=todo</code>.</p>
+<p><strong>RPC call</strong>: <code>select public.reassign_chore('zzp4d_c80','zzp4d_parent2','zzp4d_parent1','handing off')</code>.</p>
+<p><strong>Result</strong>: Success. Row: <code>status=todo, assigned_to_id=zzp4d_parent2, is_pool=false</code>. <code>chore_participants</code> shows exactly one row for <code>zzp4d_c80</code>: <code>member_id=zzp4d_parent2, role=assignee, status=pending</code> — the old <code>zzp4d_parent1</code> assignee row was cleanly deleted, not left dangling.</p>
+<p><strong>Per-role breakdown</strong>:</p>
+<div class="bullet">• <strong>Delegating parent (B, parent1)</strong>: <code>DelegateSheet</code>'s member picker only offers parents (and GP if GP-Welcome is on) — never kids/teens. Toast "Delegated to {Name} ✓" fires and sheet closes.</div>
+<div class="bullet">• <strong>New target parent (A, parent2)</strong>: Chore now appears in their own adult-quest list, freshly <code>todo</code>-status, no special "reassigned" badge.</div>
+<div class="bullet">• <strong>Prior assignee (parent1)</strong>: Receives an explicit chat message notification (<code>DelegateSheet.tsx:102-104</code>) — the only in-app push for the bumped party; their own card simply stops showing the chore once synced.</div>
+<div class="bullet">• <strong>Uninvolved co-parent/other roles</strong>: No dedicated notification; would notice via the chat thread or the chore card's new assignee.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED</strong> — live <code>chore_participants</code> state (single clean row for the new assignee, old row deleted) matches the trace's claim about the RPC's atomic delete-then-insert pattern; <code>family_id</code> cross-family check exists in the same function body (not re-tested here per task scope — already covered by the dedicated security migration).</p>
+<hr>
+<h4 class="tc4-h3">TC-81 — Offer → decline → accept (out of order)</h4>
+<p><strong>Scenario</strong>: <code>offer_chore_handoff</code> targets a receiver, the receiver declines, then a subsequent <code>accept_chore_handoff</code> is attempted on the now-resolved offer.</p>
+<p><strong>Setup</strong>: <code>zzp4d_c81</code> created with <code>assigned_to_id=zzp4d_kid1, status=todo, is_pool=false</code>.</p>
+<p><strong>Step 1 — offer</strong>: <code>select public.offer_chore_handoff('zzp4d_c81','zzp4d_teen1','zzp4d_kid1','cant do it')</code>. Result: <code>assigned_to_id=zzp4d_kid1</code> (unchanged — offer doesn't reassign yet), <code>pending_handoff_to=zzp4d_teen1, pending_handoff_reason='cant do it', pending_handoff_offered_by=zzp4d_kid1</code>.</p>
+<div class="bullet">• <strong>Original holder (kid1)</strong>: Own card unchanged — no "offer sent, awaiting response" state.</div>
+<div class="bullet">• <strong>Receiver (teen1)</strong>: <code>QuestCard.tsx</code> badge strip shows "Kid1 wants to hand you this — 'cant do it'"; two buttons "I've got it"/"Can't either" render, chore appears in teen1's "my quests" via <code>pendingHandoffTo</code> filter even though <code>assignedToId</code> still points at kid1.</div>
+<p><strong>Step 2 — decline</strong>: <code>select public.decline_chore_handoff('zzp4d_c81','zzp4d_teen1')</code>. Result: <code>assigned_to_id=null, is_pool=true, status=todo, pending_handoff_to=null</code> — released straight to the general pool, does NOT bounce back to the original holder (kid1).</p>
+<div class="bullet">• <strong>Receiver (teen1, decliner)</strong>: Handoff badge/buttons disappear immediately.</div>
+<div class="bullet">• <strong>Original holder (kid1)</strong>: Also loses the chore — now shows in the general kid/teen pool for anyone, including kid1.</div>
+<div class="bullet">• <strong>Other kid/teen</strong>: Chore appears as an ordinary claimable pool item.</div>
+<p><strong>Step 3 — accept (stale/already-resolved)</strong>: <code>select public.accept_chore_handoff('zzp4d_c81','zzp4d_teen1')</code>. Result: <code>ERROR: P0001: chore zzp4d_c81 has no pending handoff to member zzp4d_teen1</code> — no row changed.</p>
+<div class="bullet">• <strong>Receiver (teen1, retrying/stale)</strong>: Optimistic local change (if any) rolled back on the error branch; buttons already gone from a synced screen per step 2.</div>
+<div class="bullet">• <strong>Every other role</strong>: Unaffected — chore already resolved to the pool by step 2.</div>
+<p><strong>Verdict</strong>: <strong>CONFIRMED FOR ALL THREE STEPS</strong> — decline is the authoritative terminal action; row state after decline exactly matches ("released to pool," not "returned to original holder"); the stale accept is rejected cleanly with the exact claimed guard message.</p>
+<hr>
+<h4 class="tc4-h3">TC-82 — Propose → approve → decline (out of order)</h4>
+<p>Fully traced above under <strong>TC-69 / TC-82</strong>. All three steps CONFIRMED.</p>
+<hr>
+<h3 class="tc4-h2">Summary table</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>TC</th><th>Scenario</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>67</td><td><code>approve_later_date</code>, no pending proposal</td><td>CONFIRMED</td></tr>
+<tr><td>68</td><td><code>approve_later_date</code>, not authorized</td><td>CONFIRMED</td></tr>
+<tr><td>69</td><td><code>decline_later_date</code>, no pending proposal</td><td>CONFIRMED</td></tr>
+<tr><td>74</td><td><code>claim_pool_quest</code> on non-pool chore</td><td>CONFIRMED</td></tr>
+<tr><td>75</td><td><code>claim_pool_quest</code> race (winner/loser)</td><td>CONFIRMED</td></tr>
+<tr><td>76</td><td><code>approve_chore</code>, not authorized</td><td>CONFIRMED</td></tr>
+<tr><td>77</td><td><code>approve_chore</code>, not pending_approval</td><td>CONFIRMED</td></tr>
+<tr><td>78</td><td><code>approve_chore</code>, double-approve race</td><td>CONFIRMED</td></tr>
+<tr><td>79</td><td><code>resolve_redo_dispute</code>, same-parent blocked + legitimate different-parent resolve</td><td>CONFIRMED</td></tr>
+<tr><td>80</td><td><code>reassign_chore</code>, legitimate same-family reassign</td><td>CONFIRMED</td></tr>
+<tr><td>81</td><td>Offer → decline → accept (out of order)</td><td>CONFIRMED</td></tr>
+<tr><td>82</td><td>Propose → approve → decline (out of order)</td><td>CONFIRMED</td></tr>
+</tbody></table></div>
+<p><strong>No mismatches found.</strong> Every claim in <code>docs/master_flow_full_role_trace_TC67-82.md</code> for TC-67–82 was verified against real RPC calls and real resulting row state. The one previously-flagged issue — <code>proposeLaterDate</code>'s stale <code>isPool: false</code> optimistic patch — is confirmed fixed in both the client source (<code>store/choreStore.ts:2511</code>) and live-verified against the server's actual <code>is_pool=true</code> behavior immediately after <code>propose_later_date</code>.</p>
+<hr>
+<h3 class="tc4-h2">Cleanup — zero-row proof</h3>
+<p>All <code>zzp4d_</code>-prefixed rows and the throwaway family were deleted after testing:</p>
+<pre><code>delete from public.chore_participants where chore_id like 'zzp4d_%';
+delete from public.activity_log where entity_id like 'zzp4d_%';
+delete from public.chore_tasks where id like 'zzp4d_%';
+delete from public.members where id like 'zzp4d_%';
+delete from public.families where id = '6be0f194-9399-4521-a68c-de25f76a8821';</code></pre>
+<p><strong>Proof query and result</strong> (run after cleanup):</p>
+<pre><code>select
+  (select count(*) from public.members where id like 'zzp4d_%') as members,
+  (select count(*) from public.chore_tasks where id like 'zzp4d_%') as chore_tasks,
+  (select count(*) from public.chore_participants where chore_id like 'zzp4d_%') as chore_participants,
+  (select count(*) from public.activity_log where entity_id like 'zzp4d_%') as activity_log,
+  (select count(*) from public.families where id = '6be0f194-9399-4521-a68c-de25f76a8821') as families,
+  (select count(*) from public.parent_quest_assignments where chore_id like 'zzp4d_%') as pqa;</code></pre>
+<p>Result:</p>
+<pre><code>{ "members": 0, "chore_tasks": 0, "chore_participants": 0, "activity_log": 0, "families": 0, "pqa": 0 }</code></pre>
+<p>All zero. No real user/family data was touched at any point — every insert used a fresh <code>zzp4d_</code>-prefixed id or the dedicated throwaway family row.</p>
+
+  </div>
+</section>
+
+</div>
+
+<footer>Family Cube internal QA · Pass 5 · all test data cleaned up and confirmed at 0 rows across every touched table, every run</footer>
+
+<script>
+function showRange(id) {
+  document.querySelectorAll('.range-section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+</script>

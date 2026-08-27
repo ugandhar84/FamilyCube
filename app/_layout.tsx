@@ -37,7 +37,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useFamilyStore } from '@/store/familyStore';
-import { isBackgroundLocationTracking, startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
+import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
@@ -700,19 +700,19 @@ function RootNavigator() {
   // Battery-only polling (every 5 min, independent of the 0.1-mile location
   // gate) — lives here instead of GpsTab.tsx so it keeps running as long as
   // the app is alive, not just while the GPS tab happens to be mounted.
-  // GpsTab.tsx's own toggle still starts/stops the underlying background
-  // location task; this effect just re-checks whether that task is active
-  // for the current member and (re)starts/stops the battery timer to match,
-  // re-checked on every activeMemberId change (profile switch, sign-in).
+  //
+  // Was gated on whether background LOCATION tracking happened to be
+  // active — someone who never enabled "Share My Location" (or had it off)
+  // never got their own battery_level polled at all, so the family's Radar
+  // roster showed their battery as permanently stale/never-updated
+  // (user-reported: "battery % also not a periodic check"). Seeing your own
+  // accurate battery percentage doesn't require sharing your location with
+  // anyone — poll it for the active member unconditionally, any time
+  // they're signed in.
   useEffect(() => {
     if (!activeMemberId) { stopBatteryPolling(); return; }
-    let cancelled = false;
-    isBackgroundLocationTracking().then(active => {
-      if (cancelled) return;
-      if (active) startBatteryPolling(activeMemberId);
-      else stopBatteryPolling();
-    });
-    return () => { cancelled = true; };
+    startBatteryPolling(activeMemberId);
+    return () => stopBatteryPolling();
   }, [activeMemberId]);
 
   useEffect(() => {

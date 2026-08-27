@@ -162,7 +162,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         setBackgroundLocationMemberId(activeMemberId);
         setBackgroundLocationFamilyId(familyId ?? null);
       }
-    });
+    }).catch(() => {}); // isBackgroundLocationTracking already resolves false on failure; this is defense-in-depth against an uncaught rejection reaching here
   }, [activeMemberId, familyId]);
 
   // Realtime — other family members' background pings should move their
@@ -212,6 +212,14 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         }
         setTracking(ok);
       }
+    } catch (e) {
+      // startBackgroundLocationTracking is the one call in this function
+      // that can still legitimately throw (native permission/task-manager
+      // errors) — this was an unguarded try/finally with no catch, so a
+      // thrown error here surfaced as an uncaught rejection instead of
+      // reaching the user as feedback.
+      console.warn('[GpsTab] toggleTracking failed', (e as Error)?.message ?? e);
+      Alert.alert('Could not update location sharing', 'Something went wrong — please try again.');
     } finally {
       setTogglingTrack(false);
     }
@@ -514,7 +522,21 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     </View>
   );
 
-  const roster = [...pinned, ...unpinned];
+  // Active member always first (it's "my" row — the one thing worth
+  // anchoring in place regardless of anyone's activity), then everyone
+  // else sorted by most-recently-updated first, so a family member who
+  // just moved/refreshed surfaces near the top instead of wherever the DB
+  // happened to return their row. Was unordered ([...pinned, ...unpinned]
+  // with no sort inside either group), so the list visually shuffled on
+  // every realtime reload with no predictable order at all.
+  const roster = useMemo(() => {
+    const all = [...pinned, ...unpinned];
+    return all.sort((a, b) => {
+      if (a.member_id === activeMemberId) return -1;
+      if (b.member_id === activeMemberId) return 1;
+      return new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime();
+    });
+  }, [pinned, unpinned, activeMemberId]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -635,22 +657,27 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
-        {tracking && (
-          <View style={[g.exactToggleRow, { borderColor: colors.border }]}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
-                Share exact address
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
-                {shareExactAddress
+        {/* Was only rendered while tracking===true, so a user with location
+            sharing off had no way to even discover this setting exists.
+            Always shown now; the Switch itself disables (grayed, non-
+            interactive) until tracking is on, so it's clear the setting is
+            real but currently inactive, not a dead control. */}
+        <View style={[g.exactToggleRow, { borderColor: colors.border, opacity: tracking ? 1 : 0.5 }]}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+              Share exact address
+            </Text>
+            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
+              {!tracking
+                ? 'Turn on location sharing above to use this'
+                : shareExactAddress
                   ? 'Family sees your exact street number, e.g. "412 Wimberley Dr"'
                   : 'Family sees street name only, e.g. "Wimberley Dr"'}
-              </Text>
-            </View>
-            <Switch value={shareExactAddress} onValueChange={toggleExactAddress}
-              trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
+            </Text>
           </View>
-        )}
+          <Switch value={shareExactAddress} onValueChange={toggleExactAddress} disabled={!tracking}
+            trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
+        </View>
 
         {roster.map((loc, i) => {
           const rc  = roleColor(loc.role);

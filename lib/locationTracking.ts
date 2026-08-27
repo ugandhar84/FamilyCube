@@ -44,11 +44,16 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
   } catch { /* best-effort — a missed alert isn't worth failing the location update over */ }
 }
 
-// 0.2 mile — the OS only calls the task again once the device has moved at
-// least this far, so an idle/stationary phone simply never re-fires and
+// ~0.05 mile — the OS only calls the task again once the device has moved
+// at least this far, so an idle/stationary phone simply never re-fires and
 // nothing gets written. That's the "don't pull battery when idle" behavior:
 // battery is only read inside the task body, which only runs on real movement.
-const MIN_DISTANCE_METERS = 322; // 0.2 mi = 321.8688m
+// Was 322m (0.2mi) — user-reported: location visibly lagged behind someone
+// who had genuinely started walking/driving, since nothing wrote until a
+// full 0.2mi had passed (~4-5 minutes of walking). 80m is still well above
+// normal GPS jitter on a stationary phone (typically single-digit meters)
+// but responsive enough that "just started moving" shows up promptly.
+const MIN_DISTANCE_METERS = 80; // ~0.05 mi
 
 let lastFamilyId: string | null = null;
 export function setBackgroundLocationFamilyId(id: string | null) {
@@ -355,21 +360,43 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
 }
 
 export async function stopBackgroundLocationTracking(): Promise<void> {
-  if (!getTaskManager()) return;
-  const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-  if (started) {
-    // A dev-client rebuild/reinstall can leave hasStartedLocationUpdatesAsync
-    // reporting true from a previous native binary's task registration that
-    // no longer exists in this one — stopLocationUpdatesAsync then throws
-    // "Task ... not found" instead of just being a no-op. Either way the
-    // task isn't running anymore, so swallow it rather than let it become
-    // an uncaught rejection.
-    await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+  try {
+    if (!getTaskManager()) return;
+    const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+    if (started) {
+      // A dev-client rebuild/reinstall can leave hasStartedLocationUpdatesAsync
+      // reporting true from a previous native binary's task registration that
+      // no longer exists in this one — stopLocationUpdatesAsync then throws
+      // "Task ... not found" instead of just being a no-op. Either way the
+      // task isn't running anymore, so swallow it rather than let it become
+      // an uncaught rejection.
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+    }
+  } catch (e) {
+    // Whole-function guard, same class of fix as isBackgroundLocationTracking
+    // above — getTaskManager()/the native bridge itself can throw
+    // "Task ... not found for app ID ..." outside the two already-guarded
+    // inner calls, and this function has no caller that awaits it with its
+    // own .catch() (see GpsTab.tsx's `await stopBackgroundLocationTracking()`).
+    console.warn('[locationTracking] stopBackgroundLocationTracking failed, treating as already stopped:', (e as Error)?.message ?? e);
   }
   setBackgroundLocationMemberId(null);
 }
 
 export async function isBackgroundLocationTracking(): Promise<boolean> {
-  if (!getTaskManager()) return false;
-  return Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+  // Was: only the inner hasStartedLocationUpdatesAsync call was guarded —
+  // getTaskManager()/the native bridge call itself could still throw
+  // (observed live: "Task 'family-cube-background-location' not found for
+  // app ID 'mainApplication'" — the OS-level task registration can outlive
+  // a single JS session, e.g. after a dev-client reinstall/rebuild leaves a
+  // stale native registration behind), and every call site awaited this
+  // with a bare .then(), no .catch(), so the rejection surfaced as an
+  // uncaught promise error instead of just meaning "not tracking."
+  try {
+    if (!getTaskManager()) return false;
+    return await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+  } catch (e) {
+    console.warn('[locationTracking] isBackgroundLocationTracking failed — treating as not tracking:', (e as Error)?.message ?? e);
+    return false;
+  }
 }

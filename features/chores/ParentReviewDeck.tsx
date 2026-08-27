@@ -106,7 +106,13 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#2563EB' }}>GP Quest</Text>
           </View>
         )}
-        {task.basePoints > 0 && (
+        {/* GPs are never paid coins (master-flow R_COINS) — this read
+            task.basePoints directly with no isGP guard, so a GP quest's
+            review card showed a fake "+N pts" payout badge even though
+            grandparentApproveAndCheer/approveChore never actually credits
+            the GP anything. ChildChoreBoard.tsx already had this guard;
+            this card didn't. */}
+        {!isGP && task.basePoints > 0 && (
           <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>+{task.basePoints} pts</Text>
           </View>
@@ -540,7 +546,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark, hideEmptySta
   const {
     approveChore, requestRedo, acceptGPOffer, declineGPOffer,
     approveBountyClaim, declineBountyClaim,
-    scanAndAutoApprove, resetDueRecurringChores, syncFromDB, loadFromStorage,
+    resetDueRecurringChores, syncFromDB, loadFromStorage,
   } = useChoreStore();
   const allNames = members.map(m => m.name);
 
@@ -577,7 +583,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark, hideEmptySta
   const [redoOpen, setRedoOpen] = useState(false);
 
   useEffect(() => {
-    loadFromStorage().then(() => { syncFromDB(); scanAndAutoApprove(); resetDueRecurringChores(); });
+    loadFromStorage().then(() => { syncFromDB(); resetDueRecurringChores(); });
   }, []);
 
   const totalCount = pendingSubmissions.length + pendingCashOuts.length + gpOffersPending.length + pendingBountyClaims.length;

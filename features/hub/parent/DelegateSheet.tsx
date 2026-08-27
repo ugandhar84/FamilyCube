@@ -23,8 +23,17 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
   updateQuest: (id: string, patch: Record<string, any>) => void;
   addParentQuest: (choreId: string, assignedBy: string, assignedTo: string, mode: 'DIRECT', note?: string) => void;
 }) {
-  const currentChore = target ? questPool.find(c => c.id === target.choreId) : null;
-  const isGPOpen = !!(currentChore as any)?.openToGP;
+  // Read the live chore_tasks row directly from the store, not questPool —
+  // questPool's "unassigned adult quest" branch (ParentView.tsx) reshapes
+  // rows into a synthetic object that never carries openToGP/
+  // inviteGrandparents at all, so isGPOpen was permanently stuck reading
+  // undefined (always closed) for any chore that came through that reshape,
+  // regardless of what was actually written to the DB — toggling GP Welcome
+  // correctly wrote the real chore_tasks row, but this sheet kept reading
+  // the stale synthetic snapshot instead, so neither the checkmark nor the
+  // picker filter ever reflected the change.
+  const liveChore = useChoreStore(s => s.chores.find(c => c.id === target?.choreId));
+  const isGPOpen = !!liveChore?.inviteGrandparents;
   const [note, setNote] = useState('');
 
   return (
@@ -51,7 +60,16 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
           }}
         />
         <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-          {members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => (
+          {/* Grandparents only offered as direct-delegate targets while GP
+              Welcome is on — otherwise unselecting it right below (the
+              toggle a parent would reasonably read as "don't involve
+              grandparents in this") had zero effect on the picker directly
+              above it: Grandpa Raj/Grandma Lakshmi stayed tappable
+              regardless. inviteGrandparents/openToGP never actually gates
+              addParentQuest's direct-assign path server-side (only the pool
+              -claim paths, claimGPErrand/startGrandparentQuest, read it) —
+              this is a UI-only restriction, doesn't change any write logic. */}
+          {members.filter(m => m.role === 'parent' || (m.role === 'senior' && isGPOpen)).map(m => (
             <Pressable key={m.id} onPress={() => {
               if (!target) return;
               // A task mid-negotiation (locked/pending) that gets
@@ -60,9 +78,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
               // why, or that it happened at all. Only fires when there was
               // a live assignment to actually take it from, not a plain
               // first-time delegation of a pool task.
-              const priorAssignment = useChoreStore.getState().parentAssignments.find(a =>
-                a.choreId === target.choreId && ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
-              );
+              const priorAssignment = useChoreStore.getState().getLiveAssignmentForChore(target.choreId);
               const priorAssigneeId = priorAssignment
                 ? (priorAssignment.assignedTo === active.id ? priorAssignment.assignedBy : priorAssignment.assignedTo)
                 : undefined;
@@ -105,7 +121,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
         <Pressable
           onPress={() => {
             if (!target) return;
-            useChoreStore.getState().updateChore(target.choreId, { openToGP: !isGPOpen } as any);
+            useChoreStore.getState().updateChore(target.choreId, { inviteGrandparents: !isGPOpen } as any);
           }}
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,

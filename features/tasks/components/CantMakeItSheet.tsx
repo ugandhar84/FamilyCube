@@ -19,8 +19,10 @@
 import { useState } from 'react';
 import { View, Text, Pressable, TextInput, Modal, KeyboardAvoidingView, ScrollView, Platform, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
+import { localDateStr, fmtDate } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import { resolveCantMakeIt, type CantMakeItItem, type CantMakeItOutcome } from '../lib/cantMakeIt';
 import { showToast } from '@/components/AppToast';
@@ -38,11 +40,14 @@ export function CantMakeItSheet({
   const { colors, isDark } = useTheme();
   const [reason, setReason] = useState('');
   const [customReason, setCustomReason] = useState('');
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [reassignTo, setReassignTo] = useState<string | null>(null);
+  const [laterDate, setLaterDate] = useState<string>(localDateStr(new Date(Date.now() + 86_400_000)));
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const close = () => {
     setReason(''); setCustomReason(''); setStep(1); setReassignTo(null);
+    setLaterDate(localDateStr(new Date(Date.now() + 86_400_000))); setShowDatePicker(false);
     onClose();
   };
   const dismiss = () => { Keyboard.dismiss(); close(); };
@@ -53,16 +58,25 @@ export function CantMakeItSheet({
   const submit = (outcome: CantMakeItOutcome) => {
     if (!target || !finalReason) return;
     const reassignMember = reassignTo ? members.find(m => m.id === reassignTo) : undefined;
-    resolveCantMakeIt(target, outcome, finalReason, byMemberId, {
+    const result = resolveCantMakeIt(target, outcome, finalReason, byMemberId, {
       reassignToMemberId: reassignMember?.id,
       reassignToMemberName: reassignMember?.name,
+      laterDate: outcome === 'later' ? laterDate : undefined,
     });
-    showToast(
+    const successMsg =
       outcome === 'pool' ? "Marked — you're off this one ✓"
       : outcome === 'reassign' ? `Sent to ${reassignMember?.name?.split(' ')[0] ?? 'them'} ✓`
-      : outcome === 'later' ? 'Sent back to re-time ✓'
-      : 'Cancelled ✓'
-    );
+      : outcome === 'later' ? `Asked for ${fmtDate(laterDate)} — waiting on a parent ✓`
+      : 'Cancelled ✓';
+    // cancelChore is the one outcome that can genuinely be rejected
+    // (creator/parent-only) — wait for the real answer before closing and
+    // claiming success; every other outcome is fire-and-forget optimistic.
+    if (result && typeof (result as Promise<boolean>).then === 'function') {
+      (result as Promise<boolean>).then(ok => { if (ok) showToast(successMsg); });
+      close();
+      return;
+    }
+    showToast(successMsg);
     close();
   };
 
@@ -164,7 +178,7 @@ export function CantMakeItSheet({
                     </Pressable>
                   </View>
 
-                  <Pressable onPress={() => submit('later')}
+                  <Pressable onPress={() => setStep(3)}
                     style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: SPACING.md }}>
                     <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>Ask for a later time</Text>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Goes back to a parent to re-time</Text>
@@ -177,6 +191,36 @@ export function CantMakeItSheet({
                   </Pressable>
 
                   <Pressable onPress={() => setStep(1)} style={{ alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>← Back</Text>
+                  </Pressable>
+                </>
+              )}
+              {step === 3 && (
+                <>
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>What date works better?</Text>
+                  <Pressable onPress={() => setShowDatePicker(true)}
+                    style={{ borderRadius: RADIUS.md, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: isDark ? colors.surface : '#fff', padding: SPACING.md, alignItems: 'center' }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.primary }}>{fmtDate(laterDate)}</Text>
+                  </Pressable>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={new Date(`${laterDate}T00:00:00`)}
+                      mode="date"
+                      minimumDate={new Date()}
+                      onChange={(_, d) => {
+                        setShowDatePicker(Platform.OS === 'ios');
+                        if (d) setLaterDate(localDateStr(d));
+                      }}
+                    />
+                  )}
+                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                    A parent has to approve this before it changes — it stays unclaimed on the original date until then.
+                  </Text>
+                  <Pressable onPress={() => submit('later')}
+                    style={{ borderRadius: RADIUS.md, paddingVertical: 14, alignItems: 'center', backgroundColor: colors.primary }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: '#fff' }}>Ask a parent</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setStep(2)} style={{ alignItems: 'center', paddingVertical: 6 }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>← Back</Text>
                   </Pressable>
                 </>

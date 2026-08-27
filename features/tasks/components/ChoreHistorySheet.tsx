@@ -63,6 +63,26 @@ function resolveFieldValue(field: string | null, value: string | null, members: 
   return value;
 }
 
+// Defense-in-depth: `note` is free text written server-side by whichever
+// RPC logged this row — unlike field/oldValue/newValue above, there's no
+// structured way to know a note contains a raw id that needs resolving.
+// Confirmed live: reassign_chore/propose_kid_chore/offer_chore_handoff all
+// independently made the same mistake at different times (format(...) with
+// a bare member id, never resolved to a name) — each is now fixed at the
+// source, but a note is exactly the kind of free text a future RPC could
+// get wrong again the same way, with no compiler/reviewer catching it. This
+// is the one place ALL of them render, so it's the one place worth a
+// backstop: any bare UUID still present gets resolved to a name if it
+// matches a known member, or stripped entirely rather than shown as hex.
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+function sanitizeNote(note: string | null | undefined, members: FamilyMember[]): string | null {
+  if (!note) return null;
+  if (!UUID_RE.test(note)) return note;
+  UUID_RE.lastIndex = 0;
+  const cleaned = note.replace(UUID_RE, (uuid) => members.find(m => m.id === uuid)?.name?.split(' ')[0] ?? '');
+  return cleaned.replace(/\s{2,}/g, ' ').trim() || null;
+}
+
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
   const mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
@@ -135,9 +155,12 @@ export function ChoreHistorySheet({ choreId, title, members, onClose }: {
                       <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: rowColor ?? colors.textPrimary }}>
                         {verb}{actor ? ` by ${actor.split(' ')[0]}` : ''}
                       </Text>
-                      {!!row.note && (
-                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>{row.note}</Text>
-                      )}
+                      {(() => {
+                        const note = sanitizeNote(row.note, members);
+                        return !!note && (
+                          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>{note}</Text>
+                        );
+                      })()}
                       {!!row.field && (row.oldValue != null || row.newValue != null) && (
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
                           {FIELD_LABEL[row.field] ?? row.field}: {resolveFieldValue(row.field, row.oldValue, members)} → {resolveFieldValue(row.field, row.newValue, members)}

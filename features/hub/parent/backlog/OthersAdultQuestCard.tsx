@@ -30,7 +30,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   const si         = choreData?.shoppingItems ?? (q as any).shoppingItems;
   const ss         = choreData?.shoppingStore ?? (q as any).shoppingStore;
   const hasDetail  = q.description || si?.length > 0 || ss || q.dueDate || (q as any).createdAt || q.claimedAt;
-  const isGPOpen   = !!(choreData?.openToGP ?? (q as any).openToGP);
+  const isGPOpen   = !!(choreData?.inviteGrandparents ?? (q as any).inviteGrandparents);
 
   const sendNudge = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${q.title}" assigned to ${assignee?.name ?? 'partner'} (id=${q.id}) → sendMessage [features/hub/parent/backlog/OthersAdultQuestCard.tsx:32]`);
@@ -82,9 +82,16 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
               {q.title}
             </Text>
           </View>
-          <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2, fontWeight: '600' }}>
-            → {assignee?.name ?? 'Partner'}{q.dueDate ? ` · Due ${fmtDate(q.dueDate)}` : ''}
-          </Text>
+          {/* colors.warning read as "needs attention" everywhere else in
+              this app — using it here for an ALREADY-claimed task read as
+              still-pending/ambiguous rather than "handled, nothing to do."
+              A green check + colors.success reads unambiguously as done. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <CheckCircle2 size={12} color={colors.success} />
+            <Text style={{ fontSize: TYPO.label, color: colors.success, fontWeight: '700' }}>
+              Claimed by {assignee?.name?.split(' ')[0] ?? 'Partner'}{q.dueDate ? ` · Due ${fmtDate(q.dueDate)}` : ''}
+            </Text>
+          </View>
           {si?.length > 0 && !isExp && (
             <Text style={{ fontSize: TYPO.micro, color: colors.parent, marginTop: 2 }}>
               {si.length} item{si.length !== 1 ? 's' : ''}{ss ? ` · ${ss}` : ''}
@@ -141,7 +148,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       )}
 
       {si?.length > 0 && (
-        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${q.title}" (id=${q.id}) → updateChore(openToGP) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:123]`); useChoreStore.getState().updateChore(q.id, { openToGP: !isGPOpen }); }}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${q.title}" (id=${q.id}) → updateChore(inviteGrandparents) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:123]`); useChoreStore.getState().updateChore(q.id, { inviteGrandparents: !isGPOpen }); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
             marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 10,
             backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F8FAFC'),

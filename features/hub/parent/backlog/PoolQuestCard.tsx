@@ -81,14 +81,14 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
                 {(chore as any).shoppingItems.length} item{(chore as any).shoppingItems.length !== 1 ? 's' : ''}
                 {(chore as any).shoppingStore ? ` · ${(chore as any).shoppingStore}` : ''}
               </Text>
-              {(chore as any).openToGP && <HeartHandshake size={10} color={GP_VIOLET} />}
+              {chore.inviteGrandparents && <HeartHandshake size={10} color={GP_VIOLET} />}
             </View>
           ) : chore.dueDate && !isExp ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Due {fmtDate(chore.dueDate)}</Text>
-              {(chore as any).openToGP && <HeartHandshake size={10} color={GP_VIOLET} />}
+              {chore.inviteGrandparents && <HeartHandshake size={10} color={GP_VIOLET} />}
             </View>
-          ) : (chore as any).openToGP && !isExp ? (
+          ) : chore.inviteGrandparents && !isExp ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
               <HeartHandshake size={10} color={GP_VIOLET} />
               <Text style={{ fontSize: TYPO.micro, color: GP_VIOLET }}>GP Welcome</Text>
@@ -178,24 +178,24 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
           {(chore as any).shoppingItems?.length > 0 && (
             <Pressable
               onPress={() => {
-                console.log(`[UserAction] screen=Hub role=parent tapped "GP Welcome" toggle on "${chore.title}" (id=${chore.id}) newValue=${!(chore as any).openToGP} → updateChore(openToGP) [features/hub/parent/backlog/PoolQuestCard.tsx:178]`);
+                console.log(`[UserAction] screen=Hub role=parent tapped "GP Welcome" toggle on "${chore.title}" (id=${chore.id}) newValue=${!chore.inviteGrandparents} → updateChore(inviteGrandparents) [features/hub/parent/backlog/PoolQuestCard.tsx:178]`);
                 const { updateChore } = useChoreStore.getState();
-                updateChore(chore.id, { openToGP: !(chore as any).openToGP } as any);
+                updateChore(chore.id, { inviteGrandparents: !chore.inviteGrandparents });
               }}
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 8,
                 borderRadius: 10, borderWidth: 1.5,
-                borderColor: (chore as any).openToGP ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
-                backgroundColor: (chore as any).openToGP ? `${GP_VIOLET}20` : 'transparent',
+                borderColor: chore.inviteGrandparents ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
+                backgroundColor: chore.inviteGrandparents ? `${GP_VIOLET}20` : 'transparent',
                 padding: 10,
               }}>
               <View style={{
                 width: 20, height: 20, borderRadius: 10,
-                borderWidth: 2, borderColor: (chore as any).openToGP ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
-                backgroundColor: (chore as any).openToGP ? GP_VIOLET : 'transparent',
+                borderWidth: 2, borderColor: chore.inviteGrandparents ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
+                backgroundColor: chore.inviteGrandparents ? GP_VIOLET : 'transparent',
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                {(chore as any).openToGP && <Check size={12} color="#fff" />}
+                {chore.inviteGrandparents && <Check size={12} color="#fff" />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>

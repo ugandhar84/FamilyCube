@@ -114,7 +114,18 @@ export function choreToQuest(c: ChoreTask): Quest {
     // card (claim button, submit button, reward line) showed 0 coins even
     // though the real payout correctly used coins_reward and credited 15.
     // Same fallback line 32 in this file already uses.
-    coins:            c.basePoints > 0 ? c.basePoints : c.coinsReward,
+    //
+    // grandparent_quest is a real exception to that fallback though: a GP
+    // is never paid coins (master-flow spec — GP work is "logged and
+    // thanked," coins are a kid/teen-only concept), and the store's own
+    // payout logic already skips awarding the GP. But this field stayed
+    // populated from basePoints/coinsReward regardless, which QuestCard's
+    // in-progress coin pill correctly hides (isGPQuest check) while its
+    // completed-card "Approved · +N paid" status suffix had no matching
+    // guard — a finished GP quest visibly claimed a payout that never
+    // happened. Zeroing it at the source fixes every consumer at once
+    // instead of requiring each render site to remember its own guard.
+    coins:            c.categoryType === 'grandparent_quest' ? 0 : (c.basePoints > 0 ? c.basePoints : c.coinsReward),
     xpReward:         c.xpReward ?? 10,
     bonusCoins:       c.bonusCoins ?? 0,
     bonusExpiresAt:   (c as any).bonusExpiresAt ?? undefined,
@@ -209,6 +220,9 @@ export function choreToQuest(c: ChoreTask): Quest {
     isAdultTask:      c.isPrivateParent || c.categoryType === 'parent_only_quest' || c.categoryType === 'shopping',
     inviteGrandparents: c.inviteGrandparents ?? false,
     gpWithdrawnIds:   c.gpWithdrawnIds,
+    pendingHandoffTo:        c.pendingHandoffTo,
+    pendingHandoffReason:    c.pendingHandoffReason,
+    pendingHandoffOfferedBy: c.pendingHandoffOfferedBy,
     questType:        categoryTypeToQuestType(c.categoryType),
     assignmentMode:   c.assignedToId ? 'direct' : 'pull',
     bounceCount:      0,

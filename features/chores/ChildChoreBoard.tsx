@@ -1055,7 +1055,7 @@ interface ChildChoreBoardProps {
 }
 
 export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreBoardProps) {
-  const { syncFromDB, loadFromStorage, loaded, scanAndAutoApprove, resetDueRecurringChores, declineGrandparentQuest } = useChoreStore();
+  const { syncFromDB, loadFromStorage, loaded, resetDueRecurringChores, declineGrandparentQuest } = useChoreStore();
 
   const chores = useChoreStore(s => s.chores);
 
@@ -1107,7 +1107,6 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
   useEffect(() => {
     loadFromStorage().then(() => {
       syncFromDB();
-      scanAndAutoApprove();
       resetDueRecurringChores();
     });
   }, []);

@@ -118,29 +118,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const gpWelcomeRequests = kidRequests.filter(r =>
     r.openToGP && r.status === 'approved' && !r.assignedHelper
   );
-  // Partner chores flagged openToGP — GP can buy supplies + scan receipt.
-  // Bug (found via live-DB testing): 'in_progress' alone doesn't mean
-  // still-open — it's also the status a chore lands in the MOMENT another
-  // GP claims it (claimGPErrand's real work-in-progress state after
-  // gp_offer_pending is accepted). Every uninvolved GP's Hub kept showing
-  // that already-claimed chore as a live "I'd Love To Help" invitation
-  // (QuestInvitationsSection has no claimed-by check of its own) — tapping
-  // it silently no-ops (claimGPErrand's own status==='todo' guard blocks
-  // it), but the stale card stayed there looking actionable regardless.
-  // 'todo' with no assignee is the only genuinely-still-open state.
-  // updateChore now writes inviteGrandparents whenever openToGP is set (see
-  // its own comment on that mirroring) — the two flags are effectively the
-  // same "open to grandparents" state on one chore. Without excluding
-  // inviteGrandparents here, a chore toggled via "GP Welcome" (PoolQuestCard/
-  // OthersAdultQuestCard) rendered in BOTH this "family could use a hand"
-  // list AND QuestInvitationsSection's gpInvitations list below — the same
-  // chore showing as two separate cards in this Hub. QuestInvitationsSection
-  // is the fuller UI (Accept + Pass), so it wins; this list only picks up
-  // the (now effectively unreachable, but safe to keep as a guard) case of
-  // openToGP without inviteGrandparents.
-  const gpWelcomeChores = chores.filter(c =>
-    (c as any).openToGP && !c.inviteGrandparents && c.status === 'todo' && !c.assignedToId
-  );
+  // Was a guard against chore_tasks.openToGP/inviteGrandparents drift (two
+  // columns meaning the same thing) — openToGP has since been dropped from
+  // chore_tasks entirely (single source of truth: inviteGrandparents,
+  // which QuestInvitationsSection's gpInvitations list already covers), so
+  // this list can never match anything anymore. Kept as an explicit empty
+  // array rather than deleting the prop/badge wiring outright, to avoid
+  // touching every downstream consumer for a no-op cleanup.
+  const gpWelcomeChores: typeof chores = [];
   // Scenario 1.6 — offers THIS GP made that are still waiting on a parent
   // to Accept/Decline (see claimGPErrand/PendingOffersSection).
   const myPendingOffers = chores.filter(c =>
@@ -940,7 +925,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               <LockedAssignmentCard key={a.id} a={a} chore={chore} active={active} members={members}
                 colors={colors} isDark={isDark}
                 onDelegate={(choreId, choreTitle) => setDelegateSheet({ choreId, choreTitle })}
-                cancelLockedAssignment={(assignmentId) => { logAction('Cancel Locked Assignment', `cancelLockedAssignment(${assignmentId})`, { targetId: chore.id, targetTitle: chore.title, at: '838' }); cancelLockedAssignment(assignmentId); }} />
+                cancelLockedAssignment={(assignmentId) => { logAction('Cancel Locked Assignment', `cancelLockedAssignment(${assignmentId})`, { targetId: chore.id, targetTitle: chore.title, at: '838' }); cancelLockedAssignment(assignmentId, active.id); }} />
             );
           })}
         </SectionCard>

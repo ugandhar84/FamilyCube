@@ -118,7 +118,13 @@ export function deriveQuestActions(
   const done = isDoneCard(q);
   const declined = isDeclinedCard(q);
 
-  const canClaim = isKidOrTeen && pool;
+  // A chore a GP backed out of (backoutGpWelcomeChore) goes back to
+  // isPool:true/status:'todo' so it's re-claimable by another GP — but
+  // those are the exact same two fields the kid/teen pool checks, so
+  // without this exclusion the same dropped chore also reappeared in the
+  // Bounty board, i.e. it fell through to the general pool instead of
+  // staying GP-pool-only per the master flow spec.
+  const canClaim = isKidOrTeen && pool && !q.inviteGrandparents;
   const canSubmit = isKidOrTeen && todo && !!myId && isAssignedTo(q, myId);
   const canResubmit = isKidOrTeen && declined && !!myId && isAssignedTo(q, myId);
   const canKidDecline = isKidOrTeen && todo && !q.isPool && !!myId && isAssignedTo(q, myId);

@@ -226,9 +226,16 @@ export function QuestCard({
   // proceeds normally, only payout is gated). Without this, the card looked
   // byte-for-byte identical to a normal, fully-paid "Approved" quest —
   // the teen had zero indication their coins were actually withheld.
-  const paidSuffix = q.rewardPendingReview
-    ? ' · reward pending parent review'
-    : q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
+  // GPs are never paid coins (master-flow R_COINS) — this had no isGPQuest
+  // guard, unlike the pill above (line 332-333) and ParentReviewDeck.tsx's
+  // own equivalent fix, so a completed GP quest's done-card status line
+  // still showed "Approved · +N paid" even though nothing was ever paid.
+  const isGPQuestDone = q.questType === 'grandparent_quest';
+  const paidSuffix = isGPQuestDone
+    ? ''
+    : q.rewardPendingReview
+      ? ' · reward pending parent review'
+      : q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
   const statusLine = isReview
     ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
     : isDoneCard
@@ -647,6 +654,25 @@ export function QuestCard({
           </View>
         )}
 
+        {/* ── Named handoff — receiver's Accept/Pass-again offer ──
+            Was confirmed via QA audit to have zero UI anywhere despite
+            the store actions (offerChoreHandoff/acceptChoreHandoff/
+            declineChoreHandoff) existing since earlier this session —
+            CantMakeItSheet's "hand it to someone specific" wrote a real
+            pending offer that no screen ever showed the receiver. */}
+        {q.pendingHandoffTo === myId && (
+          <View style={[s.declineBox, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '60' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.declineText, { color: colors.primary, fontWeight: '800' }]}>
+                {members.find((m: any) => m.id === q.pendingHandoffOfferedBy)?.name?.split(' ')[0] ?? 'Someone'} wants to hand you this
+              </Text>
+              {!!q.pendingHandoffReason && (
+                <Text style={[s.declineText, { color: colors.textSecondary }]}>"{q.pendingHandoffReason}"</Text>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* ── Terms changed (QA punch list #2) ── */}
         {q.pendingTerms && (
           <View style={[s.declineBox, { backgroundColor: colors.dangerLight, borderColor: colors.danger + '60' }]}>
@@ -830,6 +856,25 @@ export function QuestCard({
               onPress={() => useChoreStore.getState().rejectTermsChange(q.id, myId ?? '')}
             >
               <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Hand it back</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Receiver of a named handoff — Accept ("I've got it") or Pass
+            again ("can't either — put it back", no reason required). */}
+        {q.pendingHandoffTo === myId && (
+          <>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: colors.success }]}
+              onPress={() => useChoreStore.getState().acceptChoreHandoff(q.id, myId ?? '')}
+            >
+              <Text style={[s.actionBtnText, { color: colors.textInverse }]}>I've got it</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: colors.danger }]}
+              onPress={() => useChoreStore.getState().declineChoreHandoff(q.id, myId ?? '')}
+            >
+              <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Can't either</Text>
             </TouchableOpacity>
           </>
         )}
@@ -1030,12 +1075,8 @@ export function QuestCard({
                       updateQuest(q.id, {
                         assignedToId: activeMember?.id, isPool: false, status: 'in_progress',
                       }, activeMember?.id);
-                      // Atomic remove instead of a client-side filter —
-                      // closes a real race two GPs passing/reconsidering
-                      // near-simultaneously on the same chore could hit.
                       if (myId) {
-                        supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: false })
-                          .then(({ error }) => { if (error) console.warn('[QuestCard] set_gp_withdrawn failed', error.message); });
+                        useChoreStore.getState().setGpWithdrawn(q.id, myId, false);
                       }
                       showToast("You're on it ✓");
                     },
@@ -1051,13 +1092,9 @@ export function QuestCard({
               <TouchableOpacity
                 style={[s.actionBtn, { borderWidth: 1.5, borderColor: colors.border, backgroundColor: 'transparent', flex: 1 }]}
                 onPress={() => {
-                  console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → set_gp_withdrawn [features/quests/components/QuestCard.tsx:948]`);
+                  console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → setGpWithdrawn [features/quests/components/QuestCard.tsx:948]`);
                   if (myId) {
-                    supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: true })
-                      .then(({ error }) => {
-                        if (error) { console.warn('[QuestCard] set_gp_withdrawn failed', error.message); return; }
-                        showToast('Passed ✓');
-                      });
+                    useChoreStore.getState().setGpWithdrawn(q.id, myId, true);
                   }
                 }}
               >

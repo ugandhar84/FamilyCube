@@ -3,7 +3,7 @@ import { View, Text, Pressable, Alert, TextInput } from 'react-native';
 import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand, PartyPopper, Clock3 } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
-import { parseDbTime } from '@/lib/dates';
+import { parseDbTime, fmtDate } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
@@ -555,24 +555,21 @@ function RedoDisputeCard({ c, members, colors, isDark, active, resolveRedoDisput
 // increase coins they can do right?"). Distinguished from a plain
 // declined-to-pool chore (declineChoreAssignment's 'Declined by X:' prefix,
 // assignedToId cleared) by still having a real assignee.
-function CantMakeItLaterCard({ c, members, colors, isDark, active, reassignChore, updateChoreCoins, dismissLaterRequest }: {
+// Rebuilt against propose_later_date/approve_later_date/decline_later_date
+// (added this session) — the old version predated that RPC design and
+// showed c.assignedToId (a kid), which propose_later_date always nulls
+// while the request is pending, so it displayed the wrong person and its
+// Reassign/Bump-coins/Dismiss actions never called the real approve/
+// decline RPCs at all. This version shows who actually asked
+// (pendingLaterRequestedBy) and the real proposed date, and Approve/
+// Decline call the actual RPCs — approve only now writes the new
+// due_date; decline leaves the original untouched.
+function CantMakeItLaterCard({ c, members, colors, isDark, active, approveLaterDate, declineLaterDate }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
-  reassignChore: (choreId: string, newMemberId: string, byMemberId: string, reason?: string) => void;
-  updateChoreCoins: (choreId: string, coins: number) => void;
-  dismissLaterRequest: (choreId: string) => void;
+  approveLaterDate: (choreId: string, parentId: string) => void;
+  declineLaterDate: (choreId: string, parentId: string) => void;
 }) {
-  const kid = members.find(m => m.id === c.assignedToId);
-  const [reassigning, setReassigning] = useState(false);
-  const [bumping, setBumping] = useState(false);
-  const [coins, setCoins] = useState(String((c.basePoints > 0 ? c.basePoints : c.coinsReward) ?? 0));
-  const eligibleSiblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== c.assignedToId);
-
-  const confirmBump = () => {
-    const parsed = parseInt(coins, 10);
-    if (!Number.isFinite(parsed) || parsed < 0) return;
-    updateChoreCoins(c.id, parsed);
-    setBumping(false);
-  };
+  const requester = members.find(m => m.id === c.pendingLaterRequestedBy);
 
   return (
     <View style={{ borderRadius: 14, padding: 12, gap: 8,
@@ -583,68 +580,25 @@ function CantMakeItLaterCard({ c, members, colors, isDark, active, reassignChore
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-            {kid?.name.split(' ')[0] ?? 'Kid'} asked for a later time
+            {requester?.name.split(' ')[0] ?? 'Someone'} asked to move this to {c.pendingLaterDate ? fmtDate(c.pendingLaterDate) : 'a later date'}
           </Text>
         </View>
       </View>
-      {c.rejectionReason ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.rejectionReason}"</Text>
+      {c.pendingLaterReason ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.pendingLaterReason}"</Text>
       ) : null}
 
-      {bumping ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Coins size={14} color={colors.amber} />
-          <TextInput
-            value={coins} onChangeText={setCoins} keyboardType="number-pad" autoFocus
-            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.amber + '60',
-              backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
-              fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
-          />
-          <Pressable onPress={() => setBumping(false)} style={{ paddingHorizontal: 10, paddingVertical: 9 }}>
-            <X size={16} color={colors.textTertiary} />
-          </Pressable>
-          <Pressable onPress={confirmBump}
-            style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.amber }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Save</Text>
-          </Pressable>
-        </View>
-      ) : reassigning ? (
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Reassign to</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {eligibleSiblings.map(m => (
-              <Pressable key={m.id}
-                onPress={() => { reassignChore(c.id, m.id, active.id, c.rejectionReason); setReassigning(false); }}
-                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.full, borderWidth: 1.5,
-                  backgroundColor: isDark ? colors.surface : colors.card, borderColor: colors.border }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{m.name.split(' ')[0]}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable onPress={() => setReassigning(false)} style={{ alignSelf: 'flex-start' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Cancel</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          <Pressable onPress={() => dismissLaterRequest(c.id)}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
-              borderWidth: 1.5, borderColor: colors.border }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Leave as-is</Text>
-          </Pressable>
-          <Pressable onPress={() => setBumping(true)}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
-              borderWidth: 1.5, borderColor: colors.amber + '60' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.amber }}>Bump coins</Text>
-          </Pressable>
-          {eligibleSiblings.length > 0 && (
-            <Pressable onPress={() => setReassigning(true)}
-              style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: colors.amber }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Reassign</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable onPress={() => declineLaterDate(c.id, active.id)}
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
+            borderWidth: 1.5, borderColor: colors.border }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Keep original date</Text>
+        </Pressable>
+        <Pressable onPress={() => approveLaterDate(c.id, active.id)}
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: colors.amber }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Approve new date</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -693,9 +647,13 @@ export function ChoreReviewSection({
   // (the same "Dismiss" mechanism recentlyApproved already uses below)
   // lets this parent clear it from their own list without affecting a
   // co-parent's view.
+  // Was `c.assignedToId &&` — propose_later_date (this session's fix)
+  // ALWAYS nulls assigned_to_id when staging a later-date request (the
+  // chore is genuinely unassigned while the proposal is pending), so this
+  // filter could never match a real later-date request at all, confirmed
+  // via QA audit. pendingLaterDate is the actual authoritative signal now.
   const laterRequests = chores.filter(c =>
-    c.status === 'todo' && c.assignedToId && c.rejectionReason && c.declinedAt &&
-    !c.rejectionReason.startsWith('Declined by') &&
+    c.status === 'todo' && !!c.pendingLaterDate &&
     !(c.reviewAckIds ?? []).includes(active.id)
   );
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
@@ -837,15 +795,8 @@ export function ChoreReviewSection({
                 </View>
                 {laterRequests.map(c => (
                   <CantMakeItLaterCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
-                    reassignChore={(choreId, newMemberId, byMemberId, reason) => {
-                      supabase.rpc('reassign_chore', { p_chore_id: choreId, p_new_member_id: newMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null })
-                        .then(({ error }: any) => { if (error) console.warn('[ChoreReviewSection] reassign_chore failed', error.message); else useChoreStore.getState().syncFromDB(true); });
-                    }}
-                    updateChoreCoins={(choreId, coins) => useChoreStore.getState().updateChore(choreId, { coinsReward: coins, basePoints: coins })}
-                    dismissLaterRequest={(choreId) => {
-                      const chore = chores.find(x => x.id === choreId);
-                      useChoreStore.getState().updateChore(choreId, { reviewAckIds: [...(chore?.reviewAckIds ?? []), active.id] });
-                    }}
+                    approveLaterDate={(choreId, parentId) => useChoreStore.getState().approveLaterDate(choreId, parentId)}
+                    declineLaterDate={(choreId, parentId) => useChoreStore.getState().declineLaterDate(choreId, parentId)}
                   />
                 ))}
               </View>

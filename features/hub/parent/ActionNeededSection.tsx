@@ -197,6 +197,14 @@ export function ActionNeededSection({
     const isSupplies   = req.detail.startsWith(SUPPLIES_PREFIX);
     const isCashOut    = req.type === 'delegation' && req.detail.startsWith('💵');
     const isVehicleIssue = req.type === 'emergency' && req.detail.startsWith('🚗');
+    // A GP/kid-triggered real Emergency SOS (SeniorView.tsx's triggerSos,
+    // KidView.tsx's emergency button) is also type:'emergency' but has no
+    // 🚗 prefix — it fell through every branch below all the way to the
+    // grocery/supplies catch-all (isSupplies/isGrocery are both false for
+    // it too), rendering a live "call for help" as a plain, lowest-
+    // urgency "Supplies" card with 0 items. Anything typed 'emergency'
+    // that isn't the vehicle-issue variant is the true SOS case.
+    const isTrueSos = req.type === 'emergency' && !isVehicleIssue;
     const isGrocery    = req.type === 'delegation' && !isSupplies && !isCashOut && (req.items?.length ?? 0) > 0;
     const isPermission = req.type === 'permission';
     const isQuestion   = req.type === 'question';
@@ -216,6 +224,19 @@ export function ActionNeededSection({
         node: <InlineReplyCard key={req.id} req={req} kidName={kidName}
           isPermission={false} isQuestion={false} isMedical={false}
           accent={accent} colors={colors} isDark={isDark}
+          onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
+          onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,
+      });
+      continue;
+    }
+
+    if (isTrueSos) {
+      ranked.push({
+        key: `req-${req.id}`, age,
+        severity: 'emergency', score: SEVERITY.emergency + age / 1000,
+        node: <InlineReplyCard key={req.id} req={req} kidName={kidName}
+          isPermission={false} isQuestion={false} isMedical={false}
+          accent={colors.danger} colors={colors} isDark={isDark}
           onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
           onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,
       });

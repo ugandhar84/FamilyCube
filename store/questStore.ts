@@ -160,6 +160,14 @@ export interface Quest {
   isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
   inviteGrandparents?: boolean; // true = grandparents can also see/claim this adult task
   gpWithdrawnIds?:   string[]; // memberIds of grandparents who Passed on this GP invitation
+  // Master-flow named handoff — set while awaiting the receiver's Accept/
+  // Pass-again response (offerChoreHandoff/acceptChoreHandoff/
+  // declineChoreHandoff in choreStore.ts). Was confirmed via QA audit to
+  // have zero UI consumer anywhere — the store actions existed with no
+  // card ever calling them.
+  pendingHandoffTo?:        string;
+  pendingHandoffReason?:    string;
+  pendingHandoffOfferedBy?: string;
 
   // Spec §2 / §8: parent-only quest extensions
   questType:        QuestType;

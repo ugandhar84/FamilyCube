@@ -526,9 +526,15 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     const myId = activeMember?.id;
 
     // Helper: is this quest assigned to a specific member (single or multi-assign)?
+    // Also true for the RECEIVER of a still-pending named handoff — the
+    // chore stays assigned to the ORIGINAL holder until accepted
+    // (offerChoreHandoff's whole point), so without this the receiver's
+    // Accept/Pass card (QuestCard.tsx's pendingHandoffTo block) was
+    // confirmed via QA audit to never appear anywhere for them to act on.
     const isAssignedTo = (q: typeof quests[0], memberId: string) =>
       q.assignedToId === memberId ||
-      (q.assignedToIds?.length > 0 && q.assignedToIds.includes(memberId));
+      (q.assignedToIds?.length > 0 && q.assignedToIds.includes(memberId)) ||
+      q.pendingHandoffTo === memberId;
 
     if (isKidOrTeen) {
       // Kids only ever see:
@@ -575,16 +581,19 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       // !q.assignedToId, but this dedicated Pool tab was missing the same
       // check, so a sibling's just-claimed bounty stayed visible/tappable
       // here until the next full reload.
-      list = list.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.assignedToId);
+      // inviteGrandparents-flagged chores are GP-pool-only even while
+      // isPool/todo (e.g. after backoutGpWelcomeChore) — excluded here too.
+      list = list.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.assignedToId && !q.inviteGrandparents);
     } else if (isKidOrTeen && kidFilter === 'all') {
       // Kid/Teen "All Family" — their own directly assigned quests, plus any
       // unclaimed bounty task (open to anyone to claim, so it's relevant to
       // "all family" the same way it already is for a parent's All Family
       // view below). Adult tasks stay excluded — those were never meant to
-      // be kid-visible regardless of pool status.
+      // be kid-visible regardless of pool status. Same inviteGrandparents
+      // exclusion as the Pool tab above.
       list = list.filter(q =>
         (myId && isAssignedTo(q, myId)) ||
-        (q.isPool && q.status === 'todo' && !q.isAdultTask && !q.assignedToId)
+        (q.isPool && q.status === 'todo' && !q.isAdultTask && !q.assignedToId && !q.inviteGrandparents)
       );
     } else if (!isKidOrTeen && kidFilter !== 'all' && kidFilter !== 'cheer') {
       // Parent filtered by specific kid — also keep unassigned pool quests (backlog)
@@ -650,7 +659,11 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     if (!isKidOrTeen || tabStatus !== 'todo') return null;
     const citizenship    = filteredQuests.filter(q => q.questType === 'citizenship');
     const routines       = filteredQuests.filter(q => q.questType === 'routine' || (q.questType === 'general' && q.isDaily && !q.isPool));
-    const bountyBoard    = filteredQuests.filter(q => q.isPool && q.status === 'todo');
+    // inviteGrandparents-flagged chores stay GP-pool-only even when
+    // dropped back to isPool/todo by backoutGpWelcomeChore — excluded here
+    // too, matching canClaim's own exclusion, so the card doesn't show up
+    // in the kid/teen Bounty Board with no way to actually claim it.
+    const bountyBoard    = filteredQuests.filter(q => q.isPool && q.status === 'todo' && !q.inviteGrandparents);
     const grandparent    = filteredQuests.filter(q => q.questType === 'grandparent_quest');
     const other          = filteredQuests.filter(q =>
       !citizenship.find(x => x.id === q.id) &&

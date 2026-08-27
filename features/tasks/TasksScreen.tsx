@@ -162,8 +162,17 @@ export default function TasksScreen() {
   const choreCounts = useMemo(() => {
     let pending = 0, active = 0;
     const isKidOrTeen = activeMember?.role === 'kid' || activeMember?.role === 'teen';
+    const isSenior = activeMember?.role === 'senior';
+    // A GP is scoped to only their own assigned/sponsored chores — never
+    // the general kid/teen bounty pool, even an inviteGrandparents-flagged
+    // one. Was grouped with "parent" (family-wide, unrestricted count)
+    // before this fix, same bug class as the kid/teen scoping fix right
+    // below it (isRelevant existed for kids/teens; senior fell through to
+    // the unrestricted branch instead of getting its own scoping).
     const isRelevant = (c: (typeof chores)[number]) =>
-      !isKidOrTeen || c.assignedToId === activeMemberId || (c.isPool && c.status === 'todo');
+      isSenior
+        ? c.assignedToId === activeMemberId || c.sponsorUserId === activeMemberId
+        : (!isKidOrTeen || c.assignedToId === activeMemberId || (c.isPool && c.status === 'todo' && !c.inviteGrandparents));
     for (const c of chores) {
       if (!isRelevant(c)) continue;
       if (c.status === 'todo' || c.status === 'gp_offer_pending') pending++;

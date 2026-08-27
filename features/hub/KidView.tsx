@@ -222,8 +222,17 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // choreStatusToQuestStatus) — exclude it everywhere here via
   // awaitingParentApproval so it never appears as visible/claimable before
   // a parent has actually signed off.
-  const myQuests       = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id)) && !q.awaitingParentApproval);
-  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval);
+  // A chore mid-named-handoff stays assigned to the ORIGINAL holder until
+  // the receiver actually accepts (offerChoreHandoff's whole point — a
+  // real offer, not an immediate reassignment) — so assignedToId alone
+  // never matches the receiver. Without this, the receiver's Accept/Pass
+  // card (QuestCard.tsx's pendingHandoffTo block) was confirmed via QA
+  // audit to be unreachable: the chore simply never appeared in their
+  // "my quests" list for that card to render on in the first place.
+  const myQuests       = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id) || q.pendingHandoffTo === active.id) && !q.awaitingParentApproval);
+  // inviteGrandparents-flagged chores stay GP-pool-only even while
+  // isPool/todo (e.g. after a GP backs out) — excluded here too.
+  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents);
   const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');

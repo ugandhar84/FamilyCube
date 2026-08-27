@@ -32,6 +32,8 @@ import PaywallSheet from '@/components/PaywallSheet';
 import PickerLoadingOverlay from '@/components/PickerLoadingOverlay';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useChoreStore } from '@/store/choreStore';
+import { useEventStore } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useFamilyStore } from '@/store/familyStore';
@@ -653,6 +655,28 @@ function RootNavigator() {
           useNotifStore.getState().fetchAll(user.id).catch(() => {});
         }
       });
+
+      // Force a real chore/quest DB re-fetch on every foreground — Supabase
+      // realtime sockets silently die when the OS suspends the app in the
+      // background, and choreStore's own reconnect guard only checks "does
+      // a channel object exist," not "is it actually connected," so a dead
+      // socket previously went unnoticed indefinitely: a GP's decline/pass/
+      // backout updated their OWN device fine but never reached anyone
+      // else's until they happened to pull-to-refresh (the only path that
+      // does a real DB round-trip independent of the socket). syncFromDB's
+      // force=true bypasses its 60s TTL guard, and reaches ensureRealtime,
+      // which — now that its .subscribe() callback clears a dead channel on
+      // CLOSED/CHANNEL_ERROR/TIMED_OUT — will actually resubscribe here
+      // instead of trusting a corpse.
+      useChoreStore.getState().syncFromDB(true).catch(() => {});
+      // Same gap, same fix, sibling system — eventStore's own realtime
+      // channel (calendar_events, ride/driver assignments) had the
+      // identical dead-channel vulnerability with no foreground-triggered
+      // recovery at all, confirmed via QA audit after the chore-side fix
+      // shipped. syncFromDB() here re-fetches the current day and re-runs
+      // selectDate, which reaches ensureRealtime the same way choreStore's
+      // does.
+      useEventStore.getState().syncFromDB().catch(() => {});
 
       if (awayMs < LOCK_AFTER_MS) return;
       if (!bootCompleted.current) return;

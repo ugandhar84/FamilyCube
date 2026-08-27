@@ -15,7 +15,7 @@ export function LockedAssignmentCard({ a, chore, active, members, colors, isDark
   a: ParentQuestAssignment; chore: ChoreTask; active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onDelegate: (choreId: string, title: string) => void;
-  cancelLockedAssignment: (assignmentId: string) => void;
+  cancelLockedAssignment: (assignmentId: string, byMemberId: string) => void;
 }) {
   const [isExp, setExp] = useState(false);
   const other = members.find(m => m.id === (a.assignedBy === active.id ? a.assignedTo : a.assignedBy));
@@ -29,7 +29,7 @@ export function LockedAssignmentCard({ a, chore, active, members, colors, isDark
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reopen', onPress: () => {
         console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reopen" on "${chore.title}" (id=${a.id}) → cancelLockedAssignment [features/hub/parent/backlog/LockedAssignmentCard.tsx:27]`);
-        cancelLockedAssignment(a.id);
+        cancelLockedAssignment(a.id, active.id);
         showToast('Reopened ✓');
         // Neither cancelLockedAssignment nor DelegateSheet's reassign path
         // notify the OTHER party in this negotiation — a task Marcus was

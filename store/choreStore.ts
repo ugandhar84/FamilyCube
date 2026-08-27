@@ -109,6 +109,7 @@ export interface ChoreTask {
   sponsorUserId?: string;        // For grandparent quests
   questMode?: 'local' | 'virtual'; // grandparent_quest: in-person vs video call
   inviteGrandparents?: boolean;  // parent-proposed: open invitation to grandparents
+  isOpenToTeens?: boolean;       // parent-proposed: open invitation to teens (mirrors inviteGrandparents)
   isPrivateParent: boolean;
   isPool?: boolean;               // unassigned quest open for anyone to claim
   // Set when a single-slot chore is claimed via claimPoolQuest (in_progress),
@@ -143,7 +144,6 @@ export interface ChoreTask {
   shoppingItems?: string[];          // e.g. ['Milk 2%', 'Bread', 'Eggs x12']
   shoppingStore?: string;            // e.g. 'Walmart', 'Target'
   shoppingBudget?: number;           // optional spend cap in dollars
-  openToGP?: boolean;        // parent flagged this for grandparent to handle (e.g. grocery run + scan receipt)
   // Spec 8.2 — optional tie to a calendar event this quest logistically
   // supports (e.g. "pack for the trip" linked to the "Family Trip" event).
   // Display-only association picked at creation/edit, no bidirectional
@@ -177,6 +177,22 @@ export interface ChoreTask {
   // Pass hide the invite from the other). Cleared implicitly once the
   // chore is actually assigned (assignedToId set) or reopened to the pool.
   gpWithdrawnIds?: string[];
+  // Master-flow "hand it to a specific person" — set by offer_chore_handoff,
+  // cleared by accept_chore_handoff/decline_chore_handoff. While set, the
+  // chore has NOT actually been reassigned yet (assignedToId is untouched)
+  // — it's a real offer awaiting the receiver's Accept/Pass-again response,
+  // not a blind immediate reassignment.
+  pendingHandoffTo?: string;
+  pendingHandoffReason?: string;
+  pendingHandoffOfferedBy?: string;
+  pendingHandoffOfferedAt?: string;
+  // Master-flow "ask for a later time" — set by propose_later_date, cleared
+  // by approve_later_date (which then actually rewrites dueDate)/
+  // decline_later_date. dueDate itself is untouched while this is set.
+  pendingLaterDate?: string;
+  pendingLaterReason?: string;
+  pendingLaterRequestedBy?: string;
+  pendingLaterRequestedAt?: string;
   // GP receipt reimbursement
   receiptPhotoUrl?: string;
   receiptAmount?: number;       // in dollars/currency units (not points)
@@ -579,6 +595,7 @@ function choreFromRow(row: any): ChoreTask {
     sponsorUserId:           row.sponsor_user_id ?? undefined,
     questMode:               row.quest_mode ?? undefined,
     inviteGrandparents:      row.invite_grandparents ?? false,
+    isOpenToTeens:           row.is_open_to_teens ?? false,
     isPrivateParent:         row.category_type === 'parent_only_quest',
     requiresPhotoProof:      row.requires_photo ?? row.requires_photo_proof ?? false,
     recurrenceRule:          (typeof row.recurrence_rule === 'object' && row.recurrence_rule)
@@ -608,8 +625,15 @@ function choreFromRow(row: any): ChoreTask {
     shoppingItems:           Array.isArray(row.shopping_items) ? row.shopping_items : undefined,
     shoppingStore:           row.shopping_store ?? undefined,
     shoppingBudget:          row.shopping_budget != null ? Number(row.shopping_budget) : undefined,
-    openToGP:                row.open_to_gp ?? false,
     gpWithdrawnIds:          Array.isArray(row.gp_withdrawn_ids) ? row.gp_withdrawn_ids : undefined,
+    pendingHandoffTo:        row.pending_handoff_to ?? undefined,
+    pendingHandoffReason:    row.pending_handoff_reason ?? undefined,
+    pendingHandoffOfferedBy: row.pending_handoff_offered_by ?? undefined,
+    pendingHandoffOfferedAt: row.pending_handoff_offered_at ?? undefined,
+    pendingLaterDate:        row.pending_later_date ?? undefined,
+    pendingLaterReason:      row.pending_later_reason ?? undefined,
+    pendingLaterRequestedBy: row.pending_later_requested_by ?? undefined,
+    pendingLaterRequestedAt: row.pending_later_requested_at ?? undefined,
     reviewAckIds:            Array.isArray(row.review_ack_ids) ? row.review_ack_ids : undefined,
     isDisabled:              row.is_disabled ?? false,
     rewardPendingReview:     row.reward_pending_review ?? false,
@@ -828,6 +852,14 @@ interface ChoreState {
   // Accept or Decline before assignedToId/status:'in_progress' are set. See
   // acceptGPOffer/declineGPOffer/withdrawGPOffer below.
   claimGPErrand:           (choreId: string, gpMemberId: string) => void;
+  setGpWithdrawn:          (choreId: string, gpMemberId: string, withdrawn: boolean) => void;
+  offerChoreHandoff:       (choreId: string, toMemberId: string, byMemberId: string, reason?: string) => void;
+  acceptChoreHandoff:      (choreId: string, memberId: string) => void;
+  declineChoreHandoff:     (choreId: string, memberId: string) => void;
+  proposeLaterDate:        (choreId: string, byMemberId: string, newDate: string, reason?: string) => void;
+  approveLaterDate:        (choreId: string, parentId: string) => void;
+  declineLaterDate:        (choreId: string, parentId: string) => void;
+  cancelChore:             (choreId: string, byMemberId: string) => Promise<boolean>;
   acceptGPOffer:           (choreId: string, parentId: string) => void;
   declineGPOffer:          (choreId: string, parentId: string, reason?: string) => void;
   // A kid proposed this chore for themselves/a sibling (propose_kid_chore
@@ -873,7 +905,6 @@ interface ChoreState {
   cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
-  scanAndAutoApprove:              () => void;
   resetDueRecurringChores:         () => void;
 
   // ── Scenario 1.13 — Teen reward co-sign threshold ─────────────────────────
@@ -941,7 +972,7 @@ interface ChoreState {
   // that offline conversation happened. Clears the lock, marks the
   // assignment DECLINED (finally giving that status a real use), and
   // reopens the chore in the pool for anyone to take or re-delegate.
-  cancelLockedAssignment: (assignmentId: string) => void;
+  cancelLockedAssignment: (assignmentId: string, byMemberId: string) => void;
   // The delegator taking back a still-PENDING (not yet accepted) System-A
   // delegation — distinct from cancelLockedAssignment, which is for a
   // locked (two-bounce) assignment. A delegator should always be able to
@@ -989,6 +1020,7 @@ interface ChoreState {
   // own assignedToId, which System A deliberately leaves empty until
   // accepted.
   getActiveAssignmentChoreIds: () => Set<string>;
+  getLiveAssignmentForChore: (choreId: string) => ParentQuestAssignment | undefined;
   getMyDirectPending: (memberId: string) => ParentQuestAssignment[];
   getMyLockedItems:   (memberId: string) => ParentQuestAssignment[];
   getMyOutgoingPending: (memberId: string) => ParentQuestAssignment[];
@@ -1174,6 +1206,28 @@ function ensureRealtime(
       })
       .subscribe((status) => {
         console.log(`[choreStore] realtime chores:${familyId} subscribe status=${status}`);
+        // ensureRealtime's own guard above only checks "does _rtChannel
+        // exist," never "is it actually connected" — a socket that dies
+        // (most commonly: the OS suspends the app in the background, which
+        // silently kills the underlying WebSocket) left _rtChannel as a
+        // non-null but functionally dead object, so every later syncFromDB
+        // call kept short-circuiting on "already subscribed... skipping"
+        // forever. Confirmed live: GP/parent actions (Pass, decline,
+        // backout) updated the ACTING device fine (local optimistic state)
+        // but never reached any OTHER family member's device until they
+        // manually pulled-to-refresh — which works only because it forces
+        // a real DB round-trip, bypassing the dead socket entirely. Nulling
+        // _rtChannel here on a terminal bad status makes the next
+        // syncFromDB call (see the AppState foreground handler below)
+        // actually resubscribe instead of trusting a corpse.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[choreStore] realtime chores:${familyId} unhealthy (${status}) — clearing so the next sync resubscribes`);
+          // Guard against a stale channel's late status callback clobbering
+          // a newer channel that's already replaced it (e.g. a rapid
+          // background/foreground cycle creating a second ensureRealtime
+          // call before this one's status settles).
+          if (_rtFamilyId === familyId) { _rtChannel = null; _rtFamilyId = ''; }
+        }
       });
   } catch (e: any) {
     console.warn('[choreStore] ensureRealtime subscribe failed', e?.message ?? e);
@@ -1412,6 +1466,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       sponsor_user_id:          chore.sponsorUserId,
       quest_mode:               chore.questMode ?? null,
       invite_grandparents:      chore.inviteGrandparents ?? false,
+      is_open_to_teens:         chore.isOpenToTeens ?? false,
       requires_photo:           chore.requiresPhotoProof,
       recurrence_rule:          chore.recurrenceRule,
       instance_date:            chore.instanceDate,
@@ -1589,18 +1644,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         }
       }
     }
-    // openToGP (the "Offer to GP" toggle in OthersAdultQuestCard/
-    // PoolQuestCard/DelegateSheet) and inviteGrandparents (the separate
-    // "Invite Grandparents?" toggle in Add/EditQuestModal, and what
-    // claimGPErrand/submitGPErrandReceipt and the Chores tab's senior
-    // visibility filter actually check) are two different DB columns with
-    // overlapping intent that nothing kept in sync — a parent toggling
-    // "Offer to GP" set openToGP, but every read path a grandparent's
-    // claim/visibility depends on checks inviteGrandparents instead, so the
-    // toggle silently did nothing. Setting one now sets both.
-    const updates = 'openToGP' in (rawUpdates as any) && !('inviteGrandparents' in rawUpdates)
-      ? { ...rawUpdates, inviteGrandparents: (rawUpdates as any).openToGP as boolean }
-      : rawUpdates;
+    // openToGP (a separate "Offer to GP" toggle column) and
+    // inviteGrandparents used to be two different DB columns meaning the
+    // same thing, kept in sync by a mirror-write here that a later bug
+    // (DelegateSheet reading a stale snapshot) showed wasn't a reliable fix
+    // — openToGP has since been dropped from chore_tasks entirely;
+    // inviteGrandparents is the one column every read path uses.
+    const updates = rawUpdates;
     set(s => ({
       chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c),
     }));
@@ -1639,11 +1689,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('alertCallLeadMinutes' in updates) patch.alert_call_lead_minutes = updates.alertCallLeadMinutes ?? 10;
     if ('requiresPhotoProof' in updates) patch.requires_photo           = updates.requiresPhotoProof;
     if ('inviteGrandparents' in updates) patch.invite_grandparents      = updates.inviteGrandparents;
+    if ('isOpenToTeens'      in updates) patch.is_open_to_teens         = updates.isOpenToTeens;
     if ('recurrenceRule'     in updates) patch.recurrence_rule          = updates.recurrenceRule;
     if ('shoppingItems'        in updates) patch.shopping_items             = updates.shoppingItems;
     if ('shoppingStore'        in updates) patch.shopping_store             = updates.shoppingStore;
     if ('shoppingBudget'       in updates) patch.shopping_budget            = updates.shoppingBudget;
-    if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
     if ('gpWithdrawnIds' in (updates as any)) patch.gp_withdrawn_ids       = (updates as any).gpWithdrawnIds ?? [];
     if ('reviewAckIds' in (updates as any)) patch.review_ack_ids          = (updates as any).reviewAckIds ?? [];
     if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
@@ -2308,6 +2358,192 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
+  // A GP passing/reconsidering on a GP-welcome invite — see gpWithdrawnIds'
+  // own comment for why this is server-persisted (per-GP, survives reload).
+  // Previously called set_gp_withdrawn directly from both QuestCard.tsx and
+  // QuestInvitationsSection.tsx with no local state patch on success — the
+  // RPC (correctly) wrote the DB row, but nothing told choreStore.chores
+  // about it, so the "🔄 Reconsider?" flip only ever appeared after a
+  // realtime round-trip happened to land, making Pass look like a dead
+  // button in the meantime. Fixed with the same optimistic-patch +
+  // rollback-on-error shape claimGPErrand already uses for its own RPC.
+  setGpWithdrawn: (choreId, gpMemberId, withdrawn) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    const prevIds = chore.gpWithdrawnIds ?? [];
+    const nextIds = withdrawn
+      ? (prevIds.includes(gpMemberId) ? prevIds : [...prevIds, gpMemberId])
+      : prevIds.filter(id => id !== gpMemberId);
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, gpWithdrawnIds: nextIds } : c),
+    }));
+    supabase.rpc('set_gp_withdrawn', { p_chore_id: choreId, p_gp_member_id: gpMemberId, p_withdrawn: withdrawn })
+      .then(({ error }) => {
+        if (!error) { if (withdrawn) showToast('Passed ✓'); return; }
+        console.warn('[choreStore] setGpWithdrawn RPC failed', error.message);
+        // Roll back to the pre-tap ids so the button doesn't lie about what
+        // actually got saved.
+        set(s => ({
+          chores: s.chores.map(c => c.id === choreId ? { ...c, gpWithdrawnIds: prevIds } : c),
+        }));
+        showToast("Couldn't save — check your connection and try again", 'error');
+      });
+  },
+
+  // Master-flow "hand it to a specific person" — records an offer without
+  // reassigning yet (see offer_chore_handoff's own comment). Local patch is
+  // optimistic on the offering device; the receiver's device picks it up
+  // via realtime/sync same as any other chore field.
+  offerChoreHandoff: (choreId, toMemberId, byMemberId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c,
+        pendingHandoffTo: toMemberId, pendingHandoffReason: reason,
+        pendingHandoffOfferedBy: byMemberId, pendingHandoffOfferedAt: new Date().toISOString(),
+        rejectionReason: reason ?? c.rejectionReason,
+      } : c),
+    }));
+    supabase.rpc('offer_chore_handoff', {
+      p_chore_id: choreId, p_to_member_id: toMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null,
+    }).then(({ error }) => {
+      if (!error) return;
+      console.warn('[choreStore] offerChoreHandoff RPC failed', error.message);
+      set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+      showToast("Couldn't send — check your connection and try again", 'error');
+    });
+  },
+
+  // Receiver: "I've got it" — only now does the chore actually become
+  // theirs. Requires a live pending_handoff_to match (server-enforced too).
+  acceptChoreHandoff: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.pendingHandoffTo !== memberId) return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, assignedToId: memberId, isPool: false, status: 'todo', claimedAt: new Date().toISOString(),
+        pendingHandoffTo: undefined, pendingHandoffReason: undefined,
+        pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
+      } : c),
+    }));
+    supabase.rpc('accept_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
+      .then(({ error }) => {
+        if (!error) { showToast("You're on it ✓"); return; }
+        console.warn('[choreStore] acceptChoreHandoff RPC failed', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+        showToast("Couldn't save — check your connection and try again", 'error');
+      });
+  },
+
+  // Receiver: "can't either — put it back" — reopens straight to the pool,
+  // no reason required (master-flow's own framing for this exact case).
+  declineChoreHandoff: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.pendingHandoffTo !== memberId) return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, assignedToId: undefined, isPool: true, status: 'todo',
+        pendingHandoffTo: undefined, pendingHandoffReason: undefined,
+        pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
+      } : c),
+    }));
+    supabase.rpc('decline_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
+      .then(({ error }) => {
+        if (!error) return;
+        console.warn('[choreStore] declineChoreHandoff RPC failed', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+        showToast("Couldn't save — check your connection and try again", 'error');
+      });
+  },
+
+  // Master-flow "ask for a later time" — a counter-offer, not a silent
+  // self-service reschedule. Releases the chore (it's genuinely not
+  // happening at the original time on this assignee's plate) but leaves
+  // dueDate untouched until a parent actually approves the new date.
+  proposeLaterDate: (choreId, byMemberId, newDate, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, assignedToId: undefined, isPool: false, claimedAt: undefined,
+        rejectionReason: reason ?? c.rejectionReason, declinedAt: new Date().toISOString(),
+        pendingLaterDate: newDate, pendingLaterReason: reason,
+        pendingLaterRequestedBy: byMemberId, pendingLaterRequestedAt: new Date().toISOString(),
+      } : c),
+    }));
+    supabase.rpc('propose_later_date', { p_chore_id: choreId, p_by_member_id: byMemberId, p_new_date: newDate, p_reason: reason ?? null })
+      .then(({ error }) => {
+        if (!error) return;
+        console.warn('[choreStore] proposeLaterDate RPC failed', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+        showToast("Couldn't send — check your connection and try again", 'error');
+      });
+  },
+
+  // Parent approves a pending later-date proposal — only now does dueDate
+  // actually change.
+  approveLaterDate: (choreId, parentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.pendingLaterDate) return;
+    const newDate = chore.pendingLaterDate;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, dueDate: newDate,
+        pendingLaterDate: undefined, pendingLaterReason: undefined,
+        pendingLaterRequestedBy: undefined, pendingLaterRequestedAt: undefined,
+      } : c),
+    }));
+    supabase.rpc('approve_later_date', { p_chore_id: choreId, p_parent_id: parentId })
+      .then(({ error }) => {
+        if (!error) { showToast('Reschedule approved ✓'); return; }
+        console.warn('[choreStore] approveLaterDate RPC failed', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+        showToast("Couldn't save — check your connection and try again", 'error');
+      });
+  },
+
+  // Parent declines a pending later-date proposal — clears it, original
+  // dueDate stands, chore is already unassigned from proposeLaterDate.
+  declineLaterDate: (choreId, parentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.pendingLaterDate) return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c,
+        pendingLaterDate: undefined, pendingLaterReason: undefined,
+        pendingLaterRequestedBy: undefined, pendingLaterRequestedAt: undefined,
+      } : c),
+    }));
+    supabase.rpc('decline_later_date', { p_chore_id: choreId, p_parent_id: parentId })
+      .then(({ error }) => {
+        if (!error) return;
+        console.warn('[choreStore] declineLaterDate RPC failed', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
+        showToast("Couldn't save — check your connection and try again", 'error');
+      });
+  },
+
+  // "It's not needed anymore" — only the chore's creator or a parent may
+  // cancel outright (master-flow spec). Server-enforced via cancel_chore
+  // rather than trusting client role state; this used to just call
+  // deleteChore directly, letting ANY current assignee hard-delete a chore
+  // someone else created. No optimistic local delete here (unlike this
+  // file's other actions) — deleting first and rolling back on a 403 would
+  // flash the chore as gone for anyone unauthorized to remove it; wait for
+  // the RPC's real answer instead.
+  cancelChore: async (choreId, byMemberId) => {
+    const { data, error } = await supabase.rpc('cancel_chore', { p_chore_id: choreId, p_by_member_id: byMemberId });
+    if (error) {
+      console.warn('[choreStore] cancelChore RPC failed', error.message);
+      showToast("Only the person who created this, or a parent, can cancel it", 'error');
+      return false;
+    }
+    set(s => ({ chores: s.chores.filter(c => c.id !== choreId) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    return true;
+  },
+
   // A parent accepting a pending GP offer — this is the ONLY point the
   // chore actually becomes assigned to the offering GP (assignedToId +
   // status:'in_progress'), mirroring startGrandparentQuest's claim shape.
@@ -2896,7 +3132,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // session) meant an approved-and-paid photo quest snapped straight back
     // to "Take Photo to Get Paid" before the teen ever left the screen. The
     // actual reset is date-gated and handled by resetDueRecurringChores,
-    // called alongside scanAndAutoApprove on every load.
+    // called on every load.
   },
 
   requestRedo: (choreId, reviewerId, reason, _presetKey) => {
@@ -3340,32 +3576,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
   },
 
-  // Scan local store for expired approval windows and auto-approve them
-  scanAndAutoApprove: () => {
-    const now = Date.now();
-    const toAuto = get().chores.filter(c =>
-      c.status === 'pending_approval' &&
-      c.approvalWindowExpiresAt &&
-      new Date(c.approvalWindowExpiresAt).getTime() <= now &&
-      c.assignedToId,
-    );
-    for (const chore of toAuto) {
-      get().updateChore(chore.id, {
-        status:     'auto_approved',
-        approvedAt: new Date().toISOString(),
-        reviewedAt: new Date().toISOString(),
-      });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, chore.id, pts, chore.xpReward, wallet);
-    }
-  },
-
   // G1 — an approved recurring chore only resets to an unassigned 'todo'
   // once its next cycle has actually arrived (daily → the next calendar
   // day, weekly/monthly → one period out from approval), not the instant
-  // it's approved. Called alongside scanAndAutoApprove on every load, same
-  // as that function's own cadence.
+  // it's approved. Called on every load.
+  //
+  // Auto-approval of an expired review window itself is NOT handled
+  // client-side anymore — a scanAndAutoApprove() used to run here too,
+  // deciding the outcome and crediting coins directly from whichever
+  // device happened to load the screen first, with no server authority,
+  // no escalation check, and no CAS guard against two devices racing the
+  // same payout. It also silently defeated chore-auto-approve's correct,
+  // already-deployed server-side design (24h escalate-to-other-parent,
+  // 48h last-resort auto-approve) by winning the race to auto-approve
+  // immediately on app-open, before escalation ever got a chance to fire.
+  // Removed per explicit product direction: every state transition must be
+  // a real DB/RPC write the server decides, not a client-side scan that
+  // happens to reach the same conclusion.
   resetDueRecurringChores: () => {
     const today = localDateStr(new Date());
     const toReset = get().chores.filter(c =>
@@ -4045,15 +4272,39 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     return assignment;
   },
 
+  // Rewritten onto the respond_to_parent_quest RPC — the CAS check now runs
+  // against the DB's live row inside the same transaction that writes it,
+  // never a client-side status snapshot. The old version guarded its write
+  // with `.eq('status', previousStatus)` where previousStatus came from
+  // get().parentAssignments.find(...) — a value that can go stale after a
+  // profile switch, backgrounding, or any timing gap, and when the CAS
+  // lost, the client silently reverted its optimistic update and only
+  // logged a warning: the person who tapped Decline saw the sheet close
+  // as if it worked, and the assignment quietly stayed exactly as it was
+  // (live-repro'd: a GP's "can't do it" sat PENDING in the DB indefinitely
+  // with zero visible error). Same optimistic-patch-then-reconcile shape as
+  // this file's other RPC-backed actions, but now a genuine failure surfaces
+  // a real, visible error instead of a silent no-op.
   respondToParentQuest: (assignmentId, response) => {
-    console.log(`[choreStore] respondToParentQuest called — assignmentId=${assignmentId} action=${response.action}`);
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] respondToParentQuest ABORTED — no assignment found with id=${assignmentId}`);
       return;
     }
+    // QA-confirmed bug: respond_to_parent_quest's RPC never took an actor
+    // parameter at all, so it couldn't verify the caller was actually a
+    // party (assignedTo/assignedBy) to the assignment — an uninvolved
+    // family member could accept/decline someone else's delegation with
+    // zero identity check. The RPC now requires one; getActiveMemberId()
+    // is the same "who's acting" resolution every other actor-less action
+    // in this file already uses (see its own call sites above).
+    const actorId = getActiveMemberId();
+    if (!actorId) {
+      showToast("Couldn't tell who's responding — try again", 'error');
+      return;
+    }
     if (assignment.isLocked) {
-      console.warn(`[choreStore] respondToParentQuest ABORTED — assignment ${assignmentId} is locked (two-bounce rule)`);
+      showToast("This one's locked — needs to be discussed outside the app", 'error');
       return;
     }
 
@@ -4068,9 +4319,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         newStatus = 'ACCEPTED';
         break;
       case 'DECLINE':
-        // A flat "no" — distinct from a pushback (SNOOZE/BLOCKER/TRADE/
-        // DISCUSS all keep the task open and expect the assigner to hear
-        // back); DECLINED is terminal, same as walking away from it.
         newStatus = 'DECLINED';
         break;
       case 'SNOOZE':
@@ -4082,106 +4330,63 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       case 'DISCUSS':
         newStatus = 'PARKED';
         newBounceCount += 1;
-        // Two-Bounce Rule — the first Blocker/Trade/Discuss just records the
-        // pushback and stays open (PARKED, not locked) so the other parent
-        // can respond again; only a second bounce locks it into "discuss
-        // offline." This was previously off-by-one (locked after the FIRST
-        // bounce at >= 1) while the UI told users they had two chances —
-        // now the code matches what PushbackSheet actually promises.
-        if (newBounceCount >= 2) {
-          newIsLocked = true;
-        }
+        if (newBounceCount >= 2) newIsLocked = true;
         break;
     }
 
-    console.log(`[choreStore] respondToParentQuest → assignment ${assignmentId}: status=${newStatus} bounceCount=${newBounceCount} locked=${newIsLocked}`);
+    const prevAssignment = assignment;
+    const prevChore = get().chores.find(c => c.id === assignment.choreId);
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId
           ? {
               ...a,
-              status:             newStatus,
-              snoozeUntil,
-              bounceCount:        newBounceCount,
-              isLocked:           newIsLocked,
+              status: newStatus, snoozeUntil, bounceCount: newBounceCount, isLocked: newIsLocked,
               actionablePushback: (response.action === 'ACCEPT' || response.action === 'DECLINE') ? undefined : response.action as PushbackType,
-              pushbackDetails:    response.details,
-              updatedAt:          now,
+              pushbackDetails: response.details, updatedAt: now,
             }
           : a
       ),
+      chores: newStatus === 'ACCEPTED'
+        ? s.chores.map(c => c.id === assignment.choreId ? { ...c, assignedToId: assignment.assignedTo, status: 'in_progress' } : c)
+        : (newStatus === 'PARKED' || newStatus === 'DECLINED')
+          ? s.chores.map(c => c.id === assignment.choreId ? { ...c, assignedToId: undefined, status: 'todo' } : c)
+          : s.chores,
     }));
 
-    // Keep the chore row in step — the backlog's pool/mine/theirs split reads the
-    // chore, not the assignment. A bounced task must lose its assignee or it sits
-    // on the refuser's list forever and nobody else can pick it up.
-    if (newStatus === 'ACCEPTED') {
-      get().updateChore(assignment.choreId, { assignedToId: assignment.assignedTo, status: 'in_progress' });
-    } else if (newStatus === 'PARKED' || newStatus === 'DECLINED') {
-      get().updateChore(assignment.choreId, { assignedToId: undefined, status: 'todo' });
-    }
-
-    // Two parents acting on the same assignment within the same round-trip
-    // window (e.g. one taps Accept while the other bounces it) would both
-    // pass the isLocked/not-found guards above against the same starting
-    // state and both locally set() a different outcome — a plain UPDATE
-    // with no status guard would then just last-writer-win in Postgres
-    // with no signal to the loser. Guard the write with the assignment's
-    // status as it was at the start of this call; if that's no longer
-    // true (someone else's response landed first), the 0-row result rolls
-    // the loser's optimistic local update back to whatever the DB now
-    // actually holds via the next realtime/poll sync instead of leaving a
-    // client showing a response that never actually took.
-    const previousStatus = assignment.status;
-    _fetchedAt = 0;
-    supabase.from('parent_quest_assignments')
-      .update({
-        status:               newStatus,
-        snooze_until:         snoozeUntil,
-        bounce_count:         newBounceCount,
-        is_locked:            newIsLocked,
-        actionable_pushback:  response.action === 'ACCEPT' ? null : response.action,
-        pushback_details:     response.details,
-        updated_at:           now,
-      })
-      .eq('id', assignmentId)
-      .eq('status', previousStatus)
-      .select('id')
-      .then(({ data, error }) => {
+    supabase.rpc('respond_to_parent_quest', { p_assignment_id: assignmentId, p_actor_id: actorId, p_action: response.action, p_details: response.details ?? null })
+      .then(({ error }) => {
         if (error) {
-          console.warn(`[choreStore] respondToParentQuest DB update FAILED for ${assignmentId}`, error.message);
+          console.warn(`[choreStore] respondToParentQuest RPC failed for ${assignmentId}`, error.message);
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? prevAssignment : a),
+            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
+          }));
+          showToast("That didn't go through — someone else may have already responded. Pull to refresh and try again.", 'error');
           return;
         }
-        if (!data || data.length === 0) {
-          console.warn(`[choreStore] respondToParentQuest lost the race on ${assignmentId} — another response landed first, reverting local state`);
-          set(s => ({
-            parentAssignments: s.parentAssignments.map(a =>
-              a.id === assignmentId && a.status === newStatus ? { ...a, status: previousStatus } : a
-            ),
-          }));
+        // Notify the delegator only once the write is CONFIRMED — they
+        // fired off a delegation and otherwise have no signal it was
+        // actually accepted/declined until they happen to reopen the
+        // backlog. Only ACCEPT/DECLINE are terminal-enough to be worth a
+        // ping here; SNOOZE/BLOCKER/TRADE/DISCUSS already surface via
+        // PushbackSheet's existing flow.
+        if (newStatus === 'ACCEPTED' || newStatus === 'DECLINED') {
+          try {
+            const { useFamilyStore } = require('./familyStore');
+            const { useChatStore } = require('./chatStore');
+            const delegate = useFamilyStore.getState().members.find((m: any) => m.id === assignment.assignedTo);
+            const chore = get().chores.find(c => c.id === assignment.choreId);
+            const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+            const msg = newStatus === 'ACCEPTED'
+              ? `✅ ${firstName} accepted "${chore?.title ?? 'that task'}".`
+              : `🚫 ${firstName} declined "${chore?.title ?? 'that task'}".`;
+            useChatStore.getState().sendMessage(assignment.assignedBy, assignment.assignedTo, msg);
+          } catch (e) {
+            console.warn('[choreStore] respondToParentQuest notify failed', e);
+          }
         }
       });
-
-    // Notify the delegator — they fired off a delegation and otherwise have
-    // no signal it was actually accepted/declined until they happen to
-    // reopen the backlog. Only ACCEPT/DECLINE are terminal-enough to be
-    // worth a ping here; SNOOZE/BLOCKER/TRADE/DISCUSS already surface via
-    // PushbackSheet's existing flow.
-    if (newStatus === 'ACCEPTED' || newStatus === 'DECLINED') {
-      try {
-        const { useFamilyStore } = require('./familyStore');
-        const { useChatStore } = require('./chatStore');
-        const delegate = useFamilyStore.getState().members.find((m: any) => m.id === assignment.assignedTo);
-        const chore = get().chores.find(c => c.id === assignment.choreId);
-        const firstName = delegate?.name?.split(' ')[0] ?? 'They';
-        const msg = newStatus === 'ACCEPTED'
-          ? `✅ ${firstName} accepted "${chore?.title ?? 'that task'}".`
-          : `🚫 ${firstName} declined "${chore?.title ?? 'that task'}".`;
-        useChatStore.getState().sendMessage(assignment.assignedBy, assignment.assignedTo, msg);
-      } catch (e) {
-        console.warn('[choreStore] respondToParentQuest notify failed', e);
-      }
-    }
   },
 
   completeParentQuest: (assignmentId, completedBy) => {
@@ -4199,34 +4404,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : a
       ),
     }));
-    dbUpdate('parent_quest_assignments', assignmentId, {
-      status:       'COMPLETED',
-      completed_at: now,
-      updated_at:   now,
-    }, () => {
-      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
-    });
-    console.log(`[choreStore] completeParentQuest → syncing chore ${assignment.choreId} status=completed`);
-    get().updateChore(assignment.choreId, { status: 'completed' });
-
-    // Let the delegator know their delegated task actually got done —
-    // matches the accept/decline notify above and the recall notify's
-    // existing pattern.
-    try {
-      const { useFamilyStore } = require('./familyStore');
-      const { useChatStore } = require('./chatStore');
-      const delegate = useFamilyStore.getState().members.find((m: any) => m.id === completedBy);
-      const chore = get().chores.find(c => c.id === assignment.choreId);
-      const firstName = delegate?.name?.split(' ')[0] ?? 'They';
-      useChatStore.getState().sendMessage(assignment.assignedBy, completedBy,
-        `🎉 ${firstName} completed "${chore?.title ?? 'that task'}"!`);
-    } catch (e) {
-      console.warn('[choreStore] completeParentQuest notify failed', e);
-    }
+    const prevChore = get().chores.find(c => c.id === assignment.choreId);
+    supabase.rpc('complete_parent_quest', { p_assignment_id: assignmentId, p_completed_by: completedBy })
+      .then(({ error }) => {
+        if (error) {
+          console.warn(`[choreStore] completeParentQuest RPC failed for ${assignmentId}`, error.message);
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a),
+            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
+          }));
+          showToast("That didn't go through — check your connection and try again", 'error');
+          return;
+        }
+        try {
+          const { useFamilyStore } = require('./familyStore');
+          const { useChatStore } = require('./chatStore');
+          const delegate = useFamilyStore.getState().members.find((m: any) => m.id === completedBy);
+          const chore = get().chores.find(c => c.id === assignment.choreId);
+          const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+          useChatStore.getState().sendMessage(assignment.assignedBy, completedBy,
+            `🎉 ${firstName} completed "${chore?.title ?? 'that task'}"!`);
+        } catch (e) {
+          console.warn('[choreStore] completeParentQuest notify failed', e);
+        }
+      });
   },
 
-  cancelLockedAssignment: (assignmentId) => {
-    console.log(`[choreStore] cancelLockedAssignment called — assignmentId=${assignmentId}`);
+  cancelLockedAssignment: (assignmentId, byMemberId) => {
     const now = new Date().toISOString();
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
@@ -4240,13 +4444,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : a
       ),
     }));
-    dbUpdate('parent_quest_assignments', assignmentId, {
-      status:     'DECLINED',
-      is_locked:  false,
-      updated_at: now,
-    }, () => {
-      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
-    });
+    supabase.rpc('cancel_locked_assignment', { p_assignment_id: assignmentId, p_by_member_id: byMemberId })
+      .then(({ error }) => {
+        if (!error) return;
+        console.warn(`[choreStore] cancelLockedAssignment RPC failed for ${assignmentId}`, error.message);
+        set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
+        showToast("That didn't go through — check your connection and try again", 'error');
+      });
     // Chore was already unassigned/todo while locked (respondToParentQuest's
     // PARKED branch clears assignedToId) — no chore-row change needed here,
     // it naturally re-enters the open pool now that no live assignment
@@ -4258,43 +4462,48 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // delegation. Only PENDING is recallable: once accepted the delegate has
   // committed to it (recall at that point would be a "reassign" decision,
   // a different, already-existing flow via DelegateSheet). See spec 1.3/6.5.
+  // Rewritten onto recall_parent_quest — was a client-side-only
+  // `assignment.assignedBy !== recallerId` check (the exact staleness class
+  // respond_to_parent_quest was already rewritten to close): a stale
+  // client could show the Recall button to someone unauthorized and the
+  // raw dbUpdate would have gone through unchecked. The RPC re-validates
+  // against the live row.
   recallParentQuest: (assignmentId, recallerId) => {
-    const now = new Date().toISOString();
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] recallParentQuest ABORTED — no assignment found with id=${assignmentId}`);
       return;
     }
-    if (assignment.assignedBy !== recallerId) {
-      console.warn(`[choreStore] recallParentQuest ABORTED — ${recallerId} is not the delegator of ${assignmentId}`);
-      return;
-    }
-    if (assignment.status !== 'PENDING') {
-      console.warn(`[choreStore] recallParentQuest ABORTED — assignment ${assignmentId} is not PENDING (status=${assignment.status})`);
-      return;
-    }
+    const now = new Date().toISOString();
+    const prevChore = get().chores.find(c => c.id === assignment.choreId);
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId ? { ...a, status: 'DECLINED', updatedAt: now } : a
       ),
+      chores: s.chores.map(c => c.id === assignment.choreId ? { ...c, assignedToId: recallerId, status: 'todo' } : c),
     }));
-    dbUpdate('parent_quest_assignments', assignmentId, { status: 'DECLINED', updated_at: now }, () => {
-      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
-    });
-    // Reassign the underlying chore straight back to the recaller — they
-    // said "I'll just do it myself," not "reopen this to the family pool."
-    get().updateChore(assignment.choreId, { assignedToId: recallerId, status: 'todo' });
-
-    try {
-      const { useFamilyStore } = require('./familyStore');
-      const { useChatStore } = require('./chatStore');
-      const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
-      const chore = get().chores.find(c => c.id === assignment.choreId);
-      useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
-        `↩️ ${recaller?.name?.split(' ')[0] ?? 'They'} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
-    } catch (e) {
-      console.warn('[choreStore] recallParentQuest notify failed', e);
-    }
+    supabase.rpc('recall_parent_quest', { p_assignment_id: assignmentId, p_recaller_id: recallerId })
+      .then(({ error }) => {
+        if (error) {
+          console.warn(`[choreStore] recallParentQuest RPC failed for ${assignmentId}`, error.message);
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a),
+            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
+          }));
+          showToast("That didn't go through — check your connection and try again", 'error');
+          return;
+        }
+        try {
+          const { useFamilyStore } = require('./familyStore');
+          const { useChatStore } = require('./chatStore');
+          const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
+          const chore = get().chores.find(c => c.id === assignment.choreId);
+          useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
+            `↩️ ${recaller?.name?.split(' ')[0] ?? 'They'} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
+        } catch (e) {
+          console.warn('[choreStore] recallParentQuest notify failed', e);
+        }
+      });
   },
 
   appreciationPing: (assignmentId, fromId, message) => {
@@ -4708,8 +4917,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   getParentReviewDeck: () => {
+    // Was `&& !c.isPrivateParent` — silently undercounted the badge relative
+    // to what ParentReviewDeck.tsx actually renders (its own pendingSubmissions
+    // filter, `chores.filter(c => c.status === 'pending_approval')`, has no
+    // such exclusion, and parent_only_quest submissions ARE real, actionable
+    // approve/decline cards there — a co-parent-delegated adult task goes
+    // through the same submit flow as any other chore). Dropped to match.
     return get().chores
-      .filter(c => c.status === 'pending_approval' && !c.isPrivateParent)
+      .filter(c => c.status === 'pending_approval')
       .sort((a, b) => (a.submittedAt ?? a.createdAt) < (b.submittedAt ?? b.createdAt) ? -1 : 1);
   },
 
@@ -4749,6 +4964,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     );
   },
 
+  // The one shared place "which assignment, if any, is currently live on
+  // this chore" is computed — DelegateSheet, MyAdultQuestCard, and
+  // HouseholdBacklogSection each used to hand-roll their own
+  // .find(a => a.choreId === X && ['PENDING','ACCEPTED',...].includes(a.status))
+  // with slightly different status lists, which is exactly the drift class
+  // this session's bugs kept coming from (a co-parent's delegation being
+  // invisible to the other parent, a stuck assignment nobody's UI agreed
+  // was "live"). Same status set as getActiveAssignmentChoreIds, plus
+  // ACCEPTED (a chore someone has already taken on is still "live" for the
+  // purposes of "who currently holds this").
+  getLiveAssignmentForChore: (choreId) => {
+    const live = new Set(['PENDING', 'ACCEPTED', 'PARKED', 'SNOOZED']);
+    return get().parentAssignments.find(a => a.choreId === choreId && live.has(a.status));
+  },
+
   getMyDirectPending: (memberId) => {
     const nowIso = new Date().toISOString();
     const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
@@ -4784,12 +5014,40 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // with no card anywhere until the assignee responded, so "assigned a
   // task" and "nothing happened yet" looked identical from the assigner's
   // side.
+  // A delegation to a THIRD PARTY (grandparent, not the other parent) is a
+  // household responsibility, not a private negotiation between the two
+  // people on it — every parent should be able to see it's pending, Nudge
+  // it, or Recall it, not just whichever parent happened to be the one who
+  // tapped "assign." Previously scoped strictly to a.assignedBy === memberId,
+  // so the SECOND parent had zero visibility into a co-parent's delegation
+  // to a GP — no card, no way to know it existed, no way to act on it.
+  // A parent-to-PARENT delegation (assignee is also a parent/senior... no,
+  // assignee role check below) stays assigner-scoped — that one genuinely
+  // is a private two-person negotiation (PushbackSheet's SNOOZE/BLOCKER/
+  // TRADE/DISCUSS model), not a household-wide broadcast.
   getMyOutgoingPending: (memberId) => {
     const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
-    return get().parentAssignments.filter(a =>
-      a.assignedBy === memberId && a.assignedBy !== a.assignedTo && !a.isLocked && !systemBIds.has(a.choreId) &&
-      (a.status === 'PENDING' || a.status === 'SNOOZED' || a.status === 'PARKED')
-    );
+    const myRole = (() => {
+      try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === memberId)?.role; }
+      catch { return null; }
+    })();
+    const assigneeRole = (id: string) => {
+      try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === id)?.role; }
+      catch { return null; }
+    };
+    return get().parentAssignments.filter(a => {
+      if (a.assignedBy === a.assignedTo || a.isLocked || systemBIds.has(a.choreId)) return false;
+      if (!(a.status === 'PENDING' || a.status === 'SNOOZED' || a.status === 'PARKED')) return false;
+      if (a.assignedBy === memberId) return true;
+      // Not the one who assigned it — only visible to another PARENT
+      // (never a senior/GP peeking at someone else's delegation), and only
+      // when the target is a third party (senior/GP), not the co-parent's
+      // own private handoff to this exact member (which is System-A's
+      // getMyDirectPending's job, not this one).
+      if (myRole !== 'parent') return false;
+      const targetRole = assigneeRole(a.assignedTo);
+      return targetRole === 'senior' && a.assignedTo !== memberId;
+    });
   },
 
   getMemberBalance: (memberId) => {

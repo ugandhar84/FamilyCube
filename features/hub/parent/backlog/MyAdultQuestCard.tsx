@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { ChevronUp, ChevronDown, Check, Send, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
+import { useChoreStore } from '@/store/choreStore';
 import { showToast } from '@/components/AppToast';
 import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
@@ -34,7 +35,15 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
   // line and Nudge action OthersAdultQuestCard (the read-only view of a
   // task assigned to a co-parent) already has, so this reads as the mirror
   // image of that card instead of two visually unrelated things.
-  const linkedAssignment = parentAssignments.find(x => x.choreId === q.id && x.status !== 'COMPLETED' && x.status !== 'DECLINED');
+  // Same shared lookup DelegateSheet/HouseholdBacklogSection use — was its
+  // own hand-rolled predicate here (status !== 'COMPLETED' && !== 'DECLINED',
+  // a THIRD distinct status list from what DelegateSheet's own copy used),
+  // one of several independent re-derivations of "which assignment is
+  // currently live on this chore" that drifted apart from each other.
+  // useChoreStore(s => ...) (not .getState()) so this stays reactive —
+  // a plain getState() read here wouldn't re-render when parentAssignments
+  // changes out from under an already-mounted card.
+  const linkedAssignment = useChoreStore(s => s.getLiveAssignmentForChore(q.id));
   const assignerId = linkedAssignment?.assignedBy ?? (q.createdById !== active.id ? q.createdById : undefined);
   const assigner = assignerId && assignerId !== active.id ? members.find(m => m.id === assignerId) : undefined;
 
@@ -77,7 +86,7 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={() => {
-          const a = parentAssignments.find(x => x.choreId === q.id && x.status !== 'COMPLETED' && x.status !== 'DECLINED');
+          const a = useChoreStore.getState().getLiveAssignmentForChore(q.id);
           if (a) completeParentQuest(a.id, active.id);
           else updateQuest(q.id, { status: 'done' });
         }}

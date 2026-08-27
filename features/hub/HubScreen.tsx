@@ -3,6 +3,8 @@ import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { useDeviceClass } from '@/lib/useDeviceClass';
+import KioskScreen from '@/features/kiosk/KioskScreen';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
@@ -28,6 +30,7 @@ import { AppsQuickAccessPills } from './AppsQuickAccessPills';
 
 export default function HubScreen() {
   const { colors, isDark } = useTheme();
+  const { deviceClass } = useDeviceClass();
   const { members, activeMemberId, setActiveMember, loaded, loadFromStorage } = useFamilyStore();
   const { loadFromStorage: loadQuests }  = useQuestStore();
   const { loadFromStorage: loadEvents }  = useEventStore();
@@ -89,6 +92,13 @@ export default function HubScreen() {
   const isKid    = !isParent && !isSenior && !isTeen;
 
   if (!active) return null;
+
+  // Wall-mounted kitchen tablet — a fully separate dashboard/nav-rail UI,
+  // not the phone Hub resized. See features/kiosk/ for the whole feature;
+  // this is its only touch-point into existing mobile screens. Placed after
+  // all hooks above (Rules of Hooks) so a live device-class change (window
+  // resize/rotation) never skips a hook on some renders but not others.
+  if (deviceClass === 'kitchenHub') return <KioskScreen />;
 
   // Shape EnRouteBanner/ParentView/KidView/etc already expect, one per
   // active trip — resolved fresh on every render from the synced trip rows

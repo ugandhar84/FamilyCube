@@ -41,7 +41,7 @@ export function HouseholdBacklogSection({
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   respondToParentQuest: (id: string, response: { action: 'ACCEPT' }) => void;
-  cancelLockedAssignment: (assignmentId: string) => void;
+  cancelLockedAssignment: (assignmentId: string, byMemberId: string) => void;
   recallParentQuest: (assignmentId: string, recallerId: string) => void;
   appreciationPing: (assignmentId: string, fromId: string, message: string) => void;
   handlePullTask: (chore: ChoreTask) => void;
@@ -66,9 +66,11 @@ export function HouseholdBacklogSection({
 
   const badgeCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
     + myDirectPending.length + myLockedItems.length + myOutgoingPending.length;
+  // getLiveAssignmentForChore — same shared lookup DelegateSheet/
+  // MyAdultQuestCard use; this had its own independent status predicate.
+  const getLiveAssignmentForChore = useChoreStore(s => s.getLiveAssignmentForChore);
   const unclaimedPool = questPool.filter(c =>
-    !systemBIds.has(c.id) &&
-    !parentAssignments.find(a => a.choreId === c.id && a.status !== 'COMPLETED' && a.status !== 'DECLINED')
+    !systemBIds.has(c.id) && !getLiveAssignmentForChore(c.id)
   );
   // Was missing othersAdultQuests and myAdultQuests from this sum — the
   // "🎉 Backlog is clear" empty state rendered directly underneath a real
@@ -145,9 +147,15 @@ export function HouseholdBacklogSection({
                 {myOutgoingPending.map(a => {
                   const chore = allChores.find(c => c.id === a.choreId);
                   if (!chore) return null;
+                  // myOutgoingPending now includes a co-parent's delegation
+                  // to a third party (GP), not just this viewer's own — but
+                  // recallParentQuest only lets the ORIGINAL assigner take
+                  // it back (recalling someone else's delegation isn't a
+                  // co-parent's call to make, only Nudge is). Only show the
+                  // Recall action when this viewer is actually who assigned it.
                   return (
                     <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={isDark}
-                      onRecall={a.status === 'PENDING' ? () => recallParentQuest(a.id, active.id) : undefined} />
+                      onRecall={a.status === 'PENDING' && a.assignedBy === active.id ? () => recallParentQuest(a.id, active.id) : undefined} />
                   );
                 })}
               </View>

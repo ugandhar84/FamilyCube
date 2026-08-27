@@ -29,7 +29,6 @@
  */
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
-import { supabase } from '@/lib/supabase';
 
 export type CantMakeItItem =
   | { kind: 'chore'; item: ChoreTask }
@@ -43,7 +42,7 @@ export function resolveCantMakeIt(
   reason: string,
   byMemberId: string,
   opts?: { reassignToMemberId?: string; reassignToMemberName?: string; laterDate?: string; laterTime?: string },
-): void {
+): void | Promise<boolean> {
   if (target.kind === 'chore') {
     const { item } = target;
     switch (outcome) {
@@ -52,32 +51,32 @@ export function resolveCantMakeIt(
         return;
       case 'reassign':
         if (!opts?.reassignToMemberId) return;
-        // Now the reassign_chore RPC (see migrations
-        // 20260905120000_chore_participant_rpcs.sql and
-        // 20260905130000_reassign_chore_reason.sql) instead of a raw
-        // updateChore patch — single entry point that atomically bundles
-        // assigned_to_id/is_pool/status/rejection_reason/declined_at
-        // together in one write, and writes a real activity_log audit row
-        // this call previously skipped.
-        supabase.rpc('reassign_chore', {
-          p_chore_id: item.id, p_new_member_id: opts.reassignToMemberId, p_by_member_id: byMemberId, p_reason: reason,
-        }).then(({ error }) => {
-          if (error) console.warn('[cantMakeIt] reassign_chore failed', error.message);
-        });
+        // Named handoff, not a blind immediate reassignment — the receiver
+        // gets a real Accept ("I've got it") / Pass-again ("can't either —
+        // put it back") choice via offerChoreHandoff (offer_chore_handoff/
+        // accept_chore_handoff/decline_chore_handoff RPCs). This used to
+        // call reassign_chore directly, which sets assigned_to_id
+        // immediately — the chore just appeared live on the receiver's
+        // screen with zero say in it, the exact "blind repost" the
+        // master-flow spec calls out as wrong for this specific outcome.
+        useChoreStore.getState().offerChoreHandoff(item.id, opts.reassignToMemberId, byMemberId, reason);
         return;
       case 'later':
-        // Same shape as declineChoreAssignment's plain-chore branch, minus
-        // isPool — this goes back to the creator to re-time, not straight
-        // into the open pool at the old time.
-        useChoreStore.getState().updateChore(item.id, {
-          assignedToId: undefined, status: 'todo', claimedAt: undefined,
-          rejectionReason: reason, declinedAt: new Date().toISOString(),
-          ...(opts?.laterDate ? { dueDate: opts.laterDate } : {}),
-        });
+        // A counter-offer awaiting a parent's Approve/Decline, not a
+        // silent self-service reschedule — CantMakeItSheet's own copy
+        // ("Goes back to a parent to re-time") previously didn't match
+        // what this actually did (an immediate, unconditional dueDate
+        // rewrite). proposeLaterDate/approveLaterDate/declineLaterDate
+        // leave dueDate untouched until a parent actually approves it.
+        if (!opts?.laterDate) return;
+        useChoreStore.getState().proposeLaterDate(item.id, byMemberId, opts.laterDate, reason);
         return;
       case 'cancel':
-        useChoreStore.getState().deleteChore(item.id);
-        return;
+        // Only the creator or a parent may cancel outright (master-flow
+        // spec) — enforced server-side by cancel_chore, not trusted from
+        // client role state. Returns a promise so the sheet can wait for
+        // the real answer before showing "Cancelled" and closing.
+        return useChoreStore.getState().cancelChore(item.id, byMemberId);
     }
     return;
   }

@@ -16,6 +16,7 @@
  * whatever the Calendar tab is doing.
  */
 import { useEffect, useState, useCallback } from 'react';
+import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { fromRow, type FamilyEvent } from '@/store/eventStore';
 import { localToday } from './hubUtils';
@@ -91,10 +92,37 @@ export function useUpcomingOpenEvents(familyId: string | undefined) {
           });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Same class of gap confirmed via QA audit as eventStore.ts's/
+        // choreStore.ts's own channels: this one had NO status handling at
+        // all (not even a log line) and no foreground-triggered refetch —
+        // this hook can stay mounted for the entire time the app is
+        // backgrounded (it powers an always-visible Hub card), so a
+        // silently-dead socket here had no recovery path whatsoever short
+        // of the component unmounting. A real force-refetch on every
+        // foreground transition below is the actual fix; this log is only
+        // so a dead socket is at least visible in diagnostics.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[useUpcomingOpenEvents] realtime hub-open-events:${familyId} unhealthy (${status})`);
+        }
+      });
 
     return () => { supabase.removeChannel(channel); };
   }, [familyId]);
+
+  // Force a real re-fetch on every foreground transition — independent of
+  // whatever state the realtime socket is actually in, matching the same
+  // AppState-driven recovery pattern added to app/_layout.tsx for
+  // choreStore/eventStore. This hook has no access to that shared handler
+  // (it's component-scoped, mounted per-Hub-render, not a module-level
+  // store), so it needs its own listener rather than relying on the
+  // global one to happen to also cover it.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refetch();
+    });
+    return () => sub.remove();
+  }, [refetch]);
 
   return { events, loaded, refetch };
 }

@@ -104,8 +104,13 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const siblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
 
   // ── My Chores (same normalized model KidView uses) ──────────────────────────
-  const myQuests = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id)) && !q.awaitingParentApproval);
-  const poolQuests = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval);
+  // See KidView.tsx's identical fix — a chore mid-named-handoff stays
+  // assigned to the ORIGINAL holder until accepted, so the receiver needs
+  // their own visibility path or their Accept/Pass card never appears.
+  const myQuests = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id) || q.pendingHandoffTo === active.id) && !q.awaitingParentApproval);
+  // inviteGrandparents-flagged chores stay GP-pool-only even while
+  // isPool/todo (e.g. after a GP backs out) — excluded here too.
+  const poolQuests = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents);
   const todoQuests = myQuests.filter(q => q.status === 'todo' && !q.isPool);
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests = myQuests.filter(q => q.status === 'pending_approval');

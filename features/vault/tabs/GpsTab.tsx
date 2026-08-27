@@ -665,23 +665,21 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 
         {/* Was only rendered while tracking===true, so a user with location
             sharing off had no way to even discover this setting exists.
-            Always shown now; the Switch itself disables (grayed, non-
-            interactive) until tracking is on, so it's clear the setting is
-            real but currently inactive, not a dead control. */}
-        <View style={[g.exactToggleRow, { borderColor: colors.border, opacity: tracking ? 1 : 0.5 }]}>
+            Always shown now, and always interactive — this is just a
+            preference for whenever sharing IS on, not something that
+            needs sharing on right now to set. */}
+        <View style={[g.exactToggleRow, { borderColor: colors.border }]}>
           <View style={{ flex: 1, marginRight: 10 }}>
             <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
               Share exact address
             </Text>
             <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
-              {!tracking
-                ? 'Turn on location sharing above to use this'
-                : shareExactAddress
-                  ? 'Family sees your exact street number, e.g. "412 Wimberley Dr"'
-                  : 'Family sees street name only, e.g. "Wimberley Dr"'}
+              {shareExactAddress
+                ? 'Family sees your exact street number, e.g. "412 Wimberley Dr"'
+                : 'Family sees street name only, e.g. "Wimberley Dr"'}
             </Text>
           </View>
-          <Switch value={shareExactAddress} onValueChange={toggleExactAddress} disabled={!tracking}
+          <Switch value={shareExactAddress} onValueChange={toggleExactAddress}
             trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
         </View>
 

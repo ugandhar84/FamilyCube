@@ -119,7 +119,7 @@ export interface ChoreTask {
   claimedAt?: string;
   // Set while status === 'terms_changed' — old/new coins/due-date values
   // for the claimant's Accept/Hand-back card. See propose_terms_change RPC.
-  pendingTerms?: { old: { coinsReward: number; basePoints: number; dueDate?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string }; changedBy: string; changedAt: string };
+  pendingTerms?: { old: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; changedBy: string; changedAt: string };
   requiresPhotoProof: boolean;
   difficulty?: 'easy' | 'medium' | 'hard' | 'hero';
   recurrenceRule: RecurrenceRule;
@@ -1064,11 +1064,25 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
 function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onFailure?: () => void): Promise<{ ok: boolean }> {
   _fetchedAt = 0;
   console.log(`[choreStore] → DB update ${table}/${id}`, patch);
-  return Promise.resolve(supabase.from(table).update(patch).eq('id', id)).then(({ error }) => {
+  // QA TC-43 — .update().eq('id', id) with no matching row returns NO error
+  // and zero affected rows, which this previously reported as {ok:true}. An
+  // optimistic edit applied locally to a chore someone else had already
+  // deleted (a real race, not hypothetical — a parent cancels while another
+  // parent is mid-edit) looked like a successful save with nothing actually
+  // written server-side, silently reverting on the next real sync with zero
+  // explanation. .select('id') makes Postgrest report the actually-matched
+  // rows so a real 0-row case is now distinguishable from a genuine error.
+  return Promise.resolve(supabase.from(table).update(patch).eq('id', id).select('id')).then(({ data, error }) => {
     if (error) {
       console.warn(`[choreStore] ✗ DB update ${table}/${id} FAILED`, error.message);
       onFailure?.();
       showToast("Couldn't save — check your connection and try again", 'error');
+      return { ok: false };
+    }
+    if (!data || data.length === 0) {
+      console.warn(`[choreStore] ✗ DB update ${table}/${id} matched 0 rows — likely already deleted`);
+      onFailure?.();
+      showToast("Couldn't save — this may have already been removed", 'error');
       return { ok: false };
     }
     console.log(`[choreStore] ✓ DB update ${table}/${id} ok`);
@@ -1519,6 +1533,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   updateChore: (id, rawUpdates) => {
     const prevChore = get().chores.find(c => c.id === id);
+    // QA TC-38 — SeniorView.tsx's openEditSponsoredQuest/handleCreateQuest
+    // already let a grandparent edit their own sponsored quest via this same
+    // updateChore call, but with no server-side backstop: the "only reachable
+    // while pending_parent_approval" claim relied entirely on the UI never
+    // exposing the edit button once a parent has acted, not on updateChore
+    // itself refusing a stale/direct write. Once a parent has approved or
+    // declined, the terms are final — reject any further edit here instead
+    // of trusting the client to never ask.
+    if (prevChore?.categoryType === 'grandparent_quest' && prevChore.status !== 'pending_parent_approval') {
+      const editableFields = ['title', 'description', 'basePoints', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
+      if (editableFields.some(f => f in rawUpdates)) {
+        console.warn(`[choreStore] blocked edit to grandparent_quest ${id} — status is ${prevChore.status}, not pending_parent_approval`);
+        showToast("This quest has already been reviewed — it can't be edited anymore", 'error');
+        return;
+      }
+    }
     // QA punch list #2 — "Terms changed after someone took it" was
     // entirely missing: a plain patch here silently rewrote coins/due-date
     // on an already-claimed chore with zero notice to the claimant. A
@@ -1533,16 +1563,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // plain, immediate edit — nobody has a stake in it yet).
     if (
       prevChore && prevChore.status === 'in_progress' && prevChore.assignedToId &&
-      (('coinsReward' in rawUpdates) || ('basePoints' in rawUpdates) || ('dueDate' in rawUpdates))
+      // QA TC-36 — dueTime was missing from this gate entirely, so a
+      // due-time-only edit on a claimed chore fell through to the plain
+      // patch below with zero notice to the claimant, unlike coins/
+      // dueDate edits on the same chore.
+      (('coinsReward' in rawUpdates) || ('basePoints' in rawUpdates) || ('dueDate' in rawUpdates) || ('dueTime' in rawUpdates))
     ) {
       const reviewerId = getActiveMemberId();
       if (reviewerId) {
         const newCoins = 'coinsReward' in rawUpdates ? (rawUpdates as any).coinsReward : undefined;
         const newBase   = 'basePoints'  in rawUpdates ? (rawUpdates as any).basePoints  : undefined;
         const newDue     = 'dueDate'     in rawUpdates ? (rawUpdates as any).dueDate     : undefined;
+        const newDueTime = 'dueTime'     in rawUpdates ? (rawUpdates as any).dueTime     : undefined;
         supabase.rpc('propose_terms_change', {
           p_chore_id: id, p_by_member_id: reviewerId,
-          p_new_coins_reward: newCoins ?? null, p_new_base_points: newBase ?? null, p_new_due_date: newDue ?? null,
+          p_new_coins_reward: newCoins ?? null, p_new_base_points: newBase ?? null,
+          p_new_due_date: newDue ?? null, p_new_due_time: newDueTime ?? null,
         }).then(({ error }) => {
           if (error) {
             console.warn('[choreStore] propose_terms_change RPC failed', error.message);

@@ -110,7 +110,7 @@ export interface Quest {
   // choreAdapter.ts) — a parent edited coins/due-date on this already-
   // claimed quest and the claimant needs to Accept or Hand It Back before
   // continuing. pendingTerms carries the old/new values for the card.
-  pendingTerms?:    { old: { coinsReward: number; basePoints: number; dueDate?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string }; changedBy: string; changedAt: string };
+  pendingTerms?:    { old: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; changedBy: string; changedAt: string };
   // Real status is 'kid_disputed_redo' — the assignee disputed a redo
   // request (dispute_redo RPC) instead of resubmitting, waiting on a
   // second parent to review the original submission directly.

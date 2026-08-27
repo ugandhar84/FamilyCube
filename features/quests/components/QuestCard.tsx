@@ -688,6 +688,11 @@ export function QuestCard({
                   Due: {q.pendingTerms.old.dueDate ?? 'none'} → {q.pendingTerms.new.dueDate ?? 'none'}
                 </Text>
               )}
+              {q.pendingTerms.old.dueTime !== q.pendingTerms.new.dueTime && (
+                <Text style={[s.declineText, { color: colors.textSecondary }]}>
+                  Due time: {q.pendingTerms.old.dueTime ?? 'none'} → {q.pendingTerms.new.dueTime ?? 'none'}
+                </Text>
+              )}
             </View>
           </View>
         )}

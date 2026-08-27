@@ -422,6 +422,28 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     };
   }, [pinned]);
 
+  // Active member always first (it's "my" row — the one thing worth
+  // anchoring in place regardless of anyone's activity), then everyone
+  // else sorted by most-recently-updated first, so a family member who
+  // just moved/refreshed surfaces near the top instead of wherever the DB
+  // happened to return their row. Was unordered ([...pinned, ...unpinned]
+  // with no sort inside either group), so the list visually shuffled on
+  // every realtime reload with no predictable order at all.
+  //
+  // Must stay above the `if (loading) return` early-return below — hooks
+  // can never be conditional, and this one previously sat after it, which
+  // corrupted the hook order (and crashed with "Rendered more hooks than
+  // during the previous render") the instant `loading` flipped from true
+  // to false on a live device.
+  const roster = useMemo(() => {
+    const all = [...pinned, ...unpinned];
+    return all.sort((a, b) => {
+      if (a.member_id === activeMemberId) return -1;
+      if (b.member_id === activeMemberId) return 1;
+      return new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime();
+    });
+  }, [pinned, unpinned, activeMemberId]);
+
   // MapView is uncontrolled (initialRegion only) so refreshes don't hard-snap
   // the camera — react-native-maps' `region` prop re-centers/re-zooms on
   // every render when fed a new object, which is what caused the glitchy
@@ -521,22 +543,6 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       <CubeSpinner size={28} />
     </View>
   );
-
-  // Active member always first (it's "my" row — the one thing worth
-  // anchoring in place regardless of anyone's activity), then everyone
-  // else sorted by most-recently-updated first, so a family member who
-  // just moved/refreshed surfaces near the top instead of wherever the DB
-  // happened to return their row. Was unordered ([...pinned, ...unpinned]
-  // with no sort inside either group), so the list visually shuffled on
-  // every realtime reload with no predictable order at all.
-  const roster = useMemo(() => {
-    const all = [...pinned, ...unpinned];
-    return all.sort((a, b) => {
-      if (a.member_id === activeMemberId) return -1;
-      if (b.member_id === activeMemberId) return 1;
-      return new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime();
-    });
-  }, [pinned, unpinned, activeMemberId]);
 
   return (
     <View style={{ flex: 1 }}>

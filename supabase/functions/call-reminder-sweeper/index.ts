@@ -110,6 +110,15 @@ function localWallClockToUTC(wallClock: string, timeZone: string): Date {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
+  // Unconditional baseline log — every existing console.* call in this
+  // file was inside a conditional/error branch, so there was never
+  // confirmation that ANY console output from this function actually
+  // reaches the dashboard's log stream at all (only lifecycle Boot/
+  // Shutdown events were ever confirmed visible, live-reported). If this
+  // line doesn't show up either, the problem is log delivery itself, not
+  // anything downstream in the sweep logic.
+  console.log('[call-reminder-sweeper] invoked at', new Date().toISOString());
+
   try {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -277,8 +286,22 @@ serve(async (req) => {
       console.error('[call-reminder-sweeper] claim upsert failed, aborting sweep', claimError);
       return json({ ok: false, error: claimError.message }, 500);
     }
-    const claimedSet = new Set((claimed ?? []).map((r: any) => `${r.item_type}:${r.item_id}:${r.due_at}`));
-    const toRing = targets.filter(t => claimedSet.has(`${t.itemType}:${t.itemId}:${dueAtKey(t.dueAt)}`));
+    // Was: keyed claimedSet off the row's OWN due_at as Postgres echoes it
+    // back ("2026-08-27T00:53:00+00:00", timestamptz's own text format)
+    // and compared against dueAtKey(t.dueAt) — JS's toISOString()
+    // ("2026-08-27T00:53:00.000Z"). Same instant, different string
+    // representation, so the .has() lookup NEVER matched — toRing was
+    // silently empty on every single invocation regardless of family or
+    // member, meaning sendVoipPush was never reached at all since the
+    // atomic-claim rewrite was introduced (confirmed live via full-path
+    // tracing: claim upsert correctly returns the claimed row, but
+    // toRingCount is 0 immediately after). Keying instead by item_type
+    // and item_id alone is safe here — claimRows was built 1:1 from
+    // targets in the same order for this single request, so a claimed
+    // (item_type,item_id) can only mean the (due_at) this request itself
+    // sent for it.
+    const claimedSet = new Set((claimed ?? []).map((r: any) => `${r.item_type}:${r.item_id}`));
+    const toRing = targets.filter(t => claimedSet.has(`${t.itemType}:${t.itemId}`));
     if (toRing.length === 0) return json({ ok: true, rung: 0, alreadyRung: targets.length });
 
     // ── Resolve VoIP tokens for each target's members ─────────────────────────

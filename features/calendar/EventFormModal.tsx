@@ -32,6 +32,7 @@ import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eve
 import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
+import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
 
 import { X } from './components/eventForm/Icons';
 import Chip from './components/eventForm/Chip';
@@ -1853,19 +1854,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                    <TextInput
-                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+                    <LocationAutocompleteInput
                       value={editPickupLocation} onChangeText={setEditPickupLocation}
+                      placeholder="Home / School" colors={colors}
                       onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Pickup from" on "${event.title}" (id=${event.id}) newValue=${editPickupLocation} [features/calendar/EventFormModal.tsx]`)}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-                    <TextInput
-                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
+                    <LocationAutocompleteInput
                       value={editDropLocation} onChangeText={setEditDropLocation}
+                      placeholder="Chess Club, Oak St" colors={colors}
                       onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Drop to" on "${event.title}" (id=${event.id}) newValue=${editDropLocation} [features/calendar/EventFormModal.tsx]`)}
                     />
                   </View>

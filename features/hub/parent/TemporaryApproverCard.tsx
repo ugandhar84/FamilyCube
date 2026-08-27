@@ -66,7 +66,7 @@ export function TemporaryApproverCard({
                     {grantee?.name.split(' ')[0] ?? 'Member'}
                   </Text>
                   <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
-                    Until {new Date(g.expiresAt).toLocaleString()}
+                    Until {new Date(g.expiresAt).toLocaleString(undefined, { hour12: true })}
                   </Text>
                 </View>
                 <Pressable

@@ -180,7 +180,7 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
 
     try {
       const { useChatStore } = require('./chatStore');
-      const untilLabel = new Date(expiresAt).toLocaleString();
+      const untilLabel = new Date(expiresAt).toLocaleString(undefined, { hour12: true });
       useChatStore.getState().sendMessage(grantedToMemberId, grantedByMemberId,
         `🔑 You've been granted temporary approval access until ${untilLabel} — you can approve/decline routine chore submissions until then.`);
     } catch (e) {

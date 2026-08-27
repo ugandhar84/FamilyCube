@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { fmtDate } from '@/lib/dates';
 
 // Money-green — "enabled" status accent, distinct from brand teal used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -84,7 +85,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             </View>
           ) : chore.dueDate && !isExp ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Due {chore.dueDate}</Text>
+              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Due {fmtDate(chore.dueDate)}</Text>
               {(chore as any).openToGP && <HeartHandshake size={10} color={GP_VIOLET} />}
             </View>
           ) : (chore as any).openToGP && !isExp ? (
@@ -147,7 +148,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
       {isExp && (
         <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#E2E8F0', padding: 12, gap: 8 }}>
           {chore.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text> : null}
-          {chore.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {chore.dueDate}</Text> : null}
+          {chore.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {fmtDate(chore.dueDate)}</Text> : null}
           {(chore as any).shoppingItems?.length > 0 && (
             <View style={{ borderRadius: 10, borderWidth: 1,
               borderColor: colors.parent + '40',

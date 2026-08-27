@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+import { fmtDate } from '@/lib/dates';
 
 // Confirmed-green — "GP Welcome" toggle accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -82,7 +83,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
             </Text>
           </View>
           <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2, fontWeight: '600' }}>
-            → {assignee?.name ?? 'Partner'}{q.dueDate ? ` · Due ${q.dueDate}` : ''}
+            → {assignee?.name ?? 'Partner'}{q.dueDate ? ` · Due ${fmtDate(q.dueDate)}` : ''}
           </Text>
           {si?.length > 0 && !isExp && (
             <Text style={{ fontSize: TYPO.micro, color: colors.parent, marginTop: 2 }}>

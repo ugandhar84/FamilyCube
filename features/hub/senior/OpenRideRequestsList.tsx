@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { GP } from './seniorTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { fmtTime } from '@/lib/dates';
 
 // Amber accent matching the header chip below — distinct hue kept as a
 // local constant instead of a repeated bare hex.
@@ -43,7 +44,7 @@ export function OpenRideRequestsList({
               <Car size={15} color="#fff" />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
-                  {evDay}{ev.time ? ` · ${ev.time}` : ''}
+                  {evDay}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
                   {!atWeeklyCap && <Flag size={10} color="#ffffffCC" />}

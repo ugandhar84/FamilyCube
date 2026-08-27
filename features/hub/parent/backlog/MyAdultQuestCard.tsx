@@ -7,6 +7,7 @@ import { showToast } from '@/components/AppToast';
 import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { fmtDate } from '@/lib/dates';
 
 // A parent-only quest assigned to the current parent — mark it done (closing
 // the linked assignment too, if one exists, or a second "Done" card would
@@ -66,10 +67,10 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
           {assigner ? (
             <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2, fontWeight: '600' }}>
-              ← from {assigner.name.split(' ')[0]}{q.dueDate ? ` · Due ${q.dueDate}` : ''}
+              ← from {assigner.name.split(' ')[0]}{q.dueDate ? ` · Due ${fmtDate(q.dueDate)}` : ''}
             </Text>
           ) : q.dueDate && !isExp ? (
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Due {q.dueDate}</Text>
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Due {fmtDate(q.dueDate)}</Text>
           ) : null}
         </View>
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
@@ -100,7 +101,7 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
       {isExp && (
         <View style={{ borderTopWidth: 1, borderTopColor: colors.primary + '30', padding: 12, gap: 6 }}>
           {q.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text> : null}
-          {q.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {q.dueDate}</Text> : null}
+          {q.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {fmtDate(q.dueDate)}</Text> : null}
           {/* Lifecycle timestamps — previously this card showed no dates
               at all beyond a due date, so there was no way to tell when
               this adult task was actually created or claimed/started. */}

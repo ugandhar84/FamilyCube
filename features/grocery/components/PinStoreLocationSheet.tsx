@@ -6,11 +6,12 @@
  * for that store. Skippable — a store with no pin just never geofences.
  */
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, Modal, ActivityIndicator, StyleSheet, TextInput, Keyboard } from 'react-native';
+import { View, Text, Pressable, Modal, ActivityIndicator, StyleSheet, Keyboard } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
 
 export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
   visible: boolean;
@@ -92,23 +93,16 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
             </Text>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 12 }}>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-              backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-              paddingHorizontal: 12 }}>
-              <Ionicons name="search" size={15} color={colors.textTertiary} />
-              <TextInput
-                value={searchText}
-                onChangeText={(t) => { setSearchText(t); setSearchError(null); }}
-                onSubmitEditing={searchAddress}
-                placeholder="Search an address"
-                placeholderTextColor={colors.textTertiary}
-                returnKeyType="search"
-                style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
-              />
-            </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 12, alignItems: 'flex-start' }}>
+            <LocationAutocompleteInput
+              value={searchText}
+              onChangeText={(t) => { setSearchText(t); setSearchError(null); }}
+              placeholder="Search an address"
+              colors={colors}
+              style={{ flex: 1 }}
+            />
             <Pressable onPress={searchAddress} disabled={!searchText.trim() || searching}
-              style={{ width: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+              style={{ width: 44, height: 47, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: (!searchText.trim() || searching) ? colors.textDisabled : colors.primary }}>
               {searching
                 ? <ActivityIndicator color={colors.textInverse} size="small" />

@@ -352,12 +352,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     setHistoryLoading(true);
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
+    // Already date-bounded (today only), but a defensive cap guards
+    // against a pathological case (e.g. GPS glitching and writing many
+    // pings in a burst) rather than assuming today's row count is always
+    // small.
     const { data } = await supabase
       .from('member_location_history')
       .select('lat, lng, address, recorded_at')
       .eq('member_id', memberId)
       .gte('recorded_at', startOfDay.toISOString())
-      .order('recorded_at', { ascending: false });
+      .order('recorded_at', { ascending: false })
+      .limit(500);
     const decrypted = await Promise.all((data ?? []).map(async h => ({
       ...h, address: h.address ? await decryptLocationText(memberId, h.address) : h.address,
     })));
@@ -528,14 +533,28 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           {pinned.map(loc => {
             const rc = roleColor(loc.role);
             const m = members.find(mb => mb.id === loc.member_id);
+            // Same speed-based movement badge as the list row below
+            // (classifyMovement) — was list-row-only, so the map view (the
+            // primary "where's everyone right now" glance) had no
+            // Life360-style driving/walking indicator at all next to a
+            // moving member's pin.
+            const movement = classifyMovement(loc.speed_mph ?? 0);
+            const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
             return (
               <Marker key={loc.member_id} coordinate={{ latitude: loc.lat!, longitude: loc.lng! }}
                 title={loc.name} description={loc.status_text ?? STATUS_LABELS[loc.status]}
                 anchor={{ x: 0.5, y: 1 }}>
                 <View style={g.mapPinWrap}>
-                  <View style={[g.mapPinAvatar, { borderColor: rc }]}>
-                    <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                      siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={34} />
+                  <View>
+                    <View style={[g.mapPinAvatar, { borderColor: rc }]}>
+                      <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={34} />
+                    </View>
+                    {movementMeta && (
+                      <View style={[g.mapPinBadge, { backgroundColor: colors.info, borderColor: '#fff' }]}>
+                        <movementMeta.Icon size={10} color="#fff" />
+                      </View>
+                    )}
                   </View>
                   <View style={[g.mapPinTail, { borderTopColor: rc }]} />
                 </View>
@@ -760,6 +779,8 @@ const g = StyleSheet.create({
   mapPinTail:   { width: 0, height: 0, marginTop: -2,
                   borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
                   borderLeftColor: 'transparent', borderRightColor: 'transparent' },
+  mapPinBadge:  { position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
+                  borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   mapEmptyOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                      alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   mapHeaderOverlay: { position: 'absolute', top: 12, left: 12, right: 12,

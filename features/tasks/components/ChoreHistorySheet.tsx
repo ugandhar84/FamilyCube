@@ -10,6 +10,14 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import { fetchActivityLog, type ActivityLogRow, type ActivityAction } from '@/lib/activityLog';
+import { fmtDate } from '@/lib/dates';
+
+// Raw activity_log field names → a human label, so a row reads "Due date:"
+// instead of the literal camelCase column name "dueDate:".
+const FIELD_LABEL: Record<string, string> = {
+  status: 'Status', assignedToId: 'Assigned to', coinsReward: 'Coins', bonusCoins: 'Bonus coins',
+  dueDate: 'Due date', description: 'Notes',
+};
 
 const VERB: Record<ActivityAction, string> = {
   created: 'Posted', deleted: 'Deleted',
@@ -37,12 +45,34 @@ function actionColor(action: ActivityAction, colors: any): string | undefined {
   return undefined;
 }
 
+// "Reassigned" rows log the raw assignedToId (a member uuid) as old/new
+// value — shown verbatim, a parent just sees two meaningless UUIDs instead
+// of who the chore moved from/to. Resolve through the member list the same
+// way `actor` already is above; falls back to the raw id only if the
+// member no longer exists (e.g. removed from the family since).
+function resolveFieldValue(field: string | null, value: string | null, members: FamilyMember[]): string {
+  if (value == null) return '—';
+  if (field === 'assignedToId') {
+    return members.find(m => m.id === value)?.name?.split(' ')[0] ?? value;
+  }
+  // dueDate is a raw "YYYY-MM-DD" — was shown verbatim instead of the
+  // app's normal "Aug 27, 2026" display format used everywhere else.
+  if (field === 'dueDate') {
+    return fmtDate(value, value);
+  }
+  return value;
+}
+
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
   const mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
   const rel = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago`
     : mins < 24 * 60 ? `${Math.round(mins / 60)}h ago` : `${Math.round(mins / (60 * 24))}d ago`;
-  const abs = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // hour12 explicit — toLocaleString with no hour12 option follows the
+  // device locale's own convention, which renders 24-hour time on a
+  // 24-hour-locale device even though every other time display in this app
+  // (lib/dates.ts's fmtTime, etc.) always uses 12-hour AM/PM.
+  const abs = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   return `${abs} · ${rel}`;
 }
 
@@ -110,7 +140,7 @@ export function ChoreHistorySheet({ choreId, title, members, onClose }: {
                       )}
                       {!!row.field && (row.oldValue != null || row.newValue != null) && (
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
-                          {row.field}: {row.oldValue ?? '—'} → {row.newValue ?? '—'}
+                          {FIELD_LABEL[row.field] ?? row.field}: {resolveFieldValue(row.field, row.oldValue, members)} → {resolveFieldValue(row.field, row.newValue, members)}
                         </Text>
                       )}
                       <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 3 }}>{fmtWhen(row.createdAt)}</Text>

@@ -20,6 +20,7 @@ interface LocationAutocompleteInputProps {
   onLocationDetected?: (text: string, lat: number, lng: number) => void;
   maxLength?: number;
   style?: any;
+  onBlur?: () => void;
 }
 
 export function LocationAutocompleteInput({
@@ -32,6 +33,7 @@ export function LocationAutocompleteInput({
   onLocationDetected,
   maxLength = 150,
   style,
+  onBlur,
 }: LocationAutocompleteInputProps) {
   const ac = accent ?? colors.primary;
   const { height: screenH } = useWindowDimensions();
@@ -40,6 +42,14 @@ export function LocationAutocompleteInput({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [detecting,       setDetecting]       = useState(false);
   const [dropUp,          setDropUp]          = useState(false);
+  // Once a value is picked/entered, show it as a compact read-only wrapped
+  // label instead of a live single-line input — a real street address
+  // doesn't fit on one line in a half-width column (e.g. side-by-side
+  // Pickup/Drop fields) and previously just scrolled horizontally inside
+  // the box, showing only a fragment with no way to read the rest. Tapping
+  // the label (or the X-to-clear) goes back to the small editable search
+  // box. Starts in edit mode whenever there's no value yet.
+  const [editing, setEditing] = useState(!value);
 
   const acTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userCoords = useRef<{ lat: number; lng: number } | null>(null);
@@ -115,12 +125,14 @@ export function LocationAutocompleteInput({
     onChangeText(text);
     setSuggestions([]);
     setShowSuggestions(false);
+    setEditing(false);
   }, [onChangeText]);
 
   const clear = useCallback(() => {
     onChangeText('');
     setSuggestions([]);
     setShowSuggestions(false);
+    setEditing(true);
   }, [onChangeText]);
 
   const dropdown = showSuggestions ? (
@@ -139,10 +151,16 @@ export function LocationAutocompleteInput({
           ]}
         >
           <Ionicons name="location" size={13} color={ac} style={{ marginTop: 1 }} />
+          {/* Was numberOfLines={1} on both — fine in a full-width field, but
+              this component is often placed in a narrow half-width column
+              (e.g. side-by-side Pickup/Drop fields), where a real street
+              address truncates to nearly nothing ("2036 Montgom…") with no
+              way to read the rest before picking it. Wrap onto 2 lines
+              instead of hard-truncating to 1. */}
           <View style={{ flex: 1 }}>
-            <Text style={[styles.suggName, { color: colors.textPrimary }]} numberOfLines={1}>{s.name}</Text>
+            <Text style={[styles.suggName, { color: colors.textPrimary }]} numberOfLines={2}>{s.name}</Text>
             {!!s.address && (
-              <Text style={[styles.suggAddr, { color: colors.textSecondary }]} numberOfLines={1}>{s.address}</Text>
+              <Text style={[styles.suggAddr, { color: colors.textSecondary }]} numberOfLines={2}>{s.address}</Text>
             )}
           </View>
         </TouchableOpacity>
@@ -155,33 +173,50 @@ export function LocationAutocompleteInput({
       {/* Dropdown above input */}
       {dropUp && dropdown}
 
-      {/* Input row */}
-      <View style={[
-        styles.inputRow,
-        { backgroundColor: colors.inputBg, borderColor: showSuggestions ? ac : colors.border },
-      ]}>
-        {detecting
-          ? <Ionicons name="locate-outline" size={17} color={ac} style={{ marginRight: 4 }} />
-          : <Ionicons name="location-outline" size={17} color={showSuggestions ? ac : colors.textTertiary} style={{ marginRight: 4 }} />
-        }
-        <TextInput
-          style={[styles.textInput, { color: colors.textPrimary }]}
-          placeholder={detecting ? 'Detecting location…' : placeholder}
-          placeholderTextColor={colors.placeholder}
-          value={value}
-          onChangeText={text => { onChangeText(text); fetchSuggestions(text); }}
-          onFocus={measureDirection}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          autoCorrect={false}
-          returnKeyType="done"
-          maxLength={maxLength}
-        />
-        {value.length > 0 && (
-          <TouchableOpacity onPress={clear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      {editing ? (
+        <View style={[
+          styles.inputRow,
+          { backgroundColor: colors.inputBg, borderColor: showSuggestions ? ac : colors.border },
+        ]}>
+          {detecting
+            ? <Ionicons name="locate-outline" size={17} color={ac} style={{ marginRight: 4 }} />
+            : <Ionicons name="location-outline" size={17} color={showSuggestions ? ac : colors.textTertiary} style={{ marginRight: 4 }} />
+          }
+          <TextInput
+            style={[styles.textInput, { color: colors.textPrimary }]}
+            placeholder={detecting ? 'Detecting location…' : placeholder}
+            placeholderTextColor={colors.placeholder}
+            value={value}
+            onChangeText={text => { onChangeText(text); fetchSuggestions(text); }}
+            onFocus={measureDirection}
+            onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); onBlur?.(); }}
+            autoCorrect={false}
+            returnKeyType="done"
+            maxLength={maxLength}
+            autoFocus
+          />
+          {value.length > 0 && (
+            <TouchableOpacity onPress={clear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={17} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        // Committed value — read-only wrapped label instead of a live
+        // single-line input, so a full street address is actually readable.
+        // Tap the text to go back into edit mode; tap the X to clear it
+        // entirely (also returns to edit mode, matching the empty-state box).
+        <TouchableOpacity
+          onPress={() => setEditing(true)}
+          style={[styles.inputRow, { backgroundColor: colors.inputBg, borderColor: colors.border, alignItems: 'flex-start' }]}
+        >
+          <Ionicons name="location-outline" size={17} color={colors.textTertiary} style={{ marginRight: 4, marginTop: 2 }} />
+          <Text style={[styles.textInput, { color: colors.textPrimary, paddingVertical: 0 }]}>{value}</Text>
+          <TouchableOpacity onPress={clear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 2 }}>
             <Ionicons name="close-circle" size={17} color={colors.textTertiary} />
           </TouchableOpacity>
-        )}
-      </View>
+        </TouchableOpacity>
+      )}
 
       {/* Dropdown below input */}
       {!dropUp && dropdown}

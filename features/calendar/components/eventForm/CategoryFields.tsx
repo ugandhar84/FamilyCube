@@ -7,6 +7,7 @@ import PickerOverlay from './PickerOverlay';
 import GroceryLinkSection, { GroceryItem, NewGroceryLine } from './GroceryLinkSection';
 import { f } from './styles';
 import { EventCategory, APPT_TYPES, SPORT_TYPES, SUBJECTS, fmtDisplay, fmtTimeDisplay } from './types';
+import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
 
 // ─── Category-specific fields block for AddEventModal ──────────────────────────
 // Renders the Medical / Sports / Study / Ride / Event-Birthday / Errand / Other
@@ -98,9 +99,9 @@ export default function CategoryFields({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Clinic</Text>
-              <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                placeholder="Clinic name" placeholderTextColor={colors.textTertiary}
+              <LocationAutocompleteInput
                 value={clinicLocation} onChangeText={setClinicLocation}
+                placeholder="Clinic name" colors={colors}
                 onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Clinic" on "CategoryFields(${category})" newValue=${clinicLocation} [features/calendar/components/eventForm/CategoryFields.tsx:102]`)} />
             </View>
           </View>
@@ -129,17 +130,17 @@ export default function CategoryFields({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Venue</Text>
-              <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                placeholder="Riverside Park" placeholderTextColor={colors.textTertiary}
+              <LocationAutocompleteInput
                 value={venueLocation} onChangeText={setVenueLocation}
+                placeholder="Riverside Park" colors={colors}
                 onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Venue" on "CategoryFields(${category})" newValue=${venueLocation} [features/calendar/components/eventForm/CategoryFields.tsx:131]`)} />
             </View>
           </View>
 
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-          <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-            placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+          <LocationAutocompleteInput
             value={pickupLocation} onChangeText={setPickupLocation}
+            placeholder="Home / School" colors={colors}
             onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category})" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:138]`)} />
 
           {/* Kit reminder */}
@@ -191,9 +192,9 @@ export default function CategoryFields({
           ) : (
             <>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-              <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                placeholder="Home / Library" placeholderTextColor={colors.textTertiary}
+              <LocationAutocompleteInput
                 value={venueLocation} onChangeText={setVenueLocation}
+                placeholder="Home / Library" colors={colors}
                 onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category})" newValue=${venueLocation} [features/calendar/components/eventForm/CategoryFields.tsx:189]`)} />
               {/* External tutor + in-person → show drop & pickup */}
               {!helperId && tutorName.trim().length > 0 && (
@@ -201,16 +202,16 @@ export default function CategoryFields({
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                      <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                        placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+                      <LocationAutocompleteInput
                         value={pickupLocation} onChangeText={setPickupLocation}
+                        placeholder="Home / School" colors={colors}
                         onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category}) Study" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:198]`)} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-                      <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                        placeholder="Tutor's place / Library" placeholderTextColor={colors.textTertiary}
+                      <LocationAutocompleteInput
                         value={dropLocation} onChangeText={setDropLocation}
+                        placeholder="Tutor's place / Library" colors={colors}
                         onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Drop to" on "CategoryFields(${category}) Study" newValue=${dropLocation} [features/calendar/components/eventForm/CategoryFields.tsx:204]`)} />
                     </View>
                   </View>
@@ -283,17 +284,22 @@ export default function CategoryFields({
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-              <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+              <LocationAutocompleteInput
                 value={pickupLocation} onChangeText={setPickupLocation}
+                placeholder="Home / School" colors={colors}
                 onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category})" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:287]`)} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-              <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
-                borderColor: dropLocation ? colors.borderMed : colors.warning + '60' }]}
-                placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
+              <LocationAutocompleteInput
                 value={dropLocation} onChangeText={setDropLocation}
+                placeholder="Chess Club, Oak St" colors={colors}
+                // Empty drop location is a real validation concern (Ride
+                // events need a destination) — the old plain TextInput used
+                // a persistent warning-colored border for this; this
+                // component's border only reacts to focus/suggestions, so
+                // approximate the same "needs attention" signal here.
+                accent={dropLocation ? undefined : colors.warning}
                 onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Drop to" on "CategoryFields(${category})" newValue=${dropLocation} [features/calendar/components/eventForm/CategoryFields.tsx:296]`)} />
             </View>
           </View>
@@ -420,10 +426,10 @@ export default function CategoryFields({
             {category === 'Birthday' ? '🎂 Party details' : '🎉 Event details'}
           </Text>
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-          <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-            placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
-            placeholderTextColor={colors.textTertiary}
+          <LocationAutocompleteInput
             value={generalLocation} onChangeText={setGeneralLocation}
+            placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
+            colors={colors}
             onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category})" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:426]`)} />
           {category === 'Birthday' && (
             <>
@@ -458,9 +464,9 @@ export default function CategoryFields({
         <>
           <Text style={[f.sectionLabel, { color: catColor }]}>🛒 Errand details</Text>
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Where</Text>
-          <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-            placeholder="Supermarket / Mall / Pharmacy" placeholderTextColor={colors.textTertiary}
+          <LocationAutocompleteInput
             value={generalLocation} onChangeText={setGeneralLocation}
+            placeholder="Supermarket / Mall / Pharmacy" colors={colors}
             onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Where" on "CategoryFields(${category})" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:462]`)} />
           <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Expected return (optional)</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
@@ -503,9 +509,9 @@ export default function CategoryFields({
         <>
           <Text style={[f.sectionLabel, { color: catColor }]}>✨ Custom event</Text>
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location (optional)</Text>
-          <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-            placeholder="Where is this happening?" placeholderTextColor={colors.textTertiary}
+          <LocationAutocompleteInput
             value={generalLocation} onChangeText={setGeneralLocation}
+            placeholder="Where is this happening?" colors={colors}
             onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category}) Other" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:508]`)} />
         </>
       )}

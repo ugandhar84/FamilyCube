@@ -44,11 +44,11 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
   } catch { /* best-effort — a missed alert isn't worth failing the location update over */ }
 }
 
-// 0.1 mile — the OS only calls the task again once the device has moved at
+// 0.2 mile — the OS only calls the task again once the device has moved at
 // least this far, so an idle/stationary phone simply never re-fires and
 // nothing gets written. That's the "don't pull battery when idle" behavior:
 // battery is only read inside the task body, which only runs on real movement.
-const MIN_DISTANCE_METERS = 161; // 0.1 mi = 160.9344m
+const MIN_DISTANCE_METERS = 322; // 0.2 mi = 321.8688m
 
 let lastFamilyId: string | null = null;
 export function setBackgroundLocationFamilyId(id: string | null) {
@@ -133,7 +133,7 @@ async function writeBatteryStatus(memberId: string): Promise<void> {
 }
 
 /**
- * Battery-only sampling, independent of the 0.1-mile movement gate that
+ * Battery-only sampling, independent of the 0.2-mile movement gate that
  * drives the background location task above. A stationary phone can
  * legitimately lose real battery %/charging state for hours under that gate
  * (e.g. sitting on a charger at home) — this fills in with a plain interval
@@ -201,12 +201,24 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // The OS already gates re-delivery on distanceInterval, but double-check
     // here too since some platforms are looser about the threshold — a
     // stationary device should never reach the battery read below.
-    const prev = lastFix;
-    lastFix = { lat, lng };
-    if (prev) {
-      const moved = haversineMeters(prev.lat, prev.lng, lat, lng);
+    //
+    // Was: `lastFix` got overwritten on EVERY callback regardless of
+    // whether this fix actually cleared the threshold and got written
+    // below. On a platform that calls the task more often than
+    // distanceInterval promises, each small hop reset the comparison
+    // baseline to itself — so distance was always measured "since the
+    // last raw callback" instead of "since the last point we actually
+    // recorded," letting the device drift arbitrarily far (many times
+    // MIN_DISTANCE_METERS) in a series of sub-threshold hops without ever
+    // writing a single update. Only advance `lastFix` once a fix clears
+    // the gate (right below) — an early return above now leaves the old
+    // baseline in place so the next callback's distance is still measured
+    // from the last real write, not the last raw callback.
+    if (lastFix) {
+      const moved = haversineMeters(lastFix.lat, lastFix.lng, lat, lng);
       if (moved < MIN_DISTANCE_METERS) return;
     }
+    lastFix = { lat, lng };
 
     // Crisp street-level address — geo.street is the primary "which street"
     // signal; name/city fill in when street is unavailable (e.g. rural).
@@ -332,7 +344,7 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
     // literally — an hour is loose enough that it never becomes the
     // effective polling rate; distanceInterval stays the real driver.
     timeInterval: 60 * 60_000,
-    distanceInterval: MIN_DISTANCE_METERS, // 0.1 mile
+    distanceInterval: MIN_DISTANCE_METERS, // 0.2 mile
     showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
     foregroundService: {
       notificationTitle: 'Family Cube',

@@ -14,7 +14,7 @@ import { useChoreStore } from '@/store/choreStore';
 import type { QuestCategory, QuestDifficulty, QuestType } from '@/store/questStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { localDateStr } from '@/lib/dates';
+import { localDateStr, fmtDate, fmtTime } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
@@ -641,16 +641,25 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       const hasExisting = selectedItemIds.size > 0;
       if (hasExisting || validNewLines.length > 0) {
         try {
+          // Was one INSERT per new grocery line, sequentially awaited in a
+          // loop — a real trip's grocery list is easily 10-30+ lines. Single
+          // multi-row insert instead, then group the returned ids back by
+          // store client-side (the store grouping is just bookkeeping, not
+          // something the DB needs to do row-by-row).
           const newItemsByStore: Record<string, string[]> = {};
-          for (const line of validNewLines) {
-            const store = line.store.trim() || 'Any store';
-            const { data: inserted } = await supabase
+          if (validNewLines.length > 0) {
+            const { data: insertedRows } = await supabase
               .from('grocery_items')
-              .insert({ family_id: familyId, name: line.name.trim(), quantity: line.qty.trim() || null, store_preference: line.store.trim() || null, added_by: activeMemberId, is_bought: false, ai_generated: false })
-              .select('id').single();
-            if (inserted?.id) {
+              .insert(validNewLines.map(line => ({
+                family_id: familyId, name: line.name.trim(), quantity: line.qty.trim() || null,
+                store_preference: line.store.trim() || null, added_by: activeMemberId,
+                is_bought: false, ai_generated: false,
+              })))
+              .select('id, store_preference');
+            for (const row of (insertedRows ?? [])) {
+              const store = row.store_preference?.trim() || 'Any store';
               if (!newItemsByStore[store]) newItemsByStore[store] = [];
-              newItemsByStore[store].push(inserted.id);
+              newItemsByStore[store].push(row.id);
             }
           }
           const existingByStore: Record<string, string[]> = {};
@@ -1070,7 +1079,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                             <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
                               {ev.title}
                             </Text>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{ev.date}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>

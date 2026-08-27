@@ -59,7 +59,7 @@ export function catDotColor(colors: any): Record<string, string> {
 }
 
 export function fmtProvenance(item: GroceryItem, members: any[]) {
-  const time = new Date(item.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = new Date(item.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
   const dateStr = fmtDate(item.createdAt);
   if (item.aiGenerated) return `Added by ✨ AI · ${dateStr} ${time}`;
   const member = members.find(m => m.id === item.addedBy);

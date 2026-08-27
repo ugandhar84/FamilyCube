@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { fmtTime } from '@/lib/dates';
 
 // Sheet body for the "Rides" tile: car on/off toggle up top (opt-in — a
 // teen only sees dispatch content once they've said they have a car), then
@@ -84,7 +85,7 @@ export function TeenCarDispatchSection({
                       {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
                     </Text>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
-                      {evDay}{ev.time ? ` · ${ev.time}` : ''} · waiting on you to confirm
+                      {evDay}{ev.time ? ` · ${fmtTime(ev.time)}` : ''} · waiting on you to confirm
                     </Text>
                   </View>
                 </View>
@@ -132,7 +133,7 @@ export function TeenCarDispatchSection({
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
                       {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
                     </Text>
-                    <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
                   </View>
                   <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
                 </View>
@@ -164,7 +165,7 @@ export function TeenCarDispatchSection({
                   flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Car size={14} color="#fff" />
                   <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }} numberOfLines={1}>
-                    RIDE · {evDay}{ev.time ? ` · ${ev.time}` : ''}
+                    RIDE · {evDay}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}
                   </Text>
                   {(ev.rideCoins ?? rideEarnings) > 0 && (
                     <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,

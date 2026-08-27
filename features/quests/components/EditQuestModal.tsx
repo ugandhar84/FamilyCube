@@ -13,7 +13,7 @@ import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { localDateStr, parseLocalDate, parseTimeInput } from '@/lib/dates';
+import { localDateStr, parseLocalDate, parseTimeInput, fmtDate, fmtTime } from '@/lib/dates';
 import { I } from './icons';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import { aq } from './AddQuestModal';
@@ -516,7 +516,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                               <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
                                 {ev.title}
                               </Text>
-                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{ev.date}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
                             </TouchableOpacity>
                           ))}
                         </ScrollView>

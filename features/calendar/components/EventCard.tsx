@@ -28,6 +28,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { fmtTime } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import { s } from './calendarCardStyles';
 import { isEventPast, isEventNow } from './calendarDateHelpers';
@@ -560,7 +561,7 @@ export function BusyBlockCard({ time, endTime, colors, isDark }: {
       <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={{ fontSize: 14 }}>🔒</Text>
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>
-          Busy{time ? ` · ${time}${endTime ? `–${endTime}` : ''}` : ''}
+          Busy{time ? ` · ${fmtTime(time)}${endTime ? `–${fmtTime(endTime)}` : ''}` : ''}
         </Text>
       </View>
     </View>

@@ -8,6 +8,7 @@ import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
+import { fmtDate, fmtTime } from '@/lib/dates';
 
 // Confirmed-green — "confirmed" status accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -69,7 +70,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
         </View>
       </View>
       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginLeft: 24 }}>
-        {ev.date}{ev.time ? ` · ${ev.time}` : ''}
+        {fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}
         {kidName ? ` · for ${kidName}` : ''}
         {ev.pickupLocation ? ` · From: ${ev.pickupLocation}` : ''}
         {ev.dropLocation ? ` → ${ev.dropLocation}` : ev.location ? ` → ${ev.location}` : ''}

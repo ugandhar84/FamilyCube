@@ -246,6 +246,27 @@ function RootNavigator() {
           hideSplashThen(() => {});
         }
       }, remaining);
+    }).catch((e) => {
+      // getSession() itself rejecting (thrown exception, not the normal
+      // {data,error} resolve path) meant this whole .then() chain never
+      // ran — hideSplashThen() was never called, so the splash overlay's
+      // Modal (visible={!splashGone}) stayed mounted FOREVER, with its
+      // opacity never animated down. A transparent, fully-invisible Modal
+      // still captures every touch within its bounds on native — this is
+      // exactly what live-reported as "the lock screen renders normally
+      // but nothing is tappable," surfacing on a background→foreground
+      // resume (the exact moment a transient network hiccup is most
+      // likely). Fail safe: still dismiss the splash and land on login —
+      // getSession() failing at all means there's no session to trust
+      // anyway, so login is the correct fallback destination.
+      dbgError(TAG, 'getSession promise rejected', e?.message ?? e);
+      if (!navigated.current) {
+        navigated.current = true;
+        bootCompleted.current = true;
+        setChecked(true);
+        router.replace('/(auth)/login');
+        hideSplashThen(() => {});
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {

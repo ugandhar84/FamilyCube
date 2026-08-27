@@ -12,7 +12,7 @@
  *           ScrollView body                            ← keyboard-aware
  *           [optional sticky footer]
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, StyleSheet, Platform, Keyboard, Dimensions,
@@ -68,11 +68,39 @@ export default function AppBottomSheet({
   const screenHeight = Dimensions.get('window').height;
   const toPx = (pct: string) => (parseFloat(pct) / 100) * screenHeight;
   const minPx = toPx(minHeight);
-  const maxPx = toPx(maxHeight);
+  const rawMaxPx = toPx(maxHeight);
+
+  // maxPx alone was computed against the FULL, keyboard-agnostic screen
+  // height — but KeyboardAvoidingView's 'padding' behavior (below) eats
+  // into that same space once the keyboard opens, shrinking the actual
+  // room available above it without this sheet's own height budget ever
+  // shrinking to match. A sheet already near its percentage max (e.g. the
+  // invite sheet's 92%) could end up needing more vertical room than was
+  // genuinely left once the keyboard was accounted for, pushing content up
+  // past the top of the screen or behind the status bar — live-reported as
+  // "the invite sheet gets pushed way up with the keyboard open, no max
+  // height." Track the real keyboard height and clamp maxPx to whatever's
+  // actually left below it, with a little breathing room reserved above.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const TOP_SAFE_MARGIN = 60;
+  const maxPx = keyboardHeight > 0
+    ? Math.min(rawMaxPx, screenHeight - keyboardHeight - TOP_SAFE_MARGIN)
+    : rawMaxPx;
 
   const [chromeHeight, setChromeHeight] = useState(0);
   const [footerHeight, setFooterHeight] = useState(0);
   const [contentHeight, setContentHeight] = useState(0);
+  // maxPx must win outright if the keyboard has shrunk it below minPx —
+  // Math.max(..., minPx) would otherwise override a keyboard-driven clamp
+  // that's tighter than the sheet's own configured minimum, re-introducing
+  // the exact overflow this was meant to prevent.
   const sheetHeight = Math.min(Math.max(chromeHeight + contentHeight + footerHeight, minPx), maxPx);
 
   return (

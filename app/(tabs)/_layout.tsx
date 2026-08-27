@@ -380,11 +380,37 @@ export default function TabLayout() {
   const authUserId = useAuthStore(s => s.session?.user?.id);
   const familyLoadStatus = useFamilyStore(s => s.familyLoadStatus);
   const redirectedToOnboarding = useRef(false);
+  // Recheck-before-redirect guard: familyLoadStatus reaching 'confirmed' with
+  // members still empty is supposed to mean "the bounded retry loop in
+  // loadFromStorage genuinely exhausted every attempt" — but on a slow/cold
+  // connection right after a fresh sign-in, that budget can still run out
+  // before the real family data lands (live-reported: sign out, sign back
+  // in as the same already-onboarded account, land on /onboarding instead
+  // of /(tabs)). Rather than just widening the retry budget further (a
+  // losing game against arbitrarily slow networks), do ONE extra
+  // syncFromDB() re-check here, on a short delay, before ever committing to
+  // the onboarding redirect — cheap, bounded (a single extra ~1.5s pause
+  // only in the rare case this condition is even met), and self-cancels via
+  // the `cancelled` flag if members show up before the timer fires.
+  const onboardingRecheckPending = useRef(false);
   useEffect(() => {
-    if (redirectedToOnboarding.current) return;
+    if (redirectedToOnboarding.current || onboardingRecheckPending.current) return;
     if (hasSession && familyLoadStatus === 'confirmed' && members.length === 0) {
-      redirectedToOnboarding.current = true;
-      router.replace('/onboarding');
+      onboardingRecheckPending.current = true;
+      let cancelled = false;
+      (async () => {
+        await new Promise(r => setTimeout(r, 1500));
+        if (cancelled) return;
+        await useFamilyStore.getState().syncFromDB();
+        if (cancelled) return;
+        onboardingRecheckPending.current = false;
+        if (redirectedToOnboarding.current) return;
+        if (useFamilyStore.getState().members.length === 0) {
+          redirectedToOnboarding.current = true;
+          router.replace('/onboarding');
+        }
+      })();
+      return () => { cancelled = true; };
     }
   }, [hasSession, familyLoadStatus, members.length]);
 

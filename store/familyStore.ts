@@ -774,10 +774,16 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // attempt looked identical to "genuinely no family," which sent an
     // already-onboarded user through onboarding's Create/Join Family
     // screen (reported live).
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // 5 attempts / up to ~6s total (500ms, 1000ms, 1500ms, 2000ms between
+    // tries) — widened from 3 attempts/~1.5s after a live-reported race:
+    // signing back in immediately after signing out (fresh JWT/RLS
+    // propagation, cold Supabase connection) could still read back empty
+    // past the old, tighter budget, which reached 'confirmed' anyway and
+    // sent an already-onboarded user with a real family into onboarding.
+    for (let attempt = 0; attempt < 5; attempt++) {
       await get().syncFromDB();
       if (get().members.length > 0) break;
-      if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      if (attempt < 4) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
     }
     // Reached unconditionally once the bounded loop above ends — this is
     // what guarantees familyLoadStatus always resolves to 'confirmed' in

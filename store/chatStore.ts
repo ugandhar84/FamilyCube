@@ -135,10 +135,55 @@ function deriveReplyKind(msg: ChatMessage): 'voice' | 'image' | 'video' | 'docum
   return undefined;
 }
 
-// Fixed, non-DM channel ids — never rewritten, always used as-is. Matches
-// every id literal in features/chat/components/constants.ts's
-// GROUP_CHANNELS/buildGroupChannels.
+// Fixed, non-DM channel ids used throughout the UI layer (ChatScreen.tsx,
+// features/chat/components/constants.ts's GROUP_CHANNELS/buildGroupChannels)
+// — these bare strings ('all', 'parents', etc.) are IDENTICAL across every
+// family. chat_channels.id has always been a genuinely global primary key
+// (confirmed live: call_sessions has an FK straight to it, so it can't be
+// loosened to a per-family composite key) — so a bare 'all' row can only
+// ever belong to ONE family, whichever one's device created it first.
+// Every other family's own messages to 'all' silently failed RLS forever
+// (chat_messages_insert requires channel_id IN (SELECT id FROM
+// chat_channels WHERE family_id = ...), and that other family's own 'all'
+// row never existed to satisfy it).
+//
+// Fix: family-scope the DB-facing id for these 5 channels only —
+// `${familyId}::${bareId}` — while every UI-facing reference (ChatScreen's
+// channelId state, GROUP_CHANNELS' ids, badge/unread keys shown to the
+// user) keeps using the bare id exactly as before. toDbChannelId()/
+// toBareChannelId() are the ONLY place this conversion happens; every
+// chatStore function that touches chat_channels/chat_messages/
+// chat_channel_reads converts at its own boundary so nothing partially
+// converts. DM ids (dm_<a>_<b>) are already globally unique (member ids
+// are UUIDs) and are explicitly NOT touched by this — this bug was always
+// specific to the 5 fixed group-channel literals.
 const GROUP_CHANNEL_IDS = new Set(['all', 'parents', 'seniors_a', 'seniors_b', 'seniors_all']);
+
+function toDbChannelId(uiChannelId: string, familyId: string | undefined): string {
+  if (!familyId || !GROUP_CHANNEL_IDS.has(uiChannelId)) return uiChannelId;
+  return `${familyId}::${uiChannelId}`;
+}
+
+function toBareChannelId(dbChannelId: string): string {
+  const idx = dbChannelId.indexOf('::');
+  return idx === -1 ? dbChannelId : dbChannelId.slice(idx + 2);
+}
+
+// Every call site below needs the CALLER's own family_id to convert — none
+// of these functions otherwise take one, so resolve it from familyStore the
+// same way ensureGroupChannelRow/ensureDmChannelRow already do (a runtime
+// require() to dodge a circular import, matching the existing pattern in
+// this same file).
+function currentFamilyIdForChat(): string | undefined {
+  try {
+    const { useFamilyStore } = require('./familyStore');
+    const members: any[] = useFamilyStore.getState().members;
+    const activeMemberId = useFamilyStore.getState().activeMemberId;
+    return members.find(m => m.id === activeMemberId)?.familyId ?? members[0]?.familyId;
+  } catch {
+    return undefined;
+  }
+}
 
 // The ~51 existing call sites across the app (choreStore, eventStore,
 // kidRequestStore, etc.) all call sendMessage(recipientMemberId, senderId,
@@ -223,24 +268,27 @@ const _ensuredGroupChannels = new Set<string>();
 async function ensureGroupChannelRow(channelId: string, senderId: string): Promise<void> {
   if (!GROUP_CHANNEL_IDS.has(channelId) || _ensuredGroupChannels.has(channelId)) return;
   try {
-    // Check-then-insert, not upsert(ignoreDuplicates) — an upsert's ON
-    // CONFLICT DO NOTHING still evaluates the INSERT policy's WITH CHECK
-    // on the attempted row before the conflict is resolved, so a plain
-    // upsert kept failing RLS here even when the row already existed and
-    // the "duplicate" would've been silently discarded anyway. Since
-    // chat_channels.id for these fixed ids is a bare global string (not
-    // scoped per-family), a SELECT-first check also avoids re-attempting
-    // the INSERT at all once any device has already created the row.
-    const { data: existing } = await supabase.from('chat_channels').select('id').eq('id', channelId).maybeSingle();
-    if (existing) { _ensuredGroupChannels.add(channelId); return; }
-
     const { useFamilyStore } = require('./familyStore');
     const members: any[] = useFamilyStore.getState().members;
     const sender = members.find(m => m.id === senderId);
     const familyId = sender?.familyId;
     if (!familyId) return;
+    const dbChannelId = toDbChannelId(channelId, familyId);
+    if (_ensuredGroupChannels.has(dbChannelId)) return;
+
+    // Check-then-insert, not upsert(ignoreDuplicates) — an upsert's ON
+    // CONFLICT DO NOTHING still evaluates the INSERT policy's WITH CHECK
+    // on the attempted row before the conflict is resolved, so a plain
+    // upsert kept failing RLS here even when the row already existed and
+    // the "duplicate" would've been silently discarded anyway. Scoping by
+    // the family-qualified dbChannelId (not the bare channelId) is the
+    // actual fix here — see toDbChannelId's own comment for the incident
+    // this closes.
+    const { data: existing } = await supabase.from('chat_channels').select('id').eq('id', dbChannelId).maybeSingle();
+    if (existing) { _ensuredGroupChannels.add(dbChannelId); return; }
+
     const { error } = await supabase.from('chat_channels').insert({
-      id: channelId,
+      id: dbChannelId,
       family_id: familyId,
       type: 'group',
       name: GROUP_CHANNEL_NAMES[channelId] ?? channelId,
@@ -249,7 +297,7 @@ async function ensureGroupChannelRow(channelId: string, senderId: string): Promi
     // A duplicate-key error here means another device won the race and
     // created it between our SELECT and INSERT — not a real failure.
     if (error && error.code !== '23505') { console.warn('[chatStore] ensureGroupChannelRow failed', error.message); return; }
-    _ensuredGroupChannels.add(channelId);
+    _ensuredGroupChannels.add(dbChannelId);
   } catch (e: any) {
     console.warn('[chatStore] ensureGroupChannelRow failed', e?.message ?? e);
   }
@@ -417,14 +465,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // fast regardless of how much history a channel has accumulated.
   loadLastActivity: async (channelIds) => {
     if (channelIds.length === 0) return;
+    const familyId = currentFamilyIdForChat();
+    const dbChannelIds = channelIds.map(id => toDbChannelId(id, familyId));
     const { data, error } = await supabase
       .from('chat_channels')
       .select('id, last_message_at')
-      .in('id', channelIds);
+      .in('id', dbChannelIds);
     if (error || !data) return;
     const latest: Record<string, string> = {};
     for (const row of data as { id: string; last_message_at: string | null }[]) {
-      if (row.last_message_at) latest[row.id] = row.last_message_at;
+      if (row.last_message_at) latest[toBareChannelId(row.id)] = row.last_message_at;
     }
     set(s => ({ lastActivity: { ...s.lastActivity, ...latest } }));
   },
@@ -438,12 +488,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // result (nothing unread) is treated as 0, matching the old behavior.
   loadUnreadCounts: async (channelIds, memberId) => {
     if (channelIds.length === 0) return;
+    // channelIds passed in are the bare UI ids (ChatScreen's channel list) —
+    // the RPC operates on the real chat_channel_reads/chat_messages rows,
+    // which for the 5 fixed group channels live under a family-scoped id.
+    // Convert to query, then map the result keys back to bare ids so
+    // unreadCounts (read by the UI, keyed by bare id) stays consistent with
+    // every other piece of chat state.
+    const familyId = currentFamilyIdForChat();
+    const dbChannelIds = channelIds.map(id => toDbChannelId(id, familyId));
     const { data, error } = await supabase.rpc('get_unread_counts', {
       p_member_id: memberId,
-      p_channel_ids: channelIds,
+      p_channel_ids: dbChannelIds,
     });
     if (error) { console.warn('[chatStore] loadUnreadCounts RPC failed', error.message); return; }
-    const countByChannel = Object.fromEntries((data ?? []).map((r: any) => [r.channel_id, r.unread_count]));
+    const countByChannel = Object.fromEntries((data ?? []).map((r: any) => [toBareChannelId(r.channel_id), r.unread_count]));
     const counts = channelIds.map(id => [id, countByChannel[id] ?? 0] as const);
     // The channel currently open on screen is excluded from this write —
     // this query and markChannelRead's own read-cursor upsert (fired from
@@ -461,8 +519,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // a channel is opened/viewed.
   markChannelRead: async (channelId, memberId) => {
     set(s => ({ unreadCounts: { ...s.unreadCounts, [channelId]: 0 } }));
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
     await supabase.from('chat_channel_reads')
-      .upsert({ channel_id: channelId, member_id: memberId, last_read_at: new Date().toISOString() },
+      .upsert({ channel_id: dbChannelId, member_id: memberId, last_read_at: new Date().toISOString() },
         { onConflict: 'channel_id,member_id' });
   },
 
@@ -496,7 +555,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }, (payload) => {
           const row = payload.new as any;
           if (!row || row.sender_id === memberId) return;
-          const channelId = row.channel_id as string;
+          // row.channel_id is the raw DB value — for the 5 fixed group
+          // channels that's now the family-scoped id (toDbChannelId), not
+          // the bare id every other piece of chat state (unreadCounts,
+          // _openChannelId, ChatScreen's channelId) is keyed by. Convert
+          // back immediately so this stays consistent.
+          const channelId = toBareChannelId(row.channel_id as string);
           const isMine = GROUP_CHANNEL_IDS.has(channelId) || channelId.split('_').slice(1).includes(memberId);
           if (!isMine) return;
           // Don't bump the badge for a channel the user currently has open
@@ -551,7 +615,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return { readReceipts: next };
     });
-    const rows = messageIds.map(id => ({ message_id: id, channel_id: channelId, member_id: memberId, read_at: now }));
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+    const rows = messageIds.map(id => ({ message_id: id, channel_id: dbChannelId, member_id: memberId, read_at: now }));
     await supabase.from('chat_read_receipts').upsert(rows, { onConflict: 'message_id,member_id' });
   },
 
@@ -563,13 +628,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get()._subs[channelId]) return;
     if (current?.loading) return;
 
+    // UI state (channels, _subs) stays keyed by the bare channelId
+    // throughout this function — only the actual DB read/write/realtime-
+    // filter need the family-scoped id for the 5 fixed group channels
+    // (see toDbChannelId's comment for why).
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+
     set(s => ({ channels: { ...s.channels, [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), loading: true } } }));
 
     try {
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('channel_id', channelId)
+        .eq('channel_id', dbChannelId)
         .order('created_at', { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -597,7 +668,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             event:  '*',
             schema: 'public',
             table:  'chat_messages',
-            filter: `channel_id=eq.${channelId}`,
+            filter: `channel_id=eq.${dbChannelId}`,
           }, async (payload) => {
             if (payload.eventType === 'INSERT') {
               console.log('[chatStore] realtime INSERT raw payload.new:', JSON.stringify(payload.new));
@@ -663,11 +734,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set(s => ({ channels: { ...s.channels, [channelId]: { ...ch, loading: true } } }));
 
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
     try {
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('channel_id', channelId)
+        .eq('channel_id', dbChannelId)
         .lt('created_at', ch.oldestTs)
         .order('created_at', { ascending: false })
         .limit(OLDER_SIZE);
@@ -720,10 +792,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // chat_messages RLS requires channel_id to already exist in
     // chat_channels — a brand new DM pair has no such row yet under the
     // new composite id, so ensure one before writing the message itself.
+    let dbChannelId = channelId;
     if (channelId !== originalChannelArg) {
       await ensureDmChannelRow(channelId, senderId, originalChannelArg);
     } else {
       await ensureGroupChannelRow(channelId, senderId);
+      // For the 5 fixed group channels only, the actual chat_channels/
+      // chat_messages row lives under a family-scoped id (see
+      // toDbChannelId's comment) — everything ELSE in this function keeps
+      // using the bare `channelId` (optimistic UI state, mention-notify's
+      // label), only the real DB write needs dbChannelId.
+      dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
     }
     const blind_index  = await buildBlindIndex(text);
 
@@ -787,7 +866,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const now = new Date().toISOString();
       const row: Record<string, any> = {
         id:          msgId,
-        channel_id:  channelId,
+        channel_id:  dbChannelId,
         sender_id:   senderId,
         sender_device_id: senderDeviceId ?? null,
         text:        ciphertext,
@@ -870,7 +949,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } catch {
         offline = [];
       }
-      offline.push({ channelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id });
+      offline.push({ channelId: dbChannelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id });
       await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
       // A live RLS failure here can come from the x-active-member-id header
       // (lib/supabase.ts's debugFetch, read fresh from familyStore on every
@@ -962,10 +1041,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Server does array overlap: WHERE blind_index && ARRAY[hash1, hash2, ...]
       // This is a PostgreSQL `&&` operator — any hash matches.
+      const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('channel_id', channelId)
+        .eq('channel_id', dbChannelId)
         .overlaps('blind_index', hashes)
         .order('created_at', { ascending: false })
         .limit(200);

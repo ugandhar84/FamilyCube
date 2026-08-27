@@ -282,6 +282,15 @@ export function trackIncomingCallPayloads(): () => void {
   });
   RNCallKeep.getInitialEvents().then(events => {
     console.log('[callAlert] getInitialEvents resolved, count=', events?.length ?? 0, JSON.stringify(events));
+    // getInitialEvents() only READS RNCallKeep's native _delayedEvents queue
+    // (RNCallKeep.m) — it never clears it. Without this, the exact same
+    // batch (including an already-answered call from a PREVIOUS session)
+    // replays on every subsequent JS bundle reload that re-runs this setup
+    // — live-reported as "every time the app reloads, it rings again" for
+    // a call that was already answered minutes/hours earlier. clearInitialEvents()
+    // is the library's own dedicated method for this; safe to call
+    // immediately since the batch is already captured in `events` above.
+    RNCallKeep!.clearInitialEvents();
     const answeredCallUUIDs: string[] = [];
     for (const evt of events ?? []) {
       if (evt.name === 'RNCallKeepDidLoadWithEvents') continue;

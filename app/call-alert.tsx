@@ -16,7 +16,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { resolveSpeechLocale, resolveBestVoiceId } from '@/lib/units';
-import { endCallAlert, waitForAudioSession, routeAudioToSpeaker, onCallEnded } from '@/lib/callAlert';
+import { endCallAlert, waitForAudioSession, onCallEnded } from '@/lib/callAlert';
 
 const SNOOZE_TIERS = [
   { label: 'On time', minutes: 0 },
@@ -135,12 +135,11 @@ export default function CallAlertScreen() {
     waitForAudioSession().then(async () => {
       console.log(`[call-alert][${effectId}] audio session ready, cancelled=`, cancelled);
       if (cancelled) return;
-      // CallKit's call-oriented audio session can route Speech's output to
-      // the earpiece or a connected accessory instead of the speaker —
-      // audio "plays" (onStart fires, no error) but is inaudible held
-      // normally. Force it to the speaker before speaking.
-      if (callUUID) await routeAudioToSpeaker(callUUID);
-      if (cancelled) return;
+      // Respects CallKit's own natural audio route (earpiece by default,
+      // same as a real phone call) instead of forcing speaker — a real
+      // call doesn't blast out loud the instant you answer it, and the
+      // person can tap speaker themselves mid-call the same way they
+      // would on any other call.
       const voiceId = await resolveBestVoiceId();
       if (cancelled) return;
       // Mark as spoken only once we're actually committing to speak — not

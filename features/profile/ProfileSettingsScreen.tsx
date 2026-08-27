@@ -1265,7 +1265,7 @@ export default function ProfileSettingsScreen() {
     );
   }
 
-  const expectedConfirmWord = isAuthLinked ? 'DELETE' : activeMember.name.toUpperCase();
+  const expectedConfirmWord = (isAuthLinked && !isAnonymousSession) ? 'DELETE' : activeMember.name.toUpperCase();
 
   const handleDeleteProfile = async () => {
     // Non-auth member (kid/senior, PIN-only) — only a parent can trigger
@@ -1315,12 +1315,23 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  const dangerAction = isAuthLinked ? handleDeleteAccount : handleDeleteProfile;
-  // Non-auth "delete profile" is a PARENT action on a kid/senior's PIN-only
-  // profile — a kid/senior themselves shouldn't be able to delete their own
-  // non-auth profile from this screen (no real account to lose control of,
-  // and it'd let a kid nuke themselves out of the family unsupervised).
-  const canShowDangerZone = isAuthLinked || isParent;
+  // isAuthLinked alone (activeMember.authUserId truthy) doesn't mean "has a
+  // REAL account" — an anonymous joiner (PIN/code login, no email/password)
+  // has an auth_user_id too, just an anonymous one. handleDeleteAccount's
+  // self-service "Delete account" copy/flow assumes a real account someone
+  // could recreate by signing back in, which doesn't apply here (live-
+  // reported: a PIN/code-logged-in member saw the real-account delete
+  // option for themselves, misleading and never actually appropriate for
+  // that identity). Only a genuinely real (non-anonymous) auth session gets
+  // the self-service "Delete account" path now.
+  const hasRealAccount = isAuthLinked && !isAnonymousSession;
+  const dangerAction = hasRealAccount ? handleDeleteAccount : handleDeleteProfile;
+  // Non-auth/anonymous "delete profile" is a PARENT-only action on a kid/
+  // senior's PIN- or code-only profile — that member themselves shouldn't
+  // be able to delete their own profile from this screen (no real account
+  // to lose control of, and it'd let a kid nuke themselves out of the
+  // family unsupervised).
+  const canShowDangerZone = hasRealAccount || isParent;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -1700,8 +1711,8 @@ export default function ProfileSettingsScreen() {
             {!showDangerConfirm ? (
               <Row
                 icon="warning-outline"
-                label={isAuthLinked ? 'Delete account' : `Delete ${activeMember.name}'s profile`}
-                subtitle={isAuthLinked
+                label={hasRealAccount ? 'Delete account' : `Delete ${activeMember.name}'s profile`}
+                subtitle={hasRealAccount
                   ? 'Permanently deletes your account in 7 days'
                   : 'Permanently deletes this profile in 7 days'}
                 danger
@@ -1714,10 +1725,10 @@ export default function ProfileSettingsScreen() {
                 borderWidth: 1.5, borderColor: colors.danger + '50',
               }}>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.danger, marginBottom: 6 }}>
-                  {isAuthLinked ? 'Delete your account?' : `Delete ${activeMember.name}'s profile?`}
+                  {hasRealAccount ? 'Delete your account?' : `Delete ${activeMember.name}'s profile?`}
                 </Text>
                 <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 }}>
-                  {isAuthLinked
+                  {hasRealAccount
                     ? `Your account, and everything tied to it, will be scheduled for permanent deletion. You have 7 days to change your mind — just log back in and everything is restored automatically. After 7 days this cannot be undone.`
                     : `${activeMember.name} will be removed from the family right away. Their profile is kept for 7 days in case you change your mind — entering their PIN again restores everything. After 7 days this cannot be undone.`}
                 </Text>

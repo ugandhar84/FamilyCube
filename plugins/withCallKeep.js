@@ -74,6 +74,18 @@ const SETUP_ADDITION = `RNCallKeep.setup([
       UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")
       UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")
       surfacedCallUUIDs.remove(uuid)
+      // Was: nothing here told JS a call had ended if it happened while no
+      // JS runtime was alive to receive the live 'endCall' RNCallKeep
+      // event — hanging up from the lock screen / native call UI while the
+      // app was backgrounded/suspended left the post-answer /call-alert
+      // screen stuck on screen indefinitely; reopening the app just
+      // resumed exactly where it was left, with no cleanup ever having
+      // run (live-reported). Mirrors the existing
+      // familycube_last_answered_call_uuid pattern for the answered case —
+      // FCVoipToken.getLastEndedCall reads this back on next launch/
+      // foreground so JS can close a stale screen for a call that's
+      // already over.
+      UserDefaults.standard.set(uuid, forKey: "familycube_last_ended_call_uuid")
       return
     }
     guard call.hasConnected else { return }

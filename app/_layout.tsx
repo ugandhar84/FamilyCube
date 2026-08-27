@@ -8,7 +8,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { updateStreak, awardCoins } from '@/lib/db/rewards';
 import { isFeatureEnabled } from '@/lib/featureFlags';
-import { Stack, router, usePathname } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
@@ -39,8 +39,6 @@ import { isBackgroundLocationTracking, startBatteryPolling, stopBatteryPolling }
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
-  trackIncomingCallPayloads, onCallAnswered,
-  checkNativeAnsweredCall, listenForNativeCallAnswered,
 } from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -83,18 +81,6 @@ function RootNavigator() {
   const [checked, setChecked] = useState(false);
   // Guard so router.replace only fires once even if effect somehow re-runs
   const navigated = useRef(false);
-  // The auth-state-change boot sequence's router.replace('/(tabs)') was
-  // unconditionally stomping /call-alert: PushKit/CallKit answer navigation
-  // fires very fast on a cold launch, but this async profile-fetch flow can
-  // resolve a moment later and blindly replace whatever route is active —
-  // cutting the reminder off mid-speech with no visible error, just a
-  // silent, near-instant unmount. A ref (not a hook value, since this is
-  // read inside an async callback defined once, not on every render) lets
-  // that redirect check the CURRENT route right before firing and skip
-  // itself if the user has since landed on the call screen.
-  const currentPathname = useRef('');
-  const pathname = usePathname();
-  useEffect(() => { currentPathname.current = pathname; }, [pathname]);
   // Prevents SIGNED_IN handler from navigating during the initial boot sequence
   // (getSession handles initial navigation; onAuthStateChange handles post-login navigation)
   const bootCompleted = useRef(false);
@@ -254,12 +240,7 @@ function RootNavigator() {
           pendingWidgetTap.current = false;
           // Always navigate BEFORE dismissing splash to prevent the screen
           // from loading behind the fading overlay (causes animation jank).
-          // Same call-alert guard as the onAuthStateChange redirect below —
-          // this initial-boot navigation runs in the same render pass as
-          // the call-answer effect and can race it too.
-          if (!currentPathname.current.startsWith('/call-alert')) {
-            router.replace(destination as any);
-          }
+          router.replace(destination as any);
           hideSplashThen(() => {});
         }
       }, remaining);
@@ -398,9 +379,7 @@ function RootNavigator() {
           // so this branch is unreachable — but guard anyway.
         }
 
-        if (currentPathname.current.startsWith('/call-alert')) {
-          console.log('[FamilyCube:ProfileCheck] On call-alert screen, skipping post-auth redirect');
-        } else if (!profile) {
+        if (!profile) {
           console.log('[FamilyCube:ProfileCheck] No profile found, going to onboarding');
           router.replace('/onboarding');
         } else if (!profile.terms_accepted) {
@@ -713,45 +692,7 @@ function RootNavigator() {
   }, [activeMemberId]);
 
   useEffect(() => {
-    console.log('[_layout] call-alert effect mounting');
     setupCallAlerts();
-    // onCallAnswered must run BEFORE trackIncomingCallPayloads — the latter
-    // reads CallKit's replayed cold-start event queue (getInitialEvents,
-    // async) and, if that queue contains an already-answered call (app was
-    // killed, user answered from the lock screen before JS ever loaded),
-    // invokes the answer handler directly. Registering the handler after
-    // starting that read would race it.
-    // checkNativeAnsweredCall (UserDefaults-cached, read on boot) and
-    // listenForNativeCallAnswered (the live FCCallAnswered NSNotification)
-    // both feed this same handler and can BOTH fire for the same answered
-    // call — the native CXCallObserver delegate that caches to UserDefaults
-    // is the same one whose live notification this listens for, so a
-    // single answer can trigger router.push('/call-alert') twice. The
-    // second push remounts the screen mid-flight, cancelling whatever
-    // audio-session wait / Speech.speak() was already in progress — this
-    // was the actual cause of the "screen opens, stays open, but silent"
-    // symptom on an otherwise-correct cold-start answer. Track the last
-    // routed callUUID so a duplicate is a no-op.
-    let lastRoutedCallUUID: string | null = null;
-    const unanswer = onCallAnswered((payload) => {
-      if (payload.callUUID && payload.callUUID === lastRoutedCallUUID) {
-        console.log('[_layout] duplicate answer for callUUID, skipping re-navigation', payload.callUUID);
-        return;
-      }
-      lastRoutedCallUUID = payload.callUUID || null;
-      router.push({
-        pathname: '/call-alert',
-        params: { itemType: payload.itemType, itemId: payload.itemId, callUUID: payload.callUUID },
-      } as any);
-    });
-    const untrack = trackIncomingCallPayloads();
-    // Covers the killed-app-then-answered-from-lock-screen case
-    // trackIncomingCallPayloads' getInitialEvents() cannot (see
-    // checkNativeAnsweredCall in lib/callAlert.ts for the full mechanism —
-    // CXCallObserver + UserDefaults instead of an in-memory replay queue).
-    checkNativeAnsweredCall();
-    const untrackNative = listenForNativeCallAnswered();
-    return () => { untrack(); unanswer(); untrackNative(); };
   }, []);
 
   useEffect(() => {
@@ -843,7 +784,6 @@ function RootNavigator() {
         <Stack.Screen name="profile-settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile-settings/terms" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="call-alert" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
       </Stack>
 
 

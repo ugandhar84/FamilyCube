@@ -8,10 +8,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Animated, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CheckCircle2 } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 
-type ToastKind = 'success' | 'info';
+type ToastKind = 'success' | 'info' | 'error';
 
 interface ToastState {
   visible: boolean;
@@ -71,12 +71,14 @@ export default function AppToast() {
           opacity,
           transform: [{ translateY }],
           backgroundColor: isDark ? '#1E2640' : '#FFFFFF',
-          borderColor: colors.success + '50',
+          borderColor: (state.kind === 'error' ? colors.danger : colors.success) + '50',
           shadowColor: isDark ? '#000' : 'rgba(0,0,0,0.15)',
         },
       ]}
     >
-      <CheckCircle2 size={16} color={colors.success} />
+      {state.kind === 'error'
+        ? <AlertCircle size={16} color={colors.danger} />
+        : <CheckCircle2 size={16} color={colors.success} />}
       <Text style={[s.text, { color: colors.textPrimary }]} numberOfLines={2}>{state.message}</Text>
     </Animated.View>
   );

@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { logActivity, type ActivityAction } from '@/lib/activityLog';
+import { showToast } from '@/components/AppToast';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 export type EventType    = 'event' | 'reminder' | 'appointment' | 'birthday';
@@ -583,9 +584,23 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
   };
 }
 
-function dbUpdate(id: string, patch: Record<string, unknown>) {
+// This file's own header comment claims "Optimistic — ... rolled back on DB
+// error" as an architectural principle, but this helper itself never did
+// that — only console.warn'd. Every call site applies its own optimistic
+// local state change before calling this, so a failed write (RLS, network)
+// left local state showing a change that was never actually persisted,
+// with nothing reverting it or telling the user. `onFailure` is optional
+// and additive — existing behavior is unchanged for a caller that doesn't
+// pass one; call sites are being migrated one at a time to pass a rollback
+// that restores the pre-update local state, plus a shared failure toast so
+// the failure is at least visible before every site has real rollback.
+function dbUpdate(id: string, patch: Record<string, unknown>, onFailure?: () => void) {
   supabase.from('calendar_events').update(patch).eq('id', id).then(({ error }) => {
-    if (error) console.warn('[eventStore] update failed', id, error.message);
+    if (error) {
+      console.warn('[eventStore] update failed', id, error.message);
+      onFailure?.();
+      showToast("Couldn't save — check your connection and try again", 'error');
+    }
   });
 }
 
@@ -647,6 +662,30 @@ let _rtRangeFlushTimer: ReturnType<typeof setTimeout> | null = null;
 // which match currentDate would otherwise still fire one setState per row.
 let _rtCacheInvalidateBuffer: string[] = [];
 let _rtCacheInvalidateFlushTimer: ReturnType<typeof setTimeout> | null = null;
+// Buffers the dayEvents-side handler's OWN payloads too (rows matching
+// currentDate) — this branch previously applied each incoming row via its
+// own immediate setState, same unbuffered shape the rangeEvents handler
+// below was already fixed for. A scoped bulk update (e.g.
+// updateEventScoped's "This and following" propagating a driver
+// confirmation across a recurring series) is one batched SQL statement,
+// but Postgres/realtime still delivers one UPDATE payload per affected row
+// — if more than one of those rows happens to match currentDate, or
+// deliveries arrive in a tight burst, each fired its own synchronous
+// setState here, live-crashing "Maximum update depth exceeded" the same
+// way the already-buffered rangeEvents handler used to.
+let _rtDayBuffer: any[] = [];
+let _rtDayFlushTimer: ReturnType<typeof setTimeout> | null = null;
+// Buffers the strip-map (day-strip dot indicators) update too — this ran
+// BEFORE the currentDate check above and BEFORE _rtDayBuffer existed, so it
+// fired its own synchronous setState for every single non-delete row
+// unconditionally (every date, not just currentDate) — still live-crashing
+// "Maximum update depth exceeded" on a bulk scoped update even after the
+// dayEvents/rangeEvents buffers were added, since this branch runs first
+// and never went through either of them. Buffers both the cheap in-memory
+// append path (non-delete) and the async re-query path (delete) so a burst
+// across many dates settles into one setState instead of one per row.
+let _rtStripBuffer: any[] = [];
+let _rtStripFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensureRealtime(
   familyId: string,
@@ -663,47 +702,75 @@ function ensureRealtime(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'calendar_events', filter: `family_id=eq.${familyId}` },
       (payload) => {
-        const { currentDate, dayEvents, stripMap, _dayCache } = getState();
+        const { currentDate } = getState();
         const newRow  = payload.new as any;
         const oldRow  = payload.old as any;
         const rowDate: string = (newRow?.date ?? oldRow?.date ?? '').slice(0, 10);
-        const isDeleted = !!newRow?.deleted_at;
-        const cat: string = newRow?.category ?? '';
 
         // ── Strip map update ───────────────────────────────────────────────
+        // Was: fired its OWN synchronous setState per row here, unconditionally
+        // (every date, not just currentDate, and running before the
+        // currentDate check/buffers below even apply) — a scoped bulk update
+        // across many rows (e.g. "This and following" propagating a driver
+        // confirmation across a recurring series) still live-crashed
+        // "Maximum update depth exceeded" through this path even after the
+        // dayEvents/rangeEvents handlers were buffered, since this branch
+        // never went through either buffer. Buffer here too; the delete
+        // sub-case's re-query is deduped to one query per distinct affected
+        // date instead of one per event.
         if (rowDate) {
-          if (payload.eventType === 'DELETE' || isDeleted) {
-            // Re-query that date's rows (still lightweight — 5 narrow columns)
-            supabase
-              .from('calendar_events')
-              .select('category,member_id,helper_name,driver_name')
-              .eq('family_id', familyId)
-              .eq('date', rowDate)
-              .is('deleted_at', null)
-              .then(({ data }) => {
-                if (!data) return;
-                const cats = [...new Set(data.map((r: any) => r.category).filter(Boolean))];
-                const next = { ...getState().stripMap, [rowDate]: cats };
-                const rows: StripRow[] = data.map((r: any) => ({
-                  date: rowDate, category: r.category, memberId: r.member_id ?? undefined,
-                  helper: r.helper_name ?? undefined, driverName: r.driver_name ?? undefined,
-                }));
-                const nextRows = getState().stripRows.filter(r => r.date !== rowDate).concat(rows);
-                setState({ stripMap: next, stripRows: nextRows });
-                AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
-              });
-          } else if (cat) {
-            const next = stripMap[rowDate]?.includes(cat)
-              ? stripMap
-              : { ...stripMap, [rowDate]: [...(stripMap[rowDate] ?? []), cat] };
-            const newRowEntry: StripRow = {
-              date: rowDate, category: cat, memberId: newRow?.member_id ?? undefined,
-              helper: newRow?.helper_name ?? undefined, driverName: newRow?.driver_name ?? undefined,
-            };
-            const nextRows = [...getState().stripRows, newRowEntry];
-            setState({ stripMap: next, stripRows: nextRows });
-            AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
-          }
+          _rtStripBuffer.push(payload);
+          if (_rtStripFlushTimer) clearTimeout(_rtStripFlushTimer);
+          _rtStripFlushTimer = setTimeout(async () => {
+            const payloads = _rtStripBuffer.splice(0, _rtStripBuffer.length);
+            _rtStripFlushTimer = null;
+
+            let stripMap = getState().stripMap;
+            let stripRows = getState().stripRows;
+
+            const deletedDates = new Set<string>();
+            for (const p of payloads) {
+              const pNewRow = p.new as any;
+              const pOldRow = p.old as any;
+              const pRowDate: string = (pNewRow?.date ?? pOldRow?.date ?? '').slice(0, 10);
+              if (!pRowDate) continue;
+              const pIsDeleted = !!pNewRow?.deleted_at;
+              if (p.eventType === 'DELETE' || pIsDeleted) {
+                deletedDates.add(pRowDate);
+              } else if (pNewRow?.category) {
+                const cat = pNewRow.category as string;
+                if (!stripMap[pRowDate]?.includes(cat)) {
+                  stripMap = { ...stripMap, [pRowDate]: [...(stripMap[pRowDate] ?? []), cat] };
+                }
+                stripRows = [...stripRows, {
+                  date: pRowDate, category: cat, memberId: pNewRow?.member_id ?? undefined,
+                  helper: pNewRow?.helper_name ?? undefined, driverName: pNewRow?.driver_name ?? undefined,
+                }];
+              }
+            }
+
+            // One re-query per distinct deleted-from date (still lightweight
+            // — 5 narrow columns), not one per event.
+            for (const d of deletedDates) {
+              const { data } = await supabase
+                .from('calendar_events')
+                .select('category,member_id,helper_name,driver_name')
+                .eq('family_id', familyId)
+                .eq('date', d)
+                .is('deleted_at', null);
+              if (!data) continue;
+              const cats = [...new Set(data.map((r: any) => r.category).filter(Boolean))];
+              stripMap = { ...stripMap, [d]: cats };
+              const rows: StripRow[] = data.map((r: any) => ({
+                date: d, category: r.category, memberId: r.member_id ?? undefined,
+                helper: r.helper_name ?? undefined, driverName: r.driver_name ?? undefined,
+              }));
+              stripRows = stripRows.filter(r => r.date !== d).concat(rows);
+            }
+
+            setState({ stripMap, stripRows });
+            AsyncStorage.setItem(DISK_STRIP, JSON.stringify(stripMap));
+          }, 150);
         }
 
         // ── Day events update (only if rowDate === currentDate) ────────────
@@ -724,29 +791,43 @@ function ensureRealtime(
           return;
         }
 
-        let next: FamilyEvent[];
-        if (payload.eventType === 'INSERT' && !isDeleted) {
-          const ev = fromRow(newRow);
-          if (dayEvents.find(e => e.id === ev.id)) return;
-          next = sortByTime([...dayEvents, ev]);
-        } else if (payload.eventType === 'UPDATE') {
-          if (isDeleted) {
-            next = dayEvents.filter(e => e.id !== newRow.id);
-          } else {
-            const ev = fromRow(newRow);
-            next = sortByTime(dayEvents.map(e => e.id === ev.id ? ev : e));
+        // Buffer and apply as one batch after a short quiet window, same
+        // pattern as the rangeEvents handler below — see _rtDayBuffer's
+        // comment for why a single batched write can still deliver many
+        // rapid-fire payloads here.
+        _rtDayBuffer.push(payload);
+        if (_rtDayFlushTimer) clearTimeout(_rtDayFlushTimer);
+        _rtDayFlushTimer = setTimeout(() => {
+          const payloads = _rtDayBuffer.splice(0, _rtDayBuffer.length);
+          _rtDayFlushTimer = null;
+          let next = getState().dayEvents;
+          for (const p of payloads) {
+            const pNewRow = p.new as any;
+            const pOldRow = p.old as any;
+            const pIsDeleted = !!pNewRow?.deleted_at;
+            if (p.eventType === 'INSERT' && !pIsDeleted) {
+              const ev = fromRow(pNewRow);
+              if (next.find(e => e.id === ev.id)) continue;
+              next = [...next, ev];
+            } else if (p.eventType === 'UPDATE') {
+              if (pIsDeleted) {
+                next = next.filter(e => e.id !== pNewRow.id);
+              } else {
+                const ev = fromRow(pNewRow);
+                next = next.map(e => e.id === ev.id ? ev : e);
+              }
+            } else if (p.eventType === 'DELETE') {
+              next = next.filter(e => e.id !== pOldRow.id);
+            }
           }
-        } else if (payload.eventType === 'DELETE') {
-          next = dayEvents.filter(e => e.id !== oldRow.id);
-        } else return;
-
-        setState({ dayEvents: next, events: next });
-        // Update cache entry
-        const entry = getState()._dayCache[currentDate];
-        if (entry) {
-          setState({ _dayCache: { ...getState()._dayCache, [currentDate]: { ...entry, events: next } } });
-        }
-        AsyncStorage.setItem(DISK_DAY, JSON.stringify({ date: currentDate, events: next }));
+          next = sortByTime(next);
+          setState({ dayEvents: next, events: next });
+          const entry = getState()._dayCache[currentDate];
+          if (entry) {
+            setState({ _dayCache: { ...getState()._dayCache, [currentDate]: { ...entry, events: next } } });
+          }
+          AsyncStorage.setItem(DISK_DAY, JSON.stringify({ date: currentDate, events: next }));
+        }, 150);
       }
     )
     .on(
@@ -1240,7 +1321,19 @@ export const useEventStore = create<EventState>((set, get) => ({
     set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)) });
     const updated = next.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (updated) {
-      dbUpdate(id, toRowPartial(updated, Object.keys(stamped) as (keyof FamilyEvent)[]));
+      dbUpdate(id, toRowPartial(updated, Object.keys(stamped) as (keyof FamilyEvent)[]), () => {
+        // Failed write — revert the optimistic merge above in both lists
+        // back to the exact pre-update event so local state doesn't keep
+        // showing a change (reassignment, decline-and-reopen, RSVP, etc.)
+        // that never actually landed in the DB.
+        if (prevEvent) {
+          set(s => ({
+            dayEvents: s.dayEvents.map(e => e.id === id ? prevEvent : e),
+            events: s.events.map(e => e.id === id ? prevEvent : e),
+            rangeEvents: s.rangeEvents.map(e => e.id === id ? prevEvent : e),
+          }));
+        }
+      });
       if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
     }
     // Was: a decline silently reopened the pool with zero signal to anyone
@@ -1421,11 +1514,25 @@ export const useEventStore = create<EventState>((set, get) => ({
 
   deleteEvent: (id) => {
     const prev = get().dayEvents;
+    const prevRange = get().rangeEvents;
+    const deletedEvent = prev.find(e => e.id === id) ?? prevRange.find(e => e.id === id);
     const next = prev.filter(e => e.id !== id);
     set({ dayEvents: next, events: next });
-    set({ rangeEvents: get().rangeEvents.filter(e => e.id !== id) });
+    set({ rangeEvents: prevRange.filter(e => e.id !== id) });
     const actorId = getActiveMemberId();
-    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: actorId });
+    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: actorId }, () => {
+      // Failed soft-delete — the event was already stripped from every
+      // local list above; without this it stayed permanently "deleted" on
+      // this device (until the next full reload happened to restore it)
+      // even though the DB never actually recorded the deletion.
+      if (deletedEvent) {
+        set(s => ({
+          dayEvents: [...s.dayEvents, deletedEvent],
+          events: [...s.events, deletedEvent],
+          rangeEvents: [...s.rangeEvents, deletedEvent],
+        }));
+      }
+    });
     logActivity({ entityType: 'event', entityId: id, familyId: getFamilyId(), actorId, action: 'deleted' });
     // Also refresh strip for that date (category count may drop to zero)
     const ev = prev.find(e => e.id === id);
@@ -1547,12 +1654,69 @@ export const useEventStore = create<EventState>((set, get) => ({
           .is('deleted_at', null)
           .then(({ count }) => {
             const dates = generateOccurrenceDates(latestDate, anchor.recurrenceRule!, count ?? 1);
+            if (dates.length === 0) return;
             const { id: _anchorId, ...anchorRest } = anchor;
-            for (const date of dates) {
-              get().addEvent({
-                ...anchorRest, date, seriesId, isSeriesAnchor: false, recurrenceRule: undefined,
-              });
+            // Was: get().addEvent(...) looped once per generated date — same
+            // unbatched shape addRecurringEvent's own header comment
+            // documents already live-crashing "Maximum update depth
+            // exceeded" for (one INSERT + several synchronous set() calls
+            // PER occurrence, plus a realtime echo per row). Mirrors
+            // addRecurringEvent's already-fixed batching: build every
+            // occurrence in memory, apply local state once, write to the DB
+            // once.
+            const now = new Date().toISOString();
+            const createdBy = anchor.createdBy ?? getActiveMemberId() ?? undefined;
+            const occurrences: FamilyEvent[] = dates.map((date, i) => ({
+              ...anchorRest,
+              id: `ev${Date.now()}_${i}`,
+              date, seriesId, isSeriesAnchor: false, recurrenceRule: undefined,
+              createdBy, createdAt: now,
+            }));
+
+            const currentDate = get().currentDate;
+            const sameDayOccurrences = occurrences.filter(ev => ev.date === currentDate);
+            if (sameDayOccurrences.length > 0) {
+              const next = sortByTime([...get().dayEvents, ...sameDayOccurrences]);
+              set({ dayEvents: next, events: next });
+              const entry = get()._dayCache[currentDate];
+              if (entry) set({ _dayCache: { ...get()._dayCache, [currentDate]: { ...entry, events: next } } });
             }
+
+            const rangeNext = sortByTime([...get().rangeEvents, ...occurrences]);
+            set({ rangeEvents: rangeNext });
+            const rc = get()._rangeCache;
+            let rangeCacheChanged = false;
+            const nextRangeCache = { ...rc };
+            for (const key of Object.keys(rc)) {
+              const [from, to] = key.split(':');
+              const inRange = occurrences.filter(ev => ev.date >= from && ev.date <= to);
+              if (inRange.length > 0) {
+                nextRangeCache[key] = { ...rc[key], events: sortByTime([...rc[key].events, ...inRange]) };
+                rangeCacheChanged = true;
+              }
+            }
+            if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
+
+            const cat = anchor.category;
+            if (cat) {
+              const sm = { ...get().stripMap };
+              const stripRows = [...get().stripRows];
+              for (const ev of occurrences) {
+                if (!sm[ev.date]?.includes(cat)) sm[ev.date] = [...(sm[ev.date] ?? []), cat];
+                stripRows.push({ date: ev.date, category: cat, memberId: ev.memberId, helper: ev.helper, driverName: ev.driverName });
+              }
+              set({ stripMap: sm, stripRows });
+            }
+
+            supabase.from('calendar_events').insert(occurrences.map(toRow)).then(({ error }) => {
+              if (error) {
+                console.warn('[eventStore] extendRecurringSeries: batched insert failed', error.message);
+                const idSet = new Set(occurrences.map(ev => ev.id));
+                const rolledBackDay = get().dayEvents.filter(e => !idSet.has(e.id));
+                set({ dayEvents: rolledBackDay, events: rolledBackDay });
+                set({ rangeEvents: get().rangeEvents.filter(e => !idSet.has(e.id)) });
+              }
+            });
           });
       });
   },

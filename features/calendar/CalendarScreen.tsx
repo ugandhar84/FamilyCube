@@ -537,28 +537,48 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // interaction) — check for any anchor whose last materialized occurrence
   // is getting close to today and extend it.
   React.useEffect(() => {
+    const familyId = activeMember?.familyId;
+    if (!familyId) return;
     const soon = toDateStr(addDays(new Date(), 21)); // extend once <3 weeks of runway remains
+    // Was: one query for series anchors, unscoped to this family (every
+    // family's anchors queried on every Calendar mount), then a SECOND
+    // query PER anchor to find its latest occurrence date — a classic N+1
+    // that also leaked cross-family data into this pass. Fixed both: scope
+    // to this family, and pull every occurrence for every anchor's series
+    // in ONE query (series_id IN (...), no per-row LIMIT 1 needed since
+    // client-side reduction over a single result set is cheap here — series
+    // occurrence counts are small, tens not thousands), keeping only the
+    // max date per series_id.
     supabase.from('calendar_events')
       .select('id, series_id')
+      .eq('family_id', familyId)
       .eq('is_series_anchor', true)
       .is('deleted_at', null)
       .then(({ data: anchors, error }) => {
         if (error || !anchors?.length) return;
-        for (const a of anchors) {
-          if (!a.series_id) continue;
-          supabase.from('calendar_events')
-            .select('date')
-            .eq('series_id', a.series_id)
-            .is('deleted_at', null)
-            .order('date', { ascending: false })
-            .limit(1)
-            .then(({ data: latest }) => {
-              if (latest?.[0]?.date && latest[0].date < soon) {
-                useEventStore.getState().extendRecurringSeries(a.series_id as string);
-              }
-            });
-        }
+        const seriesIds = anchors.map(a => a.series_id).filter((id): id is string => !!id);
+        if (seriesIds.length === 0) return;
+        supabase.from('calendar_events')
+          .select('series_id, date')
+          .in('series_id', seriesIds)
+          .is('deleted_at', null)
+          .then(({ data: occurrences, error: occErr }) => {
+            if (occErr || !occurrences?.length) return;
+            const latestBySeriesId = new Map<string, string>();
+            for (const o of occurrences) {
+              if (!o.series_id) continue;
+              const prev = latestBySeriesId.get(o.series_id);
+              if (!prev || o.date > prev) latestBySeriesId.set(o.series_id, o.date);
+            }
+            for (const [seriesId, latestDate] of latestBySeriesId) {
+              if (latestDate < soon) useEventStore.getState().extendRecurringSeries(seriesId);
+            }
+          });
       });
+  // Mount-only, same as before this fix — activeMember is read fresh at
+  // effect-run time rather than tracked as a dependency, since this only
+  // needs to run once per Calendar mount, not re-run if activeMember's
+  // reference happens to change for unrelated reasons.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);

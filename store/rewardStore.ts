@@ -201,7 +201,10 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     try {
       const [{ data: rData }, { data: rdData }] = await Promise.all([
         supabase.from('rewards').select('*').order('created_at'),
-        supabase.from('reward_redemptions').select('*').order('requested_at', { ascending: false }),
+        // Unbounded before — every redemption ever requested, across a
+        // family's whole lifetime, loaded on every sync. Capped same as
+        // choreStore's point_transactions/parent_quest_assignments queries.
+        supabase.from('reward_redemptions').select('*').order('requested_at', { ascending: false }).limit(200),
       ]);
       if (rData && rData.length > 0) {
         const rewards     = rData.map(rewardFromRow);

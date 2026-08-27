@@ -45,28 +45,47 @@ serve(async (req) => {
   const skipped:  { pet_id: string; day_count: number }[] = [];
 
   // ── Step 1: day-count milestones ──────────────────────────────────────────
+  // Was one INSERT per qualifying pet, in a loop — scales with total pet
+  // count as the fleet grows, even though on any given day only a handful
+  // of pets actually hit a milestone day. Build every qualifying row in
+  // memory first, then a single batched upsert; milestones_pet_day_unique
+  // (pet_id, day_count) already exists, so ignoreDuplicates safely no-ops
+  // any row that (rare backfill/re-run case) already exists instead of
+  // needing a per-row try/insert to detect that.
+  const candidates: { pet: { id: string; name: string }; daysCount: number }[] = [];
   for (const pet of (pets ?? [])) {
     const adoption = new Date(pet.adoption_date);
     adoption.setUTCHours(0, 0, 0, 0);
     const daysCount = Math.floor((today.getTime() - adoption.getTime()) / 86_400_000);
+    if (daysCount in MILESTONE_DAYS) candidates.push({ pet, daysCount });
+  }
 
-    if (!(daysCount in MILESTONE_DAYS)) continue;
-
-    const { error: insertErr } = await db
+  if (candidates.length > 0) {
+    const rows = candidates.map(({ pet, daysCount }) => ({
+      pet_id:         pet.id,
+      day_count:      daysCount,
+      title:          MILESTONE_DAYS[daysCount],
+      achieved_at:    today.toISOString().slice(0, 10),
+      milestone_type: 'day_count',
+    }));
+    const { data: upserted, error: upsertErr } = await db
       .from('milestones')
-      .insert({
-        pet_id:         pet.id,
-        day_count:      daysCount,
-        title:          MILESTONE_DAYS[daysCount],
-        achieved_at:    today.toISOString().slice(0, 10),
-        milestone_type: 'day_count',
-      });
+      .upsert(rows, { onConflict: 'pet_id,day_count', ignoreDuplicates: true })
+      .select('pet_id, day_count');
 
-    if (insertErr) {
-      skipped.push({ pet_id: pet.id, day_count: daysCount });
+    if (upsertErr) {
+      console.warn('[milestone-cron] batched upsert failed:', upsertErr.message);
+      for (const { pet, daysCount } of candidates) skipped.push({ pet_id: pet.id, day_count: daysCount });
     } else {
-      inserted.push({ pet_id: pet.id, day_count: daysCount, title: MILESTONE_DAYS[daysCount] });
-      console.log(`[milestone-cron] ✓ ${pet.name} — Day ${daysCount}: ${MILESTONE_DAYS[daysCount]}`);
+      const landedKeys = new Set((upserted ?? []).map((r: any) => `${r.pet_id}:${r.day_count}`));
+      for (const { pet, daysCount } of candidates) {
+        if (landedKeys.has(`${pet.id}:${daysCount}`)) {
+          inserted.push({ pet_id: pet.id, day_count: daysCount, title: MILESTONE_DAYS[daysCount] });
+          console.log(`[milestone-cron] ✓ ${pet.name} — Day ${daysCount}: ${MILESTONE_DAYS[daysCount]}`);
+        } else {
+          skipped.push({ pet_id: pet.id, day_count: daysCount });
+        }
+      }
     }
   }
 

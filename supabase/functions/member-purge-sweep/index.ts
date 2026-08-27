@@ -85,44 +85,56 @@ serve(async (req) => {
 
     if (membersErr) throw new Error(`members fetch: ${membersErr.message}`);
 
-    for (const m of expiredMembers ?? []) {
-      try {
-        // Release any still-live chore assignment back to the pool before
-        // the member row disappears — chore_tasks.assigned_to_id has no
-        // FK cascade, so this is the only thing standing between "member
-        // gone" and a chore stuck pointing at nobody forever.
-        const { data: liveChores } = await db
+    const expiredIds = (expiredMembers ?? []).map(m => m.id);
+
+    if (expiredIds.length > 0) {
+      // Was: one SELECT + one UPDATE per expired member (2×N round-trips
+      // for the chore-release step alone) — this cron runs daily across
+      // every family, so N was every member purged that day, one at a
+      // time. Batched: one SELECT for every live chore assigned to ANY
+      // expiring member, one UPDATE releasing all of them at once.
+      const { data: liveChores, error: choresErr } = await db
+        .from('chore_tasks')
+        .select('id, status, assigned_to_id')
+        .in('assigned_to_id', expiredIds);
+      if (choresErr) console.warn('[member-purge-sweep] chore fetch failed:', choresErr.message);
+
+      const toReleaseIds = (liveChores ?? [])
+        .filter((c: { status: string }) => !TERMINAL_CHORE_STATUSES.includes(c.status))
+        .map((c: { id: string }) => c.id);
+
+      if (toReleaseIds.length && !dryRun) {
+        const { error: releaseErr } = await db
           .from('chore_tasks')
-          .select('id, status')
-          .eq('assigned_to_id', m.id);
+          .update({ assigned_to_id: null, is_pool: true, status: 'todo' })
+          .in('id', toReleaseIds);
+        if (releaseErr) console.warn('[member-purge-sweep] chore release failed:', releaseErr.message);
+        else report.choresReleased += toReleaseIds.length;
+      } else {
+        report.choresReleased += toReleaseIds.length;
+      }
 
-        const toRelease = (liveChores ?? []).filter((c: { status: string }) => !TERMINAL_CHORE_STATUSES.includes(c.status));
-        if (toRelease.length && !dryRun) {
-          const { error: releaseErr } = await db
-            .from('chore_tasks')
-            .update({ assigned_to_id: null, is_pool: true, status: 'todo' })
-            .in('id', toRelease.map((c: { id: string }) => c.id));
-          if (releaseErr) console.warn(`[member-purge-sweep] chore release failed for member=${m.id}:`, releaseErr.message);
-          else report.choresReleased += toRelease.length;
-        } else {
-          report.choresReleased += toRelease.length;
-        }
+      // chat_messages.sender_id is intentionally left as-is (user
+      // decision — see header comment). The client renders "Removed
+      // member" when a sender lookup misses.
 
-        // chat_messages.sender_id is intentionally left as-is (user
-        // decision — see header comment). The client renders "Removed
-        // member" when a sender lookup misses.
-
-        if (!dryRun) {
-          const { error: delErr } = await db.from('members').delete().eq('id', m.id);
-          if (delErr) {
-            console.error(`[member-purge-sweep] delete members/${m.id} failed:`, delErr.message);
-            continue;
+      // Member deletion itself stays per-row (not batched) — a single
+      // member's FK constraint issue or delete failure should be isolated
+      // and logged, not abort or obscure the others' successful purges.
+      for (const m of expiredMembers ?? []) {
+        try {
+          if (!dryRun) {
+            const { error: delErr } = await db.from('members').delete().eq('id', m.id);
+            if (delErr) {
+              console.error(`[member-purge-sweep] delete members/${m.id} failed:`, delErr.message);
+              continue;
+            }
           }
+          report.membersPurged++;
+          console.log(`[member-purge-sweep] purged member=${m.id} (${m.name})`);
+        } catch (e: any) {
+          console.error(`[member-purge-sweep] error purging member=${m.id}:`, e.message);
         }
-        report.membersPurged++;
-        console.log(`[member-purge-sweep] purged member=${m.id} (${m.name})`);
-      } catch (e: any) {
-        console.error(`[member-purge-sweep] error purging member=${m.id}:`, e.message);
       }
     }
 

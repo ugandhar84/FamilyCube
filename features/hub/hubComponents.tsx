@@ -23,8 +23,8 @@ import { fmtDateShort } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
-import { decryptLocationText } from '@/lib/locationCrypto';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
+import { useDriverLocation } from '@/lib/hooks/useDriverLocation';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
 // Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
@@ -1442,32 +1442,10 @@ export function PickupRadarStatus({ colors, isDark, activeTrip }: {
   // trip only ever got a synthetic ETA countdown with zero live location,
   // even though the underlying GPS data was being written the whole time
   // (QA launch-readiness sweep — reported by the user as "the other parent
-  // and kids aren't seeing the driver's live location").
-  const [driverAddress, setDriverAddress] = useState<string | null>(null);
+  // and kids aren't seeing the driver's live location"). Shared hook now —
+  // was a byte-identical duplicate of EnRouteBanner's own effect.
   const driverMemberId = activeTrip.driverMemberId;
-  useEffect(() => {
-    if (!driverMemberId) { setDriverAddress(null); return; }
-    let cancelled = false;
-    const loadDriverLocation = async () => {
-      const { data } = await supabase.from('member_locations')
-        .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
-      if (cancelled) return;
-      if (!data || data.lat == null || data.lng == null) { setDriverAddress(null); return; }
-      setDriverAddress(data.address ? await decryptLocationText(driverMemberId, data.address) : null);
-    };
-    loadDriverLocation();
-    // Randomized suffix, not just driverMemberId — this component mounts
-    // once per VIEWER (every parent/kid/teen/GP watching the same trip on
-    // their own Hub), so a fixed channel name would collide the instant two
-    // viewers on the same device/session (or React Strict Mode's dev-only
-    // double-invoke) both target the same driverMemberId, same class of bug
-    // FamilyRadarSection/GpsTab already fix this way elsewhere.
-    const channelName = `pickup_radar_driver_${driverMemberId}_${Math.random().toString(36).slice(2)}`;
-    const ch = supabase.channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations', filter: `member_id=eq.${driverMemberId}` }, loadDriverLocation)
-      .subscribe();
-    return () => { cancelled = true; supabase.removeChannel(ch); };
-  }, [driverMemberId]);
+  const driverAddress = useDriverLocation(driverMemberId, true);
 
   const elapsedMin = activeTrip.startedAtMs ? (now - activeTrip.startedAtMs) / 60_000 : 0;
   const remainingMin = Math.max(0, Math.ceil(activeTrip.etaMinutes - elapsedMin));

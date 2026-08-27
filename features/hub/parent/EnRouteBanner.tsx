@@ -3,11 +3,10 @@ import { View, Text, Pressable, Alert, TouchableOpacity, ScrollView } from 'reac
 import Slider from '@react-native-community/slider';
 import { Navigation, Car, MapPin, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
-import { decryptLocationText } from '@/lib/locationCrypto';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
+import { useDriverLocation } from '@/lib/hooks/useDriverLocation';
 import type { FamilyMember } from '@/store/familyStore';
 
 const DEFAULT_ETA = 10;
@@ -67,30 +66,8 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
   // Driver's live position, if they're sharing — pulled straight from the
   // same member_locations rows the Radar map uses, so "en route" actually
   // shows where the driver is right now, not just a countdown timer.
-  const [driverAddress, setDriverAddress] = useState<string | null>(null);
   const driverMemberId = activeTrip?.driverMemberId;
-  useEffect(() => {
-    if (!isActive || !driverMemberId) { setDriverAddress(null); return; }
-    let cancelled = false;
-    const loadDriverLocation = async () => {
-      const { data } = await supabase.from('member_locations')
-        .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
-      if (cancelled) return;
-      if (!data || data.lat == null || data.lng == null) { setDriverAddress(null); return; }
-      setDriverAddress(data.address ? await decryptLocationText(driverMemberId, data.address) : null);
-    };
-    loadDriverLocation();
-    // Randomized suffix — same Strict-Mode double-subscribe fix already
-    // applied to FamilyRadarSection/GpsTab (and now PickupRadarStatus,
-    // this component's read-only counterpart for every other viewer): a
-    // fixed name keyed only on driverMemberId collides the instant this
-    // effect re-runs before the previous subscription's cleanup completes.
-    const channelName = `enroute_driver_${driverMemberId}_${Math.random().toString(36).slice(2)}`;
-    const ch = supabase.channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations', filter: `member_id=eq.${driverMemberId}` }, loadDriverLocation)
-      .subscribe();
-    return () => { cancelled = true; supabase.removeChannel(ch); };
-  }, [isActive, driverMemberId]);
+  const driverAddress = useDriverLocation(driverMemberId, isActive);
 
   // Countdown timer — ticks every second so both the "N min left" label and
   // the progress bar visibly count down in real time, not just a static

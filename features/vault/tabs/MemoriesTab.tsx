@@ -433,10 +433,15 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
     // `date` alone (day-granularity, no time) ties for every post made the
     // same day — order by created_at too so same-day posts still sort
     // newest-first instead of an unspecified tie order.
+    // Was unbounded — every memory ever posted loaded on every screen visit,
+    // an ever-growing feed with no cap. Capped at a generous recent window;
+    // real pagination/"load more" UI is a separate follow-up, not just a
+    // query tweak, since this screen has no infinite-scroll affordance today.
     const { data, error } = await supabase.from('family_memories')
       .select('*').eq('family_id', familyId)
       .order('date', { ascending: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (error) console.error('[MemoriesTab] load failed:', error.message, error);
     if (data) setMemories(data as Memory[]);
     setLoading(false);

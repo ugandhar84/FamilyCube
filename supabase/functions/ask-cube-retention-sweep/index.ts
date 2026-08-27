@@ -54,26 +54,51 @@ serve(async (req) => {
 
     const report = { familiesScanned: families?.length ?? 0, conversationsDeleted: 0, dryRun };
 
+    // Was one SELECT + one DELETE per family, every run, regardless of
+    // whether that family actually has anything stale — ~2×(family count)
+    // round-trips daily. Nearly every family uses the default retention
+    // window, so split into: one batched query covering every
+    // default-retention family (single cutoff, .in('family_id', ids)), and
+    // a per-family loop only for the rare custom-retention override —
+    // every family still gets the exact same cutoff logic it did before,
+    // just batched wherever the cutoff is shared.
+    const defaultFamilyIds: string[] = [];
+    const customFamilies: { id: string; retentionDays: number }[] = [];
     for (const fam of families ?? []) {
-      const retentionDays = fam.ask_cube_retention_days ?? DEFAULT_RETENTION_DAYS;
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60_000).toISOString();
+      if (fam.ask_cube_retention_days == null || fam.ask_cube_retention_days === DEFAULT_RETENTION_DAYS) {
+        defaultFamilyIds.push(fam.id);
+      } else {
+        customFamilies.push({ id: fam.id, retentionDays: fam.ask_cube_retention_days });
+      }
+    }
 
+    const deleteStaleForCutoff = async (familyIds: string[], cutoff: string) => {
+      if (familyIds.length === 0) return;
       const { data: stale, error: staleErr } = await supabase
         .from('ask_cube_conversations')
         .select('id')
-        .eq('family_id', fam.id)
+        .in('family_id', familyIds)
         .lt('updated_at', cutoff);
-      if (staleErr) { console.warn('[ask-cube-retention-sweep] scan failed', fam.id, staleErr.message); continue; }
-      if (!stale?.length) continue;
+      if (staleErr) { console.warn('[ask-cube-retention-sweep] scan failed', staleErr.message); return; }
+      if (!stale?.length) return;
 
       report.conversationsDeleted += stale.length;
-      if (dryRun) continue;
+      if (dryRun) return;
 
       const { error: delErr } = await supabase
         .from('ask_cube_conversations')
         .delete()
         .in('id', stale.map(s => s.id));
-      if (delErr) console.warn('[ask-cube-retention-sweep] delete failed', fam.id, delErr.message);
+      if (delErr) console.warn('[ask-cube-retention-sweep] delete failed', delErr.message);
+    };
+
+    if (defaultFamilyIds.length > 0) {
+      const cutoff = new Date(Date.now() - DEFAULT_RETENTION_DAYS * 24 * 60 * 60_000).toISOString();
+      await deleteStaleForCutoff(defaultFamilyIds, cutoff);
+    }
+    for (const fam of customFamilies) {
+      const cutoff = new Date(Date.now() - fam.retentionDays * 24 * 60 * 60_000).toISOString();
+      await deleteStaleForCutoff([fam.id], cutoff);
     }
 
     console.log('[ask-cube-retention-sweep]', JSON.stringify(report));

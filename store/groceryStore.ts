@@ -563,9 +563,24 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     if (error) console.warn('[groceryStore] completeRun bought-items query error', error);
     const bought = data ?? [];
     if (bought.length) {
+      // Was one UPDATE per checked-off item (10-30+ on a real trip) — group
+      // by who checked each one off (typically 1-3 people per run, not one
+      // per item) and issue one batched .in() update per distinct checker
+      // instead, since bought_by varies per group but not per item within it.
+      const byChecker = new Map<string, string[]>();
       for (const ri of bought) {
-        await supabase.from('grocery_items').update({ is_bought: true, bought_by: ri.checked_by, bought_at: now }).eq('id', ri.item_id);
+        const key = ri.checked_by ?? '';
+        const list = byChecker.get(key) ?? [];
+        list.push(ri.item_id);
+        byChecker.set(key, list);
       }
+      await Promise.all(
+        Array.from(byChecker.entries()).map(([checkedBy, itemIds]) =>
+          supabase.from('grocery_items')
+            .update({ is_bought: true, bought_by: checkedBy || null, bought_at: now })
+            .in('id', itemIds),
+        ),
+      );
       set(s => ({ items: s.items.filter(i => !bought.find(d => d.item_id === i.id)) }));
     }
   },

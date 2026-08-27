@@ -50,6 +50,24 @@ export interface ChatMessage {
   // never by the client directly. Parent-only UI shows a small indicator —
   // the message itself stays visible to everyone as sent.
   moderationFlag?: { severity: string; reason: string; flagged_at: string };
+  // 'failed' — sendMessage's write (network drop, RLS error, etc.) threw.
+  // Was silently removed from the message list on failure (get()._removeMessage)
+  // with the only recovery being an invisible background retry the next time
+  // flushOfflineQueue happened to run — the user had no way to tell the send
+  // ever failed, or to retry it themselves on demand. Now stays visible with
+  // a retry affordance instead of vanishing. Undefined/omitted = sent normally.
+  status?: 'failed';
+  // Captured only on a failed send — everything retryMessage needs to
+  // re-attempt the exact same send without the caller having to keep its
+  // own copy of every argument around just in case it fails.
+  _retryArgs?: {
+    channelId: string; senderId: string; text: string;
+    imageUri?: string; mediaType?: 'image' | 'video';
+    replyTo?: ChatMessage; voiceDuration?: number;
+    locationPin?: { address: string; lat: number; lng: number };
+    voiceUri?: string; documentUri?: string; documentName?: string;
+    systemEvent?: { type: string; payload: Record<string, any> };
+  };
 }
 
 // DB row shape — "text" column stores AES-256-GCM ciphertext
@@ -356,6 +374,10 @@ interface ChatState {
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
   deleteMessage: (channelId: string, messageId: string) => Promise<void>;
+  // Re-sends a failed message (status: 'failed') using the args captured
+  // at failure time — the tap-to-retry counterpart to the automatic
+  // background retry flushOfflineQueue already does.
+  retryMessage:  (channelId: string, messageId: string) => Promise<void>;
 
   search:        (channelId: string, query: string) => Promise<void>;
   clearSearch:   (channelId: string) => void;
@@ -407,28 +429,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set(s => ({ lastActivity: { ...s.lastActivity, ...latest } }));
   },
 
-  // O(1) per channel: count messages sent by someone else after my
-  // chat_channel_reads cursor for that channel (no cursor row = never read,
-  // so everything from others counts as unread).
+  // Was one COUNT query PER channel (Promise.all over channelIds, each
+  // with its own chat_channel_reads cutoff) — a real N+1, fired every time
+  // this runs across however many channels the family has. Now a single
+  // get_unread_counts RPC does the per-channel grouping server-side (see
+  // migration 20260927000000_batched_unread_counts_rpc.sql) — one round
+  // trip regardless of channel count. A channel absent from the RPC's
+  // result (nothing unread) is treated as 0, matching the old behavior.
   loadUnreadCounts: async (channelIds, memberId) => {
     if (channelIds.length === 0) return;
-    const { data: cursors } = await supabase
-      .from('chat_channel_reads')
-      .select('channel_id, last_read_at')
-      .eq('member_id', memberId)
-      .in('channel_id', channelIds);
-    const cursorMap = Object.fromEntries((cursors ?? []).map((c: any) => [c.channel_id, c.last_read_at]));
-
-    const counts = await Promise.all(channelIds.map(async (id) => {
-      let query = supabase
-        .from('chat_messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('channel_id', id)
-        .neq('sender_id', memberId);
-      if (cursorMap[id]) query = query.gt('created_at', cursorMap[id]);
-      const { count } = await query;
-      return [id, count ?? 0] as const;
-    }));
+    const { data, error } = await supabase.rpc('get_unread_counts', {
+      p_member_id: memberId,
+      p_channel_ids: channelIds,
+    });
+    if (error) { console.warn('[chatStore] loadUnreadCounts RPC failed', error.message); return; }
+    const countByChannel = Object.fromEntries((data ?? []).map((r: any) => [r.channel_id, r.unread_count]));
+    const counts = channelIds.map(id => [id, countByChannel[id] ?? 0] as const);
     // The channel currently open on screen is excluded from this write —
     // this query and markChannelRead's own read-cursor upsert (fired from
     // a separate, unordered effect in ChatScreen) can race: if this
@@ -587,13 +603,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
               console.log('[chatStore] realtime INSERT raw payload.new:', JSON.stringify(payload.new));
               const msg = await rowToMessage(payload.new as DBRow);
               console.log('[chatStore] realtime INSERT msg voiceUri:', msg.voiceUri, 'voiceDuration:', msg.voiceDuration);
+              const existing = get().channels[channelId]?.messages.find(m => m.id === msg.id);
               // If the schema cache hasn't refreshed voice_url yet, preserve the
               // voiceUri from the optimistic message already in state
               if (!msg.voiceUri) {
-                const existing = get().channels[channelId]?.messages.find(m => m.id === msg.id);
                 console.log('[chatStore] existing optimistic voiceUri:', existing?.voiceUri);
                 if (existing?.voiceUri) msg.voiceUri = existing.voiceUri;
               }
+              // Same gap for image/document attachments — sendMessage's own
+              // insert deliberately writes image_url/document_url as null
+              // (see chatStore.ts's row-building comment: the file itself
+              // hasn't finished uploading yet at insert time, a follow-up
+              // UPDATE patches the real signed URL in once it has). This
+              // realtime INSERT echoes that same null-image_url row back
+              // almost immediately, overwriting the optimistic message's
+              // local imageUri/documentUri with nothing — the thumbnail
+              // that was showing instantly disappears, then reappears
+              // seconds later once the UPDATE lands (which already had this
+              // exact preserve-if-missing guard, just not here on INSERT).
+              // Live-reported as the attachment preview "briefly
+              // disappearing and coming back."
+              if (!msg.imageUri && existing?.imageUri) msg.imageUri = existing.imageUri;
+              if (!msg.documentUri && existing?.documentUri) msg.documentUri = existing.documentUri;
               get()._upsertMessage(channelId, msg);
             }
             if (payload.eventType === 'UPDATE') {
@@ -815,15 +846,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Realtime subscription will deliver the real row and upsert it (replacing optimistic)
       return msgId;
     } catch (err) {
-      // Remove optimistic message on failure
-      get()._removeMessage(channelId, optimistic.id);
-      // Queue for offline retry
-      const offline = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
-      offline.push({ channelId, senderId, ciphertext, blind_index, imageUri, mediaType });
+      // Was: removed the optimistic message outright on any failure,
+      // silently re-queuing it for a background-only retry (flushOfflineQueue,
+      // triggered elsewhere on reconnect/app-active) — the sender had no
+      // visible sign the send ever failed, and no way to retry on demand.
+      // Mark it failed and keep it in the list instead, with the exact args
+      // needed to resend it stashed on the message itself.
+      get()._upsertMessage(channelId, {
+        ...optimistic,
+        status: 'failed',
+        _retryArgs: {
+          channelId, senderId, text, imageUri, mediaType, replyTo,
+          voiceDuration, locationPin, voiceUri, documentUri, documentName, systemEvent,
+        },
+      });
+      // Also queue for the existing background offline-retry path — a
+      // manual tap-to-retry and an automatic reconnect-retry aren't mutually
+      // exclusive; whichever succeeds first wins, and retryMessage below
+      // removes this queued copy if the user retries manually first.
+      let offline: any[];
+      try {
+        offline = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
+      } catch {
+        offline = [];
+      }
+      offline.push({ channelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id });
       await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
       console.warn('[chatStore] send failed, queued offline', err);
       return undefined;
     }
+  },
+
+  // Re-attempts a failed send using the args captured at failure time.
+  // Removes the failed bubble and re-runs sendMessage exactly as if the
+  // user tapped send again — a fresh optimistic message (and, if it fails
+  // again, a fresh failed one) takes its place rather than mutating the old
+  // one in place, keeping this on the same code path as every other send.
+  retryMessage: async (channelId, messageId) => {
+    const msg = get().channels[channelId]?.messages.find(m => m.id === messageId);
+    if (!msg?._retryArgs) return;
+    const args = msg._retryArgs;
+    get()._removeMessage(channelId, messageId);
+    // Drop the matching queued offline-retry copy, if any, so a manual
+    // retry doesn't also get double-sent later by flushOfflineQueue.
+    try {
+      const raw = await AsyncStorage.getItem(OFFLINE_KEY);
+      if (raw) {
+        const offline = JSON.parse(raw).filter((item: any) => item._optimisticId !== messageId);
+        await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
+      }
+    } catch { /* best-effort cleanup only */ }
+    await get().sendMessage(
+      args.channelId, args.senderId, args.text, args.imageUri, args.mediaType,
+      args.replyTo, args.voiceDuration, args.locationPin, args.voiceUri,
+      args.documentUri, args.documentName, args.systemEvent,
+    );
   },
 
   // ── Reactions ─────────────────────────────────────────────────────────────
@@ -912,7 +989,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Offline retry ─────────────────────────────────────────────────────────
 
   flushOfflineQueue: async () => {
-    let offline: { channelId: string; senderId: string; ciphertext: string; blind_index: string[]; imageUri?: string; mediaType?: 'image' | 'video' }[];
+    let offline: { channelId: string; senderId: string; ciphertext: string; blind_index: string[]; imageUri?: string; mediaType?: 'image' | 'video'; _optimisticId?: string }[];
     try {
       offline = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
     } catch {
@@ -947,9 +1024,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
         if (error) throw error;
         // Realtime subscription (if that channel is currently loaded) will
-        // deliver and upsert the real row; no local optimistic insert here
-        // since the original optimistic bubble was already removed when
-        // this item was first queued.
+        // deliver and upsert the real row under the NEW msgId minted above.
+        // The failed bubble from the original attempt (status: 'failed',
+        // kept visible now instead of being removed) is a different id and
+        // won't be touched by that upsert, so it must be explicitly cleared
+        // here or a successful background retry leaves a stale "failed —
+        // retry?" bubble sitting next to the message that actually went
+        // through.
+        if (item._optimisticId) get()._removeMessage(item.channelId, item._optimisticId);
       } catch (err) {
         console.warn('[chatStore] flushOfflineQueue: retry failed, re-queueing', err);
         stillFailed.push(item);

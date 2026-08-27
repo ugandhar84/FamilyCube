@@ -89,6 +89,21 @@ serve(async (req) => {
 
     const report = { scanned: events.length, conflictsFound: conflicts.length, notified: 0, dryRun };
 
+    // Was one members lookup per conflict pair (each re-querying by
+    // family_id+name) — pre-batch every distinct (family_id, name)
+    // assignee across all conflicts into one query instead.
+    const familyIds = [...new Set(conflicts.map(c => c.familyId))];
+    const names = [...new Set(conflicts.map(c => c.assigneeName))];
+    const memberByKey = new Map<string, string>();
+    if (familyIds.length > 0 && names.length > 0) {
+      const { data: memberRows } = await supabase
+        .from('members')
+        .select('id, family_id, name')
+        .in('family_id', familyIds)
+        .in('name', names);
+      for (const m of (memberRows ?? [])) memberByKey.set(`${m.family_id}:${m.name}`, m.id);
+    }
+
     for (const { a, b, assigneeName, familyId: fid } of conflicts) {
       // Pairing key so re-notifying is scoped to THIS specific pair, not
       // just "this event has ever been notified about anything" — if a
@@ -99,13 +114,8 @@ serve(async (req) => {
       const alreadyNotifiedThisPair = a.conflict_notified_pair === pairKey || b.conflict_notified_pair === pairKey;
       if (alreadyNotifiedThisPair) continue;
 
-      const { data: assigneeMember } = await supabase
-        .from('members')
-        .select('id')
-        .eq('family_id', fid)
-        .eq('name', assigneeName)
-        .maybeSingle();
-      if (!assigneeMember) continue; // external/free-text name, no member to notify
+      const assigneeMemberId = memberByKey.get(`${fid}:${assigneeName}`);
+      if (!assigneeMemberId) continue; // external/free-text name, no member to notify
 
       const reason = `${assigneeName.split(' ')[0]} assigned to 2 events`;
       report.notified++;
@@ -116,15 +126,18 @@ serve(async (req) => {
         body: {
           type: 'schedule_conflict',
           familyId: fid,
-          memberIds: [assigneeMember.id],
+          memberIds: [assigneeMemberId],
           payload: { reason, eventIds: [a.id, b.id] },
         },
       });
       if (notifyErr) { console.warn('[schedule-conflict-sweep] family-notifier failed', a.id, b.id, notifyErr.message); continue; }
 
+      // Was two separate .update() calls setting identical values on a and
+      // b — merged into one .in(['a.id','b.id']) update.
       const notifiedAt = new Date().toISOString();
-      await supabase.from('calendar_events').update({ conflict_notified_pair: pairKey, conflict_notified_at: notifiedAt }).eq('id', a.id);
-      await supabase.from('calendar_events').update({ conflict_notified_pair: pairKey, conflict_notified_at: notifiedAt }).eq('id', b.id);
+      await supabase.from('calendar_events')
+        .update({ conflict_notified_pair: pairKey, conflict_notified_at: notifiedAt })
+        .in('id', [a.id, b.id]);
     }
 
     console.log('[schedule-conflict-sweep]', JSON.stringify(report));

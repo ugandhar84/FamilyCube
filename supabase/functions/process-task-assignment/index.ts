@@ -306,6 +306,37 @@ serve(async (req) => {
     const maxDebt = Math.max(1, ...candidates.map(c => c.effort_debt_7d ?? 0)); // avoid /0
     const scored: CandidateScore[] = [];
 
+    // Weekly ride-cap check below used to run one COUNT query PER
+    // grandparent candidate inside this loop — same weekStart/weekEnd for
+    // all of them (both only depend on taskDate, fixed for this whole
+    // scoring pass), so batch it: one query covering every GP candidate's
+    // name via .in('helper_name', ...), counted into a map, read from
+    // inside the loop instead of re-querying per candidate.
+    const gpRideCountByName = new Map<string, number>();
+    if (taskType === 'event' && taskDate) {
+      const gpNames = candidates.filter(c => c.role === 'grandparent').map(c => c.name);
+      if (gpNames.length > 0) {
+        const weekStart0 = new Date(taskDate + 'T12:00');
+        weekStart0.setDate(weekStart0.getDate() - weekStart0.getDay());
+        const weekStartStr0 = weekStart0.toISOString().slice(0, 10);
+        const weekEnd0 = new Date(weekStart0);
+        weekEnd0.setDate(weekEnd0.getDate() + 7);
+        const weekEndStr0 = weekEnd0.toISOString().slice(0, 10);
+        const { data: weeklyRides } = await supabase
+          .from('calendar_events')
+          .select('helper_name')
+          .eq('family_id', familyId)
+          .in('helper_name', gpNames)
+          .eq('helper_status', 'confirmed')
+          .gte('date', weekStartStr0)
+          .lt('date', weekEndStr0)
+          .is('deleted_at', null);
+        for (const row of (weeklyRides ?? [])) {
+          gpRideCountByName.set(row.helper_name, (gpRideCountByName.get(row.helper_name) ?? 0) + 1);
+        }
+      }
+    }
+
     for (const c of candidates) {
       const breakdown = { history: 0, availability: 0, route: 0, preference: 0, fairness: 0, contextFit: 0 };
 
@@ -343,12 +374,6 @@ serve(async (req) => {
           continue;
         }
         if (taskDate) {
-          const weekStart = new Date(taskDate + 'T12:00');
-          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-          const weekStartStr = weekStart.toISOString().slice(0, 10);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 7);
-          const weekEndStr = weekEnd.toISOString().slice(0, 10);
           // member_id is the ride's SUBJECT (the kid needing the ride), not
           // who's driving it — a GP is essentially never the subject of a
           // ride, so this count was always 0 and the cap never fired (QA
@@ -360,17 +385,11 @@ serve(async (req) => {
           // CANCELLED still counted against the GP's weekly cap for the
           // rest of that week, with no visible cause (QA Round 10
           // verification finding — hit live: a soft-deleted ride from 5
-          // hours earlier still excluded the GP from candidacy).
-          const { count: ridesThisWeek } = await supabase
-            .from('calendar_events')
-            .select('id', { count: 'exact', head: true })
-            .eq('family_id', familyId)
-            .eq('helper_name', c.name)
-            .eq('helper_status', 'confirmed')
-            .gte('date', weekStartStr)
-            .lt('date', weekEndStr)
-            .is('deleted_at', null);
-          if ((ridesThisWeek ?? 0) >= (c.gp_weekly_ride_cap ?? 2)) {
+          // hours earlier still excluded the GP from candidacy). Count now
+          // comes from the pre-batched gpRideCountByName map above instead
+          // of a per-candidate query.
+          const ridesThisWeek = gpRideCountByName.get(c.name) ?? 0;
+          if (ridesThisWeek >= (c.gp_weekly_ride_cap ?? 2)) {
             scored.push({
               memberId: c.id, memberName: c.name, score: 0, breakdown,
               excluded: true, exclusionReason: `Already at weekly ride cap (${c.gp_weekly_ride_cap ?? 2})`,

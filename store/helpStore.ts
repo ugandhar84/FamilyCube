@@ -249,10 +249,14 @@ export const useHelpStore = create<HelpState>((set, get) => ({
 
   syncFromDB: async (memberIds?: string[]) => {
     try {
+      // Unbounded before — every help request ever made, across a family's
+      // whole lifetime. Capped same as the other history-shaped store
+      // queries in this app.
       let query = supabase
         .from('help_requests')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       // Scope to this family's members when IDs are provided — avoids blind full-table fetch
       if (memberIds && memberIds.length > 0) {

@@ -1143,6 +1143,12 @@ export default function ProfileSettingsScreen() {
   const isAnonymousSession = useAuthStore(s => !!(s.session?.user as any)?.is_anonymous);
   const authOwnerMember = allMembers.find(m => m.authUserId === authUserId);
   const viewingOwnProfile = !!activeMember && activeMember.id === authOwnerMember?.id;
+  // isParent above reads the CURRENTLY ACTIVE member's role — correct for
+  // most of this screen, but wrong for gating a parent-driven action like
+  // handleDeleteProfile: when a parent PIN-switches into a kid's profile,
+  // activeMember IS the kid, so isParent reads false even though the real
+  // signed-in owner is a parent. Use the real owner's own role for that.
+  const isRealOwnerParent = authOwnerMember?.role === 'parent';
   // Cheap RLS-scoped self-lookup (app_admins_select_self) — a kid/senior
   // profile's auth session (if any) simply won't have a matching row, so
   // this always resolves to false for them; gated below on isParent too.
@@ -1324,14 +1330,26 @@ export default function ProfileSettingsScreen() {
   // option for themselves, misleading and never actually appropriate for
   // that identity). Only a genuinely real (non-anonymous) auth session gets
   // the self-service "Delete account" path now.
-  const hasRealAccount = isAuthLinked && !isAnonymousSession;
+  // Must also require viewingOwnProfile — isAnonymousSession/isAuthLinked
+  // both read the ONE real Supabase session this device holds, which
+  // belongs to whoever the REAL auth owner is. A parent PIN-switched into
+  // a kid's profile still has their own real, non-anonymous session live
+  // underneath — without this check, hasRealAccount came back true for the
+  // KID's screen too (live-reported: a parent viewing an anonymous kid's
+  // profile via Lock/switch-back still saw "Delete account", the real-
+  // account self-service copy, instead of the parent-driven
+  // delete-this-profile flow it should always be for someone else's
+  // profile).
+  const hasRealAccount = isAuthLinked && !isAnonymousSession && viewingOwnProfile;
   const dangerAction = hasRealAccount ? handleDeleteAccount : handleDeleteProfile;
   // Non-auth/anonymous "delete profile" is a PARENT-only action on a kid/
   // senior's PIN- or code-only profile — that member themselves shouldn't
   // be able to delete their own profile from this screen (no real account
   // to lose control of, and it'd let a kid nuke themselves out of the
-  // family unsupervised).
-  const canShowDangerZone = hasRealAccount || isParent;
+  // family unsupervised). Gated on the REAL signed-in owner's role
+  // (isRealOwnerParent), not the currently-displayed member's role — see
+  // isRealOwnerParent's own comment for why isParent alone is wrong here.
+  const canShowDangerZone = hasRealAccount || (isRealOwnerParent && !viewingOwnProfile);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>

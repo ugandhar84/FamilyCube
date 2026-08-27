@@ -395,6 +395,18 @@ export default function LoginScreen() {
                   <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Create a family account</Text>
                 </Text>
               </TouchableOpacity>
+
+              {/* Distinct from "I'm joining a family" above — that's a
+                  FIRST-time join (creates a new profile). This is for
+                  someone who ALREADY has a profile but lost/wiped the
+                  device it lived on — recover-device re-authenticates the
+                  same existing identity instead of creating a new one. */}
+              <TouchableOpacity style={s.linkBtn} onPress={() => router.push('/onboarding/recover-device')}>
+                <Text style={s.linkText}>
+                  Recovering a profile on a new device?{'  '}
+                  <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Recover it</Text>
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 

@@ -1197,6 +1197,33 @@ export default function ProfileSettingsScreen() {
     }
   };
 
+  // Same pattern as resendInviteFor above, but for an already-ACTIVE member
+  // whose original device was lost/wiped — see RosterTab.tsx's identical
+  // generateRecoveryCodeFor for the full rationale (distinct edge
+  // function/table from generate-invite-code; re-authenticates an EXISTING
+  // identity instead of claiming a pending one).
+  const generateRecoveryCodeFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+    if (!familyId || !activeMember?.id) return { ok: false, error: 'Not ready yet — try again in a moment.' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-recovery-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
+      });
+      const json = await res.json();
+      if (json.ok) return { ok: true, code: json.code };
+      return { ok: false, error: json.error ?? 'Something went wrong.' };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'Network error.' };
+    }
+  };
+
   const [storeReminders, setStoreReminders] = useState(activeMember?.storeProximityRemindersEnabled ?? true);
   const [notifPrefs, setNotifPrefs] = useState(activeMember?.notificationPrefs ?? {});
   const [showNotifSheet, setShowNotifSheet] = useState(false);
@@ -1398,6 +1425,7 @@ export default function ProfileSettingsScreen() {
             onSavePin={savePin}
             onResetPin={(m) => openMember(m, 'pin')}
             onResendInvite={(m) => resendInviteFor(m)}
+            onGenerateRecoveryCode={(m) => generateRecoveryCodeFor(m)}
             colors={colors} isDark={isDark} />
         )}
         {isParent && familyId && (

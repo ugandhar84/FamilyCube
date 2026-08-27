@@ -64,7 +64,7 @@ function StatTile({ Icon, label, value, colors, accent }: { Icon: any; label: st
   );
 }
 
-export function MemberProfileSheet({ member, siblings, allMembers, visible, onClose, onSave, onLinkParent, onDelete, onSavePin, onResetPin, onResendInvite, isParentViewer, canChangePin, initialSection, colors, isDark }: {
+export function MemberProfileSheet({ member, siblings, allMembers, visible, onClose, onSave, onLinkParent, onDelete, onSavePin, onResetPin, onResendInvite, onGenerateRecoveryCode, isParentViewer, canChangePin, initialSection, colors, isDark }: {
   member: FamilyMember; siblings: string[]; visible: boolean; onClose: () => void;
   /** All members — needed for the edit section's "whose parent?" picker. */
   allMembers?: any[];
@@ -84,6 +84,12 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
    * Modal is still visible was the exact freeze already found and fixed
    * once this session for the photo picker; this avoids the same bug. */
   onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }>;
+  /** Generates a short-lived device-recovery code for an already-ACTIVE
+   * member (someone who already joined, has a PIN) whose original device
+   * was lost/wiped — re-authenticates the SAME existing identity on a new
+   * device instead of creating a fresh profile. Omit to hide "Lost this
+   * device?" entirely. */
+  onGenerateRecoveryCode?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
   /** Gates the Edit entry point — parent-only, same as before. */
   isParentViewer?: boolean;
   /** Gates the Change PIN entry point — parent or the member themself. */
@@ -127,7 +133,7 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
       {section === 'view' && (
         <ViewSection member={member} siblings={siblings} rc={rc} isKidOrTeen={isKidOrTeen} isSenior={isSenior}
           isParentViewer={isParentViewer} canChangePin={canChangePin} onSave={onSave} onDelete={onDelete}
-          onResetPin={onResetPin} onResendInvite={onResendInvite}
+          onResetPin={onResetPin} onResendInvite={onResendInvite} onGenerateRecoveryCode={onGenerateRecoveryCode}
           onEdit={() => setSection('edit')} onChangePin={() => setSection('pin')}
           onRequestRemove={() => setSection('confirmRemove')}
           colors={colors} isDark={isDark} />
@@ -158,19 +164,23 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
 // ─── View section (read-only summary — carried over from the old
 // MemberProfileSheet's badge/stat-tile layout unchanged) ────────────────────
 
-function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentViewer, canChangePin, onSave, onDelete, onResetPin, onResendInvite, onEdit, onChangePin, onRequestRemove, colors, isDark }: {
+function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentViewer, canChangePin, onSave, onDelete, onResetPin, onResendInvite, onGenerateRecoveryCode, onEdit, onChangePin, onRequestRemove, colors, isDark }: {
   member: FamilyMember; siblings: string[]; rc: string; isKidOrTeen: boolean; isSenior: boolean;
   isParentViewer?: boolean; canChangePin?: boolean;
   onSave?: (...args: any[]) => Promise<void>;
   onDelete?: (memberId: string) => Promise<void>;
   onResetPin?: (member: FamilyMember) => void;
   onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }>;
+  onGenerateRecoveryCode?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
   onEdit: () => void; onChangePin: () => void; onRequestRemove: () => void;
   colors: any; isDark: boolean;
 }) {
   const [inviteResult, setInviteResult] = useState<{ code: string; emailSent?: boolean; emailError?: string | null } | { error: string } | null>(null);
   const [resending, setResending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState<{ code: string } | { error: string } | null>(null);
+  const [generatingRecovery, setGeneratingRecovery] = useState(false);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
 
   const handleResendInvite = async () => {
     if (!onResendInvite || resending) return;
@@ -179,6 +189,21 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
     const result = await onResendInvite(member);
     setResending(false);
     setInviteResult(result.ok ? { code: result.code, emailSent: result.emailSent, emailError: result.emailError } : { error: result.error });
+  };
+
+  const handleGenerateRecoveryCode = async () => {
+    if (!onGenerateRecoveryCode || generatingRecovery) return;
+    setGeneratingRecovery(true);
+    setRecoveryResult(null);
+    const result = await onGenerateRecoveryCode(member);
+    setGeneratingRecovery(false);
+    setRecoveryResult(result.ok ? { code: result.code } : { error: result.error });
+  };
+
+  const copyRecoveryCode = async (code: string) => {
+    await Clipboard.setStringAsync(code);
+    setRecoveryCopied(true);
+    setTimeout(() => setRecoveryCopied(false), 2000);
   };
 
   const copyInviteCode = async (code: string) => {
@@ -289,6 +314,49 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
         <View style={{ marginTop: 12, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
           backgroundColor: colors.amber + '18', alignSelf: 'flex-start' }}>
           <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>Invite pending</Text>
+        </View>
+      )}
+
+      {/* "Lost this device?" — for a member who's already joined (has a PIN
+          and an existing session), not the pending-invite case above. Lets
+          a parent generate a short-lived code that re-authenticates a
+          new/wiped device as this SAME existing identity — no new profile,
+          no lost coins/xp/history. Any active member with a PIN qualifies,
+          not just seniors (kids lose/break devices just as often). */}
+      {onGenerateRecoveryCode && isParentViewer && member.inviteStatus !== 'pending' && !!member.pin && (
+        <View style={{ marginTop: 12, gap: 10 }}>
+          <TouchableOpacity onPress={handleGenerateRecoveryCode} disabled={generatingRecovery}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
+              borderWidth: 1.5, borderColor: colors.border, opacity: generatingRecovery ? 0.6 : 1 }}>
+            <KeyRound size={16} color={colors.accent} />
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Lost this device?</Text>
+            {generatingRecovery ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <RefreshCw size={14} color={colors.textTertiary} />}
+          </TouchableOpacity>
+
+          {recoveryResult && 'code' in recoveryResult && (
+            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: colors.accent + '50',
+              backgroundColor: colors.accent + '10', padding: 14, gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+                Recovery code for {member.name.split(' ')[0]} — expires in 1 hour
+              </Text>
+              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: colors.textPrimary }}>
+                {recoveryResult.code}
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                On their new device: Login screen → "Recovering a profile on a new device?" → enter this code + their PIN.
+              </Text>
+              <TouchableOpacity onPress={() => copyRecoveryCode(recoveryResult.code)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 10 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+                  {recoveryCopied ? 'Copied!' : 'Copy code'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {recoveryResult && 'error' in recoveryResult && (
+            <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600' }}>{recoveryResult.error}</Text>
+          )}
         </View>
       )}
 

@@ -248,6 +248,33 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
     }
   };
 
+  // Same shape/pattern as resendInviteFor above, but for an already-ACTIVE
+  // member whose original device was lost/wiped — calls generate-recovery-
+  // code (a distinct edge function/table from generate-invite-code, since
+  // this re-authenticates an EXISTING identity rather than claiming a
+  // pending one).
+  const generateRecoveryCodeFor = async (targetMember: any): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+    if (!familyId || !activeMemberId) return { ok: false, error: 'Not ready yet — try again in a moment.' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-recovery-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ familyId, memberId: activeMemberId, targetMemberId: targetMember.id }),
+      });
+      const json = await res.json();
+      if (json.ok) return { ok: true, code: json.code };
+      return { ok: false, error: json.error ?? 'Something went wrong.' };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'Network error.' };
+    }
+  };
+
   const copyCode = async (code: string) => {
     await Clipboard.setStringAsync(code);
     setCopied(code);
@@ -430,6 +457,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
           onSavePin={savePin}
           onResetPin={(m) => openMember(m, 'pin')}
           onResendInvite={(m) => resendInviteFor(m)}
+          onGenerateRecoveryCode={(m) => generateRecoveryCodeFor(m)}
           colors={colors} isDark={isDark} />
       )}
     </>

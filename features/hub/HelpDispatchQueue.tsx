@@ -743,7 +743,17 @@ const q = StyleSheet.create({
 
   helperTrigger:     { borderWidth: 1, borderRadius: 14, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   helperTriggerText: { fontSize: 11, fontWeight: '700' },
-  helperDropdown:    { position: 'absolute', top: 44, left: 0, right: 0, borderWidth: 1, borderRadius: 12, zIndex: 999, elevation: 20 },
+  // Was elevation:20 with no iOS shadow at all — absurdly high for a small
+  // inline dropdown (this app's own Modal-based overlays top out around
+  // 16-24, and THOSE render in their own native Android window/surface, so
+  // they don't compete for stacking with page content the way this one
+  // does). Rendered inline inside a scrollable help-request queue (not a
+  // Modal), elevation:20 gave Android a real paint-order stacking context
+  // that let this dropdown float visually above unrelated rows below it as
+  // the list scrolled. Brought down to a sane inline-dropdown elevation and
+  // added the missing iOS shadow to match.
+  helperDropdown:    { position: 'absolute', top: 44, left: 0, right: 0, borderWidth: 1, borderRadius: 12, zIndex: 999,
+                       elevation: 6, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8 },
   helperOption:      { padding: 10 },
   helperOptionText:  { fontSize: 12, fontWeight: '600' },
 

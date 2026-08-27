@@ -125,7 +125,15 @@ const sf = StyleSheet.create({
   label:       { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 4 },
   trigger:     { borderWidth: 1.5, borderRadius: 14, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   triggerText: { fontSize: TYPO.body, fontWeight: '600', flex: 1, marginRight: 4 },
-  dropdown:    { borderWidth: 1, borderRadius: 12, marginTop: 4, overflow: 'hidden', position: 'absolute', top: 58, left: 0, right: 0, zIndex: 999, elevation: 10 },
+  // Was overflow:'hidden' + elevation:10 with no iOS shadow properties at
+  // all — on Android, overflow:'hidden' clips the elevation shadow right at
+  // the rounded corners (looks flat-edged instead of floating), and on iOS
+  // there was no shadow whatsoever (looks pasted onto the page, no depth
+  // cue). Dropped overflow:'hidden' (nothing inside needs clipping — it's
+  // just text rows) and added a real, modest iOS shadow to match a sane
+  // elevation for a small inline dropdown.
+  dropdown:    { borderWidth: 1, borderRadius: 12, marginTop: 4, position: 'absolute', top: 58, left: 0, right: 0, zIndex: 999,
+                 elevation: 6, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8 },
   option:      { padding: 12 },
   optionText:  { fontSize: TYPO.body, fontWeight: '600' },
 });

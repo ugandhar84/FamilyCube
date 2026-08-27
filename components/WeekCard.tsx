@@ -118,7 +118,11 @@ export default function WeekCard({
 }
 
 const s = StyleSheet.create({
-  card:    { marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 0 },
+  // Was elevation: 0 — deliberately zeroed Android's depth cue while iOS
+  // got a (subtle) shadow, so this card read as visually flatter on
+  // Android than iOS for no apparent reason. Small, matched elevation
+  // instead so both platforms show the same subtle lift.
+  card:    { marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1 },
   navRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
   arrow:   { padding: 4 },
   dateBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },

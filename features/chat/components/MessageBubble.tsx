@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, Image, Animated, Alert, Linking } fr
 import MapView, { Marker } from 'react-native-maps';
 import * as WebBrowser from 'expo-web-browser';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Play, CheckCheck, AlertTriangle, MapPin, FileText } from 'lucide-react-native';
+import { Play, CheckCheck, AlertTriangle, MapPin, FileText, RefreshCw } from 'lucide-react-native';
 import { ChatMessage } from '@/store/chatStore';
 import { VoiceNoteBubble } from './VoiceComponents';
 import { SwipeableBubble } from './SwipeableBubble';
@@ -84,7 +84,7 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
 // re-render for messages that show the reader stack.
 function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
   senderColor, replyToColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent, readers,
-  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard }: {
+  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard, onRetry }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
   senderName: string; senderEmoji: string; senderColor: string;
   // Color of the ORIGINAL sender of the quoted message (msg.replyTo), not
@@ -101,6 +101,10 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   onOpenImage?: (uri: string) => void;
   onOpenVideo?: (uri: string) => void;
   onOpenSharedCard?: (payload: any) => void;
+  // Only relevant when msg.status === 'failed' — retries the exact send
+  // that failed (network drop, RLS error, etc.) using the args chatStore
+  // captured at failure time.
+  onRetry?: () => void;
   searchQuery: string; colors: any; isDark: boolean;
   onLongPress: () => void; onDoubleTap: () => void; onSwipeRight: () => void;
 }) {
@@ -471,6 +475,24 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
           {/* Read-by avatar stack — only on the last bubble of a group, so a
               run of consecutive messages from me doesn't repeat it per line. */}
           {isGroupLast && readerStack}
+
+          {/* Failed send — was silently removed from the list with only an
+              invisible background retry (flushOfflineQueue, next reconnect/
+              app-active); the sender had no way to tell it failed or retry
+              on demand. Only ever shown for status: 'failed', which only
+              ever applies to my own not-yet-sent messages. */}
+          {msg.status === 'failed' && (
+            <Pressable
+              onPress={onRetry}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3,
+                alignSelf: isMe ? 'flex-end' : 'flex-start' }}
+            >
+              <AlertTriangle size={11} color={colors.danger} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>Not sent</Text>
+              <RefreshCw size={11} color={colors.danger} style={{ marginLeft: 2 }} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger, textDecorationLine: 'underline' }}>Tap to retry</Text>
+            </Pressable>
+          )}
         </Animated.View>
       </View>
     </SwipeableBubble>

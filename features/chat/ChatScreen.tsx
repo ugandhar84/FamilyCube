@@ -65,7 +65,7 @@ export default function ChatScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const {
-    channels, loadChannel, sendMessage, addReaction, deleteMessage,
+    channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage,
     lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
     readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
   } = useChatStore();
@@ -475,8 +475,17 @@ export default function ChatScreen() {
     pendingMentions.current = {};
     const localAttachUri = attachUri;
     const localAttachType = attachType;
-    const sentMsgId = await sendMessage(channelId, activeMemberId, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
+    // Was cleared AFTER awaiting sendMessage — sendMessage does real network
+    // work (blind-index build, encryption, DB insert) before resolving, so
+    // the attachment preview sat visible for that entire round-trip and
+    // only cleared once it finished, instead of clearing the instant the
+    // user tapped send like the message bubble itself already does
+    // (optimistic insert via _upsertMessage). Looked like the preview
+    // "briefly disappearing and coming back" — it never actually
+    // disappeared until the send resolved, which reads as a flicker/delay
+    // rather than the instant clear a tap should give.
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
+    const sentMsgId = await sendMessage(channelId, activeMemberId, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
     // Scroll to newest (offset 0 on inverted list = visual bottom)
     requestAnimationFrame(() => flatRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
@@ -1077,6 +1086,7 @@ export default function ChatScreen() {
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
                     onOpenSharedCard={setSharedCardPayload}
+                    onRetry={() => retryMessage(channelId, msg.id)}
                   />
                 );
               }}

@@ -10,7 +10,7 @@
 // Role-gating follows the same `roles: MemberRole[]` convention VaultScreen's
 // own FEATURES array and Hub's role views already use — no new pattern.
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform, Share, Image, InteractionManager } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform, Share, Image, InteractionManager, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -1320,7 +1320,16 @@ export default function ProfileSettingsScreen() {
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      {/* KeyboardAvoidingView added — the Danger Zone's "type DELETE to
+          confirm" input sits near the bottom of a long scroll view with no
+          keyboard handling at all, so the keyboard covered it outright
+          instead of the view shifting up (live-reported, screenshot showed
+          the field hidden behind the keyboard). */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
@@ -1711,6 +1720,7 @@ export default function ProfileSettingsScreen() {
           </View>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

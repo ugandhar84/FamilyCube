@@ -400,6 +400,23 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_chore_action',
+      description: 'Propose an ACTION on an already-existing chore/quest that changes its status — claiming an open pool chore for yourself, approving or declining a submitted/pending chore (parent/approver only), marking a claimed chore complete/done, or cancelling a chore entirely. Does NOT perform the action — returns a proposal card the user must confirm. Use this whenever the user asks to claim/take/approve/decline/finish/cancel a specific chore by name, e.g. "I\'ll take out the trash chore", "approve Leo\'s dishes", "cancel the garage cleanup", "mark the laundry chore done". Looks the chore up by title/member the same way propose_update does — never guess which chore if more than one matches.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action:       { type: 'string', enum: ['claim', 'approve', 'decline', 'complete', 'cancel'], description: 'claim = take an open pool chore for the asking user; approve/decline = a parent/approver reviewing a submitted chore; complete = mark a chore the asking user already holds as done; cancel = remove the chore entirely (creator/parent only)' },
+          targetSearch: { type: 'string', description: 'Words to match the chore\'s title, e.g. "trash" or "clean the garage"' },
+          memberName:   { type: 'string', description: 'Whose chore this is, if named — narrows the search when multiple chores could match. For "claim", omit this — the chore is claimed for whoever is chatting right now, not a named third party.' },
+          reason:       { type: 'string', description: 'decline/cancel only — the reason given, if the user stated one' },
+        },
+        required: ['action', 'targetSearch'],
+      },
+    },
+  },
 ];
 
 // ─── Model calls ─────────────────────────────────────────────────────────
@@ -1043,6 +1060,65 @@ async function executeTool(
     };
   }
 
+  if (name === 'propose_chore_action') {
+    const action = args.action as 'claim' | 'approve' | 'decline' | 'complete' | 'cancel';
+    let memberId: string | null = null;
+    if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    const search = args.targetSearch ?? '';
+
+    let query = supabase.from('chore_tasks')
+      .select('id, title, status, is_pool, assigned_to_id, created_by_id, photo_required')
+      .eq('family_id', familyId)
+      .ilike('title', `%${search}%`);
+    if (memberId) query = query.eq('assigned_to_id', memberId);
+    const { data, error } = await query.limit(5);
+    if (error) return { error: error.message };
+    let candidates = data ?? [];
+    if (viewerRole !== 'parent' && viewerRole !== 'senior') {
+      candidates = candidates.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId || r.is_pool);
+    }
+    if (!candidates.length) {
+      return { error: `Couldn't find a chore matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess.` };
+    }
+    if (candidates.length > 1) {
+      return {
+        error: 'Multiple matching chores found — ask the user which one they mean before proposing this action. Do not guess.',
+        candidates: candidates.map((c: any) => ({ title: realNameToAlias(aliasMap, members, c.title), status: c.status, assignedTo: c.assigned_to_id ? (aliasMap.toAlias.get(c.assigned_to_id) ?? 'Unknown') : null })),
+      };
+    }
+    const chore = candidates[0];
+
+    if (action === 'claim') {
+      if (!chore.is_pool || chore.assigned_to_id) {
+        return { error: `"${chore.title}" isn't open to claim right now (${chore.assigned_to_id ? 'already taken' : 'not in the open pool'}). Tell the user plainly rather than proposing a claim that would fail.` };
+      }
+    } else if (action === 'approve' || action === 'decline') {
+      if (viewerRole !== 'parent' && viewerRole !== 'senior') {
+        return { error: 'Only a parent or approver can approve/decline a chore. Tell the user plainly.' };
+      }
+      if (chore.status !== 'pending_approval') {
+        return { error: `"${chore.title}" isn't waiting for approval right now (status: ${chore.status}). Tell the user plainly rather than proposing an approval that would fail.` };
+      }
+    } else if (action === 'complete') {
+      if (chore.assigned_to_id !== viewerId) {
+        return { error: `"${chore.title}" isn't currently held by the person chatting, so they can't mark it complete themselves. Tell the user plainly.` };
+      }
+      if (chore.photo_required) {
+        return { error: `"${chore.title}" requires a photo to submit — that has to be done from the Quests tab, not through chat. Tell the user plainly.` };
+      }
+    } else if (action === 'cancel') {
+      if (viewerRole !== 'parent' && viewerRole !== 'senior' && chore.created_by_id !== viewerId) {
+        return { error: `Only "${chore.title}"'s creator or a parent can cancel it. Tell the user plainly.` };
+      }
+    }
+
+    return {
+      __proposal: 'chore_action',
+      choreId: chore.id, title: realNameToAlias(aliasMap, members, chore.title), status: chore.status,
+      action, reason: typeof args.reason === 'string' ? args.reason : null,
+    };
+  }
+
   return { error: `Unknown tool: ${name}` };
 }
 
@@ -1217,11 +1293,26 @@ a week further out). If the user says "this weekend" but the request is clearly 
 weekend" as a general statement, not a single task/event), you may reason about Sat–Sun as a range for your reply
 text, but any single date you actually WRITE to a due date/start date field must still be ${weekendSaturdayStr}
 unless the user explicitly names Sunday instead.
+Dates and times coming back from tools are in raw machine format (YYYY-MM-DD dates, 24-hour HH:MM times) — NEVER put
+that raw format in your reply text to the user. Always convert every date/time you mention to how a person actually
+reads it: dates as "Aug 23" (add the year only if it isn't the current year), times as 12-hour with AM/PM ("9:00 PM",
+never "21:00"). A chore/event with no due time at all just has no time to mention — don't invent one. When a date is
+BEFORE today (${today}), call it out as overdue/late in your own words (e.g. "overdue since Aug 23") rather than
+stating it neutrally alongside on-time items — a list mixing overdue and upcoming items should make clear which is
+which, not present them identically. This applies to every date/time your reply text touches, not just proposals.
 You're talking to ${viewerAlias} (role: ${member.role}).
 Family members are referred to only by alias in this conversation (${viewerAlias}, etc) — never ask for or expect
 real names, and always use the alias exactly as given in tool results and messages.
 Answer questions about the family's schedule and chores using the tools available — always call a tool to check
-real data before answering "what's going on" type questions; never guess or make up events/chores.
+real data before answering "what's going on" type questions; never guess or make up events/chores. This applies even
+to a short, incomplete-looking fragment like "whats" or "what's" with nothing else — treat that as the start of a
+"what's going on" question and call get_schedule/get_quests fresh, the same as if they'd finished the sentence.
+NEVER answer a data question (what's pending, what's on the calendar, who's assigned what) using a tool result from
+an EARLIER turn in this conversation, even if it looks relevant — chores and events change constantly, so a result
+from even a few messages ago may already be stale/wrong. Always make a fresh tool call for a new data question,
+every single time, and answer only from what that fresh call actually returned. Naming a specific title, person, or
+detail (e.g. "Leo's Wash the dishes") that did not come from a tool result THIS turn is fabrication, not an answer —
+if you don't have a fresh, real tool result to point to, you don't have an answer yet, so make the call first.
 A broad question like "what's going on today/this week", "what's on our plate", or "anything I should know about"
 is asking about BOTH the calendar AND chores, not just one — call get_schedule AND get_quests together (same turn,
 both calls before you reply) for these, not just whichever one the phrasing happens to mention first. Only skip one
@@ -1279,11 +1370,32 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   propose_update reports no match at all, tell the user plainly that you couldn't find it — don't guess or silently
   update something else, and don't create a new item unless they then confirm that's actually what they want. If it
   reports multiple matches, ask the user which one they mean before calling propose_update again.
+- CRITICAL — carry context across your OWN follow-up questions: if you just named a specific record and asked the
+  user for a value (a date, a time, a name, an amount), and their very next message is JUST that value with no
+  further context (e.g. you said "what would you like me to set the due date to?" and they reply "tomorrow 9pm", or
+  "Aug 28th 9pm", or just "30"), that reply is the answer to YOUR question, not a new, standalone, ambiguous request.
+  Combine it with what you already established a message or two ago (which record, which field) and immediately call
+  propose_update with both — do NOT ask "could you clarify what you mean by tomorrow 9pm" or any other rephrasing of
+  the same question you already asked; asking the same thing a second way is a bug, not politeness. This applies
+  just as much to a value spread across TWO of the user's short replies in a row (date in one message, time-of-day
+  confirmed or corrected in the next) — accumulate them together into one propose_update call once you have enough,
+  rather than restarting the exchange or treating the second short reply as its own unrelated request. If you are
+  ever unsure whether a short reply is answering your own pending question versus starting something new, prefer
+  treating it as the answer — the conversation history above shows exactly what you asked; look at your own last
+  message before deciding a one-line reply is "unclear."
 When the user asks to add/schedule something NEW, use propose_event, propose_quest, propose_grocery_items, or
 propose_meal as appropriate. When they're referring to something that already exists, use propose_update. When they
 ask about redeeming/claiming a reward, use get_rewards to check the catalog/balance and propose_redemption to
-redeem — never treat a reward like a quest or event. These only PROPOSE, they do not create or change anything
-themselves.
+redeem — never treat a reward like a quest or event. When the user wants to DO something to a chore rather than edit
+one of its fields — claim/take it, approve or decline it, mark it done, or cancel it entirely — use
+propose_chore_action, not propose_update (propose_update only ever changes a field's value like a due date or coin
+amount; it can never claim, approve, decline, complete, or cancel). "I'll take the trash chore" -> action: 'claim'.
+"Approve Leo's dishes" / "decline that, it's not done right" -> action: 'approve'/'decline' (parent/approver only —
+if a kid asks this, tell them plainly only a parent can approve chores, don't propose it anyway). "Mark the laundry
+chore done" -> action: 'complete', but only for a chore with no photo requirement — if propose_chore_action reports
+one is needed, tell the user plainly they need to submit it with a photo from the Quests tab instead. "Cancel/remove
+the garage chore" -> action: 'cancel'. These only PROPOSE, they do not create, change, or perform anything
+themselves — same confirm-before-acting rule as every other propose_* tool.
 If a propose_event/propose_quest tool result includes "_unresolvedName", the person you tried to assign it to
 couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
 UNASSIGNED/open-pool instead. Say so plainly in your one-sentence reply (e.g. "I couldn't find someone named X, so
@@ -1331,6 +1443,18 @@ same conversation.`;
     // appears in the model's reply text. Never sent to the model itself.
     const choreRefsMap = new Map<string, { id: string; title: string }>();
     let finalText = '';
+    // Grounding check (see below, after the loop): true the moment ANY tool
+    // is actually called this turn — a real, reported live bug was the model
+    // answering a data question ("whats") entirely from an earlier turn's
+    // stale tool result with zero fresh call, then naming a chore/event title
+    // that appeared in NEITHER this turn's tool results NOR the user's own
+    // message — i.e. inventing it outright. Read-only lookups only; a turn
+    // that's purely a propose_*/confirm-style action with no data lookup at
+    // all legitimately calls no tool, so the check below only fires when a
+    // grounding tool WAS called but the final text still cites something
+    // that call never returned.
+    let calledAnyToolThisTurn = false;
+    const groundedTitles = new Set<string>(); // every title string a grounding tool actually returned this turn
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const reply = await callModel(messages, TOOLS);
@@ -1351,6 +1475,20 @@ same conversation.`;
           console.log('[ask-cube] tool_call', { round, name: call.function.name, args });
           const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today);
           console.log('[ask-cube] tool_result', { round, name: call.function.name, result });
+
+          // Grounding: only the read-side lookups (never the propose_*
+          // tools, which return a drafted title the model itself invented on
+          // purpose) count as "real data the model is now allowed to cite."
+          const GROUNDING_TOOLS = new Set(['get_schedule', 'get_schedule_conflicts', 'get_free_time', 'get_quests', 'get_chore_history', 'get_rewards']);
+          if (GROUNDING_TOOLS.has(call.function.name)) {
+            calledAnyToolThisTurn = true;
+            const r: any = result;
+            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy].filter(Array.isArray);
+            for (const pool of pools) for (const item of pool) {
+              if (typeof item?.title === 'string') groundedTitles.add(item.title);
+              if (typeof item?.person === 'string') groundedTitles.add(item.person);
+            }
+          }
 
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });
@@ -1385,6 +1523,32 @@ same conversation.`;
       finalText = proposals.length
         ? (proposals.length > 1 ? "I've drafted a few options below — take a look and pick one." : "I've drafted that for you — take a look below and confirm if it looks right.")
         : "Here's what I found — let me know if you'd like more detail.";
+    }
+
+    // Grounding check — catches the exact live bug reported: the model
+    // answering a data question by reusing an EARLIER turn's stale tool
+    // result (or inventing one outright) instead of calling a fresh tool,
+    // then naming a specific bolded/quoted title that was never actually
+    // returned this turn. Only fires when a grounding tool WAS called this
+    // turn (so pure propose_*/confirmation turns, which legitimately call no
+    // read tool, are never touched) and the reply names something quoted or
+    // bolded that doesn't match anything the tool actually returned, and
+    // wasn't itself just a phrase from the user's own message (echoing the
+    // user's own words back is fine — the risk is the model supplying a NEW
+    // specific-sounding title on its own).
+    if (calledAnyToolThisTurn) {
+      const cited = [...finalText.matchAll(/\*\*([^*]{3,60})\*\*|"([^"]{3,60})"/g)].map(m => m[1] ?? m[2]);
+      const userLower = aliasedMessage.toLowerCase();
+      const unverified = cited.filter(c =>
+        !groundedTitles.has(c) &&
+        !userLower.includes(c.toLowerCase()) &&
+        !Object.values(Object.fromEntries(aliasMap.toAlias)).includes(c) // aliases like "Person A" are always legitimate to cite
+      );
+      if (unverified.length) {
+        console.warn('[ask-cube] grounding check failed — reply cited unverified title(s), discarding', { unverified, groundedTitles: [...groundedTitles] });
+        finalText = "I don't actually have that on file right now — I may have mixed up an earlier answer. Could you ask again so I can look it up fresh?";
+        proposals = []; // never ship a proposal built on the same ungrounded turn either
+      }
     }
     finalText = aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, finalText));
 

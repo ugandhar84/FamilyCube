@@ -14,6 +14,9 @@ import type { AskCubeProposal } from '@/lib/askCubeService';
 import type { FamilyMember } from '@/store/familyStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
+import { fmtDate, fmtTime } from '@/lib/dates';
+import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
+import { RADIUS } from '@/constants/theme';
 
 // Shared hero for meal cards/sheets — a real dish photo when the model gave
 // one (Wikimedia Commons only, enforced server-side), falling back to the
@@ -41,6 +44,18 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   update_event: { label: 'Update draft',     icon: Clock,         accent: 'primary' },
   update_chore: { label: 'Update draft',     icon: Clock,         accent: 'kid' },
   redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },
+  chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'kid' },
+};
+
+// Plain-English label per action kind — shown as the card's main line
+// instead of a generic "Update" verb, since each one reads very differently
+// ("Claim" vs "Approve" vs "Cancel").
+const CHORE_ACTION_LABEL: Record<string, string> = {
+  claim: 'Claim',
+  approve: 'Approve',
+  decline: 'Decline',
+  complete: 'Mark complete',
+  cancel: 'Cancel',
 };
 
 // Human-readable label per changeable field, shared by both update_event and
@@ -61,6 +76,13 @@ const CHANGE_FIELD_LABEL: Record<string, string> = {
 function formatChangeValue(field: string, value: any): string {
   if (field === 'alertCallLeadMinutes') return value === 0 ? 'On time' : `${value} min before`;
   if (field === 'coinsReward') return `${value} coins`;
+  // dueDate/date are YYYY-MM-DD; dueTime/time are 24h "HH:MM" — both come
+  // straight from the model's tool-call args, so they need the same
+  // app-wide display formatting every other date/time field in the app
+  // uses (fmtDate → "Aug 27, 2026", fmtTime → "9:00 PM"), not the raw
+  // machine-readable string.
+  if (field === 'dueDate' || field === 'date') return fmtDate(value, String(value));
+  if (field === 'dueTime' || field === 'time') return fmtTime(value, String(value));
   return String(value);
 }
 
@@ -134,6 +156,69 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
   );
 }
 
+// Turns a "date and time" edit on a proposal card from "discard and re-ask
+// Cube in plain English" into a direct tap — reuses the exact same native
+// spinner picker the manual Add/Edit Quest and Add Event forms use
+// (DueDateTimePicker), so adjusting a date Cube got slightly wrong feels
+// identical to editing it anywhere else in the app, with zero extra AI
+// round-trip. Only rendered when the caller supplies onChange (a still-
+// pending proposal) — same opt-in pattern as ReminderPicker/StorePicker.
+function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onChange }: {
+  dateStr?: string | null; timeStr?: string | null;
+  accent: string; colors: any; isDark: boolean;
+  onChange?: (next: { date: string; time?: string }) => void;
+}) {
+  const [showDatePick, setShowDatePick] = useState(false);
+  const [showTimePick, setShowTimePick] = useState(false);
+
+  if (!onChange) {
+    // Read-only fallback (e.g. an already-decided/discarded card) — plain
+    // text, no picker affordance.
+    if (!dateStr) return null;
+    return (
+      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+        {fmtDate(dateStr, dateStr)}{timeStr ? ` · ${fmtTime(timeStr, timeStr)}` : ''}
+      </Text>
+    );
+  }
+
+  // DueDateTimePicker owns one Date object covering both fields — parse the
+  // separate dateStr ("YYYY-MM-DD")/timeStr ("HH:MM") props into it, and
+  // split the merged Date back into those same two string shapes on change
+  // (matching exactly what propose_update/propose_event/propose_quest's own
+  // dueDate/dueTime or date/time fields expect).
+  const [y, m, d] = (dateStr ?? new Date().toISOString().slice(0, 10)).split('-').map(Number);
+  const [hh, mm] = (timeStr ?? '09:00').split(':').map(Number);
+  const asDate = new Date(y || new Date().getFullYear(), (m || 1) - 1, d || 1, hh || 9, mm || 0);
+
+  const setValue: React.Dispatch<React.SetStateAction<Date>> = (updater) => {
+    const next = typeof updater === 'function' ? (updater as (prev: Date) => Date)(asDate) : updater;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    onChange({
+      date: `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`,
+      time: `${pad(next.getHours())}:${pad(next.getMinutes())}`,
+    });
+  };
+
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <DueDateTimePicker
+        value={asDate}
+        setValue={setValue}
+        showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+        showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+        fmtDateLabel={(dt) => fmtDate(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)}
+        fmtTimeLabel={(dt) => fmtTime(`${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`)}
+        accentColor={accent} colors={colors} isDark={isDark}
+        label=""
+        pillStyle={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}
+        overlayStyle={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 }}
+        cardStyle={{ borderRadius: RADIUS.lg, overflow: 'hidden', paddingBottom: 12 }}
+      />
+    </View>
+  );
+}
+
 // Lets the user pick an existing store (past runs + this item's own
 // storePreference field + the app's default list) or type a new one for a
 // still-pending grocery proposal's whole item batch — reuses the same two
@@ -191,7 +276,7 @@ function StorePicker({ store, accent, colors, onChange }: {
 }
 
 export default function AskCubeProposalCard({
-  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, onChangeStore, added,
+  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, onChangeStore, onChangeDateTime, added, discarded,
 }: {
   proposal: AskCubeProposal;
   members: FamilyMember[];
@@ -210,14 +295,27 @@ export default function AskCubeProposalCard({
   // pending-proposal-in-place-edit pattern as onChangeReminder, only ever
   // passed for proposal.kind === 'grocery'.
   onChangeStore?: (store: string) => void;
+  // Lets the date/due-date and time/due-time row become a tappable native
+  // picker instead of read-only text — same in-place-edit pattern as
+  // onChangeReminder/onChangeStore, for quest/event/update_chore/
+  // update_event proposals. Skips a whole extra chat round-trip when the
+  // AI's guessed date/time just needs a small correction.
+  onChangeDateTime?: (next: { date: string; time?: string }) => void;
   // Once accepted, the card previously vanished entirely — replaced by a
   // single bare "✓ Title" text line, which read as the meal/event itself
   // disappearing rather than a confirmation (user-reported: "it just
   // briefly disappears"). Keep rendering the full card (photo, prep time,
   // recipe) with a checkmark instead of the discard/create actions.
   added?: boolean;
+  // Same treatment as `added`, for the opposite outcome — a discarded
+  // proposal previously collapsed to a single italic text line ("Title —
+  // discarded"), losing all the detail the user was just looking at. Keep
+  // the full card visible but grayed out and non-interactive, with a
+  // "Discarded" pill in place of the action buttons, matching the pattern
+  // `added` already established for the confirm path.
+  discarded?: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const meta = KIND_META[proposal.kind];
   const accent = (colors as any)[meta.accent] ?? colors.primary;
   const Icon = meta.icon;
@@ -286,6 +384,10 @@ export default function AskCubeProposalCard({
     <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.successLight, marginTop: 4 }}>
       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.success }}>✓ Added</Text>
     </View>
+  ) : discarded ? (
+    <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.surface, marginTop: 4 }}>
+      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary }}>Discarded</Text>
+    </View>
   ) : (
     <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
       <Pressable onPress={onDiscard}
@@ -297,16 +399,25 @@ export default function AskCubeProposalCard({
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
           {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
             : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
-            : proposal.kind === 'redemption' ? 'Redeem' : 'Create'}
+            : proposal.kind === 'redemption' ? 'Redeem'
+            : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
+            : 'Create'}
         </Text>
       </Pressable>
     </View>
   );
 
+  // Discarded cards render fully (same detail as a live proposal) but dimmed
+  // and non-interactive — matches `added`'s "keep showing the real card"
+  // precedent instead of collapsing to a bare text line, which lost all the
+  // detail the user was just reviewing and read as the item vanishing
+  // outright rather than a recorded decision.
   const cardBase = {
     marginTop: 8, maxWidth: '90%' as const, backgroundColor: colors.card,
-    borderRadius: 14, borderWidth: 1.5, borderColor: accent + '40', padding: 14, gap: 8,
+    borderRadius: 14, borderWidth: 1.5, borderColor: (discarded ? colors.border : accent + '40'), padding: 14, gap: 8,
+    opacity: discarded ? 0.55 : 1,
   };
+  const cardPointerEvents = discarded ? ('none' as const) : undefined;
 
   if (proposal.kind === 'meal') {
     const chef = memberName(members, d.chefId);
@@ -364,7 +475,7 @@ export default function AskCubeProposalCard({
     // batch picker for a per-item field would be misleading otherwise.
     const anyItemHasStore = items.some(it => !!it.store);
     return (
-      <View style={cardBase}>
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
         <View style={{ gap: 6 }}>
           {items.slice(0, 8).map((it, i) => (
@@ -395,7 +506,7 @@ export default function AskCubeProposalCard({
     const assignee = memberName(members, d.memberId);
     const assignedToAdult = !!d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent';
     return (
-      <View style={cardBase}>
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -412,9 +523,7 @@ export default function AskCubeProposalCard({
             </View>
           )}
           {!!d.dueDate && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              Due {d.dueDate}{d.dueTime ? ` · ${d.dueTime}` : ''}
-            </Text>
+            <DateTimeEditRow dateStr={d.dueDate} timeStr={d.dueTime} accent={accent} colors={colors} isDark={isDark} onChange={onChangeDateTime} />
           )}
           {!!d.photoRequired && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -435,11 +544,39 @@ export default function AskCubeProposalCard({
     );
   }
 
+  if (proposal.kind === 'chore_action') {
+    const actionColors: Record<string, string> = {
+      claim: colors.kid, approve: colors.success, decline: colors.danger,
+      complete: colors.success, cancel: colors.danger,
+    };
+    const actionColor = actionColors[d.action] ?? accent;
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ backgroundColor: actionColor + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: actionColor, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              {CHORE_ACTION_LABEL[d.action] ?? d.action}
+            </Text>
+          </View>
+          {!!d.status && (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>currently {d.status.replace(/_/g, ' ')}</Text>
+          )}
+        </View>
+        {!!d.reason && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>
+        )}
+        {Actions}
+      </View>
+    );
+  }
+
   if (proposal.kind === 'redemption') {
     const redeemerName = memberName(members, d.memberId) ?? d.memberAlias;
     const balanceAfter = typeof d.currentBalance === 'number' ? d.currentBalance - d.cost : null;
     return (
-      <View style={cardBase}>
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -466,10 +603,18 @@ export default function AskCubeProposalCard({
 
   if (proposal.kind === 'update_event' || proposal.kind === 'update_chore') {
     const changes: Record<string, any> = d.changes ?? {};
-    const changeEntries = Object.entries(changes).filter(([k]) => k !== 'alertCall' && k !== 'alertCallLeadMinutes');
     const isChore = proposal.kind === 'update_chore';
+    // Date/time get pulled out of the generic key-value list and rendered
+    // as one interactive DateTimeEditRow instead — same "give the user a
+    // real picker, not another AI round-trip" treatment as the plain quest/
+    // event cards get, just adapted to this card's field-pair naming
+    // (dueDate/dueTime for chores, date/time for events).
+    const dateField = isChore ? 'dueDate' : 'date';
+    const timeField = isChore ? 'dueTime' : 'time';
+    const hasDateTimeChange = dateField in changes;
+    const changeEntries = Object.entries(changes).filter(([k]) => k !== 'alertCall' && k !== 'alertCallLeadMinutes' && k !== dateField && k !== timeField);
     return (
-      <View style={cardBase}>
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         {!isChore && !!d.date && (
@@ -479,8 +624,22 @@ export default function AskCubeProposalCard({
         )}
         {isChore && !!d.currentDueDate && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: -4 }}>
-            Currently due {d.currentDueDate}{d.currentDueTime ? ` · ${d.currentDueTime}` : ''}
+            Currently due {fmtDate(d.currentDueDate, d.currentDueDate)}{d.currentDueTime ? ` · ${fmtTime(d.currentDueTime, d.currentDueTime)}` : ''}
           </Text>
+        )}
+        {hasDateTimeChange && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+            backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+              {isChore ? 'New due date:' : 'New date:'}
+            </Text>
+            <DateTimeEditRow
+              dateStr={changes[dateField]} timeStr={changes[timeField]}
+              accent={accent} colors={colors} isDark={isDark}
+              onChange={onChangeDateTime}
+            />
+          </View>
         )}
         {!!changeEntries.length && (
           <View style={{ gap: 6 }}>
@@ -507,7 +666,7 @@ export default function AskCubeProposalCard({
   // event
   const assignee = memberName(members, d.memberId);
   return (
-    <View style={cardBase}>
+    <View style={cardBase} pointerEvents={cardPointerEvents}>
       {Header}
       <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

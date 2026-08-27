@@ -310,7 +310,7 @@ export default function LoginScreen() {
           </View>
 
           {mode === 'choose' && (
-            <View style={{ gap: SPACING.md }}>
+            <View style={{ gap: SPACING.md, width: '100%', maxWidth: 420 }}>
               {/* Log in with Face ID / Touch ID — a returning user's fastest
                   path, kept visible right on the fork instead of a tap
                   deeper, since biometric auto-triggers on mount anyway and
@@ -399,7 +399,7 @@ export default function LoginScreen() {
           )}
 
           {mode === 'email' && (
-            <>
+            <View style={{ width: '100%', maxWidth: 420 }}>
               <TouchableOpacity style={s.backToChoice} onPress={() => setMode('choose')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
                 <Text style={s.backToChoiceText}>Back</Text>
@@ -495,7 +495,7 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
-            </>
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -506,8 +506,8 @@ export default function LoginScreen() {
 const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    scroll: { flexGrow: 1, justifyContent: 'center', padding: SPACING.xxl },
-    logoWrap: { alignItems: 'center', marginBottom: SPACING.xxxl },
+    scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.xxl },
+    logoWrap: { alignItems: 'center', marginBottom: SPACING.xxxl, width: '100%', maxWidth: 420 },
     logoBrand: { width: 100, height: 100, marginBottom: SPACING.md, resizeMode: 'contain' },
     logoText: { fontSize: 38, fontWeight: '700', color: colors.primaryText ?? colors.primary, letterSpacing: -0.5 },
     logoSub: { fontSize: TYPO.body, color: colors.textSecondary, textAlign: 'center', marginTop: SPACING.xs, lineHeight: 20 },

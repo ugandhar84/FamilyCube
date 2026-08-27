@@ -66,9 +66,11 @@ export function DueDateTimePicker({
 
   return (
     <>
-      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }}>
-        {label}
-      </Text>
+      {!!label && (
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }}>
+          {label}
+        </Text>
+      )}
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
         <TouchableOpacity
           style={[pillStyle, { backgroundColor: showDatePick ? accentColor + '20' : pillBg, borderColor: showDatePick ? accentColor : pillBdr }]}

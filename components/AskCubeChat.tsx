@@ -83,6 +83,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const updateEvent = useEventStore(s => s.updateEvent);
   const { addQuest } = useQuestStore();
   const updateChore = useChoreStore(s => s.updateChore);
+  const claimPoolQuest = useChoreStore(s => s.claimPoolQuest);
+  const approveChore = useChoreStore(s => s.approveChore);
+  const declineChoreAssignment = useChoreStore(s => s.declineChoreAssignment);
+  const submitChore = useChoreStore(s => s.submitChore);
+  const cancelChore = useChoreStore(s => s.cancelChore);
   const addGroceryItem = useGroceryStore(s => s.addItem);
   const redeemReward = useRewardStore(s => s.redeemReward);
   const sendChatMessage = useChatStore(s => s.sendMessage);
@@ -140,9 +145,15 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       // Legacy rows stored a single proposal object; current rows store
       // an array — normalize either shape to an array on load.
       const proposals: AskCubeProposal[] = Array.isArray(r.proposal) ? r.proposal : (r.proposal ? [r.proposal as any] : []);
+      // proposal_statuses (jsonb array, per-proposal) is the real persisted
+      // decision — falls back to the old single-value proposal_status
+      // column (applied to every proposal in the row, matching its old
+      // semantics) only for rows written before this column existed.
+      const persistedStatuses = Array.isArray((r as any).proposal_statuses) ? (r as any).proposal_statuses as ProposalStatus[] : null;
       return {
         id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
-        proposals, proposalStatuses: proposals.map(() => (r.proposal_status as ProposalStatus) ?? 'pending'),
+        proposals,
+        proposalStatuses: proposals.map((_, i) => persistedStatuses?.[i] ?? (r.proposal_status as ProposalStatus) ?? 'pending'),
         chores: Array.isArray((r as any).chore_refs) ? (r as any).chore_refs : undefined,
       };
     }));
@@ -323,6 +334,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       if (m.id !== msgId || !m.proposalStatuses) return m;
       const next = [...m.proposalStatuses];
       next[index] = 'created';
+      // Fire-and-forget persist — without this the decision only ever lived
+      // in local component state and silently reset to "pending" the next
+      // time this conversation was reopened (user-reported).
+      askCube.setProposalStatus(msgId, next).catch(() => {});
       return { ...m, proposalStatuses: next };
     }));
   };
@@ -349,6 +364,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         }
         return { ...p, data: { ...p.data, alertCall: true, alertCallLeadMinutes: leadMinutes } };
       });
+      // Persist immediately — without this, an in-place edit (reminder,
+      // store, or date/time below) only ever lived in local component
+      // state and silently reverted to the AI's original draft the next
+      // time this conversation reopened (user-reported, same class of gap
+      // as proposal_status before it got the same treatment).
+      askCube.setProposalData(msgId, nextProposals).catch(() => {});
       return { ...m, proposals: nextProposals };
     }));
   };
@@ -361,6 +382,41 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId || !m.proposals) return m;
       const nextProposals = m.proposals.map((p, i) => i === index ? { ...p, data: { ...p.data, store } } : p);
+      askCube.setProposalData(msgId, nextProposals).catch(() => {});
+      return { ...m, proposals: nextProposals };
+    }));
+  };
+
+  // Lets the user adjust a proposal's date/time directly via the native
+  // picker (see AskCubeProposalCard's DateTimeEditRow) instead of discarding
+  // and re-asking Cube in plain English — same in-place-edit + persist
+  // pattern as the reminder/store editors above. Writes into the field
+  // names each proposal kind actually expects on confirm: quest uses
+  // top-level dueDate/dueTime, update_chore the same pair nested under
+  // `changes`, event/update_event use date/time (top-level or nested).
+  const updateProposalDateTime = (msgId: string, index: number, next: { date: string; time?: string }) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId || !m.proposals) return m;
+      const nextProposals = m.proposals.map((p, i) => {
+        if (i !== index) return p;
+        if (p.kind === 'update_chore') {
+          return { ...p, data: { ...p.data, changes: { ...p.data.changes, dueDate: next.date, dueTime: next.time } } };
+        }
+        if (p.kind === 'update_event') {
+          return { ...p, data: { ...p.data, changes: { ...p.data.changes, date: next.date, time: next.time } } };
+        }
+        if (p.kind === 'quest') {
+          return { ...p, data: { ...p.data, dueDate: next.date, dueTime: next.time } };
+        }
+        if (p.kind === 'event') {
+          const [h, m2] = (next.time ?? '09:00').split(':').map(Number);
+          const startAt = new Date(`${next.date}T00:00:00`);
+          startAt.setHours(h, m2, 0, 0);
+          return { ...p, data: { ...p.data, startAt: startAt.toISOString() } };
+        }
+        return p;
+      });
+      askCube.setProposalData(msgId, nextProposals).catch(() => {});
       return { ...m, proposals: nextProposals };
     }));
   };
@@ -435,6 +491,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       // updates object via `in` checks, so passing exactly d.changes here
       // (nothing more) keeps every untouched field on the real row intact.
       updateChore(d.choreId, d.changes ?? {});
+    } else if (proposal.kind === 'chore_action') {
+      // Each branch calls the exact same store action the corresponding
+      // manual UI control does (Claim button, Approve/Decline in
+      // ChoreReviewSection, the Quests tab's "Mark done" for a no-photo
+      // chore, Cancel) — propose_chore_action already re-validated the
+      // chore's current status server-side, so this mirrors createProposal's
+      // other branches in trusting that check rather than re-deriving it.
+      if (d.action === 'claim') claimPoolQuest(d.choreId, activeMember.id);
+      else if (d.action === 'approve') approveChore(d.choreId, activeMember.id);
+      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Cube');
+      else if (d.action === 'complete') submitChore(d.choreId);
+      else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
     }
     markProposalCreated(msgId, index);
   };
@@ -444,6 +512,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       if (m.id !== msgId || !m.proposalStatuses) return m;
       const next = [...m.proposalStatuses];
       next[index] = 'discarded';
+      askCube.setProposalStatus(msgId, next).catch(() => {});
       return { ...m, proposalStatuses: next };
     }));
   };
@@ -546,44 +615,43 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                       <View style={{ width: '100%', flexDirection: isMealGrid ? 'row' : 'column', flexWrap: isMealGrid ? 'wrap' : 'nowrap', gap: isMealGrid ? 8 : 4 }}>
                         {m.proposals.map((p, i) => {
                           const status = m.proposalStatuses?.[i] ?? 'pending';
-                          // Was: any non-pending status collapsed the whole
-                          // card to a single bare text line — for 'created'
-                          // this read as the meal/event itself disappearing
-                          // rather than a confirmation (user-reported: "it
-                          // just briefly disappears"). Keep the real card
-                          // visible with a checkmark instead; 'discarded'
-                          // stays a plain text line since there's genuinely
-                          // nothing left worth showing for that one.
-                          if (status === 'pending' || status === 'created') {
-                            return (
-                              <View key={i} style={isMealGrid ? { width: '48%' } : undefined}>
-                                <AskCubeProposalCard
-                                  proposal={p}
-                                  members={members}
-                                  compact={isMealGrid}
-                                  added={status === 'created'}
-                                  onDiscard={() => discardProposal(m.id, i)}
-                                  onCreate={() => createProposal(m.id, i, p)}
-                                  onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
-                                  onChangeReminder={
-                                    ['event', 'quest', 'update_event', 'update_chore'].includes(p.kind)
-                                      ? (leadMinutes: number) => updateProposalReminder(m.id, i, leadMinutes)
-                                      : undefined
-                                  }
-                                  onChangeStore={
-                                    p.kind === 'grocery'
-                                      ? (store: string) => updateProposalStore(m.id, i, store)
-                                      : undefined
-                                  }
-                                />
-                              </View>
-                            );
-                          }
+                          // Both terminal states (created/discarded) keep
+                          // rendering the full real card — grayed and
+                          // non-interactive for discarded, a green checkmark
+                          // for created — instead of collapsing to a bare
+                          // text line, which lost all the detail the user was
+                          // just reviewing and read as the item disappearing
+                          // outright rather than a recorded decision
+                          // (user-reported for the 'created' case originally;
+                          // the same complaint applies to 'discarded').
                           return (
-                            <Text key={i} style={{ marginTop: 4, fontSize: TYPO.label, fontWeight: '400',
-                              color: colors.textTertiary, fontStyle: 'italic' }}>
-                              {p.data?.title ?? 'Draft'} — discarded
-                            </Text>
+                            <View key={i} style={isMealGrid ? { width: '48%' } : undefined}>
+                              <AskCubeProposalCard
+                                proposal={p}
+                                members={members}
+                                compact={isMealGrid}
+                                added={status === 'created'}
+                                discarded={status === 'discarded'}
+                                onDiscard={() => discardProposal(m.id, i)}
+                                onCreate={() => createProposal(m.id, i, p)}
+                                onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
+                                onChangeReminder={
+                                  ['event', 'quest', 'update_event', 'update_chore'].includes(p.kind)
+                                    ? (leadMinutes: number) => updateProposalReminder(m.id, i, leadMinutes)
+                                    : undefined
+                                }
+                                onChangeStore={
+                                  p.kind === 'grocery'
+                                    ? (store: string) => updateProposalStore(m.id, i, store)
+                                    : undefined
+                                }
+                                onChangeDateTime={
+                                  ['event', 'quest', 'update_event', 'update_chore'].includes(p.kind)
+                                    ? (next: { date: string; time?: string }) => updateProposalDateTime(m.id, i, next)
+                                    : undefined
+                                }
+                              />
+                            </View>
                           );
                         })}
                       </View>

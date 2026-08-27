@@ -114,9 +114,17 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   const getMyLockedItems   = useChoreStore(s => s.getMyLockedItems);
   const getMyOutgoingPending = useChoreStore(s => s.getMyOutgoingPending);
   const getActiveAssignmentChoreIds = useChoreStore(s => s.getActiveAssignmentChoreIds);
-  const myDirectPending    = isParent && activeMember ? getMyDirectPending(activeMember.id) : [];
-  const myLockedItems      = isParent && activeMember ? getMyLockedItems(activeMember.id) : [];
-  const myOutgoingPending  = isParent && activeMember ? getMyOutgoingPending(activeMember.id) : [];
+  // Gated on isParentOrSenior (declared below), not isParent alone — a
+  // grandparent's live System-A delegation (PENDING/PARKED/locked) is fully
+  // visible and actionable on the Hub tab (SeniorView.tsx calls these same
+  // three selectors unconditionally for a senior), but this screen used to
+  // hard-code isParent, silently showing an empty list here regardless of
+  // real DB state. A senior checking Chores instead of Hub saw nothing
+  // pending even with a real, waiting delegation (exploratory QA finding).
+  const isParentOrSeniorForSystemA = isParent || activeMember?.role === 'senior';
+  const myDirectPending    = isParentOrSeniorForSystemA && activeMember ? getMyDirectPending(activeMember.id) : [];
+  const myLockedItems      = isParentOrSeniorForSystemA && activeMember ? getMyLockedItems(activeMember.id) : [];
+  const myOutgoingPending  = isParentOrSeniorForSystemA && activeMember ? getMyOutgoingPending(activeMember.id) : [];
   // Same "mine assigned / assigned to another parent" split Household
   // Backlog uses, rendered via the exact same MyAdultQuestCard/
   // OthersAdultQuestCard components — previously the Chores tab rendered
@@ -135,11 +143,11 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   // repro). getActiveAssignmentChoreIds() below is used elsewhere in this
   // file for the same "has a live System-A row" purpose.
   const myAdultQuestsAssignmentIds = getActiveAssignmentChoreIds();
-  const myAdultQuests = isParent && activeMember ? quests.filter(q =>
+  const myAdultQuests = isParentOrSeniorForSystemA && activeMember ? quests.filter(q =>
     !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
     q.isAdultTask && q.assignedToId === activeMember.id && !myAdultQuestsAssignmentIds.has(q.id)
   ) : [];
-  const othersAdultQuests = isParent && activeMember ? quests.filter(q =>
+  const othersAdultQuests = isParentOrSeniorForSystemA && activeMember ? quests.filter(q =>
     !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
     q.isAdultTask && q.assignedToId && q.assignedToId !== activeMember.id && !myAdultQuestsAssignmentIds.has(q.id)
   ) : [];

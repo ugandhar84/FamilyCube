@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface AskCubeProposal {
-  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption';
+  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action';
   data: Record<string, any>;
 }
 
@@ -52,7 +52,7 @@ export const askCube = {
 
   async getMessages(conversationId: string) {
     const { data, error } = await supabase.from('ask_cube_messages')
-      .select('id, role, content, proposal, proposal_status, chore_refs, created_at')
+      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, created_at')
       .eq('conversation_id', conversationId)
       // tool rows (raw JSON results) and assistant rows that only carry
       // tool_calls (content null) are internal to the model loop — the chat
@@ -63,6 +63,31 @@ export const askCube = {
       .order('created_at');
     if (error) throw error;
     return data ?? [];
+  },
+
+  // Persists a discard/confirm decision so it survives reopening the
+  // conversation — previously this was 100% in-memory client state
+  // (AskCubeChat.tsx's discardProposal/markProposalCreated only ever
+  // mutated local component state), so every proposal silently reset back
+  // to "pending" the next time the thread loaded, regardless of what the
+  // user had already decided (user-reported).
+  async setProposalStatus(messageId: string, statuses: ('pending' | 'created' | 'discarded')[]) {
+    const { error } = await supabase.from('ask_cube_messages')
+      .update({ proposal_statuses: statuses })
+      .eq('id', messageId);
+    if (error) throw error;
+  },
+
+  // Persists an in-place edit to a still-pending proposal's own data (date/
+  // time, reminder lead time, grocery store) — same gap as proposal_status
+  // above: adjusting a card's reminder/store/date/time only ever mutated
+  // local component state, so the edit silently reverted to the AI's
+  // original draft the next time the conversation reopened (user-reported).
+  async setProposalData(messageId: string, proposals: AskCubeProposal[]) {
+    const { error } = await supabase.from('ask_cube_messages')
+      .update({ proposal: proposals })
+      .eq('id', messageId);
+    if (error) throw error;
   },
 
   async startNewConversation() {

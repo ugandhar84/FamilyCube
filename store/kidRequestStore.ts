@@ -317,11 +317,16 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       // family_id comes from familyStore (invitation-based members, not auth users)
       const familyId = getFamilyId();
       if (familyId) {
+        // Unbounded before — every kid request ever made (ride, permission,
+        // grocery, quest proposal, etc.), across a family's whole lifetime,
+        // with no cleanup sweep to bound it. Capped same as the other
+        // history-shaped store queries.
         const { data: rows, error } = await supabase
           .from('kid_requests')
           .select('*')
           .eq('family_id', familyId)
-          .order('requested_at', { ascending: false });
+          .order('requested_at', { ascending: false })
+          .limit(200);
         if (!error) {
           // rows may be [] on a fresh family — that's valid, don't fall through to seed
           const requests: KidRequest[] = (rows ?? []).map((r: any) => {
@@ -390,12 +395,22 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
 
   approveRequest: (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
+    // Was: unconditionally rewrote status on every call, so a double-tap
+    // (e.g. ServiceRequestCard's awardCoins/QuestProposalCard's addChore —
+    // both un-guarded, plain-additive side effects the caller runs
+    // alongside this) would re-approve an already-approved request instead
+    // of being a no-op — the caller-side effects duplicated (double coin
+    // award, duplicate chore) while nothing here caught it. Mirrors
+    // deductCoins' own guard against double-spend for the same class of
+    // race: only the FIRST approve/decline on a still-pending request
+    // takes effect.
+    if (!req || req.status !== 'pending') return;
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'approved' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
-    if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+    notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'approved', note, fromMemberId: req.fromMemberId,
     });
@@ -403,12 +418,13 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
 
   declineRequest: (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
+    if (!req || req.status !== 'pending') return;
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'declined' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
-    if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+    notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'declined', note, fromMemberId: req.fromMemberId,
     });

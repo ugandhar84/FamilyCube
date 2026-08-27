@@ -26,8 +26,16 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
   const isGPOpen   = !!req.openToGP;
   const canOfferCoins = req.type === 'tutor' || req.type === 'cheer';
   const [coinOffer, setCoinOffer] = useState('');
+  // Guards against a fast double-tap firing handleApprove twice — awardCoins
+  // is a plain additive write (no idempotency check) and approveRequest's
+  // own pending-status guard only protects the status flip itself, not the
+  // coin award/chat message that ran alongside it. Without this, two rapid
+  // taps on "Approve +N¢" paid the kid coins twice.
+  const [submitting, setSubmitting] = useState(false);
 
   const handleApprove = () => {
+    if (submitting) return;
+    setSubmitting(true);
     const coins = parseInt(coinOffer, 10);
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Approve" on "${typeLabel}" for ${kidName} (id=${req.id}) coinOffer=${coinOffer || 0} → approveRequest [features/hub/parent/ServiceRequestCard.tsx:90]`);
     if (canOfferCoins && coins > 0) {
@@ -78,7 +86,15 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Offer coins (optional):</Text>
           <TextInput
             value={coinOffer}
-            onChangeText={t => setCoinOffer(t.replace(/[^0-9]/g, ''))}
+            onChangeText={t => {
+              const digits = t.replace(/[^0-9]/g, '');
+              // Clamp to a sane ceiling — this field had no upper bound at
+              // all, so a fat-finger extra digit (e.g. "5000" instead of
+              // "500") awarded the full amount with no confirmation step,
+              // unlike other coin fields in the app. 500 comfortably covers
+              // any real one-off tutor/cheer bonus.
+              setCoinOffer(digits === '' ? '' : String(Math.min(500, parseInt(digits, 10))));
+            }}
             onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=parent member=${active.name} field="coinOffer" on "${typeLabel}" for ${kidName} (id=${req.id}) newValue=${coinOffer} [features/hub/parent/ServiceRequestCard.tsx:80]`); }}
             keyboardType="number-pad"
             placeholder="0"
@@ -89,15 +105,16 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         </View>
       )}
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={handleApprove}
+        <Pressable onPress={handleApprove} disabled={submitting}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10,
-            paddingVertical: 9 }}>
+            paddingVertical: 9, opacity: submitting ? 0.6 : 1 }}>
           <Check size={13} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
             {canOfferCoins && parseInt(coinOffer, 10) > 0 ? `Approve +${parseInt(coinOffer, 10)}¢` : 'Approve'}
           </Text>
         </Pressable>
         <Pressable
+          disabled={submitting}
           onPress={() => {
             console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Decline" on "${typeLabel}" for ${kidName} (id=${req.id}) [features/hub/parent/ServiceRequestCard.tsx:99]`);
             Alert.prompt(
@@ -106,6 +123,8 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Send & Decline', style: 'destructive', onPress: (note: string | undefined) => {
+                  if (submitting) return;
+                  setSubmitting(true);
                   const finalNote = note?.trim() || undefined;
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Decline" on "${typeLabel}" for ${kidName} (id=${req.id}) → declineRequest [features/hub/parent/ServiceRequestCard.tsx:106]`);
                   declineRequest(req.id, active.id, finalNote);
@@ -118,7 +137,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
             );
           }}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${colors.danger}15`, borderWidth: 1,
-            borderColor: `${colors.danger}40`, borderRadius: 10, paddingVertical: 9 }}>
+            borderColor: `${colors.danger}40`, borderRadius: 10, paddingVertical: 9, opacity: submitting ? 0.6 : 1 }}>
           <X size={13} color={colors.danger} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>

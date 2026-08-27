@@ -10,6 +10,7 @@ import { logActivity, type ActivityAction } from '@/lib/activityLog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
+import { todayLocal } from '@/lib/dates';
 
 const genId = (): string =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1011,12 +1012,35 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
 
 // ─── DB write helper ──────────────────────────────────────────────────────────
 
-function dbUpdate(table: string, id: string, patch: Record<string, unknown>) {
+// Was fire-and-forget with no failure handling at all beyond a
+// console.warn — every one of dbUpdate's ~20 call sites applies its own
+// optimistic local `set()` BEFORE calling this, so on an RLS violation or
+// network failure the UI kept showing the optimistic result (chore
+// approved, points awarded, quest reassigned) forever with nothing telling
+// the user or reverting local state — a real, silent data-integrity gap,
+// not just a missing nicety. `onFailure` is optional and additive: existing
+// call sites that don't pass one keep the exact old (silent, console-only)
+// behavior; call sites are being migrated one at a time to pass a rollback
+// that restores the pre-optimistic-update local state, plus a shared
+// user-facing toast so a failed save is at least visible even before every
+// site has a real rollback wired.
+// Returns a promise of whether the write succeeded — most callers ignore it
+// (truly fire-and-forget, `onFailure` covers their rollback need), but a
+// call site whose NEXT step must only happen once the write is actually
+// confirmed (e.g. denyCashOut's coin refund, which must never fire ahead of
+// its own denial tag actually landing) can await/.then() it directly.
+function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onFailure?: () => void): Promise<{ ok: boolean }> {
   _fetchedAt = 0;
   console.log(`[choreStore] → DB update ${table}/${id}`, patch);
-  supabase.from(table).update(patch).eq('id', id).then(({ error }) => {
-    if (error) console.warn(`[choreStore] ✗ DB update ${table}/${id} FAILED`, error.message);
-    else console.log(`[choreStore] ✓ DB update ${table}/${id} ok`);
+  return Promise.resolve(supabase.from(table).update(patch).eq('id', id)).then(({ error }) => {
+    if (error) {
+      console.warn(`[choreStore] ✗ DB update ${table}/${id} FAILED`, error.message);
+      onFailure?.();
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return { ok: false };
+    }
+    console.log(`[choreStore] ✓ DB update ${table}/${id} ok`);
+    return { ok: true };
   });
 }
 
@@ -1242,12 +1266,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         supabase
           .from('user_badges')
           .select('*')
-          .order('created_at', { ascending: false }),
-        // RLS scopes this to the family via its chore_tasks join — no family_id column on the table itself
+          .order('created_at', { ascending: false })
+          .limit(200),
+        // RLS scopes this to the family via its chore_tasks join — no family_id column on the table itself.
+        // Same unbounded-growth risk point_transactions already caps for —
+        // this table is append-only across a family's whole lifetime.
         supabase
           .from('parent_quest_assignments')
           .select('*')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .limit(200),
         // Household Settings previously never had a working read path at
         // all — updateHouseholdSettings wrote these columns, but nothing
         // ever fetched them back, so every device silently kept whatever
@@ -1554,7 +1582,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
             ),
           }));
           for (const a of staleOpen) {
-            dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+            dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
+              set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
+            });
           }
         }
       }
@@ -1644,7 +1674,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('disputedAt'         in (updates as any)) patch.disputed_at     = (updates as any).disputedAt ?? null;
     if ('reversedAt'         in (updates as any)) patch.reversed_at     = (updates as any).reversedAt ?? null;
     if ('reversedById'       in (updates as any)) patch.reversed_by_id  = (updates as any).reversedById ?? null;
-    if (Object.keys(patch).length > 0) dbUpdate('chore_tasks', id, patch);
+    if (Object.keys(patch).length > 0) {
+      dbUpdate('chore_tasks', id, patch, () => {
+        // Failed write — revert the optimistic merge above back to the
+        // exact pre-update chore so local state doesn't keep showing a
+        // change that never actually landed in the DB.
+        if (prevChore) {
+          set(s => ({ chores: s.chores.map(c => c.id === id ? prevChore : c) }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        }
+      });
+    }
     if (prevChore) logChoreUpdateActivity(prevChore, updates, id);
   },
 
@@ -1664,15 +1704,29 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ),
       }));
       for (const a of orphaned) {
-        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
+          set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
+        });
       }
     }
     const familyId = getFamilyId();
     const actorId = getActiveMemberId();
+    const deletedChore = get().chores.find(c => c.id === id);
     set(s => ({ chores: s.chores.filter(c => c.id !== id) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     supabase.from('chore_tasks').delete().eq('id', id).then(({ error }) => {
-      if (error) console.warn('[choreStore] delete error', error.message);
+      if (error) {
+        console.warn('[choreStore] delete error', error.message);
+        // Was silently permanent — a failed DB delete still removed the
+        // chore from local state forever (until the next full reload
+        // happened to restore it from the DB), with no indication to the
+        // user that "deleted" hadn't actually landed. Restore it.
+        if (deletedChore) {
+          set(s => ({ chores: [...s.chores, deletedChore] }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        }
+        showToast("Couldn't delete — check your connection and try again", 'error');
+      }
     });
     logActivity({ entityType: 'chore', entityId: id, familyId, actorId, action: 'deleted' });
   },
@@ -2985,14 +3039,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     if (targets.length === 0) {
       // No kids selected → Bounty Pool. Any grandchild can claim first-come.
+      // updateChore already writes this exact patch to chore_tasks itself
+      // (and now rolls back on failure) — was a second, redundant dbUpdate
+      // call to the same row with the same fields right after, with no
+      // rollback of its own.
       get().updateChore(choreId, { status: 'todo', isPool: true, assignedToId: undefined, reviewedAt: now });
-      dbUpdate('chore_tasks', choreId, { status: 'todo', is_pool: true, assigned_to_id: null, reviewed_at: now });
       return;
     }
     if (targets.length === 1) {
-      // Single targeted kid → assign directly, full points.
+      // Single targeted kid → assign directly, full points. Same
+      // already-covered-by-updateChore redundancy as above.
       get().updateChore(choreId, { status: 'todo', isPool: false, assignedToId: targets[0], reviewedAt: now });
-      dbUpdate('chore_tasks', choreId, { status: 'todo', is_pool: false, assigned_to_id: targets[0], reviewed_at: now });
       return;
     }
 
@@ -3002,16 +3059,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // clones for a single consolidated review card; it no longer gates payout.
     const teamGroup = `team_${choreId}`;
     console.log(`[choreStore] approveGrandparentQuestAsParent → bounty ${teamGroup}: ${targets.length} kids × ${chore.basePoints} pts each`);
+    // updateChore already writes this same patch to chore_tasks itself
+    // (with rollback on failure) — was a second, redundant dbUpdate call to
+    // the same row right after.
     get().updateChore(choreId, {
       status: 'todo', isPool: false, assignedToId: targets[0],
       teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
     });
-    dbUpdate('chore_tasks', choreId, {
-      status: 'todo', is_pool: false, assigned_to_id: targets[0],
-      team_group_id: teamGroup, reviewed_at: now,
-    });
     for (const targetKid of targets.slice(1)) {
       const cloneId = genId();
+      set(s => ({
+        chores: [{
+          ...chore, id: cloneId, assignedToId: targetKid, status: 'todo', isPool: false,
+          teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
+        }, ...s.chores],
+      }));
       dbInsert('chore_tasks', {
         id: cloneId, title: chore.title, description: chore.description,
         category_type: 'grandparent_quest', base_points: chore.basePoints, coins_reward: chore.coinsReward,
@@ -3020,24 +3082,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         team_group_id: teamGroup, quest_mode: chore.questMode ?? null,
         requires_photo: chore.requiresPhotoProof, family_id: chore.familyId ?? getFamilyId(),
         due_date: chore.dueDate ?? null, created_at: now,
+      }).then(({ ok }) => {
+        // Was never checked — a failed clone insert (e.g. RLS rejection)
+        // still left a phantom "assigned" chore card in local state for a
+        // kid who, server-side, was never actually given anything to do.
+        if (!ok) {
+          set(s => ({ chores: s.chores.filter(c => c.id !== cloneId) }));
+          showToast("Couldn't create this kid's copy — check your connection and try again", 'error');
+        }
       });
-      set(s => ({
-        chores: [{
-          ...chore, id: cloneId, assignedToId: targetKid, status: 'todo', isPool: false,
-          teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
-        }, ...s.chores],
-      }));
     }
   },
 
   declineGrandparentQuestAsParent: (choreId, parentId, reason) => {
+    // updateChore already writes this same patch to chore_tasks itself
+    // (with rollback on failure) — was a second, redundant dbUpdate call to
+    // the same row right after.
     get().updateChore(choreId, {
       status:          'declined',
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),
-    });
-    dbUpdate('chore_tasks', choreId, {
-      status: 'declined', rejection_reason: reason, reviewed_at: new Date().toISOString(),
     });
   },
 
@@ -3341,7 +3405,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           ),
         }));
         for (const a of staleOpen) {
-          dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+          dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
+            set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
+          });
         }
       }
       // Live QA audit found this unconditionally cleared assignedToId on
@@ -3552,7 +3618,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           m.id === rule.id ? { ...m, monthlyContributedYtd: newYtd } : m
         ),
       }));
-      dbUpdate('grandparent_matches', rule.id, { monthly_contributed_ytd: newYtd });
+      // The match itself already paid out via awardPoints above (real
+      // coins, not reversible here) — but if THIS write fails, the
+      // monthly-cap counter silently desyncs from what was actually paid,
+      // which could let a future match exceed the grandparent's intended
+      // monthly cap. Roll the local counter back to what's actually
+      // persisted so the next run's cap check is still accurate.
+      dbUpdate('grandparent_matches', rule.id, { monthly_contributed_ytd: newYtd }, () => {
+        set(s => ({
+          grandparentMatches: s.grandparentMatches.map(m => m.id === rule.id ? rule : m),
+        }));
+      });
 
       // Let the grandparent know their match actually fired — a match with
       // no visible confirmation is indistinguishable from one that's
@@ -3661,25 +3737,36 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   settleCashOut: (transactionId, method) => {
+    const prevTx = get().transactions.find(tx => tx.id === transactionId);
+    const newNotes = `${prevTx?.notes ?? ''} [Settled: ${method}]`;
     set(s => ({
       transactions: s.transactions.map(tx =>
-        tx.id === transactionId
-          ? { ...tx, notes: `${tx.notes} [Settled: ${method}]` }
-          : tx
+        tx.id === transactionId ? { ...tx, notes: newNotes } : tx
       ),
     }));
-    dbUpdate('point_transactions', transactionId, { notes: `Settled: ${method}` });
+    // Was writing the bare literal "Settled: X" to the DB — discarding
+    // whatever the transaction's original notes text was there, diverging
+    // from the full `${prior} [Settled: X]` string applied to local state
+    // above. Also had no rollback: a failed write left local state showing
+    // "settled" forever with the DB never actually reflecting it.
+    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
+      set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
+    });
   },
 
   approveCashOut: (transactionId) => {
+    const prevTx = get().transactions.find(tx => tx.id === transactionId);
+    const newNotes = `${prevTx?.notes ?? ''} [Approved]`;
     set(s => ({
       transactions: s.transactions.map(tx =>
-        tx.id === transactionId
-          ? { ...tx, notes: `${tx.notes ?? ''} [Approved]` }
-          : tx
+        tx.id === transactionId ? { ...tx, notes: newNotes } : tx
       ),
     }));
-    dbUpdate('point_transactions', transactionId, { notes: '[Approved]' });
+    // Same bare-literal-overwrite bug as settleCashOut above, plus no
+    // rollback on failure.
+    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
+      set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
+    });
   },
 
   denyCashOut: (transactionId) => {
@@ -3694,21 +3781,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // for" behavior mainCoins gets implicitly from the reducer) — so a
     // denied GP cash-out must be credited back explicitly here, below.
     const tx = get().transactions.find(t => t.id === transactionId);
+    const newNotes = `${tx?.notes ?? ''} [Denied]`;
     set(s => ({
       transactions: s.transactions.map(t =>
-        t.id === transactionId
-          ? { ...t, notes: `${t.notes ?? ''} [Denied]` }
-          : t
+        t.id === transactionId ? { ...t, notes: newNotes } : t
       ),
     }));
-    dbUpdate('point_transactions', transactionId, { notes: '[Denied]' });
-    if (tx?.wallet === 'gpCoins' && tx.userId) {
-      // Explicit refund — gpCoins is a literal balance, not derived from
-      // transactions the way getMemberBalance computes mainCoins, so a
-      // denied request must be credited back directly rather than relying
-      // on an excluded-row reducer that doesn't exist for this wallet.
-      get().awardPoints(tx.userId, '', tx.amount, 0, 'gpCoins');
-    }
+    // Was writing the bare literal "[Denied]" (discarding the transaction's
+    // original notes text) and refunding gpCoins UNCONDITIONALLY regardless
+    // of whether this write actually succeeded — a failed write here left
+    // local state showing "denied" (balance looks right on this device)
+    // while the DB's row was never actually tagged, AND the gpCoins refund
+    // had already fired. A later sync reading the still-untagged DB row
+    // back could then look "un-denied" while the coins were already
+    // refunded once — a real double-payout vector. Gate the refund on the
+    // write actually landing, using dbUpdate's returned promise instead of
+    // firing it unconditionally right after the fire-and-forget call.
+    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
+      set(s => ({ transactions: s.transactions.map(t => t.id === transactionId && tx ? tx : t) }));
+    }).then(({ ok }) => {
+      if (ok && tx?.wallet === 'gpCoins' && tx.userId) {
+        // Explicit refund — gpCoins is a literal balance, not derived from
+        // transactions the way getMemberBalance computes mainCoins, so a
+        // denied request must be credited back directly rather than relying
+        // on an excluded-row reducer that doesn't exist for this wallet.
+        get().awardPoints(tx.userId, '', tx.amount, 0, 'gpCoins');
+      }
+    });
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3746,22 +3845,31 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   unlockBadge: (userId, badgeKey, tier = 'STANDARD') => {
     const now = new Date().toISOString();
-    set(s => {
-      const existing = s.badges.find(
-        b => b.userId === userId && b.badgeKey === badgeKey && b.tier === tier,
-      );
-      if (existing?.unlockedAt) return s; // Already unlocked
+    const prevBadge = get().badges.find(
+      b => b.userId === userId && b.badgeKey === badgeKey && b.tier === tier,
+    );
+    if (prevBadge?.unlockedAt) return; // Already unlocked
+    if (!prevBadge) return; // No local row to unlock — addBadge must run first
 
-      return {
-        badges: s.badges.map(b =>
-          (b.userId === userId && b.badgeKey === badgeKey && b.tier === tier)
-            ? { ...b, unlockedAt: now, bonusPerkActive: true }
-            : b
-        ),
-      };
-    });
+    set(s => ({
+      badges: s.badges.map(b =>
+        (b.userId === userId && b.badgeKey === badgeKey && b.tier === tier)
+          ? { ...b, unlockedAt: now, bonusPerkActive: true }
+          : b
+      ),
+    }));
     AsyncStorage.setItem(CACHE_KEY_BADGES, JSON.stringify(get().badges));
-    dbUpdate('user_badges', badgeKey, { unlocked_at: now, bonus_perk_active: true });
+    // Was `dbUpdate('user_badges', badgeKey, ...)` — badgeKey (e.g.
+    // "streak_7") was passed as the row's PRIMARY KEY, but user_badges.id is
+    // a separate generated uuid; `badge_key` is just a category column, never
+    // the id. `.eq('id', badgeKey)` matched zero rows every single call, so
+    // this write has been a silent permanent no-op since the table was
+    // created — badge unlocks only ever existed in the local AsyncStorage
+    // cache, never actually persisted, and would vanish on a fresh
+    // syncFromDB() or reinstall. Use the real row id instead.
+    dbUpdate('user_badges', prevBadge.id, { unlocked_at: now, bonus_perk_active: true }, () => {
+      set(s => ({ badges: s.badges.map(b => b.id === prevBadge.id ? prevBadge : b) }));
+    });
   },
 
   getBadgeProgress: (userId) => {
@@ -3837,7 +3945,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ),
       }));
       for (const a of staleOpen) {
-        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
+          set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
+        });
       }
     }
 
@@ -4093,6 +4203,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       status:       'COMPLETED',
       completed_at: now,
       updated_at:   now,
+    }, () => {
+      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
     });
     console.log(`[choreStore] completeParentQuest → syncing chore ${assignment.choreId} status=completed`);
     get().updateChore(assignment.choreId, { status: 'completed' });
@@ -4132,6 +4244,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       status:     'DECLINED',
       is_locked:  false,
       updated_at: now,
+    }, () => {
+      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
     });
     // Chore was already unassigned/todo while locked (respondToParentQuest's
     // PARKED branch clears assignedToId) — no chore-row change needed here,
@@ -4164,7 +4278,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         a.id === assignmentId ? { ...a, status: 'DECLINED', updatedAt: now } : a
       ),
     }));
-    dbUpdate('parent_quest_assignments', assignmentId, { status: 'DECLINED', updated_at: now });
+    dbUpdate('parent_quest_assignments', assignmentId, { status: 'DECLINED', updated_at: now }, () => {
+      set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
+    });
     // Reassign the underlying chore straight back to the recaller — they
     // said "I'll just do it myself," not "reopen this to the family pool."
     get().updateChore(assignment.choreId, { assignedToId: recallerId, status: 'todo' });
@@ -4283,13 +4399,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     if (!chore.isPool && !chore.targetChildIds?.length) {
       // Directly assigned → release to pool for the whole family.
+      // updateChore already writes this same patch to chore_tasks itself
+      // (with rollback on failure) — was a second, redundant dbUpdate call
+      // to the same row right after.
       get().updateChore(choreId, {
         status: 'todo', isPool: true, assignedToId: undefined,
         rejectionReason: reason, reviewedAt: new Date().toISOString(),
-      });
-      dbUpdate('chore_tasks', choreId, {
-        status: 'todo', is_pool: true, assigned_to_id: null,
-        rejection_reason: reason, reviewed_at: new Date().toISOString(),
       });
       return;
     }
@@ -4419,6 +4534,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         goal_target:              updated.goalTarget,
         max_monthly_contribution: updated.maxMonthlyContribution,
         is_active:                true,
+      }, () => {
+        set(s => ({ grandparentMatches: s.grandparentMatches.map(m => m.id === existing.id ? existing : m) }));
       });
       return;
     }
@@ -4445,11 +4562,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   approveGrandparentQuest: (choreId, parentId) => {
-    get().updateChore(choreId, { status: 'todo' }); // Moves from pending to claimable
-    dbUpdate('chore_tasks', choreId, {
-      status:      'todo',
-      reviewed_at: new Date().toISOString(),
-    });
+    // Moves from pending to claimable. Was two separate writes to the same
+    // row — updateChore's own status-only patch, then a second dbUpdate
+    // adding reviewedAt that updateChore's call didn't carry (not a true
+    // duplicate like the other sites in this file, since the field sets
+    // differed, but still two round-trips for one logical change with no
+    // rollback on the second). Folded into the one call.
+    get().updateChore(choreId, { status: 'todo', reviewedAt: new Date().toISOString() });
   },
 
   grandparentApproveAndCheer: (choreId, grandparentId, sticker) => {
@@ -4533,7 +4652,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // ─────────────────────────────────────────────────────────────────────────
 
   getChildDashboard: (childId) => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Was `new Date().toISOString().split('T')[0]` (UTC today) compared
+    // against approvedAt/submittedAt's own UTC-date prefix — for anyone
+    // west of UTC, a chore approved at 8pm local already has a UTC
+    // timestamp dated tomorrow for several hours, silently dropping it off
+    // "completed today" until midnight local. Use the device's local
+    // calendar date on both sides instead (see lib/dates.ts).
+    const todayStr = todayLocal();
     const allVisible = get().chores.filter(c => !c.isPrivateParent);
 
     return {
@@ -4567,11 +4692,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ['todo', 'in_progress', 'pending_grandparent_approval'].includes(c.status) &&
         (c.assignedToId === childId || !c.assignedToId),
       ),
-      completedToday: allVisible.filter(c =>
-        c.assignedToId === childId &&
-        ['approved', 'auto_approved', 'completed'].includes(c.status) &&
-        (c.approvedAt ?? c.submittedAt ?? '').startsWith(todayStr),
-      ),
+      completedToday: allVisible.filter(c => {
+        if (c.assignedToId !== childId) return false;
+        if (!['approved', 'auto_approved', 'completed'].includes(c.status)) return false;
+        const ts = c.approvedAt ?? c.submittedAt;
+        if (!ts) return false;
+        const d = new Date(ts);
+        return !isNaN(d.getTime()) && localDateStr(d) === todayStr;
+      }),
       pendingReview: allVisible.filter(c =>
         c.assignedToId === childId &&
         ['pending_approval', 'pending_grandparent_approval'].includes(c.status),

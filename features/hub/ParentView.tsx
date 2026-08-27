@@ -8,6 +8,7 @@ import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { localDateStr, todayLocal } from '@/lib/dates';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
@@ -349,7 +350,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // kid/teen), and notifies the requesting kid via chat the same way
   // approveTeenReward/declineGrandparentQuest already centralize their
   // outcome notifications.
-  const approveQuestProposalHandler = (req: any, finalCoins: number) => {
+  const approveQuestProposalHandler = (req: any, finalCoins: number, schedule?: { dueDate: string; dueTime: string; alertCall: boolean; alertCallLeadMinutes: number }) => {
     addChore({
       title: req.detail,
       categoryType: 'routine',
@@ -363,6 +364,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       recurrenceRule: { frequency: 'once' },
       familyId: (active as any).familyId,
       createdById: active.id,
+      // A proposal approved WITH the call-reminder toggle carries its own
+      // parent-picked due date/time (schedule). One approved plainly (no
+      // toggle) previously got no due date at all — it showed on backlog/
+      // Quests cards with no due-date label (just the "Tonight" generic
+      // fallback) even though it's meant to be done same-day, and every
+      // other quest-creation form (AddQuestModal, etc.) always sets one.
+      // Default to end of today so it at least shows and sorts as a normal
+      // dated chore; the parent's own schedule picker still wins outright
+      // whenever they set one explicitly.
+      dueDate: schedule?.dueDate ?? todayLocal(),
+      ...(schedule ? { dueTime: schedule.dueTime, alertCall: schedule.alertCall, alertCallLeadMinutes: schedule.alertCallLeadMinutes } : {}),
     });
     approveRequest(req.id, active.id, `Approved as a ${finalCoins}-coin quest!`);
     try {
@@ -509,11 +521,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     addParentQuest(chore.id, active.id, active.id, 'PULL');
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const reviewedToday = chores.filter(c =>
-    (c.status === 'approved' || c.status === 'auto_approved') &&
-    (c.reviewedAt ?? '').startsWith(todayStr)
-  ).length;
+  // Was UTC-today compared against reviewedAt's UTC-timestamp prefix — a
+  // chore reviewed at 8pm in a timezone west of UTC has a UTC date already
+  // one day ahead, dropping it off "reviewed today" for hours. See
+  // choreStore.ts's getChildDashboard for the same class of fix.
+  const todayStr = todayLocal();
+  const reviewedToday = chores.filter(c => {
+    if (c.status !== 'approved' && c.status !== 'auto_approved') return false;
+    if (!c.reviewedAt) return false;
+    const d = new Date(c.reviewedAt);
+    return !isNaN(d.getTime()) && localDateStr(d) === todayStr;
+  }).length;
   const pendingCashOuts = getPendingCashOuts();
   const kids = members.filter(m => m.role === 'kid');
   const avgStreak = kids.length > 0

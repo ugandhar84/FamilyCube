@@ -114,7 +114,7 @@ export function ActionNeededSection({
   // the way every other request type's approve action does. Kept as its
   // own callback rather than overloading approveRequest so the "create a
   // real chore row" side-effect lives in one obvious place (ParentView).
-  approveQuestProposal?: (req: any, finalCoins: number) => void;
+  approveQuestProposal?: (req: any, finalCoins: number, schedule?: { dueDate: string; dueTime: string; alertCall: boolean; alertCallLeadMinutes: number }) => void;
   declineQuestProposal?: (req: any, reason?: string) => void;
 }) {
   if (actionCount === 0) return null;
@@ -291,7 +291,7 @@ export function ActionNeededSection({
         key: `req-${req.id}`, age,
         severity: 'soon', score: SEVERITY.soon,
         node: <QuestProposalCard key={req.id} req={req} kidName={kidName} active={active} colors={colors} isDark={isDark}
-          onApprove={(finalCoins) => approveQuestProposal?.(req, finalCoins)}
+          onApprove={(finalCoins, schedule) => approveQuestProposal?.(req, finalCoins, schedule)}
           onDecline={(reason) => declineQuestProposal?.(req, reason)} />,
       });
       continue;

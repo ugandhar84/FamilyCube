@@ -3,6 +3,10 @@ import { View, Text, TextInput, Alert, Pressable } from 'react-native';
 import { Coins, X, Check, PenLine } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
+import { fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFormShared';
+import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { KidRequest } from '@/store/kidRequestStore';
 
@@ -19,15 +23,35 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
   colors: any; isDark: boolean;
   // finalCoins may differ from req.rewardCoins if the parent edited the
   // amount inline ("Approve with Changes" collapsed into one editable field
-  // rather than a separate modal — same end result, less friction).
-  onApprove: (finalCoins: number) => void;
+  // rather than a separate modal — same end result, less friction). dueDate/
+  // dueTime/alertCall/alertCallLeadMinutes are all optional: a quest
+  // proposal approves into an open pool quest by default (no due date), the
+  // same as before this picker existed — a parent only needs to set them if
+  // they want the call-reminder sweeper to actually have something to ring
+  // against (it only queries chores that have a due_date set at all).
+  onApprove: (finalCoins: number, schedule?: { dueDate: string; dueTime: string; alertCall: boolean; alertCallLeadMinutes: number }) => void;
   onDecline: (reason?: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [coinsText, setCoinsText] = useState(String(req.rewardCoins ?? 15));
+  // Guards a fast double-tap on Approve/Decline — onApprove calls addChore
+  // (no dedup, creates a new chore every call) and onDecline calls
+  // declineRequest; without this, two rapid taps created two live pool
+  // quests for the same proposal plus two chat notifications.
+  const [submitting, setSubmitting] = useState(false);
 
   const finalCoins = Math.max(0, Math.round(parseInt(coinsText, 10) || 0));
   const wasEdited = finalCoins !== (req.rewardCoins ?? 15);
+
+  // Call-style reminder needs a due date/time to ring against — off by
+  // default (pool quest, no due date, matching the pre-existing behavior)
+  // and only shown/collected once the parent turns the toggle on.
+  const [alertCall, setAlertCall] = useState(false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
+  const defaultDue = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
+  const [dueDate, setDueDate] = useState<Date>(defaultDue);
+  const [showDatePick, setShowDatePick] = useState(false);
+  const [showTimePick, setShowTimePick] = useState(false);
 
   return (
     <CollapsibleCard accent={colors.parent} colors={colors} isDark={isDark} defaultExpanded
@@ -72,26 +96,61 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
         )}
       </View>
 
+      {/* Optional due date/time + call-reminder — shown collapsed by
+          default (pool quest, no schedule) since most proposed chores don't
+          need one; a parent who wants the sweeper to ring must set a due
+          time here first, since it only queries chores with due_date set. */}
+      <CallReminderToggle
+        alertCall={alertCall} setAlertCall={setAlertCall}
+        alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+        accentColor={colors.parent} colors={colors} isDark={isDark}
+        variant="icon" pillStyle={styles.datePill}
+      />
+      {alertCall && (
+        <DueDateTimePicker
+          value={dueDate} setValue={setDueDate}
+          showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+          showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+          fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+          accentColor={colors.parent} colors={colors} isDark={isDark}
+          pillStyle={styles.datePill} overlayStyle={styles.pickerOverlay} cardStyle={styles.pickerCard}
+        />
+      )}
+
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
+          disabled={submitting}
           onPress={() => Alert.prompt(
             'Decline Chore Idea',
             `Let ${kidName} know why "${req.detail}" wasn't approved (optional).`,
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Decline', style: 'destructive', onPress: (reason?: string) => onDecline(reason?.trim() || undefined) },
+              { text: 'Decline', style: 'destructive', onPress: (reason?: string) => {
+                if (submitting) return;
+                setSubmitting(true);
+                onDecline(reason?.trim() || undefined);
+              } },
             ],
             'plain-text',
           )}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}40`,
-            paddingVertical: 10, borderRadius: 12 }}>
+            paddingVertical: 10, borderRadius: 12, opacity: submitting ? 0.6 : 1 }}>
           <X size={13} color={colors.danger} />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
-        <Pressable onPress={() => onApprove(finalCoins)}
+        <Pressable
+          disabled={submitting}
+          onPress={() => {
+            if (submitting) return;
+            setSubmitting(true);
+            onApprove(finalCoins, alertCall ? {
+              dueDate: localDateStr(dueDate), dueTime: fmtTimeLabel(dueDate),
+              alertCall, alertCallLeadMinutes,
+            } : undefined);
+          }}
           style={{ flex: 2, backgroundColor: colors.parent, paddingVertical: 10, borderRadius: 12,
-            alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+            alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, opacity: submitting ? 0.6 : 1 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
             {wasEdited ? `Approve with Changes (${finalCoins}🪙)` : `Approve as Chore (${finalCoins}🪙)`}
@@ -101,3 +160,9 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
     </CollapsibleCard>
   );
 }
+
+const styles = {
+  datePill:      { flexDirection: 'row' as const, alignItems: 'center' as const, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center' as const, paddingHorizontal: 20 },
+  pickerCard:    { borderRadius: 20, overflow: 'hidden' as const, paddingBottom: 12 },
+};

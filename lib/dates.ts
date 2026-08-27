@@ -104,12 +104,21 @@ export function fmtDateShort(dateStr: string | null | undefined, fallback = '—
 }
 
 /**
- * Format a 24h "HH:MM" time string for display: "3:30 PM".
+ * Format a time string for display: "3:30 PM". Accepts either a 24h
+ * "HH:MM" string (the normal case) or an already-12-hour "3:30 PM"/"3:30am"
+ * string passed through unchanged — some write paths in this app (event
+ * forms writing via a local fmtTimeLabel-style helper) store the display
+ * string directly in the same column a 24h "HH:MM" is stored in elsewhere,
+ * so a caller can't assume which shape it'll get. Feeding an already-12-hour
+ * string through the old 24h-only parser silently misread every PM time as
+ * its AM equivalent (e.g. "6:00 PM".split(':') → hour "6", losing the PM).
  * Returns fallback for missing/invalid values.
  */
 export function fmtTime(timeStr: string | null | undefined, fallback = '—'): string {
   if (!timeStr) return fallback;
-  const [h, m] = timeStr.split(':').map(Number);
+  const trimmed = timeStr.trim();
+  if (/am|pm/i.test(trimmed)) return trimmed.replace(/am/i, 'AM').replace(/pm/i, 'PM');
+  const [h, m] = trimmed.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) return fallback;
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12  = h % 12 || 12;

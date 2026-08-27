@@ -27,7 +27,7 @@ import {
   useChoreStore, BADGE_DEFINITIONS, type ChoreTask, type ChoreCategoryType,
 } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { parseLocalDate } from '@/lib/dates';
+import { parseLocalDate, localDateStr, todayLocal } from '@/lib/dates';
 
 // Money-green — "done/positive" accent, distinct from brand teal used for
 // confirmed/assigned state elsewhere. Not colors.success (which IS brand
@@ -1060,7 +1060,11 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
   const chores = useChoreStore(s => s.chores);
 
   const dash = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Was UTC-today compared against a UTC-timestamp prefix — dropped
+    // evening-approved chores off "completed today" for hours in any
+    // timezone west of UTC. See choreStore.ts's getChildDashboard for the
+    // same fix.
+    const todayStr = todayLocal();
     const visible = chores.filter(c => !c.isPrivateParent);
     return {
       citizenship: visible.filter(c =>
@@ -1081,11 +1085,14 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         ['todo', 'in_progress', 'pending_grandparent_approval'].includes(c.status) &&
         (c.assignedToId === member.id || !c.assignedToId),
       ),
-      completedToday: visible.filter(c =>
-        c.assignedToId === member.id &&
-        ['approved', 'auto_approved', 'completed'].includes(c.status) &&
-        (c.approvedAt ?? c.submittedAt ?? '').startsWith(todayStr),
-      ),
+      completedToday: visible.filter(c => {
+        if (c.assignedToId !== member.id) return false;
+        if (!['approved', 'auto_approved', 'completed'].includes(c.status)) return false;
+        const ts = c.approvedAt ?? c.submittedAt;
+        if (!ts) return false;
+        const d = new Date(ts);
+        return !isNaN(d.getTime()) && localDateStr(d) === todayStr;
+      }),
       pendingReview: visible.filter(c =>
         c.assignedToId === member.id &&
         ['pending_approval', 'pending_grandparent_approval'].includes(c.status),

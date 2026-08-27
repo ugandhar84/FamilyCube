@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
-import { withinLast24h } from '@/lib/dates';
+import { withinLast24h, localDateStr } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 
@@ -515,12 +515,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // shown in dispatch only carries what's still ahead.
   const upcomingClaimedRides = myClaimedRides.filter(e => !isPastEvent(e));
 
-  // Weekly claim count (current calendar week)
+  // Weekly claim count (current calendar week). Was .toISOString() (UTC
+  // date) compared against e.date (event's LOCAL calendar date, written via
+  // eventStore's localDateStr convention) — for a grandparent west of UTC,
+  // this could shift the week window by up to a day, wrongly blocking or
+  // allowing one extra ride claim right at the boundary.
   const weekStart = (() => {
-    const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0, 10);
+    const d = new Date(); d.setDate(d.getDate() - d.getDay()); return localDateStr(d);
   })();
   const weekEnd = (() => {
-    const d = new Date(); d.setDate(d.getDate() + (6 - d.getDay())); return d.toISOString().slice(0, 10);
+    const d = new Date(); d.setDate(d.getDate() + (6 - d.getDay())); return localDateStr(d);
   })();
   const ridesThisWeek = myClaimedRides.filter(e => e.date >= weekStart && e.date <= weekEnd).length;
   const atWeeklyCap   = ridesThisWeek >= weeklyRideCap;
@@ -852,7 +856,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             borderRadius: 12, padding: 10, borderWidth: 1, borderColor: colors.accent + '30' }}>
             <Text style={{ fontSize: 16 }}>🔑</Text>
             <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: colors.accent }}>
-              You're the temporary approver{caregiverGrant ? ` until ${new Date(caregiverGrant.expiresAt).toLocaleString()}` : ''} — you can approve/decline chore submissions below.
+              You're the temporary approver{caregiverGrant ? ` until ${new Date(caregiverGrant.expiresAt).toLocaleString(undefined, { hour12: true })}` : ''} — you can approve/decline chore submissions below.
             </Text>
           </View>
           <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />

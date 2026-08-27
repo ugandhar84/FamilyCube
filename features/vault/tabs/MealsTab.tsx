@@ -10,6 +10,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { localDateStr } from '@/lib/dates';
 
 import {
   Meal, AiDayOptions, AiMealResult,
@@ -229,7 +230,10 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     const daysUntil = ((dayIdx - (todayIdx === 0 ? 6 : todayIdx - 1) + 7) % 7);
     const due = new Date();
     due.setDate(due.getDate() + daysUntil);
-    const dueDate = due.toISOString().split('T')[0];
+    // Was due.toISOString() (UTC date) — for anyone west of UTC in the
+    // evening this silently wrote a due_date one calendar day off from what
+    // the day picker showed (e.g. picking "Fri" could write Saturday's date).
+    const dueDate = localDateStr(due);
 
     addQuest({
       title:            `🍳 Cook ${mealTitle}`,

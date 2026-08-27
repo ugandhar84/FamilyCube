@@ -872,6 +872,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       offline.push({ channelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id });
       await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
+      // A live RLS failure here can come from the x-active-member-id header
+      // (lib/supabase.ts's debugFetch, read fresh from familyStore on every
+      // request) not matching `senderId` at send time — logging both lets
+      // the NEXT failure prove or rule that out directly instead of
+      // guessing. See migration 20260903170000_add_active_member_header_
+      // support.sql's resolve_active_member_id() for why a mismatch here
+      // silently fails RLS rather than erroring loudly.
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const activeMemberId = useFamilyStore.getState().activeMemberId;
+        console.warn('[chatStore] send failed — diagnostic context:', {
+          senderId, channelId, activeMemberId,
+          senderMatchesActive: senderId === activeMemberId,
+          errorCode: (err as any)?.code, errorMessage: (err as any)?.message,
+        });
+      } catch { /* best-effort logging only */ }
       console.warn('[chatStore] send failed, queued offline', err);
       return undefined;
     }

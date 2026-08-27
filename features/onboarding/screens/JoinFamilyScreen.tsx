@@ -120,8 +120,10 @@ export default function JoinFamilyScreen() {
   const setMembers    = useFamilyStore(s => s.setMembers);
   const setActiveMem  = useFamilyStore(s => s.setActiveMember);
 
+  const [checkingCode, setCheckingCode] = useState(false);
+
   // ── Step 1: Validate code ────────────────────────────────────────────────────
-  const handleCodeNext = () => {
+  const handleCodeNext = async () => {
     // 8 chars (3-letter family-name prefix + 5 random alphanumeric), but
     // don't hard-require exact length client-side — join-family's own
     // lookup is the real check, and codes generated before this format
@@ -130,6 +132,49 @@ export default function JoinFamilyScreen() {
     // code they were already given.
     if (code.trim().length < 6) { setError('Enter your invite code'); return; }
     setError('');
+
+    // Pre-fill whatever the parent already entered (name/DOB/role/
+    // relationship) when creating this pending member, instead of making
+    // the invitee re-type it all from scratch (live-reported gap). Best-
+    // effort — a peek failure (network hiccup, legacy code with no
+    // pre-created row) just falls back to the old blank-form behavior
+    // rather than blocking progress; the REAL validation still happens on
+    // final submit via join-family's normal path.
+    setCheckingCode(true);
+    try {
+      const res = await fetch(
+        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/join-family`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+          },
+          body: JSON.stringify({ code: code.trim(), peek: true }),
+        }
+      );
+      const data = await res.json();
+      if (res.ok && data.ok && data.member) {
+        if (data.member.name) setName(data.member.name);
+        if (data.member.role) setRole(data.member.role === 'child' ? 'kid' : data.member.role === 'grandparent' ? 'grandparent' : data.member.role);
+        if (data.member.relationship) setRelationship(data.member.relationship);
+        // date_of_birth isn't shown on THIS screen (deliberately deferred to
+        // CompleteProfileScreen.tsx, see its own header comment) — it's
+        // already on the DB row from addPendingMember and join-family's
+        // claim update never touches it, so CompleteProfileScreen picks it
+        // up automatically once the real member syncs in. Nothing to do
+        // with it here.
+      } else if (!res.ok) {
+        // A genuinely invalid/expired code — surface it now rather than
+        // waiting for the final submit to fail with the same message.
+        setCheckingCode(false);
+        setError(data.error ?? 'Invalid or expired invite code.');
+        return;
+      }
+    } catch {
+      // Network hiccup — proceed with a blank form rather than blocking.
+    }
+    setCheckingCode(false);
     setStep('profile');
   };
 
@@ -242,8 +287,22 @@ export default function JoinFamilyScreen() {
         questsPending:   0,
         relationship:    relationship,
       };
+      // setMembers([member]) alone used to leave familyStore with a
+      // ONE-PERSON array and loaded still false — every downstream screen
+      // that gates its own initial fetch on `!loaded` (HubScreen, ChatScreen,
+      // StoreScreen) independently raced its own catch-up syncFromDB() right
+      // as the user landed, so for a window right after joining, the rest of
+      // the family (parents, siblings, seniors) was simply missing from
+      // every screen: no profile-switcher entries, no chat channels/DMs, no
+      // group roster — live-reported (a freshly-joined member saw only
+      // herself everywhere). Seed the store with this one member first (so
+      // setActiveMember below has a target to resolve against immediately),
+      // then run a full syncFromDB() — now that a real session + family_id
+      // exist — so the complete roster is in the store, and `loaded` is
+      // genuinely true, before this screen ever navigates away.
       setMembers([member]);
       setActiveMem(member.id);
+      await useFamilyStore.getState().syncFromDB();
 
       setStep('confirm');
     } catch (e: any) {
@@ -320,9 +379,11 @@ export default function JoinFamilyScreen() {
                 <TouchableOpacity
                   style={[s.btn, { backgroundColor: code.length >= 6 ? '#10B981' : '#ccc' }]}
                   onPress={handleCodeNext}
-                  disabled={code.length < 6}
+                  disabled={code.length < 6 || checkingCode}
                 >
-                  <Text style={s.btnText}>Continue</Text>
+                  {checkingCode
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={s.btnText}>Continue</Text>}
                 </TouchableOpacity>
               </View>
             )}

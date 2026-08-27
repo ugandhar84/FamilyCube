@@ -1127,6 +1127,20 @@ export default function ProfileSettingsScreen() {
   // profile" (only a Lock/switch-back is safe here, never a real
   // Supabase sign-out).
   const authUserId = useAuthStore(s => s.session?.user?.id);
+  // Real Sign Out revokes this device's refresh token server-side. For a
+  // real account that's fine — the person has an email/password (or Face
+  // ID) to sign back in with. For an anonymous joiner (every kid/GP who
+  // joined via invite code — see JoinFamilyScreen.tsx's
+  // signInAnonymously()), there is NO credential to sign back in with:
+  // "I have an account" needs one, and "I'm joining a family" would try to
+  // create a brand-new identity that join-family's own claim guard blocks
+  // for an already-active member. Signing out was a real, confusing dead
+  // end for this population (live-reported) — the only way back in from
+  // there is a parent-generated device-recovery code (same as a lost
+  // device), which is a much bigger ask than "just sign back in." Hide the
+  // real Sign Out for an anonymous session and point at Lock instead,
+  // which never revokes the session.
+  const isAnonymousSession = useAuthStore(s => !!(s.session?.user as any)?.is_anonymous);
   const authOwnerMember = allMembers.find(m => m.authUserId === authUserId);
   const viewingOwnProfile = !!activeMember && activeMember.id === authOwnerMember?.id;
   // Cheap RLS-scoped self-lookup (app_admins_select_self) — a kid/senior
@@ -1594,11 +1608,15 @@ export default function ProfileSettingsScreen() {
             zone's "Delete account" below (that's permanent; this just ends
             the device session, same signOut()+redirect the delete-account
             handler already runs after its own soft-delete). Only shown for
-            an auth-linked member — a PIN-only kid/senior profile has no
-            independent session of their own to sign out of; they switch
-            profiles instead. No confirmation needed, unlike the delete
-            flows — signing out is normal, everyday UX. */}
-        {isAuthLinked && viewingOwnProfile && (
+            an auth-linked, NON-anonymous member — a PIN-only kid/senior
+            profile has no independent session of their own to sign out of
+            (they switch profiles instead), and an anonymous joiner has no
+            credential to sign back in with once this revokes their session
+            (see isAnonymousSession's comment above) — for them this would
+            be a real dead end, not a reversible everyday action. No
+            confirmation needed for the real-account case — signing out is
+            normal, everyday UX. */}
+        {isAuthLinked && viewingOwnProfile && !isAnonymousSession && (
           <View style={{ marginBottom: 24 }}>
             <Row
               icon="log-out-outline"
@@ -1626,6 +1644,24 @@ export default function ProfileSettingsScreen() {
               }}
               colors={colors} isDark={isDark}
             />
+          </View>
+        )}
+
+        {/* Anonymous joiner's own profile — no real Sign Out (see the gate
+            above), but staying silent here would look like the feature was
+            simply forgotten, not deliberately withheld. Explain why, and
+            point at the one thing that IS safe: locking the device (which
+            just requires the PIN again next time, no session loss) instead
+            of a real sign-out with no way back in. */}
+        {isAuthLinked && viewingOwnProfile && isAnonymousSession && (
+          <View style={{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+            backgroundColor: colors.surface, padding: 14, gap: 6 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+              No Sign Out here
+            </Text>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 }}>
+              You joined with an invite code, not an email — there's nothing to sign back in WITH if you sign out. If you're switching to someone else's profile, use the switcher instead. If you lose this device, ask a parent for a recovery code.
+            </Text>
           </View>
         )}
 

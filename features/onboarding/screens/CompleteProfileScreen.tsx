@@ -37,7 +37,12 @@ export default function CompleteProfileScreen() {
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [dob, setDob] = useState<Date | null>(null);
+  // Pre-fill from whatever the parent already entered when creating this
+  // pending member (addPendingMember's own DOB field) — was always blank
+  // here, forcing a re-entry of data that already exists on the row
+  // (live-reported gap). Still fully editable — this is just a starting
+  // point, not a lock.
+  const [dob, setDob] = useState<Date | null>(active?.dateOfBirth ? new Date(active.dateOfBirth) : null);
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 

@@ -51,14 +51,56 @@ serve(async (req) => {
       avatar,         // emoji string e.g. '🧒'
       color,          // hex string e.g. '#9261C7'
       expoPushToken,  // optional — device push token
+      peek,           // true = read-only lookup, no claim/consume (see below)
     } = await req.json() as {
       code:           string;
-      name:           string;
-      role:           string;
-      avatar:         string;
+      name?:          string;
+      role?:          string;
+      avatar?:        string;
       color?:         string;
       expoPushToken?: string;
+      peek?:          boolean;
     };
+
+    // Read-only "peek" mode — JoinFamilyScreen's profile step used to always
+    // start blank, forcing the invitee to re-type name/DOB/role the parent
+    // had ALREADY entered when pre-creating their member row (live-reported
+    // gap). This looks up that pre-created row WITHOUT claiming/consuming
+    // the code, so the client can pre-fill its form before the invitee ever
+    // submits anything. Only meaningful for the per-invitee model
+    // (invite.member_id set) — a legacy code (member_id null) has no
+    // pre-created row to peek at, so it returns member: null and the client
+    // falls back to its old blank-form behavior.
+    if (peek) {
+      if (!code) return json({ error: 'code required' }, 400);
+      const { data: peekInvite, error: peekErr } = await createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+        .from('family_invites')
+        .select('id, family_id, status, expires_at, member_id')
+        .eq('code', code.trim())
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (peekErr || !peekInvite) {
+        return json({ error: 'Invalid or expired invite code. Ask a parent to share a new code.' }, 404);
+      }
+      if (new Date(peekInvite.expires_at) < new Date()) {
+        return json({ error: 'This invite code has expired. Ask a parent to generate a new one.' }, 410);
+      }
+      if (!peekInvite.member_id) {
+        return json({ ok: true, member: null });
+      }
+      const { data: peekMember } = await createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+        .from('members')
+        .select('name, role, relationship, date_of_birth')
+        .eq('id', peekInvite.member_id)
+        .maybeSingle();
+      return json({ ok: true, member: peekMember ?? null });
+    }
 
     if (!code || !name || !role || !avatar) {
       return json({ error: 'code, name, role, avatar required' }, 400);

@@ -15,11 +15,11 @@
  *   "Add to Schedule" saves an event per selected kid via useEventStore
  *   Parent can tap any field to edit before confirming
  */
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TextInput,
   StyleSheet, Image, ActivityIndicator, Alert, Platform,
-  KeyboardAvoidingView, Animated,
+  KeyboardAvoidingView, Animated, Keyboard, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -155,6 +155,32 @@ interface Props {
 
 export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
+
+  // This sheet rolls its own Modal (not the canonical AppBottomSheet) and
+  // has real TextInputs throughout the review/timetable steps (title,
+  // location, cost, description, per-period subject/teacher/room/times).
+  // f.sheet's maxHeight: '94%' below is a static CSS percentage of the
+  // FULL screen — it doesn't shrink when the keyboard opens, so a sheet
+  // already close to that ceiling has nowhere to go but up past the top
+  // of the screen (the same class of bug found and fixed in
+  // AppBottomSheet.tsx). Tracking the real keyboard height here and
+  // clamping the sheet's own maxHeight style to it directly, mirroring
+  // that fix, since migrating this ~1000-line multi-step wizard onto
+  // AppBottomSheet wholesale is a much larger, riskier change than this
+  // component needs just to close the actual bug.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const screenHeight = Dimensions.get('window').height;
+  const TOP_SAFE_MARGIN = 60;
+  const sheetMaxHeight = keyboardHeight > 0
+    ? Math.max(300, screenHeight - keyboardHeight - TOP_SAFE_MARGIN)
+    : screenHeight * 0.94;
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
   const { schedules, addSchedule, updateSchedule } = useSchoolStore();
@@ -408,7 +434,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={resetAndClose}>
       <Pressable style={f.backdrop} onPress={resetAndClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
-        <View style={[f.sheet, { backgroundColor: isDark ? '#0D1117' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+        <View style={[f.sheet, { backgroundColor: isDark ? '#0D1117' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0', maxHeight: sheetMaxHeight }]}>
           <View style={[f.handle, { backgroundColor: isDark ? '#334155' : '#CBD5E1' }]} />
 
           {/* ── TOAST ── */}
@@ -1041,7 +1067,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const f = StyleSheet.create({
   backdrop:   { flex: 1, backgroundColor: 'rgba(2,6,23,0.75)' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, maxHeight: '94%', minHeight: 400 },
+  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, minHeight: 400 },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
   hdr:        { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
   hdrIcon:    { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

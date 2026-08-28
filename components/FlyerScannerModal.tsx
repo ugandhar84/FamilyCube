@@ -1067,7 +1067,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const f = StyleSheet.create({
   backdrop:   { flex: 1, backgroundColor: 'rgba(2,6,23,0.75)' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, minHeight: 400 },
+  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, minHeight: 400, overflow: 'hidden' },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
   hdr:        { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
   hdrIcon:    { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

@@ -1,21 +1,33 @@
 /**
- * Wires react-native-callkeep's PushKit wake-on-killed-app handling into
- * the generated native project on every `expo prebuild`. This is necessary
- * because the installed react-native-callkeep version (4.3.16) ships no
- * PKPushRegistryDelegate of its own — that delegate has to live in
- * AppDelegate.swift by hand, which prebuild would otherwise silently wipe
- * on the next `expo prebuild --clean` (per the project's documented clean-
- * build workflow), breaking call reminders with no error and no obvious
- * symptom until a reminder just doesn't ring.
+ * Wires react-native-callkeep's PushKit wake-on-killed-app handling, the
+ * CXCallObserver answer/hangup bridge, and the native (no-JS) AVSpeechSynthesizer
+ * TTS reminder into the generated native project on every `expo prebuild`.
+ * This is necessary because the installed react-native-callkeep version
+ * (4.3.16) ships no PKPushRegistryDelegate of its own, and this app is
+ * deliberately native-CallKit-only (no in-app call screen, no JS involved in
+ * ring/answer/speak) — all of that logic has to live in AppDelegate.swift by
+ * hand, which prebuild would otherwise silently wipe on the next
+ * `expo prebuild --clean`, breaking call reminders with no error and no
+ * obvious symptom until a reminder just doesn't ring or stays silent.
  *
- * Reapplies:
- *  - `#import <RNCallKeep/RNCallKeep.h>` in the Swift bridging header
- *  - PushKit import, PKPushRegistryDelegate conformance, RNCallKeep.setup(),
- *    and the didReceiveIncomingPushWith handler in AppDelegate.swift
+ * ios/FamilyCube/AppDelegate.swift (gitignored, hand-edited directly when
+ * iterating on the call-reminder feature) is this plugin's SINGLE SOURCE OF
+ * TRUTH — this file no longer hand-duplicates Swift as template-literal
+ * strings. Instead, at patch time it reads the real AppDelegate.swift off
+ * disk and extracts the exact units it needs (imports, the class-conformance
+ * line, the properties block, and each named method via brace-matching),
+ * then ensures the generated file being patched contains an up-to-date copy
+ * of each unit — inserting it if missing, replacing it if present-but-stale.
+ * This removes the possibility of the plugin and the hand-written file
+ * silently drifting apart (which already caused one real bug: a stray
+ * `var`/`let speechSynthesizer` mismatch produced a duplicate-property
+ * insertion, only caught by the idempotency test harness).
  *
- * See ios/FamilyCube/AppDelegate.swift for the canonical hand-written
- * version this plugin mirrors — keep the two in sync if the delegate logic
- * changes.
+ * If ios/FamilyCube/AppDelegate.swift doesn't exist yet (very first
+ * prebuild, before the file has ever been generated), this plugin no-ops —
+ * there is nothing to extract from. Run `npx expo prebuild` once first to
+ * generate the initial file, hand-edit in the CallKit/TTS code once, and
+ * from then on this plugin keeps every subsequent prebuild in sync with it.
  */
 const { withAppDelegate, withDangerousMod, withXcodeProject } = require('@expo/config-plugins');
 const fs = require('fs');
@@ -23,295 +35,260 @@ const path = require('path');
 
 const BRIDGING_HEADER_IMPORT = '#import <RNCallKeep/RNCallKeep.h>';
 
-const PUSHKIT_IMPORT = 'import PushKit';
-const CALLKIT_IMPORT = 'import CallKit';
-const AVFOUNDATION_IMPORT = 'import AVFoundation';
+const CANONICAL_APP_DELEGATE_PATH = path.join(__dirname, '..', 'ios', 'FamilyCube', 'AppDelegate.swift');
 
-const DELEGATE_CONFORMANCE_OLD = 'public class AppDelegate: ExpoAppDelegate {';
-const DELEGATE_CONFORMANCE_NEW = 'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {';
+function readCanonicalSource() {
+  if (!fs.existsSync(CANONICAL_APP_DELEGATE_PATH)) return null;
+  return fs.readFileSync(CANONICAL_APP_DELEGATE_PATH, 'utf8');
+}
 
-const PROPERTY_MARKER = 'var reactNativeFactory: RCTReactNativeFactory?';
-const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  // CXCallObserver's callChanged delegate fires on EVERY state transition\n  // of a call, not just once on connect — a call reliably re-fires this\n  // with hasConnected still true / hasEnded still false more than once\n  // over its lifetime (e.g. audio-route changes, hold/mute toggles, or\n  // just a redundant re-notify from CallKit's own internals). Each such\n  // re-fire used to unconditionally rewrite familycube_last_answered_* to\n  // UserDefaults again — so if JS had already consumed (cleared) that\n  // pointer via getLastAnsweredCall once the user handled the call, a\n  // LATER redundant callChanged for that same already-answered call would\n  // resurrect it, and the app would show the call-alert banner again on\n  // next reopen for a call that was already over. This set tracks which\n  // callUUIDs have already been surfaced to JS so a repeat delivery for\n  // the same call is a no-op instead of a phantom re-answer.\n  var surfacedCallUUIDs = Set<String>()\n  // Speaks the reminder once CallKit reports the call connected — the\n  // actual TTS this whole call-reminder feature is FOR. This app is\n  // deliberately native-CallKit-only (no in-app call screen, no JS\n  // involved in ring/answer/speak at all), so this has to live here, not\n  // in a JS effect — and needs to work even before React Native has\n  // booted (a VoIP push can answer straight into this delegate from a\n  // killed app). AVSpeechSynthesizer shares the call's own already-active\n  // AVAudioSession automatically once CallKit hands control back\n  // (didActivateAudioSession), so speech comes out the same earpiece/\n  // speaker the call itself is using.\n  let speechSynthesizer = AVSpeechSynthesizer()`;
+// Extracts a single top-level line (e.g. an `import Foo` statement) verbatim.
+function extractLine(source, linePrefix) {
+  const line = source.split('\n').find((l) => l.trim().startsWith(linePrefix));
+  if (!line) throw new Error(`withCallKeep: canonical AppDelegate.swift is missing expected line starting with "${linePrefix}"`);
+  return line.trim();
+}
 
-const SPEAK_REMINDER_FUNCTION = `\n  // Builds and speaks the reminder as several short, separately-queued\n  // AVSpeechUtterances rather than one long comma-joined sentence — the\n  // synthesizer paces on utterance boundaries far better than on internal\n  // punctuation alone, so this reads with natural pauses between the\n  // greeting, the reminder itself, and any notes, instead of one flat\n  // run-on at a constant clip (mirrors the pacing the app's old in-app\n  // call screen achieved via repeated Speech.speak() calls in JS, before\n  // that screen was removed in favor of a fully native-CallKit-only flow).\n  private func speakReminder(callUUID: String, itemType: String) {\n    let title = UserDefaults.standard.string(forKey: "familycube_call_title_\\(callUUID)") ?? "your reminder"\n    let recipientName = UserDefaults.standard.string(forKey: "familycube_call_recipient_\\(callUUID)")\n    let notes = UserDefaults.standard.string(forKey: "familycube_call_notes_\\(callUUID)")\n\n    // A fixed postUtteranceDelay after EVERY segment (the first attempt at\n    // this) added the same dead-air gap whether or not one actually\n    // belonged there — reported live as sounding choppy/robotic, not\n    // natural, since real speech doesn't pause identically between every\n    // clause of one continuous thought. Fix: fold the greeting + main\n    // reminder into ONE utterance (natural sentence-internal punctuation\n    // paces itself correctly without any artificial delay), and reserve\n    // the real pause for the one place a person actually would pause when\n    // speaking this aloud — the beat before switching topics into the\n    // notes/instructions, if there are any.\n    var greetingPart = ""\n    if let recipientName = recipientName, !recipientName.isEmpty {\n      greetingPart = "Hi \\(recipientName), this is your Family Cube reminder — "\n    } else {\n      greetingPart = "This is your Family Cube reminder — "\n    }\n    // "Don't forget: {title}" for literally every single chore reminder\n    // was flagged live as repetitive/not the intended final phrasing — a\n    // person reminding you about medicine doesn't use the same words as\n    // one reminding you to take out the trash. Pick from a small set of\n    // natural phrasings, varied by what the reminder is actually about\n    // (a lowercased title match for medicine/medication-flavored chores,\n    // since that's this app's own most common call-alert use case,\n    // falling back to a generic-but-still-varied chore phrasing\n    // otherwise). Deterministic (based on the title's own hash), not\n    // random — the same recurring reminder shouldn't sound different\n    // every single day, just not identical to every OTHER reminder.\n    let lowerTitle = title.lowercased()\n    let isMedication = lowerTitle.contains("medic") || lowerTitle.contains("pill") || lowerTitle.contains("dose") || lowerTitle.contains("vitamin")\n    let chorePhrasings = isMedication\n      ? ["it's time to take \\(title).", "don't forget \\(title).", "time for \\(title)."]\n      : ["don't forget: \\(title).", "it's time for \\(title).", "you've got \\(title) coming up."]\n    let phrasingIndex = abs(title.hashValue) % chorePhrasings.count\n    let mainSentence = greetingPart + (\n      itemType == "event"\n        ? "it's time for \\(title)."\n        : chorePhrasings[phrasingIndex]\n    )\n    var segments: [String] = [mainSentence]\n    if let notes = notes, !notes.isEmpty {\n      // "Also, ..." reads as a natural aside a person would actually add,\n      // rather than dropping straight into raw instructions cold right\n      // after a sentence-ending pause — small phrasing choice, but it's\n      // exactly the kind of thing that separates "someone talking to you"\n      // from "a system reading a data field."\n      segments.append("Also, \\(notes)")\n    }\n\n    // Prefer a Siri-quality voice (.premium, falling back to .enhanced)\n    // over the default ".default" compact system voice — same preference\n    // lib/units.ts's resolveBestVoiceId() already applies for the (now-\n    // removed) JS speech path; mirrored here since that logic no longer\n    // runs. Enhanced/Premium voices must be downloaded on-device\n    // (Settings > Accessibility > Spoken Content > Voices) — if none are\n    // installed for the current language, this correctly falls back to\n    // whatever default voice AVSpeechSynthesisVoice(language:) returns.\n    let languageCode = AVSpeechSynthesisVoice.currentLanguageCode()\n    let candidates = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == languageCode }\n    let voice = candidates.first(where: { $0.quality == .premium })\n      ?? candidates.first(where: { $0.quality == .enhanced })\n      ?? AVSpeechSynthesisVoice(language: languageCode)\n\n    for (index, segment) in segments.enumerated() {\n      let utterance = AVSpeechUtterance(string: segment)\n      utterance.voice = voice\n      utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.97\n      // A dead-flat pitchMultiplier of 1.0 across the entire message is\n      // its own small robotic tell — real speech has a touch of natural\n      // variation between sentences. A slight, fixed per-segment offset\n      // (not randomized — that would sound erratic, not natural) gives\n      // the notes/aside segment a marginally different color than the\n      // main sentence, the way a person's voice shifts slightly when\n      // adding an afterthought.\n      utterance.pitchMultiplier = index == 0 ? 1.0 : 0.97\n      // Was: a 0.5s preUtteranceDelay on the first segment, meant as a\n      // brief settling beat after CallKit hands back the audio session —\n      // live-reported as an actual bug, not a nice touch: it produced a\n      // broken/stuck-sounding pause before the greeting even started,\n      // worse than speaking immediately. Removed outright rather than\n      // just shortened — CallKit's own connection handoff already\n      // provides enough of a natural beat on its own; this doesn't need\n      // an artificial one stacked on top of it.\n      // Only pause between segments — a genuine beat before switching\n      // topics into the notes, if there are any — never after the very\n      // last segment (an artificial trailing pause with nothing to\n      // pause FOR is exactly what read as robotic).\n      utterance.postUtteranceDelay = index < segments.count - 1 ? 0.45 : 0\n      speechSynthesizer.speak(utterance)\n    }\n  }`;
-
-const SETUP_MARKER = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)\n  }';
-// react-native-callkeep's answerCall/getInitialEvents replay queue
-// (_delayedEvents in RNCallKeep.m) is a plain in-memory array with no
-// persistence — if the process that displayed the CallKit call and captured
-// the answer action gets torn down before this app relaunches (the
-// documented, still-open killed-app-then-answer-from-lock-screen case —
-// react-native-webrtc/react-native-callkeep#844, #190, #682), that queue is
-// gone and JS never learns the call was answered. CXCallObserver asks iOS's
-// own CallKit call registry directly, independent of which process is
-// running; UserDefaults survives the process boundary the in-memory array
-// doesn't. See callObserver(_:callChanged:) below and FCVoipToken's
-// getLastAnsweredCall.
-const SETUP_ADDITION = `RNCallKeep.setup([
-      "appName": "Family Cube",
-      "supportsVideo": false,
-      "maximumCallGroups": 1,
-      "maximumCallsPerCallGroup": 1,
-    ])
-
-    let registry = PKPushRegistry(queue: DispatchQueue.main)
-    registry.delegate = self
-    registry.desiredPushTypes = [.voIP]
-    voipRegistry = registry
-
-    let observer = CXCallObserver()
-    observer.setDelegate(self, queue: nil)
-    callObserver = observer
-
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-  }
-
-  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-    let uuid = call.uuid.uuidString
-    // A call ending is the one transition that must actually clear state,
-    // not just be ignored — otherwise the per-UUID payload cache
-    // (familycube_call_itemType_/itemId_) outlives the call itself and can
-    // still be read back by a later, unrelated callChanged delivery for
-    // the same now-dead CXCall object.
-    if call.hasEnded {
-      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")
-      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")
-      UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")
-      UserDefaults.standard.removeObject(forKey: "familycube_call_recipient_\\(uuid)")
-      UserDefaults.standard.removeObject(forKey: "familycube_call_notes_\\(uuid)")
-      speechSynthesizer.stopSpeaking(at: .immediate)
-      surfacedCallUUIDs.remove(uuid)
-      // Was: nothing here told JS a call had ended if it happened while no
-      // JS runtime was alive to receive the live 'endCall' RNCallKeep
-      // event — hanging up from the lock screen / native call UI while the
-      // app was backgrounded/suspended left the post-answer /call-alert
-      // screen stuck on screen indefinitely; reopening the app just
-      // resumed exactly where it was left, with no cleanup ever having
-      // run (live-reported). Mirrors the existing
-      // familycube_last_answered_call_uuid pattern for the answered case —
-      // FCVoipToken.getLastEndedCall reads this back on next launch/
-      // foreground so JS can close a stale screen for a call that's
-      // already over.
-      UserDefaults.standard.set(uuid, forKey: "familycube_last_ended_call_uuid")
-      return
+// Extracts a brace-delimited unit (a function body, or the class declaration
+// through its opening brace) starting at the first occurrence of `marker`,
+// by counting braces from that point until they balance back to zero. This
+// is what lets the plugin pull a whole method verbatim out of the real file
+// regardless of how its internals have changed, rather than needing a
+// separate template literal kept in sync by hand.
+function extractBraceBlock(source, marker) {
+  const start = source.indexOf(marker);
+  if (start === -1) throw new Error(`withCallKeep: canonical AppDelegate.swift is missing expected block starting with "${marker}"`);
+  let depth = 0;
+  let seenOpenBrace = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '{') {
+      depth++;
+      seenOpenBrace = true;
+    } else if (ch === '}') {
+      depth--;
+      if (seenOpenBrace && depth === 0) {
+        return source.slice(start, i + 1);
+      }
     }
-    guard call.hasConnected else { return }
-    // Already surfaced this exact call to JS once — a repeat hasConnected
-    // delivery for the same UUID (CallKit re-fires callChanged for
-    // unrelated state changes while a call stays connected) must not
-    // resurrect an already-handled call.
-    guard !surfacedCallUUIDs.contains(uuid) else { return }
-    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),
-          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {
-      // No cached payload for this call — either it's a real phone call
-      // (this app has no other CallKit use) or the payload was already
-      // consumed. Nothing to answer-notify JS about.
-      return
-    }
-    surfacedCallUUIDs.insert(uuid)
-    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")
-    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")
-    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")
-    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,
-      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])
-
-    speakReminder(callUUID: uuid, itemType: itemType)
   }
-${SPEAK_REMINDER_FUNCTION}
+  throw new Error(`withCallKeep: unbalanced braces extracting block starting with "${marker}"`);
+}
 
-  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────
-  public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
-    guard type == .voIP else { return }
-    let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-    // FCVoipToken.swift's getCachedToken() reads this key to cover the
-    // race where PushKit hands the token to iOS before JS has booted far
-    // enough to attach its listener, or to re-deliver the same token when
-    // the JS effect re-runs after a profile switch — this write was
-    // missing entirely, so getCachedToken() always returned empty and only
-    // a live NotificationCenter post (a one-time, easy-to-miss event) ever
-    // actually delivered a token to JS.
-    UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")
-    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])
+// Extracts just the class declaration line (through its opening brace, but
+// not the whole class body) — e.g.
+// "public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, ... {"
+function extractClassDeclarationLine(source) {
+  const start = source.indexOf('public class AppDelegate:');
+  if (start === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the AppDelegate class declaration');
+  const end = source.indexOf('{', start);
+  if (end === -1) throw new Error('withCallKeep: could not find opening brace of AppDelegate class declaration');
+  return source.slice(start, end + 1).trim();
+}
+
+// Extracts the properties block: everything from `var reactNativeFactory`
+// (a line already present in every fresh-prebuilt AppDelegate.swift) through
+// the last `static let repeatGapSeconds` line this feature owns — i.e. every
+// CallKit/PushKit/TTS-related stored property, verbatim, in one contiguous
+// chunk.
+function extractPropertiesBlock(source) {
+  const startMarker = 'var reactNativeFactory: RCTReactNativeFactory?';
+  const startMarkerIdx = source.indexOf(startMarker);
+  if (startMarkerIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the reactNativeFactory property');
+  // Start AFTER the anchor line itself — the target file already has this
+  // exact line (it ships in every fresh-prebuilt AppDelegate.swift), so the
+  // extracted block must only contain what comes after it, or inserting
+  // "anchor\n<block>" would duplicate the anchor line.
+  const start = source.indexOf('\n', startMarkerIdx) + 1;
+  const endMarker = 'static let repeatGapSeconds: TimeInterval = 2.0';
+  const endIdx = source.indexOf(endMarker);
+  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the repeatGapSeconds property');
+  const lineEnd = source.indexOf('\n', endIdx);
+  // trimStart() too — insertion below supplies its own leading indent, and
+  // the raw slice starts with the source's existing "  " (2-space) indent
+  // already, which would otherwise double up to 4 spaces once spliced in.
+  return source.slice(start, lineEnd === -1 ? source.length : lineEnd).trim();
+}
+
+// Extracts the two setup snippets inserted inside didFinishLaunchingWithOptions
+// (RNCallKeep.setup + PushKit/CXCallObserver/speechSynthesizer wiring),
+// i.e. everything between the ReactNative-bootstrap #endif and the
+// `return super.application(...)` line.
+function extractDidFinishLaunchingSetup(source) {
+  const startMarker = '#endif';
+  const start = source.indexOf(startMarker);
+  if (start === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the #endif marker in didFinishLaunchingWithOptions');
+  const contentStart = start + startMarker.length;
+  const endMarker = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)';
+  const end = source.indexOf(endMarker, contentStart);
+  if (end === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the didFinishLaunchingWithOptions return statement');
+  return source.slice(contentStart, end).trim();
+}
+
+function buildCanonicalUnits() {
+  const source = readCanonicalSource();
+  if (!source) return null;
+
+  return {
+    pushkitImport: extractLine(source, 'import PushKit'),
+    callkitImport: extractLine(source, 'import CallKit'),
+    avfoundationImport: extractLine(source, 'import AVFoundation'),
+    classDeclarationLine: extractClassDeclarationLine(source),
+    propertiesBlock: extractPropertiesBlock(source),
+    setupSnippet: extractDidFinishLaunchingSetup(source),
+    callObserverFn: extractBraceBlock(source, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {'),
+    dayPartPhraseFn: extractBraceBlock(source, 'private func dayPartPhrase(for dueAtIso: String) -> String {'),
+    speakReminderFn: extractBraceBlock(source, 'private func speakReminder(callUUID: String, itemType: String) {'),
+    speechDidFinishFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {'),
+    pushRegistryDidUpdateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {'),
+    pushRegistryDidInvalidateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {'),
+    pushRegistryDidReceiveFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {'),
+  };
+}
+
+// Replaces `find` with `replacement` in-place if present (staleness-repair),
+// otherwise inserts `replacement` right after `anchor` (first-time
+// insertion). Either way, ends with exactly one up-to-date copy of the unit.
+function ensureUnit(contents, { find, anchor, replacement }) {
+  if (find && contents.includes(find)) {
+    if (find === replacement) return contents; // already exactly current
+    return contents.replace(find, replacement);
   }
-
-  public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
-    guard type == .voIP else { return }
-    UserDefaults.standard.removeObject(forKey: "familycube_voip_token")
-    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])
+  if (contents.includes(replacement)) return contents; // already exactly current, e.g. via a different find path
+  if (!contents.includes(anchor)) {
+    throw new Error(`withCallKeep: could not find anchor for insertion: ${anchor.slice(0, 60)}...`);
   }
-
-  public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
-    guard type == .voIP else { completion(); return }
-    let callerName = (payload.dictionaryPayload["callerName"] as? String) ?? "Family Cube Reminder"
-    let itemType = (payload.dictionaryPayload["itemType"] as? String) ?? ""
-    let itemId = (payload.dictionaryPayload["itemId"] as? String) ?? ""
-    let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""
-    let recipientName = payload.dictionaryPayload["recipientName"] as? String
-    let notes = payload.dictionaryPayload["notes"] as? String
-    let callUUID = UUID().uuidString
-    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")
-    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")
-    UserDefaults.standard.set(callerName, forKey: "familycube_call_title_\\(callUUID)")
-    if let recipientName = recipientName {
-      UserDefaults.standard.set(recipientName, forKey: "familycube_call_recipient_\\(callUUID)")
-    }
-    if let notes = notes {
-      UserDefaults.standard.set(notes, forKey: "familycube_call_notes_\\(callUUID)")
-    }
-    RNCallKeep.reportNewIncomingCall(
-      callUUID,
-      handle: callerName,
-      handleType: "generic",
-      hasVideo: false,
-      localizedCallerName: callerName,
-      supportsHolding: false,
-      supportsDTMF: false,
-      supportsGrouping: false,
-      supportsUngrouping: false,
-      fromPushKit: true,
-      payload: ["itemType": itemType, "itemId": itemId, "dueAtIso": dueAtIso, "callUUID": callUUID],
-      withCompletionHandler: completion
-    )
-  }`;
+  return contents.replace(anchor, `${anchor}\n${replacement}`);
+}
 
 function withCallKeepAppDelegate(config) {
   return withAppDelegate(config, (config) => {
+    const units = buildCanonicalUnits();
+    if (!units) {
+      console.warn('[withCallKeep] ios/FamilyCube/AppDelegate.swift not found — skipping CallKit/TTS patch. Run prebuild once, hand-edit that file, then prebuild again.');
+      return config;
+    }
+
     let contents = config.modResults.contents;
 
-    if (!contents.includes(PUSHKIT_IMPORT)) {
-      contents = contents.replace('import ReactAppDependencyProvider', `import ReactAppDependencyProvider\n${PUSHKIT_IMPORT}`);
+    // ── Imports ────────────────────────────────────────────────────────────
+    if (!contents.includes(units.pushkitImport)) {
+      contents = contents.replace('import ReactAppDependencyProvider', `import ReactAppDependencyProvider\n${units.pushkitImport}`);
     }
-    if (!contents.includes(CALLKIT_IMPORT)) {
-      contents = contents.replace(PUSHKIT_IMPORT, `${PUSHKIT_IMPORT}\n${CALLKIT_IMPORT}`);
+    if (!contents.includes(units.callkitImport)) {
+      contents = contents.replace(units.pushkitImport, `${units.pushkitImport}\n${units.callkitImport}`);
     }
-    if (!contents.includes(AVFOUNDATION_IMPORT)) {
-      contents = contents.replace(CALLKIT_IMPORT, `${CALLKIT_IMPORT}\n${AVFOUNDATION_IMPORT}`);
+    if (!contents.includes(units.avfoundationImport)) {
+      contents = contents.replace(units.callkitImport, `${units.callkitImport}\n${units.avfoundationImport}`);
     }
-    if (!contents.includes('CXCallObserverDelegate')) {
-      contents = contents.replace(DELEGATE_CONFORMANCE_OLD, DELEGATE_CONFORMANCE_NEW);
-      // Older builds may already have the PKPushRegistryDelegate-only
-      // conformance from before this fix — upgrade that variant too.
-      contents = contents.replace(
-        'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate {',
-        DELEGATE_CONFORMANCE_NEW,
-      );
-    }
-    if (!contents.includes('var voipRegistry')) {
-      contents = contents.replace(PROPERTY_MARKER, PROPERTY_ADDITION);
-    } else if (!contents.includes('var callObserver')) {
-      contents = contents.replace('var voipRegistry: PKPushRegistry?', 'var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  var surfacedCallUUIDs = Set<String>()');
-    } else if (!contents.includes('var surfacedCallUUIDs')) {
-      // callObserver property already applied by an older version of this
-      // plugin/fix but missing the surfacedCallUUIDs de-dup tracking set —
-      // insert just that piece.
-      contents = contents.replace('var callObserver: CXCallObserver?', 'var callObserver: CXCallObserver?\n  var surfacedCallUUIDs = Set<String>()');
-    }
-    if (contents.includes('var surfacedCallUUIDs') && !contents.includes('let speechSynthesizer')) {
-      // surfacedCallUUIDs already applied by an older version of this
-      // plugin but missing the AVSpeechSynthesizer property added for the
-      // native-only TTS fix — insert just that piece.
-      contents = contents.replace(
-        'var surfacedCallUUIDs = Set<String>()',
-        'var surfacedCallUUIDs = Set<String>()\n  let speechSynthesizer = AVSpeechSynthesizer()',
-      );
-    }
-    if (!contents.includes('RNCallKeep.setup(')) {
-      contents = contents.replace(SETUP_MARKER, SETUP_ADDITION);
-    } else if (!contents.includes('callObserver(_ callObserver: CXCallObserver')) {
-      // setup() already applied by an older version of this plugin but
-      // missing the CXCallObserver addition — insert just that piece rather
-      // than re-running the whole block (which would duplicate setup()).
-      contents = contents.replace(
-        'let registry = PKPushRegistry(queue: DispatchQueue.main)\n    registry.delegate = self\n    registry.desiredPushTypes = [.voIP]\n    voipRegistry = registry\n',
-        'let registry = PKPushRegistry(queue: DispatchQueue.main)\n    registry.delegate = self\n    registry.desiredPushTypes = [.voIP]\n    voipRegistry = registry\n\n    let observer = CXCallObserver()\n    observer.setDelegate(self, queue: nil)\n    callObserver = observer\n',
-      );
-      if (!contents.includes('func callObserver(_ callObserver: CXCallObserver')) {
-        contents = contents.replace(
-          '  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
-          '  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    let uuid = call.uuid.uuidString\n    if call.hasEnded {\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)\n      return\n    }\n    guard call.hasConnected else { return }\n    guard !surfacedCallUUIDs.contains(uuid) else { return }\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    surfacedCallUUIDs.insert(uuid)\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }\n\n  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
-        );
-      }
-    } else if (!contents.includes('surfacedCallUUIDs.contains(uuid)')) {
-      // setup() AND callObserver both already present, but callObserver
-      // still has the old unguarded version (this plugin's own previously-
-      // generated template, from before the hasEnded-clears-state /
-      // surfacedCallUUIDs de-dup fix) — replace that exact old function
-      // body in place. A literal string match (not a brace-counting regex)
-      // — the function contains nested `guard ... else { }` blocks whose
-      // inner closing braces are indistinguishable from the outer one to a
-      // non-greedy [\s\S]*? pattern, which previously stopped at the wrong
-      // `}` and silently left the old body untouched.
-      const OLD_CALLOBSERVER_BODY = 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    guard call.hasConnected, !call.hasEnded else { return }\n    let uuid = call.uuid.uuidString\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }';
-      const NEW_CALLOBSERVER_BODY = 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    let uuid = call.uuid.uuidString\n    if call.hasEnded {\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)\n      return\n    }\n    guard call.hasConnected else { return }\n    guard !surfacedCallUUIDs.contains(uuid) else { return }\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    surfacedCallUUIDs.insert(uuid)\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }';
-      if (contents.includes(OLD_CALLOBSERVER_BODY)) {
-        contents = contents.replace(OLD_CALLOBSERVER_BODY, NEW_CALLOBSERVER_BODY);
+
+    // ── Class conformance line ───────────────────────────────────────────────
+    if (!contents.includes(units.classDeclarationLine)) {
+      const existingDeclMatch = contents.match(/public class AppDelegate: ExpoAppDelegate[^{]*\{/);
+      if (existingDeclMatch) {
+        contents = contents.replace(existingDeclMatch[0], units.classDeclarationLine);
+      } else {
+        throw new Error('withCallKeep: could not find any AppDelegate class declaration to replace');
       }
     }
-    if (!contents.includes('familycube_call_itemType_')) {
-      contents = contents.replace(
-        'let callUUID = UUID().uuidString\n    RNCallKeep.reportNewIncomingCall(',
-        'let callUUID = UUID().uuidString\n    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")\n    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
-      );
+
+    // ── Stored properties block ───────────────────────────────────────────────
+    // Bare-bones fresh-prebuild files only have reactNativeFactory with
+    // nothing after it on subsequent lines belonging to this feature — so if
+    // the canonical block isn't already there verbatim, drop any stale
+    // partial version (identified by the same start/end anchors used to
+    // extract it) and splice in the current one fresh, right after the
+    // reactNativeFactory line.
+    if (!contents.includes(units.propertiesBlock)) {
+      const anchor = 'var reactNativeFactory: RCTReactNativeFactory?';
+      const anchorIdx = contents.indexOf(anchor);
+      if (anchorIdx === -1) throw new Error('withCallKeep: target AppDelegate.swift is missing reactNativeFactory property');
+      const afterAnchor = anchorIdx + anchor.length;
+      // If a previous (possibly stale) version of this plugin already
+      // inserted SOME properties here, they sit between reactNativeFactory
+      // and the next blank-line-then-method boundary. Find that boundary by
+      // locating the next occurrence of the didFinishLaunchingWithOptions
+      // function signature and cut everything between as the "existing
+      // properties region" to replace wholesale.
+      const nextFuncIdx = contents.indexOf('public override func application(', afterAnchor);
+      if (nextFuncIdx === -1) throw new Error('withCallKeep: target AppDelegate.swift is missing didFinishLaunchingWithOptions');
+      const before = contents.slice(0, afterAnchor).replace(/[ \t]+$/, '');
+      const after = contents.slice(nextFuncIdx);
+      contents = `${before}\n  ${units.propertiesBlock}\n\n  ${after}`;
     }
-    // Upgrade path: didReceiveIncomingPushWith already caches itemType/
-    // itemId (the branch above) but not yet the title/recipient/notes TTS
-    // needs — insert those three cache writes right after the existing
-    // itemId one, and read the two new payload fields at the top of the
-    // function alongside the existing ones.
-    if (contents.includes('familycube_call_itemType_') && !contents.includes('familycube_call_title_')) {
-      contents = contents.replace(
-        'let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""',
-        'let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""\n    let recipientName = payload.dictionaryPayload["recipientName"] as? String\n    let notes = payload.dictionaryPayload["notes"] as? String',
-      );
-      contents = contents.replace(
-        'UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
-        'UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    UserDefaults.standard.set(callerName, forKey: "familycube_call_title_\\(callUUID)")\n    if let recipientName = recipientName {\n      UserDefaults.standard.set(recipientName, forKey: "familycube_call_recipient_\\(callUUID)")\n    }\n    if let notes = notes {\n      UserDefaults.standard.set(notes, forKey: "familycube_call_notes_\\(callUUID)")\n    }\n    RNCallKeep.reportNewIncomingCall(',
-      );
+
+    // ── didFinishLaunchingWithOptions body (RNCallKeep.setup + PushKit + observer + speech delegate wiring) ──
+    if (!contents.includes(units.setupSnippet)) {
+      const endMarker = '#endif';
+      const endIdx = contents.indexOf(endMarker);
+      if (endIdx === -1) throw new Error('withCallKeep: target AppDelegate.swift is missing #endif in didFinishLaunchingWithOptions');
+      const contentStart = endIdx + endMarker.length;
+      const returnMarker = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)';
+      const returnIdx = contents.indexOf(returnMarker, contentStart);
+      if (returnIdx === -1) throw new Error('withCallKeep: target AppDelegate.swift is missing the didFinishLaunchingWithOptions return statement');
+      const before = contents.slice(0, contentStart);
+      const after = contents.slice(returnIdx);
+      contents = `${before}\n\n    ${units.setupSnippet}\n\n    ${after}`;
     }
-    // Upgrade path: callObserver's hasEnded branch already clears
-    // itemType/itemId but not yet the newer title/recipient/notes keys or
-    // stops any in-flight speech — insert those right after the existing
-    // itemId cleanup.
-    if (contents.includes('familycube_call_title_') && contents.includes('UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")') && !contents.includes('UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")')) {
-      contents = contents.replace(
-        'UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)',
-        'UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_recipient_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_notes_\\(uuid)")\n      speechSynthesizer.stopSpeaking(at: .immediate)\n      surfacedCallUUIDs.remove(uuid)',
-      );
-    }
-    // Upgrade path: callObserver already posts FCCallAnswered but doesn't
-    // yet call speakReminder — the actual TTS fix. Insert the call right
-    // after the notification post, and append the speakReminder function
-    // itself once, right after callObserver's closing brace.
-    if (contents.includes('NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered")') && !contents.includes('speakReminder(callUUID:')) {
-      contents = contents.replace(
-        'NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }',
-        'NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n\n    speakReminder(callUUID: uuid, itemType: itemType)\n  }\n' + SPEAK_REMINDER_FUNCTION,
-      );
-    }
-    // Upgrade path for installs that already have pushRegistry(didUpdate:)
-    // from before this fix — it only ever posted the live
-    // NotificationCenter event, never wrote the UserDefaults key
-    // FCVoipToken.swift's getCachedToken() reads. Confirmed live on a real
-    // device: getCachedToken() always resolved {hasToken:false}, even on a
-    // session whose voip_push_tokens DB row was already populated — that
-    // row could only have arrived via the live notification's lucky
-    // timing on some earlier cold launch, never via this "reliable"
-    // fallback path the surrounding comments describe. Breaks re-
-    // registration after a profile switch on a shared device, since the
-    // JS effect that re-runs on activeMemberId change relies on
-    // getCachedToken() to re-deliver the same physical token.
-    if (!contents.includes('UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")')) {
-      const OLD_DIDUPDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {\n    guard type == .voIP else { return }\n    let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])\n  }';
-      const NEW_DIDUPDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {\n    guard type == .voIP else { return }\n    let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()\n    UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])\n  }';
-      if (contents.includes(OLD_DIDUPDATE)) {
-        contents = contents.replace(OLD_DIDUPDATE, NEW_DIDUPDATE);
+
+    // ── Named methods — each ensured independently via brace-matched replace-or-insert ──
+    const methodAnchor = 'public override func application(\n    _ application: UIApplication,\n    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil\n  ) -> Bool {';
+    const methodInsertAfter = () => {
+      // Insert new methods right after didFinishLaunchingWithOptions's
+      // closing brace — found by brace-matching from the anchor above,
+      // since methods can vary in body content between installs.
+      const idx = contents.indexOf(methodAnchor);
+      if (idx === -1) return null;
+      let depth = 0;
+      let seenOpenBrace = false;
+      for (let i = idx; i < contents.length; i++) {
+        const ch = contents[i];
+        if (ch === '{') { depth++; seenOpenBrace = true; }
+        else if (ch === '}') {
+          depth--;
+          if (seenOpenBrace && depth === 0) return i + 1;
+        }
       }
-      const OLD_DIDINVALIDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {\n    guard type == .voIP else { return }\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])\n  }';
-      const NEW_DIDINVALIDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {\n    guard type == .voIP else { return }\n    UserDefaults.standard.removeObject(forKey: "familycube_voip_token")\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])\n  }';
-      if (contents.includes(OLD_DIDINVALIDATE)) {
-        contents = contents.replace(OLD_DIDINVALIDATE, NEW_DIDINVALIDATE);
+      return null;
+    };
+
+    function ensureMethod(fnSource, findMarker) {
+      const existingStart = contents.indexOf(findMarker);
+      if (existingStart !== -1) {
+        // A method with this signature already exists — extract its current
+        // body the same way we extracted the canonical one, and replace it
+        // wholesale if different (keeps behavior changes like phrasing/
+        // repeat-count tweaks flowing through without a manual patch string).
+        let depth = 0;
+        let seenOpenBrace = false;
+        let existingEnd = -1;
+        for (let i = existingStart; i < contents.length; i++) {
+          const ch = contents[i];
+          if (ch === '{') { depth++; seenOpenBrace = true; }
+          else if (ch === '}') {
+            depth--;
+            if (seenOpenBrace && depth === 0) { existingEnd = i + 1; break; }
+          }
+        }
+        if (existingEnd === -1) throw new Error(`withCallKeep: unbalanced braces in target file's existing method starting with "${findMarker}"`);
+        const existingFn = contents.slice(existingStart, existingEnd);
+        if (existingFn === fnSource) return; // already current
+        contents = contents.slice(0, existingStart) + fnSource + contents.slice(existingEnd);
+        return;
       }
+      // Not present yet — insert right after didFinishLaunchingWithOptions.
+      const insertAt = methodInsertAfter();
+      if (insertAt === null) throw new Error('withCallKeep: could not find insertion point for new method');
+      contents = `${contents.slice(0, insertAt)}\n\n  ${fnSource}${contents.slice(insertAt)}`;
     }
+
+    ensureMethod(units.callObserverFn, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {');
+    ensureMethod(units.dayPartPhraseFn, 'private func dayPartPhrase(for dueAtIso: String) -> String {');
+    ensureMethod(units.speakReminderFn, 'private func speakReminder(callUUID: String, itemType: String) {');
+    ensureMethod(units.speechDidFinishFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {');
+    ensureMethod(units.pushRegistryDidUpdateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {');
+    ensureMethod(units.pushRegistryDidInvalidateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {');
+    ensureMethod(units.pushRegistryDidReceiveFn, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {');
 
     config.modResults.contents = contents;
     return config;

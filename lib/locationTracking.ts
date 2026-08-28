@@ -192,6 +192,19 @@ let taskDefined = false;
 function ensureTaskDefined(tm: TaskManagerAPI) {
   if (taskDefined || tm.isTaskDefined(LOCATION_TASK_NAME)) { taskDefined = true; return; }
   tm.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+    // Whole-body try/catch — this callback is invoked directly by the
+    // native TaskManager bridge, not from any JS call site that could ever
+    // .catch() it itself. Before this, only the inner reverse-geocode and
+    // battery reads were individually guarded; a thrown/rejected
+    // encryptLocationText call or either of the two Supabase writes further
+    // down (network blip, RLS denial, malformed payload) escaped as a
+    // genuinely uncaught rejection straight out of the native bridge —
+    // live-reported as "Uncaught (in promise, id: 0) ... Task
+    // 'family-cube-background-location' not found for app ID
+    // 'mainApplication'" even with isBackgroundLocationTracking/
+    // stopBackgroundLocationTracking already fully guarded, since neither
+    // of those was actually the source — this callback body was.
+    try {
     if (error) {
       console.error('[locationTracking] background task error:', error.message);
       return;
@@ -301,6 +314,9 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
         battery_level: batteryLevel, is_charging: isCharging,
         recorded_at: now,
       });
+    }
+    } catch (e) {
+      console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);
     }
   });
   taskDefined = true;

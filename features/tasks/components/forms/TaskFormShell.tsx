@@ -30,6 +30,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import StepProgressBar from '@/components/StepProgressBar';
 import StepTransition from '@/components/StepTransition';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 export function TaskFormShell({
   visible, onClose, stepIds, stepTitles, step, setStep,
@@ -54,6 +55,11 @@ export function TaskFormShell({
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  // s.sheet's maxHeight: '75%' is static against the full screen — clamp
+  // it once the keyboard opens so it can't get pushed past the top of the
+  // screen (same class of bug fixed in AppBottomSheet.tsx). Falls through
+  // to the sheet's own 75% when the keyboard is closed.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
   const currentStepId = stepIds[Math.min(step, stepIds.length - 1)];
   const isReview = currentStepId === reviewStepId;
@@ -65,7 +71,8 @@ export function TaskFormShell({
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={[s.sheet, { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }]}>
+            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8,
+            ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}>
             {/* Drag handle */}
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 

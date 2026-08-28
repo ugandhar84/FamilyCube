@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, TouchableWithoutFeedback,
-  KeyboardAvoidingView, StyleSheet, Platform, Keyboard,
+  KeyboardAvoidingView, StyleSheet, Platform, Keyboard, Dimensions,
 } from 'react-native';
 import PickerOverlay from './PickerOverlay';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,6 +40,29 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
+  // ss.sheet's maxHeight: '92%' is a static percentage of the FULL screen
+  // — never clamped against the actual keyboard height once it opens, so
+  // a sheet with a text input near its height ceiling (FeedbackSheet.tsx's
+  // description field, etc.) can get pushed up past the top of the screen
+  // (same class of bug found and fixed in AppBottomSheet.tsx). Track the
+  // real keyboard height and clamp maxHeight to whatever's actually left
+  // above it whenever it's open — the configured 92% is left completely
+  // unchanged otherwise, per explicit instruction to keep each sheet's
+  // existing max as-is.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const screenHeight = Dimensions.get('window').height;
+  const TOP_SAFE_MARGIN = 60;
+  const keyboardAwareMaxHeight = keyboardHeight > 0
+    ? Math.min(screenHeight * 0.92, screenHeight - keyboardHeight - TOP_SAFE_MARGIN)
+    : undefined; // undefined = fall through to ss.sheet's own 92%
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss} onDismiss={onDismiss}>
       {/* KAV owns full height so the sheet stays pinned to the keyboard */}
@@ -53,6 +77,7 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
           <View style={[ss.sheet, {
             backgroundColor: colors.card,
             paddingBottom: Math.max(insets.bottom, extraBottom ?? 0) + 8,
+            ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}),
           }, style]}>
             {/* Drag handle */}
             <View style={ss.handle}>
@@ -98,6 +123,7 @@ const ss = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 0,
     maxHeight: '92%',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: -2 },

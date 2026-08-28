@@ -90,6 +90,22 @@ FirebaseApp.configure()
         surfacedCallUUIDs.remove(uuid)
       }
     } else if !call.isOutgoing && !surfacedCallUUIDs.contains(uuid) {
+      // CXCallObserver reports EVERY call on the device, not just this
+      // app's own VoIP reminder calls — a genuine incoming call from
+      // anyone (a real person, a robocall, anything) hits this exact
+      // branch too. Without this guard, the itemType ?? "reminder"
+      // fallback below meant speakReminder() ran for real, unrelated
+      // phone calls the instant the native call screen appeared, speaking
+      // "This is a reminder for..." over someone else's actual call
+      // (confirmed live: reported happening on every incoming call, not
+      // just app-originated reminder calls). itemId only ever gets written
+      // to UserDefaults by THIS app's own pushRegistry(didReceiveIncomingPushWith:)
+      // handler above — its absence is the reliable signal this call has
+      // nothing to do with Family Cube.
+      guard UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)") != nil else {
+        surfacedCallUUIDs.insert(uuid)
+        return
+      }
       surfacedCallUUIDs.insert(uuid)
       let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
       let itemId   = UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)")

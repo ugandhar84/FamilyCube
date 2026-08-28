@@ -358,7 +358,126 @@ serve(async (req) => {
       rung++;
     }
 
-    return json({ ok: true, rung, results });
+    // ── Missed-call follow-up: one retry + one push, never a loop ────────────
+    // A call reminder that rings and is never answered previously just
+    // disappeared — the claim above permanently marks that due_at as "rung"
+    // regardless of whether anyone picked up, and the native side's TTS only
+    // ever speaks on an actually-connected call, so an unanswered ring left
+    // nothing behind at all. answered is set true by the client (via
+    // mark-call-reminder-answered) the moment CXCall.hasConnected fires;
+    // anything still false here, ~3-4 minutes after it first rang, was
+    // genuinely missed. Bounded to retry_count = 0 so this fires exactly
+    // once per reminder — a single quiet follow-up (one more call attempt +
+    // one normal push notification), never a repeating nag.
+    const followUpWindowStart = new Date(now.getTime() - 4 * 60_000).toISOString();
+    const followUpWindowEnd = new Date(now.getTime() - 3 * 60_000).toISOString();
+    const { data: missed } = await supabase
+      .from('call_reminder_log')
+      .select('id, item_type, item_id, due_at')
+      .eq('answered', false)
+      .eq('retry_count', 0)
+      .gte('fired_at', followUpWindowStart)
+      .lt('fired_at', followUpWindowEnd);
+
+    let followedUp = 0;
+    if (missed && missed.length > 0) {
+      // Re-derive title/members/category/etc for each missed item — the
+      // in-memory `targets`/`toRing` from this same invocation won't have
+      // them (a reminder rings once per sweep run; the 3-4 min-old rows
+      // being checked here were claimed by an EARLIER run, not this one).
+      const choreIds = missed.filter(m => m.item_type === 'chore').map(m => m.item_id);
+      const eventIds = missed.filter(m => m.item_type === 'event').map(m => m.item_id);
+      const [{ data: missedChores }, { data: missedEvents }] = await Promise.all([
+        choreIds.length
+          ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description').in('id', choreIds)
+          : Promise.resolve({ data: [] as any[] }),
+        eventIds.length
+          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids').in('id', eventIds).is('deleted_at', null)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      const choreById = Object.fromEntries((missedChores ?? []).map((c: any) => [c.id, c]));
+      const eventById = Object.fromEntries((missedEvents ?? []).map((e: any) => [e.id, e]));
+
+      // Same driver/helper + event's own member_id/member_ids union the main
+      // sweep uses above — re-fetched here since that map is scoped to THIS
+      // run's own toRing set, not the older (3-4 min ago) missed rows.
+      let missedParticipantsByEvent: Record<string, string[]> = {};
+      if (eventIds.length) {
+        const { data: participantRows } = await supabase
+          .from('event_participants')
+          .select('event_id, member_id, role')
+          .in('event_id', eventIds)
+          .in('role', ['driver', 'helper'])
+          .eq('status', 'confirmed')
+          .not('member_id', 'is', null);
+        for (const row of (participantRows ?? [])) {
+          (missedParticipantsByEvent[row.event_id as string] ??= []).push(row.member_id as string);
+        }
+      }
+
+      for (const m of missed) {
+        const isChore = m.item_type === 'chore';
+        const source = isChore ? choreById[m.item_id] : eventById[m.item_id];
+        if (!source) continue; // item was deleted since it rang — nothing to follow up on
+
+        const memberIds = isChore
+          ? [source.assigned_to_id].filter(Boolean)
+          : [...new Set([
+              ...(missedParticipantsByEvent[m.item_id] ?? []),
+              ...(source.member_id ? [source.member_id] : (source.member_ids ?? [])),
+            ])];
+        if (memberIds.length === 0) continue;
+
+        const [{ data: voipTokenRows }, { data: expoTokenRows }, { data: memberRows2 }] = await Promise.all([
+          supabase.from('voip_push_tokens').select('member_id, token, platform').in('member_id', memberIds),
+          supabase.from('member_device_tokens').select('member_id, expo_push_token').in('member_id', memberIds),
+          supabase.from('members').select('id, name').in('id', memberIds),
+        ]);
+        const nameOf2: Record<string, string> = Object.fromEntries((memberRows2 ?? []).map((r: any) => [r.id, r.name]));
+        const voipTargets = (voipTokenRows ?? []).map((r: any) => ({
+          token: r.token, platform: r.platform, recipientName: nameOf2[r.member_id],
+        }));
+
+        // Retry: one more VoIP call attempt, same phrasing path as the
+        // original ring (speakReminder on the client picks up whichever
+        // category/notes/location UserDefaults keys this push carries).
+        if (voipTargets.length > 0) {
+          await sendVoipPush(voipTargets, {
+            callerName: source.title,
+            itemType: m.item_type as 'chore' | 'event',
+            itemId: m.item_id,
+            dueAtIso: m.due_at,
+            memberNames: memberIds.map((id: string) => nameOf2[id]).filter(Boolean),
+            location: !isChore ? (source.location ?? undefined) : undefined,
+            notes: (isChore ? source.description : source.notes) ?? undefined,
+          });
+        }
+
+        // Fallback: a normal push notification, so the reminder isn't lost
+        // entirely even on a device where the retry call also goes
+        // unanswered — this is the safety net, not a second call attempt.
+        const expoTokens = (expoTokenRows ?? [])
+          .map((r: any) => r.expo_push_token)
+          .filter((t: string) => t?.startsWith('ExponentPushToken'));
+        if (expoTokens.length > 0) {
+          const title = isChore ? `Missed reminder: ${source.title}` : `You missed a call about ${source.title}`;
+          const body = isChore ? "Don't forget — this is still due." : "This was coming up — check your calendar.";
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(expoTokens.map((token: string) => ({
+              to: token, sound: 'default', title, body, priority: 'high', channelId: 'family',
+              data: { type: 'call_reminder_missed', itemType: m.item_type, itemId: m.item_id },
+            }))),
+          }).catch(() => {});
+        }
+
+        await supabase.from('call_reminder_log').update({ retry_count: 1 }).eq('id', m.id);
+        followedUp++;
+      }
+    }
+
+    return json({ ok: true, rung, results, followedUp });
 
   } catch (e: any) {
     console.error('[call-reminder-sweeper]', e);

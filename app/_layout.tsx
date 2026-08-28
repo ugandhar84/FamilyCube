@@ -41,6 +41,7 @@ import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking'
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
+  listenForCallReminderAnswered,
 } from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -738,6 +739,11 @@ function RootNavigator() {
 
   useEffect(() => {
     setupCallAlerts();
+    // Doesn't depend on activeMemberId — the native "CallReminderAnswered"
+    // event already carries itemType/itemId/dueAtIso, everything
+    // mark-call-reminder-answered needs to find the right row.
+    const unanswered = listenForCallReminderAnswered();
+    return unanswered;
   }, []);
 
   useEffect(() => {

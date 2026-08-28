@@ -92,11 +92,25 @@ FirebaseApp.configure()
     } else if !call.isOutgoing && !surfacedCallUUIDs.contains(uuid) {
       surfacedCallUUIDs.insert(uuid)
       let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
-      if let it = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)"),
-         let id = UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)") {
+      let itemId   = UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)")
+      let dueAtIso = UserDefaults.standard.string(forKey: "familycube_call_dueAtIso_\(uuid)")
+      if let id = itemId {
         UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")
-        UserDefaults.standard.set(it,   forKey: "familycube_last_answered_itemType")
+        UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")
         UserDefaults.standard.set(id,   forKey: "familycube_last_answered_itemId")
+      }
+      // Reaching this branch (non-outgoing, not yet surfaced, not hasEnded)
+      // is CallKit's answered transition — tells the JS side (which holds
+      // the actual auth session; the native side makes no network calls of
+      // its own, matching the VoipTokenUpdated pattern above) to mark this
+      // reminder answered server-side, so call-reminder-sweeper's missed-
+      // call follow-up never fires for a call the person actually picked up.
+      if let id = itemId, let due = dueAtIso {
+        NotificationCenter.default.post(
+          name: NSNotification.Name("CallReminderAnswered"),
+          object: nil,
+          userInfo: ["itemType": itemType, "itemId": id, "dueAtIso": due]
+        )
       }
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
         self?.speakReminder(callUUID: uuid, itemType: itemType)
@@ -255,7 +269,6 @@ FirebaseApp.configure()
     let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
     UserDefaults.standard.set(token, forKey: "familycube_voip_token")
     NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": token])
-    RNCallKeep.didUpdatePush(credentials: pushCredentials)
   }
 
   public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {

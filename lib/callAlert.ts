@@ -127,6 +127,38 @@ export function listenForVoipToken(onToken: (token: string) => void): () => void
   }
 }
 
+// Bridges AppDelegate.swift's "CallReminderAnswered" NotificationCenter post
+// (fired the moment CXCallObserver sees a reminder call actually connect) to
+// the mark-call-reminder-answered edge function. The native side makes no
+// network calls of its own (same reasoning as the VoIP token bridge above —
+// only JS holds the real Supabase session), so this is what actually tells
+// the backend "this one was picked up" — without it, call-reminder-sweeper's
+// missed-call follow-up (one retry call + one push, ~3 min later) would fire
+// for every reminder, answered or not, turning a quiet safety net into a
+// redundant nag on top of a call the person already took.
+export function listenForCallReminderAnswered(): () => void {
+  if (Platform.OS !== 'ios') return () => {};
+  try {
+    const sub = DeviceEventEmitter.addListener(
+      'CallReminderAnswered',
+      async (e: { itemType?: string; itemId?: string; dueAtIso?: string }) => {
+        if (!e?.itemType || !e?.itemId || !e?.dueAtIso) return;
+        try {
+          await supabase.functions.invoke('mark-call-reminder-answered', {
+            body: { itemType: e.itemType, itemId: e.itemId, dueAtIso: e.dueAtIso },
+          });
+        } catch (err) {
+          console.warn('[callAlert] mark-call-reminder-answered failed', err);
+        }
+      }
+    );
+    return () => sub.remove();
+  } catch (e) {
+    console.warn('[callAlert] listenForCallReminderAnswered threw', e);
+    return () => {};
+  }
+}
+
 // ── FCM token + foreground ring (Android) ──────────────────────────────────
 // Background/killed-app delivery is handled by index.js's
 // setBackgroundMessageHandler (must run at module-eval time, outside React);

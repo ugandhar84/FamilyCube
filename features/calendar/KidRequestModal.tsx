@@ -49,6 +49,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, Switch, Alert } from 'react-native';
 import { Mic, ChevronLeft, X, Check, Phone, Trash2 } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { TYPO } from '@/constants/theme';
@@ -98,6 +99,9 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   editEvent?: FamilyEvent;
 }) {
   const { colors, isDark } = useTheme();
+  // Same keyboard-clamp fix as EventFormModal.tsx — shares f.sheet's
+  // maxHeight: '75%' from eventForm/styles.ts.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
   const { addEvent, updateEvent, deleteEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
   const active = members.find(m => m.id === activeMemberId);
@@ -318,7 +322,8 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={close} />
-          <View style={[f.sheet, { backgroundColor: colors.card, minHeight: '55%' }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, minHeight: '55%' },
+            keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : null]}>
             <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
 
             {/* ── Header: back, progress dots, mic, close ── */}

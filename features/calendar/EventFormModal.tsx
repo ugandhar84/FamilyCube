@@ -33,6 +33,7 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 import { X } from './components/eventForm/Icons';
 import Chip from './components/eventForm/Chip';
@@ -1279,6 +1280,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   onDelete?: (scope?: 'this' | 'following' | 'all') => void;
 }) {
   const { colors, isDark } = useTheme();
+  // f.sheet's maxHeight: '75%' (eventForm/styles.ts, shared with
+  // AddQuestModal via TaskFormShell) is static against the full screen —
+  // clamp it once the keyboard opens so it can't get pushed past the top
+  // of the screen (same class of bug fixed in AppBottomSheet.tsx). Falls
+  // through to the sheet's own 75% when the keyboard is closed.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
   const { updateEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
@@ -1590,7 +1597,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
 
           {/* Sheet — header outside scroll, content scrolls */}
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card },
+            keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : null]}>
             {/* Drag handle */}
             <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
 

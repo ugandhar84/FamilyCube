@@ -110,7 +110,8 @@
           "@react-native-ml-kit/text-recognition",
           "react-native-compressor",
           "@react-native-voice/voice",
-          "widget-data"
+          "widget-data",
+          "react-native-callkeep"
         ]
       }
     }

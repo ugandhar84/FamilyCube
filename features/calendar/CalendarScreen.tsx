@@ -1437,8 +1437,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   (isConf || (!!ev.helper && ev.helperStatus !== 'confirmed') || (!!ev.rideRequired && (!ev.driverName || ev.driverStatus !== 'confirmed')));
                 const isBusyBlock = sensitiveVisibility(ev) === 'busy-block';
 
+                // Same illegibility fix as Hub's TimelineCard — 0.45
+                // stacked on textTertiary's contrast made a past event
+                // nearly unreadable rather than reading as "done".
                 return (
-                  <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56, opacity: isPast ? 0.45 : 1 }}>
+                  <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56, opacity: isPast ? 0.7 : 1 }}>
 
                     {/* Left col: time label + connecting line */}
                     <View style={{ width: 40, alignItems: 'flex-end', paddingRight: 6 }}>

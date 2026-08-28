@@ -614,10 +614,9 @@ export default function SmartTaskComposer({
     <AppBottomSheet visible={visible} onClose={close} title="What do you need?" subtitle="Describe it — everything else is detected automatically"
       // With nothing typed yet there's nothing to justify a 45% floor —
       // the sheet looked oversized on open (live-reported). Once the user
-      // starts typing (or dictation fills in text), grow back to the
-      // normal 45% floor so the sheet doesn't visibly shrink/grow again
-      // as detected fields/results appear below the input.
-      minHeight={input.trim() ? '45%' : '28%'} maxHeight={keyboardOpen ? '55%' : '85%'} bodyPaddingBottom={40 + insets.bottom}>
+      // starts typing (or dictation fills in text), grow to 60% so there's
+      // room for the detected fields/results that appear below the input.
+      minHeight={input.trim() ? '60%' : '28%'} maxHeight={keyboardOpen ? '55%' : '85%'} bodyPaddingBottom={40 + insets.bottom}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 14 }}>
         <View style={{ position: 'relative' }}>
           <TextInput

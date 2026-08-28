@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import type { Quest } from '@/store/questStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 interface Props {
   submitTarget: Quest | null;
@@ -31,6 +32,7 @@ export function SubmitQuestSheet({
   proofPhotoViewerUri, setProofPhotoViewerUri, colors, isDark,
 }: Props) {
   const dismiss = () => { Keyboard.dismiss(); closeSubmitSheet(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <>
@@ -38,8 +40,8 @@ export function SubmitQuestSheet({
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
             <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-            <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-              maxHeight: '90%', backgroundColor: colors.card }}>
+            <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+              maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
               {/* Drag handle */}
               <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />

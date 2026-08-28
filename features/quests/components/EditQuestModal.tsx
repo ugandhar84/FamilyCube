@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
@@ -202,14 +203,15 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   };
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             {/* Drag handle */}
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />

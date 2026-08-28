@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
 import type { Quest } from '@/store/questStore';
 import { aq } from './AddQuestModal';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 interface Props {
   kudosTarget: Quest | null;
@@ -40,14 +41,17 @@ export function KudosSheet({
 }: Props) {
   const dismiss = () => { Keyboard.dismiss(); closeKudosSheet(); };
   const accent = '#00BBA4';
+  // Same keyboard-clamp fix as AppBottomSheet/TaskFormShell — this sheet's
+  // maxHeight: '90%' is static against the full screen.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <Modal visible={!!kudosTarget} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

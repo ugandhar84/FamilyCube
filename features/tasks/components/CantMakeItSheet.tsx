@@ -26,6 +26,7 @@ import { localDateStr, fmtDate } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import { resolveCantMakeIt, type CantMakeItItem, type CantMakeItOutcome } from '../lib/cantMakeIt';
 import { showToast } from '@/components/AppToast';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 const REASONS = ['Something came up', 'Not feeling well', 'No ride', 'Need more time', 'Too hard, need help'];
 
@@ -91,13 +92,15 @@ export function CantMakeItSheet({
     m.id !== byMemberId &&
     (actingMember?.role !== 'kid' || m.role === 'kid' || m.role === 'teen')
   );
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <Pressable style={{ flex: 1 }} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingTop: 12, maxHeight: '90%', backgroundColor: colors.card,
+          <View style={{ borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />

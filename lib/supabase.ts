@@ -442,23 +442,39 @@ export async function uploadFamilyMemoryPhoto(
 }
 
 // Hub's "Family Photo Frame" — deliberately a separate storage path (and,
-// via familyFrameStore.ts, a separate table) from family_memories/its
-// `memories/` path above. The frame is a single "what's on display right
-// now" slot, not a post in the family's Memories feed — uploading to the
-// frame must never create a Memories entry, and vice versa.
-export async function uploadFamilyFramePhoto(familyId: string, localUri: string): Promise<string> {
+// via family_photo_frame, a separate table) from family_memories/its
+// `memories/` path above. The frame is each parent's own "what's on display
+// right now" slot (one row per family_id+member_id — see the
+// family_photo_frame_per_member migration), not a post in the family's
+// Memories feed — uploading to the frame must never create a Memories
+// entry, and vice versa.
+//
+// memberId (not just session.user.id) is part of the storage path because
+// multiple members can share one auth_user_id on a shared-device family
+// (PIN-switching between parents under the same login) — keying only on
+// auth_user_id would let one parent's upload collide with another's.
+//
+// Fixed filename (no Date.now() suffix) + upsert:true — unlike
+// uploadFamilyMemoryPhoto, the frame is a single "what's on display now"
+// slot per parent, not a growing feed of posts, so every re-upload should
+// actually REPLACE the previous file in the bucket rather than leaving it
+// behind as an orphan. createSignedUrl() mints a fresh token/expiry each
+// call even for the same underlying path, so the returned URL string still
+// changes on every replace — ExpoImage's cache (keyed on the URL) won't
+// serve a stale copy of the old photo despite the storage path staying put.
+export async function uploadFamilyFramePhoto(familyId: string, memberId: string, localUri: string): Promise<{ signedUrl: string; path: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('No session');
   const compressed = await compressImage(localUri, COMPRESS.gallery);
   const body = await encodeBody(compressed.uri, compressed.base64 ?? null);
-  const path = `${session.user.id}/${familyId}/photo-frame/${Date.now()}.jpg`;
+  const path = `${session.user.id}/${familyId}/photo-frame/${memberId}/current.jpg`;
 
   const bodySize = body instanceof ArrayBuffer ? body.byteLength : (body as Blob).size;
   if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
 
   const { error: upErr } = await supabase.storage
     .from(MEMORIES_BUCKET)
-    .upload(path, body, { upsert: false, contentType: 'image/jpeg' });
+    .upload(path, body, { upsert: true, contentType: 'image/jpeg' });
   if (upErr) throw new Error(upErr.message);
 
   // Same read-after-write lag/retry as uploadFamilyMemoryPhoto above.
@@ -472,7 +488,20 @@ export async function uploadFamilyFramePhoto(familyId: string, localUri: string)
     if (signed?.signedUrl) break;
   }
   if (!signed?.signedUrl) throw new Error(signErr?.message ?? 'Failed to sign URL');
-  return signed.signedUrl;
+  return { signedUrl: signed.signedUrl, path };
+}
+
+// Removes a parent's own frame photo entirely — both the storage object
+// (via the DELETE policy added alongside the per-member family_photo_frame
+// migration) and the DB row, so a removed photo is actually gone rather
+// than just unlinked (the row alone carrying no reference to it would leave
+// the file orphaned in storage forever, silently consuming space).
+export async function deleteFamilyFramePhoto(familyId: string, memberId: string, storagePath: string): Promise<void> {
+  const { error: storageErr } = await supabase.storage.from(MEMORIES_BUCKET).remove([storagePath]);
+  if (storageErr) throw new Error(storageErr.message);
+  const { error: dbErr } = await supabase.from('family_photo_frame')
+    .delete().eq('family_id', familyId).eq('member_id', memberId);
+  if (dbErr) throw new Error(dbErr.message);
 }
 
 // ── Recommendation / sponsored media (image, GIF, or video) ─────────────────

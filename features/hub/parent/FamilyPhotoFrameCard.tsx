@@ -3,8 +3,15 @@
  * greeting text on the Parent Hub, mirroring the photo-frame thumbnail seen
  * on other family-hub apps' Home tab header. Fully separate from the
  * Memories feed — its own storage path (uploadFamilyFramePhoto) and its own
- * table (family_photo_frame, one row per family), so setting what's on the
- * frame never creates a Memories post and never reads from one.
+ * table (family_photo_frame, one row per family_id+member_id — see the
+ * family_photo_frame_per_member migration), so setting what's on the frame
+ * never creates a Memories post and never reads from one.
+ *
+ * Scoped per PARENT, not per family: each parent has their own frame photo,
+ * independent of what any other parent on the same family has set (this
+ * card only ever renders on a parent's own Hub via ParentView.tsx — kids/
+ * teens/grandparents never see it, so there's no other role to reconcile
+ * this with).
  *
  * Empty state uses assets/empty/family-frame.jpg — a static illustration
  * (not generated at runtime) matching the app's warm/sepia tone.
@@ -14,7 +21,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { RADIUS, TYPO } from '@/constants/theme';
-import { supabase, uploadFamilyFramePhoto } from '@/lib/supabase';
+import { supabase, uploadFamilyFramePhoto, deleteFamilyFramePhoto } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import CubeSpinner from '@/components/CubeSpinner';
 
@@ -29,25 +36,28 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
   const myId = activeMemberId ?? members[0]?.id ?? '';
 
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
   const loadLatest = useCallback(async () => {
+    if (!myId) { setLoading(false); return; }
     // A real fetch failure (network, RLS) was previously indistinguishable
-    // from "family genuinely has no photo set" — data came back undefined
-    // either way and both fell through to the same empty-state illustration
-    // with no way to tell which happened, and no retry path short of a full
-    // app reload. Logging the error at least surfaces it in dev/crash
-    // reporting; a failed load is retried automatically next time this
-    // card remounts (e.g. navigating back to Hub).
+    // from "this parent genuinely has no photo set" — data came back
+    // undefined either way and both fell through to the same empty-state
+    // illustration with no way to tell which happened, and no retry path
+    // short of a full app reload. Logging the error at least surfaces it in
+    // dev/crash reporting; a failed load is retried automatically next time
+    // this card remounts (e.g. navigating back to Hub).
     const { data, error } = await supabase.from('family_photo_frame')
-      .select('photo_url').eq('family_id', familyId).maybeSingle();
+      .select('photo_url, storage_path').eq('family_id', familyId).eq('member_id', myId).maybeSingle();
     if (error) console.warn('[FamilyPhotoFrameCard] loadLatest failed:', error.message);
     setPhotoUrl(data?.photo_url ?? null);
+    setStoragePath(data?.storage_path ?? null);
     setPhotoFailed(false);
     setLoading(false);
-  }, [familyId]);
+  }, [familyId, myId]);
 
   useEffect(() => { loadLatest(); }, [loadLatest]);
 
@@ -68,12 +78,12 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
 
     setUploading(true);
     try {
-      const url = await uploadFamilyFramePhoto(familyId, res.assets[0].uri);
+      const { signedUrl, path } = await uploadFamilyFramePhoto(familyId, myId, res.assets[0].uri);
       const { data, error } = await supabase.from('family_photo_frame')
-        .upsert({ family_id: familyId, photo_url: url, updated_by: myId, updated_at: new Date().toISOString() })
-        .select('photo_url').single();
+        .upsert({ family_id: familyId, member_id: myId, photo_url: signedUrl, storage_path: path, updated_by: myId, updated_at: new Date().toISOString() })
+        .select('photo_url, storage_path').single();
       if (error) throw new Error(error.message);
-      if (data) { setPhotoUrl(data.photo_url); setPhotoFailed(false); }
+      if (data) { setPhotoUrl(data.photo_url); setStoragePath(data.storage_path); setPhotoFailed(false); }
     } catch (e: any) {
       Alert.alert("Couldn't update frame", e?.message ?? 'Please try again.');
     } finally {
@@ -81,10 +91,45 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
     }
   };
 
+  const removePhoto = () => {
+    Alert.alert('Remove frame photo?', "This deletes your photo completely — it can't be undone.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          if (!storagePath) return;
+          setUploading(true);
+          try {
+            await deleteFamilyFramePhoto(familyId, myId, storagePath);
+            setPhotoUrl(null);
+            setStoragePath(null);
+            setPhotoFailed(false);
+          } catch (e: any) {
+            Alert.alert("Couldn't remove photo", e?.message ?? 'Please try again.');
+          } finally {
+            setUploading(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const onLongPress = () => {
+    if (!photoUrl || photoFailed) { uploadFromGallery(); return; }
+    // An existing photo gets a choice — long-pressing straight into another
+    // gallery picker with no way to instead just remove what's there was
+    // the gap this whole feature request was about ("provide option to
+    // delete existing photo completely").
+    Alert.alert('Frame photo', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Choose new photo', onPress: uploadFromGallery },
+      { text: 'Remove photo', style: 'destructive', onPress: removePhoto },
+    ]);
+  };
+
   return (
     <View style={{ alignItems: 'center' }}>
       <Pressable
-        onLongPress={uploadFromGallery}
+        onLongPress={onLongPress}
         delayLongPress={350}
         style={{
           transform: [{ rotate: '4deg' }],

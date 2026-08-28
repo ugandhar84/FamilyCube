@@ -152,7 +152,7 @@ serve(async (req) => {
     // and can never be returned by this query in the first place.
     const { data: chores } = await supabase
       .from('chore_tasks')
-      .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status, notes')
+      .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status, description')
       .eq('alert_call', true)
       .in('due_date', dateWindow)
       .in('status', ['todo', 'in_progress']);
@@ -194,7 +194,7 @@ serve(async (req) => {
         targets.push({
           itemType: 'chore', itemId: c.id, title: c.title, dueAt,
           memberIds: c.assigned_to_id ? [c.assigned_to_id] : [],
-          notes: (c as any).notes ?? null,
+          notes: (c as any).description ?? null,
         });
       }
     }

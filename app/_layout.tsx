@@ -137,7 +137,15 @@ function RootNavigator() {
       prefetchFeatureFlags().catch(() => {});
       if (session) {
         initRevenueCat(session.user.id);
-        useSubscriptionStore.getState().loadSubscription(session.user.id).catch(() => {});
+        // familyId lets loadSubscription anchor the 7-day trial window to
+        // families.created_at — omitting it (as every call site here
+        // previously did) meant computeTrial() always saw familyCreatedAt
+        // as null, so isTrial/trialDaysLeft never actually activated for
+        // anyone, silently.
+        useSubscriptionStore.getState().loadSubscription(
+          session.user.id,
+          useFamilyStore.getState().members.find(m => m.familyId)?.familyId,
+        ).catch(() => {});
         useNotifStore.getState().fetchAll(session.user.id).catch(() => {});
         // Streak + daily login coins (fire-and-forget, only when gamification is on)
         if (isFeatureEnabled('gamification')) {
@@ -277,7 +285,15 @@ function RootNavigator() {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         // Init RevenueCat and load subscription tier.
         initRevenueCat(session.user.id);
-        useSubscriptionStore.getState().loadSubscription(session.user.id).catch(() => {});
+        // familyId lets loadSubscription anchor the 7-day trial window to
+        // families.created_at — omitting it (as every call site here
+        // previously did) meant computeTrial() always saw familyCreatedAt
+        // as null, so isTrial/trialDaysLeft never actually activated for
+        // anyone, silently.
+        useSubscriptionStore.getState().loadSubscription(
+          session.user.id,
+          useFamilyStore.getState().members.find(m => m.familyId)?.familyId,
+        ).catch(() => {});
         useNotifStore.getState().fetchAll(session.user.id).catch(() => {});
 
         savePushToken(session.user.id).catch((e) =>
@@ -673,7 +689,10 @@ function RootNavigator() {
       // Always refresh subscription + unread count on foreground.
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (user) {
-          useSubscriptionStore.getState().loadSubscription(user.id).catch(() => {});
+          useSubscriptionStore.getState().loadSubscription(
+            user.id,
+            useFamilyStore.getState().members.find(m => m.familyId)?.familyId,
+          ).catch(() => {});
           useNotifStore.getState().fetchAll(user.id).catch(() => {});
         }
       });

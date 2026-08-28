@@ -13,8 +13,10 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-const TIER_RANK: Record<string, number> = { free: 0, pro: 1, ultimate: 2 };
-const ENTITLEMENT_IDS = { pro: 'pro', ultimate: 'ultimate' };
+// Family Cube is single-tier (Family Plan only) — see
+// docs/paywall_setup_and_implementation.md and revenuecat-webhook/index.ts's
+// matching comment on why there's no tier-to-tier fallback logic here.
+const PREMIUM_ENTITLEMENT = 'com_familycube_ios_premium';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -47,47 +49,23 @@ serve(async (req) => {
 
     const rcData = await rcRes.json();
     const entitlements = rcData.subscriber?.entitlements ?? {};
+    const activeEnt = entitlements[PREMIUM_ENTITLEMENT];
+    const isActive = activeEnt?.expires_date && new Date(activeEnt.expires_date) > new Date();
 
-    const tier: 'free' | 'pro' | 'ultimate' =
-      entitlements[ENTITLEMENT_IDS.ultimate]?.expires_date &&
-        new Date(entitlements[ENTITLEMENT_IDS.ultimate].expires_date) > new Date()
-        ? 'ultimate'
-        : entitlements[ENTITLEMENT_IDS.pro]?.expires_date &&
-          new Date(entitlements[ENTITLEMENT_IDS.pro].expires_date) > new Date()
-          ? 'pro'
-          : 'free';
-
-    if (tier === 'free') return json({ tier: 'free' });
-
-    const activeEnt = entitlements[ENTITLEMENT_IDS.ultimate] ?? entitlements[ENTITLEMENT_IDS.pro];
-    const expiresAt = activeEnt?.expires_date ?? null;
-    const productId = activeEnt?.product_identifier ?? null;
-
-    // Read existing row to preserve fallback_tier
-    const { data: existing } = await supabaseClient
-      .from('subscriptions')
-      .select('tier, fallback_tier')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const currentTier = (existing?.tier ?? 'free') as string;
-    const fallbackTier = TIER_RANK[tier] > TIER_RANK[currentTier]
-      ? currentTier
-      : (existing?.fallback_tier ?? 'free');
+    if (!isActive) return json({ tier: 'free' });
 
     await supabaseClient.from('subscriptions').upsert({
       user_id:      user.id,
-      tier,
+      tier:         'premium',
       status:       'active',
-      product_id:   productId,
+      product_id:   activeEnt.product_identifier ?? null,
       platform:     'ios',
-      expires_at:   expiresAt,
-      fallback_tier: fallbackTier,
+      expires_at:   activeEnt.expires_date,
       revenuecat_app_user_id: user.id,
       updated_at:   new Date().toISOString(),
     }, { onConflict: 'user_id' });
 
-    return json({ tier });
+    return json({ tier: 'premium' });
   } catch (e: any) {
     return json({ error: e?.message }, 500);
   }

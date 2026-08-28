@@ -7,22 +7,18 @@ const SUPABASE_KEY   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Map RevenueCat event types to subscription actions
+// Family Cube is single-tier (Family Plan only) — see
+// docs/paywall_setup_and_implementation.md. Whether the active entitlement
+// list contains the one premium entitlement is all that matters; there is
+// no tier-to-tier fallback logic (a previous pro/ultimate version of this
+// webhook had that, and referenced a fallback_tier column no migration ever
+// actually added — every webhook call upserting it would have failed
+// outright against the real schema).
+const PREMIUM_ENTITLEMENT = 'com_familycube_ios_premium';
+
 const ACTIVE_EVENTS   = new Set(['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE']);
 const GRACE_EVENTS    = new Set(['BILLING_ISSUE']);
 const INACTIVE_EVENTS = new Set(['EXPIRATION', 'CANCELLATION']);
-
-function getTierFromProductId(productId: string, entitlements?: Record<string, unknown>): 'free' | 'pro' | 'ultimate' {
-  // Check entitlements first (most reliable)
-  if (entitlements?.['ultimate']) return 'ultimate';
-  if (entitlements?.['pro'])      return 'pro';
-  // Fall back to product ID matching
-  if (productId.includes('ultimate')) return 'ultimate';
-  if (productId.includes('pro'))      return 'pro';
-  // Generic RC test products — default to ultimate for sandbox testing
-  if (productId === 'monthly' || productId === 'yearly') return 'ultimate';
-  return 'free';
-}
 
 serve(async (req) => {
   if (req.method !== 'POST') {
@@ -48,10 +44,8 @@ serve(async (req) => {
     const appUserId   = event.app_user_id as string;  // = Supabase user UUID
     const productId   = event.product_id as string;
     // RC sends entitlement_ids as string[] in webhook events
-    const entitlementIds = event.entitlement_ids as string[] | undefined;
-    const entitlements = entitlementIds
-      ? Object.fromEntries(entitlementIds.map((id: string) => [id, true]))
-      : undefined;
+    const entitlementIds = (event.entitlement_ids as string[] | undefined) ?? [];
+    const hasPremium = entitlementIds.includes(PREMIUM_ENTITLEMENT);
     const expiresAt   = event.expiration_at_ms
       ? new Date(event.expiration_at_ms).toISOString()
       : null;
@@ -59,33 +53,17 @@ serve(async (req) => {
     if (!appUserId) return new Response('Missing app_user_id', { status: 400 });
 
     if (ACTIVE_EVENTS.has(eventType)) {
-      const newTier = getTierFromProductId(productId, entitlements);
-
-      // Read the current tier so we know what to fall back to if this subscription expires.
-      // A free user going to Pro records fallback = 'free'.
-      // A Pro user going to Ultimate records fallback = 'pro'.
-      const { data: existing } = await supabase
-        .from('subscriptions')
-        .select('tier, fallback_tier')
-        .eq('user_id', appUserId)
-        .maybeSingle();
-
-      // Fallback = whatever the user currently has (before this upgrade), capped below the new tier.
-      // If the new tier IS the same or lower (e.g. renewal), keep the existing fallback_tier.
-      const tierRank: Record<string, number> = { free: 0, pro: 1, ultimate: 2 };
-      const currentTier = (existing?.tier ?? 'free') as string;
-      const fallbackTier = (tierRank[newTier] > tierRank[currentTier])
-        ? currentTier                           // upgrading → record current as fallback
-        : (existing?.fallback_tier ?? 'free');  // renewal / same tier → preserve existing fallback
-
+      // entitlement_ids should carry the premium entitlement for any of
+      // these event types on a single-product app — if RC ever sends one
+      // without it (e.g. a product change to something unexpected), treat
+      // it as free rather than guessing.
       await supabase.from('subscriptions').upsert({
         user_id:                appUserId,
-        tier:                   newTier,
+        tier:                   hasPremium ? 'premium' : 'free',
         status:                 'active',
         product_id:             productId,
         platform:               event.store === 'APP_STORE' ? 'ios' : 'android',
         expires_at:             expiresAt,
-        fallback_tier:          fallbackTier,
         revenuecat_app_user_id: appUserId,
         updated_at:             new Date().toISOString(),
       }, { onConflict: 'user_id' });
@@ -98,26 +76,23 @@ serve(async (req) => {
       }).eq('user_id', appUserId);
 
     } else if (INACTIVE_EVENTS.has(eventType)) {
-      // On expiry / cancellation, revert to fallback_tier (not always 'free').
-      // Pro user's Ultimate trial expiring → revert to 'pro', not 'free'.
+      // On expiry / cancellation, revert to free — single-tier app, so
+      // there's nothing else to fall back to.
+      // For CANCELLATION: keep expires_at from the event (subscription still valid until that date).
+      // For EXPIRATION or missing expires_at: use now so the row is immediately seen as expired.
       const { data: existing } = await supabase
         .from('subscriptions')
-        .select('fallback_tier, expires_at')
+        .select('expires_at')
         .eq('user_id', appUserId)
         .maybeSingle();
 
-      const revertTier = existing?.fallback_tier ?? 'free';
-
-      // For CANCELLATION: keep expires_at from the event (subscription still valid until that date).
-      // For EXPIRATION or missing expires_at: use now so the row is immediately seen as expired.
       const effectiveExpiresAt = expiresAt ?? existing?.expires_at ?? new Date().toISOString();
 
       await supabase.from('subscriptions').upsert({
         user_id:       appUserId,
-        tier:          revertTier,
+        tier:          'free',
         status:        eventType === 'EXPIRATION' ? 'expired' : 'cancelled',
         expires_at:    effectiveExpiresAt,
-        fallback_tier: 'free',   // once reverted, the new fallback is always free
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'user_id' });
     }

@@ -32,6 +32,8 @@ import { HouseholdBacklogSection } from './parent/HouseholdBacklogSection';
 import { ChoreReviewSection } from './parent/ChoreReviewSection';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
+import { TrialNagBanner } from './parent/TrialNagBanner';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
 
 export function ParentView({ active, members, colors, isDark, onScanFlyer, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
   active: FamilyMember; members: FamilyMember[];
@@ -54,6 +56,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 }) {
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
+  // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
+  // trial ended, not subscribed yet — a dismissible nag, not a lock.
+  // trialDaysLeft === -1 means "family data hasn't loaded yet" (computeTrial's
+  // own not-yet-known state, distinct from trialDaysLeft: 0 = genuinely
+  // expired) — excluding it here stops a brand-new family from flashing the
+  // "trial ended" nag for the instant before their real family id loads.
+  const { tier, isTrial, trialDaysLeft, loading: subLoading } = useSubscriptionStore();
+  const showTrialNag = !subLoading && tier === 'free' && !isTrial && trialDaysLeft !== -1;
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
           approveRequest, declineRequest, approveItems, rejectItems, toggleGPWelcome } = useKidRequestStore();
@@ -555,6 +565,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   return (
     <>
       <GreetingHeader colors={colors} isDark={isDark} activeMember={active} otherAttentionCount={otherAttentionCount} />
+
+      {showTrialNag && <TrialNagBanner colors={colors} isDark={isDark} />}
 
       {/* rejectedEvents/pendingNoResponseEvents/unassignedUrgentEvents were
           dropped from here — those 3 card types duplicated

@@ -16,6 +16,13 @@ Deliberately NOT a hard lock (blocking the whole app / read access to a family's
 
 **SDK:** RevenueCat (`react-native-purchases`) — handles StoreKit receipt validation, entitlement checks, restore purchases, and paywall templates. Chosen over hand-rolled StoreKit 2 to avoid owning refund/family-sharing/upgrade-proration edge cases directly.
 
+**Status: implemented and live** (as of 2026-08-28). Actual RevenueCat configuration (from the real dashboard, not the placeholder names Part 1 below was originally written against):
+- Product IDs: `familycube_monthly`, `familycube_yearly`
+- Entitlement identifier: `com_familycube_ios_premium` (display name "Family Plan") — this exact string is hardcoded in `lib/subscription.ts` (`PREMIUM_ENTITLEMENT`), `store/subscriptionStore.ts`, and both `revenuecat-webhook`/`sync-subscription` edge functions
+- `SubscriptionTier` type is `'free' | 'premium'` (collapsed from an earlier `pro`/`ultimate` two-tier leftover that was never actually used by this app)
+- Day 15+ soft lock is enforced server-side via Postgres RLS (`public.family_can_create_content(family_id)`, migration `20260828040000_paywall_soft_lock_rls.sql`) on the INSERT policies of `chore_tasks`, `calendar_events`, `chat_messages`, and `reward_redemptions` — verified with real test rows (blocked/allowed/subscribed-allowed all confirmed against the live DB)
+- Trial window anchors to `families.created_at` (immutable server timestamp), never client-supplied
+
 ---
 
 ## Part 1 — Account Setup (must be done by a human, in App Store Connect + RevenueCat dashboards — not automatable from this codebase)

@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGroceryStore, GroceryItem } from '@/store/groceryStore';
 import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from './types';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
     : aiSuggestions;
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   // Same two sources AskCubeProposalCard's own store picker and
   // AddQuestGrocerySection's inline chips both pull from — real past runs
@@ -114,8 +116,8 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: sheetBg }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: sheetBg }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

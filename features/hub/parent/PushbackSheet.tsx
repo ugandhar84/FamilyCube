@@ -7,6 +7,7 @@ import { Clock, Construction, Repeat, MessageCircle, X, XCircle } from 'lucide-r
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // Violet — "Snooze" action accent, deliberately distinct from BRAND.purple
 // (#9261C7) so each of these four response actions reads as its own color;
@@ -42,14 +43,15 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
     console.log(`[UserAction] screen=Hub role=parent tapped "Dismiss" on PushbackSheet for "${target?.choreTitle ?? ''}" (id=${target?.assignmentId ?? 'n/a'}) [features/hub/parent/PushbackSheet.tsx:40]`);
     Keyboard.dismiss(); setDetail(''); onClose();
   };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

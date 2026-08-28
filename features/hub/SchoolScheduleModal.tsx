@@ -16,6 +16,7 @@ import { Plus, Trash2, ChevronDown, X } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { useSchoolStore, type ClassPeriod, type KidSchedule, subjectColor } from '@/store/schoolStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,14 +256,15 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
   };
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <Pressable style={{ flex: 1 }} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '92%', backgroundColor: colors.card }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '92%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

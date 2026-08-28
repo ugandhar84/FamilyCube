@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput, Modal, ScrollView } from 'react-native';
+import { View, Text, Pressable, TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { X, ShoppingCart, Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { GroceryCategory, useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { GROCERY_CATS } from './constants';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Grocery modal ────────────────────────────────────────────────────────────
 
@@ -32,10 +33,15 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
     onAdd({ name: name.trim(), quantity: qty, category: cat, storePreference: store.trim() || undefined });
     onClose();
   };
+  const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16,
+        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16, overflow: 'hidden',
+          maxHeight: keyboardAwareMaxHeight ?? '90%',
           borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
           shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -43,7 +49,7 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
               <ShoppingCart size={20} color={colors.teal} />
               <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>Add to Shopping List</Text>
             </View>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={dismiss}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <View>
             <Text style={gm.label(colors)}>Item Name</Text>
@@ -79,7 +85,7 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
             </ScrollView>
           </View>
           <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
-            <Pressable onPress={onClose} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+            <Pressable onPress={dismiss} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
               <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={submit} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#10b981', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -89,6 +95,7 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // A static-height bottom sheet for the Teen Hub's tile grid — AppBottomSheet
 // measures actual content height (onLayout/onContentSizeChange) and grows
@@ -17,13 +18,14 @@ export function TeenTileSheet({ visible, onClose, title, accentColor, colors, is
   colors: any; isDark: boolean; children: React.ReactNode;
 }) {
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={s.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { dismiss(); }} />
-          <View style={[s.sheet, { backgroundColor: colors.card }]}>
+          <View style={[s.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -51,7 +53,7 @@ export function TeenTileSheet({ visible, onClose, title, accentColor, colors, is
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%' },
+  sheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%', overflow: 'hidden' },
   handle: { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title: { fontSize: TYPO.heading, fontWeight: '900' },
 });

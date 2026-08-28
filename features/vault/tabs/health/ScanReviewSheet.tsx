@@ -10,6 +10,7 @@ import Svg, { Path, Circle, Rect, Polyline } from 'react-native-svg';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../../usePrescriptionScanner';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 export interface ScanReviewSheetHandle {
   open: (mode: 'rx' | 'vaccine') => void;
@@ -31,6 +32,7 @@ export default function ScanReviewSheet({
   onScanningChange?: (scanning: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
   // Prescription scanner
   const {
@@ -393,8 +395,8 @@ export default function ScanReviewSheet({
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeScanSheet} />
           <View style={{
             backgroundColor: isDark ? '#13131F' : '#F8F8FC',
-            borderTopLeftRadius: 28, borderTopRightRadius: 28,
-            maxHeight: '92%',
+            borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '92%',
             paddingBottom: insets.bottom || 16,
           }}>
             {/* ── Progress bar (2 steps) ── */}

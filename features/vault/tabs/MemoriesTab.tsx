@@ -27,6 +27,7 @@ import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import { EmptyState } from './shared';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // Fixed cap instead of PostMedia's dynamic source-ratio sizing — a tall
@@ -162,6 +163,7 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
   };
 
   const dismiss = () => { Keyboard.dismiss(); reset(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(80);
 
   // Static-height sheet (fixed maxHeight %, no content-driven measurement) —
   // same pattern as TeenTileSheet/EventFormModal, which don't get shoved
@@ -172,7 +174,7 @@ function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={md.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[md.sheet, { backgroundColor: isDark ? colors.card : colors.accentLight }]}>
+          <View style={[md.sheet, { backgroundColor: isDark ? colors.card : colors.accentLight, maxHeight: keyboardAwareMaxHeight ?? '80%' }]}>
             <View style={[md.handle, { backgroundColor: colors.border }]} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -566,7 +568,7 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
 
 const md = StyleSheet.create({
   backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '80%' },
+  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '80%', overflow: 'hidden' },
   handle:    { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title:     { fontSize: 18, fontWeight: '900' },
   label:     { fontSize: 12, fontWeight: '700', marginBottom: 5 },

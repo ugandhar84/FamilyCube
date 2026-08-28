@@ -11,6 +11,7 @@ import {
   VaxForm, BLANK_VAX, VAX_TYPES, VAX_SUGGESTIONS,
   fmtDate, fmtDateDisplay, aStyles,
 } from './types';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // Stepper — same rationale as AddMedModal.tsx's own comment: was one long
 // scroll across 5 sections, broken into steps matching the existing
@@ -98,13 +99,15 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
     { backgroundColor: isDark ? colors.card : colors.tealLight, borderColor: colors.border, color: colors.textPrimary },
   ];
 
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card,
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
 

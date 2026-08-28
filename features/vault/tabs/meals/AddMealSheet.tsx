@@ -5,6 +5,7 @@ import {
 import { X } from 'lucide-react-native';
 import { MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { em } from './styles';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Add Meal Sheet ─────────────────────────────────────────────────────────
 
@@ -31,13 +32,15 @@ export default function AddMealSheet({
   resetAddForm: () => void;
   addManualMeal: () => void;
 }) {
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+
   return (
     <Modal visible={!!addDay} transparent animationType="slide" onRequestClose={resetAddForm}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={resetAddForm} />
-          <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28,
-            paddingHorizontal: 20, paddingTop: 12, maxHeight: '90%',
+          <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden',
+            paddingHorizontal: 20, paddingTop: 12, maxHeight: keyboardAwareMaxHeight ?? '90%',
             backgroundColor: isDark ? colors.card : '#FAFAFA' }}>
 
             {/* Drag handle */}

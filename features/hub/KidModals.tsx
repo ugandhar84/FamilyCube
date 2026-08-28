@@ -35,6 +35,7 @@ import { Calendar } from 'lucide-react-native';
 import { VoiceTextField } from './kid/VoiceTextField';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { Mic } from 'lucide-react-native';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Encoding helpers (re-exported so HelpDispatchQueue can import them) ──────
 
@@ -204,7 +205,7 @@ const SUPPLIES_SUGGESTIONS: { name: string; emoji: string }[] = [
 
 const f = StyleSheet.create({
   backdrop:   { flex: 1, justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '75%' },
+  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '75%', overflow: 'hidden' },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
   header:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 12, paddingBottom: 14 },
   title:      { fontSize: TYPO.heading, fontWeight: '900' },
@@ -279,6 +280,7 @@ export function GroceryModal({ visible, onClose, active }: {
 
   const reset   = () => { setLines([emptyLine()]); setFocusedLineIdx(null); setFocusedField(null); setGlobalCat('Snacks'); setNotes(''); };
   const dismiss = () => { reset(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
   const validLines = lines.filter(l => l.name.trim());
   const canSubmit  = validLines.length > 0;
@@ -335,7 +337,7 @@ export function GroceryModal({ visible, onClose, active }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>
@@ -507,6 +509,7 @@ export function SuppliesModal({ visible, onClose, active }: {
 
   const reset   = () => { setItems([{ name: '', qty: '' }]); setUrgency('normal'); setNotes(''); };
   const dismiss = () => { reset(); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
   const validItems = items.filter(i => i.name.trim());
   const canSubmit  = validItems.length > 0;
 
@@ -557,7 +560,7 @@ export function SuppliesModal({ visible, onClose, active }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>
@@ -1058,6 +1061,7 @@ export function AskModal({ visible, onClose, type, active }: {
 
   const meta    = ASK_META[type];
   const dismiss = () => { setText(''); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
   const submit  = () => {
     if (!text.trim()) return;
     sendRequest({ type, fromMemberId: active.id, detail: text.trim(), urgency: type === 'medication' ? 'urgent' : 'normal' });
@@ -1070,7 +1074,7 @@ export function AskModal({ visible, onClose, type, active }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>
@@ -1130,6 +1134,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
   const accent = BRAND.purple;
 
   const dismiss = () => { setTitle(''); setCoins('15'); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
   const submit  = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -1150,7 +1155,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>

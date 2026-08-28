@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { TYPO } from '@/constants/theme';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── DECLINE PRESETS ──────────────────────────────────────────────────────────
 const DECLINE_PRESETS = [
@@ -19,11 +20,14 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
   const [selected, setSelected] = useState('');
   const [custom, setCustom]     = useState('');
   const finalReason = custom.trim() || selected;
+  const dismiss = () => { Keyboard.dismiss(); onCancel(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={dm.backdrop}>
-        <View style={[dm.sheet, { backgroundColor: colors.card }]}>
+        <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '90%' }]}>
           <View style={[dm.handle, { backgroundColor: colors.border }]} />
           <Text style={[dm.title, { color: colors.textPrimary }]}>Decline Quest</Text>
           <Text style={[dm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{questTitle}"</Text>
@@ -51,7 +55,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
           <Text style={[dm.charCount, { color: colors.textTertiary }]}>{custom.length}/200</Text>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            <TouchableOpacity style={[dm.btn, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]} onPress={onCancel}>
+            <TouchableOpacity style={[dm.btn, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]} onPress={dismiss}>
               <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: TYPO.caption }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -64,12 +68,13 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 const dm = StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet:       { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
+  sheet:       { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, overflow: 'hidden' },
   handle:      { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   title:       { fontSize: TYPO.subheading, fontWeight: '900', marginBottom: 2 },
   sub:         { fontSize: TYPO.caption, marginBottom: 14 },

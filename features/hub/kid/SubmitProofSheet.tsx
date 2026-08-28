@@ -8,6 +8,7 @@ import { Camera, Image as ImageIcon, CheckCircle2, X } from 'lucide-react-native
 import { KID } from './kidTheme';
 import type { Quest } from '@/store/questStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // Money-green — "photo proof / submit" positive accent, distinct from
 // brand teal used elsewhere in the kid hub. Not colors.success (which IS
@@ -42,14 +43,15 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
   };
 
   const dismiss = () => { Keyboard.dismiss(); close(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   return (
     <Modal visible={!!quest} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

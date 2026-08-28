@@ -6,12 +6,13 @@ import { TYPO, RADIUS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import { VoiceTextField } from './VoiceTextField';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // Matches the same bottom-sheet chrome every other kid-facing request modal
 // in KidModals.tsx uses (that file's own local `f` isn't exported).
 const f = StyleSheet.create({
   backdrop:   { flex: 1, justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '75%' },
+  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '75%', overflow: 'hidden' },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
   header:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 12, paddingBottom: 14 },
   title:      { fontSize: TYPO.heading, fontWeight: '900' },
@@ -41,6 +42,7 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   const accent = BRAND.purple;
 
   const dismiss = () => { setTitle(''); setForId(active.id); setError(null); setSubmitting(false); onClose(); };
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -75,7 +77,7 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+          <View style={[f.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>

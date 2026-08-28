@@ -27,6 +27,11 @@ interface UIState {
   // modal (AddMedModal / AddRecordModal) and clears the flag.
   openHealthRecordsComposerRequested: boolean;
   setOpenHealthRecordsComposerRequested: (v: boolean) => void;
+  // Same one-shot pattern, for the shared FAB's School-tab "+" face —
+  // SchoolTab reads it once on focus to open SchoolScheduleModal for the
+  // currently-selected kid, then clears it immediately.
+  openSchoolScheduleComposerRequested: boolean;
+  setOpenSchoolScheduleComposerRequested: (v: boolean) => void;
   // Live-updated (not one-shot) by HealthRecordsScreen/HealthTab so the
   // shared FAB's own background color in app/(tabs)/_layout.tsx can track
   // which inner segment (Health/Medications vs. Immunizations) is actually
@@ -54,6 +59,8 @@ export const useUIStore = create<UIState>((set) => ({
   setOpenMemoryComposerRequested: (v) => set({ openMemoryComposerRequested: v }),
   openHealthRecordsComposerRequested: false,
   setOpenHealthRecordsComposerRequested: (v) => set({ openHealthRecordsComposerRequested: v }),
+  openSchoolScheduleComposerRequested: false,
+  setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   healthRecordsActiveSegment: 'health',
   setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),
   activeTabName: undefined,

@@ -35,7 +35,8 @@ const path = require('path');
 
 const BRIDGING_HEADER_IMPORT = '#import <RNCallKeep/RNCallKeep.h>';
 
-const CANONICAL_APP_DELEGATE_PATH = path.join(__dirname, '..', 'ios', 'FamilyCube', 'AppDelegate.swift');
+// git-tracked canonical source — survives `rm -rf ios/` / EAS clean builds
+const CANONICAL_APP_DELEGATE_PATH = path.join(__dirname, 'AppDelegate.canonical.swift');
 
 function readCanonicalSource() {
   if (!fs.existsSync(CANONICAL_APP_DELEGATE_PATH)) return null;
@@ -127,7 +128,10 @@ function extractDidFinishLaunchingSetup(source) {
 
 function buildCanonicalUnits() {
   const source = readCanonicalSource();
-  if (!source) return null;
+  if (!source) {
+    console.warn('[withCallKeep] ios/FamilyCube/AppDelegate.swift not found — skipping CallKit/TTS patch. Run prebuild once, hand-edit that file, then prebuild again.');
+    return null;
+  }
 
   return {
     pushkitImport: extractLine(source, 'import PushKit'),

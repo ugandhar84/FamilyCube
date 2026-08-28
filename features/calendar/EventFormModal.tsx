@@ -1026,6 +1026,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                   category === 'Other'    ? '👤 For (optional)' :
                   'For'
                 }
+                // Only 'Other' and the generic fallback leave real ambiguity —
+                // Medical/Sports/Study/Ride/Birthday's own labels already make
+                // clear who the event concerns. Leaving this picker untouched
+                // for those two doesn't mean "just me" — it hands the event to
+                // the auto-assignment engine, which guesses an assignee from
+                // category context (see the applyAssignment() call below).
+                hint={
+                  (category === 'Other' || !['Medical', 'Sports', 'Study', 'Ride', 'Birthday'].includes(category))
+                    ? 'Leave blank to auto-assign, or tap yourself if this is just for you'
+                    : undefined
+                }
                 selectedIds={memberIds}
                 members={forMembers}
                 onToggle={id => setMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}

@@ -6,8 +6,16 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { f } from './styles';
 
 // ─── Multi-select member picker ────────────────────────────────────────────────
-export default function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds }: {
-  label: string; selectedIds: string[];
+export default function MemberPicker({ label, hint, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds }: {
+  label: string;
+  // Shown under the label — used by EventFormModal's 'Other'/generic-fallback
+  // categories to make it explicit that leaving this picker empty doesn't
+  // mean "nobody, just me" — it hands the event to the auto-assignment
+  // engine, which guesses an assignee from category context. Tapping your
+  // own avatar chip below (already a normal member in `members`) is what
+  // actually keeps a personal event personal.
+  hint?: string;
+  selectedIds: string[];
   members: any[]; onToggle: (id: string) => void; onSelectAll?: () => void;
   colors: any; isDark: boolean; siblings: string[];
   lockedIds?: string[];  // IDs that cannot be deselected
@@ -16,7 +24,7 @@ export default function MemberPicker({ label, selectedIds, members, onToggle, on
   const allSelected = members.length > 0 && members.every(m => selectedIds.includes(m.id));
   return (
     <View style={{ marginBottom: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: hint ? 2 : 8 }}>
         <Text style={[f.label, { color: colors.textSecondary }]}>{label}</Text>
         {onSelectAll && members.length > 1 && (
           <TouchableOpacity onPress={() => { console.log(`[UserAction] FORM screen=Schedule tapped "${allSelected ? 'Deselect' : 'Select'} all" for "${label}" on MemberPicker [features/calendar/components/eventForm/MemberPicker.tsx:22]`); onSelectAll(); }}
@@ -27,6 +35,9 @@ export default function MemberPicker({ label, selectedIds, members, onToggle, on
           </TouchableOpacity>
         )}
       </View>
+      {hint && (
+        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 8 }}>{hint}</Text>
+      )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
         {members.map(m => {
           const sel = selectedIds.includes(m.id);

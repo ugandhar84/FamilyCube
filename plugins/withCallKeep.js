@@ -101,9 +101,9 @@ function extractPropertiesBlock(source) {
   // extracted block must only contain what comes after it, or inserting
   // "anchor\n<block>" would duplicate the anchor line.
   const start = source.indexOf('\n', startMarkerIdx) + 1;
-  const endMarker = 'static let repeatGapSeconds: TimeInterval = 2.0';
+  const endMarker = 'let speechSynthesizer = AVSpeechSynthesizer()';
   const endIdx = source.indexOf(endMarker);
-  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the repeatGapSeconds property');
+  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the speechSynthesizer property');
   const lineEnd = source.indexOf('\n', endIdx);
   // trimStart() too — insertion below supplies its own leading indent, and
   // the raw slice starts with the source's existing "  " (2-space) indent
@@ -141,9 +141,7 @@ function buildCanonicalUnits() {
     propertiesBlock: extractPropertiesBlock(source),
     setupSnippet: extractDidFinishLaunchingSetup(source),
     callObserverFn: extractBraceBlock(source, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {'),
-    dayPartPhraseFn: extractBraceBlock(source, 'private func dayPartPhrase(for dueAtIso: String) -> String {'),
     speakReminderFn: extractBraceBlock(source, 'private func speakReminder(callUUID: String, itemType: String) {'),
-    speechDidFinishFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {'),
     pushRegistryDidUpdateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {'),
     pushRegistryDidInvalidateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {'),
     pushRegistryDidReceiveFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {'),
@@ -287,9 +285,7 @@ function withCallKeepAppDelegate(config) {
     }
 
     ensureMethod(units.callObserverFn, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {');
-    ensureMethod(units.dayPartPhraseFn, 'private func dayPartPhrase(for dueAtIso: String) -> String {');
     ensureMethod(units.speakReminderFn, 'private func speakReminder(callUUID: String, itemType: String) {');
-    ensureMethod(units.speechDidFinishFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {');
     ensureMethod(units.pushRegistryDidUpdateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {');
     ensureMethod(units.pushRegistryDidInvalidateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {');
     ensureMethod(units.pushRegistryDidReceiveFn, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {');

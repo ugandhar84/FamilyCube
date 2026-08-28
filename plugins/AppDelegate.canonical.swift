@@ -7,7 +7,7 @@ import CallKit
 import AVFoundation
 
 @UIApplicationMain
-public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate, AVSpeechSynthesizerDelegate {
+public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
@@ -16,8 +16,6 @@ public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserve
   var callObserver: CXCallObserver?
   var surfacedCallUUIDs = Set<String>()
   let speechSynthesizer = AVSpeechSynthesizer()
-  static let maxRepeats: Int = 3
-  static let repeatGapSeconds: TimeInterval = 2.0
 
   public override func application(
     _ application: UIApplication,
@@ -84,11 +82,10 @@ FirebaseApp.configure()
     let uuid = call.uuid.uuidString
     if call.hasEnded {
       if surfacedCallUUIDs.contains(uuid) {
-        UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\(uuid)")
-        UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\(uuid)")
-        UserDefaults.standard.removeObject(forKey: "familycube_call_title_\(uuid)")
-        UserDefaults.standard.removeObject(forKey: "familycube_call_recipient_\(uuid)")
-        UserDefaults.standard.removeObject(forKey: "familycube_call_notes_\(uuid)")
+        let d = UserDefaults.standard
+        for key in ["itemType","itemId","dueAtIso","title","recipient","notes","location","category"] {
+          d.removeObject(forKey: "familycube_call_\(key)_\(uuid)")
+        }
         speechSynthesizer.stopSpeaking(at: .immediate)
         surfacedCallUUIDs.remove(uuid)
       }
@@ -107,47 +104,149 @@ FirebaseApp.configure()
     }
   }
 
+  // Returns a greeting time-of-day phrase based on the stored dueAtIso.
+  // Used only when the call comes through the answered path (callObserver)
+  // so the device's local clock is already running — falls back to an
+  // empty string (no "good morning/afternoon/evening" prefix) rather than
+  // a stale or wrong phrase if the ISO string is unparseable.
+  private func timeOfDayGreeting() -> String {
+    let hour = Calendar.current.component(.hour, from: Date())
+    switch hour {
+    case 5..<12:  return "Good morning"
+    case 12..<18: return "Good afternoon"
+    case 18..<22: return "Good evening"
+    default:      return "Hey"
+    }
+  }
+
   private func speakReminder(callUUID: String, itemType: String) {
-    let title         = UserDefaults.standard.string(forKey: "familycube_call_title_\(callUUID)") ?? "your reminder"
-    let recipientName = UserDefaults.standard.string(forKey: "familycube_call_recipient_\(callUUID)")
-    let notes         = UserDefaults.standard.string(forKey: "familycube_call_notes_\(callUUID)")
+    let d             = UserDefaults.standard
+    let title         = d.string(forKey: "familycube_call_title_\(callUUID)") ?? "your reminder"
+    let recipientName = d.string(forKey: "familycube_call_recipient_\(callUUID)")
+    let notes         = d.string(forKey: "familycube_call_notes_\(callUUID)")
+    let location      = d.string(forKey: "familycube_call_location_\(callUUID)")
+    let category      = d.string(forKey: "familycube_call_category_\(callUUID)") ?? ""
+    let dueAtIso      = d.string(forKey: "familycube_call_dueAtIso_\(callUUID)") ?? ""
 
-    var greetingPart = ""
-    if let recipientName = recipientName, !recipientName.isEmpty {
-      greetingPart = "Hi \(recipientName), this is your Family Cube reminder — "
+    // ── Time-of-day aware greeting ─────────────────────────────────────────
+    let greeting = timeOfDayGreeting()
+    let name = recipientName.flatMap { $0.isEmpty ? nil : $0 }
+    let greetingLine: String
+    if let name = name {
+      greetingLine = "\(greeting) \(name)."
     } else {
-      greetingPart = "This is your Family Cube reminder — "
+      greetingLine = "\(greeting)."
     }
 
-    let lowerTitle = title.lowercased()
-    let isMedication = lowerTitle.contains("medic") || lowerTitle.contains("pill") || lowerTitle.contains("dose") || lowerTitle.contains("vitamin")
-    let chorePhrasings = isMedication
-      ? ["it's time to take \(title).", "don't forget \(title).", "time for \(title)."]
-      : ["don't forget: \(title).", "it's time for \(title).", "you've got \(title) coming up."]
-    let phrasingIndex = abs(title.hashValue) % chorePhrasings.count
-    let mainSentence = greetingPart + (
-      itemType == "event"
-        ? "it's time for \(title)."
-        : chorePhrasings[phrasingIndex]
-    )
-    var segments: [String] = [mainSentence]
-    if let notes = notes, !notes.isEmpty {
-      segments.append("Also, \(notes)")
+    // ── Minutes until due (urgency) ────────────────────────────────────────
+    var minutesUntilDue: Int? = nil
+    let df = ISO8601DateFormatter()
+    df.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let due = df.date(from: dueAtIso) ?? ISO8601DateFormatter().date(from: dueAtIso) {
+      let mins = Int(due.timeIntervalSinceNow / 60)
+      if mins >= 0 && mins <= 60 { minutesUntilDue = mins }
     }
 
-    let languageCode = AVSpeechSynthesisVoice.currentLanguageCode()
-    let candidates = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == languageCode }
-    let voice = candidates.first(where: { $0.quality == .premium })
-      ?? candidates.first(where: { $0.quality == .enhanced })
-      ?? AVSpeechSynthesisVoice(language: languageCode)
+    let urgencyPhrase: String
+    if let mins = minutesUntilDue {
+      if mins <= 2 { urgencyPhrase = "right now" }
+      else if mins <= 10 { urgencyPhrase = "in about \(mins) minutes" }
+      else { urgencyPhrase = "soon" }
+    } else {
+      urgencyPhrase = ""
+    }
 
-    for (index, segment) in segments.enumerated() {
-      let utterance = AVSpeechUtterance(string: segment)
-      utterance.voice = voice
-      utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.97
-      utterance.pitchMultiplier = index == 0 ? 1.0 : 0.97
-      utterance.postUtteranceDelay = index < segments.count - 1 ? 0.45 : 0
-      speechSynthesizer.speak(utterance)
+    // ── Category + title → main sentence ──────────────────────────────────
+    let lowerTitle    = title.lowercased()
+    let lowerCategory = category.lowercased()
+
+    // Detect medication regardless of category (chore title overrides category)
+    let isMedication = lowerTitle.contains("medic") || lowerTitle.contains("pill") ||
+                       lowerTitle.contains("dose")  || lowerTitle.contains("vitamin") ||
+                       lowerTitle.contains("drug")  || lowerTitle.contains("prescription")
+
+    // Common verb prefixes already in the title — strip them so we don't
+    // say "Time to clean your room" when the title IS "Clean your room"
+    let verbPrefixes = ["clean ", "wash ", "feed ", "take ", "do ", "make ",
+                        "pick up ", "drop off ", "water ", "check ", "finish ",
+                        "pack ", "prepare ", "study ", "complete ", "pay "]
+    let titleStartsWithVerb = verbPrefixes.contains(where: { lowerTitle.hasPrefix($0) })
+
+    let mainLine: String
+    if itemType == "chore" {
+      if isMedication {
+        let medPhrasings = ["It's time to take \(title).",
+                            "Don't forget \(title).",
+                            "Time for \(title)."]
+        mainLine = medPhrasings[abs(title.hashValue) % medPhrasings.count]
+      } else if titleStartsWithVerb {
+        // Title already reads as a command — just wrap it
+        let chorePhrasings = ["Time to \(title.prefix(1).lowercased() + title.dropFirst()).",
+                              "Don't forget to \(lowerTitle).",
+                              "You've got \(title) on your list."]
+        mainLine = chorePhrasings[abs(title.hashValue) % chorePhrasings.count]
+      } else {
+        let chorePhrasings = ["Don't forget: \(title).",
+                              "It's time for \(title).",
+                              "You've got \(title) coming up."]
+        mainLine = chorePhrasings[abs(title.hashValue) % chorePhrasings.count]
+      }
+    } else {
+      // Event — category-specific phrasing
+      switch lowerCategory {
+      case "medical":
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "You have a medical appointment — \(title)\(u)."
+      case "sports":
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "Get ready for \(title)\(u)."
+      case "study":
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "Time to get your books out — \(title)\(u)."
+      case "birthday":
+        mainLine = "Don't forget — it's \(title) today!"
+      case "ride":
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "Your ride for \(title) is\(u.isEmpty ? " coming up" : u)."
+      case "work":
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "Work reminder: \(title)\(u)."
+      default:
+        let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
+        mainLine = "It's time for \(title)\(u)."
+      }
+    }
+
+    // ── Notes / location as a natural aside ───────────────────────────────
+    var asideLine: String? = nil
+    let loc  = location.flatMap { $0.isEmpty ? nil : $0 }
+    let note = notes.flatMap    { $0.isEmpty ? nil : $0 }
+    if let loc = loc, let note = note {
+      asideLine = "Also — \(loc). \(note)."
+    } else if let loc = loc {
+      asideLine = "It's at \(loc)."
+    } else if let note = note {
+      asideLine = "Also — \(note)."
+    }
+
+    // ── Build segment list ─────────────────────────────────────────────────
+    var segments: [String] = ["\(greetingLine) \(mainLine)"]
+    if let aside = asideLine { segments.append(aside) }
+
+    // ── Voice selection — prefer Siri premium/enhanced over compact ────────
+    let langCode = AVSpeechSynthesisVoice.currentLanguageCode()
+    let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == langCode }
+    let voice = voices.first(where: { $0.quality == .premium })
+      ?? voices.first(where: { $0.quality == .enhanced })
+      ?? AVSpeechSynthesisVoice(language: langCode)
+
+    for (i, segment) in segments.enumerated() {
+      let u = AVSpeechUtterance(string: segment)
+      u.voice = voice
+      u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.97
+      u.pitchMultiplier = i == 0 ? 1.0 : 0.97
+      u.postUtteranceDelay = i < segments.count - 1 ? 0.45 : 0
+      speechSynthesizer.speak(u)
     }
   }
 
@@ -175,19 +274,19 @@ FirebaseApp.configure()
     let itemId        = data["itemId"]        as? String ?? ""
     let dueAtIso      = data["dueAtIso"]      as? String ?? ""
     let recipientName = data["recipientName"] as? String
+    let category      = data["category"]      as? String
     let notes         = data["notes"]         as? String
+    let location      = data["location"]      as? String
 
-    let defaults = UserDefaults.standard
-    defaults.set(itemType,  forKey: "familycube_call_itemType_\(callUUID)")
-    defaults.set(itemId,    forKey: "familycube_call_itemId_\(callUUID)")
-    defaults.set(dueAtIso,  forKey: "familycube_call_dueAt_\(callUUID)")
-    defaults.set(callerName, forKey: "familycube_call_title_\(callUUID)")
-    if let recipientName = recipientName {
-      defaults.set(recipientName, forKey: "familycube_call_recipient_\(callUUID)")
-    }
-    if let notes = notes {
-      defaults.set(notes, forKey: "familycube_call_notes_\(callUUID)")
-    }
+    let d = UserDefaults.standard
+    d.set(itemType,   forKey: "familycube_call_itemType_\(callUUID)")
+    d.set(itemId,     forKey: "familycube_call_itemId_\(callUUID)")
+    d.set(dueAtIso,   forKey: "familycube_call_dueAtIso_\(callUUID)")
+    d.set(callerName, forKey: "familycube_call_title_\(callUUID)")
+    if let v = recipientName { d.set(v, forKey: "familycube_call_recipient_\(callUUID)") }
+    if let v = category      { d.set(v, forKey: "familycube_call_category_\(callUUID)") }
+    if let v = notes         { d.set(v, forKey: "familycube_call_notes_\(callUUID)") }
+    if let v = location      { d.set(v, forKey: "familycube_call_location_\(callUUID)") }
 
     RNCallKeep.reportNewIncomingCall(
       callUUID,

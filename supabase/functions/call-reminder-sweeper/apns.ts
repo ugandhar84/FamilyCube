@@ -15,9 +15,9 @@ interface RingPayload {
   itemId: string;
   dueAtIso: string;
   memberNames: string[];
-  // Read aloud after the main reminder sentence when present — a
-  // medication chore's dosage instructions, an event's location/notes.
+  category?: string;
   notes?: string;
+  location?: string;
 }
 
 // ─── iOS: APNs PushKit via JWT (ES256) provider auth ──────────────────────────
@@ -89,7 +89,9 @@ async function sendApnsVoip(token: string, payload: RingPayload, recipientName?:
     itemId: payload.itemId,
     dueAtIso: payload.dueAtIso,
     ...(recipientName ? { recipientName } : {}),
+    ...(payload.category ? { category: payload.category } : {}),
     ...(payload.notes ? { notes: payload.notes } : {}),
+    ...(payload.location ? { location: payload.location } : {}),
   });
 
   try {
@@ -194,7 +196,9 @@ async function sendFcmDataMessage(token: string, payload: RingPayload, recipient
             itemId: payload.itemId,
             dueAtIso: payload.dueAtIso,
             ...(recipientName ? { recipientName } : {}),
+            ...(payload.category ? { category: payload.category } : {}),
             ...(payload.notes ? { notes: payload.notes } : {}),
+            ...(payload.location ? { location: payload.location } : {}),
           },
         },
       }),

@@ -38,10 +38,7 @@ interface RingTarget {
   title: string;
   dueAt: Date;
   memberIds: string[];
-  // Read aloud (native AVSpeechSynthesizer, AppDelegate.swift) after the
-  // main reminder sentence, when present — a medication chore's dosage
-  // instructions, an event's venue/parking note, etc. Optional: most
-  // reminders have neither and the phrase is simply skipped.
+  category?: string | null;
   notes?: string | null;
   location?: string | null;
 }
@@ -177,7 +174,7 @@ serve(async (req) => {
     // never re-ringing after a time change.
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at, notes, location')
+      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at, notes, location, category')
       .eq('alert_call', true)
       .in('date', dateWindow)
       .is('deleted_at', null);
@@ -237,7 +234,9 @@ serve(async (req) => {
         const ids = [...new Set([...(participantsByEvent[e.id] ?? []), ...e.memberIds])];
         targets.push({
           itemType: 'event', itemId: e.id, title: e.title, dueAt: e.dueAt, memberIds: ids,
-          notes: [e.location, e.notes].filter(Boolean).join(' — ') || null,
+          category: (e as any).category ?? null,
+          notes: e.notes ?? null,
+          location: e.location ?? null,
         });
       }
     }
@@ -344,7 +343,9 @@ serve(async (req) => {
         itemId: t.itemId,
         dueAtIso: t.dueAt.toISOString(),
         memberNames: t.memberIds.map(id => nameOf[id]).filter(Boolean),
+        category: t.category ?? undefined,
         notes: t.notes ?? undefined,
+        location: t.location ?? undefined,
       });
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
       // The claim row (item_type,item_id,due_at) was already written

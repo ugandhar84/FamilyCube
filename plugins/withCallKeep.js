@@ -141,6 +141,7 @@ function buildCanonicalUnits() {
     propertiesBlock: extractPropertiesBlock(source),
     setupSnippet: extractDidFinishLaunchingSetup(source),
     callObserverFn: extractBraceBlock(source, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {'),
+    timeOfDayGreetingFn: extractBraceBlock(source, 'private func timeOfDayGreeting() -> String {'),
     speakReminderFn: extractBraceBlock(source, 'private func speakReminder(callUUID: String, itemType: String) {'),
     pushRegistryDidUpdateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {'),
     pushRegistryDidInvalidateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {'),
@@ -285,6 +286,7 @@ function withCallKeepAppDelegate(config) {
     }
 
     ensureMethod(units.callObserverFn, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {');
+    ensureMethod(units.timeOfDayGreetingFn, 'private func timeOfDayGreeting() -> String {');
     ensureMethod(units.speakReminderFn, 'private func speakReminder(callUUID: String, itemType: String) {');
     ensureMethod(units.pushRegistryDidUpdateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {');
     ensureMethod(units.pushRegistryDidInvalidateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {');

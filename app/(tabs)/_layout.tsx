@@ -316,6 +316,11 @@ export default function TabLayout() {
   // viewing this screen still just gets the FAB hidden (same as Store/
   // FindFam), not a "+" they can't actually use.
   const onFamilyHealthTab = activeTabName === 'family-health';
+  // Same treatment as Health & Records above — School's own add/edit-
+  // schedule affordance is already inline per-kid inside
+  // SchoolScheduleCard (parent-only), so this stays inside the parent-only
+  // gate below the same way onFamilyHealthTab does.
+  const onSchoolTab = activeTabName === 'school';
   const healthRecordsActiveSegment = useUIStore(s => s.healthRecordsActiveSegment);
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -534,6 +539,7 @@ export default function TabLayout() {
             // (danger-red for Health, teal for Immunizations or Records).
             const fabColor = onFamilyHealthTab
               ? (healthRecordsActiveSegment === 'health' ? colors.danger : colors.teal)
+              : onSchoolTab ? colors.amber
               : colors.primary;
             return (
               <Pressable
@@ -541,6 +547,7 @@ export default function TabLayout() {
                   if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
                   else if (onMemoriesTab) useUIStore.getState().setOpenMemoryComposerRequested(true);
                   else if (onFamilyHealthTab) useUIStore.getState().setOpenHealthRecordsComposerRequested(true);
+                  else if (onSchoolTab) useUIStore.getState().setOpenSchoolScheduleComposerRequested(true);
                   else setAskCubeOpen(true);
                 }}
                 style={{
@@ -550,7 +557,7 @@ export default function TabLayout() {
                   shadowColor: fabColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
                   elevation: 6,
                 }}>
-                {(onTasksTab || onMemoriesTab || onFamilyHealthTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
+                {(onTasksTab || onMemoriesTab || onFamilyHealthTab || onSchoolTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
               </Pressable>
             );
           })()}

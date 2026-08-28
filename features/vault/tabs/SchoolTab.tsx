@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useSchoolStore } from '@/store/schoolStore';
+import { useUIStore } from '@/store/uiStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -28,6 +29,12 @@ export default function SchoolTab({ colors, isDark, isKid }: {
   const allNames = members.map(m => m.name);
   const [selectedKidId, setSelectedKidId] = useState<string>(kids[0]?.id ?? '');
   const activeKid = kids.find(k => k.id === selectedKidId) ?? kids[0];
+
+  // Shared FAB's School-tab "+" face (app/(tabs)/_layout.tsx) fires this
+  // one-shot flag instead of opening Ask Cube — same pattern HealthTab.tsx
+  // uses for its own "+". Opens the active kid's SchoolScheduleCard edit
+  // modal via its externalOpenRequested prop, then clears itself.
+  const openSchoolScheduleComposerRequested = useUIStore(s => s.openSchoolScheduleComposerRequested);
 
   if (kids.length === 0) {
     return (
@@ -96,6 +103,8 @@ export default function SchoolTab({ colors, isDark, isKid }: {
           colors={colors}
           isDark={isDark}
           defaultExpanded
+          externalOpenRequested={openSchoolScheduleComposerRequested}
+          onExternalOpenHandled={() => useUIStore.getState().setOpenSchoolScheduleComposerRequested(false)}
         />
       )}
     </ScrollView>

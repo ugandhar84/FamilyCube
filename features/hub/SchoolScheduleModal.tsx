@@ -4,7 +4,7 @@
  *
  * Data lives in schoolStore (AsyncStorage).  No Supabase yet.
  */
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   Pressable, Alert, ScrollView, Platform, StyleSheet,
@@ -437,10 +437,23 @@ const DAY_ABBR: Record<string,string> = { mon:'M',tue:'T',wed:'W',thu:'Th',fri:'
 const DAY_FULL: Record<string,string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
 const NOW_DAY_KEY_MAP: Record<number,string> = { 0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat' };
 
-export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isDark, defaultExpanded }: {
+export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isDark, defaultExpanded, externalOpenRequested, onExternalOpenHandled }: {
   memberId: string; memberName: string; isParent: boolean; colors: any; isDark: boolean; defaultExpanded?: boolean;
+  /** Set true to open this card's edit-schedule modal from OUTSIDE (the
+   * shared FAB's School-tab "+" face, via SchoolTab.tsx's one-shot uiStore
+   * flag) — same one-shot pattern as HealthTab's own composer-requested
+   * flag. onExternalOpenHandled must be called once consumed so the caller
+   * can clear its own flag. */
+  externalOpenRequested?: boolean;
+  onExternalOpenHandled?: () => void;
 }) {
   const [editModalOpen, setEditModalOpen] = useState(false);
+  useEffect(() => {
+    if (externalOpenRequested) {
+      setEditModalOpen(true);
+      onExternalOpenHandled?.();
+    }
+  }, [externalOpenRequested]);
   const { schedules } = useSchoolStore();
   const schedule = schedules.find(s => s.memberId === memberId);
 
@@ -538,11 +551,14 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
         </View>
 
         {!schedule ? (
-          /* No schedule yet */
-          <Pressable onPress={() => setEditModalOpen(true)}
-            style={{ paddingHorizontal: 14, paddingBottom: 14, alignItems: 'center' }}>
-            <Text style={{ fontSize: TYPO.caption, color: BRAND.purple, fontWeight: '700' }}>+ Set Up Schedule →</Text>
-          </Pressable>
+          /* No schedule yet — setup now lives behind the shared FAB's
+             School-tab "+" face (app/(tabs)/_layout.tsx), not a second
+             inline entry point on this card. */
+          <View style={{ paddingHorizontal: 14, paddingBottom: 14, alignItems: 'center' }}>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontWeight: '600' }}>
+              No schedule yet — tap the + button below to set one up
+            </Text>
+          </View>
         ) : (
           <>
             {/* Term tabs — only when multiple terms */}

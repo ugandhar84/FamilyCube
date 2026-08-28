@@ -1458,7 +1458,10 @@ export default function ProfileSettingsScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* The shared Ask Cube FAB is visible on this tab by default (no
+          Profile-specific exclusion in app/(tabs)/_layout.tsx) — same
+          overlap risk fixed on Hub/Quests/School/Health/Memories. */}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,

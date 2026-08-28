@@ -47,8 +47,10 @@ export default function SchoolTab({ colors, isDark, isKid }: {
     );
   }
 
+  // The shared Ask Cube FAB is visible on this tab (morphs to a "+" for
+  // School's composer) — same overlap risk fixed on Hub/Quests.
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
 
       {/* Kid picker — parents only, or single kid just shows header */}
       {!isKid && kids.length > 1 && (

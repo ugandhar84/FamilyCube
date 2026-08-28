@@ -16,7 +16,10 @@ export default function FlatSectionHeader({ Icon, title, badge, badgeColor, acce
         <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
           <Icon size={15} color={accent} />
         </View>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+        {/* Matches Hub's SectionCard, including its heading-color fix —
+            textSecondary read as gray/hard-to-read for what's the
+            strongest text on its row (same UI review finding). */}
+        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
           {title}
         </Text>
         {badge ? (

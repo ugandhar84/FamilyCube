@@ -46,8 +46,11 @@ export default function MemoriesScreen({ hideHeader = false }: { hideHeader?: bo
           </Text>
         </View>
       )}
+      {/* The shared Ask Cube FAB is visible on this tab (morphs to a "+"
+          for Memories' composer) — same overlap risk fixed on
+          Hub/Quests/School/Health & Records. */}
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 140, paddingTop: 14 }}>
         <MemoriesTabComp colors={colors} isDark={isDark} readOnly={readOnly} />
       </ScrollView>
     </SafeAreaView>

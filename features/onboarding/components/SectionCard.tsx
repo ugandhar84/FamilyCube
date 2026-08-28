@@ -6,7 +6,7 @@ export const SectionCard = React.memo(function SectionCard({ title, colors, chil
   return (
     <View style={{ marginBottom: 16 }}>
       <Text style={{
-        fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary ?? colors.textSecondary,
+        fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary,
         textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 4, marginBottom: 8,
       }}>{title}</Text>
       <View style={{

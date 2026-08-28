@@ -116,8 +116,11 @@ export default function HealthRecordsScreen({ hideHeader = false }: { hideHeader
         </View>
       )}
 
+      {/* The shared Ask Cube FAB is visible on this tab (morphs to a "+"
+          for Health & Records' composer) — same overlap risk fixed on
+          Hub/Quests/School. */}
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 140, paddingTop: 14 }}>
         {tab === 'records'
           ? <RecordsTabComp colors={colors} isDark={isDark} />
           : <HealthTabComp colors={colors} isDark={isDark} kidView={kidView}

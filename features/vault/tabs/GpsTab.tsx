@@ -654,11 +654,37 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           Family ({roster.length})
         </Text>
 
+        {/* Real, labeled toggle — the only other way to turn sharing on was
+            a small unlabeled icon-only button floating on the map itself
+            (trackFab below), which a user had no way to discover meant
+            "tap to share your location" (flagged directly: "give another
+            toggle button... visible to user, they don't need to click on
+            arrow"). Same Switch + labeled-row pattern as "Share exact
+            address" right below it, and the same toggleTracking handler
+            the map button already uses — one source of truth, two entry
+            points to it. */}
+        <View style={[g.exactToggleRow, { borderColor: colors.border, marginBottom: 10 }]}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+              Share my location
+            </Text>
+            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
+              {tracking
+                ? 'Your family can see where you are on the map'
+                : 'Off — your family can\'t see your location'}
+            </Text>
+          </View>
+          {togglingTrack
+            ? <CubeSpinner size={16} />
+            : <Switch value={tracking} onValueChange={toggleTracking}
+                trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />}
+        </View>
+
         {!tracking && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12 }}>
             <ShieldOff size={11} color={colors.textTertiary} />
             <Text style={{ fontSize: 11, color: colors.textTertiary, flex: 1 }}>
-              Your location is off — turn on the button on the map to share it with your family.
+              Your location is off — turn on "Share my location" above to share it with your family.
             </Text>
           </View>
         )}

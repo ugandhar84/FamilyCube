@@ -1036,7 +1036,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
           which is what caused Day view's scroll to dead-stop partway
           through instead of reaching 8pm. Day view now owns its own
           correctly-scoped sticky header inside its own branch below. */}
-      <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
+      {/* Calendar shares the 'tasks' tab route with Quests, so the shared
+          Ask Cube FAB (morphed to "+") is visible here too — same overlap
+          risk fixed across every other FAB-visible tab this pass. */}
+      <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}
         scrollEnabled={viewMode !== 'day'} bounces={viewMode !== 'day'}>
 
         {headerContent}

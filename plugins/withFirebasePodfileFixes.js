@@ -48,6 +48,43 @@ module.exports = function withFirebasePodfileFixes(config) {
         }
       }
 
+      // RNCallKeep doesn't ship a Clang module map, so Swift can't import it
+      // via the bridging header when use_modular_headers! is active globally.
+      // This post_install hook generates a minimal modulemap at the path Xcode
+      // expects, which satisfies the module lookup without changing any pod's
+      // own sources.
+      const RN_CALLKEEP_MODULEMAP_MARKER = 'RNCallKeep.modulemap';
+      if (!contents.includes(RN_CALLKEEP_MODULEMAP_MARKER)) {
+        const postInstallHook = `
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    if target.name == 'RNCallKeep'
+      target.build_configurations.each do |config|
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+        config.build_settings['SWIFT_OBJC_BRIDGING_HEADER'] = ''
+      end
+    end
+  end
+end
+`;
+        if (!contents.includes('post_install do')) {
+          contents = contents + postInstallHook;
+        } else {
+          // Splice into existing post_install block
+          contents = contents.replace(
+            /post_install do \|installer\|/,
+            `post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    if target.name == 'RNCallKeep'
+      target.build_configurations.each do |config|
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+      end
+    end
+  end`,
+          );
+        }
+      }
+
       fs.writeFileSync(podfilePath, contents);
       return config;
     },

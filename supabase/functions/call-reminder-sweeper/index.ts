@@ -38,6 +38,12 @@ interface RingTarget {
   title: string;
   dueAt: Date;
   memberIds: string[];
+  // Read aloud (native AVSpeechSynthesizer, AppDelegate.swift) after the
+  // main reminder sentence, when present — a medication chore's dosage
+  // instructions, an event's venue/parking note, etc. Optional: most
+  // reminders have neither and the phrase is simply skipped.
+  notes?: string | null;
+  location?: string | null;
 }
 
 // due_time/start_time are stored as display strings from the app's time
@@ -146,7 +152,7 @@ serve(async (req) => {
     // and can never be returned by this query in the first place.
     const { data: chores } = await supabase
       .from('chore_tasks')
-      .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status')
+      .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status, notes')
       .eq('alert_call', true)
       .in('due_date', dateWindow)
       .in('status', ['todo', 'in_progress']);
@@ -171,7 +177,7 @@ serve(async (req) => {
     // never re-ringing after a time change.
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at')
+      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at, notes, location')
       .eq('alert_call', true)
       .in('date', dateWindow)
       .is('deleted_at', null);
@@ -188,11 +194,12 @@ serve(async (req) => {
         targets.push({
           itemType: 'chore', itemId: c.id, title: c.title, dueAt,
           memberIds: c.assigned_to_id ? [c.assigned_to_id] : [],
+          notes: (c as any).notes ?? null,
         });
       }
     }
 
-    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[] }[] = [];
+    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[]; notes?: string | null; location?: string | null }[] = [];
     for (const e of (events ?? [])) {
       if (!e.start_time) continue;
       const t24 = to24Hour(e.start_time);
@@ -201,7 +208,7 @@ serve(async (req) => {
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);
-        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids });
+        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null });
       }
     }
 
@@ -228,7 +235,10 @@ serve(async (req) => {
       }
       for (const e of dueEvents) {
         const ids = [...new Set([...(participantsByEvent[e.id] ?? []), ...e.memberIds])];
-        targets.push({ itemType: 'event', itemId: e.id, title: e.title, dueAt: e.dueAt, memberIds: ids });
+        targets.push({
+          itemType: 'event', itemId: e.id, title: e.title, dueAt: e.dueAt, memberIds: ids,
+          notes: [e.location, e.notes].filter(Boolean).join(' — ') || null,
+        });
       }
     }
 
@@ -315,9 +325,13 @@ serve(async (req) => {
       .select('id, name')
       .in('id', allMemberIds.length ? allMemberIds : ['__none__']);
     const nameOf: Record<string, string> = Object.fromEntries((memberRows ?? []).map((m: any) => [m.id, m.name]));
-    const tokensByMember: Record<string, { token: string; platform: string }[]> = {};
+    // recipientName travels WITH each token (not just family_id -> tokens)
+    // so the native TTS greeting can address whoever's own device this
+    // specific push actually reaches ("Hi Priya") — flatMap-ping tokens
+    // without carrying the member id lost that association entirely.
+    const tokensByMember: Record<string, { token: string; platform: string; recipientName?: string }[]> = {};
     for (const row of (tokenRows ?? [])) {
-      (tokensByMember[row.member_id] ??= []).push({ token: row.token, platform: row.platform });
+      (tokensByMember[row.member_id] ??= []).push({ token: row.token, platform: row.platform, recipientName: nameOf[row.member_id] });
     }
 
     let rung = 0;
@@ -330,6 +344,7 @@ serve(async (req) => {
         itemId: t.itemId,
         dueAtIso: t.dueAt.toISOString(),
         memberNames: t.memberIds.map(id => nameOf[id]).filter(Boolean),
+        notes: t.notes ?? undefined,
       });
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
       // The claim row (item_type,item_id,due_at) was already written

@@ -4,13 +4,20 @@
 // support the VoIP push type CallKit requires to wake a killed/backgrounded
 // app and trigger displayIncomingCall() natively.
 
-interface VoipTarget { token: string; platform: string }
+// recipientName is per-DEVICE (one specific member's own token), unlike
+// RingPayload.memberNames below which is the whole batch of everyone this
+// reminder rings — the spoken greeting needs to address the actual person
+// holding THIS device, not read out the full target list.
+interface VoipTarget { token: string; platform: string; recipientName?: string }
 interface RingPayload {
   callerName: string;
   itemType: 'chore' | 'event';
   itemId: string;
   dueAtIso: string;
   memberNames: string[];
+  // Read aloud after the main reminder sentence when present — a
+  // medication chore's dosage instructions, an event's location/notes.
+  notes?: string;
 }
 
 // ─── iOS: APNs PushKit via JWT (ES256) provider auth ──────────────────────────
@@ -58,7 +65,7 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-async function sendApnsVoip(token: string, payload: RingPayload): Promise<{ ok: boolean; error?: string }> {
+async function sendApnsVoip(token: string, payload: RingPayload, recipientName?: string): Promise<{ ok: boolean; error?: string }> {
   const jwt = await getApnsJwt();
   const topic = Deno.env.get('APNS_TOPIC');
   if (!jwt || !topic) return { ok: false, error: 'APNs VoIP not configured' };
@@ -81,6 +88,8 @@ async function sendApnsVoip(token: string, payload: RingPayload): Promise<{ ok: 
     itemType: payload.itemType,
     itemId: payload.itemId,
     dueAtIso: payload.dueAtIso,
+    ...(recipientName ? { recipientName } : {}),
+    ...(payload.notes ? { notes: payload.notes } : {}),
   });
 
   try {
@@ -166,7 +175,7 @@ async function getFcmAccessToken(): Promise<{ token: string; projectId: string }
   return { token: tokenJson.access_token, projectId: sa.project_id };
 }
 
-async function sendFcmDataMessage(token: string, payload: RingPayload): Promise<{ ok: boolean; error?: string }> {
+async function sendFcmDataMessage(token: string, payload: RingPayload, recipientName?: string): Promise<{ ok: boolean; error?: string }> {
   const auth = await getFcmAccessToken();
   if (!auth) return { ok: false, error: 'FCM not configured' };
 
@@ -184,6 +193,8 @@ async function sendFcmDataMessage(token: string, payload: RingPayload): Promise<
             itemType: payload.itemType,
             itemId: payload.itemId,
             dueAtIso: payload.dueAtIso,
+            ...(recipientName ? { recipientName } : {}),
+            ...(payload.notes ? { notes: payload.notes } : {}),
           },
         },
       }),
@@ -206,8 +217,8 @@ export async function sendVoipPush(
 
   for (const t of targets) {
     const result = t.platform === 'ios'
-      ? await sendApnsVoip(t.token, payload)
-      : await sendFcmDataMessage(t.token, payload);
+      ? await sendApnsVoip(t.token, payload, t.recipientName)
+      : await sendFcmDataMessage(t.token, payload, t.recipientName);
 
     // Was silent on both success and failure except via the returned
     // `errors` array — invisible unless the caller happened to win the

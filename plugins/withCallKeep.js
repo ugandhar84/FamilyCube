@@ -25,12 +25,15 @@ const BRIDGING_HEADER_IMPORT = '#import <RNCallKeep/RNCallKeep.h>';
 
 const PUSHKIT_IMPORT = 'import PushKit';
 const CALLKIT_IMPORT = 'import CallKit';
+const AVFOUNDATION_IMPORT = 'import AVFoundation';
 
 const DELEGATE_CONFORMANCE_OLD = 'public class AppDelegate: ExpoAppDelegate {';
 const DELEGATE_CONFORMANCE_NEW = 'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {';
 
 const PROPERTY_MARKER = 'var reactNativeFactory: RCTReactNativeFactory?';
-const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  // CXCallObserver's callChanged delegate fires on EVERY state transition\n  // of a call, not just once on connect — a call reliably re-fires this\n  // with hasConnected still true / hasEnded still false more than once\n  // over its lifetime (e.g. audio-route changes, hold/mute toggles, or\n  // just a redundant re-notify from CallKit's own internals). Each such\n  // re-fire used to unconditionally rewrite familycube_last_answered_* to\n  // UserDefaults again — so if JS had already consumed (cleared) that\n  // pointer via getLastAnsweredCall once the user handled the call, a\n  // LATER redundant callChanged for that same already-answered call would\n  // resurrect it, and the app would show the call-alert banner again on\n  // next reopen for a call that was already over. This set tracks which\n  // callUUIDs have already been surfaced to JS so a repeat delivery for\n  // the same call is a no-op instead of a phantom re-answer.\n  var surfacedCallUUIDs = Set<String>()`;
+const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  // CXCallObserver's callChanged delegate fires on EVERY state transition\n  // of a call, not just once on connect — a call reliably re-fires this\n  // with hasConnected still true / hasEnded still false more than once\n  // over its lifetime (e.g. audio-route changes, hold/mute toggles, or\n  // just a redundant re-notify from CallKit's own internals). Each such\n  // re-fire used to unconditionally rewrite familycube_last_answered_* to\n  // UserDefaults again — so if JS had already consumed (cleared) that\n  // pointer via getLastAnsweredCall once the user handled the call, a\n  // LATER redundant callChanged for that same already-answered call would\n  // resurrect it, and the app would show the call-alert banner again on\n  // next reopen for a call that was already over. This set tracks which\n  // callUUIDs have already been surfaced to JS so a repeat delivery for\n  // the same call is a no-op instead of a phantom re-answer.\n  var surfacedCallUUIDs = Set<String>()\n  // Speaks the reminder once CallKit reports the call connected — the\n  // actual TTS this whole call-reminder feature is FOR. This app is\n  // deliberately native-CallKit-only (no in-app call screen, no JS\n  // involved in ring/answer/speak at all), so this has to live here, not\n  // in a JS effect — and needs to work even before React Native has\n  // booted (a VoIP push can answer straight into this delegate from a\n  // killed app). AVSpeechSynthesizer shares the call's own already-active\n  // AVAudioSession automatically once CallKit hands control back\n  // (didActivateAudioSession), so speech comes out the same earpiece/\n  // speaker the call itself is using.\n  let speechSynthesizer = AVSpeechSynthesizer()`;
+
+const SPEAK_REMINDER_FUNCTION = `\n  // Builds and speaks the reminder as several short, separately-queued\n  // AVSpeechUtterances rather than one long comma-joined sentence — the\n  // synthesizer paces on utterance boundaries far better than on internal\n  // punctuation alone, so this reads with natural pauses between the\n  // greeting, the reminder itself, and any notes, instead of one flat\n  // run-on at a constant clip (mirrors the pacing the app's old in-app\n  // call screen achieved via repeated Speech.speak() calls in JS, before\n  // that screen was removed in favor of a fully native-CallKit-only flow).\n  private func speakReminder(callUUID: String, itemType: String) {\n    let title = UserDefaults.standard.string(forKey: "familycube_call_title_\\(callUUID)") ?? "your reminder"\n    let recipientName = UserDefaults.standard.string(forKey: "familycube_call_recipient_\\(callUUID)")\n    let notes = UserDefaults.standard.string(forKey: "familycube_call_notes_\\(callUUID)")\n\n    var segments: [String] = []\n    if let recipientName = recipientName, !recipientName.isEmpty {\n      segments.append("Hi \\(recipientName).")\n    }\n    segments.append("This is your Family Cube reminder.")\n    segments.append(\n      itemType == "event"\n        ? "It's time for \\(title)."\n        : "Don't forget: \\(title)."\n    )\n    if let notes = notes, !notes.isEmpty {\n      segments.append(notes)\n    }\n\n    // Prefer a Siri-quality voice (.premium, falling back to .enhanced)\n    // over the default ".default" compact system voice — same preference\n    // lib/units.ts's resolveBestVoiceId() already applies for the (now-\n    // removed) JS speech path; mirrored here since that logic no longer\n    // runs. Enhanced/Premium voices must be downloaded on-device\n    // (Settings > Accessibility > Spoken Content > Voices) — if none are\n    // installed for the current language, this correctly falls back to\n    // whatever default voice AVSpeechSynthesisVoice(language:) returns.\n    let languageCode = AVSpeechSynthesisVoice.currentLanguageCode()\n    let candidates = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == languageCode }\n    let voice = candidates.first(where: { $0.quality == .premium })\n      ?? candidates.first(where: { $0.quality == .enhanced })\n      ?? AVSpeechSynthesisVoice(language: languageCode)\n\n    for segment in segments {\n      let utterance = AVSpeechUtterance(string: segment)\n      utterance.voice = voice\n      utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.97\n      utterance.postUtteranceDelay = 0.35\n      speechSynthesizer.speak(utterance)\n    }\n  }`;
 
 const SETUP_MARKER = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)\n  }';
 // react-native-callkeep's answerCall/getInitialEvents replay queue
@@ -73,6 +76,10 @@ const SETUP_ADDITION = `RNCallKeep.setup([
     if call.hasEnded {
       UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")
       UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")
+      UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")
+      UserDefaults.standard.removeObject(forKey: "familycube_call_recipient_\\(uuid)")
+      UserDefaults.standard.removeObject(forKey: "familycube_call_notes_\\(uuid)")
+      speechSynthesizer.stopSpeaking(at: .immediate)
       surfacedCallUUIDs.remove(uuid)
       // Was: nothing here told JS a call had ended if it happened while no
       // JS runtime was alive to receive the live 'endCall' RNCallKeep
@@ -107,7 +114,10 @@ const SETUP_ADDITION = `RNCallKeep.setup([
     UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")
     NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,
       userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])
+
+    speakReminder(callUUID: uuid, itemType: itemType)
   }
+${SPEAK_REMINDER_FUNCTION}
 
   // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────
   public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
@@ -136,9 +146,18 @@ const SETUP_ADDITION = `RNCallKeep.setup([
     let itemType = (payload.dictionaryPayload["itemType"] as? String) ?? ""
     let itemId = (payload.dictionaryPayload["itemId"] as? String) ?? ""
     let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""
+    let recipientName = payload.dictionaryPayload["recipientName"] as? String
+    let notes = payload.dictionaryPayload["notes"] as? String
     let callUUID = UUID().uuidString
     UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")
     UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")
+    UserDefaults.standard.set(callerName, forKey: "familycube_call_title_\\(callUUID)")
+    if let recipientName = recipientName {
+      UserDefaults.standard.set(recipientName, forKey: "familycube_call_recipient_\\(callUUID)")
+    }
+    if let notes = notes {
+      UserDefaults.standard.set(notes, forKey: "familycube_call_notes_\\(callUUID)")
+    }
     RNCallKeep.reportNewIncomingCall(
       callUUID,
       handle: callerName,
@@ -165,6 +184,9 @@ function withCallKeepAppDelegate(config) {
     if (!contents.includes(CALLKIT_IMPORT)) {
       contents = contents.replace(PUSHKIT_IMPORT, `${PUSHKIT_IMPORT}\n${CALLKIT_IMPORT}`);
     }
+    if (!contents.includes(AVFOUNDATION_IMPORT)) {
+      contents = contents.replace(CALLKIT_IMPORT, `${CALLKIT_IMPORT}\n${AVFOUNDATION_IMPORT}`);
+    }
     if (!contents.includes('CXCallObserverDelegate')) {
       contents = contents.replace(DELEGATE_CONFORMANCE_OLD, DELEGATE_CONFORMANCE_NEW);
       // Older builds may already have the PKPushRegistryDelegate-only
@@ -183,6 +205,15 @@ function withCallKeepAppDelegate(config) {
       // plugin/fix but missing the surfacedCallUUIDs de-dup tracking set —
       // insert just that piece.
       contents = contents.replace('var callObserver: CXCallObserver?', 'var callObserver: CXCallObserver?\n  var surfacedCallUUIDs = Set<String>()');
+    }
+    if (contents.includes('var surfacedCallUUIDs') && !contents.includes('let speechSynthesizer')) {
+      // surfacedCallUUIDs already applied by an older version of this
+      // plugin but missing the AVSpeechSynthesizer property added for the
+      // native-only TTS fix — insert just that piece.
+      contents = contents.replace(
+        'var surfacedCallUUIDs = Set<String>()',
+        'var surfacedCallUUIDs = Set<String>()\n  let speechSynthesizer = AVSpeechSynthesizer()',
+      );
     }
     if (!contents.includes('RNCallKeep.setup(')) {
       contents = contents.replace(SETUP_MARKER, SETUP_ADDITION);
@@ -220,6 +251,41 @@ function withCallKeepAppDelegate(config) {
       contents = contents.replace(
         'let callUUID = UUID().uuidString\n    RNCallKeep.reportNewIncomingCall(',
         'let callUUID = UUID().uuidString\n    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")\n    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
+      );
+    }
+    // Upgrade path: didReceiveIncomingPushWith already caches itemType/
+    // itemId (the branch above) but not yet the title/recipient/notes TTS
+    // needs — insert those three cache writes right after the existing
+    // itemId one, and read the two new payload fields at the top of the
+    // function alongside the existing ones.
+    if (contents.includes('familycube_call_itemType_') && !contents.includes('familycube_call_title_')) {
+      contents = contents.replace(
+        'let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""',
+        'let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""\n    let recipientName = payload.dictionaryPayload["recipientName"] as? String\n    let notes = payload.dictionaryPayload["notes"] as? String',
+      );
+      contents = contents.replace(
+        'UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
+        'UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    UserDefaults.standard.set(callerName, forKey: "familycube_call_title_\\(callUUID)")\n    if let recipientName = recipientName {\n      UserDefaults.standard.set(recipientName, forKey: "familycube_call_recipient_\\(callUUID)")\n    }\n    if let notes = notes {\n      UserDefaults.standard.set(notes, forKey: "familycube_call_notes_\\(callUUID)")\n    }\n    RNCallKeep.reportNewIncomingCall(',
+      );
+    }
+    // Upgrade path: callObserver's hasEnded branch already clears
+    // itemType/itemId but not yet the newer title/recipient/notes keys or
+    // stops any in-flight speech — insert those right after the existing
+    // itemId cleanup.
+    if (contents.includes('familycube_call_title_') && contents.includes('UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")') && !contents.includes('UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")')) {
+      contents = contents.replace(
+        'UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)',
+        'UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_title_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_recipient_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_notes_\\(uuid)")\n      speechSynthesizer.stopSpeaking(at: .immediate)\n      surfacedCallUUIDs.remove(uuid)',
+      );
+    }
+    // Upgrade path: callObserver already posts FCCallAnswered but doesn't
+    // yet call speakReminder — the actual TTS fix. Insert the call right
+    // after the notification post, and append the speakReminder function
+    // itself once, right after callObserver's closing brace.
+    if (contents.includes('NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered")') && !contents.includes('speakReminder(callUUID:')) {
+      contents = contents.replace(
+        'NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }',
+        'NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n\n    speakReminder(callUUID: uuid, itemType: itemType)\n  }\n' + SPEAK_REMINDER_FUNCTION,
       );
     }
     // Upgrade path for installs that already have pushRegistry(didUpdate:)

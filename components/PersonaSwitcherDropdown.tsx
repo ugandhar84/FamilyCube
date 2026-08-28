@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
 import { BRAND } from './FamilyCubeLogo';
+import { showAlert } from './AppAlert';
 
 const ROLE_ACCENT: Record<string, string> = {
   parent: BRAND.teal,
@@ -236,6 +237,14 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   const listMaxHeight = Math.max(220, windowHeight - HEADER_OFFSET - 220);
 
   const handleSelect = (m: FamilyMember) => {
+    // See PersonaSwitcherSheet.tsx's identical guard: a pending invite has
+    // no auth_user_id and often no PIN yet, so it fell through the PIN
+    // branch below with no gate at all — letting anyone on this device
+    // switch into a member profile nobody has actually claimed.
+    if (m.inviteStatus && m.inviteStatus !== 'active') {
+      showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
+      return;
+    }
     if (m.pinEnabled && m.id !== activeMemberId) {
       setPinTarget(m);
     } else {

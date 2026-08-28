@@ -25,6 +25,7 @@ import { TYPO, SPACING, RADIUS } from '@/constants/theme';
 import { BRAND, AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import { uploadMemberAvatar } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
+import { useAuthStore } from '@/store/authStore';
 import { fmtDate, localDateStr } from '@/lib/dates';
 import { showAlert } from '@/components/AppAlert';
 
@@ -63,8 +64,21 @@ export default function CompleteProfileScreen() {
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
   };
 
+  const finishOnboarding = async () => {
+    // This is the actual end-of-flow marker profiles.onboarding_completed
+    // gates on (see app/_layout.tsx's OnboardingGate) — every exit from this
+    // screen used to skip straight to router.replace('/(tabs)') without ever
+    // calling this, so the flag stayed false forever and every subsequent
+    // login re-routed a fully-set-up account back through /onboarding.
+    try {
+      await useAuthStore.getState().completeOnboarding();
+    } catch (e: any) {
+      console.warn('[CompleteProfileScreen] completeOnboarding failed', e?.message);
+    }
+  };
+
   const handleSave = async () => {
-    if (!active) { router.replace('/(tabs)'); return; }
+    if (!active) { await finishOnboarding(); router.replace('/(tabs)'); return; }
     setSaving(true);
     try {
       let avatarUrl: string | undefined;
@@ -88,6 +102,7 @@ export default function CompleteProfileScreen() {
       });
     } finally {
       setSaving(false);
+      await finishOnboarding();
       router.replace('/(tabs)');
     }
   };
@@ -172,7 +187,11 @@ export default function CompleteProfileScreen() {
               : <Text style={s.saveBtnText}>{uploading ? 'Uploading…' : 'Save & Continue'}</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.skipBtn} onPress={() => router.replace('/(tabs)')} disabled={saving}>
+          <TouchableOpacity
+            style={s.skipBtn}
+            onPress={async () => { await finishOnboarding(); router.replace('/(tabs)'); }}
+            disabled={saving}
+          >
             <Text style={[s.skipText, { color: colors.textSecondary }]}>Skip for now</Text>
           </TouchableOpacity>
         </ScrollView>

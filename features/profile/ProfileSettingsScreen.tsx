@@ -24,6 +24,9 @@ import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
 import { supabase, uploadMemberAvatar } from '@/lib/supabase';
 import { showAlert } from '@/components/AppAlert';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { restorePurchases, isRevenueCatReady } from '@/lib/subscription';
+import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
@@ -366,6 +369,65 @@ function CurrencySheet({
       <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 10 }}>
         Example: 250 coins = {householdSettings.currencySymbol}{(250 * householdSettings.pointsToFiatRatio).toFixed(2)}
       </Text>
+    </AppBottomSheet>
+  );
+}
+
+// ─── Family Name sheet ──────────────────────────────────────────────────────
+// Parent-only (gated at the call site, isParent), mirrors CurrencySheet's
+// pattern. familyStore.familyName was previously stuck forever at its
+// 'Our Family' default — nothing fetched the real families.name row or
+// wrote a rename back to it — so this is the family's first working rename
+// path, not a UI-only fix on top of already-working backing logic.
+function FamilyNameSheet({
+  visible, onClose, currentName, renameFamily, colors, isDark,
+}: {
+  visible: boolean; onClose: () => void; currentName: string;
+  renameFamily: (name: string) => Promise<boolean>;
+  colors: any; isDark: boolean;
+}) {
+  const [name, setName] = useState(currentName);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { if (visible) { setName(currentName); setError(''); } }, [visible, currentName]);
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError('Enter a family name'); return; }
+    setSaving(true);
+    setError('');
+    const ok = await renameFamily(name);
+    setSaving(false);
+    if (ok) onClose();
+    else setError("Couldn't save — try again.");
+  };
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Family Name"
+      subtitle="Shown on the Hub, the widget, and shared with anyone you invite" minHeight="40%" maxHeight="60%">
+      <TextInput
+        value={name}
+        onChangeText={t => { setName(t); setError(''); }}
+        placeholder="e.g. The Smith Family"
+        placeholderTextColor={colors.textTertiary}
+        autoFocus
+        style={{
+          fontSize: TYPO.heading, fontWeight: '700', color: colors.textPrimary,
+          borderWidth: 1.5, borderColor: error ? colors.danger : colors.border, borderRadius: RADIUS.md,
+          paddingHorizontal: 14, paddingVertical: 12, backgroundColor: colors.surface, marginTop: 8,
+        }}
+      />
+      {error ? <Text style={{ color: colors.danger, fontSize: TYPO.caption, marginTop: 6 }}>{error}</Text> : null}
+      <TouchableOpacity
+        onPress={handleSave}
+        disabled={saving}
+        style={{
+          marginTop: 18, backgroundColor: colors.primary, borderRadius: RADIUS.md,
+          paddingVertical: 14, alignItems: 'center', opacity: saving ? 0.7 : 1,
+        }}
+      >
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800', fontSize: TYPO.body }}>Save</Text>}
+      </TouchableOpacity>
     </AppBottomSheet>
   );
 }
@@ -1093,9 +1155,33 @@ export default function ProfileSettingsScreen() {
   const removeMember = useFamilyStore(s => s.removeMember);
   const setActiveMember = useFamilyStore(s => s.setActiveMember);
   const { signOut } = useAuthStore();
+  const { tier, isTrial, trialDaysLeft } = useSubscriptionStore();
+  const [restoringPurchase, setRestoringPurchase] = useState(false);
+
+  const handleRestorePurchases = async () => {
+    const userId = useAuthStore.getState().session?.user?.id;
+    if (!userId) return;
+    if (!isRevenueCatReady()) {
+      showAlert('Not available', 'Restore requires a TestFlight or App Store build.');
+      return;
+    }
+    setRestoringPurchase(true);
+    const result = await restorePurchases(userId);
+    setRestoringPurchase(false);
+    if (result.success && result.tier && result.tier !== 'free') {
+      showAlert('Restored! 🎉', 'Your Family Plan subscription is active.', [{ text: 'Great!' }]);
+    } else if (result.error) {
+      showAlert('Restore failed', result.error);
+    } else {
+      showAlert('Nothing to restore', 'No active subscription found for this Apple ID.');
+    }
+  };
   const householdSettings = useChoreStore(s => s.householdSettings);
   const updateHouseholdSettings = useChoreStore(s => s.updateHouseholdSettings);
   const [showCurrencySheet, setShowCurrencySheet] = useState(false);
+  const familyName = useFamilyStore(s => s.familyName);
+  const renameFamily = useFamilyStore(s => s.renameFamily);
+  const [showFamilyNameSheet, setShowFamilyNameSheet] = useState(false);
 
   // Same "who's actually in this family right now" filter RosterTab uses —
   // soft-deleted members and not-yet-claimed pending invitees stay out of
@@ -1486,6 +1572,36 @@ export default function ProfileSettingsScreen() {
             colors={colors} isDark={isDark} />
         )}
 
+        {/* Subscription */}
+        <View style={{ marginBottom: 24 }}>
+          <SectionHeader label="Subscription" colors={colors} />
+          <Row
+            icon="star-outline"
+            label={
+              isTrial
+                ? `Free Trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left`
+                : tier !== 'free'
+                  ? 'Family Plan — Active'
+                  : 'Free Plan'
+            }
+            subtitle={
+              tier === 'free' && !isTrial
+                ? 'Tap to unlock full access'
+                : isTrial
+                  ? 'Full access until trial ends'
+                  : undefined
+            }
+            onPress={tier === 'free' && !isTrial ? () => usePaywallSheetStore.getState().show({ headline: 'Family Plan', body: 'Unlock full access for your whole family.' }) : undefined}
+            colors={colors} isDark={isDark}
+          />
+          <Row
+            icon="refresh-outline"
+            label={restoringPurchase ? 'Restoring…' : 'Restore Purchases'}
+            onPress={restoringPurchase ? undefined : handleRestorePurchases}
+            colors={colors} isDark={isDark}
+          />
+        </View>
+
         {/* Notifications — was 6+ toggle rows sitting flat on this page;
             collapsed into one summary row that opens NotificationsSheet
             (categories, quiet hours, call alerts all together), same
@@ -1571,6 +1687,32 @@ export default function ProfileSettingsScreen() {
               }
             />
           </View>
+        )}
+
+        {/* Family Name — familyName was previously stuck forever at the
+            store's 'Our Family' default (nothing fetched families.name or
+            wrote a rename back to it); this is the first working rename
+            path. Same parent-editable / read-only-for-others split as
+            Currency below. */}
+        <View style={{ marginBottom: 24 }}>
+          <SectionHeader label="Family" colors={colors} />
+          <Row
+            icon="home-outline"
+            label={familyName}
+            subtitle={isParent ? 'Tap to rename' : undefined}
+            onPress={isParent ? () => setShowFamilyNameSheet(true) : undefined}
+            colors={colors} isDark={isDark}
+          />
+        </View>
+
+        {isParent && (
+          <FamilyNameSheet
+            visible={showFamilyNameSheet}
+            onClose={() => setShowFamilyNameSheet(false)}
+            currentName={familyName}
+            renameFamily={renameFamily}
+            colors={colors} isDark={isDark}
+          />
         )}
 
         {/* Currency — the coins-to-real-money conversion every kid's wallet/

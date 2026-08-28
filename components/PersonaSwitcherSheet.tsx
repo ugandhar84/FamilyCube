@@ -16,6 +16,7 @@ import { useFamilyStore, FamilyMember } from '@/store/familyStore';
 import { BRAND } from './FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from './FamilyAvatar';
+import { showAlert } from './AppAlert';
 
 // ─── Role theming ─────────────────────────────────────────────────────────────
 
@@ -451,6 +452,18 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
   const allNames = members.map(m => m.name);
 
   const handleSelect = (m: FamilyMember) => {
+    // A pending invite (invite_status !== 'active') has no auth_user_id and
+    // typically no PIN yet — that member row exists only as a placeholder
+    // waiting to be claimed via their own invite code (join-family), not as
+    // a profile anyone on this device should be able to switch into. Without
+    // this check, an un-joined member with pinEnabled falsy (no PIN set)
+    // fell through the PIN branch below with zero gate at all, letting
+    // anyone holding this device switch straight into their still-unclaimed
+    // profile.
+    if (m.inviteStatus && m.inviteStatus !== 'active') {
+      showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
+      return;
+    }
     if (m.pinEnabled && m.id !== activeMemberId) {
       setPinTarget(m);
     } else {

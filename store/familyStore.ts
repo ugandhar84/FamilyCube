@@ -220,6 +220,12 @@ interface FamilyState {
   setMembers: (members: FamilyMember[]) => void;
   setActiveMember: (id: string) => void;
   setFamilyName: (name: string) => void;
+  // Persists to families.name (setFamilyName only ever touched local state —
+  // there was previously no path back to the DB at all, so a rename made
+  // here would look like it worked and then silently revert on next sync).
+  // Returns false on failure so the settings screen can show an error
+  // instead of optimistically closing.
+  renameFamily: (name: string) => Promise<boolean>;
   addMember: (member: Omit<FamilyMember, 'id'>) => Promise<void>;
   // Per-invitee invite flow (Profile's "Add family member" form) — creates
   // a minimal real member row (name/relationship/role/optional DOB+email,
@@ -386,6 +392,23 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   familyName: 'Our Family',
 
   setFamilyName: (name) => set({ familyName: name }),
+
+  renameFamily: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const familyId = get().members.find(m => m.familyId)?.familyId;
+    if (!familyId) return false;
+    const { error } = await supabase.from('families').update({ name: trimmed }).eq('id', familyId);
+    if (error) { console.warn('[familyStore] renameFamily failed', error.message); return false; }
+    set({ familyName: trimmed });
+    // Any other parent's device picks this up via the existing members
+    // realtime channel's warm-up path next time it calls syncFromDB(); this
+    // is a plain UPDATE with no realtime subscription of its own on
+    // families, so it isn't instantly pushed the way member/quest changes
+    // are — acceptable since a family's display name changes rarely and
+    // isn't time-sensitive the way live status fields are.
+    return true;
+  },
 
   setMembers: (members) => {
     const deduped = dedupeMembers(members);
@@ -841,6 +864,18 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           warmupCustomCache(familyId).catch(() => {});
         });
         ensureRealtime(familyId, set, get);
+
+        // familyName was previously stuck at its 'Our Family' store default
+        // forever — nothing ever fetched families.name (the actual name set
+        // during onboarding) or wrote it back into this store. Fetched here
+        // so every screen reading useFamilyStore().familyName (TodayView,
+        // AppHeader, ProfilePickerScreen, the widget sync) shows the real
+        // name instead of the fallback for the rest of the app's lifetime.
+        supabase.from('families').select('name').eq('id', familyId).maybeSingle()
+          .then(({ data: family, error: familyErr }) => {
+            if (familyErr) { console.warn('[familyStore] family name fetch failed', familyErr.message); return; }
+            if (family?.name) set({ familyName: family.name });
+          });
       }
     } catch (e) {
       console.warn('[familyStore] syncFromDB:', e);

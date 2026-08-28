@@ -18,58 +18,76 @@
 
 export const lightColors = {
   // ── Brand primaries — Dusty Terracotta ──────────────────────────────────
-  primary:      '#CD7B57',        // Dusty terracotta (main brand, primary actions) — deepened a step, still short of the original loud version
-  primaryLight: '#F3E1D6',
-  primaryDark:  '#A05939',
+  // "Bold tiles" palette (approved after live mock comparison — see
+  // palette_mock artifact, session 2026-08-28): *Light tint tokens are the
+  // tile/pill/badge BACKGROUNDS most of the screen's colored area actually
+  // consists of — punching up only the small icon-circle colors and leaving
+  // these washed-out tints barely moved was why an earlier saturation pass
+  // read as "no different from current" (direct user feedback on the first
+  // mock). These are meaningfully darker/more saturated than a typical
+  // "light" tint, by design.
+  primary:      '#BF4E12',        // Bold saturated terracotta (was dusty #CD7B57)
+  primaryLight: '#EACAAC',
+  primaryDark:  '#8A3A0D',
   primaryMid:   '#DA9977',
-  primaryText:  '#A05939',
+  primaryText:  '#8A3A0D',
 
   // ── Teal slot — Muted Sage (Connect / calm / parent) ────────────────────
-  teal:         '#69927C',
-  tealLight:    '#E3EDE8',
-  tealDark:     '#4F7562',
+  teal:         '#3C805B',        // Bold saturated sage (was dusty #69927C)
+  tealLight:    '#C7E3D5',
+  tealDark:     '#245A3D',
 
   // ── Amber — Organize (kids earn coins), dustier gold not lightened orange
-  amber:        '#C9964F',
-  amberLight:   '#F2E6CE',
-  amberDark:    '#A17638',
+  amber:        '#BF7600',        // Bold saturated amber (was dusty #C9964F)
+  amberLight:   '#EADA98',
+  amberDark:    '#8A5500',
 
   // ── Pink slot — Muted Lavender (Care / third accent) ────────────────────
-  pink:         '#9686B5',
-  pinkLight:    '#E9E3F1',
-  pinkDark:     '#75699A',
+  pink:         '#6C519F',        // Bold saturated lavender (was dusty #9686B5)
+  pinkLight:    '#D4C3EA',
+  pinkDark:     '#4A3670',
 
   // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
   navy:         '#2C2722',
   navyLight:    '#F2ECE1',
 
   // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#69927C',        // Sage = Connect = parents
-  parentLight:  '#E3EDE8',
-  parentDark:   '#4F7562',
+  parent:       '#3C805B',        // Sage = Connect = parents
+  parentLight:  '#C7E3D5',
+  parentDark:   '#245A3D',
 
-  kid:          '#C9964F',        // Amber = Organize = kids earn coins
-  kidLight:     '#F2E6CE',
-  kidDark:      '#A17638',
+  // NOTE: kid was historically an exact alias of amber (both #C9964F) —
+  // Grocery and Meals action tiles (both tinted from this pair) were
+  // therefore guaranteed-identical colors sitting side by side, flagged as
+  // "hardly visible/same color" in review. Fixed at the CALL SITE
+  // (ParentQuickActions.tsx: Grocery now tints from colors.primary instead
+  // of colors.kid) rather than by un-aliasing kid from amber here — every
+  // other kid-role UI surface (avatars, badges, roster) still correctly
+  // wants kid===amber as one coherent "Organize" identity; only that one
+  // tile row actually needed two more distinct hues than the brand has role
+  // slots for.
+  kid:          '#BF7600',        // Amber = Organize = kids earn coins
+  kidLight:     '#EADA98',
+  kidDark:      '#8A5500',
 
   // ── Semantics ─────────────────────────────────────────────────────────
   danger:       '#B85F45',
-  dangerLight:  '#F3E1D6',
+  dangerLight:  '#EACAAC',
   dangerDark:   '#8E4632',
-  warning:      '#C9964F',
-  warningLight: '#F2E6CE',
-  warningDark:  '#A17638',
-  success:      '#69927C',
-  successLight: '#E3EDE8',
-  successDark:  '#4F7562',
+  warning:      '#BF7600',
+  warningLight: '#EADA98',
+  warningDark:  '#8A5500',
+  success:      '#3C805B',
+  successLight: '#C7E3D5',
+  successDark:  '#245A3D',
   info:         '#5F8CB8',
   infoLight:    '#DEE9F2',
   infoDark:     '#456A8E',
 
   // ── Accent (lavender / care) ────────────────────────────────────────────
-  accent:       '#9686B5',
-  accentLight:  '#E9E3F1',
-  accentDark:   '#75699A',
+  accent:       '#6C519F',
+  accentLight:  '#D4C3EA',
+  accentDark:   '#4A3670',
 
   // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
   background:   '#FDFBF7',
@@ -85,7 +103,11 @@ export const lightColors = {
   // ── Text ──────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
   textSecondary: '#6B5F52',
-  textTertiary:  '#8A7D6C',
+  // Darkened from #8A7D6C — that value read as 3.79-4.01:1 against
+  // card/background, under WCAG AA's 4.5:1 minimum for normal text
+  // (flagged in UI review: subtitles/dates/timestamps using this token
+  // read as near-illegible faint gray). #756A5B clears 4.5:1 on both.
+  textTertiary:  '#756A5B',
   textInverse:   '#FFFFFF',
   textDisabled:  '#D5CCBE',
 
@@ -180,7 +202,10 @@ export const darkColors: typeof lightColors = {
   // is easier to read for long sessions while staying plenty legible.
   textPrimary:   '#EDE8E0',
   textSecondary: '#B8AC9C',
-  textTertiary:  '#7A6E60',
+  // Lightened from #7A6E60 — same WCAG AA contrast fix as the light-mode
+  // textTertiary above (that value was 3.35-3.7:1 against card/background,
+  // under the 4.5:1 minimum). #988978 clears 4.5:1 on both.
+  textTertiary:  '#988978',
   textInverse:   '#1A1714',
   textDisabled:  '#4A4038',
 

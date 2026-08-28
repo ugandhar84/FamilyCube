@@ -1,0 +1,38 @@
+# EAS CLI compresses the project for build using .gitignore's patterns by
+# default when no .easignore exists. This file overrides that for a LOCAL
+# build's sake specifically (`eas build --local`) — cloud builds don't need
+# any of these exclusions lifted, since they get GOOGLE_SERVICES_PLIST and
+# every EXPO_PUBLIC_* env var injected separately via EAS's own cloud
+# secrets, bypassing this archive entirely. A local build has no such
+# injection step at all, so anything its prebuild or JS bundling step
+# actually needs to read from disk has to be IN the archive, or the build
+# either fails outright (missing GoogleService-Info.plist crashes prebuild)
+# or silently succeeds with broken values baked in (a missing .env meant an
+# earlier local build shipped with lib/supabase.ts's placeholder.supabase.co
+# fallback silently baked into the bundle — verified via `strings` on the
+# built .ipa, not caught by any build-time error).
+#
+# .env holds only EXPO_PUBLIC_* values here — meant to be public by Expo's
+# own naming convention (they end up embedded in the shipped JS bundle
+# regardless of how they got there), so there's no secrecy loss un-ignoring
+# it. Confirmed: this repo's .env carries no non-EXPO_PUBLIC_ secrets; if
+# that ever changes, split those into a separate git-ignored file instead of
+# re-ignoring this one.
+
+supabase/functions/.env
+google-services.json
+
+node_modules/
+
+.expo/
+dist/
+web-build/
+
+android/
+ios/
+!modules/*/ios/
+
+.DS_Store
+*.log
+*.ipa
+build-*.ipa

@@ -155,7 +155,15 @@ export default function HubScreen() {
         keyboardShouldPersistTaps="handled"
         style={{ backgroundColor: colors.background }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingTop: 2, paddingBottom: 60 }}
+        // The shared Ask Cube FAB (app/(tabs)/_layout.tsx) floats at
+        // bottom: insets.bottom + 74, is 52px tall, and sits ABOVE this
+        // screen's content in z-order — its full vertical reach is roughly
+        // insets.bottom + 74 to insets.bottom + 126 from the screen edge.
+        // 60px of bottom padding here let scrolled content (e.g. the last
+        // line of Household Backlog) end up directly underneath and
+        // obscured by it (flagged in UI review). 140 clears the FAB's full
+        // span with room to spare regardless of device inset.
+        contentContainerStyle={{ paddingTop: 2, paddingBottom: 140 }}
       >
         {isParent && (
           <ParentView

@@ -16,7 +16,7 @@ import { Clock, Briefcase, CheckCircle2 } from 'lucide-react-native';
 import { SectionCard, LiveDot } from './hubComponents';
 import { TimelineCard } from './hubComponents';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
-import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
+import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
@@ -36,7 +36,6 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
   // reads the exact same underlying chores array and would double-count.
   otherAttentionCount?: number;
 }) {
-  const { familyName } = useFamilyStore();
   const { quests } = useQuestStore();
   const { events } = useEventStore();
   const firstName = activeMember.name.split(' ')[0];
@@ -74,17 +73,13 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
           {'\n'}
           <Text style={{ fontWeight: '600' }}>{firstName}</Text>
         </Text>
+        {/* Family name already shown in AppHeader right above (tied to the
+            "Switch Profile" action there) — repeating it here was pure
+            duplication with no distinct purpose, flagged in UI review. */}
         <Text style={{
           fontSize: TYPO.label, fontWeight: '600',
           color: colors.textSecondary,
           marginTop: 4,
-        }}>
-          {familyName.replace(/\s*family$/i, '')} Family
-        </Text>
-        <Text style={{
-          fontSize: TYPO.label, fontWeight: '600',
-          color: colors.textSecondary,
-          marginTop: 2,
         }}>
           {weekday}, {monthDay}
         </Text>
@@ -220,8 +215,16 @@ export function TodayView({
               {upcoming.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
                   <CheckCircle2 size={18} color={colors.textTertiary} />
+                  {/* "All done for today" alone read as "nothing happened
+                      today at all" — sitting right above the "N completed"
+                      toggle (which, once expanded, shows exactly what DID
+                      happen) created a mixed signal at a glance, flagged in
+                      UI review. Naming what's actually done removes the
+                      apparent contradiction. */}
                   <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
-                    All done for today
+                    {past.length > 0
+                      ? `All done — ${past.length} completed today`
+                      : 'All done for today'}
                   </Text>
                 </View>
               ) : (

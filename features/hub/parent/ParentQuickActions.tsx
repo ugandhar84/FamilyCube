@@ -22,7 +22,14 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
     // saw inconsistent text, unlike every other tile in this row which
     // never changes its label. Keep the label fixed; the count now shows as
     // a small badge on the icon chip instead (see the badge render below).
-    { key: 'grocery', label: 'Grocery', icon: ShoppingCart, tint: colors.kid, badge: groceryCount, onPress: () => router.push('/(tabs)/grocery' as any) },
+    // colors.kid IS colors.amber (same hex — see constants/colors.ts's role
+    // mapping) — Grocery and Meals both being "amber" made them visually
+    // identical tiles sitting side by side, flagged in UI review ("hardly
+    // visible" against each other). Only 4 distinct brand hues exist total
+    // and Scan Flyer/Add Task already claim accent/parent, so Grocery takes
+    // the one remaining unclaimed hue (primary/terracotta) instead of
+    // colliding with Meals.
+    { key: 'grocery', label: 'Grocery', icon: ShoppingCart, tint: colors.primary, badge: groceryCount, onPress: () => router.push('/(tabs)/grocery' as any) },
     // Re-added per explicit direction — was previously pulled from both the
     // Apps grid and this row (see VaultScreen.tsx's FEATURES comment).
     // Links straight to its own route (app/(tabs)/meals.tsx), same pattern
@@ -31,7 +38,8 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
     // colors.danger (red) previously tinted this tile with no real reason —
     // it isn't a warning/alert action, it just read as one sitting next to
     // three calm tiles. amber reads as "food" without borrowing the app's
-    // one alert color.
+    // one alert color. Kept as amber (not moved) — Grocery moved instead,
+    // since amber/food is a stronger, more legible pairing than terracotta/food.
     { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.amber, onPress: () => { router.push('/(tabs)/meals' as any); } },
   ];
 

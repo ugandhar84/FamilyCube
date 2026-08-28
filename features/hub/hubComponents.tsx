@@ -109,8 +109,13 @@ export function SectionCard({
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {/* Every section heading across the Hub (TODAY'S TIMELINE,
+                HOUSEHOLD BACKLOG, etc.) rendered in textSecondary — a
+                heading is the strongest text on its row, not secondary
+                text, and the gray read as hard-to-read (flagged directly).
+                textPrimary (charcoal) for the actual heading weight. */}
             <Text style={{
-              fontSize: large ? 16 : TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+              fontSize: large ? 16 : TYPO.sectionLabel, fontWeight: '800', color: colors.textPrimary,
               textTransform: large ? 'none' : 'uppercase', letterSpacing: large ? 0 : LETTER_SPACING.sectionLabel,
             }}>{title}</Text>
             {headerAccessory}
@@ -1375,7 +1380,12 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
       {/* Card sits flush with the section's own 16px frame — the card's
           own time chip (from EventCardRow) replaces the old separate
           time-axis column, so nothing needs to be inset for it. */}
-      <View style={{ marginBottom: isLast ? 4 : 10, opacity: isPast ? 0.45 : 1 }}>
+      {/* 0.45 opacity stacked on textTertiary's already-low contrast made a
+          past-but-confirmed event (e.g. a completed doctor's appointment)
+          read as nearly illegible rather than "done" — flagged in UI
+          review. 0.7 still signals "not the active focus" without failing
+          legibility outright. */}
+      <View style={{ marginBottom: isLast ? 4 : 10, opacity: isPast ? 0.7 : 1 }}>
         <EventCardRow
           ev={ev} members={members} colors={colors} isDark={isDark}
           onPress={() => setSheetOpen(true)}

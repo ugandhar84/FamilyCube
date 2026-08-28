@@ -28,13 +28,18 @@ import Animated, {
 // useTheme() should prefer colors.primary/colors.parent/etc. over BRAND.*
 // so they get the correct value per light/dark theme.
 export const BRAND = {
-  amber:  '#C9964F',
+  // "Bold tiles" palette — see constants/colors.ts's matching light-mode
+  // update (session 2026-08-28: dusty/washed-out tones darkened+saturated
+  // after live mock comparison). *2 variants (used for dark-mode gradients
+  // elsewhere) intentionally left at their original softer values — no
+  // dark-mode mock was reviewed/approved this round, only light mode.
+  amber:  '#BF7600',
   amber2: '#D9AF74',
-  teal:   '#69927C',
+  teal:   '#3C805B',
   teal2:  '#86AC97',
-  purple: '#CD7B57',
+  purple: '#BF4E12',
   purple2:'#DB9270',
-  pink:   '#9686B5',
+  pink:   '#6C519F',
   pink2:  '#AC9BC7',
   navy:   '#2C2722',
   white:  '#FFFFFF',

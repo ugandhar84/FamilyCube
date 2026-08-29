@@ -408,6 +408,53 @@ function getActiveMemberId(): string | null {
   } catch { return null; }
 }
 
+// ─── Ride/driver assignment notifications ──────────────────────────────────────
+// updateEvent is the single place every driver/helper assignment change flows
+// through (offer, accept, decline) — previously the only signal anyone got
+// was a chat message on decline; assignment/reassignment and acceptance sent
+// nothing, and the requesting kid was never told once a ride was actually
+// locked in. Routes through the same family-notifier pipeline as every other
+// real notification (rewardStore/helpStore/choreStore), best-effort, never
+// blocking the actual event update.
+function memberById(memberId: string | undefined | null): { id: string; name: string; role: string } | null {
+  if (!memberId) return null;
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const m = useFamilyStore.getState().members.find((mm: any) => mm.id === memberId);
+    return m ? { id: m.id, name: m.name, role: m.role } : null;
+  } catch { return null; }
+}
+
+// "Other parents" for a ride ping-pong — every parent in the family besides
+// the actor themselves. Mirrors hubComponents.tsx's own
+// `members.filter(m => m.role === 'parent' && ...)` pattern for resolving
+// co-parents.
+function otherParentIds(excludeIds: (string | null | undefined)[]): string[] {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const members = useFamilyStore.getState().members as any[];
+    const exclude = new Set(excludeIds.filter(Boolean) as string[]);
+    return members.filter(m => m.role === 'parent' && !exclude.has(m.id)).map(m => m.id);
+  } catch { return []; }
+}
+
+function notifyRideAssignment(
+  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_confirmed_for_kid' | 'ride_pool_opened',
+  memberIds: string[],
+  excludeMemberId: string | null,
+  payload: Record<string, unknown>,
+) {
+  const familyId = getFamilyId();
+  const recipients = memberIds.filter(id => id && id !== excludeMemberId);
+  if (!familyId || !recipients.length) return;
+  supabase.functions.invoke('family-notifier', {
+    body: {
+      type, familyId, memberIds: recipients, payload, persist: true,
+      excludeMemberId: excludeMemberId ?? undefined,
+    },
+  }).catch(e => console.warn('[eventStore] ride notify failed:', e?.message));
+}
+
 function today(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1294,6 +1341,18 @@ export const useEventStore = create<EventState>((set, get) => ({
     const justDeclinedHelper = updates.helperStatus === 'rejected' && prevEvent?.helperStatus !== 'rejected';
     const justDeclinedDriver = updates.driverStatus === 'rejected' && prevEvent?.driverStatus !== 'rejected';
     const justDeclined = justDeclinedHelper || justDeclinedDriver;
+    // Parent-to-parent assignment ping-pong (offer/accept/confirm) — mirrors
+    // the shape of the justDeclined* checks above, but for the two other
+    // transitions that previously sent zero real notifications: a new
+    // driver/helper name just being set (an offer/reassignment), and a
+    // status transitioning INTO 'confirmed' (an acceptance). Both are
+    // "changed to X, wasn't X before" checks against prevEvent, same as
+    // justDeclinedHelper/justDeclinedDriver.
+    const justAssignedHelper = !!updates.helper && updates.helper !== prevEvent?.helper;
+    const justAssignedDriver = !!updates.driverName && updates.driverName !== prevEvent?.driverName;
+    const justConfirmedHelper = updates.helperStatus === 'confirmed' && prevEvent?.helperStatus !== 'confirmed';
+    const justConfirmedDriver = updates.driverStatus === 'confirmed' && prevEvent?.driverStatus !== 'confirmed';
+    const justConfirmed = justConfirmedHelper || justConfirmedDriver;
     // Was: reopened the pool but left the declined person's name/status
     // sitting in helper/driverName — eventAssignee() (which prefers name
     // truthiness) then kept reporting them as the assignee everywhere,
@@ -1368,6 +1427,129 @@ export const useEventStore = create<EventState>((set, get) => ({
         }
       } catch (e) {
         console.warn('[eventStore] decline notification failed', e);
+      }
+    }
+
+    // ── Real family-notifier notifications ────────────────────────────────────
+    // The chat message above is kept as-is (it's an existing, presumably
+    // still-wanted in-thread record of the decline) — this ADDS a real
+    // bell/push notification alongside it via family-notifier, same
+    // recipients, since a chat message alone is easy to miss and doesn't
+    // populate the notification bell.
+    if (updated) {
+      const actorId = getActiveMemberId();
+      const declinerName = justDeclinedDriver ? prevEvent?.driverName : prevEvent?.helper;
+
+      // 1. Offered/reassigned — a new driver/helper name was just set.
+      // Notify the newly-assigned person (only if they're a parent — a
+      // kid/teen/GP self-claim goes through claimHelperSlot, a separate
+      // path this task deliberately doesn't touch). Also ping whichever
+      // OTHER parent was the one who made this assignment (prevEvent's
+      // last editor), if that's a different parent than the new assignee —
+      // the "other parent" stakeholder side of the ping-pong.
+      if ((justAssignedHelper || justAssignedDriver) && !justDeclined) {
+        const newAssigneeName = justAssignedDriver ? updates.driverName : updates.helper;
+        const newAssignee = (() => {
+          try {
+            const { useFamilyStore } = require('@/store/familyStore');
+            return (useFamilyStore.getState().members as any[]).find(m => m.role === 'parent' && m.name === newAssigneeName) ?? null;
+          } catch { return null; }
+        })();
+        const recipientIds = new Set<string>();
+        if (newAssignee?.id) recipientIds.add(newAssignee.id);
+        // The other parent(s) — whoever isn't the actor and isn't the new
+        // assignee — get a heads-up too, mirroring hubComponents.tsx's own
+        // conflict-banner resolution of "other parents".
+        for (const pid of otherParentIds([actorId, newAssignee?.id])) recipientIds.add(pid);
+        if (recipientIds.size) {
+          notifyRideAssignment('ride_assignment_offered', [...recipientIds], actorId, {
+            eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+            byName: memberById(actorId)?.name,
+          });
+        }
+      }
+
+      // 2. Accepted/confirmed — status just transitioned to 'confirmed'.
+      // Notify the other parent(s) (not the confirmer, not the requesting
+      // kid — the kid gets its own single, distinct notification below).
+      if (justConfirmed) {
+        const confirmerName = justConfirmedDriver ? updated.driverName : updated.helper;
+        const recipients = otherParentIds([actorId]);
+        if (recipients.length) {
+          notifyRideAssignment('ride_assignment_accepted', recipients, actorId, {
+            eventTitle: updated.title, eventId: updated.id, byName: confirmerName ?? memberById(actorId)?.name,
+          });
+        }
+      }
+
+      // 3. Declined — real notification alongside the chat message above,
+      // same recipients (prevEvent.updatedBy), excluding the actor.
+      if (justDeclined) {
+        const recipients = new Set<string>();
+        if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
+        if (recipients.size) {
+          notifyRideAssignment('ride_assignment_declined', [...recipients], actorId, {
+            eventTitle: updated.title, eventId: updated.id, byName: declinerName,
+          });
+        }
+      }
+
+      // 4. Final confirmation to the kid — exactly once, only on the actual
+      // transition INTO 'confirmed', never on intermediate offer/decline
+      // steps or on a later unrelated updateEvent call while it's already
+      // confirmed (justConfirmed is already gated on prevEvent's status
+      // being something other than 'confirmed', so this can't refire for
+      // the same confirmation).
+      if (justConfirmed) {
+        const driverOrHelperName = justConfirmedDriver ? updated.driverName : updated.helper;
+        const kidId = updated.memberId;
+        const kid = memberById(kidId);
+        // Treat 'kid' and 'teen' as one notifiable "child" recipient
+        // category, consistent with the rest of the app (e.g.
+        // EventFormModal's role checks) — a senior/grandparent-owned event
+        // (rare, but memberId isn't restricted to kids) doesn't get this
+        // "ride confirmed" framing.
+        if (kidId && kidId !== actorId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
+          notifyRideAssignment('ride_confirmed_for_kid', [kidId], actorId, {
+            eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+            driverName: driverOrHelperName,
+          });
+        }
+      }
+
+      // 5. Pool opened to grandparents/teens — a parent flipping
+      // isOpenToGrandparents/isOpenToTeens false→true previously only wrote
+      // a silent activity_log row (logUpdateActivity's gp_welcome_changed/
+      // teen_welcome_changed below) with no signal to anyone actually
+      // eligible to claim the new slot. Only the transition matters (not
+      // "was already true" — that would refire on every unrelated
+      // updateEvent call while the flag stays on), same shape as
+      // justDeclined/justConfirmed above. Gated the same way each pool's
+      // own view is: SeniorView shows any isOpenToGrandparents event to
+      // every 'senior' member, TeenView's pool is hasCar-gated, so a
+      // teen who opted out of having a car couldn't claim it anyway and
+      // shouldn't be pinged as if they could.
+      const justOpenedToGrandparents = updates.isOpenToGrandparents === true && prevEvent?.isOpenToGrandparents !== true;
+      const justOpenedToTeens = updates.isOpenToTeens === true && prevEvent?.isOpenToTeens !== true;
+      if (justOpenedToGrandparents || justOpenedToTeens) {
+        try {
+          const { useFamilyStore } = require('@/store/familyStore');
+          const members = useFamilyStore.getState().members as any[];
+          const recipientIds = new Set<string>();
+          if (justOpenedToGrandparents) {
+            for (const m of members) if (m.role === 'senior' && m.id !== actorId) recipientIds.add(m.id);
+          }
+          if (justOpenedToTeens) {
+            for (const m of members) if (m.role === 'teen' && m.hasCar && m.id !== actorId) recipientIds.add(m.id);
+          }
+          if (recipientIds.size) {
+            notifyRideAssignment('ride_pool_opened', [...recipientIds], actorId, {
+              eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+            });
+          }
+        } catch (e) {
+          console.warn('[eventStore] pool-opened notification failed', e);
+        }
       }
     }
   },
@@ -1508,6 +1690,19 @@ export const useEventStore = create<EventState>((set, get) => ({
         // require()-based cross-store call as choreStore.ts's
         // declineGrandparentQuest/recallParentQuest (no static import, to
         // avoid a store-to-store import cycle).
+        //
+        // Was: chat-only — the creator's own bell/push never fired, only a
+        // thread message easy to miss (same "chat instead of a real
+        // notification" gap updateEvent's decline/confirm paths above had).
+        // The chat message is kept as an in-thread record; a real
+        // family-notifier call is added alongside it. Also — was: the
+        // requesting kid was never told at all that a GP/teen self-claim
+        // (as opposed to a parent-driven reassignment via updateEvent)
+        // just confirmed their ride. A parent reassignment and a GP/teen
+        // self-claim are two different code paths that both end in "a
+        // driver is now confirmed," so this reuses updateEvent's own
+        // 'ride_confirmed_for_kid' type rather than inventing a
+        // near-duplicate — same title/body the kid would get either way.
         try {
           const merged = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
           const creatorId = merged?.createdBy;
@@ -1517,6 +1712,17 @@ export const useEventStore = create<EventState>((set, get) => ({
             const roleLabel = role === 'driver' ? 'driver' : 'helper';
             useChatStore.getState().sendMessage(creatorId, claimantId ?? creatorId,
               `✅ ${claimantName} confirmed as ${roleLabel} for "${merged?.title ?? 'your event'}"`);
+            notifyRideAssignment('ride_assignment_accepted', [creatorId], claimantId, {
+              eventTitle: merged?.title, eventId: id, byName: claimantName,
+            });
+          }
+          const kidId = merged?.memberId;
+          const kid = memberById(kidId);
+          if (kidId && kidId !== claimantId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
+            notifyRideAssignment('ride_confirmed_for_kid', [kidId], claimantId, {
+              eventTitle: merged?.title, eventId: id, eventTime: merged?.time,
+              driverName: claimantName,
+            });
           }
         } catch (e) {
           console.warn('[eventStore] claimHelperSlot creator notification failed', e);

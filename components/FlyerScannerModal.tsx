@@ -434,8 +434,21 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={resetAndClose}>
       <Pressable style={f.backdrop} onPress={resetAndClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
-        <View style={[f.sheet, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: sheetMaxHeight,
-          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }]}>
+        {/* Shadow lives on this OUTER view (no overflow/borderRadius clipping
+            of its own) — a shadow needs to paint outside the view's bounds to
+            be visible at all, but overflow:'hidden' clips to the rounded
+            bounds. Putting both (shadow + overflow:'hidden' + borderRadius)
+            on the SAME View, as this used to, made iOS render a rectangular
+            sliver of the shadow's own layer bleeding through above the
+            rounded top corners — live-reported as a boxy/square finish at
+            the top instead of a clean curve. AppBottomSheet.tsx elsewhere in
+            this app avoids the conflict a different way (it has a shadow but
+            no overflow:'hidden' at all); this sheet DOES need the clip
+            (image thumbnails/scroll content would otherwise bleed past the
+            rounded corners), so splitting shadow and clip onto two nested
+            views is the fix here instead. */}
+        <View style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
+          <View style={[f.sheet, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: sheetMaxHeight }]}>
           <View style={[f.handle, { backgroundColor: colors.border }]} />
 
           {/* ── TOAST ── */}
@@ -1059,6 +1072,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
             </ScrollView>
           )}
 
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>

@@ -12,6 +12,9 @@ import { localDateStr, todayLocal } from '@/lib/dates';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import { MedicationsCard } from './senior/MedicationsCard';
+import { useMedications } from '@/features/vault/tabs/health/useMedications';
+import { today as medsToday } from '@/features/vault/tabs/health/types';
 import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
@@ -352,6 +355,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const actionCount = dedupedPendingForCount.length + dedupedRideRequiredForCount.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
+
+  // Parent's own medication tracking — same real dosage/frequency/schedule
+  // form and shared useMedications hook Grandparent's Hub and the Health
+  // tab use (single source of truth across all three). Parent's Hub
+  // previously had no medication card at all.
+  const { meds: parentMeds, addMed: addParentMed, toggleMed: toggleParentMed, deleteMed: deleteParentMed } = useMedications(familyId, active.id);
+  const parentMedsTaken = Object.fromEntries(
+    parentMeds.map(m => [m.id, m.taken_date === medsToday()])
+  ) as Record<string, boolean>;
 
   // Scenario 1.4 — approving a kid's quest_proposal request must create a
   // real, live pool quest (not just flip the request's own status the way
@@ -699,6 +711,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       {/* Family Leaderboard (HouseholdSnapshotCard) hidden from the Hub per
           explicit request — component/data left fully intact, just not
           rendered, so this is a one-line revert if it's ever wanted back. */}
+
+      <MedicationsCard
+        meds={parentMeds} medsTaken={parentMedsTaken} toggleMed={toggleParentMed}
+        onAddMed={addParentMed} onRemoveMed={deleteParentMed}
+        colors={colors} isDark={isDark} active={active}
+      />
 
       {/* Scenarios 9.2/9.3 — temporary-approver / caregiver-mode grants. */}
       <View style={pad}>

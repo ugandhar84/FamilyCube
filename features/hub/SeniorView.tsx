@@ -24,7 +24,8 @@ import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { GroupBand } from './senior/seniorTheme';
 import { EmergencySosCard } from './senior/EmergencySosCard';
 import { YourRidesSection } from './senior/YourRidesSection';
-import { MedicationsCard, type Medication } from './senior/MedicationsCard';
+import { MedicationsCard } from './senior/MedicationsCard';
+import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { LendAHandCard } from './senior/LendAHandCard';
 import { CheerSquadSection } from './senior/CheerSquadSection';
 import { SendBonusCard } from './senior/SendBonusCard';
@@ -204,36 +205,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // features/vault/tabs/HealthTab.tsx: dosage, pharmacy, refill dates,
   // escalation, multi-device realtime sync). A grandparent's "taken" taps
   // here never showed up in Vault/Health, and vice versa — two medication
-  // lists that could silently disagree about the same person's meds.
-  // Now reads/writes family_medications directly, matching HealthTab's own
-  // query/update shape exactly so both surfaces stay one source of truth.
-  const [meds, setMeds] = useState<Medication[]>([]);
-  const loadMeds = useCallback(async () => {
-    if (!familyId) return;
-    const { data } = await supabase.from('family_medications')
-      .select('id, name, frequency_times, taken_date, is_active')
-      .eq('family_id', familyId).eq('member_id', active.id).eq('is_active', true)
-      .order('created_at', { ascending: false });
-    if (data) setMeds(data.map((m: any) => ({
-      id: m.id, name: m.name, time: m.frequency_times?.[0] ?? 'Anytime', takenDate: m.taken_date,
-    })) as any);
-  }, [familyId, active.id]);
-  useEffect(() => { loadMeds(); }, [loadMeds]);
-  useEffect(() => {
-    if (!familyId) return;
-    const channel = supabase
-      .channel(`meds-${familyId}-${active.id}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'family_medications',
-        filter: `member_id=eq.${active.id}`,
-      }, () => { loadMeds(); })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [familyId, active.id, loadMeds]);
-  // medsTaken derived straight from each row's own taken_date instead of a
-  // separate local map — the DB is the single source of "taken today" now.
+  // lists that could silently disagree about the same person's meds. Then
+  // upgraded to read/write family_medications directly but still only
+  // captured a name+time (no dosage/frequency/start-end date/reminder) —
+  // "not a good form... like any generic app does" (live-reported). Now
+  // shares useMedications with HealthTab.tsx and ParentView.tsx: same
+  // full MedForm-based add (AddMedModal), same recurring-reminder
+  // materialization, single source of truth across every surface.
+  const { meds, addMed, toggleMed, deleteMed } = useMedications(familyId, active.id);
   const medsTaken = Object.fromEntries(
-    meds.map(m => [m.id, (m as any).takenDate === today])
+    meds.map(m => [m.id, m.taken_date === today])
   ) as Record<string, boolean>;
 
   // SeniorView can render without ParentView ever having mounted this session,
@@ -241,37 +222,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   useEffect(() => {
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
-
-  const toggleMed = useCallback(async (id: string) => {
-    const med = meds.find(m => m.id === id) as any;
-    if (!med) return;
-    const alreadyTaken = med.takenDate === today;
-    logAction('Toggle Medication', 'family_medications.taken_date [shared with Vault/Health]', { targetId: id, at: '177' });
-    const { error } = await supabase.from('family_medications')
-      .update({ taken_date: alreadyTaken ? null : today, modified_by: active.id, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) { loadMeds(); showToast(alreadyTaken ? 'Marked as not taken' : 'Marked as taken'); }
-  }, [meds, today, active.id, loadMeds]);
-
-  const addMed = useCallback(async (name: string, time: string) => {
-    if (!familyId) return;
-    await supabase.from('family_medications').insert({
-      family_id: familyId, member_id: active.id, assigned_by: active.id,
-      name, frequency_times: [time], frequency: 'daily', category: 'other',
-      dosage: '', dosage_unit: '', is_ongoing: true, is_active: true,
-      escalation_enabled: false, escalation_after_min: 30, escalation_to: [],
-    });
-    loadMeds();
-    showToast('Medication added');
-  }, [familyId, active.id, loadMeds]);
-
-  const removeMed = useCallback(async (id: string) => {
-    await supabase.from('family_medications')
-      .update({ is_active: false, deleted_by: active.id, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    loadMeds();
-    showToast('Medication removed');
-  }, [active.id, loadMeds]);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
   const [cheerSticker, setCheerSticker] = useState('⭐');
@@ -889,7 +839,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         conflictReasons={conflictReasons}
       />
 
-      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={removeMed} colors={colors} isDark={isDark} active={active} />
+      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} />
 
       {/* A parent (or this GP themselves) directly assigned a task via
           addParentQuest — same Accept/Respond, Nudge-back, and locked-item

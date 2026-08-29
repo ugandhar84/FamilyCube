@@ -758,6 +758,25 @@ function RootNavigator() {
       // pending, so it's safe to call unconditionally on every foreground.
       shipPendingCallDebugTraceIfAny();
 
+      // Live-reported: "answered" was never getting recorded even for calls
+      // the user personally answered, causing call-reminder-sweeper's
+      // missed-call follow-up to fire a redundant retry call for a reminder
+      // that was already handled. checkLastAnsweredCallOnColdStart() was
+      // previously only ever called once, at RootNavigator mount — but the
+      // SAME reasoning that requires shipPendingCallDebugTraceIfAny to run
+      // on every foreground (not just cold start) applies here too:
+      // answering a reminder call backgrounds the app for the call's
+      // duration without killing the JS process, so the live
+      // "CallReminderAnswered" listener (registered once at mount) should
+      // in principle still be attached and should have caught it — but
+      // confirmed live, across multiple real answered calls, that it
+      // wasn't. Running this cold-start-oriented check on every foreground
+      // too costs nothing (getLastAnsweredCall/getLastCallEndedAt both
+      // resolve instantly to null when there's nothing pending, and
+      // markReminderCallRecent only ever moves forward) and closes
+      // whatever gap is causing the live listener to miss real answers.
+      checkLastAnsweredCallOnColdStart();
+
       // Track current device timezone silently on foreground (for travel banner).
       // Does NOT change home_timezone or timezone — only current_timezone updates.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

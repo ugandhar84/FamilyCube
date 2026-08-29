@@ -170,6 +170,7 @@ function buildCanonicalUnits() {
     // in both; only speechSynthesizer(_:didFinish:) was missing from the
     // generated one.
     traceFn: extractBraceBlock(source, 'private func trace(_ message: String) {'),
+    endReminderCallFn: extractBraceBlock(source, 'private func endReminderCall(uuid: String) {'),
     handleAudioSessionInterruptionFn: extractBraceBlock(source, '@objc private func handleAudioSessionInterruption(_ note: Notification) {'),
     didFinishFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {'),
     didCancelFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {'),
@@ -323,6 +324,7 @@ function withCallKeepAppDelegate(config) {
     // traceFn/handleAudioSessionInterruptionFn are TEMP diagnostic
     // instrumentation; didCancelFn is a real interruption-recovery path.
     ensureMethod(units.traceFn, 'private func trace(_ message: String) {');
+    ensureMethod(units.endReminderCallFn, 'private func endReminderCall(uuid: String) {');
     ensureMethod(units.handleAudioSessionInterruptionFn, '@objc private func handleAudioSessionInterruption(_ note: Notification) {');
     ensureMethod(units.didFinishFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {');
     ensureMethod(units.didCancelFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {');

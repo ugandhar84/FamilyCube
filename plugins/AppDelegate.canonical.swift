@@ -14,6 +14,15 @@ public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserve
   var reactNativeFactory: RCTReactNativeFactory?
   var voipRegistry: PKPushRegistry?
   var callObserver: CXCallObserver?
+  // Ends the call natively once the repeat loop has spoken its 3 passes —
+  // live-reported: a reminder call that finished speaking still had to be
+  // hung up manually, unlike a real voicemail-style message that ends
+  // itself. CXCallController submits a real CXEndCallAction transaction,
+  // the same underlying CallKit API RNCallKeep's own JS-facing endCall()
+  // uses (see RNCallKeep.m) — done directly in Swift here since this runs
+  // natively right as the last repeat finishes, with no need to round-trip
+  // through JS just to ask RNCallKeep to do it.
+  let callController = CXCallController()
   var surfacedCallUUIDs = Set<String>()
   // Calls currently ringing/connected — the repeat-speak loop checks this
   // before each replay and stops the instant the call ends, so it never
@@ -151,6 +160,26 @@ FirebaseApp.configure()
     #if DEBUG
     print("[FamilyCube CallTrace] \(line)")
     #endif
+  }
+
+  // Ends the reminder call natively once all repeat passes have finished
+  // speaking — a voicemail-style message hangs up when it's done, rather
+  // than leaving the person to notice and manually end it. uuid must be a
+  // valid CXCall.uuid (NSUUID re-serializes as uppercase; CXEndCallAction
+  // takes the UUID type directly, not the lowercased string form used
+  // elsewhere in this file for UserDefaults keys — see callObserver's own
+  // comment on that mismatch).
+  private func endReminderCall(uuid: String) {
+    guard let callUUID = UUID(uuidString: uuid) else { return }
+    let endCallAction = CXEndCallAction(call: callUUID)
+    let transaction = CXTransaction(action: endCallAction)
+    callController.request(transaction) { [weak self] error in
+      if let error = error {
+        self?.trace("endReminderCall — CXEndCallAction failed for uuid=\(uuid): \(error.localizedDescription)")
+      } else {
+        self?.trace("endReminderCall — CXEndCallAction succeeded for uuid=\(uuid)")
+      }
+    }
   }
 
   // TEMP diagnostic + real-recovery hook. See the interruptionNotification
@@ -414,6 +443,16 @@ FirebaseApp.configure()
     guard remaining > 0, stillActive else {
       repeatsRemaining.removeValue(forKey: uuid)
       repeatGapSeconds.removeValue(forKey: uuid)
+      // Live-reported: after speaking all 3 passes, the call just sat there
+      // connected/silent until the person noticed and hung up manually.
+      // Only end it here if repeats actually ran out (remaining <= 0) and
+      // the call is still active — NOT if stillActive is what failed the
+      // guard (that path means the call already ended some other way, e.g.
+      // the person hung up mid-repeat, and there is nothing left to end).
+      if remaining <= 0, stillActive {
+        trace("speechSynthesizer didFinish — all repeats exhausted, ending call uuid=\(uuid)")
+        endReminderCall(uuid: uuid)
+      }
       return
     }
     let gap = repeatGapSeconds[uuid] ?? 3.0

@@ -1320,6 +1320,22 @@ export const useEventStore = create<EventState>((set, get) => ({
         set({ rangeEvents: get().rangeEvents.filter(e => e.id !== event.id) });
       } else {
         logActivity({ entityType: 'event', entityId: event.id, familyId: getFamilyId(), actorId: event.createdBy, action: 'created' });
+        // Audit finding — same gap as choreStore.ts's addChore direct-
+        // assignment bug this whole audit started from: a parent creating
+        // an event FOR someone else (memberId set to a kid/co-parent, not
+        // the creator) sent that person zero signal. Only fires for a real
+        // "this is about someone other than the creator" event — a plain
+        // event the creator made for themselves needs no ping.
+        const familyId = getFamilyId();
+        if (event.memberId && event.memberId !== event.createdBy && familyId) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'event_assigned', familyId, memberIds: [event.memberId], persist: true,
+              excludeMemberId: event.createdBy ?? undefined,
+              payload: { eventId: event.id, eventTitle: event.title, eventTime: event.time, byName: memberById(event.createdBy)?.name },
+            },
+          }).catch(e => console.warn('[eventStore] addEvent notify failed:', e?.message));
+        }
       }
     });
 
@@ -1562,6 +1578,24 @@ export const useEventStore = create<EventState>((set, get) => ({
     const existing = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (!existing) return;
     get().updateEvent(id, { rsvps: { ...(existing.rsvps ?? {}), [memberId]: response } });
+    // Audit finding — an RSVP change only ever touches the `rsvps` map, so
+    // none of updateEvent's own notification branches above (which all key
+    // off helper/driverName/status/GP-welcome fields) ever fire for it —
+    // the event creator got zero signal someone responded. Only notifies
+    // when there's a real creator to tell and it isn't the responder's own
+    // event.
+    if (existing.createdBy && existing.createdBy !== memberId) {
+      const familyId = getFamilyId();
+      if (familyId) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'event_rsvp_response', familyId, memberIds: [existing.createdBy], persist: true,
+            excludeMemberId: memberId,
+            payload: { eventId: id, eventTitle: existing.title, response, memberName: memberById(memberId)?.name },
+          },
+        }).catch(e => console.warn('[eventStore] respondToRsvp notify failed:', e?.message));
+      }
+    }
   },
 
   // ── claimHelperSlot — compare-and-swap claim of an open GP/Teen slot ───────
@@ -1752,6 +1786,39 @@ export const useEventStore = create<EventState>((set, get) => ({
       }
     });
     logActivity({ entityType: 'event', entityId: id, familyId: getFamilyId(), actorId, action: 'deleted' });
+    // Audit finding — deleting an event told nobody it was gone: not the
+    // person it was for (memberId), not a confirmed driver/helper. Same
+    // "this left your hands with zero signal" gap as choreStore.ts's
+    // deleteChore. driver/helper are stored as names, not ids (matches
+    // this file's own newAssignee lookup pattern in updateEvent above), so
+    // resolve by name the same way.
+    if (deletedEvent) {
+      const familyId = getFamilyId();
+      if (familyId) {
+        const recipientIds = new Set<string>();
+        if (deletedEvent.memberId && deletedEvent.memberId !== actorId) recipientIds.add(deletedEvent.memberId);
+        try {
+          const { useFamilyStore } = require('@/store/familyStore');
+          const members = useFamilyStore.getState().members as any[];
+          const assigneeName = deletedEvent.driverName ?? deletedEvent.helper;
+          if (assigneeName) {
+            const assignee = members.find(m => m.name === assigneeName);
+            if (assignee?.id && assignee.id !== actorId) recipientIds.add(assignee.id);
+          }
+        } catch (e) {
+          console.warn('[eventStore] deleteEvent assignee lookup failed', e);
+        }
+        if (recipientIds.size) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'event_deleted', familyId, memberIds: [...recipientIds], persist: true,
+              excludeMemberId: actorId ?? undefined,
+              payload: { eventId: id, eventTitle: deletedEvent.title, byName: memberById(actorId)?.name },
+            },
+          }).catch(e => console.warn('[eventStore] deleteEvent notify failed:', e?.message));
+        }
+      }
+    }
     // Also refresh strip for that date (category count may drop to zero)
     const ev = prev.find(e => e.id === id);
     if (ev?.date && ev.category) {

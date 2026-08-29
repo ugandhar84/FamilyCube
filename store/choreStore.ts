@@ -534,6 +534,70 @@ function notifyChoreHandoff(
   }).catch(e => console.warn('[choreStore] handoff notify failed:', e?.message));
 }
 
+// Live-reported bug — "Assign, reassign, reclaim — these are not even
+// working." updateChore's generic assignedToId-change path (used by
+// EditQuestModal's kid-reassign save, ChoreReviewSection's GP-turned-down
+// reassign, and a handful of direct-RPC "reassign_chore"/"reclaim" call
+// sites across features/) only ever wrote logChoreUpdateActivity's silent
+// 'reassigned' audit row — never a real notification. quest-event-notifier
+// already has a fully-built 'quest_reassigned' case (new assignee gets
+// "🔀 Force Assigned"-style push, parents get a summary) that
+// choreAdapter.ts's own reassignQuest/getState().reassignQuest already call
+// for THEIR reassignment path — this is the same event, reused so the
+// updateChore path (and the raw-RPC call sites below that can't easily
+// route through choreAdapter) tells someone too. Skips a self-claim (actor
+// reassigning the chore to themselves) since there's nothing to tell the
+// actor about their own action.
+function notifyChoreReassigned(
+  chore: ChoreTask,
+  prevAssigneeId: string | undefined,
+  newAssigneeId: string,
+  triggeredById: string | null,
+) {
+  if (!chore.familyId || newAssigneeId === triggeredById) return;
+  supabase.functions.invoke('quest-event-notifier', {
+    body: {
+      event: 'quest_reassigned',
+      questId: chore.id,
+      questTitle: chore.title,
+      familyId: chore.familyId,
+      triggeredById: triggeredById ?? undefined,
+      assigneeId: prevAssigneeId,
+      newAssigneeId,
+      coins: chore.basePoints > 0 ? chore.basePoints : chore.coinsReward,
+    },
+  }).catch(e => console.warn('[choreStore] reassign notify failed:', e?.message));
+}
+
+// Nudge buttons scattered across the parent Hub/Backlog cards (OutgoingPendingCard,
+// OthersAdultQuestCard, MyAdultQuestCard, ChoreReviewSection's GP-sponsor nudge,
+// DirectPendingCard's Accept/"on it" pings) previously only ever sent a chat
+// DM via useChatStore — easy to miss, and never populates the notification
+// bell/push. Live-reported: "Nudge also should trigger the push along
+// sending the chat" — this ADDS a real family-notifier call alongside the
+// existing chat message (which stays, as the in-thread record), it doesn't
+// replace it. Reuses 'custom' (family-notifier's own default case renders
+// whatever title/body the caller passes, same pattern notifyChoreHandoff/
+// quest-event-notifier's gp_offer_pending/quest_reassigned cases already
+// rely on for a one-off title+body that doesn't need its own NotifType).
+function notifyChorePing(
+  familyId: string | undefined,
+  memberId: string | undefined | null,
+  excludeMemberId: string | null,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+) {
+  if (!familyId || !memberId || memberId === excludeMemberId) return;
+  supabase.functions.invoke('family-notifier', {
+    body: {
+      type: 'custom', familyId, memberIds: [memberId], persist: true,
+      excludeMemberId: excludeMemberId ?? undefined,
+      payload: { title, body, data: data ?? {} },
+    },
+  }).catch(e => console.warn('[choreStore] nudge notify failed:', e?.message));
+}
+
 // Mirrors eventStore.ts's logUpdateActivity — one row per meaningful field
 // change, covering the transitions a family actually wants in the shared
 // history sheet (claim/submit/approve/decline, reassignment, reward edits,
@@ -1831,6 +1895,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       });
     }
     if (prevChore) logChoreUpdateActivity(prevChore, updates, id);
+    // See notifyChoreReassigned's own comment above — logChoreUpdateActivity
+    // (just above) already logs this transition to the silent activity_log,
+    // this is the actual live notification nothing was ever sending. Only
+    // fires on a genuine reassignment to a different, real person — not a
+    // pool-release (assignedToId cleared to undefined/null) and not a
+    // self-claim, both of which have their own dedicated notification paths
+    // (claimPoolQuest/claimBounty's quest_claimed, and pool-release needs no
+    // "you got a chore" ping since nobody new was actually assigned).
+    if (prevChore && 'assignedToId' in updates) {
+      const newAssigneeId = (updates as any).assignedToId as string | undefined;
+      if (newAssigneeId && newAssigneeId !== prevChore.assignedToId) {
+        notifyChoreReassigned(
+          { ...prevChore, ...updates } as ChoreTask,
+          prevChore.assignedToId,
+          newAssigneeId,
+          getActiveMemberId(),
+        );
+      }
+    }
   },
 
   deleteChore: (id) => {
@@ -1874,6 +1957,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       }
     });
     logActivity({ entityType: 'chore', entityId: id, familyId, actorId, action: 'deleted' });
+    // Audit finding (same shape as the addChore assignment gap): a chore
+    // with a live assignee got permanently deleted with ZERO signal to
+    // that person — they'd only notice it vanished from their list. Only
+    // fires when there was actually someone to tell, and never tells the
+    // deleter about their own action.
+    if (deletedChore?.assignedToId && deletedChore.assignedToId !== actorId && familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'chore_deleted', familyId, memberIds: [deletedChore.assignedToId], persist: true,
+          excludeMemberId: actorId ?? undefined,
+          payload: { questId: id, questTitle: deletedChore.title, byName: memberName(actorId) },
+        },
+      }).catch(e => console.warn('[choreStore] deleteChore notify failed:', e?.message));
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1906,6 +2003,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           chores: s.chores.map(c => c.id === choreId ? { ...c, claims: [...(c.claims ?? []), claim] } : c),
         }));
         showToast('Claimed ✓');
+        // Live-reported: "claim ... not even working" — quest-event-notifier
+        // has a fully-built 'quest_claimed' case (tells parents/seniors a
+        // kid just claimed a slot) that nothing in this file was ever
+        // calling. Fires here alongside claimBounty/claimPoolQuest below.
+        const chore = get().chores.find(c => c.id === choreId);
+        if (chore?.familyId) {
+          supabase.functions.invoke('quest-event-notifier', {
+            body: {
+              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+              familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
+            },
+          }).catch(e => console.warn('[choreStore] claimBountySlot notify failed', e?.message));
+        }
       });
   },
 
@@ -1988,6 +2098,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       supabase.from('chore_tasks').update({ status: 'approved' }).eq('id', choreId)
         .then(({ error }) => { if (error) console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message); });
     }
+    // Audit finding — the kid whose multi-slot claim was just approved (and
+    // paid, above) got zero notice; they'd only see it if they reopened the
+    // app. Mirrors approveChore's own quest_approved call.
+    if (chore.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: { event: 'quest_approved', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId, coins: pts },
+      }).catch(e => console.warn('[choreStore] approveBountyClaim notify', e?.message));
+    }
   },
 
   declineBountyClaim: (choreId, childId, reviewerId, reason) => {
@@ -2013,6 +2131,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       .update({ status: 'declined', declined_at: now, rejection_reason: reason ?? null, reviewed_by_id: reviewerId })
       .eq('id', claim.id)
       .then(({ error }) => { if (error) console.warn('[choreStore] declineBountyClaim DB update failed', error.message); });
+    // Audit finding — same gap as approveBountyClaim above, decline side:
+    // the kid whose claim was just turned down got zero notice.
+    if (chore?.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: { event: 'quest_declined', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId, declineReason: reason },
+      }).catch(e => console.warn('[choreStore] declineBountyClaim notify', e?.message));
+    }
   },
 
   // A kid backing out of their own claimed slot before submitting — only
@@ -2305,6 +2430,29 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           return;
         }
         showToast('Asked for a second opinion ✓');
+        // Audit finding — a kid disputing a redo previously told nobody who
+        // could actually act on it; parents only saw it if they happened to
+        // reopen the review deck. This is a fresh "needs a decision" state,
+        // same recipient set (parents + seniors) as a fresh submission.
+        if (chore.familyId) {
+          try {
+            const { useFamilyStore } = require('./familyStore');
+            const approverIds = (useFamilyStore.getState().members as any[])
+              .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId)
+              .map(m => m.id);
+            if (approverIds.length) {
+              supabase.functions.invoke('family-notifier', {
+                body: {
+                  type: 'chore_redo_disputed', familyId: chore.familyId, memberIds: approverIds, persist: true,
+                  excludeMemberId: memberId,
+                  payload: { questId: choreId, questTitle: chore.title, kidName: memberName(memberId) },
+                },
+              }).catch(e => console.warn('[choreStore] disputeRedo notify', e?.message));
+            }
+          } catch (e) {
+            console.warn('[choreStore] disputeRedo recipient resolution failed', e);
+          }
+        }
       });
   },
 
@@ -2358,6 +2506,31 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           });
         }
         showToast(pay ? 'Approved ✓' : 'Sided with the redo request');
+        // Audit finding — the kid never learned the outcome of a dispute
+        // they raised; previously silent either way. pay=true reuses the
+        // normal approval notification (same one approveChore sends); pay=
+        // false gets a dedicated "the redo stands" message rather than the
+        // ordinary quest_reopened copy, since this is specifically the
+        // outcome of an escalation the kid asked for, not a fresh redo
+        // request from the same parent.
+        if (chore.assignedToId) {
+          if (pay) {
+            supabase.functions.invoke('quest-event-notifier', {
+              body: {
+                event: 'quest_approved', questId: choreId, questTitle: chore.title,
+                familyId: chore.familyId, assigneeId: chore.assignedToId, coins: result?.coins_paid ?? 0,
+              },
+            }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
+          } else if (chore.familyId) {
+            supabase.functions.invoke('family-notifier', {
+              body: {
+                type: 'chore_redo_dispute_resolved', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
+                excludeMemberId: reviewerId,
+                payload: { questId: choreId, questTitle: chore.title, pay: false },
+              },
+            }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
+          }
+        }
       });
   },
 
@@ -2590,7 +2763,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     supabase.rpc('propose_later_date', { p_chore_id: choreId, p_by_member_id: byMemberId, p_new_date: newDate, p_reason: reason ?? null })
       .then(({ error }) => {
-        if (!error) return;
+        if (!error) {
+          // Audit finding — proposing a later date releases the chore back
+          // to the pool AND parks it awaiting a parent's Approve/Decline via
+          // approveLaterDate/declineLaterDate, but no parent was ever told
+          // there was a decision waiting on them.
+          if (chore.familyId) {
+            try {
+              const { useFamilyStore } = require('./familyStore');
+              const approverIds = (useFamilyStore.getState().members as any[])
+                .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== byMemberId)
+                .map(m => m.id);
+              if (approverIds.length) {
+                supabase.functions.invoke('family-notifier', {
+                  body: {
+                    type: 'chore_later_date_proposed', familyId: chore.familyId, memberIds: approverIds, persist: true,
+                    excludeMemberId: byMemberId,
+                    payload: { questId: choreId, questTitle: chore.title, byName: memberName(byMemberId), newDate, reason },
+                  },
+                }).catch(e => console.warn('[choreStore] proposeLaterDate notify', e?.message));
+              }
+            } catch (e) {
+              console.warn('[choreStore] proposeLaterDate recipient resolution failed', e);
+            }
+          }
+          return;
+        }
         console.warn('[choreStore] proposeLaterDate RPC failed', error.message);
         set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
         showToast("Couldn't send — check your connection and try again", 'error');
@@ -2612,7 +2810,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     supabase.rpc('approve_later_date', { p_chore_id: choreId, p_parent_id: parentId })
       .then(({ error }) => {
-        if (!error) { showToast('Reschedule approved ✓'); return; }
+        if (!error) {
+          showToast('Reschedule approved ✓');
+          // Audit finding — the proposer never learned their reschedule
+          // request went through; snapshot the requester id before this
+          // function's own optimistic update above cleared it off the chore.
+          if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
+            supabase.functions.invoke('family-notifier', {
+              body: {
+                type: 'chore_later_date_approved', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
+                excludeMemberId: parentId,
+                payload: { questId: choreId, questTitle: chore.title, newDate },
+              },
+            }).catch(e => console.warn('[choreStore] approveLaterDate notify', e?.message));
+          }
+          return;
+        }
         console.warn('[choreStore] approveLaterDate RPC failed', error.message);
         set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
         showToast("Couldn't save — check your connection and try again", 'error');
@@ -2633,7 +2846,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     supabase.rpc('decline_later_date', { p_chore_id: choreId, p_parent_id: parentId })
       .then(({ error }) => {
-        if (!error) return;
+        if (!error) {
+          // Audit finding — same gap as approveLaterDate's success path,
+          // decline side: the proposer never learned it was turned down.
+          if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
+            supabase.functions.invoke('family-notifier', {
+              body: {
+                type: 'chore_later_date_declined', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
+                excludeMemberId: parentId,
+                payload: { questId: choreId, questTitle: chore.title },
+              },
+            }).catch(e => console.warn('[choreStore] declineLaterDate notify', e?.message));
+          }
+          return;
+        }
         console.warn('[choreStore] declineLaterDate RPC failed', error.message);
         set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
         showToast("Couldn't save — check your connection and try again", 'error');
@@ -2896,6 +3122,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           return;
         }
         showToast('Handed back ✓');
+        // Audit finding — the parent who proposed the terms change (coins/
+        // due-date edit on an already-claimed chore) never learned the
+        // claimant handed it back instead of accepting — they'd only see it
+        // if they happened to reopen the pool and notice it was open again.
+        const proposerId = chore.pendingTerms?.changedBy;
+        if (chore.familyId && proposerId && proposerId !== memberId) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'chore_terms_change_rejected', familyId: chore.familyId, memberIds: [proposerId], persist: true,
+              excludeMemberId: memberId,
+              payload: { questId: choreId, questTitle: chore.title, byName: memberName(memberId) },
+            },
+          }).catch(e => console.warn('[choreStore] rejectTermsChange notify', e?.message));
+        }
       });
   },
 
@@ -4417,6 +4657,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (PENDING); chore ${choreId} left unassigned until accepted`);
     }
 
+    // Audit finding — same bug class as the addChore direct-assignment gap
+    // this whole audit started from: a DIRECT parent-to-parent (or GP)
+    // delegation created a real PENDING assignment the delegate must
+    // Accept/Decline, but nothing ever told them it existed — they'd only
+    // find out by happening to open the Backlog. Fixed here, inside
+    // addParentQuest itself, rather than at individual call sites (DelegateSheet/
+    // AddQuestModal/EditQuestModal/createAndAddParentQuest all funnel through
+    // this one function) so every current AND future caller gets it
+    // uniformly — mirrors the same lesson notifyChoreReassigned already
+    // applied to updateChore's assignedToId path.
+    if (mode === 'DIRECT' && chore.familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'parent_quest_delegated', familyId: chore.familyId, memberIds: [finalAssignedTo], persist: true,
+          excludeMemberId: assignedBy,
+          payload: { questId: choreId, questTitle: chore.title, byName: memberName(assignedBy), note },
+        },
+      }).catch(e => console.warn('[choreStore] addParentQuest delegate notify failed:', e?.message));
+    }
+
     return assignment;
   },
 
@@ -4646,8 +4906,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           const { useChatStore } = require('./chatStore');
           const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
           const chore = get().chores.find(c => c.id === assignment.choreId);
+          const recallerName = recaller?.name?.split(' ')[0] ?? 'They';
           useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
-            `↩️ ${recaller?.name?.split(' ')[0] ?? 'They'} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
+            `↩️ ${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
+          // Live-reported: "reclaim ... not even working" — this is the
+          // OutgoingPendingCard "Recall" action (a parent taking a
+          // delegated task back from a co-parent). Was chat-DM-only, easy
+          // to miss and never populates the notification bell/push — this
+          // ADDS a real one alongside the existing chat message.
+          notifyChorePing(
+            chore?.familyId, assignment.assignedTo, recallerId,
+            '↩️ Task Taken Back',
+            `${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`,
+            { screen: 'Quests', questId: assignment.choreId },
+          );
         } catch (e) {
           console.warn('[choreStore] recallParentQuest notify failed', e);
         }

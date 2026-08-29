@@ -94,8 +94,25 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
                 }).then(({ error }) => {
                   if (error) { console.warn('[DelegateSheet] reassign_chore failed', error.message); return; }
                   showToast(`Delegated to ${m.name.split(' ')[0]} ✓`);
+                  // Live-reported: "reassign — not even working." This RPC
+                  // bypasses choreStore.updateChore entirely, so it never
+                  // got updateChore's own notifyChoreReassigned coverage —
+                  // the new assignee (and parents) got nothing. Same
+                  // quest-event-notifier event every other reassignment
+                  // path uses.
+                  supabase.functions.invoke('quest-event-notifier', {
+                    body: {
+                      event: 'quest_reassigned', questId: target.choreId, questTitle: target.choreTitle,
+                      familyId: liveChore?.familyId, triggeredById: active.id,
+                      assigneeId: priorAssigneeId, newAssigneeId: m.id, coins: liveChore?.coinsReward,
+                    },
+                  }).catch((e: any) => console.warn('[DelegateSheet] reassign notify failed', e?.message));
                 });
               } else {
+                // addParentQuest itself now fires the delegate notification
+                // (store/choreStore.ts's own 'parent_quest_delegated' call,
+                // added in the full notification-coverage audit) — no
+                // longer needs a duplicate one here.
                 addParentQuest(target.choreId, active.id, m.id, 'DIRECT', note.trim() || undefined);
                 showToast(`Delegated to ${m.name.split(' ')[0]} ✓`);
               }

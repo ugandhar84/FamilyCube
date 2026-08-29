@@ -640,12 +640,29 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
           // adult task the engine picked, landing pre-accepted with only a
           // Done/Reassign button.
           if (isAdultTask && res.selectedMemberId !== activeMemberId) {
+            // addParentQuest itself now fires the delegate notification
+            // (store/choreStore.ts's own 'parent_quest_delegated' call,
+            // added in the full notification-coverage audit) for every
+            // DIRECT-mode call site, this one included — no longer needs a
+            // duplicate here.
             useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
           } else {
             supabase.rpc('reassign_chore', {
               p_chore_id: newQ.id, p_new_member_id: res.selectedMemberId, p_by_member_id: activeMemberId,
             }).then(({ error }) => {
-              if (error) console.warn('[AddQuestModal] auto-assign reassign_chore failed', error.message);
+              if (error) { console.warn('[AddQuestModal] auto-assign reassign_chore failed', error.message); return; }
+              // Was a raw RPC bypassing choreStore.updateChore entirely —
+              // the auto-picked kid/GP never got a "you were assigned a
+              // quest" push, identical in shape to quest_assigned's own
+              // "new chore just for you" ping.
+              if (familyId) {
+                supabase.functions.invoke('quest-event-notifier', {
+                  body: {
+                    event: 'quest_assigned', questId: newQ.id, questTitle: title.trim(),
+                    familyId, assigneeId: res.selectedMemberId, coins: coinsDisabled ? 0 : (parseInt(coins) || 30),
+                  },
+                }).catch((e: any) => console.warn('[AddQuestModal] auto-assign notify failed', e?.message));
+              }
             });
           }
         });

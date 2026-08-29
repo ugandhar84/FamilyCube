@@ -143,6 +143,33 @@ type NotifType =
   // views already use (SeniorView's isOpenToGrandparents filter,
   // TeenView's hasCar-gated pool).
   | 'ride_pool_opened'
+  // Full choreStore/eventStore notification-coverage audit (2026-08-28/29)
+  // — a batch of previously-silent state changes across store/choreStore.ts
+  // and store/eventStore.ts, added together. See each call site's own
+  // comment in those files for the specific gap being closed.
+  | 'chore_deleted'
+  | 'bounty_claim_approved'
+  | 'bounty_claim_declined'
+  | 'chore_redo_disputed'
+  | 'chore_redo_dispute_resolved'
+  | 'chore_later_date_proposed'
+  | 'chore_later_date_approved'
+  | 'chore_later_date_declined'
+  | 'chore_terms_change_rejected'
+  | 'grandparent_quest_routed'
+  | 'grandparent_quest_declined_by_parent'
+  | 'approval_reversed'
+  | 'approval_reversal_cosigned'
+  | 'cashout_requested'
+  | 'cashout_settled'
+  | 'cashout_approved'
+  | 'cashout_denied'
+  | 'parent_quest_delegated'
+  | 'parent_quest_lock_cancelled'
+  | 'grandparent_quest_needs_review'
+  | 'event_assigned'
+  | 'event_deleted'
+  | 'event_rsvp_response'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -166,6 +193,16 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   chore_handoff_offered: 'chores', chore_handoff_accepted: 'chores', chore_handoff_declined: 'chores',
   ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
   ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
+  chore_deleted: 'chores', bounty_claim_approved: 'chores', bounty_claim_declined: 'chores',
+  chore_redo_disputed: 'chores', chore_redo_dispute_resolved: 'chores',
+  chore_later_date_proposed: 'chores', chore_later_date_approved: 'chores', chore_later_date_declined: 'chores',
+  chore_terms_change_rejected: 'chores',
+  grandparent_quest_routed: 'chores', grandparent_quest_declined_by_parent: 'chores',
+  grandparent_quest_needs_review: 'chores',
+  approval_reversed: 'chores', approval_reversal_cosigned: 'chores',
+  cashout_requested: 'rewards', cashout_settled: 'rewards', cashout_approved: 'rewards', cashout_denied: 'rewards',
+  parent_quest_delegated: 'chores', parent_quest_lock_cancelled: 'chores',
+  event_assigned: 'family', event_deleted: 'family', event_rsvp_response: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -568,6 +605,170 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
             body: `"${p.questTitle}" wasn't answered in time — ${p.coParentName ?? 'the other parent'} can approve it now.`,
             data: { screen: 'Quests', questId: p.questId },
           };
+
+    // ── ChoreStore/EventStore full coverage audit (2026-08-28/29) ─────────────
+    case 'chore_deleted':
+      return {
+        title: '🗑️ Chore Removed',
+        body: `${p.byName ?? 'A parent'} deleted "${p.questTitle}" — nothing left to do here.`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'bounty_claim_approved':
+      return {
+        title: '✅ Claim Approved!',
+        body: `Your claim on "${p.questTitle}" was approved${p.coins ? ` — +${p.coins}🪙!` : ''}`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'bounty_claim_declined':
+      return {
+        title: '❌ Claim Declined',
+        body: `Your claim on "${p.questTitle}" was declined${p.reason ? `: ${p.reason}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_redo_disputed':
+      return {
+        title: '🙋 Second Opinion Needed',
+        body: `${p.kidName ?? 'A kid'} is asking another parent to look at the redo on "${p.questTitle}"`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_redo_dispute_resolved':
+      return p.pay
+        ? {
+            title: '✅ Dispute Resolved — Approved!',
+            body: `A second parent reviewed "${p.questTitle}" and approved it${p.coins ? ` — +${p.coins}🪙!` : ''}`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          }
+        : {
+            title: '↩️ Dispute Resolved — Redo Stands',
+            body: `A second parent looked at "${p.questTitle}" and agrees it needs a redo.`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          };
+    case 'chore_later_date_proposed':
+      return {
+        title: '📅 Reschedule Requested',
+        body: `${p.byName ?? 'Someone'} asked to push "${p.questTitle}" to ${p.newDate}${p.reason ? ` — "${p.reason}"` : ''}`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_later_date_approved':
+      return {
+        title: '📅 Reschedule Approved',
+        body: `"${p.questTitle}" is now due ${p.newDate} — you're all set.`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_later_date_declined':
+      return {
+        title: '📅 Reschedule Declined',
+        body: `Your request to push back "${p.questTitle}" wasn't approved — original due date stands.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_terms_change_rejected':
+      return {
+        title: '↩️ Terms Change Turned Down',
+        body: `${p.byName ?? 'The claimant'} handed "${p.questTitle}" back rather than accept the new terms — it's open again.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'grandparent_quest_routed':
+      return {
+        title: '✅ Your Quest Was Approved',
+        body: `A parent approved "${p.questTitle}" — it's ${p.routedToPool ? 'in the bounty pool now' : 'assigned and ready'}.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'grandparent_quest_declined_by_parent':
+      return {
+        title: '❌ Quest Declined',
+        body: `A parent declined "${p.questTitle}"${p.reason ? `: ${p.reason}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'grandparent_quest_needs_review':
+      return {
+        title: '🙋 Grandparent Quest Needs Review',
+        body: `${p.gpName ?? 'A grandparent'} posted "${p.questTitle}" — review and approve or decline.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'approval_reversed':
+      return {
+        title: '⚠️ Approval Reversed',
+        body: `${p.byName ?? 'A parent'} reversed your approval of "${p.questTitle}"${p.reason ? ` — "${p.reason}"` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'approval_reversal_cosigned':
+      return {
+        title: '✅ Reversal Co-Signed',
+        body: `Your reversal request for "${p.questTitle}" was co-signed — the payout was clawed back.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'cashout_requested':
+      return {
+        title: '💵 Cash-Out Requested',
+        body: `${p.kidName ?? 'A kid'} requested a ${p.points}🪙 cash-out — review it.`,
+        sound: 'default',
+        data: { screen: 'Rewards' },
+      };
+    case 'cashout_settled':
+      return {
+        title: '💵 Cash-Out Settled',
+        body: `Your ${p.points}🪙 cash-out was settled${p.method ? ` (${p.method})` : ''}.`,
+        data: { screen: 'Rewards' },
+      };
+    case 'cashout_approved':
+      return {
+        title: '✅ Cash-Out Approved',
+        body: `Your ${p.points}🪙 cash-out was approved.`,
+        sound: 'default',
+        data: { screen: 'Rewards' },
+      };
+    case 'cashout_denied':
+      return {
+        title: '❌ Cash-Out Denied',
+        body: `Your ${p.points}🪙 cash-out request was denied${p.refunded ? ' — the coins were refunded to your balance.' : '.'}`,
+        sound: 'default',
+        data: { screen: 'Rewards' },
+      };
+    case 'parent_quest_delegated':
+      return {
+        title: '📋 New Task Delegated to You',
+        body: `${p.byName ?? 'Someone'} handed you "${p.questTitle}"${p.note ? ` — "${p.note}"` : ''} — accept or decline.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'parent_quest_lock_cancelled':
+      return {
+        title: '↩️ Assignment Cancelled',
+        body: `${p.byName ?? 'They'} cancelled the locked assignment for "${p.questTitle}" — it's reopened.`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'event_assigned':
+      return {
+        title: '📅 New Event Assigned',
+        body: `${p.byName ?? 'A parent'} assigned you to "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'event_deleted':
+      return {
+        title: '🗑️ Event Removed',
+        body: `${p.byName ?? 'A parent'} deleted "${p.eventTitle}" — it's off the schedule.`,
+        data: { screen: 'Schedule' },
+      };
+    case 'event_rsvp_response':
+      return {
+        title: `${p.response === 'going' ? '✅' : p.response === 'not_going' ? '❌' : '🤔'} RSVP Update`,
+        body: `${p.memberName ?? 'Someone'} responded ${p.response === 'going' ? "they're going" : p.response === 'not_going' ? "they can't make it" : 'maybe'} to "${p.eventTitle}".`,
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
 
     case 'custom':
     default:

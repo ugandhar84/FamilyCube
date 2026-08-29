@@ -1562,6 +1562,31 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       }).catch(e => console.warn('[choreStore] addChore quest_posted notify', e?.message));
     }
 
+    // Live-reported: a chore created and directly assigned to someone
+    // (not posted to the open pool) sent ZERO notification to them at all
+    // — the comment right above this block asserted a directly-assigned
+    // chore "already has its own separate signal via the assignment
+    // itself," but nothing in this function (or anywhere else in this
+    // file, confirmed via grep for quest_assigned) ever actually fired
+    // one. quest-event-notifier's own 'quest_assigned' case exists and is
+    // correctly implemented (assignee gets "📋 New Quest Assigned!") —
+    // it was just never called from here. Mirrors the isPool branch above:
+    // this is the direct-assignment case, so the two are mutually
+    // exclusive (a pool chore has no assignedToId yet; an assigned chore
+    // isn't posted to the open pool for others to claim).
+    if (!chore.isPool && chore.assignedToId && familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_assigned',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId,
+          assigneeId: chore.assignedToId,
+          coins: chore.coinsReward ?? 0,
+        },
+      }).catch(e => console.warn('[choreStore] addChore quest_assigned notify', e?.message));
+    }
+
     return chore;
   },
 

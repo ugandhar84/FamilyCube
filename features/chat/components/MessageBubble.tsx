@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import { View, Text, Pressable, StyleSheet, Image, Animated, Alert, Linking } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import Svg, { Path } from 'react-native-svg';
 import * as WebBrowser from 'expo-web-browser';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Play, CheckCheck, AlertTriangle, MapPin, FileText, RefreshCw } from 'lucide-react-native';
@@ -74,6 +75,33 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
 // Chat's FlatList renders potentially hundreds of these rows with no
 // tuning props previously set (see ChatScreen.tsx's FlatList) — every
 // list re-render (new message arriving, a reaction on ANY row, scroll-
+// Small iMessage-style pointed tail — a plain rounded-rectangle bubble has
+// no tail at all (this app's earlier bubble style, direct feedback: "why
+// is there no lil tail"). Sits as an absolutely-positioned sibling of the
+// bubble Pressable (which has overflow:'hidden', so a tail drawn INSIDE it
+// would get clipped) at the bubble's tail corner — bottom-right for isMe,
+// bottom-left otherwise, matching real Messages. Only rendered on the
+// tail-corner bubble in a group (same isGroupFirst flag the existing
+// flat-corner logic already uses for this — see the inverted-FlatList
+// note on btlr/btrr above: in an inverted list "group first" is the
+// visually-bottom, most-recent message of the group, which is where the
+// tail belongs).
+function BubbleTail({ isMe, color }: { isMe: boolean; color: string }) {
+  return (
+    <Svg
+      width={10} height={10}
+      viewBox="0 0 10 10"
+      style={{
+        position: 'absolute', bottom: -1,
+        ...(isMe ? { right: -6 } : { left: -6 }),
+        ...(isMe ? {} : { transform: [{ scaleX: -1 }] }),
+      }}
+    >
+      <Path d="M0,0 C0,6 3,9 9,10 C4,10 0,7 0,0 Z" fill={color} />
+    </Svg>
+  );
+}
+
 // derived header-collapse state changing) re-rendered every currently-
 // mounted MessageBubble from scratch, none of it skippable, since this
 // had no memo boundary at all. Live-reported as janky/not-smooth
@@ -150,11 +178,19 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', colors.amber] });
   const highlightWidth  = highlightAnim.interpolate({ inputRange: [0, 0.05, 1], outputRange: [0, 2, 2] });
 
-  // Flat corner on the chat-side tip (last bubble in group)
-  const btlr = isMe ? BUBBLE_R : (isGroupFirst ? BUBBLE_SM : BUBBLE_R);
-  const btrr = isMe ? (isGroupFirst ? BUBBLE_SM : BUBBLE_R) : BUBBLE_R;
-  const bblr = BUBBLE_R;
-  const bbrr = BUBBLE_R;
+  // Flat "tail" corner belongs on the BOTTOM of the last bubble in a
+  // group — ChatScreen.tsx's own comment on isGroupLast says so explicitly
+  // ("bottom of visual group — where avatar/tail goes"), but this was
+  // wired to isGroupFirst/the TOP corners instead, so the flat corner
+  // landed on the wrong end of the group (a real pre-existing bug, not an
+  // inverted-list subtlety — the avatar render a few lines below this
+  // already correctly gates on isGroupLast). Fixed to match, and now
+  // actually pairs with BubbleTail below, which needs to know the same
+  // corner to draw the tail against.
+  const btlr = BUBBLE_R;
+  const btrr = BUBBLE_R;
+  const bblr = isMe ? BUBBLE_R : (isGroupLast ? BUBBLE_SM : BUBBLE_R);
+  const bbrr = isMe ? (isGroupLast ? BUBBLE_SM : BUBBLE_R) : BUBBLE_R;
 
   // Timestamp + read tick — below and outside the bubble (iMessage
   // convention: "Read 4:32 PM" sits under the bubble, not crammed inside
@@ -298,7 +334,9 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
 
         <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2,
           borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
-          {/* Bubble */}
+          {/* Bubble — position:relative so BubbleTail (position:absolute)
+              anchors to this wrapper, not the whole message row. */}
+          <View style={{ position: 'relative' }}>
           <Pressable
             onPress={handlePress}
             onLongPress={onLongPress}
@@ -461,6 +499,8 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
               </>
             )}
           </Pressable>
+          {isGroupLast && <BubbleTail isMe={isMe} color={isMe ? bubbleMe : bubbleOther} />}
+          </View>
 
           {/* Time + read status — below and outside the bubble (iMessage
               convention), not inside it. */}

@@ -745,10 +745,24 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      {/* maxHeight is a layout property — it can't run on the native
+          driver, so this whole animation (including the opacity fade
+          bundled into the same headerAnim value) was stuck on the JS
+          thread, fighting scroll-event processing for frame time. That's
+          what read as "bouncy, not smooth" on a pull-down rather than a
+          clean glide (direct feedback). translateY + scaleY + opacity all
+          run on the native driver instead — origin: 'top' on scaleY so it
+          collapses upward into nothing rather than squashing from the
+          center. AppHeader's own real height varies by content, so this
+          overshoots on purpose (translateY covers more than enough) rather
+          than trying to measure it exactly. */}
       <Animated.View style={{
-        maxHeight: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] }),
         opacity: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
         overflow: 'hidden',
+        transform: [
+          { translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -120] }) },
+          { scaleY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.01] }) },
+        ],
       }}>
         <AppHeader
           memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
@@ -1007,10 +1021,14 @@ export default function ChatScreen() {
                 const goingToOlder = dy > 0;
                 if (goingToOlder && contentOffset.y > 40 && !headerCollapsed) {
                   setHeaderCollapsed(true);
-                  Animated.timing(headerAnim, { toValue: 1, duration: 180, useNativeDriver: false }).start();
+                  // Now driven entirely by opacity/transform (see the
+                  // header's own Animated.View above) — safe for the
+                  // native driver, which is what actually makes this run
+                  // smoothly off the JS thread during active scrolling.
+                  Animated.timing(headerAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
                 } else if ((!goingToOlder || contentOffset.y <= 40) && headerCollapsed) {
                   setHeaderCollapsed(false);
-                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
                 }
               }}
               scrollEventThrottle={100}

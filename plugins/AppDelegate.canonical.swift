@@ -272,19 +272,31 @@ FirebaseApp.configure()
     // say "Time to clean your room" when the title IS "Clean your room"
     let verbPrefixes = ["clean ", "wash ", "feed ", "take ", "do ", "make ",
                         "pick up ", "drop off ", "water ", "check ", "finish ",
-                        "pack ", "prepare ", "study ", "complete ", "pay "]
-    let titleStartsWithVerb = verbPrefixes.contains(where: { lowerTitle.hasPrefix($0) })
+                        "pack ", "prepare ", "study ", "complete ", "pay ",
+                        "tidy ", "organize ", "empty ", "put away ", "vacuum ",
+                        "sweep ", "mop ", "walk ", "brush ", "fold ", "load ",
+                        "unload ", "throw out "]
+    let matchedVerbPrefix = verbPrefixes.first(where: { lowerTitle.hasPrefix($0) })
+    let titleStartsWithVerb = matchedVerbPrefix != nil
 
     let mainLine: String
     if itemType == "chore" {
       if isMedication {
-        let medPhrasings = ["It's time to take \(title).",
-                            "Don't forget \(title).",
-                            "Time for \(title)."]
+        // Medication titles that ALSO start with a verb (e.g. "Take medicine",
+        // "Pick up prescription") used to double up: "It's time to take Take
+        // medicine." / "It's time to take Pick up prescription." — strip the
+        // matched verb prefix first so the wrapping phrase is the only verb.
+        let medTitle = matchedVerbPrefix.map { String(title.dropFirst($0.count)) } ?? title
+        let medPhrasings = ["It's time to take \(medTitle).",
+                            "Don't forget \(medTitle).",
+                            "Time for \(medTitle)."]
         mainLine = medPhrasings[abs(title.hashValue) % medPhrasings.count]
       } else if titleStartsWithVerb {
-        // Title already reads as a command — just wrap it
-        let chorePhrasings = ["Time to \(title.prefix(1).lowercased() + title.dropFirst()).",
+        // Title already reads as a command — just wrap it. Lowercase the
+        // WHOLE remainder, not just the first character — "Do Homework"
+        // used to become "Time to do Homework." (capitalized "Homework"
+        // mid-sentence) since only title[0] was folded.
+        let chorePhrasings = ["Time to \(lowerTitle).",
                               "Don't forget to \(lowerTitle).",
                               "You've got \(title) on your list."]
         mainLine = chorePhrasings[abs(title.hashValue) % chorePhrasings.count]
@@ -309,8 +321,16 @@ FirebaseApp.configure()
       case "birthday":
         mainLine = "Don't forget — it's \(title) today!"
       case "ride":
+        // Strip a redundant leading "ride to"/"ride for"/"ride" from the
+        // title — "Ride to soccer" used to produce "Your ride for Ride to
+        // soccer is..." since the category word and the title's own first
+        // word said the same thing.
+        var rideTitle = title
+        for prefix in ["ride to ", "ride for ", "ride "] {
+          if lowerTitle.hasPrefix(prefix) { rideTitle = String(title.dropFirst(prefix.count)); break }
+        }
         let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
-        mainLine = "Your ride for \(title) is\(u.isEmpty ? " coming up" : u)."
+        mainLine = "Your ride for \(rideTitle) is\(u.isEmpty ? " coming up" : u)."
       case "work":
         let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
         mainLine = "Work reminder: \(title)\(u)."

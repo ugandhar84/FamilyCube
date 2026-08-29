@@ -407,9 +407,9 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   // Redeems from a specific wallet — real deduction (deductCoins) + a real
   // Redemption record (redeemReward), replacing the old stub that only
   // showed an alert and never touched any balance or persisted anything.
-  const redeemFrom = (r: Reward, wallet: 'mainCoins' | 'gpCoins') => {
+  const redeemFrom = async (r: Reward, wallet: 'mainCoins' | 'gpCoins') => {
     if (!activeMember) return;
-    const ok = redeemReward(r.id, activeMember.id, wallet);
+    const ok = await redeemReward(r.id, activeMember.id, wallet);
     if (!ok) { Alert.alert('Unable to Redeem', 'This perk is no longer available.'); return; }
     deductCoins(activeMember.id, r.cost, wallet);
     Alert.alert('🎉 Redeemed!', `"${r.title}" redeemed for ${r.cost} 🪙 from your ${wallet === 'gpCoins' ? 'Grandparent Bonus jar' : 'Main Coins'}! Ask a parent for your reward.`);

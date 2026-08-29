@@ -897,7 +897,7 @@ interface ChoreState {
   canApprove:                      (memberId: string) => boolean;
 
   // ── Parent review ──────────────────────────────────────────────────────────
-  approveChore:                    (choreId: string, reviewerId: string) => void;
+  approveChore:                    (choreId: string, reviewerId: string) => Promise<void>;
   requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => void;
   requestGrandparentRedo:          (choreId: string, grandparentId: string, reason: string) => void;
 
@@ -2995,7 +2995,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  approveChore: (choreId, reviewerId) => {
+  approveChore: async (choreId, reviewerId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_approval') return;
     if (!chore.assignedToId) return;
@@ -3041,17 +3041,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // notification logic server-side too) is future work, not done in this
     // pass — see the DB-driven-assignment-state plan's Phase 2 step 2 note.
     const previousStatus = chore.status;
-    supabase.from('chore_tasks')
-      .update({ status: 'approved', approved_at: now, reviewed_at: now, reviewed_by_id: reviewerId })
-      .eq('id', choreId)
-      .eq('status', previousStatus)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] approveChore CAS check failed', error.message); return; }
-        if (!data || data.length === 0) {
-          console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; payout already applied locally may need manual reconciliation (see 4.7 dispute handling)`);
-        }
-      });
 
     // Atomic audit-trail write this CAS previously skipped entirely
     // (bypassing updateChore's own activity_log logging) — approveChore
@@ -3081,6 +3070,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // above) proceeds normally; only the coin payout waits on a parent
     // clearing the flag via approveTeenReward/adjustTeenReward, which pays
     // out at that point instead.
+    //
+    // Bug-hunt finding: this payout used to fire unconditionally right
+    // after the CAS write was DISPATCHED, not after it actually resolved —
+    // the CAS's own .then() correctly detected a lost race (another
+    // parent/device already flipped this chore's status) but only logged a
+    // warning, while awardPoints below had already run regardless. Two
+    // parents approving the same submission within the same round-trip
+    // window (or a network retry replaying the same approve call) could
+    // double-pay real coins. Now the payout and every side effect below it
+    // are gated on the CAS actually confirming THIS call won the race —
+    // an already-approved/declined chore (lost race) pays out nothing and
+    // stops here.
+    const { data: casData, error: casError } = await supabase.from('chore_tasks')
+      .update({ status: 'approved', approved_at: now, reviewed_at: now, reviewed_by_id: reviewerId })
+      .eq('id', choreId)
+      .eq('status', previousStatus)
+      .select('id');
+    if (casError) {
+      console.warn('[choreStore] approveChore CAS check failed', casError.message);
+      return;
+    }
+    if (!casData || casData.length === 0) {
+      console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; no payout applied here (see 4.7 dispute handling)`);
+      return;
+    }
+
     if (pointsToAward > 0 && chore.assignedToId && !chore.rewardPendingReview) {
       // A grandparent-sponsored quest can also reach this generic approval
       // path (e.g. a parent reviews it instead of the sponsoring GP using

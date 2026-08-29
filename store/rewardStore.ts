@@ -111,7 +111,13 @@ interface RewardState {
   deleteReward:            (id: string) => void;
   toggleAvailability:      (id: string) => void;
 
-  redeemReward:            (rewardId: string, memberId: string, wallet?: 'mainCoins' | 'gpCoins') => boolean; // returns false if ineligible
+  // Now async — redeem_reward is a real atomic RPC (row-locked eligibility
+  // check + stock decrement + insert in one transaction), not a client-side
+  // check-then-write. Returns false if ineligible OR if the RPC's own
+  // authoritative check rejects it (e.g. someone else claimed the last
+  // stock a moment earlier) — either way, no local state is guessed at
+  // before the server confirms.
+  redeemReward:            (rewardId: string, memberId: string, wallet?: 'mainCoins' | 'gpCoins') => Promise<boolean>;
   approveRedemption:       (id: string, approverId: string, note?: string) => void;
   rejectRedemption:        (id: string, rejectorId: string, note?: string) => void;
   cancelRedemption:        (id: string) => void;
@@ -253,51 +259,60 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     set({ rewards: next }); save(next, get().redemptions);
   },
 
-  redeemReward: (rewardId, memberId, wallet) => {
+  redeemReward: async (rewardId, memberId, wallet) => {
     const reward = get().rewards.find(r => r.id === rewardId);
-    if (!reward || !reward.available) return false;
+    if (!reward) return false;
+    // Cheap client-side pre-checks stay as an early bail for obviously-bad
+    // calls (skip a network round trip for a reward that's plainly
+    // unavailable) — but they are NOT the actual guard against a double-
+    // redeem race; redeem_reward's own row lock is. Every check that
+    // matters for correctness is re-verified server-side inside the RPC.
+    if (!reward.available) return false;
     if (reward.expiresAt && reward.expiresAt < new Date().toISOString()) return false;
     if (reward.eligibleMemberIds && !reward.eligibleMemberIds.includes(memberId)) return false;
-    if (reward.maxPerMember !== undefined) {
-      const count = get().memberRedemptionCount(rewardId, memberId);
-      if (count >= reward.maxPerMember) return false;
-    }
-    if (reward.stock !== undefined && reward.stock <= 0) return false;
 
+    const { data, error } = await supabase.rpc('redeem_reward', {
+      p_reward_id: rewardId,
+      p_member_id: memberId,
+      p_wallet: wallet ?? null,
+    });
+    if (error) {
+      // Expected failures (out of stock, max reached, expired, not
+      // eligible) surface here as a normal RPC error — the caller (e.g.
+      // StoreScreen.redeemFrom) already shows an "Unable to Redeem" alert
+      // on a false return, same UX as before, just now backed by an
+      // authoritative server check instead of a guessable client one.
+      console.warn('[rewardStore] redeem_reward RPC failed', error.message);
+      return false;
+    }
+    const redemptionId = Array.isArray(data) ? data[0]?.redemption_id : data?.redemption_id;
+    if (!redemptionId) return false;
+
+    // Local state is now a reflection of what the server already committed
+    // (not a guess made ahead of it) — safe to apply optimistically since
+    // the RPC already succeeded by this point. The realtime subscription
+    // above will also independently pick up the INSERT and no-op here via
+    // its own `some(r => r.id === rd.id)` de-dupe guard.
     const redemption: Redemption = {
-      id: 'rd' + Date.now(), rewardId, memberId,
+      id: redemptionId, rewardId, memberId,
       redeemedAt: new Date().toISOString(),
       status: reward.requiresApproval ? 'pending' : 'approved',
       deductedCoins: reward.cost,
-      // Recorded so a later reject/cancel can refund the correct jar — see
-      // rejectRedemption/cancelRedemption. Caller (StoreScreen) already
-      // knows which wallet it called deductCoins with; without this, a
-      // declined "pending approval" redemption permanently lost the coins
-      // (deductCoins fires at request time, not at approval time) with no
-      // way to know which jar to credit back.
       wallet,
       ...(reward.requiresApproval ? {} : { respondedAt: new Date().toISOString() }),
     };
-
-    // Decrement stock if limited
     const nextRewards = reward.stock !== undefined
-      ? get().rewards.map(r => r.id === rewardId ? { ...r, stock: (r.stock ?? 1) - 1 } : r)
+      ? get().rewards.map(r => r.id === rewardId ? { ...r, stock: Math.max(0, (r.stock ?? 1) - 1) } : r)
       : get().rewards;
-
-    const nextRd = [...get().redemptions, redemption];
+    const nextRd = get().redemptions.some(r => r.id === redemptionId)
+      ? get().redemptions
+      : [...get().redemptions, redemption];
     set({ rewards: nextRewards, redemptions: nextRd });
     save(nextRewards, nextRd);
-    // Previously this function only ever touched local Zustand/AsyncStorage
-    // state — a redemption made on one device was invisible to every other
-    // family member's device, and the "sync across the family" behavior the
-    // rest of this app relies on for chores/events/points never applied
-    // here at all. Persist it for real now.
-    const memberName = useFamilyStore.getState().members.find(m => m.id === memberId)?.name ?? '';
-    supabase.from('reward_redemptions').insert([redemptionToRow(redemption, reward.title, memberName)])
-      .then(({ error }) => { if (error) console.warn('[rewardStore] redeemReward insert', error.message); });
+
     if (reward.requiresApproval) {
       notifyReward(memberId, 'reward_redeemed', {
-        redemptionId: redemption.id, rewardId, rewardTitle: reward.title,
+        redemptionId, rewardId, rewardTitle: reward.title,
         rewardEmoji: reward.emoji, cost: reward.cost, memberId,
       });
     }
@@ -466,15 +481,5 @@ function redemptionFromRow(row: any): Redemption {
     wallet: row.wallet === 'gpCoins' ? 'gpCoins' : row.wallet === 'mainCoins' ? 'mainCoins' : undefined,
     respondedAt: row.approved_at ?? row.declined_at ?? undefined,
     note: row.declined_reason ?? undefined,
-  };
-}
-
-function redemptionToRow(rd: Redemption, rewardTitle: string, memberName: string) {
-  return {
-    id: rd.id, reward_id: rd.rewardId, reward_title: rewardTitle,
-    coin_cost: rd.deductedCoins, member_id: rd.memberId, member_name: memberName,
-    status: rd.status === 'rejected' ? 'declined' : rd.status,
-    requested_at: rd.redeemedAt, created_at: rd.redeemedAt,
-    wallet: rd.wallet ?? null,
   };
 }

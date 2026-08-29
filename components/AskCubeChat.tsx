@@ -476,8 +476,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       // verified both server-side so the card the user saw was accurate,
       // but the actual mutation only ever happens through the same store
       // function every other redemption in the app uses, not a bespoke
-      // write here.
-      redeemReward(d.rewardId, d.memberId);
+      // write here. redeemReward is now a real atomic RPC call (closes a
+      // double-redeem race found in this session's coin-economy audit) and
+      // can genuinely fail server-side even after propose_redemption's own
+      // check passed moments earlier (e.g. someone else claimed the last
+      // stock in between) — must actually check the result now rather than
+      // assume success and mark the card "created" regardless.
+      const redeemed = await redeemReward(d.rewardId, d.memberId);
+      if (!redeemed) {
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-redeemerr`, role: 'assistant',
+          content: "Sorry, that reward couldn't be redeemed — it may be out of stock or already at its limit. Please check the Store tab.", timestamp: new Date().toISOString() }]);
+        return;
+      }
     } else if (proposal.kind === 'update_event') {
       // Targeted patch onto the EXISTING event the edge function already
       // resolved server-side (propose_update) — never a new row, and only

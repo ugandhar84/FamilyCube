@@ -32,8 +32,8 @@ export function KioskStoreTab({ active, colors, isDark }: {
     Alert.alert('Redeem this reward?', `Spend ${reward.cost} 🪙 on "${reward.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Redeem', onPress: () => {
-          const ok = redeemReward(reward.id, active.id);
+        text: 'Redeem', onPress: async () => {
+          const ok = await redeemReward(reward.id, active.id);
           if (ok && typeof awardCoins === 'function') awardCoins(active.id, -reward.cost);
         },
       },

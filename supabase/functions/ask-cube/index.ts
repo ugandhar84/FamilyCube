@@ -336,7 +336,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           targetType:   { type: 'string', enum: ['event', 'chore'], description: 'Which table to search — infer from context (e.g. "soccer practice"/"appointment" is an event, "dishwasher chore"/"trash duty" is a chore). Ask the user only if genuinely ambiguous.' },
-          targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher"' },
+          targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher". For reschedule/move/postpone requests where the user only gave a generic noun ("the appointment", "the meeting"), still pass that generic noun here rather than leaving it blank or switching to propose_event — a weak search is better than silently creating a duplicate.' },
           memberName:   { type: 'string', description: 'Whose event/chore this is, if named — narrows the search when multiple records could match' },
           nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("this week", "Tuesday") — omit if not implied, search proceeds from today forward either way' },
           title:        { type: 'string', description: 'New title, only if the user asked to rename it' },
@@ -1370,6 +1370,17 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   propose_update reports no match at all, tell the user plainly that you couldn't find it — don't guess or silently
   update something else, and don't create a new item unless they then confirm that's actually what they want. If it
   reports multiple matches, ask the user which one they mean before calling propose_update again.
+- CRITICAL — "reschedule"/"move"/"postpone"/"push back"/"change the time of" ALWAYS means propose_update, never
+  propose_event, even when the user gives you only a generic noun instead of a specific title (e.g. "reschedule your
+  appointment on Monday", "can we move the appointment to Tuesday", "push back the meeting"). These verbs only make
+  sense applied to something that already exists — there is no such thing as "rescheduling" a thing that hasn't been
+  created yet. Do NOT let a vague/generic targetSearch (e.g. "appointment", "meeting", "the thing on Monday") push
+  you toward creating a new event instead — set targetSearch to whatever noun the user gave (even just "appointment"),
+  set nearDate from whatever date they mentioned (the day being rescheduled FROM, if stated, otherwise the day it's
+  moving TO), and call propose_update anyway. A weak/generic search term is still infinitely better than silently
+  creating a duplicate item the user never asked for. If propose_update's lookup genuinely finds nothing, say so
+  plainly and ask the user which event they mean — do not fall back to propose_event on your own judgment just
+  because the search came up empty; only create a new event if the user then explicitly confirms that's what they want.
 - CRITICAL — carry context across your OWN follow-up questions: if you just named a specific record and asked the
   user for a value (a date, a time, a name, an amount), and their very next message is JUST that value with no
   further context (e.g. you said "what would you like me to set the due date to?" and they reply "tomorrow 9pm", or

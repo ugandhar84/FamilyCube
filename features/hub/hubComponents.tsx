@@ -89,6 +89,24 @@ export function SectionCard({
   children: React.ReactNode; colors: any; isDark: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  // defaultExpanded is only ever read at mount (useState semantics) — but
+  // several callers compute it from live store data (chore/event counts)
+  // that's still an empty array on first render, before the async fetch
+  // resolves. That locked every such section collapsed forever, even once
+  // the real data arrived a moment later and visibly showed a non-zero
+  // badge (live-reported: "Household Backlog" showing "2 Active" but
+  // staying collapsed). Re-open (once) the first time defaultExpanded
+  // flips true after mount, without fighting a user who deliberately
+  // collapsed a section that already had content — track whether the user
+  // has ever manually toggled it, and only auto-open before that happens.
+  const userToggledRef = useRef(false);
+  const prevDefaultExpandedRef = useRef(defaultExpanded);
+  useEffect(() => {
+    if (defaultExpanded && !prevDefaultExpandedRef.current && !userToggledRef.current) {
+      setExpanded(true);
+    }
+    prevDefaultExpandedRef.current = defaultExpanded;
+  }, [defaultExpanded]);
   const open = !collapsible || expanded;
   const tint = accent ?? colors.primary;
   const Header = collapsible ? Pressable : View;
@@ -96,7 +114,7 @@ export function SectionCard({
   return (
     <View style={{ marginBottom: 18 }}>
       <Header
-        onPress={collapsible ? () => setExpanded(v => !v) : undefined}
+        onPress={collapsible ? () => { userToggledRef.current = true; setExpanded(v => !v); } : undefined}
         style={{
           flexDirection: 'row', alignItems: 'center', gap: large ? 12 : 10,
           paddingVertical: 4,

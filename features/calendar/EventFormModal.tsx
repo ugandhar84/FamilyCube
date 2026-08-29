@@ -375,7 +375,13 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   };
 
   // ── Member pickers ─────────────────────────────────────────────────────────
-  const kids   = members.filter(m => m.role === 'kid');
+  // Live-reported: a teen could never be picked as a Ride passenger,
+  // Medical patient, Sports player, or Study student through this pool —
+  // `role === 'kid'` alone excluded every teen-role member, even though
+  // isKid/isTeen are checked together everywhere else in this same file
+  // (e.g. line 120-121) treating them as the same "child" category for
+  // permission purposes. A teen absolutely can be picked up from soccer.
+  const kids   = members.filter(m => m.role === 'kid' || m.role === 'teen');
   // Grandparents only appear as a directly-pickable "Accompanied by/Driven
   // by" option once Grandparents Welcome is on — picking one while the
   // toggle reads "Off · private between parents only" was a direct
@@ -1439,6 +1445,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   });
   const [showEditDatePick, setShowEditDatePick] = useState(false);
   const [showEditTimePick, setShowEditTimePick] = useState(false);
+  // Live-reported: an event created all-day (e.g. a Ride with no time set)
+  // had NO way to ever get a time added, because both the Time button and
+  // the save-patch's time computation keyed off the original, immutable
+  // `event.allDay` — there was no toggle anywhere in the edit screen to
+  // flip it, unlike AddEventModal which has one (line ~924). This mirrors
+  // that same toggle so all-day is editable, not permanent.
+  const [editAllDay, setEditAllDay] = useState<boolean>(event.allDay ?? false);
   const handleDriverSelect = (id: string) => {
     const m = members.find(x => x.id === id);
     setEditDriverId(id);
@@ -1488,10 +1501,14 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (newPrivacyLevel !== (event.privacyLevel ?? 'normal')) patch.privacyLevel = newPrivacyLevel;
       // Spec 2.9 — date/time edit. All-day events carry no time field at all
       // (matches AddEventModal's own `allDay ? undefined : fmtTime(...)`).
+      // Uses editAllDay (the live toggle state), not event.allDay — the
+      // original, immutable value — so switching "All day" off here and
+      // picking a time actually sticks on save.
       const newDateStr = localDateStr(editEventDate);
-      const newTimeStr = event.allDay ? undefined : fmtTime(editEventDate);
+      const newTimeStr = editAllDay ? undefined : fmtTime(editEventDate);
       if (newDateStr !== event.date) patch.date = newDateStr;
       if (newTimeStr !== event.time) patch.time = newTimeStr;
+      if (editAllDay !== (event.allDay ?? false)) patch.allDay = editAllDay;
       if (helperTouched) {
         let newHelperName = helperName.trim();
         // Same auto-assign-to-other-parent convenience as creating a new
@@ -1542,9 +1559,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
       if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
       const newDateStr = localDateStr(editEventDate);
-      const newTimeStr = event.allDay ? undefined : fmtTime(editEventDate);
+      const newTimeStr = editAllDay ? undefined : fmtTime(editEventDate);
       if (newDateStr !== event.date) patch.date = newDateStr;
       if (newTimeStr !== event.time) patch.time = newTimeStr;
+      if (editAllDay !== (event.allDay ?? false)) patch.allDay = editAllDay;
     }
     if (Object.keys(patch).length > 0) {
       // A recurring occurrence's edit needs to know whether it applies to
@@ -1710,7 +1728,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         {fmtDisplay(editEventDate)}
                       </Text>
                     </TouchableOpacity>
-                    {!event.allDay && (
+                    {!editAllDay && (
                       <TouchableOpacity
                         style={[f.dateBtn, { flex: 2, backgroundColor: showEditTimePick ? catColor + '20' : colors.surface, borderColor: showEditTimePick ? catColor : colors.border }]}
                         onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Time" field on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1532]`); setShowEditTimePick(p => !p); setShowEditDatePick(false); }}
@@ -1730,6 +1748,20 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     onDone={() => { setShowEditDatePick(false); setShowEditTimePick(false); }}
                     accentColor={catColor} colors={colors}
                   />
+                  {/* All day toggle — previously missing entirely, which meant
+                      an event created all-day (e.g. a Ride with no time set)
+                      could never get a time added: the Time button above was
+                      permanently hidden and the save patch permanently
+                      discarded any time. Matches AddEventModal's own toggle. */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>All day</Text>
+                    <Switch
+                      value={editAllDay}
+                      onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "All day" on EditEventModal for "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1719]`); setEditAllDay(v); if (!v) { setShowEditTimePick(false); } }}
+                      trackColor={{ false: colors.border, true: catColor + '80' }}
+                      thumbColor={editAllDay ? catColor : colors.textTertiary}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -1974,8 +2006,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               )}
 
               {/* Call-style reminder — allowed even when otherwise
-                  restricted (not past), same as notes. */}
-              {!isPast && !!event.time && (
+                  restricted (not past), same as notes. Gated on the live
+                  editAllDay toggle, not the original event.time prop —
+                  that prop stays stale for the whole editing session, so
+                  turning "All day" off and picking a time (both above)
+                  used to still hide this section until the modal was
+                  closed and reopened after saving. */}
+              {!isPast && !editAllDay && (
                 <View style={{ gap: 6, marginBottom: 4 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>

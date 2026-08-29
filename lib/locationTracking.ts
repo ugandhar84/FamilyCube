@@ -21,16 +21,26 @@ import { encryptLocationText } from './locationCrypto';
 
 export const LOCATION_TASK_NAME = 'family-cube-background-location';
 
-const LOW_BATTERY_THRESHOLD = 15;
-const LOW_BATTERY_RESET_ABOVE = 20; // hysteresis — avoids re-alerting every update while hovering at 15%
+const LOW_BATTERY_THRESHOLD = 20;
+const LOW_BATTERY_RESET_ABOVE = 25; // hysteresis — avoids re-alerting every update while hovering near the threshold
 
 let lowBatteryAlerted = false;
 
 /**
  * Fires the family low-battery alert once per episode — armed again only
  * once the device charges back above LOW_BATTERY_RESET_ABOVE, so a phone
- * sitting at 14% doesn't re-notify the family on every single location
+ * sitting at 19% doesn't re-notify the family on every single location
  * update. Safe to call on every update; it no-ops most of the time.
+ *
+ * Was calling the dedicated notify-low-battery edge function, which wrote
+ * to notification_logs (confirmed dead — zero real writers app-wide, see
+ * store/notifStore.ts's header comment) and read recipient push tokens
+ * from `push_tokens` (confirmed empty — zero rows, ever). Both of this
+ * feature's two delivery paths were broken independently, so no low-
+ * battery alert has ever reached anyone. family-notifier already has a
+ * correctly-wired 'low_battery' case (real `notifications` table,
+ * member_device_tokens/members.expo_push_token resolution) — reuse that
+ * single working pipeline instead of maintaining a second, broken one.
  */
 export async function maybeAlertLowBattery(memberId: string, batteryLevel: number | null): Promise<void> {
   if (batteryLevel === null) return;
@@ -38,8 +48,25 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
   if (batteryLevel > LOW_BATTERY_THRESHOLD || lowBatteryAlerted) return;
   lowBatteryAlerted = true;
   try {
-    await supabase.functions.invoke('notify-low-battery', {
-      body: { member_id: memberId, battery_level: batteryLevel },
+    const { data: member } = await supabase.from('members')
+      .select('name, family_id').eq('id', memberId).single();
+    if (!member?.family_id) return;
+    // 'low_battery' isn't in family-notifier's NOTIFY_PARENTS/NOTIFY_SPECIFIC
+    // auto-route lists (it's not parent-specific or tied to one other
+    // member) — resolve "every other family member" here, same as the old
+    // notify-low-battery function used to do server-side.
+    const { data: others } = await supabase.from('members')
+      .select('id').eq('family_id', member.family_id).neq('id', memberId);
+    const recipientIds = (others ?? []).map((m: any) => m.id);
+    if (!recipientIds.length) return;
+    await supabase.functions.invoke('family-notifier', {
+      body: {
+        type: 'low_battery',
+        familyId: member.family_id,
+        memberIds: recipientIds,
+        payload: { memberName: member.name, memberId, batteryLevel },
+        persist: true,
+      },
     });
   } catch { /* best-effort — a missed alert isn't worth failing the location update over */ }
 }

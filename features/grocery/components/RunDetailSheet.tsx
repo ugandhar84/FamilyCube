@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Image, ActivityIndicator,
+  View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Image, ActivityIndicator, TextInput,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun, GroceryRunItem } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { showToast } from '@/components/AppToast';
 import { sh, rd } from './styles';
 
 // ─── Run Detail Sheet ─────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   colors: any; isDark: boolean;
 }) {
   const { members } = useFamilyStore();
-  const { checkRunItem, uncheckRunItem, addItemToRun, removeItemFromRun, startRun, completeRun, loadRunDetail } = useGroceryStore();
+  const { checkRunItem, uncheckRunItem, addItem, addItemToRun, removeItemFromRun, startRun, completeRun, deleteRun, loadRunDetail } = useGroceryStore();
   const addQuest = useQuestStore().addQuest;
   const [runItems,         setRunItems]         = useState<GroceryRunItem[]>([]);
   const [adding,           setAdding]           = useState(false);
@@ -31,6 +32,14 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   const [receiptAnalysis,  setReceiptAnalysis]  = useState<any | null>(null);
   const [analyzingReceipt, setAnalyzingReceipt] = useState(false);
   const [startingRun,      setStartingRun]      = useState(false);
+  // Quick-add — live-reported: "+ Add" only ever offered items already in
+  // the family's shared grocery pool, with no way to type something new on
+  // the spot while mid-shop. addItem() itself already tags the new row with
+  // this trip's store and auto-joins any open run at that store (see
+  // groceryStore.ts's own addItem — the same auto-join createRun uses), so
+  // this doesn't need a separate addItemToRun call after creating it.
+  const [quickAddName, setQuickAddName] = useState('');
+  const [quickAdding,  setQuickAdding]  = useState(false);
 
   const pickReceipt = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -52,12 +61,18 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   };
 
   const analyzeReceipt = async (base64: string) => {
-    if (!base64) return;
+    if (!base64 || !run) return;
     setAnalyzingReceipt(true); setReceiptAnalysis(null);
     try {
-      const runItems_ = runItems.map(ri => ri.item?.name ?? ri.itemId);
-      const { data, error } = await supabase.functions.invoke('family-ai', {
-        body: { action: 'analyze_receipt', imageBase64: base64, runItems: runItems_ },
+      // Was calling family-ai with action: 'analyze_receipt' — that action
+      // doesn't exist in family-ai's ACTIONS map at all (live-reported:
+      // "Edge Function returned a non-2xx status code", a 400 Unknown
+      // action). The real, already-built receipt parser is its own
+      // dedicated function with a different request/response shape
+      // entirely (familyId/scannedById/imageBase64 in, {total, items:
+      // [{name, totalPrice, ...}]} out, persisted to grocery_receipts).
+      const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
+        body: { familyId: run.familyId, scannedById: memberId, imageBase64: base64, store: run.store ?? undefined },
       });
       if (error) throw error;
       setReceiptAnalysis(data);
@@ -144,6 +159,28 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     setRunItems(detail?.runItems ?? []);
     setTab('items');
     setAdding(false);
+  };
+
+  // Creates a brand-new item (not yet in the family's grocery pool) tagged
+  // to this trip's store, and relies on addItem's own auto-join for
+  // matching open runs rather than a separate addItemToRun call.
+  const handleQuickAdd = async () => {
+    const trimmed = quickAddName.trim();
+    if (!trimmed || quickAdding) return;
+    setQuickAdding(true);
+    const created = await addItem({
+      familyId: run.familyId, name: trimmed, storePreference: run.store ?? undefined, addedBy: memberId,
+    });
+    if (created) {
+      const detail = await loadRunDetail(run.id);
+      setRunItems(detail?.runItems ?? []);
+      setQuickAddName('');
+      setTab('items');
+      showToast('Item added');
+    } else {
+      showToast("Couldn't add item — try again", 'info');
+    }
+    setQuickAdding(false);
   };
 
   // "Not found here" — marks item unavailable at current store, keeps it on list
@@ -264,6 +301,25 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   };
 
   // Partial complete — only checked items marked bought, unchecked stay on list
+  // Live-reported: starting a trip with nothing checked off yet had no way
+  // to stop — "Done" only ever appears once checkedCount > 0 (see the
+  // Actions section below), and the × just dismisses the sheet without
+  // ending the trip, leaving it stuck "Shopping now" in the background.
+  // Cancelling deletes the run itself, not the underlying grocery_items —
+  // deleteRun's own comment confirms items "naturally stay on the list."
+  const handleCancelTrip = () => {
+    Alert.alert('Stop shopping?', `"${run.name}" will be cancelled. Items stay on your grocery list for next time.`, [
+      { text: 'Keep Shopping', style: 'cancel' },
+      {
+        text: 'Stop Shopping', style: 'destructive', onPress: async () => {
+          await deleteRun(run.id);
+          showToast('Trip cancelled');
+          onClose();
+        },
+      },
+    ]);
+  };
+
   const handleComplete = () => {
     const notFoundCount = notFoundIds.size;
     const msg = notFoundCount > 0
@@ -471,7 +527,32 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
 
           {/* Add pool items to run */}
           {tab === 'add' && (
-            <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Quick-add — a brand-new item not yet in the family's pool,
+                  typed on the spot mid-shop. Tagged with this trip's store
+                  so it lands directly in this run (addItem's own auto-join). */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                <TextInput
+                  style={[sh.input, { flex: 1, marginBottom: 0, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                  placeholder="Add a new item…"
+                  placeholderTextColor={colors.textTertiary}
+                  value={quickAddName}
+                  onChangeText={setQuickAddName}
+                  onSubmitEditing={handleQuickAdd}
+                  returnKeyType="done"
+                  editable={!quickAdding}
+                />
+                <Pressable
+                  onPress={handleQuickAdd}
+                  disabled={!quickAddName.trim() || quickAdding}
+                  style={{ borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: quickAddName.trim() && !quickAdding ? colors.primary : colors.border }}
+                >
+                  {quickAdding
+                    ? <ActivityIndicator size="small" color={colors.textInverse} />
+                    : <Text style={{ color: colors.textInverse, fontWeight: '700', fontSize: 14 }}>Add</Text>}
+                </Pressable>
+              </View>
               {notInRun.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 32 }}>
                   <Text style={{ fontSize: 14, color: colors.textSecondary }}>All pending items are already in this run.</Text>
@@ -520,16 +601,18 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   )}
                   {receiptAnalysis && !analyzingReceipt && (
                     <View style={{ backgroundColor: colors.primaryLight, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border }}>
-                      {receiptAnalysis.total && (
+                      {!!receiptAnalysis.total && (
                         <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 }}>
-                          Total: ${receiptAnalysis.total}
+                          Total: ${Number(receiptAnalysis.total).toFixed(2)}
                         </Text>
                       )}
+                      {/* parse-grocery-receipt's own ExtractedItem shape —
+                          totalPrice, not price. */}
                       {(receiptAnalysis.items ?? []).map((ri: any, idx: number) => (
                         <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6,
                           borderBottomWidth: idx < receiptAnalysis.items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
                           <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>{ri.name}</Text>
-                          {ri.price && <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>${ri.price}</Text>}
+                          {!!ri.totalPrice && <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>${Number(ri.totalPrice).toFixed(2)}</Text>}
                         </View>
                       ))}
                     </View>
@@ -588,9 +671,17 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                     </View>
                   )}
 
-                  {checkedCount > 0 && (
+                  {checkedCount > 0 ? (
                     <Pressable onPress={handleComplete} style={[sh.btn, { backgroundColor: colors.primary }]}>
                       <Text style={[sh.btnText, { color: colors.textInverse }]}>✅ Done — {checkedCount} bought{notFoundIds.size > 0 ? `, ${notFoundIds.size} skipped` : ''}</Text>
+                    </Pressable>
+                  ) : (
+                    // Nothing bought yet — "Done" has no meaning here, but the
+                    // trip still needs a way to end without a purchase.
+                    <Pressable onPress={handleCancelTrip}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        borderWidth: 1.5, borderColor: colors.danger, borderRadius: 10, paddingVertical: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Stop Shopping (no purchase)</Text>
                     </Pressable>
                   )}
                 </>

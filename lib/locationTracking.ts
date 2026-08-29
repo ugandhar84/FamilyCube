@@ -365,7 +365,7 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
     // literally — an hour is loose enough that it never becomes the
     // effective polling rate; distanceInterval stays the real driver.
     timeInterval: 60 * 60_000,
-    distanceInterval: MIN_DISTANCE_METERS, // 0.2 mile
+    distanceInterval: MIN_DISTANCE_METERS, // ~0.05 mile (80m) — see MIN_DISTANCE_METERS' own comment
     showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
     foregroundService: {
       notificationTitle: 'Family Cube',

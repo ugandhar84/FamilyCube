@@ -351,6 +351,26 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     }
   };
 
+  // The native background task (startBackgroundLocationTracking) only
+  // fires on real movement — 80m/~0.05mi — so a stationary phone can go
+  // hours between location writes even with sharing on (user-reported: a
+  // pin showing "18h ago" while sharing was supposedly active). Mirrors
+  // startBatteryPolling's existing pattern of a plain interval independent
+  // of the movement gate, but scoped to LOCATION specifically and only
+  // while sharing is actually on (unlike battery, which polls
+  // unconditionally — location is the privacy-sensitive one, so this must
+  // never run just because the GPS screen happens to be mounted). Also
+  // only while this screen is in the foreground — a JS setInterval doesn't
+  // reliably fire once the app backgrounds on iOS anyway, which is exactly
+  // what the native background task above already exists to cover.
+  useEffect(() => {
+    if (!tracking || !activeMemberId) return;
+    const interval = setInterval(() => {
+      refreshMyLocation(activeMemberId);
+    }, 5 * 60_000);
+    return () => clearInterval(interval);
+  }, [tracking, activeMemberId, familyId]);
+
   const [historyFor, setHistoryFor] = useState<{ member_id: string; name: string } | null>(null);
   const [history, setHistory] = useState<{ lat: number; lng: number; address: string | null; recorded_at: string }[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);

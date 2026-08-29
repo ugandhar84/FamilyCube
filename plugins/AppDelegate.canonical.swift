@@ -7,7 +7,7 @@ import CallKit
 import AVFoundation
 
 @UIApplicationMain
-public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {
+public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate, AVSpeechSynthesizerDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
@@ -15,6 +15,19 @@ public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserve
   var voipRegistry: PKPushRegistry?
   var callObserver: CXCallObserver?
   var surfacedCallUUIDs = Set<String>()
+  // Calls currently ringing/connected — the repeat-speak loop checks this
+  // before each replay and stops the instant the call ends, so it never
+  // fires into dead air or a call the person already hung up.
+  var activeCallUUIDs = Set<String>()
+  // How many more times to repeat the reminder for a given call, keyed by
+  // uuid — decremented in speechSynthesizer(_:didFinish:) once the current
+  // pass's utterances have ALL actually finished playing (didFinish fires
+  // once per utterance, so this only reacts on the last one of a pass).
+  var repeatsRemaining: [String: Int] = [:]
+  var repeatGapSeconds: [String: TimeInterval] = [:]
+  // Set on the LAST utterance of each pass so didFinish knows that firing
+  // means "the whole pass is done," not just "one segment of it is."
+  var lastUtterancePerCall: [String: AVSpeechUtterance] = [:]
   let speechSynthesizer = AVSpeechSynthesizer()
 
   public override func application(
@@ -56,6 +69,8 @@ FirebaseApp.configure()
     observer.setDelegate(self, queue: nil)
     callObserver = observer
 
+    speechSynthesizer.delegate = self
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -91,6 +106,10 @@ FirebaseApp.configure()
     // resolve it, because this lookup never found the app's own itemId).
     let uuid = call.uuid.uuidString.lowercased()
     if call.hasEnded {
+      activeCallUUIDs.remove(uuid)
+      repeatsRemaining.removeValue(forKey: uuid)
+      repeatGapSeconds.removeValue(forKey: uuid)
+      lastUtterancePerCall.removeValue(forKey: uuid)
       if surfacedCallUUIDs.contains(uuid) {
         let d = UserDefaults.standard
         for key in ["itemType","itemId","dueAtIso","title","recipient","notes","location","category"] {
@@ -150,9 +169,41 @@ FirebaseApp.configure()
           userInfo: ["itemType": itemType, "itemId": id, "dueAtIso": due]
         )
       }
+      activeCallUUIDs.insert(uuid)
+      // 3 total plays, 3 seconds of silence between each — matches the
+      // original tuned behavior that existed before an earlier cleanup
+      // pass mistakenly deleted the whole repeat mechanism believing it
+      // wasn't part of "the real implementation." It was real; restored
+      // here using AVSpeechSynthesizerDelegate's didFinish callback (see
+      // below) instead of the previous word-count time estimate, since
+      // didFinish tells us exactly when speech actually completes.
+      repeatsRemaining[uuid] = 3
+      repeatGapSeconds[uuid] = 3.0
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
         self?.speakReminder(callUUID: uuid, itemType: itemType)
       }
+    }
+  }
+
+  // Fires once per utterance. Only the LAST utterance of a pass is tracked
+  // in lastUtterancePerCall, so this only reacts when an entire pass (all
+  // segments: greeting+main line, optional notes/location aside) has
+  // actually finished playing — not after just the first segment.
+  public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    guard let (uuid, _) = lastUtterancePerCall.first(where: { $0.value === utterance }) else { return }
+    lastUtterancePerCall.removeValue(forKey: uuid)
+    let remaining = (repeatsRemaining[uuid] ?? 1) - 1
+    repeatsRemaining[uuid] = remaining
+    guard remaining > 0, activeCallUUIDs.contains(uuid) else {
+      repeatsRemaining.removeValue(forKey: uuid)
+      repeatGapSeconds.removeValue(forKey: uuid)
+      return
+    }
+    let gap = repeatGapSeconds[uuid] ?? 3.0
+    let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
+    DispatchQueue.main.asyncAfter(deadline: .now() + gap) { [weak self] in
+      guard let self = self, self.activeCallUUIDs.contains(uuid) else { return }
+      self.speakReminder(callUUID: uuid, itemType: itemType)
     }
   }
 
@@ -167,7 +218,7 @@ FirebaseApp.configure()
     case 5..<12:  return "Good morning"
     case 12..<18: return "Good afternoon"
     case 18..<22: return "Good evening"
-    default:      return "Hey"
+    default:      return "Hi"
     }
   }
 
@@ -286,18 +337,42 @@ FirebaseApp.configure()
     if let aside = asideLine { segments.append(aside) }
 
     // ── Voice selection — prefer Siri premium/enhanced over compact ────────
+    // .premium/.enhanced only exist on-device if the user has actually
+    // downloaded that voice pack (Settings > Accessibility > Spoken
+    // Content > Voices) — a device without one installed silently falls
+    // through every candidate below to the flat, robotic default compact
+    // voice. That's a device setting, not something this code can force;
+    // logging which tier we actually got makes that distinguishable from a
+    // real code regression next time someone reports "sounds robotic."
     let langCode = AVSpeechSynthesisVoice.currentLanguageCode()
     let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == langCode }
     let voice = voices.first(where: { $0.quality == .premium })
       ?? voices.first(where: { $0.quality == .enhanced })
       ?? AVSpeechSynthesisVoice(language: langCode)
+    #if DEBUG
+    let qualityLabel = voice.map { v -> String in
+      switch v.quality {
+      case .premium: return "premium"
+      case .enhanced: return "enhanced"
+      default: return "default/compact"
+      }
+    } ?? "none"
+    print("[FamilyCube TTS] using voice quality: \(qualityLabel) (\(voice?.name ?? "nil")) — download an Enhanced/Premium voice in Settings > Accessibility > Spoken Content > Voices if this says default/compact")
+    #endif
 
+    // speechSynthesizer(_:didFinish:) fires once per utterance in this
+    // pass; only the LAST one is registered in lastUtterancePerCall, so
+    // the repeat-chaining logic there only reacts once the whole pass
+    // (greeting+main line, plus the notes/location aside if present) has
+    // actually finished speaking, not after just the first segment.
     for (i, segment) in segments.enumerated() {
       let u = AVSpeechUtterance(string: segment)
       u.voice = voice
       u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.97
       u.pitchMultiplier = i == 0 ? 1.0 : 0.97
-      u.postUtteranceDelay = i < segments.count - 1 ? 0.45 : 0
+      let isLastSegment = i == segments.count - 1
+      u.postUtteranceDelay = isLastSegment ? 0 : 0.45
+      if isLastSegment { lastUtterancePerCall[callUUID] = u }
       speechSynthesizer.speak(u)
     }
   }

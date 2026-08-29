@@ -91,11 +91,15 @@ function extractClassDeclarationLine(source) {
 // (a line already present in every fresh-prebuilt AppDelegate.swift) through
 // the last property this feature owns — i.e. every CallKit/PushKit/TTS-
 // related stored property, verbatim, in one contiguous chunk. The end
-// marker is `hasStartedSpeaking` (TEMP diagnostic instrumentation, added
-// after `callDebugTrace`/`speechSynthesizer`) rather than `speechSynthesizer`
-// itself now — keep this pointed at whatever is genuinely the LAST property
-// in the canonical file's block, or newer properties added after the old
-// marker silently won't make it into the patched output.
+// marker is `callDebugTrace` (TEMP diagnostic instrumentation, added after
+// `hasStartedSpeaking`) — keep this pointed at whatever is genuinely the
+// LAST property in the canonical file's block, or newer properties added
+// after the old marker silently won't make it into the patched output. This
+// exact class of bug shipped once already: the marker was left pointing at
+// `hasStartedSpeaking` after `callDebugTrace` was added below it, so
+// callDebugTrace was silently dropped from every generated AppDelegate.swift
+// and the app failed to compile at all ("cannot find 'callDebugTrace' in
+// scope") — caught only at the next EAS build, not by tsc or any local check.
 function extractPropertiesBlock(source) {
   const startMarker = 'var reactNativeFactory: RCTReactNativeFactory?';
   const startMarkerIdx = source.indexOf(startMarker);
@@ -105,9 +109,9 @@ function extractPropertiesBlock(source) {
   // extracted block must only contain what comes after it, or inserting
   // "anchor\n<block>" would duplicate the anchor line.
   const start = source.indexOf('\n', startMarkerIdx) + 1;
-  const endMarker = 'var hasStartedSpeaking = Set<String>()';
+  const endMarker = 'var callDebugTrace: [String] = []';
   const endIdx = source.indexOf(endMarker);
-  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the hasStartedSpeaking property');
+  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the callDebugTrace property');
   const lineEnd = source.indexOf('\n', endIdx);
   // trimStart() too — insertion below supplies its own leading indent, and
   // the raw slice starts with the source's existing "  " (2-space) indent

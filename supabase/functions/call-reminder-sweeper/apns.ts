@@ -82,8 +82,21 @@ async function sendApnsVoip(token: string, payload: RingPayload, recipientName?:
   // shipping a real TestFlight/App Store build.
   const isProduction = Deno.env.get('APNS_ENVIRONMENT') === 'production';
   const url = `https://${isProduction ? 'api' : 'api.sandbox'}.push.apple.com/3/device/${token}`;
+  // AppDelegate.swift's pushRegistry(didReceiveIncomingPushWith:) requires
+  // callUUID (data["callUUID"] or data["aps"]["callUUID"]) to proceed at
+  // all — its own guard silently no-ops (completion(); return) with no
+  // error surfaced anywhere if it's missing. This payload never included
+  // it, so every real push from this sweeper hit that exact guard and
+  // never called reportNewIncomingCall — confirmed live: Apple accepted
+  // the push (HTTP 200) but the device never rang. One real UUID per ring,
+  // generated server-side, so it's unique and consistent for THIS
+  // notification's own answered/missed-call tracking (call_reminder_log
+  // keys off item_type/item_id/due_at, not this UUID, so no correctness
+  // impact there — this only fixes the native call actually surfacing).
+  const callUUID = crypto.randomUUID();
   const body = JSON.stringify({
     aps: { 'content-available': 1 },
+    callUUID,
     callerName: payload.callerName,
     itemType: payload.itemType,
     itemId: payload.itemId,

@@ -500,6 +500,40 @@ const getActiveMemberId = (): string | null => {
   } catch { return null; }
 };
 
+// ─── Handoff notifications ─────────────────────────────────────────────────────
+// offerChoreHandoff/acceptChoreHandoff/declineChoreHandoff previously fired
+// zero notifications at all — the receiver only found out a chore was
+// offered to them by happening to open the app and see it in their list, and
+// the offerer never learned whether an accept/decline happened. Routes
+// through the same family-notifier pipeline as every other real
+// notification in the app (rewardStore/helpStore/kidRequestStore/
+// groceryStore, quest-event-notifier's fire()) — best-effort, never blocks
+// the actual handoff state change.
+function memberName(memberId: string | undefined | null): string {
+  if (!memberId) return 'Someone';
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const m = useFamilyStore.getState().members.find((mm: any) => mm.id === memberId);
+    return m?.name ?? 'Someone';
+  } catch { return 'Someone'; }
+}
+
+function notifyChoreHandoff(
+  type: 'chore_handoff_offered' | 'chore_handoff_accepted' | 'chore_handoff_declined',
+  familyId: string | undefined,
+  memberIds: string[],
+  excludeMemberId: string | null,
+  payload: Record<string, unknown>,
+) {
+  if (!familyId || !memberIds.length) return;
+  supabase.functions.invoke('family-notifier', {
+    body: {
+      type, familyId, memberIds, payload, persist: true,
+      excludeMemberId: excludeMemberId ?? undefined,
+    },
+  }).catch(e => console.warn('[choreStore] handoff notify failed:', e?.message));
+}
+
 // Mirrors eventStore.ts's logUpdateActivity — one row per meaningful field
 // change, covering the transitions a family actually wants in the shared
 // history sheet (claim/submit/approve/decline, reassignment, reward edits,
@@ -2441,6 +2475,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         rejectionReason: reason ?? c.rejectionReason,
       } : c),
     }));
+    notifyChoreHandoff('chore_handoff_offered', chore.familyId, [toMemberId], byMemberId, {
+      questTitle: chore.title, questId: chore.id, byName: memberName(byMemberId), reason: reason ?? undefined,
+    });
     supabase.rpc('offer_chore_handoff', {
       p_chore_id: choreId, p_to_member_id: toMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null,
     }).then(({ error }) => {
@@ -2456,6 +2493,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   acceptChoreHandoff: (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.pendingHandoffTo !== memberId) return;
+    const offeredBy = chore.pendingHandoffOfferedBy;
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, assignedToId: memberId, isPool: false, status: 'todo', claimedAt: new Date().toISOString(),
@@ -2463,6 +2501,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
       } : c),
     }));
+    if (offeredBy) {
+      notifyChoreHandoff('chore_handoff_accepted', chore.familyId, [offeredBy], memberId, {
+        questTitle: chore.title, questId: chore.id, byName: memberName(memberId),
+      });
+    }
     supabase.rpc('accept_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
       .then(({ error }) => {
         if (!error) { showToast("You're on it ✓"); return; }
@@ -2477,6 +2520,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   declineChoreHandoff: (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.pendingHandoffTo !== memberId) return;
+    const offeredBy = chore.pendingHandoffOfferedBy;
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, assignedToId: undefined, isPool: true, status: 'todo',
@@ -2484,6 +2528,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
       } : c),
     }));
+    if (offeredBy) {
+      notifyChoreHandoff('chore_handoff_declined', chore.familyId, [offeredBy], memberId, {
+        questTitle: chore.title, questId: chore.id, byName: memberName(memberId),
+      });
+    }
     supabase.rpc('decline_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
       .then(({ error }) => {
         if (!error) return;

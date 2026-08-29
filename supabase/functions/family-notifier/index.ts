@@ -120,6 +120,29 @@ type NotifType =
   | 'pool_unclaimed_urgent'
   | 'approval_cutoff_nudge'
   | 'approval_cutoff_escalated'
+  // Chore handoff (offer/accept/decline a chore to a specific person, master
+  // flow's "hand it to someone" path) — previously fired zero notifications
+  // at all; see store/choreStore.ts's offerChoreHandoff/acceptChoreHandoff/
+  // declineChoreHandoff.
+  | 'chore_handoff_offered'
+  | 'chore_handoff_accepted'
+  | 'chore_handoff_declined'
+  // Ride/driver assignment ping-pong (store/eventStore.ts's updateEvent) —
+  // parent-to-parent offer/accept/decline on a driver or helper assignment,
+  // plus a final one-time confirmation to the requesting kid.
+  | 'ride_assignment_offered'
+  | 'ride_assignment_accepted'
+  | 'ride_assignment_declined'
+  | 'ride_confirmed_for_kid'
+  // A parent flips isOpenToGrandparents/isOpenToTeens false→true on an
+  // event (store/eventStore.ts's updateEvent) — previously only wrote a
+  // silent activity_log row (logUpdateActivity's gp_welcome_changed/
+  // teen_welcome_changed); nobody eligible was ever told the ride pool just
+  // gained a new claimable slot. Broadcast to every senior (GP) or
+  // hasCar:true teen in the family, same eligibility gates their own pool
+  // views already use (SeniorView's isOpenToGrandparents filter,
+  // TeenView's hasCar-gated pool).
+  | 'ride_pool_opened'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -140,6 +163,9 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   kid_request: 'requests', kid_request_decision: 'requests',
   schedule_conflict: 'family',
   pool_unclaimed_urgent: 'chores', approval_cutoff_nudge: 'chores', approval_cutoff_escalated: 'chores',
+  chore_handoff_offered: 'chores', chore_handoff_accepted: 'chores', chore_handoff_declined: 'chores',
+  ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
+  ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -376,6 +402,25 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `You didn't confirm "${p.questTitle}" in time, so it's open for anyone else to take now.`,
         data: { screen: 'Quests', questId: p.questId },
       };
+    case 'chore_handoff_offered':
+      return {
+        title: '🤝 Chore Handoff',
+        body: `${p.byName ?? 'Someone'} wants to hand off "${p.questTitle}" to you${p.reason ? `: ${p.reason}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_handoff_accepted':
+      return {
+        title: '🤝 Handoff Accepted',
+        body: `${p.byName ?? 'They'} accepted "${p.questTitle}" — you're all set.`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_handoff_declined':
+      return {
+        title: '↩️ Handoff Declined',
+        body: `${p.byName ?? 'They'} couldn't take "${p.questTitle}" — it's back in the pool.`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
 
     // ── Help requests ─────────────────────────────────────────────────────────
     case 'help_requested':
@@ -445,6 +490,42 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: (p.reason as string) ?? 'Two of your events overlap — check your schedule.',
         sound: 'default',
         data: { type: 'schedule_conflict', eventIds: p.eventIds },
+      };
+
+    // ── Ride/driver assignment (store/eventStore.ts's updateEvent) ────────────
+    case 'ride_assignment_offered':
+      return {
+        title: '🚗 Ride Assignment',
+        body: `${p.byName ?? 'A parent'} assigned you to drive "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_assignment_accepted':
+      return {
+        title: '🚗 Ride Confirmed',
+        body: `${p.byName ?? 'They'} confirmed "${p.eventTitle}" — you're covered.`,
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_assignment_declined':
+      return {
+        title: '🚫 Ride Declined',
+        body: `${p.byName ?? 'The driver'} can't make "${p.eventTitle}" — it's back open for someone else.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_confirmed_for_kid':
+      return {
+        title: '🚗 Ride Confirmed',
+        body: `${p.driverName ?? 'A driver'} is picking you up for "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_pool_opened':
+      return {
+        title: '🚗 A Ride Needs a Driver',
+        body: `"${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''} needs a driver — tap to help.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
       };
 
     case 'pool_unclaimed_urgent':

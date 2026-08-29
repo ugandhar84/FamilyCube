@@ -63,10 +63,14 @@ function iconFor(type: string): string {
 export function routeForNotification(type: string, data?: Record<string, any> | null): string | null {
   const screen = data?.screen as string | undefined;
   switch (screen) {
-    case 'Quests':  return '/(tabs)/quests';
-    case 'Hub':     return '/(tabs)';
-    case 'Chat':    return '/(tabs)/chat';
-    case 'Rewards': return '/(tabs)/store';
+    case 'Quests':   return '/(tabs)/quests';
+    case 'Hub':      return '/(tabs)';
+    case 'Chat':     return '/(tabs)/chat';
+    case 'Rewards':  return '/(tabs)/store';
+    // Ride/driver assignment notifications (ride_assignment_*/
+    // ride_confirmed_for_kid) — deep-link to the Schedule tab where the
+    // event and its driver-status chips live.
+    case 'Schedule': return '/(tabs)/calendar';
     // Kid requests are reviewed inline on the parent Hub (ActionNeededSection),
     // there's no dedicated Requests screen/tab to deep-link into further.
     case 'Requests': return '/(tabs)';
@@ -79,7 +83,8 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
   // Fall back on the notification `type` itself when no screen hint is set.
   if (type.startsWith('quest_') || type === 'force_assigned' || type === 'chore_ghosted'
       || type === 'deadline_reminder' || type === 'deadline_overdue' || type === 'penalty_applied'
-      || type === 'bonus_activated' || type === 'bonus_expiring') return '/(tabs)/quests';
+      || type === 'bonus_activated' || type === 'bonus_expiring' || type.startsWith('chore_handoff_')) return '/(tabs)/quests';
+  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid') return '/(tabs)/calendar';
   if (type === 'coins_awarded' || type === 'reward_redeemed' || type === 'reward_decision') return '/(tabs)/store';
   if (type === 'chat_message') return '/(tabs)/chat';
   if (type.startsWith('kid_request')) return '/(tabs)';

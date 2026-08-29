@@ -236,15 +236,10 @@ function RootNavigator() {
                 .eq('auth_user_id', session.user.id)
                 .maybeSingle();
               destination = ownMember ? '/(tabs)' : '/onboarding';
-            } else if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
-              // Diagnostic: onboarding was reported as re-triggering for an
-              // already-onboarded user multiple times — logging the exact
-              // gate values here (rather than guessing) since a re-loop
-              // despite completing Terms/family-setup repeatedly points at
-              // either a failed/never-applied onboarding_completed UPDATE,
-              // an RLS-denied read masquerading as "not onboarded" via
-              // profileErr, or session.user.id mismatching the row that was
-              // actually updated.
+            } else if (profileErr || !profile?.terms_accepted) {
+              // No profile at all, or terms genuinely never accepted —
+              // the full 8-slide tutorial + Terms screen is the correct
+              // destination here.
               console.warn('[FamilyCube:OnboardingGate] routing to /onboarding', {
                 userId: session.user.id,
                 profileErr: profileErr?.message,
@@ -253,6 +248,21 @@ function RootNavigator() {
                 profileFound: !!profile,
               });
               destination = '/onboarding';
+            } else if (!profile.onboarding_completed) {
+              // Terms ARE already accepted (this is the common post-Terms-
+              // fix state: acceptTermsOnly() sets terms_accepted without
+              // touching onboarding_completed) but the family hasn't been
+              // created/joined yet. Live-reported: this used to send the
+              // user back through the full slide tutorial from scratch
+              // ("Let's go" screen) — after a 2.2s minimum-splash wait that
+              // read as a long, confusing hang — even though they'd
+              // already seen it and just wanted to get back to
+              // create-vs-join. Route straight to the actual decision they
+              // need to make instead.
+              console.warn('[FamilyCube:OnboardingGate] terms accepted, no family yet — routing to /onboarding/family-choice', {
+                userId: session.user.id,
+              });
+              destination = '/onboarding/family-choice';
             } else {
               let locked = false;
               try {
@@ -476,8 +486,17 @@ function RootNavigator() {
           console.log('[FamilyCube:ProfileCheck] Terms not accepted, going to onboarding');
           router.replace('/onboarding');
         } else if (!profile.onboarding_completed) {
-          console.log('[FamilyCube:ProfileCheck] Onboarding not completed, going to onboarding');
-          router.replace('/onboarding');
+          // Terms already accepted — this is the common post-Terms-fix
+          // state (acceptTermsOnly() sets terms_accepted without touching
+          // onboarding_completed), meaning the person just hasn't
+          // created/joined a family yet. Sending them through the full
+          // slide tutorial again here was the exact bug reported live:
+          // sign out from the create/join-family choice screen, sign back
+          // in, land back on the "Let's go" tutorial after a confusing
+          // wait, instead of straight back to the actual choice. Same fix
+          // as the boot-time gate above.
+          console.log('[FamilyCube:ProfileCheck] Terms accepted, no family yet — going to family-choice');
+          router.replace('/onboarding/family-choice');
         } else {
           console.log('[FamilyCube:ProfileCheck] All done, going to home');
           router.replace('/(tabs)');

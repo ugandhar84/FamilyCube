@@ -10,6 +10,7 @@ import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+import { showToast } from '@/components/AppToast';
 
 export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
   quest: Quest | null; onClose: () => void;
@@ -29,13 +30,14 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
   const save = () => {
     if (!title.trim()) return;
     updateChore(quest.id, { title: title.trim(), coinsReward: Math.max(0, parseInt(coins, 10) || 0) });
+    showToast('Chore updated');
     onClose();
   };
 
   const confirmDelete = () => {
     Alert.alert('Delete this quest?', `"${quest.title}" will be permanently removed.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { deleteChore(quest.id); onClose(); } },
+      { text: 'Delete', style: 'destructive', onPress: () => { deleteChore(quest.id); showToast('Chore deleted'); onClose(); } },
     ]);
   };
 

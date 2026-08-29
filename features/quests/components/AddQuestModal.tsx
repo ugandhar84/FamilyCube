@@ -18,6 +18,7 @@ import { localDateStr, fmtDate, fmtTime } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
+import { showToast } from '@/components/AppToast';
 import { useEventStore } from '@/store/eventStore';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, CATEGORY_META, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import {
@@ -725,6 +726,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
         `This quest's reward is above the family's usual limit, so a parent will need to approve the payout once it's done. The quest itself is ready to go now.`,
       );
     }
+    showToast('Chore created');
     reset();
     onClose();
   };

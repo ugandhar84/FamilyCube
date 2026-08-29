@@ -59,6 +59,7 @@ import {
 import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestionCard';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
+import { showToast } from '@/components/AppToast';
 
 // ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
 // One stepper shell + one recurrence picker + one call-reminder toggle + one
@@ -689,6 +690,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     }
 
     setSaving(false);
+    showToast('Event created');
     reset();
     onClose();
   };
@@ -1469,7 +1471,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (notes !== event.notes) patch.notes = notes.trim() || undefined;
       if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
       if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
-      if (Object.keys(patch).length > 0) updateEvent(event.id, patch);
+      if (Object.keys(patch).length > 0) { updateEvent(event.id, patch); showToast('Event updated'); }
       setSaving(false);
       onClose();
       return;
@@ -1560,14 +1562,15 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           'Apply this change to just this event, or the whole series?',
           [
             { text: 'Cancel', style: 'cancel', onPress: () => setSaving(false) },
-            { text: 'Just this one', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'this'); setSaving(false); onClose(); } },
-            { text: 'This and following', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'following'); setSaving(false); onClose(); } },
-            { text: 'All events', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'all'); setSaving(false); onClose(); } },
+            { text: 'Just this one', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'this'); setSaving(false); showToast('Event updated'); onClose(); } },
+            { text: 'This and following', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'following'); setSaving(false); showToast('Event updated'); onClose(); } },
+            { text: 'All events', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'all'); setSaving(false); showToast('Event updated'); onClose(); } },
           ],
         );
         return;
       }
       updateEvent(event.id, patch);
+      showToast('Event updated');
     }
     setSaving(false);
     onClose();
@@ -1582,9 +1585,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         `Delete just this occurrence of "${event.title}", or the whole series?`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Just this one', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "Just this one" delete on "${event.title}" (id=${event.id}) → onDelete('this') [features/calendar/EventFormModal.tsx:1412]`); onDelete?.('this'); onClose(); } },
-          { text: 'This and following', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "This and following" delete on "${event.title}" (id=${event.id}) → onDelete('following') [features/calendar/EventFormModal.tsx:1413]`); onDelete?.('following'); onClose(); } },
-          { text: 'All events', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "All events" delete on "${event.title}" (id=${event.id}) → onDelete('all') [features/calendar/EventFormModal.tsx:1414]`); onDelete?.('all'); onClose(); } },
+          { text: 'Just this one', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "Just this one" delete on "${event.title}" (id=${event.id}) → onDelete('this') [features/calendar/EventFormModal.tsx:1412]`); onDelete?.('this'); showToast('Event deleted'); onClose(); } },
+          { text: 'This and following', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "This and following" delete on "${event.title}" (id=${event.id}) → onDelete('following') [features/calendar/EventFormModal.tsx:1413]`); onDelete?.('following'); showToast('Event deleted'); onClose(); } },
+          { text: 'All events', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "All events" delete on "${event.title}" (id=${event.id}) → onDelete('all') [features/calendar/EventFormModal.tsx:1414]`); onDelete?.('all'); showToast('Event deleted'); onClose(); } },
         ],
       );
       return;
@@ -1596,7 +1599,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         : `Remove "${event.title}" from the family schedule?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: isOwnPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "${isOwnPending ? 'Withdraw' : 'Delete'}" on "${event.title}" (id=${event.id}) → onDelete() [features/calendar/EventFormModal.tsx:1426]`); onDelete?.(); onClose(); } },
+        { text: isOwnPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "${isOwnPending ? 'Withdraw' : 'Delete'}" on "${event.title}" (id=${event.id}) → onDelete() [features/calendar/EventFormModal.tsx:1426]`); onDelete?.(); showToast(isOwnPending ? 'Request withdrawn' : 'Event deleted'); onClose(); } },
       ]
     );
   };

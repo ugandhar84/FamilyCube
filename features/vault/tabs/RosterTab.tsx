@@ -14,6 +14,7 @@ import { SCard, CardHeader, StatusPill } from './shared';
 import { FamilyTreeView } from './FamilyTreeView';
 import { MemberProfileSheet } from './MemberProfileSheet';
 import { saveMemberEdit } from './memberActions';
+import { showToast } from '@/components/AppToast';
 
 // Same avatar-emoji set CompleteProfileScreen/JoinFamilyScreen already
 // offer at onboarding time — reused here so a parent editing someone
@@ -293,6 +294,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       return;
     }
     setInvites(prev => prev.map(i => i.id === id ? { ...i, status: 'expired' } : i));
+    showToast('Invite revoked');
   };
 
   const savePin = async (memberId: string, pin: string) => {
@@ -307,6 +309,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       return;
     }
     updateMember(memberId, { pin });
+    showToast('PIN saved');
   };
 
   const deleteMember = async (memberId: string) => {
@@ -319,6 +322,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
     // DB row stays behind.
     try {
       await removeMember(memberId);
+      showToast('Member removed');
     } catch (e: any) {
       Alert.alert(
         'Could Not Remove Member',
@@ -330,6 +334,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => {
     const { error } = await saveMemberEdit(updateMember, memberId, name, role, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship, avatarEmoji, avatarUrl);
     if (error) Alert.alert('Couldn\'t save changes', error);
+    else showToast('Profile updated');
   };
 
   const togglePin = (id: string) => setShowPins(s => ({ ...s, [id]: !s[id] }));

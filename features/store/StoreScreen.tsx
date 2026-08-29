@@ -17,6 +17,7 @@ import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
+import { showToast } from '@/components/AppToast';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
@@ -445,7 +446,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
     Alert.alert('Delete Perk?', `Remove "${r.title}" from the store?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive',
-        onPress: () => deleteReward?.(r.id) },
+        onPress: () => { deleteReward?.(r.id); showToast('Reward deleted'); } },
     ]);
   };
 
@@ -760,9 +761,9 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         colors={colors}
         onClose={() => { setShowCreate(false); setEditing(null); }}
         onSave={data => {
-          if (editing) updateReward?.(editing.id, data);
-          else addReward?.({ available: true, requiresApproval: true,
-            createdAt: new Date().toISOString(), ...data } as any);
+          if (editing) { updateReward?.(editing.id, data); showToast('Reward updated'); }
+          else { addReward?.({ available: true, requiresApproval: true,
+            createdAt: new Date().toISOString(), ...data } as any); showToast('Reward added'); }
         }}
         onDelete={r => { setShowCreate(false); setEditing(null); handleDelete(r); }}
       />

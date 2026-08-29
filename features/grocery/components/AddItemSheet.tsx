@@ -9,6 +9,7 @@ import { useGroceryStore, GroceryItem } from '@/store/groceryStore';
 import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from './types';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { showToast } from '@/components/AppToast';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
       });
     }
     setSaving(false);
+    showToast(isEdit ? 'Item updated' : 'Item added');
     reset();
     onClose();
   };

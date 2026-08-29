@@ -20,6 +20,7 @@ import { encryptAnalysis, decryptAnalysis, isEncryptedBlob } from '../records/re
 import { downloadSingle, downloadZip } from '../records/recordsDownload';
 import { MedRecord, AiAnalysis, RecordForm } from '../records/types';
 import type * as DocumentPicker from 'expo-document-picker';
+import { showToast } from '@/components/AppToast';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       ai_analyzed: false, ai_tags: [],
     }).select().single();
 
-    if (data) setRecords(prev => [data as MedRecord, ...prev]);
+    if (data) { setRecords(prev => [data as MedRecord, ...prev]); showToast('Record added'); }
   };
 
   // ── Delete ────────────────────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         setRecords(prev => prev.filter(r => r.id !== rec.id));
         setPending(prev => { const c = { ...prev }; delete c[rec.id]; return c; });
         setNotMedical(prev => { const c = { ...prev }; delete c[rec.id]; return c; });
+        showToast('Record removed');
       }},
     ]);
   };

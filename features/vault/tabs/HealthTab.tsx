@@ -18,6 +18,7 @@ import HealthSearchBar from './health/HealthSearchBar';
 import ScanReviewSheet from './health/ScanReviewSheet';
 import HealthFilterSheet, { MedFilters, VaxFilters } from './health/HealthFilterSheet';
 import HealthRecordsList from './health/HealthRecordsList';
+import { showToast } from '@/components/AppToast';
 
 export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab }: {
   colors: any; isDark: boolean; kidView?: boolean;
@@ -188,6 +189,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       setMeds(prev => prev.map(m => m.id === med.id
         ? { ...m, taken_date: newDate, modified_by: activeMember?.id ?? null }
         : m));
+      showToast(alreadyTaken ? 'Marked as not taken' : 'Marked as taken');
     }
   };
 
@@ -202,6 +204,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       .eq('id', vax.id);
     if (!error) {
       setVaxes(prev => prev.map(v => v.id === vax.id ? { ...v, done: !v.done } : v));
+      showToast(vax.done ? 'Marked as not done' : 'Marked as done');
     }
   };
 
@@ -225,6 +228,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
               .eq('id', id);
             await supabase.from('family_medications').delete().eq('id', id);
             setMeds(prev => prev.filter(m => m.id !== id));
+            showToast('Medication removed');
           },
         },
       ],
@@ -235,6 +239,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   const deleteVax = async (id: string) => {
     await supabase.from('family_vaccines').delete().eq('id', id);
     setVaxes(prev => prev.filter(v => v.id !== id));
+    showToast('Vaccine removed');
   };
 
   const toggleMedActive = (med: Medication) => {
@@ -261,8 +266,11 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
                 updated_at: new Date().toISOString(),
               })
               .eq('id', med.id);
-            if (!error) setMeds(prev => prev.map(m =>
-              m.id === med.id ? { ...m, is_active: newActive, modified_by: activeMember?.id ?? null } : m));
+            if (!error) {
+              setMeds(prev => prev.map(m =>
+                m.id === med.id ? { ...m, is_active: newActive, modified_by: activeMember?.id ?? null } : m));
+              showToast(newActive ? 'Medication reactivated' : 'Medication deactivated');
+            }
           },
         },
       ],
@@ -325,6 +333,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
           ...(form.end_date ? { endDate: form.end_date } : {}),
         }
       );
+      showToast('Medication added');
     }
   };
 
@@ -343,7 +352,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       notes: form.notes || null,
       done: false,
     }).select().single();
-    if (data) setVaxes(prev => [data as Vaccine, ...prev]);
+    if (data) { setVaxes(prev => [data as Vaccine, ...prev]); showToast('Vaccine added'); }
   };
 
   const saveScannedMed = async (reviewMed: ParsedMedication, reviewMemberId: string) => {
@@ -365,7 +374,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       escalation_enabled: false,
       escalation_after_min: 60,
     }).select().single();
-    if (data) setMeds(prev => [data as Medication, ...prev]);
+    if (data) { setMeds(prev => [data as Medication, ...prev]); showToast('Medication added'); }
   };
 
   const saveScannedVax = async (reviewVax: ParsedVaccine, reviewMemberId: string) => {
@@ -383,7 +392,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       notes: reviewVax.lot_number ? `Lot: ${reviewVax.lot_number}` : null,
       done: true,
     }).select().single();
-    if (data) setVaxes(prev => [data as Vaccine, ...prev]);
+    if (data) { setVaxes(prev => [data as Vaccine, ...prev]); showToast('Vaccine added'); }
   };
 
   // Returns true if today's dose is overdue (past scheduled time + grace, not taken)

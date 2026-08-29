@@ -32,6 +32,7 @@ import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
+import { showToast } from '@/components/AppToast';
 
 // History sheet row timestamp — "Today 5:55 AM" / "Yesterday 5:55 AM" for the
 // last two days, then a short weekday/date for anything older, matching the
@@ -511,6 +512,28 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       // the same deleteEvent(id) the rest of the app already trusts.
       deleteEvent(d.eventId);
     }
+    // Every branch above is a real DB write once confirmed — same "any
+    // update to the DB gets a toast" rule every manual create/edit/delete
+    // flow in the app follows now. Proposal cards already flip to a
+    // visual "created" state, but that's easy to miss scrolled off-screen
+    // in a chat thread; the toast is the same confirmation signal
+    // everywhere else in the app already gives.
+    const chorActionToast: Record<string, string> = {
+      claim: 'Chore claimed', approve: 'Chore approved', decline: 'Chore declined',
+      complete: 'Chore marked done', cancel: 'Chore cancelled',
+    };
+    // 'meal' is excluded here — createProposal returns early for it (see
+    // top of this function) and its own success toast fires from
+    // AskCubeMealDayPicker's onConfirm below instead, once addMealToPlan
+    // actually succeeds.
+    const toastByKind: Record<Exclude<AskCubeProposal['kind'], 'meal'>, string> = {
+      event: 'Event created', quest: 'Chore created', grocery: 'Added to grocery list',
+      redemption: 'Reward redeemed',
+      update_event: 'Event updated', update_chore: 'Chore updated',
+      chore_action: chorActionToast[d.action] ?? 'Done',
+      cancel_event: 'Event cancelled',
+    };
+    showToast(toastByKind[proposal.kind] ?? 'Done');
     markProposalCreated(msgId, index);
   };
 
@@ -854,6 +877,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           // leaving the confirm sheet stuck open with no way forward.
           setPendingMealCreate(null);
           if (ok) {
+            showToast('Meal added');
             markProposalCreated(msgId, index);
           } else {
             setMessages(prev => [...prev, { id: `local-${Date.now()}-mealerr`, role: 'assistant',

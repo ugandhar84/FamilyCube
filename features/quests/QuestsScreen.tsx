@@ -67,6 +67,7 @@ import { PushbackSheet } from '../hub/parent/PushbackSheet';
 import { SubmitQuestSheet } from './components/SubmitQuestSheet';
 import { DelegateQuestSheet } from './components/DelegateQuestSheet';
 import { KudosSheet } from './components/KudosSheet';
+import { showToast } from '@/components/AppToast';
 
 // Re-export AddQuestModal so existing external imports of
 // `import { AddQuestModal } from '@/features/quests/QuestsScreen'` keep working.
@@ -1208,6 +1209,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
             }
             updateQuest(id, patch, activeMember?.id);
+            showToast('Chore updated');
             setEditTarget(null);
           }}
           onDelete={(id) => {
@@ -1219,6 +1221,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
             }
             deleteQuest(id);
+            showToast('Chore deleted');
             setEditTarget(null);
           }}
         />

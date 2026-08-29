@@ -44,6 +44,7 @@ import { ReturnModeToolbar, BulkSelectToolbar } from './components/SelectionTool
 import { RunsTabBody } from './components/RunsTabBody';
 import { mapBoughtRow } from './components/types';
 import { s } from './components/styles';
+import { showToast } from '@/components/AppToast';
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -255,14 +256,14 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const handleBuyItem = (item: GroceryItem) => {
     Alert.alert('Mark as bought?', `"${item.name}"`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Bought ✓', onPress: () => { buyItem(item.id, activeMemberId ?? ''); setTimeout(refreshBought, 600); } },
+      { text: 'Bought ✓', onPress: () => { buyItem(item.id, activeMemberId ?? ''); showToast('Marked as bought'); setTimeout(refreshBought, 600); } },
     ]);
   };
 
   const handleDeleteRun = (run: GroceryRun) => {
     Alert.alert('Delete run?', `"${run.name}" will be removed.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteRun(run.id) },
+      { text: 'Delete', style: 'destructive', onPress: () => { deleteRun(run.id); showToast('Run deleted'); } },
     ]);
   };
 
@@ -637,7 +638,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         onBuy={() => detailItem && handleBuyItem(detailItem)}
         onDelete={isKid ? undefined : () => detailItem && Alert.alert('Remove item?', `"${detailItem.name}"`, [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Remove', style: 'destructive', onPress: () => removeItem(detailItem.id) },
+          { text: 'Remove', style: 'destructive', onPress: () => { removeItem(detailItem.id); showToast('Item removed'); } },
         ])}
         priceInfo={detailItem ? priceMap[detailItem.name] : undefined}
         colors={colors}

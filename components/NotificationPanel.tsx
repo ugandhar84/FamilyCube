@@ -84,7 +84,7 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
   if (type.startsWith('quest_') || type === 'force_assigned' || type === 'chore_ghosted'
       || type === 'deadline_reminder' || type === 'deadline_overdue' || type === 'penalty_applied'
       || type === 'bonus_activated' || type === 'bonus_expiring' || type.startsWith('chore_handoff_')) return '/(tabs)/quests';
-  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid') return '/(tabs)/calendar';
+  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid' || type === 'ride_pool_opened') return '/(tabs)/calendar';
   if (type === 'coins_awarded' || type === 'reward_redeemed' || type === 'reward_decision') return '/(tabs)/store';
   if (type === 'chat_message') return '/(tabs)/chat';
   if (type.startsWith('kid_request')) return '/(tabs)';

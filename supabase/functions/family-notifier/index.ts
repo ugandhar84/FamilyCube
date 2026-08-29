@@ -495,35 +495,35 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
     // ── Ride/driver assignment (store/eventStore.ts's updateEvent) ────────────
     case 'ride_assignment_offered':
       return {
-        title: '🚗 Ride Assignment',
-        body: `${p.byName ?? 'A parent'} assigned you to drive "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        title: '🚗 Pickup/Drop-off Assigned',
+        body: `${p.byName ?? 'A parent'} assigned you for pickup/drop-off — "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
     case 'ride_assignment_accepted':
       return {
-        title: '🚗 Ride Confirmed',
+        title: '🚗 Pickup/Drop-off Confirmed',
         body: `${p.byName ?? 'They'} confirmed "${p.eventTitle}" — you're covered.`,
         data: { screen: 'Schedule', eventId: p.eventId },
       };
     case 'ride_assignment_declined':
       return {
-        title: '🚫 Ride Declined',
-        body: `${p.byName ?? 'The driver'} can't make "${p.eventTitle}" — it's back open for someone else.`,
+        title: '🚫 Pickup/Drop-off Declined',
+        body: `${p.byName ?? 'They'} can't make the pickup/drop-off for "${p.eventTitle}" — it's back open for someone else.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
     case 'ride_confirmed_for_kid':
       return {
         title: '🚗 Ride Confirmed',
-        body: `${p.driverName ?? 'A driver'} is picking you up for "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        body: `${p.driverName ?? 'Someone'} is handling your pickup/drop-off for "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
     case 'ride_pool_opened':
       return {
-        title: '🚗 A Ride Needs a Driver',
-        body: `"${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''} needs a driver — tap to help.`,
+        title: '🚗 Pickup/Drop-off Needed',
+        body: `"${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''} needs a pickup/drop-off — tap to help.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };

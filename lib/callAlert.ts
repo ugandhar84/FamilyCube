@@ -136,21 +136,36 @@ export function listenForVoipToken(onToken: (token: string) => void): () => void
 // missed-call follow-up (one retry call + one push, ~3 min later) would fire
 // for every reminder, answered or not, turning a quiet safety net into a
 // redundant nag on top of a call the person already took.
-// Timestamp of the most recent reminder-call answer — set the instant the
-// native side reports one, read by app/_layout.tsx's foreground/AppState
-// handler to skip the biometric re-lock check for that resume. Live-
-// reported: answering a call reminder after 5+ min backgrounded (the
-// existing re-lock threshold) foregrounded the app straight into
+// Timestamp of the most recent reminder-call answer (or, once the call
+// actually ends, the more accurate hang-up time — see
+// listenForCallReminderEnded/checkLastAnsweredCallOnColdStart below) — set
+// the instant the native side reports one, read by app/_layout.tsx's
+// foreground/AppState handler to skip the biometric re-lock check for that
+// resume. Live-reported: answering a call reminder after 5+ min backgrounded
+// (the existing re-lock threshold) foregrounded the app straight into
 // LockScreen's auto-triggered Face ID prompt — but iOS won't reliably run
 // Face ID while a CallKit call is still active/dismissing, so the prompt
 // silently hung forever with no way to retry or cancel (busy stuck true,
-// both buttons dead). Skipping the lock check entirely for a few seconds
-// after a reminder-call answer avoids ever firing Face ID into that dead
-// window; the app then unlocks normally like any other quick app-switcher
-// bounce under LOCK_AFTER_MS, and re-locks again on the NEXT genuine
-// backgrounding as usual.
+// both buttons dead). Skipping the lock check entirely for a window after a
+// reminder-call answer avoids ever firing Face ID into that dead window; the
+// app then unlocks normally like any other quick app-switcher bounce under
+// LOCK_AFTER_MS, and re-locks again on the NEXT genuine backgrounding as
+// usual.
+//
+// This flag is ONLY ever consulted right when the app foregrounds (the
+// AppState background→active handlers below) — extending the window costs
+// nothing in practice (it can never skip a re-lock for an unrelated later
+// resume, since nothing re-stamps it outside an actual reminder-call answer/
+// end), so it's set generously rather than tuned tight.
 let lastReminderCallAnsweredAt = 0;
-const RECENT_ANSWER_WINDOW_MS = 60_000;
+const RECENT_ANSWER_WINDOW_MS = 180_000;
+
+// Bumps the recency flag forward, never backward — a stale/delayed event
+// (e.g. a cold-start read racing a live listener that already fired) must
+// never shorten a window a more-recent event already extended.
+function markReminderCallRecent(atMs: number): void {
+  if (atMs > lastReminderCallAnsweredAt) lastReminderCallAnsweredAt = atMs;
+}
 
 export function wasReminderCallJustAnswered(): boolean {
   return Date.now() - lastReminderCallAnsweredAt < RECENT_ANSWER_WINDOW_MS;
@@ -163,7 +178,7 @@ export function listenForCallReminderAnswered(): () => void {
       'CallReminderAnswered',
       async (e: { itemType?: string; itemId?: string; dueAtIso?: string }) => {
         if (!e?.itemType || !e?.itemId || !e?.dueAtIso) return;
-        lastReminderCallAnsweredAt = Date.now();
+        markReminderCallRecent(Date.now());
         try {
           await supabase.functions.invoke('mark-call-reminder-answered', {
             body: { itemType: e.itemType, itemId: e.itemId, dueAtIso: e.dueAtIso },
@@ -176,6 +191,33 @@ export function listenForCallReminderAnswered(): () => void {
     return () => sub.remove();
   } catch (e) {
     console.warn('[callAlert] listenForCallReminderAnswered threw', e);
+    return () => {};
+  }
+}
+
+// Bridges AppDelegate.swift's "CallReminderEnded" NotificationCenter post
+// (fired the instant CXCallObserver confirms an answered reminder call's
+// call.hasEnded — i.e. right as the app is about to foreground) to a second,
+// later re-stamp of the SAME recency flag listenForCallReminderAnswered sets
+// at answer time. Needed because the two moments can be far apart: the
+// in-call TTS repeat alone runs 3 passes with 3s gaps (20-30+ seconds), and
+// the person may keep the call open longer than that — so measuring the
+// re-lock skip window purely from answer time risked it expiring before the
+// person actually hangs up and returns to the app, which would fire Face ID
+// right back into the CallKit-teardown dead zone this whole mechanism exists
+// to avoid. Re-stamping from the real hang-up moment instead means the
+// window is measured from the instant that's actually adjacent to the
+// foreground event. markReminderCallRecent only ever moves the flag forward,
+// so this can't shorten a fresher stamp from somewhere else.
+export function listenForCallReminderEnded(): () => void {
+  if (Platform.OS !== 'ios') return () => {};
+  try {
+    const sub = DeviceEventEmitter.addListener('CallReminderEnded', () => {
+      markReminderCallRecent(Date.now());
+    });
+    return () => sub.remove();
+  } catch (e) {
+    console.warn('[callAlert] listenForCallReminderEnded threw', e);
     return () => {};
   }
 }
@@ -205,34 +247,64 @@ export function listenForCallReminderAnswered(): () => void {
 // function (called synchronously on mount, same tick as the app resuming
 // from the answered call) has had a chance to run.
 export async function checkLastAnsweredCallOnColdStart(): Promise<void> {
-  if (Platform.OS !== 'ios' || !NativeModules.FCVoipToken?.getLastAnsweredCall) return;
-  try {
-    const result = await new Promise<{ callUUID: string; itemType: string; itemId: string; dueAtIso: string } | null>(
-      (resolve) => NativeModules.FCVoipToken.getLastAnsweredCall((r: any) => resolve(r ?? null))
-    );
-    if (!result?.itemType || !result?.itemId || !result?.dueAtIso) return;
-    console.log('[callAlert] checkLastAnsweredCallOnColdStart: found answered call', {
-      itemType: result.itemType, itemId: result.itemId,
-    });
-    // Mirrors listenForCallReminderAnswered's live-listener behavior exactly —
-    // this recency flag is what lets app/_layout.tsx's and
-    // AppPinLockOverlay.tsx's background→active re-lock handlers skip the
-    // Face ID prompt that otherwise hangs while a CallKit call is still
-    // active/dismissing. Setting it here (not just calling
-    // mark-call-reminder-answered below) is required — without it, this cold-
-    // start path fixes the DB-side "answered" tracking but Bug 3's freeze
-    // keeps happening exactly as before, since wasReminderCallJustAnswered()
-    // would never have been set true by this path.
-    lastReminderCallAnsweredAt = Date.now();
+  if (Platform.OS !== 'ios') return;
+  // Two independent checks, run unconditionally of each other — a
+  // killed-mid-call scenario can have consumed/cleared one cache key set
+  // (e.g. a PREVIOUS partial boot already read getLastAnsweredCall) while
+  // the other is still there, so neither check may early-return before the
+  // other has had a chance to run.
+  if (NativeModules.FCVoipToken?.getLastAnsweredCall) {
     try {
-      await supabase.functions.invoke('mark-call-reminder-answered', {
-        body: { itemType: result.itemType, itemId: result.itemId, dueAtIso: result.dueAtIso },
-      });
-    } catch (err) {
-      console.warn('[callAlert] mark-call-reminder-answered failed (cold start)', err);
+      const result = await new Promise<{ callUUID: string; itemType: string; itemId: string; dueAtIso: string } | null>(
+        (resolve) => NativeModules.FCVoipToken.getLastAnsweredCall((r: any) => resolve(r ?? null))
+      );
+      if (result?.itemType && result?.itemId && result?.dueAtIso) {
+        console.log('[callAlert] checkLastAnsweredCallOnColdStart: found answered call', {
+          itemType: result.itemType, itemId: result.itemId,
+        });
+        // Mirrors listenForCallReminderAnswered's live-listener behavior
+        // exactly — this recency flag is what lets app/_layout.tsx's and
+        // AppPinLockOverlay.tsx's background→active re-lock handlers skip
+        // the Face ID prompt that otherwise hangs while a CallKit call is
+        // still active/dismissing. Setting it here (not just calling
+        // mark-call-reminder-answered below) is required — without it, this
+        // cold-start path fixes the DB-side "answered" tracking but Bug 3's
+        // freeze keeps happening exactly as before, since
+        // wasReminderCallJustAnswered() would never have been set true by
+        // this path.
+        markReminderCallRecent(Date.now());
+        try {
+          await supabase.functions.invoke('mark-call-reminder-answered', {
+            body: { itemType: result.itemType, itemId: result.itemId, dueAtIso: result.dueAtIso },
+          });
+        } catch (err) {
+          console.warn('[callAlert] mark-call-reminder-answered failed (cold start)', err);
+        }
+      }
+    } catch (e) {
+      console.warn('[callAlert] checkLastAnsweredCallOnColdStart threw', e);
     }
-  } catch (e) {
-    console.warn('[callAlert] checkLastAnsweredCallOnColdStart threw', e);
+  }
+  // Same reasoning as listenForCallReminderEnded above, but for the
+  // cold-start path: if JS was killed for the ENTIRE call (not just around
+  // answer time) and only relaunches once the call ends — app foregrounding
+  // is a common relaunch trigger — the live "CallReminderEnded" listener was
+  // never attached in time to catch it either, the same structural gap
+  // getLastAnsweredCall exists to cover for the answer-time event. This is
+  // usually the MORE relevant of the two checks in a killed-app scenario,
+  // since it reflects hang-up time rather than answer time.
+  if (NativeModules.FCVoipToken?.getLastCallEndedAt) {
+    try {
+      const endedAt = await new Promise<number | null>((resolve) =>
+        NativeModules.FCVoipToken.getLastCallEndedAt((r: any) => resolve(typeof r === 'number' ? r : null))
+      );
+      if (endedAt != null) {
+        // Native side caches this as a Unix seconds timestamp (Date().timeIntervalSince1970).
+        markReminderCallRecent(endedAt * 1000);
+      }
+    } catch (e) {
+      console.warn('[callAlert] checkLastAnsweredCallOnColdStart (endedAt) threw', e);
+    }
   }
 }
 

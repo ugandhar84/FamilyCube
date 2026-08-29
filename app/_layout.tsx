@@ -43,6 +43,7 @@ import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
   listenForCallReminderAnswered, wasReminderCallJustAnswered,
+  listenForCallReminderEnded,
   checkLastAnsweredCallOnColdStart, shipPendingCallDebugTraceIfAny,
 } from '@/lib/callAlert';
 
@@ -851,6 +852,12 @@ function RootNavigator() {
     // event already carries itemType/itemId/dueAtIso, everything
     // mark-call-reminder-answered needs to find the right row.
     const unanswered = listenForCallReminderAnswered();
+    // Re-stamps the same "just answered" recency flag from the real hang-up
+    // moment instead of only answer time — see listenForCallReminderEnded's
+    // own comments for why the answer-time-only stamp could expire before
+    // the person actually hangs up and the app foregrounds (the in-call TTS
+    // repeat alone runs 20-30+ seconds).
+    const unended = listenForCallReminderEnded();
     // Covers the (common) case where the reminder call was answered while
     // this listener wasn't mounted yet — backgrounded or fully killed app,
     // which describes most reminder calls since the phone is usually
@@ -866,7 +873,7 @@ function RootNavigator() {
     // time to catch that particular resume, so cold start needs its own
     // check too. See lib/callAlert.ts's shipPendingCallDebugTraceIfAny.
     shipPendingCallDebugTraceIfAny();
-    return unanswered;
+    return () => { unanswered(); unended(); };
   }, []);
 
   useEffect(() => {

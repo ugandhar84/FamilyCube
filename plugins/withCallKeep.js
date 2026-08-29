@@ -342,6 +342,7 @@ const VOIP_TOKEN_MODULE_M = `#import <React/RCTBridgeModule.h>
 @interface RCT_EXTERN_MODULE(FCVoipToken, NSObject)
 RCT_EXTERN_METHOD(getCachedToken:(RCTResponseSenderBlock)callback)
 RCT_EXTERN_METHOD(getLastAnsweredCall:(RCTResponseSenderBlock)callback)
+RCT_EXTERN_METHOD(getLastCallEndedAt:(RCTResponseSenderBlock)callback)
 RCT_EXTERN_METHOD(getLastCallDebugTrace:(RCTResponseSenderBlock)callback)
 @end
 `;
@@ -391,6 +392,31 @@ class FCVoipToken: NSObject {
     defaults.removeObject(forKey: "familycube_call_itemType_\\(callUUID)")
     defaults.removeObject(forKey: "familycube_call_itemId_\\(callUUID)")
     callback([["callUUID": callUUID, "itemType": itemType, "itemId": itemId, "dueAtIso": dueAtIso]])
+  }
+
+  // Reads back the real hang-up time of the most recent answered reminder
+  // call (see AppDelegate.swift's callObserver call.hasEnded branch, which
+  // caches this the instant CXCallObserver confirms the call actually
+  // ended). Separate from getLastAnsweredCall above on purpose: that method
+  // requires itemType/itemId/dueAtIso together (needed to call
+  // mark-call-reminder-answered) and consumes them as one unit, but this
+  // value has nothing to do with the server-side "answered" flag — it only
+  // feeds wasReminderCallJustAnswered()'s re-lock recency window, which
+  // needs to know when the call ENDED (right before the app foregrounds),
+  // not when it was answered (which can be a minute or more earlier once
+  // the TTS repeat passes and any actual talk time are accounted for).
+  // Independently consumed (cleared) on read so a stale value from a much
+  // earlier call can't be replayed against a later, unrelated foreground.
+  @objc func getLastCallEndedAt(_ callback: @escaping RCTResponseSenderBlock) {
+    let defaults = UserDefaults.standard
+    let key = "familycube_last_answered_endedAt"
+    guard defaults.object(forKey: key) != nil else {
+      callback([NSNull()])
+      return
+    }
+    let endedAt = defaults.double(forKey: key)
+    defaults.removeObject(forKey: key)
+    callback([endedAt])
   }
 
   // TEMP diagnostic instrumentation — see AppDelegate.swift's callDebugTrace/

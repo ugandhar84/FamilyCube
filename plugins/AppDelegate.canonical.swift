@@ -248,6 +248,38 @@ FirebaseApp.configure()
       lastUtterancePerCall.removeValue(forKey: uuid)
       hasStartedSpeaking.remove(uuid)
       if surfacedCallUUIDs.contains(uuid) {
+        // Live-reported gap: wasReminderCallJustAnswered()'s recency flag is
+        // stamped at ANSWER time (both here via CallReminderAnswered below,
+        // and by checkLastAnsweredCallOnColdStart), with a fixed window from
+        // that moment. The in-call TTS alone (3 repeat passes, ~3s gaps) can
+        // run 20-30+ seconds, and the person may keep listening/talking
+        // after that — so by the time they actually hang up and the app
+        // foregrounds, answer-to-now can already exceed the window, and the
+        // Face ID/PIN re-lock check in app/_layout.tsx and
+        // AppPinLockOverlay.tsx runs anyway, right back into the exact hang
+        // this mechanism exists to prevent (Face ID can't reliably run while
+        // CallKit is still tearing down). Posting a second event HERE, at
+        // the real end of the call — the moment CXCallObserver confirms
+        // hasEnded, which is essentially simultaneous with the app
+        // foregrounding — lets JS re-stamp that recency flag from hang-up
+        // time instead of answer time, so the window is measured from the
+        // instant that actually matters. Only fires for a call this app
+        // itself surfaced (TTS-answered), never for a real unrelated call.
+        NotificationCenter.default.post(
+          name: NSNotification.Name("CallReminderEnded"),
+          object: nil,
+          userInfo: ["callUUID": uuid]
+        )
+        // Also cached to UserDefaults (not just the live NotificationCenter
+        // post above) for the same reason familycube_last_answered_* exists:
+        // if JS gets killed/backgrounded for the entire duration of the call
+        // and only relaunches once the call actually ends (app foregrounding
+        // is often what triggers that relaunch), no listener was attached in
+        // time to receive the live post either — same structural gap the
+        // answered-event cache was built to cover. checkLastAnsweredCallOnColdStart
+        // reads this alongside the answer-time fields so a cold boot picks
+        // the freshest of the two timestamps.
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "familycube_last_answered_endedAt")
         let d = UserDefaults.standard
         for key in ["itemType","itemId","dueAtIso","title","recipient","notes","location","category"] {
           d.removeObject(forKey: "familycube_call_\(key)_\(uuid)")

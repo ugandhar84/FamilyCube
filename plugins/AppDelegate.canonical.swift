@@ -79,7 +79,17 @@ FirebaseApp.configure()
   }
 
   public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-    let uuid = call.uuid.uuidString
+    // NSUUID always re-serializes .uuidString as UPPERCASE, regardless of
+    // the case it was originally parsed from — but the UserDefaults keys
+    // below were written using the RAW lowercase string straight from the
+    // push payload's JSON (crypto.randomUUID() in apns.ts produces
+    // lowercase hex). Without lowercasing here, every lookup below was a
+    // case-sensitive miss against a key that does exist, so the itemId
+    // guard treated every one of this app's own reminder calls as an
+    // unrelated real call and silently returned — confirmed as the actual
+    // cause of "call rings, no TTS voice" (hasConnected fix alone did not
+    // resolve it, because this lookup never found the app's own itemId).
+    let uuid = call.uuid.uuidString.lowercased()
     if call.hasEnded {
       if surfacedCallUUIDs.contains(uuid) {
         let d = UserDefaults.standard

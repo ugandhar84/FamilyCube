@@ -708,26 +708,23 @@ FirebaseApp.configure()
     // is a real, separate improvement for TTS-over-an-active-call audio
     // quality, kept regardless.
     //
-    // Re-applying setCategory (cheap, and harmless even when unnecessary —
-    // it doesn't touch activation state or the current route) stays here as
-    // defense-in-depth against a route change/interruption-end resetting
-    // the mode between repeat passes. setActive(true) was ALSO called here
-    // on every repeat pass until live-reported: putting the call on speaker
-    // made each successive repeat noticeably quieter, down to near-silent
-    // by the 3rd. Repeatedly reactivating an already-active session on the
-    // loudspeaker route is a known way to trigger iOS's own "duck and
-    // restore" gain staging on each call — since the session is already
-    // active every time this runs now that didFinish actually fires and
-    // chains correctly, calling setActive again here was pure redundancy
-    // that cost real audio quality. The interruption-recovery handler
-    // (handleAudioSessionInterruption below) still calls setActive when a
-    // GENUINE interruption is detected — that path is unaffected.
-    let familyCubeAudioSession = AVAudioSession.sharedInstance()
-    try? familyCubeAudioSession.setCategory(
-      .playAndRecord,
-      mode: .spokenAudio,
-      options: [.allowBluetooth, .allowBluetoothA2DP]
-    )
+    // Neither setCategory NOR setActive are called here anymore. Both were
+    // tried as defense-in-depth reassertions on every repeat pass and both
+    // were live-reported to independently break speaker-route behavior:
+    // putting the call on speaker reverted to the earpiece (and got
+    // progressively quieter) on every subsequent repeat. setActive(true)
+    // on an already-active session is a known trigger for iOS's "duck and
+    // restore" gain staging; setCategory — even with category/mode
+    // UNCHANGED — is separately documented to silently clear a manual
+    // output-route override (like a user's own tap to Speaker) back to the
+    // default route, which is exactly the earpiece-revert symptom. Neither
+    // call is needed on every repeat now that didFinish actually fires and
+    // chains correctly (the actual repeat-loop bug): the session is set up
+    // once at answer (see callObserver, ~line 208-209) and the genuine
+    // interruption-recovery path (handleAudioSessionInterruption below)
+    // still reasserts both when a REAL interruption is detected — that
+    // path, and the didCancel retry path above, are the only places this
+    // should ever need to happen again mid-call.
 
     // speechSynthesizer(_:didFinish:) fires once per utterance in this
     // pass; only the LAST one is registered in lastUtterancePerCall, so

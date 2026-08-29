@@ -23,6 +23,7 @@ import DayCard from './meals/DayCard';
 import AiPlannerBanner from './meals/AiPlannerBanner';
 import MealSelectionPhase from './meals/MealSelectionPhase';
 import AddMealSheet from './meals/AddMealSheet';
+import { showToast } from '@/components/AppToast';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
@@ -272,7 +273,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
       prep_steps: addPrepSteps.split('\n').map(s => s.trim()).filter(Boolean),
       ai_generated: false,
     }).select().single();
-    if (data) setMeals(prev => [...prev, data as Meal]);
+    if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
     if (chefId) createCookingQuest(addTitle.trim(), chefId, addDay, prepMins);
     resetAddForm();
   };
@@ -281,6 +282,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     const prev = meals.find(m => m.id === id);
     await supabase.from('family_meals').update(patch).eq('id', id);
     setMeals(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m));
+    showToast('Meal updated');
     // Create quest if chef was newly assigned (or changed)
     if (patch.chef_id && patch.chef_id !== prev?.chef_id && prev) {
       const meal = { ...prev, ...patch };
@@ -291,6 +293,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const deleteMeal = async (id: string) => {
     await supabase.from('family_meals').delete().eq('id', id);
     setMeals(prev => prev.filter(m => m.id !== id));
+    showToast('Meal deleted');
   };
 
   const mealsByDay = useMemo(() => {

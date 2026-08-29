@@ -456,7 +456,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
       description: s.reason, available: true, requiresApproval: true,
       createdAt: new Date().toISOString(),
     } as any);
-    Alert.alert('✅ Added!', `"${s.title}" added to the family store.`);
+    showToast(`"${s.title}" added to the store`);
   };
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -579,11 +579,11 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                           {kid?.name.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
                         </Text>
                       </View>
-                      <Pressable onPress={() => rejectRedemption(rd.id, activeMemberId ?? '')}
+                      <Pressable onPress={() => { rejectRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption rejected'); }}
                         style={{ padding: 8, borderRadius: 10, backgroundColor: colors.danger + '18' }}>
                         <Ionicons name="close" size={16} color={colors.danger} />
                       </Pressable>
-                      <Pressable onPress={() => approveRedemption(rd.id, activeMemberId ?? '')}
+                      <Pressable onPress={() => { approveRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption approved'); }}
                         style={{ padding: 8, borderRadius: 10, backgroundColor: colors.teal + '18' }}>
                         <Ionicons name="checkmark" size={16} color={colors.teal} />
                       </Pressable>

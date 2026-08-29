@@ -699,28 +699,35 @@ FirebaseApp.configure()
     // though the call stayed connected. The earlier fix here (just
     // `setActive(true)`) did NOT resolve it — confirmed via a live retest —
     // because `setActive` on an already-active session doesn't touch its
-    // category/mode/route, and the real root cause is upstream of that: see
-    // the RNCallKeep.setup() call in didFinishLaunchingWithOptions, which
-    // now passes audioSession.mode = AVAudioSessionModeSpokenAudio instead
-    // of silently defaulting to AVAudioSessionModeDefault (a two-way-
-    // telephony mode that is a documented source of AVSpeechSynthesizer's
-    // speak() silently failing to restart playback — "_BeginSpeaking:
-    // couldn't begin playback" — once the session has been active for a
-    // while, with no error and no delegate callback to explain why).
+    // category/mode/route, and the real root cause turned out to be
+    // upstream of all of this: plugins/withCallKeep.js was silently never
+    // patching speechSynthesizer(_:didFinish:) — the entire repeat-
+    // continuation callback — into the generated AppDelegate.swift at all
+    // (now fixed). RNCallKeep.setup()'s audioSession.mode =
+    // AVAudioSessionModeSpokenAudio (set in didFinishLaunchingWithOptions)
+    // is a real, separate improvement for TTS-over-an-active-call audio
+    // quality, kept regardless.
     //
-    // This re-assertion stays as defense-in-depth: it now re-applies the
-    // FULL category+mode (matching RNCallKeep's own configureAudioSession),
-    // not just setActive, so it can recover the correct mode even if
-    // something else in the call lifecycle (a route change, an
-    // interruption-end, AirPods connecting mid-call) resets the session
-    // between repeat passes.
+    // Re-applying setCategory (cheap, and harmless even when unnecessary —
+    // it doesn't touch activation state or the current route) stays here as
+    // defense-in-depth against a route change/interruption-end resetting
+    // the mode between repeat passes. setActive(true) was ALSO called here
+    // on every repeat pass until live-reported: putting the call on speaker
+    // made each successive repeat noticeably quieter, down to near-silent
+    // by the 3rd. Repeatedly reactivating an already-active session on the
+    // loudspeaker route is a known way to trigger iOS's own "duck and
+    // restore" gain staging on each call — since the session is already
+    // active every time this runs now that didFinish actually fires and
+    // chains correctly, calling setActive again here was pure redundancy
+    // that cost real audio quality. The interruption-recovery handler
+    // (handleAudioSessionInterruption below) still calls setActive when a
+    // GENUINE interruption is detected — that path is unaffected.
     let familyCubeAudioSession = AVAudioSession.sharedInstance()
     try? familyCubeAudioSession.setCategory(
       .playAndRecord,
       mode: .spokenAudio,
       options: [.allowBluetooth, .allowBluetoothA2DP]
     )
-    try? familyCubeAudioSession.setActive(true, options: [])
 
     // speechSynthesizer(_:didFinish:) fires once per utterance in this
     // pass; only the LAST one is registered in lastUtterancePerCall, so

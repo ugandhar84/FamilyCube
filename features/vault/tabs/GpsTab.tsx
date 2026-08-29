@@ -151,18 +151,36 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   }, []);
 
   useEffect(() => {
+    if (!activeMemberId) return;
     // Re-attach the member id after a cold start — the task-body ref in
     // locationTracking.ts lives in memory only, so a relaunch while
     // tracking was already OS-level active would otherwise deliver
     // updates with no member to attribute them to until the user
     // manually re-toggles.
-    isBackgroundLocationTracking().then(active => {
-      setTracking(active);
-      if (active && activeMemberId) {
+    (async () => {
+      const active = await isBackgroundLocationTracking().catch(() => false);
+      if (active) {
+        setTracking(true);
         setBackgroundLocationMemberId(activeMemberId);
         setBackgroundLocationFamilyId(familyId ?? null);
+        return;
       }
-    }).catch(() => {}); // isBackgroundLocationTracking already resolves false on failure; this is defense-in-depth against an uncaught rejection reaching here
+      // Native task isn't running, but check whether the person's actual
+      // PERSISTED choice was "on" — a reinstall (or any OS-level wipe of
+      // the background task registration) resets `active` above to false
+      // regardless of what they'd chosen, which previously left the
+      // toggle silently showing "off" until manually re-enabled. If the
+      // DB says they wanted sharing on, auto-resume it here instead of
+      // waiting for them to notice and re-toggle.
+      const { data } = await supabase.from('member_locations').select('share_location_enabled').eq('member_id', activeMemberId).maybeSingle();
+      if (data?.share_location_enabled && isBackgroundLocationSupported()) {
+        const ok = await startBackgroundLocationTracking(activeMemberId, familyId).catch(() => false);
+        if (ok) {
+          setTracking(true);
+          startBatteryPolling(activeMemberId);
+        }
+      }
+    })();
   }, [activeMemberId, familyId]);
 
   // Realtime — other family members' background pings should move their
@@ -194,6 +212,12 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         await stopBackgroundLocationTracking();
         stopBatteryPolling();
         setTracking(false);
+        // Persisted intent, independent of the live native task state — a
+        // reinstall wipes the OS-level task registration but not this row,
+        // so the mount-time effect below can tell "genuinely turned off"
+        // apart from "was on, got reset by a reinstall" (direct report:
+        // toggle silently reset to off in the UI after reinstalling).
+        await supabase.from('member_locations').update({ share_location_enabled: false }).eq('member_id', activeMemberId);
       } else {
         const ok = await startBackgroundLocationTracking(activeMemberId, familyId);
         if (!ok) {
@@ -209,6 +233,9 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           // invisible on the map until you happen to walk 0.1mi.
           await refreshMyLocation(activeMemberId);
           startBatteryPolling(activeMemberId);
+          await supabase.from('member_locations').upsert({
+            member_id: activeMemberId, family_id: familyId, share_location_enabled: true,
+          }, { onConflict: 'member_id' });
         }
         setTracking(ok);
       }

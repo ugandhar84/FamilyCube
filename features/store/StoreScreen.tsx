@@ -466,6 +466,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         <AppHeader
           memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
           memberRole={activeMember?.role ?? 'parent'}
+          memberEmoji={activeMember?.emoji}
+          memberAvatarUrl={activeMember?.avatarUrl}
           notifCount={unreadNotifCount}
           onPersonaPress={() => setSwitcherOpen(true)}
           onBellPress={() => setNotifPanelOpen(true)}

@@ -420,6 +420,8 @@ export default function TasksScreen() {
       <AppHeader
         memberName={activeMember?.name}
         memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
+        memberEmoji={activeMember?.emoji}
+        memberAvatarUrl={activeMember?.avatarUrl}
         notifCount={unreadNotifCount}
         onPersonaPress={undefined}
         onBellPress={() => setNotifPanelOpen(true)}

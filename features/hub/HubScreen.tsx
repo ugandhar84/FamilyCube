@@ -136,6 +136,8 @@ export default function HubScreen() {
       <AppHeader
         memberName={active.name.split(' ')[0]}
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
+        memberEmoji={active.emoji}
+        memberAvatarUrl={active.avatarUrl}
         notifCount={unreadNotifCount}
         onBellPress={() => setNotifPanelOpen(true)}
         // Header gear icon removed — the new Profile pill in

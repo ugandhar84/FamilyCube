@@ -1020,6 +1020,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         <AppHeader
           memberName={activeMember?.name}
           memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
+          memberEmoji={activeMember?.emoji}
+          memberAvatarUrl={activeMember?.avatarUrl}
           notifCount={unreadNotifCount}
           onPersonaPress={switchMember}
           onBellPress={() => setNotifPanelOpen(true)}

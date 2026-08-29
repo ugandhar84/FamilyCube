@@ -17,6 +17,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { LETTER_SPACING } from '@/constants/theme';
 import { IconCubeMark, BRAND } from './FamilyCubeLogo';
 import PersonaSwitcherDropdown from './PersonaSwitcherDropdown';
+import FamilyAvatar from './FamilyAvatar';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,13 @@ const ROLE_CONFIG = {
 interface AppHeaderProps {
   memberName?:      string;
   memberRole?:      'parent' | 'kid' | 'teen' | 'senior';
+  // Real avatar (photo or emoji) — same FamilyAvatar every other member
+  // reference in the app already uses (Hub greeting, GPS roster, PIN
+  // modal, chat). Header previously always showed a plain initial-letter
+  // square instead, even for a member with a real profile photo set
+  // (direct feedback: "why are we not using the avatar - family avatar").
+  memberEmoji?:     string;
+  memberAvatarUrl?: string;
   notifCount?:      number;
   onPersonaPress?:  () => void;
   onBellPress?:     () => void;
@@ -199,6 +207,8 @@ function RefreshIcon({ color }: { color: string }) {
 export default function AppHeader({
   memberName    = 'Member',
   memberRole    = 'parent',
+  memberEmoji,
+  memberAvatarUrl,
   notifCount    = 0,
   onPersonaPress,
   onBellPress,
@@ -206,10 +216,9 @@ export default function AppHeader({
   onHeightChange,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
-  const { familyName } = useFamilyStore();
+  const { familyName, members } = useFamilyStore();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
   const [showSwitcher, setShowSwitcher] = React.useState(false);
-  const initial = (memberName.trim()[0] ?? '?').toUpperCase();
 
   const handlePersonaPress = () => {
     setShowSwitcher(v => !v);
@@ -236,12 +245,20 @@ export default function AppHeader({
           <TouchableOpacity onPress={handlePersonaPress} activeOpacity={0.75}
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
             <View style={{ position: 'relative' }}>
-              <View style={{
-                width: 34, height: 34, borderRadius: 11,
-                backgroundColor: role.color, alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>{initial}</Text>
-              </View>
+              {/* Real photo/emoji avatar — same FamilyAvatar every other
+                  member reference uses. Falls back to its own initial-
+                  letter rendering when neither emoji nor avatarUrl is set,
+                  same as everywhere else FamilyAvatar is used. */}
+              <FamilyAvatar
+                name={memberName}
+                emoji={memberEmoji}
+                avatarUrl={memberAvatarUrl}
+                siblings={members.map(m => m.name)}
+                size={34}
+                ringColor={role.color}
+                ringWidth={2}
+                bgColor={role.color + '25'}
+              />
               <View style={{
                 position: 'absolute', bottom: -2, right: -2, width: 11, height: 11, borderRadius: 6,
                 backgroundColor: colors.success, borderWidth: 2, borderColor: colors.background,

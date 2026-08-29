@@ -99,7 +99,39 @@ serve(async (req) => {
         .select('name, role, relationship, date_of_birth')
         .eq('id', peekInvite.member_id)
         .maybeSingle();
-      return json({ ok: true, member: peekMember ?? null });
+
+      // Cross-check against the SEPARATE email-invite system
+      // (member_invitations, send-member-invite/accept-member-invite) —
+      // these two invite mechanisms have no link between them (a code is
+      // per-family, not per-invitee-by-email), so this can't identify
+      // "this code is for the same person as that email invite," only
+      // "this family has an unrelated pending email invite outstanding
+      // right now." Surfaced as a soft warning, not a hard block: real bug
+      // this prevents (live-reported) — someone who WAS emailed an invite
+      // instead joins anonymously via a family code, then later signs up
+      // with their real email and ends up owning a phantom SECOND family,
+      // because nothing ever told them "you were actually meant to use
+      // your email for this." A masked address is enough for the joiner to
+      // recognize themselves without leaking the full email to whoever
+      // happens to be holding this family's code.
+      const { data: pendingEmailInvites } = await createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+        .from('member_invitations')
+        .select('email')
+        .eq('family_id', peekInvite.family_id)
+        .eq('status', 'pending');
+
+      const maskEmail = (email: string) => {
+        const [user, domain] = email.split('@');
+        if (!domain) return email;
+        const visible = user.slice(0, 1);
+        return `${visible}${'*'.repeat(Math.max(user.length - 1, 3))}@${domain}`;
+      };
+      const pendingEmailHints = (pendingEmailInvites ?? []).map(i => maskEmail(i.email));
+
+      return json({ ok: true, member: peekMember ?? null, pendingEmailHints });
     }
 
     if (!code || !name || !role || !avatar) {

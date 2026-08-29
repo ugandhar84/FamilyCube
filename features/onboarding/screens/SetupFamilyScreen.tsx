@@ -202,6 +202,33 @@ export default function SetupFamilyScreen() {
           router.replace('/(tabs)');
           return;
         }
+
+        // No members row under this auth account, BUT if this exact email
+        // was already invited to an existing family (member_invitations,
+        // send-member-invite/accept-member-invite — a separate system from
+        // the family_invites code path), this must NEVER fall through to
+        // "create a new family." Live-reported: someone invited by email
+        // instead joined a different family anonymously via code first
+        // (JoinFamilyScreen's own soft warning for this now exists, but
+        // isn't a hard block — a dismissed warning, or simply never having
+        // seen the invite email at all, both land here the same way), then
+        // signed up for real with the invited email and — without this
+        // check — this screen let her create a brand-new, disconnected
+        // second family instead of routing her into the one she was
+        // actually invited to.
+        if (user.email) {
+          const { data: pendingInvite } = await supabase
+            .from('member_invitations')
+            .select('id, token, family_id, role')
+            .eq('email', user.email.toLowerCase())
+            .eq('status', 'pending')
+            .limit(1)
+            .maybeSingle();
+          if (pendingInvite) {
+            router.replace({ pathname: '/onboarding/pending-invite', params: { token: pendingInvite.token } });
+            return;
+          }
+        }
       } catch (e: any) {
         console.warn('[SetupFamilyScreen] existing-family check exception', e?.message);
       }
@@ -249,6 +276,20 @@ export default function SetupFamilyScreen() {
         await useFamilyStore.getState().syncFromDB();
         router.replace('/(tabs)');
         return;
+      }
+      if (user.email) {
+        const { data: pendingInvite } = await supabase
+          .from('member_invitations')
+          .select('id, token')
+          .eq('email', user.email.toLowerCase())
+          .eq('status', 'pending')
+          .limit(1)
+          .maybeSingle();
+        if (pendingInvite) {
+          setLoading(false);
+          router.replace({ pathname: '/onboarding/pending-invite', params: { token: pendingInvite.token } });
+          return;
+        }
       }
 
       const expoPushToken = await registerForPushNotifications().catch(() => null);

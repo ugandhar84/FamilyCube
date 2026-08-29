@@ -171,6 +171,34 @@ export default function JoinFamilyScreen() {
         setError(data.error ?? 'Invalid or expired invite code.');
         return;
       }
+      // This family has a SEPARATE pending email invite outstanding
+      // (join-family's peek response, see its own comment) — the code and
+      // email-invite systems have no link between them, so this can't
+      // confirm the person entering this code IS the one who was emailed,
+      // only warn that someone was. Live-reported bug this catches: an
+      // email-invited person instead joins anonymously via a family code,
+      // never realizing they were actually meant to sign up with their
+      // real email — later, signing up for real, they had no linked
+      // identity and ended up creating a phantom duplicate family instead
+      // of landing in the one they were invited to. A soft confirmation
+      // here, not a hard block — dismissing it and continuing anonymously
+      // still works fine for a family member who genuinely has no email,
+      // and SetupFamilyScreen's own separate guard is the real backstop
+      // that keeps a duplicate family from ever being created even if this
+      // warning is dismissed by the actual invited person.
+      if (Array.isArray(data.pendingEmailHints) && data.pendingEmailHints.length > 0) {
+        setCheckingCode(false);
+        const hint = data.pendingEmailHints[0];
+        showAlert(
+          'Is this invite for you?',
+          `This family has a pending invite for ${hint}. If that's your email, sign up there instead — your history and coins carry over correctly that way. If that's not you, go ahead and continue.`,
+          [
+            { text: 'That\'s not me — continue', onPress: () => setStep('profile') },
+            { text: 'That\'s me — go sign up', style: 'cancel', onPress: () => router.replace('/(auth)/signup') },
+          ]
+        );
+        return;
+      }
     } catch {
       // Network hiccup — proceed with a blank form rather than blocking.
     }

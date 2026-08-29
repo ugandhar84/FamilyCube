@@ -496,6 +496,7 @@ export default function TasksScreen() {
           onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
           activeMemberId={activeMemberId ?? ''}
           prefill={manualQuestPrefill}
+          initialStep={manualQuestPrefill ? 'review' : undefined}
         />
       )}
 

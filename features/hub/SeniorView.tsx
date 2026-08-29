@@ -1073,6 +1073,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
           activeMemberId={active.id}
           prefill={manualQuestPrefill}
+          initialStep={manualQuestPrefill ? 'review' : undefined}
         />
       )}
 
@@ -1082,6 +1083,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
           activeMemberId={active.id}
           prefill={manualEventPrefill as any}
+          // Same fix as TasksScreen.tsx/ParentView.tsx's own handoff —
+          // opening blank at step 1 threw away everything Smart Tasker
+          // already detected (live-reported as "submit opens a blank
+          // manual form").
+          initialStep={manualEventPrefill ? 'review' : undefined}
         />
       )}
     </>

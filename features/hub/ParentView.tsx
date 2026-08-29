@@ -748,6 +748,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           photoRequired: addPrefill.photoRequired,
           dueDate: addPrefill.startAt ? addPrefill.startAt.slice(0, 10) : undefined,
         } : undefined}
+        initialStep={addPrefill ? 'review' : undefined}
       />
 
       {/* Same AddEventModal Calendar uses — opened right over the Hub
@@ -765,6 +766,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           startAt: addPrefill.startAt,
           notes: addPrefill.notes,
         } : undefined}
+        // Smart Tasker already detected title/category/who/when by the
+        // time it hands off here — restarting at step 1 blank (only the
+        // category pre-selected) threw that context away and looked like
+        // the parsed data had been dropped entirely (live-reported).
+        // TasksScreen.tsx's own AddEventModal call already does this; Hub's
+        // separate copy of the same handoff never got the same fix.
+        initialStep={addPrefill ? 'review' : undefined}
       />
 
       <DelegateSheet

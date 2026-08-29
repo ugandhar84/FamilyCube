@@ -79,13 +79,20 @@ function isLikelyDuplicateTitle(a: string, b: string): boolean {
 }
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
-export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType, prefill }: {
+export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType, prefill, initialStep }: {
   visible: boolean; onClose: () => void; activeMemberId: string; defaultQuestType?: QuestType;
   // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
   // "Edit in full form" handoff) — only covers what the AI response
   // actually produces; every other field keeps its normal default so the
   // rest of the form behaves exactly as if a parent had started fresh.
   prefill?: { title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string };
+  // Opens straight on the review step instead of step 1 — for a handoff
+  // from Smart Tasker/voice intake that already detected title/coins/
+  // assignee/etc. Mirrors AddEventModal's own initialStep prop (added for
+  // the identical reason: restarting at step 1 with prefill values already
+  // in state looked exactly like the parsed data had been silently
+  // dropped, live-reported as "submit opens a blank manual form").
+  initialStep?: 'review';
 }) {
   const { colors, isDark } = useTheme();
   const { addQuest, createParticipants } = useQuestStore();
@@ -305,6 +312,21 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // on every render off category, not memoized — this array is only ever
   // used to know the current step's id and total count, both cheap.
   const stepIds = ['what', ...(isGroceryCategory ? ['grocery'] : []), 'when', 'assign', 'review'] as const;
+
+  // Jump straight to Review once, on mount, for a Smart Tasker/voice-intake
+  // handoff that already detected title/coins/assignee/etc. — 'review' is
+  // always the last id regardless of whether the grocery step is present,
+  // so this reads the real length rather than a hardcoded index. A plain
+  // useState initializer can't do this since stepIds itself depends on
+  // category, which isn't known until after prefill's initial values (title
+  // only, never category) have already been applied above.
+  const jumpedToReview = React.useRef(false);
+  useEffect(() => {
+    if (initialStep === 'review' && !jumpedToReview.current) {
+      jumpedToReview.current = true;
+      setStep(stepIds.length - 1);
+    }
+  }, [initialStep, stepIds.length]);
   type StepId = typeof stepIds[number];
   const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
   // If the grocery step existed (step index 1) and the category changes away

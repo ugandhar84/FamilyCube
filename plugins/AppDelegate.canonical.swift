@@ -89,19 +89,31 @@ FirebaseApp.configure()
         speechSynthesizer.stopSpeaking(at: .immediate)
         surfacedCallUUIDs.remove(uuid)
       }
-    } else if !call.isOutgoing && !surfacedCallUUIDs.contains(uuid) {
-      // CXCallObserver reports EVERY call on the device, not just this
-      // app's own VoIP reminder calls — a genuine incoming call from
+    } else if !call.isOutgoing && call.hasConnected && !surfacedCallUUIDs.contains(uuid) {
+      // callChanged fires on EVERY state transition of a call, not just
+      // answered — for an incoming call that includes the initial
+      // "ringing" state, which arrives as its own callChanged event before
+      // any answer happens. Without checking hasConnected, that first
+      // (ringing) event satisfied !isOutgoing && !surfacedCallUUIDs and got
+      // marked "surfaced" immediately — so by the time the real answer
+      // transition fired moments later, surfacedCallUUIDs already
+      // contained this uuid and speakReminder() never ran at all
+      // (confirmed live: the call rang correctly, but no voice ever
+      // played on answer). hasConnected is false while ringing and only
+      // becomes true once actually answered — gating on it means this
+      // branch now only ever fires on the real answer.
+      //
+      // CXCallObserver also reports EVERY call on the device, not just
+      // this app's own VoIP reminder calls — a genuine incoming call from
       // anyone (a real person, a robocall, anything) hits this exact
-      // branch too. Without this guard, the itemType ?? "reminder"
-      // fallback below meant speakReminder() ran for real, unrelated
-      // phone calls the instant the native call screen appeared, speaking
-      // "This is a reminder for..." over someone else's actual call
-      // (confirmed live: reported happening on every incoming call, not
-      // just app-originated reminder calls). itemId only ever gets written
-      // to UserDefaults by THIS app's own pushRegistry(didReceiveIncomingPushWith:)
-      // handler above — its absence is the reliable signal this call has
-      // nothing to do with Family Cube.
+      // branch too. Without the itemId guard below, the itemType ??
+      // "reminder" fallback meant speakReminder() ran for real, unrelated
+      // phone calls the instant they were answered, speaking "This is a
+      // reminder for..." over someone else's actual call (confirmed live).
+      // itemId only ever gets written to UserDefaults by THIS app's own
+      // pushRegistry(didReceiveIncomingPushWith:) handler above — its
+      // absence is the reliable signal this call has nothing to do with
+      // Family Cube.
       guard UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)") != nil else {
         surfacedCallUUIDs.insert(uuid)
         return

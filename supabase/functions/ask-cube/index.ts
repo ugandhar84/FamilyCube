@@ -1370,6 +1370,16 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   propose_update reports no match at all, tell the user plainly that you couldn't find it — don't guess or silently
   update something else, and don't create a new item unless they then confirm that's actually what they want. If it
   reports multiple matches, ask the user which one they mean before calling propose_update again.
+- "Reschedule"/"move"/"push back" is genuinely ambiguous between two different changes, and you must pick based on
+  what "to <day>" is attached to, not guess: (1) "reschedule the appointment TO Monday" / "move it to Monday" means
+  the event's own date field changes to Monday — set propose_update's date field to that day. (2) "remind me Monday to
+  reschedule the appointment" / "set a reminder to reschedule the appointment" means the event's date does NOT
+  change — the user wants a call-reminder (leadMinutes) so they remember to go handle the rescheduling themselves,
+  and Monday describes when the reminder fires, not the event's new date. The verb ("remind me") coming before
+  "reschedule" is the tell for case 2; "reschedule/move ... to <day>" with no separate "remind me" framing is case 1.
+  If the phrasing genuinely could go either way, ask a single short clarifying question ("Do you want me to move the
+  appointment to Monday, or just remind you Monday to go reschedule it?") rather than guessing — this is exactly the
+  kind of case where a wrong guess produces a confusing result, not just an imperfect one.
 - CRITICAL — "reschedule"/"move"/"postpone"/"push back"/"change the time of" ALWAYS means propose_update, never
   propose_event, even when the user gives you only a generic noun instead of a specific title (e.g. "reschedule your
   appointment on Monday", "can we move the appointment to Tuesday", "push back the meeting"). These verbs only make

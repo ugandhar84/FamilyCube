@@ -283,10 +283,10 @@ serve(async (req) => {
       const eventIds = missed.filter(m => m.item_type === 'event').map(m => m.item_id);
       const [{ data: missedChores }, { data: missedEvents }] = await Promise.all([
         choreIds.length
-          ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description').in('id', choreIds)
+          ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description, family_id').in('id', choreIds)
           : Promise.resolve({ data: [] as any[] }),
         eventIds.length
-          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids').in('id', eventIds).is('deleted_at', null)
+          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids, family_id').in('id', eventIds).is('deleted_at', null)
           : Promise.resolve({ data: [] as any[] }),
       ]);
       const choreById = Object.fromEntries((missedChores ?? []).map((c: any) => [c.id, c]));
@@ -350,12 +350,12 @@ serve(async (req) => {
         // Fallback: a normal push notification, so the reminder isn't lost
         // entirely even on a device where the retry call also goes
         // unanswered — this is the safety net, not a second call attempt.
+        const title = isChore ? `Missed reminder: ${source.title}` : `You missed a call about ${source.title}`;
+        const body = isChore ? "Don't forget — this is still due." : "This was coming up — check your calendar.";
         const expoTokens = (expoTokenRows ?? [])
           .map((r: any) => r.expo_push_token)
           .filter((t: string) => t?.startsWith('ExponentPushToken'));
         if (expoTokens.length > 0) {
-          const title = isChore ? `Missed reminder: ${source.title}` : `You missed a call about ${source.title}`;
-          const body = isChore ? "Don't forget — this is still due." : "This was coming up — check your calendar.";
           await fetch('https://exp.host/--/api/v2/push/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -364,6 +364,34 @@ serve(async (req) => {
               data: { type: 'call_reminder_missed', itemType: m.item_type, itemId: m.item_id },
             }))),
           }).catch(() => {});
+        }
+
+        // Live-reported: tapping the missed-reminder push opened the app's
+        // notifications sheet/screen (both of which read the `notifications`
+        // table, keyed by member_id — see store/notifStore.ts's own header
+        // comment for the "notification_logs has zero writers" history) but
+        // showed "All caught up" with nothing listed, because this push was
+        // ONLY ever sent as a raw Expo push — never persisted anywhere the
+        // in-app UI actually reads from. Same insert shape family-notifier
+        // uses for every other real notification in this app, so it shows
+        // up in the exact same per-member feed as any other alert would.
+        const familyId = (source as any).family_id as string | undefined;
+        if (familyId) {
+          await supabase.from('notifications').insert(memberIds.map((memberId: string) => ({
+            family_id:     familyId,
+            member_id:     memberId,
+            target_member: memberId,
+            type:          'call_reminder_missed',
+            title,
+            message:       body,
+            body,
+            data:          { type: 'call_reminder_missed', itemType: m.item_type, itemId: m.item_id },
+            meta:          { type: 'call_reminder_missed', itemType: m.item_type, itemId: m.item_id },
+            timestamp:     new Date().toISOString(),
+            read:          false,
+          }))).then(({ error }) => {
+            if (error) console.warn('[call-reminder-sweeper] notifications insert failed', error.message);
+          });
         }
 
         await supabase.from('call_reminder_log').update({ retry_count: 1 }).eq('id', m.id);

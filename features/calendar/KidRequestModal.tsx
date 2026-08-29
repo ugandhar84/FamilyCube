@@ -61,6 +61,7 @@ import { SUGGESTIONS, localDateStr, fmtTime as fmtTimeVal, fmtDisplay, fmtTimeDi
 import { RIDE_PICKUP_TIME_UNKNOWN, parseRideMeta } from '../hub/parent/rideLegs';
 import type { EventCategory } from './components/eventForm/types';
 import type { FamilyEvent, EventType } from '@/store/eventStore';
+import { showToast } from '@/components/AppToast';
 
 type RideChoice = 'none' | 'dropoff' | 'pickup' | 'both';
 
@@ -583,7 +584,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                           console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Withdraw this request" on "${editEvent.title}" (id=${editEvent.id}) [features/calendar/KidRequestModal.tsx:556]`);
                           Alert.alert('Withdraw Request', `Withdraw "${editEvent.title}"?`, [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Withdraw', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} confirmed "Withdraw" on "${editEvent.title}" (id=${editEvent.id}) → deleteEvent [features/calendar/KidRequestModal.tsx:559]`); deleteEvent(editEvent.id); close(); } },
+                            { text: 'Withdraw', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} confirmed "Withdraw" on "${editEvent.title}" (id=${editEvent.id}) → deleteEvent [features/calendar/KidRequestModal.tsx:559]`); deleteEvent(editEvent.id); showToast('Request withdrawn'); close(); } },
                           ]);
                         }}
                         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>

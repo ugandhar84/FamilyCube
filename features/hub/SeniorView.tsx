@@ -44,6 +44,7 @@ import { UserCheck } from 'lucide-react-native';
 import SmartTaskComposer from '../tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { showToast } from '@/components/AppToast';
 
 export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips, familyId, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
@@ -249,7 +250,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const { error } = await supabase.from('family_medications')
       .update({ taken_date: alreadyTaken ? null : today, modified_by: active.id, updated_at: new Date().toISOString() })
       .eq('id', id);
-    if (!error) loadMeds();
+    if (!error) { loadMeds(); showToast(alreadyTaken ? 'Marked as not taken' : 'Marked as taken'); }
   }, [meds, today, active.id, loadMeds]);
 
   const addMed = useCallback(async (name: string, time: string) => {
@@ -261,6 +262,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       escalation_enabled: false, escalation_after_min: 30, escalation_to: [],
     });
     loadMeds();
+    showToast('Medication added');
   }, [familyId, active.id, loadMeds]);
 
   const removeMed = useCallback(async (id: string) => {
@@ -268,6 +270,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       .update({ is_active: false, deleted_by: active.id, updated_at: new Date().toISOString() })
       .eq('id', id);
     loadMeds();
+    showToast('Medication removed');
   }, [active.id, loadMeds]);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);

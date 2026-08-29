@@ -279,6 +279,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   };
 
   const addMed = async (memberId: string, form: MedForm) => {
+    const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
     const { data } = await supabase.from('family_medications').insert({
       family_id: familyId,
       member_id: memberId,
@@ -287,7 +288,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       dosage: form.dosage.trim(),
       dosage_unit: form.dosage_unit,
       frequency: form.frequency,
-      frequency_times: [form.reminder_time || '08:00'],
+      frequency_times: times,
       category: form.category,
       prescribing_doctor: form.prescribing_doctor || null,
       pharmacy: form.pharmacy || null,
@@ -316,23 +317,28 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       // up on the member's own Schedule, and alert_call opts into the same
       // CallKit-style ringing reminder chores/events already use, riding
       // that existing infrastructure with zero new native/server work.
-      useEventStore.getState().addRecurringEvent(
-        {
-          title: `Take ${form.name.trim()}`,
-          date: form.start_date || today(),
-          time: form.reminder_time || '08:00',
-          memberId,
-          type: 'reminder',
-          category: 'Medication',
-          notes: form.instructions || undefined,
-          alertCall: form.alert_call,
-          alertCallLeadMinutes: 0,
-        },
-        {
-          frequency: 'daily',
-          ...(form.end_date ? { endDate: form.end_date } : {}),
-        }
-      );
+      // One independent recurring series PER dose time (see
+      // useMedications.ts's addMed for the matching fix + full rationale —
+      // "2x Daily" used to silently only ever get one reminder).
+      times.forEach(time => {
+        useEventStore.getState().addRecurringEvent(
+          {
+            title: `Take ${form.name.trim()}`,
+            date: form.start_date || today(),
+            time,
+            memberId,
+            type: 'reminder',
+            category: 'Medication',
+            notes: form.instructions || undefined,
+            alertCall: form.alert_call,
+            alertCallLeadMinutes: 0,
+          },
+          {
+            frequency: 'daily',
+            ...(form.end_date ? { endDate: form.end_date } : {}),
+          }
+        );
+      });
       showToast('Medication added');
     }
   };

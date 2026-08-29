@@ -49,6 +49,7 @@ export function useMedications(familyId: string | undefined, memberId: string | 
   // schedule anywhere.
   const addMed = useCallback(async (form: MedForm) => {
     if (!familyId || !memberId) return;
+    const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
     const { data } = await supabase.from('family_medications').insert({
       family_id: familyId,
       member_id: memberId,
@@ -57,7 +58,7 @@ export function useMedications(familyId: string | undefined, memberId: string | 
       dosage: form.dosage.trim(),
       dosage_unit: form.dosage_unit,
       frequency: form.frequency,
-      frequency_times: [form.reminder_time || '08:00'],
+      frequency_times: times,
       category: form.category,
       prescribing_doctor: form.prescribing_doctor || null,
       pharmacy: form.pharmacy || null,
@@ -78,23 +79,31 @@ export function useMedications(familyId: string | undefined, memberId: string | 
         p_category: form.category,
         p_hint: form.category,
       }).then(() => {});
-      useEventStore.getState().addRecurringEvent(
-        {
-          title: `Take ${form.name.trim()}`,
-          date: form.start_date || today(),
-          time: form.reminder_time || '08:00',
-          memberId,
-          type: 'reminder',
-          category: 'Medication',
-          notes: form.instructions || undefined,
-          alertCall: form.alert_call,
-          alertCallLeadMinutes: 0,
-        },
-        {
-          frequency: 'daily',
-          ...(form.end_date ? { endDate: form.end_date } : {}),
-        }
-      );
+      // One independent recurring series PER dose time — "2x Daily" with
+      // times [08:00, 20:00] materializes two separate daily recurring
+      // events, each ringing at its own time, instead of the one call
+      // this used to make (which silently dropped every dose time past
+      // the first — live-reported: selecting "2x Daily" only ever asked
+      // for a single reminder time with nowhere to enter a second).
+      times.forEach(time => {
+        useEventStore.getState().addRecurringEvent(
+          {
+            title: `Take ${form.name.trim()}`,
+            date: form.start_date || today(),
+            time,
+            memberId,
+            type: 'reminder',
+            category: 'Medication',
+            notes: form.instructions || undefined,
+            alertCall: form.alert_call,
+            alertCallLeadMinutes: 0,
+          },
+          {
+            frequency: 'daily',
+            ...(form.end_date ? { endDate: form.end_date } : {}),
+          }
+        );
+      });
       showToast('Medication added');
     }
   }, [familyId, memberId]);

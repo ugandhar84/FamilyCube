@@ -80,23 +80,33 @@ export interface MedForm {
   instructions: string; notes: string;
   escalation_enabled: boolean; escalation_after_min: string;
   // Reminder scheduling — start_date/end_date/frequency_times already
-  // exist as DB columns on Medication (types.ts's Medication interface)
-  // but were never exposed in the add-form; reminder_time is the single
-  // time-of-day used to materialize a recurring calendar reminder
-  // (multiple daily times aren't supported yet — frequency_times stays a
-  // 1-element array until that's needed). alert_call opts into the
-  // existing CallKit-style ringing reminder (same alertCall/
-  // alertCallLeadMinutes pattern FamilyEvent already uses for chores/
-  // events) instead of a plain push.
-  start_date: string; end_date: string; reminder_time: string;
+  // exist as DB columns on Medication (types.ts's Medication interface).
+  // reminder_times holds one time-of-day per dose — length 1 for
+  // daily/weekly/as_needed, length 2 for twice_daily (live-reported: "2x
+  // Daily" only ever asked for ONE time, silently meaning the second dose
+  // never got its own reminder at all). Each entry materializes its own
+  // independent recurring calendar event (see useMedications.ts's addMed —
+  // addRecurringEvent is called once per entry, not once per medication).
+  // alert_call opts into the existing CallKit-style ringing reminder (same
+  // alertCall/alertCallLeadMinutes pattern FamilyEvent already uses for
+  // chores/events) instead of a plain push, applied to every dose time.
+  start_date: string; end_date: string; reminder_times: string[];
   alert_call: boolean;
+}
+// Number of reminder times FREQUENCY implies — daily/weekly/as_needed are
+// one dose, twice_daily is two. Used both to size BLANK_MED's initial
+// array and to grow/shrink reminder_times when the user changes frequency
+// after already picking times (never silently discards an already-set
+// time — see AddMedModal's frequency-change handler).
+export function doseCountForFrequency(frequency: string): number {
+  return frequency === 'twice_daily' ? 2 : 1;
 }
 export const BLANK_MED: MedForm = {
   name: '', dosage: '', dosage_unit: 'tablet', frequency: 'daily',
   category: 'prescription', prescribing_doctor: '', pharmacy: '',
   refill_date: '', pills_remaining: '', instructions: '', notes: '',
   escalation_enabled: false, escalation_after_min: '60',
-  start_date: today(), end_date: '', reminder_time: '08:00',
+  start_date: today(), end_date: '', reminder_times: ['08:00'],
   alert_call: false,
 };
 

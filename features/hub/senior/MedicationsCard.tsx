@@ -49,7 +49,7 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: GP.sub, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
                 <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>
-                  {med.frequency_times?.[0] ?? 'Anytime'}{scheduleLine ? ` · ${scheduleLine}` : ''}
+                  {med.frequency_times?.length ? med.frequency_times.join(' & ') : 'Anytime'}{scheduleLine ? ` · ${scheduleLine}` : ''}
                 </Text>
               </View>
               <Pressable onPress={() => toggleMed(med)} style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: taken ? MONEY_GREEN + '20' : BRAND.teal, borderWidth: taken ? 1 : 0, borderColor: MONEY_GREEN + '40' }}>

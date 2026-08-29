@@ -10,7 +10,7 @@ import StepProgressBar from '@/components/StepProgressBar';
 import StepTransition from '@/components/StepTransition';
 import {
   MedForm, BLANK_MED, MED_SUGGESTIONS, getCatColors, FREQ_LABELS,
-  fmtDate, fmtDateDisplay, aStyles,
+  fmtDate, fmtDateDisplay, aStyles, doseCountForFrequency,
 } from './types';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
@@ -38,7 +38,11 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   const [refillDate, setRefillDate]   = useState<Date | null>(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker]     = useState(false);
-  const [showTimePicker, setShowTimePicker]   = useState(false);
+  // Which reminder_times INDEX is currently showing its picker — null when
+  // none is open. Was a plain boolean when there was only ever one
+  // reminder time; now needs to track which of potentially several
+  // (twice_daily = 2) dose times the user tapped.
+  const [showTimePickerIdx, setShowTimePickerIdx] = useState<number | null>(null);
   const [nameFocused, setNameFocused] = useState(false);
   const [globalSuggestions, setGlobalSuggestions] = useState<{ name: string; hint: string; category: string }[]>([]);
   const [touched, setTouched]         = useState<Record<string, boolean>>({});
@@ -59,6 +63,27 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   useEffect(() => { if (visible) setStepIndex(0); }, [visible]);
 
   const set = (k: keyof MedForm, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const setReminderTime = (idx: number, time: string) =>
+    setForm(f => ({ ...f, reminder_times: f.reminder_times.map((t, i) => i === idx ? time : t) }));
+  // Grows/shrinks reminder_times to match what the newly-picked frequency
+  // needs (twice_daily = 2 dose times, everything else = 1) — never
+  // silently discards a time the user already set: switching FROM
+  // twice_daily back to daily keeps only the first time, and switching TO
+  // twice_daily keeps the existing time as dose 1 and adds a sensible
+  // default (12 hours later) as dose 2 rather than a blank/duplicate.
+  const setFrequency = (freq: string) => {
+    setForm(f => {
+      const wanted = doseCountForFrequency(freq);
+      let times = f.reminder_times;
+      if (times.length > wanted) times = times.slice(0, wanted);
+      else if (times.length < wanted) {
+        const [h, m] = (times[0] ?? '08:00').split(':').map(Number);
+        const secondHour = ((h || 8) + 12) % 24;
+        times = [...times, `${String(secondHour).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`];
+      }
+      return { ...f, frequency: freq, reminder_times: times };
+    });
+  };
   const touch = (k: string) => setTouched(t => ({ ...t, [k]: true }));
 
   // Derived validation errors — name/dosage/member gate steps 1 & 2, not
@@ -76,7 +101,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   const reset = () => {
     setForm(BLANK_MED); setRefillDate(null);
     setShowRefillPicker(false); setNameFocused(false);
-    setShowStartPicker(false); setShowEndPicker(false); setShowTimePicker(false);
+    setShowStartPicker(false); setShowEndPicker(false); setShowTimePickerIdx(null);
     setTouched({}); setSubmitAttempted(false); setStepIndex(0);
   };
 
@@ -326,7 +351,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                   <Text style={[aStyles.label, { color: colors.textSecondary }]}>Frequency</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                     {Object.entries(FREQ_LABELS).map(([k, v]) => (
-                      <TouchableOpacity key={k} onPress={() => set('frequency', k)}
+                      <TouchableOpacity key={k} onPress={() => setFrequency(k)}
                         style={[aStyles.chipSmall, {
                           borderColor: form.frequency === k ? catColor : colors.border,
                           backgroundColor: form.frequency === k ? catColor + '15' : 'transparent',
@@ -422,32 +447,44 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                     )}
 
                     <View style={{ marginTop: 10 }}>
-                      <Text style={[aStyles.label, { color: colors.textSecondary }]}>Reminder Time</Text>
-                      <TouchableOpacity onPress={() => setShowTimePicker(p => !p)}
-                        style={[aStyles.dateBtn, { alignSelf: 'flex-start', minWidth: 110,
-                          backgroundColor: showTimePicker ? catColor + '20' : colors.surface,
-                          borderColor: showTimePicker ? catColor : colors.border }]}>
-                        <Calendar size={14} color={showTimePicker ? catColor : colors.textTertiary} />
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: showTimePicker ? catColor : colors.textPrimary }}>
-                          {form.reminder_time}
-                        </Text>
-                      </TouchableOpacity>
+                      <Text style={[aStyles.label, { color: colors.textSecondary }]}>
+                        {form.reminder_times.length > 1 ? 'Reminder Times' : 'Reminder Time'}
+                      </Text>
+                      {/* One button per dose — twice_daily shows 2, keeping
+                          each dose's own independent time instead of the
+                          old single field that silently only ever
+                          scheduled the first dose (live-reported). */}
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {form.reminder_times.map((time, idx) => (
+                          <TouchableOpacity key={idx} onPress={() => setShowTimePickerIdx(idx)}
+                            style={[aStyles.dateBtn, { alignSelf: 'flex-start', minWidth: 110,
+                              backgroundColor: showTimePickerIdx === idx ? catColor + '20' : colors.surface,
+                              borderColor: showTimePickerIdx === idx ? catColor : colors.border }]}>
+                            <Calendar size={14} color={showTimePickerIdx === idx ? catColor : colors.textTertiary} />
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: showTimePickerIdx === idx ? catColor : colors.textPrimary }}>
+                              {form.reminder_times.length > 1 ? `Dose ${idx + 1} · ${time}` : time}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </View>
-                    {showTimePicker && (
-                      <Modal transparent animationType="fade" visible onRequestClose={() => setShowTimePicker(false)}>
-                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowTimePicker(false)}>
+                    {showTimePickerIdx !== null && (
+                      <Modal transparent animationType="fade" visible onRequestClose={() => setShowTimePickerIdx(null)}>
+                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowTimePickerIdx(null)}>
                           <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                               paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>Reminder Time</Text>
-                              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>
+                                {form.reminder_times.length > 1 ? `Dose ${showTimePickerIdx + 1} Time` : 'Reminder Time'}
+                              </Text>
+                              <TouchableOpacity onPress={() => setShowTimePickerIdx(null)}>
                                 <Text style={{ color: catColor, fontWeight: '900', fontSize: 15 }}>Done</Text>
                               </TouchableOpacity>
                             </View>
                             <DateTimePicker
-                              value={(() => { const [h, m] = form.reminder_time.split(':').map(Number); const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d; })()}
+                              value={(() => { const [h, m] = form.reminder_times[showTimePickerIdx].split(':').map(Number); const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d; })()}
                               mode="time" display="spinner"
-                              onChange={(_, d) => { if (d) set('reminder_time', `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`); }}
+                              onChange={(_, d) => { if (d) setReminderTime(showTimePickerIdx, `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`); }}
                               textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
                             />
                           </TouchableOpacity>
@@ -623,7 +660,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                     {form.prescribing_doctor ? ` · Dr. ${form.prescribing_doctor}` : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                    Reminds daily at {form.reminder_time}{form.alert_call ? ' (ringing alert)' : ''}
+                    Reminds daily at {form.reminder_times.join(' & ')}{form.alert_call ? ' (ringing alert)' : ''}
                     {form.end_date ? ` until ${fmtDateDisplay(new Date(form.end_date + 'T00:00:00'))}` : ', ongoing'}
                   </Text>
                 </View>

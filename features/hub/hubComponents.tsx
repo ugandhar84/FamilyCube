@@ -525,8 +525,14 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
           const otherParents = members.filter(m => m.role === 'parent' && m.name !== excludeName && m.name !== activeName);
           const viewerIsExcluded = activeName === excludeName;
           // Same allowGpTeen gate DriverChipRow uses elsewhere — a Work
-          // event never offers Grandparent/Teen as a resolution.
-          const allowGpTeen = ev.category !== 'Work';
+          // event never offers Grandparent/Teen as a resolution. Also
+          // requires an actual senior/teen member to exist in the family;
+          // live-reported: these chips rendered even for a family with no
+          // grandparent or teen member at all, offering a "resolution"
+          // that had no one behind it.
+          const allowGp = members.some(m => m.role === 'senior');
+          const allowTeen = members.some(m => m.role === 'teen');
+          const allowGpTeen = ev.category !== 'Work' && (allowGp || allowTeen);
           return (
             <View key={ev.id} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -547,14 +553,14 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
                     </Pressable>
                   ))}
-                  {allowGpTeen && (
+                  {allowGpTeen && allowGp && (
                     <Pressable onPress={() => openPool(ev, 'gp')}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.warning, backgroundColor: colors.warning + '18' }}>
                       <Users size={13} color={colors.warningDark} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Grandparent</Text>
                     </Pressable>
                   )}
-                  {allowGpTeen && (
+                  {allowGpTeen && allowTeen && (
                     <Pressable onPress={() => openPool(ev, 'teen')}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.warning, backgroundColor: colors.warning + '18' }}>
                       <Backpack size={13} color={colors.warningDark} />
@@ -678,6 +684,13 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   );
   const gpOpen = !!ev.isOpenToGrandparents && !assignee.name;
   const teenOpen = !!ev.isOpenToTeens && !assignee.name;
+  // allowGpTeen is category-only (a Work event never offers GP/Teen at
+  // all); also require an actual senior/teen member in the family before
+  // rendering that role's chip — live-reported: these chips showed up
+  // for a family with no grandparent or teen member, a "resolution" with
+  // no one behind it.
+  const showGp = allowGpTeen && members.some(m => m.role === 'senior');
+  const showTeen = allowGpTeen && members.some(m => m.role === 'teen');
 
   const chip = (key: string, label: string, Icon: typeof User, onPress: () => void, tone: 'primary' | 'neutral' | 'open' = 'neutral') => {
     const sel = picked === key;
@@ -703,8 +716,8 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
         {viewerCanDrive && chip('me', 'Me', User, () => setPicked('me'), 'primary')}
         {otherParents.map(m => chip(m.id, m.name.split(' ')[0], User, () => setPicked(m.id)))}
-        {allowGpTeen && chip('gp', 'Grandparent', Users, () => onOpenPool('gp'), gpOpen ? 'open' : 'neutral')}
-        {allowGpTeen && chip('teen', 'Teen', Backpack, () => onOpenPool('teen'), teenOpen ? 'open' : 'neutral')}
+        {showGp && chip('gp', 'Grandparent', Users, () => onOpenPool('gp'), gpOpen ? 'open' : 'neutral')}
+        {showTeen && chip('teen', 'Teen', Backpack, () => onOpenPool('teen'), teenOpen ? 'open' : 'neutral')}
       </ScrollView>
       {picked && (
         <>

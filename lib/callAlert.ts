@@ -136,6 +136,26 @@ export function listenForVoipToken(onToken: (token: string) => void): () => void
 // missed-call follow-up (one retry call + one push, ~3 min later) would fire
 // for every reminder, answered or not, turning a quiet safety net into a
 // redundant nag on top of a call the person already took.
+// Timestamp of the most recent reminder-call answer — set the instant the
+// native side reports one, read by app/_layout.tsx's foreground/AppState
+// handler to skip the biometric re-lock check for that resume. Live-
+// reported: answering a call reminder after 5+ min backgrounded (the
+// existing re-lock threshold) foregrounded the app straight into
+// LockScreen's auto-triggered Face ID prompt — but iOS won't reliably run
+// Face ID while a CallKit call is still active/dismissing, so the prompt
+// silently hung forever with no way to retry or cancel (busy stuck true,
+// both buttons dead). Skipping the lock check entirely for a few seconds
+// after a reminder-call answer avoids ever firing Face ID into that dead
+// window; the app then unlocks normally like any other quick app-switcher
+// bounce under LOCK_AFTER_MS, and re-locks again on the NEXT genuine
+// backgrounding as usual.
+let lastReminderCallAnsweredAt = 0;
+const RECENT_ANSWER_WINDOW_MS = 60_000;
+
+export function wasReminderCallJustAnswered(): boolean {
+  return Date.now() - lastReminderCallAnsweredAt < RECENT_ANSWER_WINDOW_MS;
+}
+
 export function listenForCallReminderAnswered(): () => void {
   if (Platform.OS !== 'ios') return () => {};
   try {
@@ -143,6 +163,7 @@ export function listenForCallReminderAnswered(): () => void {
       'CallReminderAnswered',
       async (e: { itemType?: string; itemId?: string; dueAtIso?: string }) => {
         if (!e?.itemType || !e?.itemId || !e?.dueAtIso) return;
+        lastReminderCallAnsweredAt = Date.now();
         try {
           await supabase.functions.invoke('mark-call-reminder-answered', {
             body: { itemType: e.itemType, itemId: e.itemId, dueAtIso: e.dueAtIso },

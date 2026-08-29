@@ -42,7 +42,7 @@ import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking'
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
-  listenForCallReminderAnswered,
+  listenForCallReminderAnswered, wasReminderCallJustAnswered,
 } from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -790,6 +790,15 @@ function RootNavigator() {
 
       if (awayMs < LOCK_AFTER_MS) return;
       if (!bootCompleted.current) return;
+      // Live-reported: answering a call-reminder call (which backgrounds
+      // the app for the call's duration, easily past LOCK_AFTER_MS) then
+      // foregrounded straight into LockScreen's auto-triggered Face ID —
+      // but iOS won't reliably run Face ID while a CallKit call is still
+      // active/dismissing, so the prompt hung forever with both buttons
+      // dead (busy stuck true, no way to retry). Skip the re-lock check
+      // entirely for this one resume; it re-arms on the next genuine
+      // backgrounding as usual.
+      if (wasReminderCallJustAnswered()) return;
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;

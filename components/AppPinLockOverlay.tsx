@@ -12,6 +12,7 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFamilyStore } from '@/store/familyStore';
 import { useTheme } from '@/lib/ThemeContext';
+import { wasReminderCallJustAnswered } from '@/lib/callAlert';
 import PinEntryModal from './PinEntryModal';
 
 // Same 5-minute threshold as the Face ID re-lock in app/_layout.tsx — only
@@ -42,6 +43,12 @@ export default function AppPinLockOverlay() {
       const awayMs = backgroundedAt.current != null ? Date.now() - backgroundedAt.current : 0;
       backgroundedAt.current = null;
       if (awayMs < LOCK_AFTER_MS) return;
+      // Same skip the sibling biometric re-lock check in app/_layout.tsx
+      // applies — answering a call reminder backgrounds the app for the
+      // call's duration (easily past LOCK_AFTER_MS), and forcing a PIN
+      // re-entry the instant that call is answered is an unwanted
+      // interruption for a resume the user didn't actually initiate.
+      if (wasReminderCallJustAnswered()) return;
       // Challenge only if the CURRENT active member actually has a PIN set —
       // re-read via the ref at fire time, not a stale closure value.
       if (activeMemberRef.current?.pinEnabled && activeMemberRef.current?.pin) {

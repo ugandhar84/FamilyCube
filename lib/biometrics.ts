@@ -236,12 +236,27 @@ export async function authenticateWithBiometricsDetailed(
   reason?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: reason ?? 'Sign in to Family Cube',
-      fallbackLabel: 'Use password',
-      disableDeviceFallback: false,
-      cancelLabel: 'Cancel',
-    });
+    // Live-reported: answering a call-reminder call could foreground the
+    // app straight into this prompt while a CallKit call was still active
+    // — iOS silently refuses to present Face ID in that state, and
+    // authenticateAsync's promise never resolves either way, leaving
+    // LockScreen's "busy" stuck true forever (both buttons permanently
+    // dead, no retry possible). The real fix is not reaching this call in
+    // that state at all (see wasReminderCallJustAnswered in callAlert.ts),
+    // but this timeout is the backstop — the caller is guaranteed a
+    // settled result within 20s no matter what native does.
+    const timeout = new Promise<{ success: boolean; error?: string }>((resolve) =>
+      setTimeout(() => resolve({ success: false, error: 'timeout' }), 20_000)
+    );
+    const result = await Promise.race([
+      LocalAuthentication.authenticateAsync({
+        promptMessage: reason ?? 'Sign in to Family Cube',
+        fallbackLabel: 'Use password',
+        disableDeviceFallback: false,
+        cancelLabel: 'Cancel',
+      }),
+      timeout,
+    ]);
     return { success: result.success, error: (result as any).error };
   } catch (e: any) {
     return { success: false, error: e?.message ?? 'unknown error' };

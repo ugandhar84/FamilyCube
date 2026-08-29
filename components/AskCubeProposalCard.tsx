@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import { View, Text, Pressable, Image, TextInput } from 'react-native';
-import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store } from 'lucide-react-native';
+import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2 } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import type { AskCubeProposal } from '@/lib/askCubeService';
@@ -45,6 +45,7 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   update_chore: { label: 'Update draft',     icon: Clock,         accent: 'kid' },
   redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },
   chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'kid' },
+  cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'danger' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -401,6 +402,7 @@ export default function AskCubeProposalCard({
             : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
             : proposal.kind === 'redemption' ? 'Redeem'
             : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
+            : proposal.kind === 'cancel_event' ? 'Cancel event'
             : 'Create'}
         </Text>
       </Pressable>
@@ -563,6 +565,38 @@ export default function AskCubeProposalCard({
           {!!d.status && (
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>currently {d.status.replace(/_/g, ' ')}</Text>
           )}
+        </View>
+        {!!d.reason && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>
+        )}
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'cancel_event') {
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {!!d.date && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Calendar size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{fmtDate(d.date)}</Text>
+            </View>
+          )}
+          {!!d.time && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{fmtTime(d.time)}</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ backgroundColor: colors.danger + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' }}>
+          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.danger, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            Cancel this event
+          </Text>
         </View>
         {!!d.reason && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>

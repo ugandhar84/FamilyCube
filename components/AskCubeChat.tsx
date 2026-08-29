@@ -81,6 +81,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const addEvent = useEventStore(s => s.addEvent);
   const addRecurringEvent = useEventStore(s => s.addRecurringEvent);
   const updateEvent = useEventStore(s => s.updateEvent);
+  const deleteEvent = useEventStore(s => s.deleteEvent);
   const { addQuest } = useQuestStore();
   const updateChore = useChoreStore(s => s.updateChore);
   const claimPoolQuest = useChoreStore(s => s.claimPoolQuest);
@@ -503,6 +504,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Cube');
       else if (d.action === 'complete') submitChore(d.choreId);
       else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
+    } else if (proposal.kind === 'cancel_event') {
+      // Same soft-delete every manual "Delete event" control in the app
+      // uses (Calendar tab's own delete action) — propose_cancel_event
+      // already resolved the exact event server-side, so this just applies
+      // the same deleteEvent(id) the rest of the app already trusts.
+      deleteEvent(d.eventId);
     }
     markProposalCreated(msgId, index);
   };

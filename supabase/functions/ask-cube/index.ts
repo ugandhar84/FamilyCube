@@ -417,6 +417,23 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_cancel_event',
+      description: 'Propose CANCELLING (deleting) an already-existing calendar event entirely — never for a chore (use propose_chore_action with action: "cancel" for that instead). Does NOT delete anything — returns a proposal card the user must confirm. Use whenever the user asks to cancel/delete/remove an event by description, e.g. "cancel my dentist appointment", "delete the soccer practice on Saturday", "remove Leo\'s orthodontist visit — it\'s not happening". Looks the event up by title/member/rough date the same way propose_update does — never guess which event if more than one matches, and never silently reinterpret this as a reschedule (propose_update) unless the user actually asked to move it to a new date instead of removing it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          targetSearch: { type: 'string', description: 'Words to match the event\'s title, e.g. "dentist" or "soccer practice". A generic noun ("the appointment") is fine if that\'s all the user gave — still call this rather than doing nothing.' },
+          memberName:   { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
+          nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("Saturday", "next week") — omit if not implied' },
+          reason:       { type: 'string', description: 'The reason given for cancelling, if the user stated one' },
+        },
+        required: ['targetSearch'],
+      },
+    },
+  },
 ];
 
 // ─── Model calls ─────────────────────────────────────────────────────────
@@ -888,6 +905,37 @@ async function executeTool(
       __proposal: 'update_event',
       eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time,
       changes,
+    };
+  }
+
+  if (name === 'propose_cancel_event') {
+    let memberId: string | null = null;
+    if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    const search = args.targetSearch ?? '';
+    let query = supabase.from('calendar_events')
+      .select('id, title, category, date, start_time, member_id, member_ids')
+      .eq('family_id', familyId).is('deleted_at', null)
+      .ilike('title', `%${search}%`);
+    if (args.nearDate) query = query.gte('date', args.nearDate);
+    else query = query.gte('date', today);
+    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+    const { data, error } = await query.order('date').limit(5);
+    if (error) return { error: error.message };
+    let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    if (!candidates.length) {
+      return { error: `Couldn't find an upcoming event matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or cancel something unrelated.` };
+    }
+    if (candidates.length > 1) {
+      return {
+        error: 'Multiple matching events found — ask the user which one they mean before proposing a cancellation. Do not guess.',
+        candidates: candidates.map((e: any) => ({ title: realNameToAlias(aliasMap, members, e.title), date: e.date, time: e.start_time })),
+      };
+    }
+    const ev = candidates[0];
+    return {
+      __proposal: 'cancel_event',
+      eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time,
+      reason: typeof args.reason === 'string' ? args.reason : undefined,
     };
   }
 
@@ -1416,6 +1464,16 @@ if a kid asks this, tell them plainly only a parent can approve chores, don't pr
 chore done" -> action: 'complete', but only for a chore with no photo requirement — if propose_chore_action reports
 one is needed, tell the user plainly they need to submit it with a photo from the Quests tab instead. "Cancel/remove
 the garage chore" -> action: 'cancel'. These only PROPOSE, they do not create, change, or perform anything
+- "Cancel"/"delete"/"remove" is genuinely overloaded across THREE unrelated domains — pick based on what kind of
+  thing is being cancelled, never guess: a chore ("cancel the garage cleanup") -> propose_chore_action with
+  action:'cancel'; an event ("cancel my dentist appointment", "delete the soccer practice Saturday") ->
+  propose_cancel_event; a reward redemption ("cancel that redemption", "undo the movie night redeem") — there is
+  currently no tool that can do this, so tell the user plainly that redemption cancellation has to be handled by a
+  parent directly in the Store tab rather than pretending to do it or misusing propose_chore_action/propose_update
+  against a reward. Never call propose_update with made-up fields to try to "cancel" something — propose_update only
+  ever changes a field's value on a record that still exists; it can never delete/remove one. If it's ambiguous
+  which of the three the user means (e.g. just "cancel it" with no clear referent), ask which one before proposing
+  anything.
 themselves — same confirm-before-acting rule as every other propose_* tool.
 If a propose_event/propose_quest tool result includes "_unresolvedName", the person you tried to assign it to
 couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
@@ -1458,7 +1516,7 @@ same conversation.`;
     // Collected across the WHOLE loop, not just the final round — a single
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
-    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore'; data: any }[] = [];
+    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
     // turn — used client-side only, to linkify a chore's title wherever it
     // appears in the model's reply text. Never sent to the model itself.

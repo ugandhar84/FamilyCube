@@ -434,8 +434,9 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={resetAndClose}>
       <Pressable style={f.backdrop} onPress={resetAndClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
-        <View style={[f.sheet, { backgroundColor: isDark ? '#0D1117' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0', maxHeight: sheetMaxHeight }]}>
-          <View style={[f.handle, { backgroundColor: isDark ? '#334155' : '#CBD5E1' }]} />
+        <View style={[f.sheet, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: sheetMaxHeight,
+          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }]}>
+          <View style={[f.handle, { backgroundColor: colors.border }]} />
 
           {/* ── TOAST ── */}
           <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 50, left: 20, right: 20, zIndex: 99, opacity: toastOpacity }}>
@@ -461,7 +462,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
               </Text>
             </View>
             <Pressable onPress={resetAndClose}
-              style={[f.closeBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
+              style={[f.closeBtn, { backgroundColor: colors.surface }]}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Ionicons name="close" size={16} color={colors.textSecondary} />
             </Pressable>
@@ -1066,7 +1067,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const f = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(2,6,23,0.75)' },
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, minHeight: 400, overflow: 'hidden' },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
   hdr:        { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },

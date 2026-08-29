@@ -202,7 +202,7 @@ You agree to indemnify and hold harmless PeopleOnTech LLC from third-party claim
 
 export default function TermsScreen() {
   const { colors, isDark } = useTheme();
-  const { acceptTerms } = useAuthStore();
+  const { acceptTermsOnly } = useAuthStore();
   const [accepted, setAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -210,16 +210,29 @@ export default function TermsScreen() {
     if (!accepted || loading) return;
     setLoading(true);
     try {
-      await acceptTerms();
+      // acceptTermsOnly (not acceptTerms) — this is the mid-flow terms
+      // acceptance, BEFORE the user has created or joined a family.
+      // acceptTerms() also stamps onboarding_completed: true, which was
+      // wrong here: signing out anywhere between this screen and
+      // CompleteProfileScreen's real completeOnboarding() call, then
+      // signing back in, made _layout.tsx's routing see
+      // onboarding_completed=true with zero family members and route
+      // straight to /(tabs) — which immediately bounced back to
+      // /onboarding once (tabs)/_layout.tsx's own family-check effect
+      // found no members, producing a confusing blank-screen-then-
+      // tutorial flash (reported live). acceptTermsOnly leaves
+      // onboarding_completed false until CompleteProfileScreen's
+      // completeOnboarding() actually runs at the true end of the flow.
+      await acceptTermsOnly();
       router.replace('/onboarding/family-choice');
     } catch (e: any) {
       // Was a silent no-op catch — a failed write (RLS denial, network
       // error) left the user staring at an unresponsive Accept button
-      // with no explanation, and onboarding_completed never actually got
-      // set, so the next app launch routed straight back to /onboarding
-      // even though the user believed they'd already completed it
-      // (reported: "completed onboarding multiple times, still asking").
-      console.error('[TermsScreen] acceptTerms failed:', e?.message, e);
+      // with no explanation, and terms_accepted never actually got set,
+      // so the next app launch routed straight back to /onboarding even
+      // though the user believed they'd already completed it (reported:
+      // "completed onboarding multiple times, still asking").
+      console.error('[TermsScreen] acceptTermsOnly failed:', e?.message, e);
       showAlert('Something went wrong', e?.message ?? 'Could not save your acceptance. Please check your connection and try again.');
     } finally {
       setLoading(false);

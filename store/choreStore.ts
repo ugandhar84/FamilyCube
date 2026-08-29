@@ -669,6 +669,52 @@ const notifyQuestSubmitted = (chore: ChoreTask) => {
   }).catch(e => console.warn('[choreStore] quest_submitted notify', e?.message));
 };
 
+// ─── Helper: cash-out notifications ────────────────────────────────────────────
+// Audit finding — requestCashOut/settleCashOut/approveCashOut/denyCashOut
+// previously fired zero notifications in any direction: parents never knew
+// a cash-out was waiting on them, and the requesting kid never learned the
+// outcome once a parent acted. Mirrors reward_redeemed/reward_decision's
+// existing shape (the closest semantic match — a kid asking for something
+// that needs a parent's approval) rather than reusing those types directly,
+// since a cash-out isn't a store reward redemption.
+function notifyCashOutRequested(userId: string, points: number) {
+  const familyId = getFamilyId();
+  if (!familyId) return;
+  try {
+    const { useFamilyStore } = require('./familyStore');
+    const approverIds = (useFamilyStore.getState().members as any[])
+      .filter((m: any) => (m.role === 'parent' || m.role === 'senior') && m.id !== userId)
+      .map((m: any) => m.id);
+    if (!approverIds.length) return;
+    supabase.functions.invoke('family-notifier', {
+      body: {
+        type: 'cashout_requested', familyId, memberIds: approverIds, persist: true,
+        excludeMemberId: userId,
+        payload: { points, kidName: memberName(userId) },
+      },
+    }).catch(e => console.warn('[choreStore] cashout_requested notify', e?.message));
+  } catch (e) {
+    console.warn('[choreStore] notifyCashOutRequested failed', e);
+  }
+}
+
+function notifyCashOutDecision(
+  type: 'cashout_settled' | 'cashout_approved' | 'cashout_denied',
+  tx: PointTransaction | undefined,
+  extra?: Record<string, unknown>,
+) {
+  const familyId = getFamilyId();
+  const actorId = getActiveMemberId();
+  if (!familyId || !tx?.userId || tx.userId === actorId) return;
+  supabase.functions.invoke('family-notifier', {
+    body: {
+      type, familyId, memberIds: [tx.userId], persist: true,
+      excludeMemberId: actorId ?? undefined,
+      payload: { points: tx.amount, ...extra },
+    },
+  }).catch(e => console.warn(`[choreStore] ${type} notify`, e?.message));
+}
+
 // ─── DB row mappers ───────────────────────────────────────────────────────────
 
 function choreFromRow(row: any): ChoreTask {
@@ -4382,6 +4428,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // requires an actual deduction here — refunded explicitly by
       // denyCashOut if the parent declines it.
       get().awardPoints(userId, '', -points, 0, 'gpCoins');
+      notifyCashOutRequested(userId, points);
       return;
     }
 
@@ -4427,6 +4474,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       created_at:       tx.createdAt,
       wallet:           'mainCoins',
     });
+    notifyCashOutRequested(userId, points);
   },
 
   settleCashOut: (transactionId, method) => {
@@ -4444,6 +4492,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // "settled" forever with the DB never actually reflecting it.
     dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
       set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
+    }).then(({ ok }) => {
+      // Audit finding — the kid never learned their cash-out was settled;
+      // gated on the write actually landing, same pattern denyCashOut's
+      // gpCoins refund already uses.
+      if (ok) notifyCashOutDecision('cashout_settled', prevTx, { method });
     });
   },
 
@@ -4459,6 +4512,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // rollback on failure.
     dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
       set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
+    }).then(({ ok }) => {
+      // Audit finding — the kid never learned their cash-out was approved.
+      if (ok) notifyCashOutDecision('cashout_approved', prevTx);
     });
   },
 
@@ -4500,6 +4556,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         // on an excluded-row reducer that doesn't exist for this wallet.
         get().awardPoints(tx.userId, '', tx.amount, 0, 'gpCoins');
       }
+      // Audit finding — the kid never learned their cash-out was denied.
+      if (ok) notifyCashOutDecision('cashout_denied', tx, { refunded: tx?.wallet === 'gpCoins' });
     });
   },
 
@@ -4932,10 +4990,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     supabase.rpc('cancel_locked_assignment', { p_assignment_id: assignmentId, p_by_member_id: byMemberId })
       .then(({ error }) => {
-        if (!error) return;
-        console.warn(`[choreStore] cancelLockedAssignment RPC failed for ${assignmentId}`, error.message);
-        set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
-        showToast("That didn't go through — check your connection and try again", 'error');
+        if (error) {
+          console.warn(`[choreStore] cancelLockedAssignment RPC failed for ${assignmentId}`, error.message);
+          set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
+          showToast("That didn't go through — check your connection and try again", 'error');
+          return;
+        }
+        // Audit finding — the OTHER party to this locked negotiation (a
+        // two-bounce assignment stuck on "discuss offline") never learned
+        // it was cancelled and reopened — whichever of assignedBy/assignedTo
+        // isn't the one cancelling.
+        const otherPartyId = assignment.assignedBy === byMemberId ? assignment.assignedTo : assignment.assignedBy;
+        const familyId = get().chores.find(c => c.id === assignment.choreId)?.familyId ?? getFamilyId();
+        if (otherPartyId && otherPartyId !== byMemberId && familyId) {
+          const choreTitle = get().chores.find(c => c.id === assignment.choreId)?.title;
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'parent_quest_lock_cancelled', familyId, memberIds: [otherPartyId], persist: true,
+              excludeMemberId: byMemberId,
+              payload: { questId: assignment.choreId, questTitle: choreTitle ?? 'that task', byName: memberName(byMemberId) },
+            },
+          }).catch(e => console.warn('[choreStore] cancelLockedAssignment notify', e?.message));
+        }
       });
     // Chore was already unassigned/todo while locked (respondToParentQuest's
     // PARKED branch clears assignedToId) — no chore-row change needed here,
@@ -5072,6 +5148,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       quest_mode: task.mode ?? null, requires_photo: task.requiresPhoto ?? true,
       family_id: familyId, due_date: task.dueDate, created_at: now,
     });
+    // Audit finding — a GP-created quest enters the parent safety-review
+    // queue (status 'pending_parent_approval') but no parent was ever told
+    // one was waiting — they'd only see it by opening the review deck.
+    if (familyId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const parentIds = (useFamilyStore.getState().members as any[])
+          .filter((m: any) => m.role === 'parent' && m.id !== task.sponsorId)
+          .map((m: any) => m.id);
+        if (parentIds.length) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'grandparent_quest_needs_review', familyId, memberIds: parentIds, persist: true,
+              excludeMemberId: task.sponsorId,
+              payload: { questId: chore.id, questTitle: chore.title, gpName: memberName(task.sponsorId) },
+            },
+          }).catch(e => console.warn('[choreStore] createGrandparentQuest notify', e?.message));
+        }
+      } catch (e) {
+        console.warn('[choreStore] createGrandparentQuest recipient resolution failed', e);
+      }
+    }
     return chore;
   },
 
@@ -5322,6 +5420,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       }).then(({ error }) => {
         if (error) console.warn('[choreStore] responsibility_history insert', error.message);
       });
+    }
+
+    // Audit finding — this is the GP's own direct approve-and-pay flow
+    // (as opposed to a parent using the generic approveChore, which already
+    // fires this same notification) and it told the kid nothing at all.
+    if (chore.assignedToId && chore.familyId) {
+      const pts = chore.basePoints > 0 ? chore.basePoints + (chore.bonusCoins ?? 0) : 0;
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_approved', questId: choreId, questTitle: chore.title,
+          familyId: chore.familyId, assigneeId: chore.assignedToId, coins: pts,
+        },
+      }).catch(e => console.warn('[choreStore] grandparentApproveAndCheer notify', e?.message));
     }
   },
 

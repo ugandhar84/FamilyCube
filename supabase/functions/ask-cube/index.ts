@@ -838,6 +838,23 @@ async function executeTool(
         candidates = candidates.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
       }
       if (!candidates.length) {
+        // Household terms like "trash"/"laundry" can be EITHER a kid's
+        // chore or a parent's own calendar event (e.g. logging municipal
+        // trash pickup day as a reminder, not a chore) — targetType is a
+        // single upfront guess, so a miss here doesn't necessarily mean
+        // nothing exists, just that it's filed under the other table.
+        // Check before giving up, so "reschedule the trash to Thursday"
+        // doesn't fail outright when it's actually an event, not a chore.
+        const { data: eventFallback } = await supabase.from('calendar_events')
+          .select('id, title, date, start_time')
+          .eq('family_id', familyId).is('deleted_at', null)
+          .ilike('title', `%${search}%`).gte('date', today).order('date').limit(5);
+        if (eventFallback && eventFallback.length > 0) {
+          return {
+            error: `No chore matched "${search}", but a matching EVENT was found instead. Call propose_update again with targetType: 'event' (not 'chore') for this — do not tell the user nothing was found.`,
+            candidates: eventFallback.map((e: any) => ({ title: realNameToAlias(aliasMap, members, e.title), date: e.date, time: e.start_time })),
+          };
+        }
         return { error: `Couldn't find a chore matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or update something unrelated.` };
       }
       if (candidates.length > 1) {
@@ -883,6 +900,17 @@ async function executeTool(
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
     if (!candidates.length) {
+      // Same reciprocal check as the chore branch above — a household term
+      // could be filed as a chore instead of an event.
+      const { data: choreFallback } = await supabase.from('chore_tasks')
+        .select('id, title, due_date, due_time, assigned_to_id')
+        .eq('family_id', familyId).ilike('title', `%${search}%`).limit(5);
+      if (choreFallback && choreFallback.length > 0) {
+        return {
+          error: `No event matched "${search}", but a matching CHORE was found instead. Call propose_update again with targetType: 'chore' (not 'event') for this — do not tell the user nothing was found.`,
+          candidates: choreFallback.map((c: any) => ({ title: realNameToAlias(aliasMap, members, c.title), dueDate: c.due_date, assignedTo: c.assigned_to_id ? (aliasMap.toAlias.get(c.assigned_to_id) ?? 'Unknown') : null })),
+        };
+      }
       return { error: `Couldn't find an upcoming event matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or update something unrelated. Offer to create a new event instead if that seems to be what they actually want.` };
     }
     if (candidates.length > 1) {
@@ -1417,7 +1445,11 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   field(s) the user actually asked to change in the call — never fill in other fields "while you're at it." If
   propose_update reports no match at all, tell the user plainly that you couldn't find it — don't guess or silently
   update something else, and don't create a new item unless they then confirm that's actually what they want. If it
-  reports multiple matches, ask the user which one they mean before calling propose_update again.
+  reports multiple matches, ask the user which one they mean before calling propose_update again. This generic-noun
+  tolerance is NOT limited to reschedule-style requests — "add 20 more coins to the chore", "bump the reward up to
+  50", "add a note to the appointment" with only a vague noun ("the chore", "the reward", "the appointment") still
+  means propose_update, same as a reschedule request with a vague noun — pass the generic noun as targetSearch
+  rather than treating the lack of a specific title as a reason to create something new instead.
 - "Reschedule"/"move"/"push back" is genuinely ambiguous between two different changes, and you must pick based on
   what "to <day>" is attached to, not guess: (1) "reschedule the appointment TO Monday" / "move it to Monday" means
   the event's own date field changes to Monday — set propose_update's date field to that day. (2) "remind me Monday to
@@ -1428,6 +1460,15 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   If the phrasing genuinely could go either way, ask a single short clarifying question ("Do you want me to move the
   appointment to Monday, or just remind you Monday to go reschedule it?") rather than guessing — this is exactly the
   kind of case where a wrong guess produces a confusing result, not just an imperfect one.
+- The exact same "remind me [time] to do X" vs "do X at [time]" ambiguity applies to chores, not just reschedule
+  requests. "Remind me tonight to do the trash chore" does NOT mean the trash chore's due date/time changes to
+  tonight — the chore's own schedule stays whatever it already is, and this is only a leadMinutes/call-reminder
+  change (via propose_update, targetType 'chore') for whenever it's already due, or (if there's real ambiguity about
+  which chore) a request to set a reminder at a specific clock time tonight rather than at the chore's own due time.
+  Contrast with "clean the dishwasher at 8 tonight" — no "remind me" framing, so 8pm IS the actual new due time,
+  handled as a normal dueDate/dueTime field change. The tell is the same as reschedule: "remind me [time] to..."
+  puts the person, not the task's schedule, as the subject of the time — the reminder fires then, the task's own
+  due time is untouched unless the user separately says so.
 - CRITICAL — "reschedule"/"move"/"postpone"/"push back"/"change the time of" ALWAYS means propose_update, never
   propose_event, even when the user gives you only a generic noun instead of a specific title (e.g. "reschedule your
   appointment on Monday", "can we move the appointment to Tuesday", "push back the meeting"). These verbs only make
@@ -1452,6 +1493,14 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   ever unsure whether a short reply is answering your own pending question versus starting something new, prefer
   treating it as the answer — the conversation history above shows exactly what you asked; look at your own last
   message before deciding a one-line reply is "unclear."
+- A pronoun/possessive ("his appointment", "move her chore", "cancel their event") is only safe to resolve on your
+  own when exactly one plausible person fits — e.g. the family has only one son and "his" clearly means him, or the
+  pronoun matches whoever was just named a message ago. If TWO OR MORE family members could plausibly be "he"/"she"/
+  "they" (two sons, two daughters, or genuinely unclear from context), do NOT guess which one and do NOT pass the
+  pronoun itself as memberName (resolveMemberId cannot match a pronoun to anyone, so the search would silently run
+  unfiltered by member — risking a match against the WRONG sibling's identically-titled event/chore). Ask a single
+  short question naming the candidates instead ("Do you mean Aiden's or Noah's dentist appointment?") before calling
+  propose_update/propose_cancel_event/propose_chore_action.
 When the user asks to add/schedule something NEW, use propose_event, propose_quest, propose_grocery_items, or
 propose_meal as appropriate. When they're referring to something that already exists, use propose_update. When they
 ask about redeeming/claiming a reward, use get_rewards to check the catalog/balance and propose_redemption to

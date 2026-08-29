@@ -10,11 +10,11 @@ import { router } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
 import { BRAND } from './FamilyCubeLogo';
 import { showAlert } from './AppAlert';
+import FamilyAvatar from './FamilyAvatar';
 
 const ROLE_ACCENT: Record<string, string> = {
   parent: BRAND.teal,
@@ -64,25 +64,12 @@ function ArrowLeftIcon({ c }: { c: string }) {
   );
 }
 
-// ── Square gradient-initial avatar tile (mock's exact style) ───────────────────
-function SquareAvatar({ name, roleAccent, size = 40 }: { name: string; roleAccent: string; size?: number }) {
-  const initial = (name.trim()[0] ?? '?').toUpperCase();
-  return (
-    <LinearGradient
-      colors={[roleAccent, roleAccent + 'AA']}
-      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-      style={{ width: size, height: size, borderRadius: size * 0.32, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Text style={{ fontSize: size * 0.42, fontWeight: '800', color: '#fff' }}>{initial}</Text>
-    </LinearGradient>
-  );
-}
-
 // ── PIN pad (compact, reused for locked profile switch) ────────────────────────
 const PIN_LENGTH = 4;
 
-function PinPad({ member, isDark, onSuccess, onCancel }: {
+function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
   member: FamilyMember; isDark: boolean; onSuccess: () => void; onCancel: () => void;
+  siblings: string[];
 }) {
   const { colors } = useTheme();
   const [digits, setDigits] = useState('');
@@ -127,7 +114,16 @@ function PinPad({ member, isDark, onSuccess, onCancel }: {
         <TouchableOpacity onPress={onCancel} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <ArrowLeftIcon c={colors.textSecondary} />
         </TouchableOpacity>
-        <SquareAvatar name={member.name} roleAccent={ac} size={32} />
+        <FamilyAvatar
+          name={member.name}
+          emoji={member.emoji}
+          avatarUrl={member.avatarUrl}
+          siblings={siblings}
+          size={32}
+          ringColor={ac}
+          ringWidth={2}
+          bgColor={ac + '22'}
+        />
         <View>
           <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>{member.name}</Text>
           <Text style={{ fontSize: 10, color: colors.textTertiary }}>Enter PIN to switch</Text>
@@ -176,8 +172,9 @@ function PinPad({ member, isDark, onSuccess, onCancel }: {
 }
 
 // ── Member row ───────────────────────────────────────────────────────────────
-function MemberRow({ member, isActive, onPress, isDark }: {
+function MemberRow({ member, isActive, onPress, isDark, siblings }: {
   member: FamilyMember; isActive: boolean; onPress: () => void; isDark: boolean;
+  siblings: string[];
 }) {
   const { colors } = useTheme();
   const ac = accent(member.role);
@@ -192,7 +189,20 @@ function MemberRow({ member, isActive, onPress, isDark }: {
         borderColor: isActive ? ac + '50' : 'transparent',
         backgroundColor: isActive ? ac + (isDark ? '1E' : '12') : 'transparent',
       }}>
-      <SquareAvatar name={member.name} roleAccent={ac} />
+      {/* Real photo/emoji avatar, same FamilyAvatar the header itself now
+          uses — was a plain gradient-tile initial regardless of whether
+          the member had a real avatar set (direct feedback: "same style
+          of the previous avatar" — i.e. match the header's fix here too). */}
+      <FamilyAvatar
+        name={member.name}
+        emoji={member.emoji}
+        avatarUrl={member.avatarUrl}
+        siblings={siblings}
+        size={40}
+        ringColor={ac}
+        ringWidth={2}
+        bgColor={ac + '22'}
+      />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{member.name}</Text>
         <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>{subLabel}</Text>
@@ -291,11 +301,13 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
               )}
 
               {pinTarget ? (
-                <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)} />
+                <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)}
+                  siblings={members.map(mb => mb.name)} />
               ) : (
                 <ScrollView style={{ maxHeight: listMaxHeight }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
                   {members.map(m => (
-                    <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark} />
+                    <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark}
+                      siblings={members.map(mb => mb.name)} />
                   ))}
                 </ScrollView>
               )}

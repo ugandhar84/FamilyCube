@@ -604,9 +604,28 @@ function RootNavigator() {
         // segment (see features/tasks/TasksScreen.tsx).
         router.push('/(tabs)/tasks' as any);
       } else {
-        // system, pet_found, and truly unknown types
-        console.log('[Notification] Sending to notifications tab for type:', data?.type);
-        router.push('/(tabs)/notifications' as any);
+        // Was: router.push('/(tabs)/notifications') — that page
+        // (NotificationsScreen.tsx, via the all-notifications/notifications
+        // routes) reads from notification_logs, a table confirmed to have
+        // zero real writers (see store/notifStore.ts's own header comment
+        // and the notifications-table id-default fix). Live-reported:
+        // tapping a missed-call-reminder push (call_reminder_missed, one of
+        // the "truly unknown types" that always fell into this branch)
+        // landed on a dedicated page that always says "All caught up" no
+        // matter what — user explicitly wants the bell's own in-app sheet
+        // instead, not that page. routeForNotification (the same lookup the
+        // in-app toast tap above already uses) returns a specific screen
+        // route when the notification type maps to one; anything it doesn't
+        // recognize opens NotificationPanel instead, which reads the real,
+        // live `notifications` table and actually shows the item.
+        const dest = data?.type ? routeForNotification(data.type, data) : null;
+        if (dest) {
+          console.log('[Notification] Routing to', dest, 'for type:', data?.type);
+          router.push(dest as any);
+        } else {
+          console.log('[Notification] Opening notification panel for type:', data?.type);
+          setNotifPanelOpen(true);
+        }
       }
     });
 

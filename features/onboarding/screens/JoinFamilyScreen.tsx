@@ -33,7 +33,7 @@ const ROLES   = [
   { value: 'grandparent', label: 'Grandparent',   emoji: '👴', desc: 'View & support the family' },
 ];
 
-type Step = 'code' | 'profile' | 'pin' | 'confirm';
+type Step = 'code' | 'invite-check' | 'profile' | 'pin' | 'confirm';
 
 // ─── Invite-code step icon — an envelope holding a key, since this step is
 // literally "someone handed you a key to their family." Sage (CONNECT).
@@ -121,6 +121,7 @@ export default function JoinFamilyScreen() {
   const setActiveMem  = useFamilyStore(s => s.setActiveMember);
 
   const [checkingCode, setCheckingCode] = useState(false);
+  const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null);
 
   // ── Step 1: Validate code ────────────────────────────────────────────────────
   const handleCodeNext = async () => {
@@ -175,28 +176,25 @@ export default function JoinFamilyScreen() {
       // (join-family's peek response, see its own comment) — the code and
       // email-invite systems have no link between them, so this can't
       // confirm the person entering this code IS the one who was emailed,
-      // only warn that someone was. Live-reported bug this catches: an
+      // only that someone was. Live-reported bug this catches: an
       // email-invited person instead joins anonymously via a family code,
       // never realizing they were actually meant to sign up with their
       // real email — later, signing up for real, they had no linked
       // identity and ended up creating a phantom duplicate family instead
-      // of landing in the one they were invited to. A soft confirmation
-      // here, not a hard block — dismissing it and continuing anonymously
-      // still works fine for a family member who genuinely has no email,
-      // and SetupFamilyScreen's own separate guard is the real backstop
-      // that keeps a duplicate family from ever being created even if this
-      // warning is dismissed by the actual invited person.
+      // of landing in the one they were invited to. Routes to a dedicated
+      // 'invite-check' step (a real forced decision, not a dismissible
+      // Alert — a plain Alert is too easy to tap through without actually
+      // reading) rather than a hard block on the whole family: a genuine
+      // second family member (a kid, say) joining by code while an
+      // unrelated co-parent email invite happens to be pending must still
+      // be able to proceed normally by answering "that's not me."
+      // SetupFamilyScreen's own separate guard is the real backstop that
+      // keeps a duplicate family from ever being created even if someone
+      // answers this incorrectly.
       if (Array.isArray(data.pendingEmailHints) && data.pendingEmailHints.length > 0) {
         setCheckingCode(false);
-        const hint = data.pendingEmailHints[0];
-        showAlert(
-          'Is this invite for you?',
-          `This family has a pending invite for ${hint}. If that's your email, sign up there instead — your history and coins carry over correctly that way. If that's not you, go ahead and continue.`,
-          [
-            { text: 'That\'s not me — continue', onPress: () => setStep('profile') },
-            { text: 'That\'s me — go sign up', style: 'cancel', onPress: () => router.replace('/(auth)/signup') },
-          ]
-        );
+        setPendingEmailHint(data.pendingEmailHints[0]);
+        setStep('invite-check');
         return;
       }
     } catch {
@@ -375,14 +373,19 @@ export default function JoinFamilyScreen() {
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
-            {/* Back */}
-            {step !== 'confirm' && (
+            {/* Back — omitted on 'invite-check': this is a forced decision
+                (must explicitly answer whether the pending email invite is
+                them), not a step to quietly back out of past. Both its own
+                buttons are real, complete exits (either to signup or
+                forward into the normal join flow), so no separate back
+                affordance is needed. */}
+            {step !== 'confirm' && step !== 'invite-check' && (
               <TouchableOpacity style={s.back} onPress={() => step === 'code' ? router.back() : setStep(step === 'pin' ? 'profile' : 'code')}>
                 <Text style={[s.backText, { color: colors.textSecondary }]}>← Back</Text>
               </TouchableOpacity>
             )}
 
-            {step !== 'confirm' && <StepDots step={step} colors={colors} />}
+            {step !== 'confirm' && step !== 'invite-check' && <StepDots step={step} colors={colors} />}
 
             {/* ── STEP 1: Enter Code ─────────────────────────────────────────── */}
             {step === 'code' && (
@@ -412,6 +415,35 @@ export default function JoinFamilyScreen() {
                   {checkingCode
                     ? <ActivityIndicator color="#fff" />
                     : <Text style={s.btnText}>Continue</Text>}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Forced decision: does a pending email invite belong to
+                whoever is entering this code? A required choice, not a
+                dismissible Alert — an Alert is too easy to tap through
+                without actually reading, which defeats the whole point of
+                catching this before it becomes a duplicate-family bug. ── */}
+            {step === 'invite-check' && (
+              <View style={s.center}>
+                <InviteCodeSvg colors={colors} />
+                <Text style={[s.title, { color: colors.textPrimary }]}>Is this invite for you?</Text>
+                <Text style={[s.subtitle, { color: colors.textSecondary }]}>
+                  This family has a pending invite for{'\n'}
+                  <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{pendingEmailHint}</Text>.
+                  {'\n\n'}If that's your email, sign up there instead — it's already connected to this family.
+                </Text>
+                <TouchableOpacity
+                  style={[s.btn, { backgroundColor: colors.primary, marginTop: 24 }]}
+                  onPress={() => router.replace('/(auth)/signup')}
+                >
+                  <Text style={s.btnText}>Yes, that's me — take me to sign up</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.border ?? '#E0E0E0', marginTop: 10 }]}
+                  onPress={() => setStep('profile')}
+                >
+                  <Text style={[s.btnText, { color: colors.textPrimary }]}>No, that's not me — continue joining</Text>
                 </TouchableOpacity>
               </View>
             )}

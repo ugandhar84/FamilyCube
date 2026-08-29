@@ -111,17 +111,23 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   const alertTint = detectAlertTint(msg.text);
   const alertColor = alertTint === 'danger' ? colors.danger : alertTint === 'warning' ? colors.warning : alertTint === 'success' ? colors.success : null;
 
-  // Blue "my bubble" from the brand palette (colors.info) instead of the
-  // primary terracotta — distinguishes "my own message" from the app's
-  // universal CTA/action color, matching the classic messaging-app
-  // convention of a distinct blue for your own bubbles. Kept the same
-  // softened alpha treatment (reduced from full opacity so it sits back a
-  // bit rather than reading as the loudest thing on screen).
-  const bubbleMe       = isDark ? colors.info + 'B0' : colors.info + 'A8';
+  // Real iMessage blue, solid — not alpha-blended. The earlier softened
+  // colors.info + alpha treatment read as washed-out/muted rather than a
+  // deliberate "this is you" color (direct feedback: wanted a real
+  // iOS-style solid blue/green bubble, not a faded tint). #0A84FF is iOS's
+  // own system blue / the actual Messages bubble color; a fixed literal
+  // rather than colors.info since info is a shared semantic token used for
+  // generic info states elsewhere, not specifically "my chat bubble."
+  const bubbleMe       = '#0A84FF';
   const bubbleMeTxt    = '#FFFFFF';
   const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
   const bubbleOtherTxt = colors.textPrimary;
-  const tsColor        = isMe ? 'rgba(255,255,255,0.65)' : colors.textTertiary;
+  // Was 'rgba(255,255,255,0.65)' for isMe — correct on white text sitting
+  // ON the colored bubble, but the timestamp/read-status now render below
+  // and outside the bubble (iMessage convention, moved off the "inside
+  // bubble, WhatsApp style" placement) — it sits on the screen background
+  // now, same as the other-person case, so it uses the same textTertiary.
+  const tsColor        = colors.textTertiary;
 
   const totalRx = Object.values(msg.reactions ?? {}).flat().length;
   const isVoice = !!msg.voiceUri && !msg.text;
@@ -150,10 +156,14 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   const bblr = BUBBLE_R;
   const bbrr = BUBBLE_R;
 
-  // Timestamp + tick — inline at bottom-right of bubble (WhatsApp style)
+  // Timestamp + read tick — below and outside the bubble (iMessage
+  // convention: "Read 4:32 PM" sits under the bubble, not crammed inside
+  // it). Was rendered inline inside the Pressable bubble (WhatsApp style,
+  // "inside bubble, bottom-right") — direct feedback asked for the
+  // iMessage placement instead.
   const metaRow = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
-      alignSelf: 'flex-end', marginTop: 4, marginBottom: -2 }}>
+      alignSelf: isMe ? 'flex-end' : 'flex-start', marginTop: 3 }}>
       {/* Parent-only — the AI moderation pass (layer 2) flags tone issues
           silently; the message stays visible to everyone as sent, only
           parents see this small indicator, never a public callout. */}
@@ -165,16 +175,17 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
         </Pressable>
       )}
       {msg.edited && <Text style={{ fontSize: 9, color: tsColor }}>edited · </Text>}
-      <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
-      {/* isMe read-receipt checkmark uses colors.info (the app's one true
-          blue) — was colors.parent, which is a role-accent color that means
-          "this is a parent's content" everywhere else in the app (Parents
-          Vault, role badges). Reusing it as a generic "read" tint was
-          confusing regardless of who actually read the message. */}
-      {isMe && (
-        <CheckCheck size={13} color={
-          (readers?.length ?? 0) > 0 ? colors.info : 'rgba(255,255,255,0.55)'
-        } />
+      {/* "Read 4:32 PM" as the label itself once read (matches iMessage's
+          own "Read [time]" text under a bubble) rather than a plain
+          timestamp plus a separate checkmark icon — the icon-only tick
+          doesn't carry that same explicit meaning at this size/placement. */}
+      {isMe && (readers?.length ?? 0) > 0 ? (
+        <Text style={{ fontSize: 10, color: tsColor }}>Read {formatTime(msg.timestamp)}</Text>
+      ) : (
+        <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
+      )}
+      {isMe && (readers?.length ?? 0) === 0 && (
+        <CheckCheck size={13} color={colors.textTertiary} />
       )}
     </View>
   );
@@ -449,9 +460,11 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                 )}
               </>
             )}
-            {/* Time + tick — inside bubble, bottom-right (WhatsApp style) */}
-            {metaRow}
           </Pressable>
+
+          {/* Time + read status — below and outside the bubble (iMessage
+              convention), not inside it. */}
+          {metaRow}
 
           {/* Reaction chips */}
           {totalRx > 0 && (

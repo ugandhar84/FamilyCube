@@ -978,9 +978,25 @@ export default function ChatScreen() {
               updateCellsBatchingPeriod={50}
               removeClippedSubviews
               onTouchStart={() => showAttachMenu && setShowAttachMenu(false)}
-              onScroll={({ nativeEvent: { contentOffset } }) => {
+              onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
                 // In inverted list offset 0 = bottom; >200 means user scrolled up
                 setShowScrollBtn(contentOffset.y > 200);
+
+                // A short conversation (or already fully scrolled to the
+                // top) has no real scroll range left — iOS's elastic
+                // overscroll bounce still fires onScroll with the offset
+                // rubber-banding rapidly around 0 in that case, and each
+                // tiny back-and-forth independently crossed this handler's
+                // direction/threshold checks below, flipping
+                // headerCollapsed on and off several times a second (live-
+                // reported as the header "glitchy bouncing up and down"
+                // when there's nothing left to scroll). Skip entirely when
+                // the list can't actually scroll past its own bounds, and
+                // clamp out negative offsets (the bounce itself) so a real
+                // conversation's own overscroll at either end doesn't
+                // trigger this either.
+                const canScroll = contentSize.height > layoutMeasurement.height + 1;
+                if (!canScroll || contentOffset.y < 0) return;
 
                 // Inverted list: a GROWING offset.y means the user is
                 // scrolling toward older messages (visually "up"); a

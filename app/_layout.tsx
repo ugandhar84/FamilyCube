@@ -36,6 +36,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
+import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
 import {
@@ -258,6 +259,21 @@ function RootNavigator() {
                 if (await isBiometricEnabled()) locked = await isBiometricAvailable();
               } catch {}
               destination = locked ? '/(auth)/lock' : '/(tabs)';
+              // Whoever was PIN-switched to as the active member before the
+              // app closed is NOT necessarily who's coming back on this cold
+              // boot — same reasoning as LoginScreen/LockScreen's Face ID
+              // restore paths, which already mark this. Without it here,
+              // biometric lock being OFF meant this branch went straight to
+              // /(tabs) with the last-persisted activeMemberId (possibly a
+              // PIN-enabled kid's profile) and no reset ever ran — reported
+              // live as landing directly on a kid's profile with no PIN
+              // prompt after a plain app relaunch. isLocked/lock-screen's own
+              // Face ID path already covers the locked branch; this covers
+              // the no-lock-enabled branch the same way.
+              if (!locked) {
+                const { markPendingOwnerReset } = await import('@/lib/biometrics');
+                await markPendingOwnerReset();
+              }
             }
           }
           // Widget tap arrived before boot — ensure we land on home tab
@@ -858,6 +874,12 @@ function RootNavigator() {
           AppHeader bell. Mounted once here so the toast can trigger it
           regardless of which tab is currently active. */}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+
+      {/* Blurs the screen and demands the active member's PIN after the app
+          resumes from background past the same 5-min threshold Face ID
+          re-lock uses below — covers the PIN-only case (no device biometric
+          lock enabled) that the Face ID AppState handler doesn't touch. */}
+      <AppPinLockOverlay />
 
       <Stack
         screenOptions={{

@@ -51,6 +51,16 @@ export async function consumePendingOwnerReset(): Promise<boolean> {
   return pending;
 }
 
+// Non-destructive peek at the same flag — for callers (AppPinLockOverlay)
+// that need to know "is an owner-reset about to happen" WITHOUT consuming
+// it themselves, since only (tabs)/_layout.tsx's effect is the actual
+// consumer. Prevents a race where the overlay challenges for the wrong
+// (pre-reset) member's PIN a moment before activeMemberId gets swapped
+// back to the real owner.
+export async function hasPendingOwnerReset(): Promise<boolean> {
+  return (await AsyncStorage.getItem(PENDING_OWNER_RESET_KEY)) === '1';
+}
+
 // Set when a user checks "I agree" on SignupScreen.tsx but signUp() lands
 // on the email-verification path (no session yet — Supabase requires
 // clicking the emailed link first). authStore.acceptTermsOnly() needs a

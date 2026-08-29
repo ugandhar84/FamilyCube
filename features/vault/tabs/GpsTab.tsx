@@ -620,13 +620,23 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
-        {/* Floating header, over the map — no boxed card, translucent pills like Apple Maps */}
+        {/* Floating header, over the map — no boxed card, translucent pills like Apple Maps.
+            mapHeaderChip's own backgroundColor is a hardcoded white
+            (rgba(255,255,255,0.92)) with no theme awareness at all — in
+            dark mode, colors.textPrimary is correctly near-white for use
+            on DARK backgrounds, so pairing it with this always-white pill
+            produced white-on-white, unreadable (direct feedback: "white
+            color pill on map"). The "1/2 live" pill next to it only
+            looked okay by accident — colors.textSecondary's dark-mode
+            value happens to still have some contrast left over white.
+            Overridden here to a real theme-aware translucent background
+            instead of patching the two text colors individually. */}
         <View style={g.mapHeaderOverlay}>
-          <View style={g.mapHeaderChip}>
+          <View style={[g.mapHeaderChip, { backgroundColor: isDark ? 'rgba(30,26,20,0.85)' : 'rgba(255,255,255,0.92)' }]}>
             <Radio size={14} color={colors.teal} />
             <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textPrimary, marginLeft: 6 }}>Family Radar</Text>
           </View>
-          <View style={g.mapHeaderChip}>
+          <View style={[g.mapHeaderChip, { backgroundColor: isDark ? 'rgba(30,26,20,0.85)' : 'rgba(255,255,255,0.92)' }]}>
             <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
               {pinned.length}/{locations.length} live
             </Text>

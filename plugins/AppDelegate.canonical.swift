@@ -380,6 +380,20 @@ FirebaseApp.configure()
     print("[FamilyCube TTS] using voice quality: \(qualityLabel) (\(voice?.name ?? "nil")) — download an Enhanced/Premium voice in Settings > Accessibility > Spoken Content > Voices if this says default/compact")
     #endif
 
+    // Live-reported: the repeat loop played once then went silent even
+    // though the call stayed connected. RNCallKeep activates the
+    // AVAudioSession exactly once, when the call is first answered
+    // (provider:didActivateAudioSession: in RNCallKeep.m) — nothing
+    // re-asserts it afterward. If iOS reclaims/reconfigures the shared
+    // audio session in the ~3s gap between repeats (a real possibility
+    // during an active CallKit call, since the session is shared with the
+    // telephony stack), AVSpeechSynthesizer.speak() silently no-ops with
+    // no delegate callback to explain why — there is no "failed to speak"
+    // error, just quiet. Re-asserting setActive(true) immediately before
+    // every speak pass (not just the first) costs nothing when the
+    // session is already active, and recovers it when it isn't.
+    try? AVAudioSession.sharedInstance().setActive(true, options: [])
+
     // speechSynthesizer(_:didFinish:) fires once per utterance in this
     // pass; only the LAST one is registered in lastUtterancePerCall, so
     // the repeat-chaining logic there only reacts once the whole pass

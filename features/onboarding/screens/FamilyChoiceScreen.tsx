@@ -12,6 +12,9 @@ import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import Svg, { Circle, Path, Rect, G, Ellipse, Polygon } from 'react-native-svg';
+import { useAuthStore } from '@/store/authStore';
+import { showAlert } from '@/components/AppAlert';
+import { LogOut } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -95,11 +98,38 @@ function JoinCodeSvg({ colors }: { colors: any }) {
 
 export default function FamilyChoiceScreen() {
   const { colors, isDark } = useTheme();
+  const signOut = useAuthStore(s => s.signOut);
+
+  // This screen was previously a dead end — no back button, no sign-out —
+  // for anyone who reached it and didn't actually want to create or join a
+  // family right now (reported live). A small top-right icon, rather than
+  // a competing third button, matches how "exit this flow" is usually
+  // placed relative to the two real choices being offered.
+  const handleSignOut = () => {
+    showAlert('Sign out?', "You'll need to sign in again to continue.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out', style: 'destructive',
+        onPress: async () => {
+          await signOut();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={[s.root, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+
+        <TouchableOpacity
+          onPress={handleSignOut}
+          style={[s.signOutBtn, { backgroundColor: colors.surface }]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <LogOut size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
 
         {/* Hero */}
         <View style={s.heroWrap}>
@@ -157,6 +187,11 @@ export default function FamilyChoiceScreen() {
 const s = StyleSheet.create({
   root:      { flex: 1 },
   safe:      { flex: 1, paddingHorizontal: 20 },
+  signOutBtn: {
+    position: 'absolute', top: 12, right: 20, zIndex: 10,
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
   heroWrap:  { alignItems: 'center', marginTop: 16, marginBottom: 8 },
   headWrap:  { alignItems: 'center', marginBottom: 28 },
   headline:  { fontSize: 30, fontWeight: '800', textAlign: 'center', lineHeight: 36, marginBottom: 8 },

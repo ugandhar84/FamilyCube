@@ -265,6 +265,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
             <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
             <TextInput value={name} onChangeText={setName}

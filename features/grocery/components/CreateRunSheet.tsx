@@ -71,6 +71,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
 
             <ScrollView
               keyboardShouldPersistTaps="always"
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}>
           <TextInput

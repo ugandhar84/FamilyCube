@@ -75,7 +75,23 @@ export default function AddMealSheet({
             </View>
 
             {/* Scrollable body */}
+            {/* automaticallyAdjustKeyboardInsets — iOS's own UIScrollView
+                keyboard-avoidance: scrolls the currently-focused TextInput
+                into view above the keyboard automatically. Without it, the
+                sheet's outer maxHeight correctly shrinks around the
+                keyboard (useKeyboardAwareMaxHeight above), but nothing
+                actually moved the SCROLL POSITION when a lower field like
+                Ingredients/Steps got focus — the field stayed at its
+                pre-keyboard on-screen position, which now fell behind the
+                keyboard (live-reported, screenshot showed the field
+                clipped under the keyboard while Cancel/Add Meal stayed
+                correctly visible above it — confirming the height clamp
+                itself was fine, only the scroll-into-view step was
+                missing). Genuinely new prop for this codebase, but it's a
+                standard RN/iOS 13+ ScrollView behavior, not a new pattern —
+                composes safely alongside the existing KeyboardAvoidingView. */}
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ paddingBottom: 40 }}>
 
               {/* Emoji picker */}

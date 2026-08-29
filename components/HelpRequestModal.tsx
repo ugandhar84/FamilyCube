@@ -223,6 +223,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
             contentContainerStyle={s.body}>
 
             {/* Who needs help — all family members, self-labelled */}

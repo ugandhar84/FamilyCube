@@ -139,6 +139,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
             </View>
 
             <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 8, gap: 18 }}>
               <StepTransition stepKey={step}>
 

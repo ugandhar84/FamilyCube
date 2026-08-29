@@ -91,6 +91,7 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
             </View>
 
             <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
               {/* Emoji picker button */}
               <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)}

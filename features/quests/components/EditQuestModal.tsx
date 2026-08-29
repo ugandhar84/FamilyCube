@@ -243,6 +243,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
             <ScrollView
               keyboardShouldPersistTaps="always"
               onScrollBeginDrag={Keyboard.dismiss}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}>
 

@@ -118,6 +118,7 @@ export function TaskFormShell({
               style={{ flexShrink: 1 }}
               keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
+              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ paddingBottom: isReview ? Math.max(48, insets.bottom + 32) : 48 }}
             >
               <StepTransition stepKey={currentStepId}>

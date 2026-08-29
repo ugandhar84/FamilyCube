@@ -140,6 +140,7 @@ export default function AppBottomSheet({
               keyboardShouldPersistTaps="handled"
               onScrollBeginDrag={Keyboard.dismiss}
               onContentSizeChange={(_w, h) => setContentHeight(h)}
+              automaticallyAdjustKeyboardInsets
               style={{ flex: 1 }}
               contentContainerStyle={{ padding: 20, paddingBottom: bodyPaddingBottom }}
               showsVerticalScrollIndicator={false}>

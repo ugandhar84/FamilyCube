@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, Check, Send, MessageCircle } from 'lucide-react
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore } from '@/store/choreStore';
+import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
@@ -59,6 +60,19 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
         console.warn('[MyAdultQuestCard] sendNudgeBack failed', e?.message ?? e);
         Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
       });
+    // Live-reported: "Nudge also should trigger the push along sending the
+    // chat" — was chat-DM-only. Chat message above stays as the in-thread
+    // record; this adds a real push alongside it.
+    const familyId = useChoreStore.getState().chores.find(c => c.id === q.id)?.familyId;
+    if (familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'custom', familyId, memberIds: [assigner.id], persist: true,
+          excludeMemberId: active.id,
+          payload: { title: '👋 Nudge', body: msg, data: { screen: 'Quests', questId: q.id } },
+        },
+      }).catch((e: any) => console.warn('[MyAdultQuestCard] nudge push failed', e?.message));
+    }
   };
 
   return (

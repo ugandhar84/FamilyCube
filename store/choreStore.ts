@@ -3661,6 +3661,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!chore) return;
     const targets = chore.targetChildIds ?? [];
 
+    // Audit finding — the sponsoring grandparent who created this quest
+    // never learned a parent actually approved and routed it; they'd only
+    // find out by reopening the app and noticing the status changed.
+    // Notifies regardless of which of the three routing branches below
+    // runs, since all three are "a parent approved your quest," just with
+    // different downstream routing.
+    const notifySponsor = () => {
+      if (chore.sponsorUserId && chore.familyId && chore.sponsorUserId !== parentId) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'grandparent_quest_routed', familyId: chore.familyId, memberIds: [chore.sponsorUserId], persist: true,
+            excludeMemberId: parentId,
+            payload: { questId: choreId, questTitle: chore.title, routedToPool: targets.length === 0 },
+          },
+        }).catch(e => console.warn('[choreStore] approveGrandparentQuestAsParent notify', e?.message));
+      }
+    };
+
     if (targets.length === 0) {
       // No kids selected → Bounty Pool. Any grandchild can claim first-come.
       // updateChore already writes this exact patch to chore_tasks itself
@@ -3668,12 +3686,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // call to the same row with the same fields right after, with no
       // rollback of its own.
       get().updateChore(choreId, { status: 'todo', isPool: true, assignedToId: undefined, reviewedAt: now });
+      notifySponsor();
       return;
     }
     if (targets.length === 1) {
       // Single targeted kid → assign directly, full points. Same
       // already-covered-by-updateChore redundancy as above.
       get().updateChore(choreId, { status: 'todo', isPool: false, assignedToId: targets[0], reviewedAt: now });
+      notifySponsor();
       return;
     }
 
@@ -3716,17 +3736,31 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         }
       });
     }
+    notifySponsor();
   },
 
   declineGrandparentQuestAsParent: (choreId, parentId, reason) => {
     // updateChore already writes this same patch to chore_tasks itself
     // (with rollback on failure) — was a second, redundant dbUpdate call to
     // the same row right after.
+    const chore = get().chores.find(c => c.id === choreId);
     get().updateChore(choreId, {
       status:          'declined',
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),
     });
+    // Audit finding — mirrors declineGrandparentQuest's (the kid-decline
+    // sibling function) existing sponsor notification, which this
+    // parent-decline path never had at all.
+    if (chore?.sponsorUserId && chore.familyId && chore.sponsorUserId !== parentId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'grandparent_quest_declined_by_parent', familyId: chore.familyId, memberIds: [chore.sponsorUserId], persist: true,
+          excludeMemberId: parentId,
+          payload: { questId: choreId, questTitle: chore.title, reason },
+        },
+      }).catch(e => console.warn('[choreStore] declineGrandparentQuestAsParent notify', e?.message));
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3920,6 +3954,35 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] reversal notification (assignee) failed', e);
     }
+    // Real push/bell notification alongside the chat message above (kept as
+    // the in-thread record) — mirrors this file's other "add a real
+    // notification alongside the existing chat DM" upgrades.
+    if (chore.familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
+          excludeMemberId: byParentId,
+          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+        },
+      }).catch(e => console.warn('[choreStore] reversal notify (assignee) failed', e?.message));
+    }
+    // Audit finding — when this runs via the UNILATERAL path (household
+    // setting allows a single parent to reverse without a co-sign), the
+    // ORIGINAL approving parent (whose approval is being overridden) never
+    // learned about it at all — only the co-signed path (requestApprovalReversal,
+    // below) notified them, and only that a request existed, not that it
+    // executed. byParentId === chore.reviewedById can't happen in practice
+    // (requestApprovalReversal's own guard blocks disputing your own
+    // approval before reaching here) but is excluded defensively anyway.
+    if (chore.familyId && chore.reviewedById && chore.reviewedById !== byParentId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.reviewedById], persist: true,
+          excludeMemberId: byParentId,
+          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+        },
+      }).catch(e => console.warn('[choreStore] reversal notify (approver) failed', e?.message));
+    }
   },
 
   requestApprovalReversal: (choreId, byParentId, reason) => {
@@ -3961,7 +4024,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // parent's sign-off, not the same person confirming their own request.
     if (coSigningParentId !== chore.reviewedById) return;
 
+    // Snapshot before _executeReversal's own updateChore call clears
+    // disputedById/disputeStatus as part of executing the reversal.
+    const requesterId = chore.disputedById;
     get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
+    // Audit finding — the parent who originally REQUESTED the reversal
+    // never learned it was actually co-signed and executed; they'd only
+    // find out by reopening the chore and noticing it flipped to declined.
+    if (chore.familyId && requesterId && requesterId !== coSigningParentId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'approval_reversal_cosigned', familyId: chore.familyId, memberIds: [requesterId], persist: true,
+          excludeMemberId: coSigningParentId,
+          payload: { questId: choreId, questTitle: chore.title },
+        },
+      }).catch(e => console.warn('[choreStore] coSignReversal notify', e?.message));
+    }
   },
 
   // G1 — an approved recurring chore only resets to an unassigned 'todo'

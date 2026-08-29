@@ -43,7 +43,7 @@ import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
   listenForCallReminderAnswered, wasReminderCallJustAnswered,
-  checkLastAnsweredCallOnColdStart,
+  checkLastAnsweredCallOnColdStart, shipPendingCallDebugTraceIfAny,
 } from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -747,6 +747,16 @@ function RootNavigator() {
       const awayMs = backgroundedAt.current != null ? Date.now() - backgroundedAt.current : 0;
       backgroundedAt.current = null;
 
+      // TEMP diagnostic — ship any pending call-reminder TTS debug trace
+      // (see lib/callAlert.ts's shipPendingCallDebugTraceIfAny comment for
+      // the full story and why this has to run on EVERY foreground, not
+      // just cold start: answering a reminder call backgrounds the app for
+      // the call's duration, so the far more common case than a killed app
+      // is exactly this — a normal background→active resume once the user
+      // hangs up. Fire-and-forget, no-ops instantly if there's no trace
+      // pending, so it's safe to call unconditionally on every foreground.
+      shipPendingCallDebugTraceIfAny();
+
       // Track current device timezone silently on foreground (for travel banner).
       // Does NOT change home_timezone or timezone — only current_timezone updates.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -849,6 +859,13 @@ function RootNavigator() {
     // practice. Fire-and-forget: nothing else in boot depends on this
     // resolving first.
     checkLastAnsweredCallOnColdStart();
+    // TEMP diagnostic — covers the killed-app case for the debug trace the
+    // same way checkLastAnsweredCallOnColdStart covers it for the answered
+    // flag just above: if the app was killed while the reminder call was
+    // still ringing/active, the AppState 'active' listener never mounts in
+    // time to catch that particular resume, so cold start needs its own
+    // check too. See lib/callAlert.ts's shipPendingCallDebugTraceIfAny.
+    shipPendingCallDebugTraceIfAny();
     return unanswered;
   }, []);
 

@@ -236,6 +236,52 @@ export async function checkLastAnsweredCallOnColdStart(): Promise<void> {
   }
 }
 
+// TEMP diagnostic instrumentation — see AppDelegate.canonical.swift's
+// callDebugTrace/trace(_:) comments for the full story. Two previous fix
+// attempts for "call-reminder TTS speaks once then goes silent forever"
+// were both confirmed live to NOT resolve it. Rather than ship a third
+// blind guess as "the fix," the native repeat loop now appends a
+// timestamped breadcrumb at every meaningful lifecycle point and persists
+// it to UserDefaults; this function pulls that trace back out (via
+// FCVoipToken.getLastCallDebugTrace, see plugins/withCallKeep.js) and ships
+// it to the call_reminder_debug_trace table (see the matching migration)
+// so it's readable after the fact — the user cannot connect this device to
+// Xcode/Console.app or generate/share device logs, so this is the only way
+// to get real evidence off of a live test call.
+//
+// Timing: the trace is only complete once call.hasEnded fires natively
+// (the repeat loop could still be mid-pass before then), so this must be
+// called AFTER the call has ended, not at answer time. For the common case
+// (answering a reminder call backgrounds/foregrounds the app around the
+// call's lifetime), the app's next 'active' AppState transition happens
+// once the user hangs up and CallKit's UI dismisses — by which point
+// call.hasEnded has already fired natively and flushed the final trace
+// entry. That means EVERY foreground check (not just cold start) needs to
+// try this, since most reminder calls are answered while the app is merely
+// backgrounded (not killed) — see app/_layout.tsx's AppState 'active'
+// handler, where this is called unconditionally alongside the existing
+// foreground refresh work. It's cheap to call with nothing to report:
+// getLastCallDebugTrace resolves null immediately if no trace is pending.
+export async function shipPendingCallDebugTraceIfAny(): Promise<void> {
+  if (Platform.OS !== 'ios' || !NativeModules.FCVoipToken?.getLastCallDebugTrace) return;
+  try {
+    const result = await new Promise<{ trace: string[]; itemId: string | null; dueAtIso: string | null; itemType: string | null } | null>(
+      (resolve) => NativeModules.FCVoipToken.getLastCallDebugTrace((r: any) => resolve(r ?? null))
+    );
+    if (!result?.trace?.length) return;
+    console.log('[callAlert] shipPendingCallDebugTraceIfAny: found a trace with', result.trace.length, 'entries');
+    const { error } = await supabase.from('call_reminder_debug_trace').insert({
+      item_id: result.itemId ?? null,
+      due_at_iso: result.dueAtIso ?? null,
+      item_type: result.itemType ?? null,
+      trace: result.trace,
+    });
+    if (error) console.warn('[callAlert] shipPendingCallDebugTraceIfAny: insert failed', error.message);
+  } catch (e) {
+    console.warn('[callAlert] shipPendingCallDebugTraceIfAny threw', e);
+  }
+}
+
 // ── FCM token + foreground ring (Android) ──────────────────────────────────
 // Background/killed-app delivery is handled by index.js's
 // setBackgroundMessageHandler (must run at module-eval time, outside React);

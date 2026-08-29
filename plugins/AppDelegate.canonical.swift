@@ -29,6 +29,25 @@ public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserve
   // means "the whole pass is done," not just "one segment of it is."
   var lastUtterancePerCall: [String: AVSpeechUtterance] = [:]
   let speechSynthesizer = AVSpeechSynthesizer()
+  // Marked the moment speakReminder() is first entered for a call — lets
+  // handleAudioSessionInterruption's recovery path (below) tell "this call
+  // hasn't spoken even once yet, the already-scheduled first speakReminder
+  // call will handle it" apart from "this call has spoken before and looks
+  // genuinely stuck now," without which the synthetic .ended interruption
+  // RNCallKeep posts on every single answer (see didActivateAudioSession)
+  // could race the 0.5s-delayed first speakReminder call and double-fire it.
+  var hasStartedSpeaking = Set<String>()
+  // TEMP diagnostic instrumentation (see traceLog/getLastCallDebugTrace) —
+  // two previous fix attempts (setActive(true) reassertion, then the
+  // AVAudioSessionModeSpokenAudio mode fix) were both confirmed live to NOT
+  // resolve "reminder speaks once then goes silent for the rest of the
+  // call." Rather than ship a third blind guess, this repeat-loop code now
+  // appends a timestamped breadcrumb at every meaningful lifecycle point
+  // (see trace(_:) below) so the NEXT test call produces hard evidence
+  // instead of another live/fail report. Ripe for deletion once the actual
+  // root cause is confirmed and fixed — search "TEMP diagnostic" in this
+  // file and in plugins/withCallKeep.js / lib/callAlert.ts for every piece.
+  var callDebugTrace: [String] = []
 
   public override func application(
     _ application: UIApplication,
@@ -92,7 +111,93 @@ FirebaseApp.configure()
 
     speechSynthesizer.delegate = self
 
+    // TEMP diagnostic + real-recovery hook (see callDebugTrace comment
+    // above). RNCallKeep's own CXProviderDelegate implementation
+    // (provider:didActivateAudioSession:) posts a SYNTHETIC
+    // AVAudioSessionInterruptionNotification (.ended/.shouldResume) every
+    // time CallKit (re)activates the audio session — which happens once on
+    // answer AND can happen again later in a call. A REAL interruption
+    // (e.g. Siri, another app's audio, a route change while the OS is
+    // re-negotiating) can also land here independent of that synthetic
+    // one. Either kind arriving while AVSpeechSynthesizer is mid-utterance
+    // is a documented way for speech to be silently cut off without ever
+    // calling speechSynthesizer(_:didFinish:) — see speechSynthesizer
+    // (_:didCancel:) below for why that alone would fully explain "plays
+    // once, then permanently silent, call stays connected, no error."
+    // Listening here lets the repeat loop actually recover (re-assert the
+    // session and resume) instead of just logging that it happened.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleAudioSessionInterruption(_:)),
+      name: AVAudioSession.interruptionNotification,
+      object: nil
+    )
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // TEMP diagnostic instrumentation — appends a timestamped breadcrumb to an
+  // in-memory array AND persists it to UserDefaults after every append
+  // (survives the app being killed mid-call, same as the existing
+  // familycube_last_answered_* keys) so it's readable even if the process
+  // dies before call.hasEnded ever fires. Capped at 200 entries so a
+  // pathological loop can't grow this unboundedly.
+  private func trace(_ message: String) {
+    let ts = ISO8601DateFormatter().string(from: Date())
+    let line = "\(ts)  \(message)"
+    callDebugTrace.append(line)
+    if callDebugTrace.count > 200 { callDebugTrace.removeFirst(callDebugTrace.count - 200) }
+    UserDefaults.standard.set(callDebugTrace, forKey: "familycube_call_debug_trace")
+    #if DEBUG
+    print("[FamilyCube CallTrace] \(line)")
+    #endif
+  }
+
+  // TEMP diagnostic + real-recovery hook. See the interruptionNotification
+  // registration above for why this fires and what it would explain.
+  // AVAudioSessionInterruptionTypeBegan means playback was just cut off;
+  // .ended means the session is clear to resume. RNCallKeep's own
+  // didActivateAudioSession handler always posts a synthetic .ended event
+  // (see its comment), which this can't tell apart from a real one — so
+  // this logs BOTH kinds and, on .ended, re-asserts the session and — if a
+  // pass looks stuck (activeCallUUIDs still contains the uuid but nothing
+  // is currently speaking) — proactively resumes speaking, since waiting
+  // for didFinish/didCancel to fire is exactly what's failing.
+  @objc private func handleAudioSessionInterruption(_ note: Notification) {
+    guard let info = note.userInfo,
+          let typeRaw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else {
+      trace("interruptionNotification fired with no usable type")
+      return
+    }
+    if type == .began {
+      trace("interruptionNotification BEGAN — audio session was just interrupted")
+      return
+    }
+    trace("interruptionNotification ENDED — reasserting session, checking for a stuck call")
+    let session = AVAudioSession.sharedInstance()
+    try? session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.allowBluetooth, .allowBluetoothA2DP])
+    try? session.setActive(true, options: [])
+    // This fires on EVERY .ended interruption, including the SYNTHETIC one
+    // RNCallKeep posts on every single didActivateAudioSession call — which
+    // includes the very first one, moments after answer, racing against
+    // the 0.5s-delayed first speakReminder() call already scheduled by
+    // callObserver. Three guards keep this from double-firing speakReminder
+    // concurrently with work that's already scheduled/in-flight:
+    // hasStartedSpeaking.contains(uuid) rules out that initial 0.5s window
+    // (repeatsRemaining is already set by then, but speakReminder hasn't
+    // run yet — the ONLY gap none of the other guards would catch);
+    // lastUtterancePerCall[uuid] == nil rules out a pass currently awaiting
+    // its own didFinish/didCancel; !isSpeaking rules out mid-utterance.
+    for uuid in activeCallUUIDs {
+      guard repeatsRemaining[uuid] != nil,
+            hasStartedSpeaking.contains(uuid),
+            lastUtterancePerCall[uuid] == nil,
+            !speechSynthesizer.isSpeaking else { continue }
+      trace("interruption recovery: call \(uuid) has repeatsRemaining=\(repeatsRemaining[uuid] ?? -1) but synthesizer is idle with no pass in flight — resuming speakReminder")
+      let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
+      speakReminder(callUUID: uuid, itemType: itemType)
+    }
   }
 
   // Linking API
@@ -127,10 +232,21 @@ FirebaseApp.configure()
     // resolve it, because this lookup never found the app's own itemId).
     let uuid = call.uuid.uuidString.lowercased()
     if call.hasEnded {
+      // TEMP diagnostic — logged BEFORE any cleanup/flush below so the
+      // trace still captures the exact repeatsRemaining/activeCallUUIDs
+      // state at the moment the call ended, then flush to UserDefaults
+      // (trace() already persists on every call, but this call is the
+      // last guaranteed chance before callDebugTrace's in-memory copy is
+      // moot — the process may be torn down moments after the user hangs
+      // up on a backgrounded call).
+      if surfacedCallUUIDs.contains(uuid) {
+        trace("call.hasEnded uuid=\(uuid) repeatsRemaining=\(repeatsRemaining[uuid].map(String.init) ?? "nil") wasActive=\(activeCallUUIDs.contains(uuid)) synthesizerSpeaking=\(speechSynthesizer.isSpeaking)")
+      }
       activeCallUUIDs.remove(uuid)
       repeatsRemaining.removeValue(forKey: uuid)
       repeatGapSeconds.removeValue(forKey: uuid)
       lastUtterancePerCall.removeValue(forKey: uuid)
+      hasStartedSpeaking.remove(uuid)
       if surfacedCallUUIDs.contains(uuid) {
         let d = UserDefaults.standard
         for key in ["itemType","itemId","dueAtIso","title","recipient","notes","location","category"] {
@@ -212,8 +328,29 @@ FirebaseApp.configure()
       // didFinish tells us exactly when speech actually completes.
       repeatsRemaining[uuid] = 3
       repeatGapSeconds[uuid] = 3.0
+      // TEMP diagnostic — new call, reset the trace so it only ever holds
+      // this one call's lifecycle (avoids interleaving stale data from a
+      // previous test call with the one currently under test), and record
+      // OUR OWN copy of itemId/dueAtIso (familycube_call_debug_trace_*, not
+      // familycube_last_answered_*) so JS can correlate this trace to the
+      // right call_reminder_log row once it ships. Deliberately a separate
+      // pair of keys from familycube_last_answered_itemId/dueAtIso just
+      // above — those are consumed (deleted) by getLastAnsweredCall, and
+      // checkLastAnsweredCallOnColdStart() / this trace-shipper can run in
+      // either order on a given resume, so sharing keys would mean
+      // whichever one runs second reads back nil.
+      callDebugTrace = []
+      UserDefaults.standard.removeObject(forKey: "familycube_call_debug_trace")
+      if let id = itemId, let due = dueAtIso {
+        UserDefaults.standard.set(id,       forKey: "familycube_call_debug_trace_itemId")
+        UserDefaults.standard.set(due,      forKey: "familycube_call_debug_trace_dueAtIso")
+        UserDefaults.standard.set(itemType, forKey: "familycube_call_debug_trace_itemType")
+      }
+      trace("callObserver: answered uuid=\(uuid) itemType=\(itemType) itemId=\(itemId ?? "nil") dueAtIso=\(dueAtIso ?? "nil") — scheduling first speakReminder in 0.5s")
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-        self?.speakReminder(callUUID: uuid, itemType: itemType)
+        guard let self = self else { return }
+        self.trace("first speakReminder closure FIRED for uuid=\(uuid)")
+        self.speakReminder(callUUID: uuid, itemType: itemType)
       }
     }
   }
@@ -223,19 +360,80 @@ FirebaseApp.configure()
   // segments: greeting+main line, optional notes/location aside) has
   // actually finished playing — not after just the first segment.
   public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-    guard let (uuid, _) = lastUtterancePerCall.first(where: { $0.value === utterance }) else { return }
+    let matched = lastUtterancePerCall.first(where: { $0.value === utterance })
+    // TEMP diagnostic — logs whether this callback fired at all (it did,
+    // since we're inside it) and, critically, whether the lastUtterancePerCall
+    // lookup actually matched something. A miss here (matched == nil) means
+    // didFinish fired for a NON-final segment (expected/normal — greeting
+    // vs. main line) or for an utterance this dictionary never tracked; it
+    // is NOT itself evidence of a bug. What matters is whether this callback
+    // fires AT ALL for utterance #2+ of a pass — if the trace shows the
+    // scheduling closure ran and speakReminder was entered, but no
+    // corresponding didFinish/didCancel line ever follows for that pass,
+    // that pinpoints the utterance as silently dropped between speak() and
+    // any delegate callback.
+    trace("speechSynthesizer didFinish — matchedUuid=\(matched?.key ?? "none/non-final-segment")")
+    guard let (uuid, _) = matched else { return }
     lastUtterancePerCall.removeValue(forKey: uuid)
     let remaining = (repeatsRemaining[uuid] ?? 1) - 1
     repeatsRemaining[uuid] = remaining
-    guard remaining > 0, activeCallUUIDs.contains(uuid) else {
+    let stillActive = activeCallUUIDs.contains(uuid)
+    trace("speechSynthesizer didFinish — pass complete for uuid=\(uuid), remaining=\(remaining), activeCallUUIDs.contains=\(stillActive)")
+    guard remaining > 0, stillActive else {
       repeatsRemaining.removeValue(forKey: uuid)
       repeatGapSeconds.removeValue(forKey: uuid)
       return
     }
     let gap = repeatGapSeconds[uuid] ?? 3.0
     let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
+    trace("speechSynthesizer didFinish — scheduling next pass for uuid=\(uuid) in \(gap)s")
     DispatchQueue.main.asyncAfter(deadline: .now() + gap) { [weak self] in
+      guard let self = self else { return }
+      guard self.activeCallUUIDs.contains(uuid) else {
+        self.trace("repeat-scheduling closure fired for uuid=\(uuid) but call is no longer active — skipping")
+        return
+      }
+      self.trace("repeat-scheduling closure FIRED for uuid=\(uuid) — calling speakReminder")
+      self.speakReminder(callUUID: uuid, itemType: itemType)
+    }
+  }
+
+  // Fires instead of didFinish when an utterance is interrupted/cancelled
+  // rather than allowed to play to completion — e.g. speechSynthesizer.
+  // stopSpeaking(), or (per Apple's own AVAudioSession interruption
+  // handling guidance) when the audio session is interrupted mid-speech.
+  // This app's repeat-chaining logic previously lived ENTIRELY inside
+  // didFinish — if utterance #2+ of any pass was ever silently cancelled
+  // instead of finishing normally, didFinish would simply never fire for
+  // it, lastUtterancePerCall would never clear, and the call would sit
+  // connected with no further speech and no error: exactly the reported
+  // symptom, on both previous "fixed" builds. Handling didCancel the same
+  // way didFinish handles a completed pass (treat "cancelled" as "this
+  // segment is done, decide whether to continue") means a mid-speech
+  // interruption can no longer permanently wedge the repeat loop — this is
+  // a real recovery path, not just a diagnostic.
+  public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    let matched = lastUtterancePerCall.first(where: { $0.value === utterance })
+    trace("speechSynthesizer didCancel — matchedUuid=\(matched?.key ?? "none/non-final-segment") — an utterance was interrupted/cancelled rather than finishing normally")
+    guard let (uuid, _) = matched else { return }
+    lastUtterancePerCall.removeValue(forKey: uuid)
+    guard activeCallUUIDs.contains(uuid) else {
+      repeatsRemaining.removeValue(forKey: uuid)
+      repeatGapSeconds.removeValue(forKey: uuid)
+      return
+    }
+    // Don't consume a repeat count for a cancelled pass — the person never
+    // actually heard it, so retry the SAME pass (not the next one) shortly
+    // after re-asserting the audio session, rather than either skipping
+    // ahead or (the old, buggy-by-omission behavior) doing nothing forever.
+    let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
+    trace("speechSynthesizer didCancel — retrying the same pass for uuid=\(uuid) in 1.5s (repeatsRemaining unchanged at \(repeatsRemaining[uuid].map(String.init) ?? "nil"))")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
       guard let self = self, self.activeCallUUIDs.contains(uuid) else { return }
+      let session = AVAudioSession.sharedInstance()
+      try? session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.allowBluetooth, .allowBluetoothA2DP])
+      try? session.setActive(true, options: [])
+      self.trace("didCancel retry closure FIRED for uuid=\(uuid) — calling speakReminder")
       self.speakReminder(callUUID: uuid, itemType: itemType)
     }
   }
@@ -256,6 +454,19 @@ FirebaseApp.configure()
   }
 
   private func speakReminder(callUUID: String, itemType: String) {
+    // TEMP diagnostic — logs the exact moment speakReminder is entered and
+    // the repeatsRemaining value at that instant, plus the audio session's
+    // own reported state right before this function (re-)configures it.
+    // Distinguishes "speakReminder was never called" from "it was called
+    // but speak() itself was a no-op" once cross-referenced with the
+    // didFinish/didCancel trace lines above.
+    let sessionBefore = AVAudioSession.sharedInstance()
+    trace("speakReminder ENTERED uuid=\(callUUID) repeatsRemaining=\(repeatsRemaining[callUUID].map(String.init) ?? "nil") category=\(sessionBefore.category.rawValue) mode=\(sessionBefore.mode.rawValue) isOtherAudioPlaying=\(sessionBefore.isOtherAudioPlaying) synthesizerIsSpeaking=\(speechSynthesizer.isSpeaking)")
+    // Marks this call as having spoken at least once — see hasStartedSpeaking's
+    // property comment for why handleAudioSessionInterruption's recovery
+    // path needs this to avoid double-firing during the 0.5s window between
+    // answer and the first scheduled speakReminder call.
+    hasStartedSpeaking.insert(callUUID)
     let d             = UserDefaults.standard
     let title         = d.string(forKey: "familycube_call_title_\(callUUID)") ?? "your reminder"
     let recipientName = d.string(forKey: "familycube_call_recipient_\(callUUID)")
@@ -454,6 +665,13 @@ FirebaseApp.configure()
       u.postUtteranceDelay = isLastSegment ? 0 : 0.45
       if isLastSegment { lastUtterancePerCall[callUUID] = u }
       speechSynthesizer.speak(u)
+      // TEMP diagnostic — confirms speak() was actually called for this
+      // segment (as opposed to the loop body never running at all) and
+      // whether the synthesizer immediately reports itself as speaking
+      // right after — a false report here (isSpeaking == false right after
+      // speak()) would point at speak() itself silently no-op'ing rather
+      // than at a later interruption/cancellation.
+      trace("speakReminder segment \(i+1)/\(segments.count) queued via speak() uuid=\(callUUID) isLast=\(isLastSegment) synthesizerIsSpeakingNow=\(speechSynthesizer.isSpeaking)")
     }
   }
 

@@ -89,9 +89,13 @@ function extractClassDeclarationLine(source) {
 
 // Extracts the properties block: everything from `var reactNativeFactory`
 // (a line already present in every fresh-prebuilt AppDelegate.swift) through
-// the last `static let repeatGapSeconds` line this feature owns — i.e. every
-// CallKit/PushKit/TTS-related stored property, verbatim, in one contiguous
-// chunk.
+// the last property this feature owns — i.e. every CallKit/PushKit/TTS-
+// related stored property, verbatim, in one contiguous chunk. The end
+// marker is `hasStartedSpeaking` (TEMP diagnostic instrumentation, added
+// after `callDebugTrace`/`speechSynthesizer`) rather than `speechSynthesizer`
+// itself now — keep this pointed at whatever is genuinely the LAST property
+// in the canonical file's block, or newer properties added after the old
+// marker silently won't make it into the patched output.
 function extractPropertiesBlock(source) {
   const startMarker = 'var reactNativeFactory: RCTReactNativeFactory?';
   const startMarkerIdx = source.indexOf(startMarker);
@@ -101,9 +105,9 @@ function extractPropertiesBlock(source) {
   // extracted block must only contain what comes after it, or inserting
   // "anchor\n<block>" would duplicate the anchor line.
   const start = source.indexOf('\n', startMarkerIdx) + 1;
-  const endMarker = 'let speechSynthesizer = AVSpeechSynthesizer()';
+  const endMarker = 'var hasStartedSpeaking = Set<String>()';
   const endIdx = source.indexOf(endMarker);
-  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the speechSynthesizer property');
+  if (endIdx === -1) throw new Error('withCallKeep: canonical AppDelegate.swift is missing the hasStartedSpeaking property');
   const lineEnd = source.indexOf('\n', endIdx);
   // trimStart() too — insertion below supplies its own leading indent, and
   // the raw slice starts with the source's existing "  " (2-space) indent
@@ -143,6 +147,28 @@ function buildCanonicalUnits() {
     callObserverFn: extractBraceBlock(source, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {'),
     timeOfDayGreetingFn: extractBraceBlock(source, 'private func timeOfDayGreeting() -> String {'),
     speakReminderFn: extractBraceBlock(source, 'private func speakReminder(callUUID: String, itemType: String) {'),
+    // TEMP diagnostic instrumentation (traceFn/handleAudioSessionInterruptionFn)
+    // — see AppDelegate.swift's callDebugTrace comment. didFinishFn/didCancelFn
+    // are NOT diagnostic-only: didFinishFn is the actual repeat-continuation
+    // logic (decrements repeatsRemaining, schedules the next pass) and — this
+    // was the real, confirmed root cause of "reminder speaks once then goes
+    // silent forever" across BOTH previous fix attempts — it was never in
+    // this list before, meaning speechSynthesizer(_:didFinish:) was silently
+    // ABSENT from every generated ios/FamilyCube/AppDelegate.swift this
+    // plugin ever produced, despite existing in this canonical source file
+    // the whole time. speechSynthesizer.delegate = self was set, the class
+    // declared AVSpeechSynthesizerDelegate conformance, but the method
+    // itself never made it into the compiled binary — so didFinish had
+    // nothing to call, the repeat loop's continuation never ran, and the
+    // call sat connected+silent until manual hangup. Confirmed by diffing
+    // ios/FamilyCube/AppDelegate.swift (this app's current generated file)
+    // against this canonical source: every other method below was present
+    // in both; only speechSynthesizer(_:didFinish:) was missing from the
+    // generated one.
+    traceFn: extractBraceBlock(source, 'private func trace(_ message: String) {'),
+    handleAudioSessionInterruptionFn: extractBraceBlock(source, '@objc private func handleAudioSessionInterruption(_ note: Notification) {'),
+    didFinishFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {'),
+    didCancelFn: extractBraceBlock(source, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {'),
     pushRegistryDidUpdateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {'),
     pushRegistryDidInvalidateFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {'),
     pushRegistryDidReceiveFn: extractBraceBlock(source, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {'),
@@ -288,6 +314,14 @@ function withCallKeepAppDelegate(config) {
     ensureMethod(units.callObserverFn, 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {');
     ensureMethod(units.timeOfDayGreetingFn, 'private func timeOfDayGreeting() -> String {');
     ensureMethod(units.speakReminderFn, 'private func speakReminder(callUUID: String, itemType: String) {');
+    // didFinishFn is the fix (see buildCanonicalUnits' comment on it) — it
+    // was never being patched into the generated file before this change.
+    // traceFn/handleAudioSessionInterruptionFn are TEMP diagnostic
+    // instrumentation; didCancelFn is a real interruption-recovery path.
+    ensureMethod(units.traceFn, 'private func trace(_ message: String) {');
+    ensureMethod(units.handleAudioSessionInterruptionFn, '@objc private func handleAudioSessionInterruption(_ note: Notification) {');
+    ensureMethod(units.didFinishFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {');
+    ensureMethod(units.didCancelFn, 'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {');
     ensureMethod(units.pushRegistryDidUpdateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {');
     ensureMethod(units.pushRegistryDidInvalidateFn, 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {');
     ensureMethod(units.pushRegistryDidReceiveFn, 'public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {');
@@ -308,6 +342,7 @@ const VOIP_TOKEN_MODULE_M = `#import <React/RCTBridgeModule.h>
 @interface RCT_EXTERN_MODULE(FCVoipToken, NSObject)
 RCT_EXTERN_METHOD(getCachedToken:(RCTResponseSenderBlock)callback)
 RCT_EXTERN_METHOD(getLastAnsweredCall:(RCTResponseSenderBlock)callback)
+RCT_EXTERN_METHOD(getLastCallDebugTrace:(RCTResponseSenderBlock)callback)
 @end
 `;
 
@@ -356,6 +391,42 @@ class FCVoipToken: NSObject {
     defaults.removeObject(forKey: "familycube_call_itemType_\\(callUUID)")
     defaults.removeObject(forKey: "familycube_call_itemId_\\(callUUID)")
     callback([["callUUID": callUUID, "itemType": itemType, "itemId": itemId, "dueAtIso": dueAtIso]])
+  }
+
+  // TEMP diagnostic instrumentation — see AppDelegate.swift's callDebugTrace/
+  // trace(_:)/getLastCallDebugTrace comments for the full story: two
+  // previous "fixes" for the call-reminder TTS repeat loop (setActive(true)
+  // reassertion, then AVAudioSessionModeSpokenAudio) were both confirmed
+  // live to NOT fix "speaks once then goes silent forever." Rather than
+  // ship a third blind guess, the native repeat loop now appends a
+  // timestamped breadcrumb at every lifecycle point that could explain the
+  // symptom (answer → first speak → each didFinish/didCancel → each repeat-
+  // scheduling closure firing → call.hasEnded) into UserDefaults, and this
+  // method is how JS pulls that trace back out to ship to Supabase — the
+  // user cannot connect this device to Xcode/Console.app, so this is the
+  // only way to get real evidence off of it. Consumes (clears) on read,
+  // same pattern as getLastAnsweredCall above. Reads its OWN itemId/dueAtIso
+  // keys (familycube_call_debug_trace_*), not familycube_last_answered_* —
+  // those are consumed by getLastAnsweredCall, and the two methods can run
+  // in either order on a given app resume, so sharing keys would make
+  // whichever one runs second see nil. Search "TEMP diagnostic" in
+  // AppDelegate.swift, lib/callAlert.ts, and this file for every piece —
+  // all of it should be removed together once the real root cause is
+  // confirmed fixed.
+  @objc func getLastCallDebugTrace(_ callback: @escaping RCTResponseSenderBlock) {
+    let defaults = UserDefaults.standard
+    guard let trace = defaults.stringArray(forKey: "familycube_call_debug_trace"), !trace.isEmpty else {
+      callback([NSNull()])
+      return
+    }
+    let itemId   = defaults.string(forKey: "familycube_call_debug_trace_itemId")
+    let dueAtIso = defaults.string(forKey: "familycube_call_debug_trace_dueAtIso")
+    let itemType = defaults.string(forKey: "familycube_call_debug_trace_itemType")
+    defaults.removeObject(forKey: "familycube_call_debug_trace")
+    defaults.removeObject(forKey: "familycube_call_debug_trace_itemId")
+    defaults.removeObject(forKey: "familycube_call_debug_trace_dueAtIso")
+    defaults.removeObject(forKey: "familycube_call_debug_trace_itemType")
+    callback([["trace": trace, "itemId": itemId as Any, "dueAtIso": dueAtIso as Any, "itemType": itemType as Any]])
   }
 }
 `;

@@ -180,6 +180,62 @@ export function listenForCallReminderAnswered(): () => void {
   }
 }
 
+// Covers the killed-app-then-answered case listenForCallReminderAnswered's
+// live NotificationCenter listener structurally cannot: that listener only
+// receives the "CallReminderAnswered" post if JS is already running and this
+// listener already attached at the exact moment CXCallObserver sees the call
+// connect. A reminder call typically rings while the phone is locked/idle —
+// the common case is the app is backgrounded or fully killed, so JS boots
+// AFTER AppDelegate.swift's callObserver has already posted (and lost) that
+// notification. Confirmed live via a direct call_reminder_log query: EVERY
+// row ever written has answered=false, retry_count=0 — including calls the
+// user personally answered — meaning the live listener has never once
+// actually fired end-to-end in real usage.
+//
+// FCVoipToken.getLastAnsweredCall (native, see plugins/withCallKeep.js) reads
+// back the same answer event from UserDefaults, written by the same
+// callObserver, but cached under keys that survive both app-kill and the
+// call's own hasEnded cleanup — see that method's comments for why dueAtIso
+// specifically needed its own stable cache key. Call this once on app
+// mount/boot (see app/_layout.tsx) alongside listenForCallReminderAnswered().
+// Order relative to boot routing doesn't matter — this only ever affects (a)
+// the server-side answered flag, checked by a cron sweep running minutes
+// later, and (b) wasReminderCallJustAnswered()'s recency flag, only consulted
+// by the AppState background→active handler, which can't fire before this
+// function (called synchronously on mount, same tick as the app resuming
+// from the answered call) has had a chance to run.
+export async function checkLastAnsweredCallOnColdStart(): Promise<void> {
+  if (Platform.OS !== 'ios' || !NativeModules.FCVoipToken?.getLastAnsweredCall) return;
+  try {
+    const result = await new Promise<{ callUUID: string; itemType: string; itemId: string; dueAtIso: string } | null>(
+      (resolve) => NativeModules.FCVoipToken.getLastAnsweredCall((r: any) => resolve(r ?? null))
+    );
+    if (!result?.itemType || !result?.itemId || !result?.dueAtIso) return;
+    console.log('[callAlert] checkLastAnsweredCallOnColdStart: found answered call', {
+      itemType: result.itemType, itemId: result.itemId,
+    });
+    // Mirrors listenForCallReminderAnswered's live-listener behavior exactly —
+    // this recency flag is what lets app/_layout.tsx's and
+    // AppPinLockOverlay.tsx's background→active re-lock handlers skip the
+    // Face ID prompt that otherwise hangs while a CallKit call is still
+    // active/dismissing. Setting it here (not just calling
+    // mark-call-reminder-answered below) is required — without it, this cold-
+    // start path fixes the DB-side "answered" tracking but Bug 3's freeze
+    // keeps happening exactly as before, since wasReminderCallJustAnswered()
+    // would never have been set true by this path.
+    lastReminderCallAnsweredAt = Date.now();
+    try {
+      await supabase.functions.invoke('mark-call-reminder-answered', {
+        body: { itemType: result.itemType, itemId: result.itemId, dueAtIso: result.dueAtIso },
+      });
+    } catch (err) {
+      console.warn('[callAlert] mark-call-reminder-answered failed (cold start)', err);
+    }
+  } catch (e) {
+    console.warn('[callAlert] checkLastAnsweredCallOnColdStart threw', e);
+  }
+}
+
 // ── FCM token + foreground ring (Android) ──────────────────────────────────
 // Background/killed-app delivery is handled by index.js's
 // setBackgroundMessageHandler (must run at module-eval time, outside React);

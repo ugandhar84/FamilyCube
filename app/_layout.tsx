@@ -43,6 +43,7 @@ import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
   listenForCallReminderAnswered, wasReminderCallJustAnswered,
+  checkLastAnsweredCallOnColdStart,
 } from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -840,6 +841,14 @@ function RootNavigator() {
     // event already carries itemType/itemId/dueAtIso, everything
     // mark-call-reminder-answered needs to find the right row.
     const unanswered = listenForCallReminderAnswered();
+    // Covers the (common) case where the reminder call was answered while
+    // this listener wasn't mounted yet — backgrounded or fully killed app,
+    // which describes most reminder calls since the phone is usually
+    // locked/idle when one rings. See checkLastAnsweredCallOnColdStart's own
+    // comments for why the live listener above misses this so often in
+    // practice. Fire-and-forget: nothing else in boot depends on this
+    // resolving first.
+    checkLastAnsweredCallOnColdStart();
     return unanswered;
   }, []);
 

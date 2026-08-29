@@ -53,11 +53,32 @@ FirebaseApp.configure()
       launchOptions: launchOptions)
 #endif
 
+    // audioSession.mode defaults to AVAudioSessionModeDefault (a two-way
+    // telephony mode meant for an actual voice call) when omitted — that is
+    // what this app was silently getting, since no audioSession block was
+    // ever passed here. .default + .playAndRecord is a documented source of
+    // AVSpeechSynthesizer.speak() silently failing to (re)start playback
+    // ("_BeginSpeaking: couldn't begin playback" / "[AXTTSCommon] Failure
+    // starting audio queue alp!" in the system log, no error, no delegate
+    // callback) once the session has already been active/routed for a
+    // while — matching exactly what was live-reported: the repeat loop's
+    // first speak() (right after CallKit freshly activates the session)
+    // plays fine, every speak() after that goes silent with the call still
+    // connected. AVAudioSessionModeSpokenAudio is Apple's own mode for
+    // exactly this use case (one-way announcement/TTS layered over an
+    // otherwise-active audio session, the same mode VoiceOver/turn-by-turn
+    // apps use) — RNCallKeep persists this into NSUserDefaults and
+    // configureAudioSession() (called on every provider:didActivateAudioSession:
+    // and every answer) re-applies it every time, so this single setup()
+    // call fixes every subsequent repeat pass, not just the first.
     RNCallKeep.setup([
       "appName": "Family Cube",
       "supportsVideo": false,
       "maximumCallGroups": "1",
       "maximumCallsPerCallGroup": "1",
+      "audioSession": [
+        "mode": "AVAudioSessionModeSpokenAudio",
+      ],
     ])
 
     let registry = PKPushRegistry(queue: DispatchQueue.main)
@@ -151,10 +172,22 @@ FirebaseApp.configure()
       let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\(uuid)") ?? "reminder"
       let itemId   = UserDefaults.standard.string(forKey: "familycube_call_itemId_\(uuid)")
       let dueAtIso = UserDefaults.standard.string(forKey: "familycube_call_dueAtIso_\(uuid)")
-      if let id = itemId {
+      // Cached into the STABLE familycube_last_answered_* keys (not just the
+      // per-uuid familycube_call_dueAtIso_<uuid> one) because the call.hasEnded
+      // branch above deletes every familycube_call_*_<uuid> key the moment this
+      // call ends — which, for the common case of a reminder call answered while
+      // the app is backgrounded/killed, happens well before JS ever boots back
+      // up to read it. Without a copy that survives hasEnded's cleanup,
+      // getLastAnsweredCall() (FCVoipToken, read by
+      // checkLastAnsweredCallOnColdStart() in lib/callAlert.ts) would find
+      // itemType/itemId but a already-gone dueAtIso on every cold-start check —
+      // and mark-call-reminder-answered requires dueAtIso to find the right
+      // call_reminder_log row.
+      if let id = itemId, let due = dueAtIso {
         UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")
         UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")
         UserDefaults.standard.set(id,   forKey: "familycube_last_answered_itemId")
+        UserDefaults.standard.set(due,  forKey: "familycube_last_answered_dueAtIso")
       }
       // Reaching this branch (non-outgoing, not yet surfaced, not hasEnded)
       // is CallKit's answered transition — tells the JS side (which holds
@@ -381,18 +414,31 @@ FirebaseApp.configure()
     #endif
 
     // Live-reported: the repeat loop played once then went silent even
-    // though the call stayed connected. RNCallKeep activates the
-    // AVAudioSession exactly once, when the call is first answered
-    // (provider:didActivateAudioSession: in RNCallKeep.m) — nothing
-    // re-asserts it afterward. If iOS reclaims/reconfigures the shared
-    // audio session in the ~3s gap between repeats (a real possibility
-    // during an active CallKit call, since the session is shared with the
-    // telephony stack), AVSpeechSynthesizer.speak() silently no-ops with
-    // no delegate callback to explain why — there is no "failed to speak"
-    // error, just quiet. Re-asserting setActive(true) immediately before
-    // every speak pass (not just the first) costs nothing when the
-    // session is already active, and recovers it when it isn't.
-    try? AVAudioSession.sharedInstance().setActive(true, options: [])
+    // though the call stayed connected. The earlier fix here (just
+    // `setActive(true)`) did NOT resolve it — confirmed via a live retest —
+    // because `setActive` on an already-active session doesn't touch its
+    // category/mode/route, and the real root cause is upstream of that: see
+    // the RNCallKeep.setup() call in didFinishLaunchingWithOptions, which
+    // now passes audioSession.mode = AVAudioSessionModeSpokenAudio instead
+    // of silently defaulting to AVAudioSessionModeDefault (a two-way-
+    // telephony mode that is a documented source of AVSpeechSynthesizer's
+    // speak() silently failing to restart playback — "_BeginSpeaking:
+    // couldn't begin playback" — once the session has been active for a
+    // while, with no error and no delegate callback to explain why).
+    //
+    // This re-assertion stays as defense-in-depth: it now re-applies the
+    // FULL category+mode (matching RNCallKeep's own configureAudioSession),
+    // not just setActive, so it can recover the correct mode even if
+    // something else in the call lifecycle (a route change, an
+    // interruption-end, AirPods connecting mid-call) resets the session
+    // between repeat passes.
+    let familyCubeAudioSession = AVAudioSession.sharedInstance()
+    try? familyCubeAudioSession.setCategory(
+      .playAndRecord,
+      mode: .spokenAudio,
+      options: [.allowBluetooth, .allowBluetoothA2DP]
+    )
+    try? familyCubeAudioSession.setActive(true, options: [])
 
     // speechSynthesizer(_:didFinish:) fires once per utterance in this
     // pass; only the LAST one is registered in lastUtterancePerCall, so

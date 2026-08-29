@@ -329,20 +329,33 @@ class FCVoipToken: NSObject {
   // replay queue cannot, since that queue is in-memory only and dies with
   // whatever process displayed/answered the call if a different process
   // ends up relaunching this JS. Consumes (clears) on read.
+  //
+  // dueAtIso comes from familycube_last_answered_dueAtIso — a copy cached
+  // alongside itemType/itemId at answer time (AppDelegate.swift's
+  // callObserver), specifically because the per-uuid familycube_call_dueAtIso_
+  // <uuid> key gets deleted by that same callObserver's call.hasEnded cleanup
+  // branch, which — for a reminder call answered while the app is backgrounded
+  // or killed — routinely runs before JS ever boots back up to call this
+  // method. Without the stable copy, this would find itemType/itemId but a
+  // dueAtIso that's already gone on every real cold-start case. Consumes
+  // (clears) all four on read. mark-call-reminder-answered requires dueAtIso
+  // to compute the dueAtKey that matches the exact call_reminder_log row.
   @objc func getLastAnsweredCall(_ callback: @escaping RCTResponseSenderBlock) {
     let defaults = UserDefaults.standard
     guard let callUUID = defaults.string(forKey: "familycube_last_answered_call_uuid"),
           let itemType = defaults.string(forKey: "familycube_last_answered_itemType"),
-          let itemId = defaults.string(forKey: "familycube_last_answered_itemId") else {
+          let itemId = defaults.string(forKey: "familycube_last_answered_itemId"),
+          let dueAtIso = defaults.string(forKey: "familycube_last_answered_dueAtIso") else {
       callback([NSNull()])
       return
     }
     defaults.removeObject(forKey: "familycube_last_answered_call_uuid")
     defaults.removeObject(forKey: "familycube_last_answered_itemType")
     defaults.removeObject(forKey: "familycube_last_answered_itemId")
+    defaults.removeObject(forKey: "familycube_last_answered_dueAtIso")
     defaults.removeObject(forKey: "familycube_call_itemType_\\(callUUID)")
     defaults.removeObject(forKey: "familycube_call_itemId_\\(callUUID)")
-    callback([["callUUID": callUUID, "itemType": itemType, "itemId": itemId]])
+    callback([["callUUID": callUUID, "itemType": itemType, "itemId": itemId, "dueAtIso": dueAtIso]])
   }
 }
 `;

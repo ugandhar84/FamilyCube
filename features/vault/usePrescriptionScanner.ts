@@ -34,6 +34,17 @@ export interface ScanResult {
   doc_type: DocType;
   medication?: ParsedMedication;
   vaccine?: ParsedVaccine;
+  /** "low" means the model had trouble reading a field (often the dosage/
+   * dose number) and left it blank rather than guessing — surface
+   * confidenceNote so the user knows to double-check the original document
+   * before trusting this as a real health record. */
+  confidence?: 'high' | 'low';
+  confidenceNote?: string;
+  /** The document had more than one medication/vaccine listed but this
+   * schema only extracts one entry per scan — additionalItemsNote
+   * describes what else was found so nothing is silently lost. */
+  additionalItemsFound?: boolean;
+  additionalItemsNote?: string;
 }
 
 export interface PendingImage {
@@ -126,6 +137,10 @@ export function usePrescriptionScanner() {
         doc_type: json.doc_type ?? 'medication',
         medication: json.medication,
         vaccine: json.vaccine,
+        confidence: json.confidence,
+        confidenceNote: json.confidence_note,
+        additionalItemsFound: json.additional_items_found,
+        additionalItemsNote: json.additional_items_note,
       });
       setPendingImages([]); // leave redact mode so review page shows
       setShowReview(true);

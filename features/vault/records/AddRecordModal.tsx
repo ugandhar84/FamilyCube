@@ -5,8 +5,10 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker    from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Lock, Shield, FileText, Camera, Image, FolderOpen, X } from 'lucide-react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import PhotoRedactModal, { RedactableImage } from '@/components/PhotoRedactModal';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
 
 interface Props {
@@ -38,6 +40,12 @@ export default function AddRecordModal({
   const [file,      setFile]      = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [saving,    setSaving]    = useState(false);
   const [tried,     setTried]     = useState(false);
+  // A camera/library photo pick goes through the redact step below before
+  // becoming `file` — analyze-medical-record sends the raw image to Gemini
+  // unredacted (only text metadata is anonymized server-side), so this is
+  // the only point where sensitive info visible IN the photo itself (name,
+  // DOB, MRN) can actually be covered before it ever leaves the device.
+  const [pendingPhoto, setPendingPhoto] = useState<{ asset: ImagePicker.ImagePickerAsset; redactImg: RedactableImage } | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -62,6 +70,15 @@ export default function AddRecordModal({
     if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
   };
 
+  // Shared by camera/library: reads the picked asset into base64 and opens
+  // the redact step instead of setting `file` directly — file only gets
+  // set once the user confirms (possibly redacted) in handleRedactConfirm.
+  const openRedactFor = async (asset: ImagePicker.ImagePickerAsset) => {
+    const base64 = asset.base64
+      ?? await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' as any });
+    setPendingPhoto({ asset, redactImg: { base64, mimeType: asset.mimeType ?? 'image/jpeg' } });
+  };
+
   const pickFromCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -72,8 +89,9 @@ export default function AddRecordModal({
       mediaTypes: ['images'],
       quality: 0.85,
       allowsEditing: false,
+      base64: true,
     });
-    if (!result.canceled && result.assets[0]) setFile(imageAssetToDoc(result.assets[0]));
+    if (!result.canceled && result.assets[0]) await openRedactFor(result.assets[0]);
   };
 
   const pickFromLibrary = async () => {
@@ -86,8 +104,28 @@ export default function AddRecordModal({
       mediaTypes: ['images'],
       quality: 0.85,
       allowsEditing: false,
+      base64: true,
     });
-    if (!result.canceled && result.assets[0]) setFile(imageAssetToDoc(result.assets[0]));
+    if (!result.canceled && result.assets[0]) await openRedactFor(result.assets[0]);
+  };
+
+  const handleRedactConfirm = async (finalImages: RedactableImage[]) => {
+    if (!pendingPhoto) return;
+    const finalImg = finalImages[0];
+    // Persist the (possibly redacted) base64 to a real cache file so `file`
+    // still fits the DocumentPickerAsset { uri, name, mimeType, size } shape
+    // onSave/uploadRecord already expects — same contract as an untouched pick.
+    const name = pendingPhoto.asset.fileName ?? `photo_${Date.now()}.jpg`;
+    const destUri = `${FileSystem.cacheDirectory}${Date.now()}_${name}`;
+    await FileSystem.writeAsStringAsync(destUri, finalImg.base64, { encoding: 'base64' as any });
+    const info = await FileSystem.getInfoAsync(destUri);
+    setFile({
+      uri: destUri,
+      name,
+      mimeType: finalImg.mimeType,
+      size: (info as any).size ?? null,
+    } as DocumentPicker.DocumentPickerAsset);
+    setPendingPhoto(null);
   };
 
   const handleSave = async () => {
@@ -102,6 +140,7 @@ export default function AddRecordModal({
   const inp = [s.inp, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }];
 
   return (
+    <>
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
@@ -249,6 +288,18 @@ export default function AddRecordModal({
           style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
       </View>
     </AppBottomSheet>
+
+    <PhotoRedactModal
+      visible={!!pendingPhoto}
+      images={pendingPhoto ? [pendingPhoto.redactImg] : []}
+      accentColor={colors.teal}
+      title="Cover Sensitive Info"
+      subtitle="Drag to black out names, DOB or any detail before AI analysis"
+      confirmLabel="Use This Photo →"
+      onDiscard={() => setPendingPhoto(null)}
+      onConfirm={handleRedactConfirm}
+    />
+    </>
   );
 }
 

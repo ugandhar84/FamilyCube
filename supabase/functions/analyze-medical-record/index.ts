@@ -19,7 +19,15 @@ const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-// ── Anonymize sensitive text before sending to AI ─────────────────────────────
+// ── Anonymize sensitive TEXT METADATA before sending to AI ────────────────────
+// IMPORTANT — this only redacts the title/notes STRINGS built in contextPrompt
+// below. It does NOT touch the actual document image/PDF bytes sent to Gemini
+// as imageParts (see callGemini call further down) — if the real name, DOB,
+// SSN, or MRN is visible IN THE PHOTO itself (the normal case for an actual
+// medical document), Gemini sees it unredacted. True image-level redaction
+// would need OCR + region-masking before upload, which doesn't exist here.
+// Do not treat this function's existence as proof the image content is
+// protected — only the metadata fields are.
 function anonymize(text: string, realName: string): string {
   const esc = realName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text

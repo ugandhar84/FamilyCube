@@ -603,6 +603,31 @@ export default function ScanReviewSheet({
             {scanPage === 2 && (
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24, gap: 16 }}>
 
+                {/* ── Low-confidence warning — the AI left a field blank rather
+                    than guess (e.g. an unclear dosage number). This is a real
+                    health record, so a silently-wrong guess is worse than
+                    asking the user to double-check the original document. ── */}
+                {scanResult?.confidence === 'low' && (
+                  <View style={{ backgroundColor: colors.danger + '12', borderRadius: 12, padding: 12,
+                    borderWidth: 1, borderColor: colors.danger + '40',
+                    flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <AlertCircle size={14} color={colors.danger} style={{ marginTop: 1 }} />
+                    <Text style={{ fontSize: 12, color: colors.danger, flex: 1, fontWeight: '600' }}>
+                      {scanResult.confidenceNote ?? 'Some details were hard to read clearly — please double-check the fields below against the original document before saving.'}
+                    </Text>
+                  </View>
+                )}
+                {scanResult?.additionalItemsFound && (
+                  <View style={{ backgroundColor: colors.amber + '12', borderRadius: 12, padding: 12,
+                    borderWidth: 1, borderColor: colors.amber + '40',
+                    flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <AlertCircle size={14} color={colors.amber} style={{ marginTop: 1 }} />
+                    <Text style={{ fontSize: 12, color: colors.amber, flex: 1, fontWeight: '600' }}>
+                      {scanResult.additionalItemsNote ?? 'This document listed more than one item — only one was extracted here.'}
+                    </Text>
+                  </View>
+                )}
+
                 {/* ── Who is this for? ── */}
                 <View>
                   <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#888' : '#888', letterSpacing: 0.5, marginBottom: 10 }}>

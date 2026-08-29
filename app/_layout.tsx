@@ -219,7 +219,23 @@ function RootNavigator() {
                 showAlert('Welcome back!', 'Your account and all your data have been fully restored. Nothing was lost.');
               }
             }
-            if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
+            if (session.user.is_anonymous) {
+              // Anonymous users (join-family / device-recovery) never get a
+              // profiles row by design — join-family only ever stamps
+              // members.auth_user_id, never touches profiles (confirmed:
+              // profiles is real-auth-only). Routing through the
+              // terms_accepted/onboarding_completed check below would
+              // always read "no profile" for this population and send a
+              // successfully-joined kid/senior back through onboarding on
+              // every cold relaunch, forever — check for an actual joined
+              // members row instead, the real signal of "already done."
+              const { data: ownMember } = await supabase
+                .from('members')
+                .select('id')
+                .eq('auth_user_id', session.user.id)
+                .maybeSingle();
+              destination = ownMember ? '/(tabs)' : '/onboarding';
+            } else if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
               // Diagnostic: onboarding was reported as re-triggering for an
               // already-onboarded user multiple times — logging the exact
               // gate values here (rather than guessing) since a re-loop
@@ -281,6 +297,24 @@ function RootNavigator() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       dbg(TAG, 'onAuthStateChange →', event, session?.user?.id ?? 'no user');
       setSession(session);
+
+      // An anonymous session (signInAnonymously(), used by LoginScreen's
+      // "Enter invite code" and the device-recovery flow) is ALWAYS a
+      // deliberate mid-flow step toward join-family/recover-device — there
+      // is no profile row for it yet by definition, and there never will be
+      // one until the join/recovery completes and re-stamps a REAL profile.
+      // Letting this handler's normal SIGNED_IN routing run for it raced
+      // against the screen's own router.push('/onboarding/join-family')
+      // (LoginScreen.tsx's startCodeFlow): if this handler's async
+      // profile fetch resolved first, it saw "no profile" and called
+      // router.replace('/onboarding') — hijacking navigation into the
+      // tutorial before the user ever reached join-family, then the user
+      // had to go through FamilyChoiceScreen and back into JoinFamilyScreen
+      // a second time, which is exactly the "asks twice" confusion
+      // reported live. The screen that started the anonymous session
+      // already owns navigation for it — this handler has nothing useful
+      // to do until a real (non-anonymous) profile exists.
+      if (session?.user?.is_anonymous) return;
 
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         // Init RevenueCat and load subscription tier.

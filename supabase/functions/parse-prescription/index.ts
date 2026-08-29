@@ -29,24 +29,36 @@ If the document does NOT contain medical content (e.g. it is a receipt, ID, util
 
 If the document DOES contain medical content, decide if it is primarily a MEDICATION prescription, a VACCINE record, or both, then extract the key fields.
 
+If the document lists MORE THAN ONE medication or vaccine (common on discharge summaries or multi-dose vaccine cards),
+do NOT silently pick one or merge them into a single entry — this is medication data and dropping a drug silently is
+a real safety issue, not just a minor omission. Instead set doc_type's medication/vaccine field to the FIRST/primary
+one, and add a top-level "additional_items_found": true with "additional_items_note": a one-sentence description of
+what else was on the document (e.g. "Also lists Amoxicillin 250mg — not extracted, please add separately"), so nothing
+is lost even though this schema only extracts one entry per call.
+
 For a MEDICATION prescription, extract:
 - name: drug/medication name (brand or generic)
-- dosage: e.g. "10mg", "500mg/5ml"
+- dosage: e.g. "10mg", "500mg/5ml" — CRITICAL: if the numeric dose is even slightly unclear, blurry, or ambiguous
+  between two readings (e.g. could be "10mg" or "100mg", decimal point unclear), do NOT guess a number. Leave dosage
+  as null and add a note in "notes" describing exactly what's ambiguous (e.g. "Dosage number unclear — could be 10mg
+  or 100mg, please verify against the original"). A wrong guessed number is far worse than an honest blank, since
+  this can become an actual medication record someone relies on.
 - frequency: e.g. "Once daily", "Twice a day", "Every 8 hours"
 - duration: e.g. "7 days", "30 days", "Ongoing"
 - instructions: any special instructions (e.g. "Take with food", "Avoid sunlight")
-- refills: number of refills authorized (integer or null)
+- refills: number of refills AUTHORIZED (not refills already used) — if the label says "refills used: 1 of 3", the
+  authorized count is 3, not 1; if it's unclear which number is meant, leave this null rather than guessing
 - prescriber: doctor/provider name
 - prescribed_date: "YYYY-MM-DD" format
 - pharmacy: pharmacy name if printed
-- notes: any other relevant notes
+- notes: any other relevant notes, PLUS any ambiguity/uncertainty flags from above
 
 For a VACCINE record, extract:
 - vaccine_name: full vaccine name (e.g. "Influenza", "MMR", "COVID-19 mRNA")
 - manufacturer: brand/manufacturer name if visible
 - lot_number: lot/batch number if visible
 - administered_date: "YYYY-MM-DD"
-- dose_number: e.g. 1, 2 (integer or null)
+- dose_number: e.g. 1, 2 (integer or null) — same rule as dosage above: if unclear/ambiguous, null, don't guess
 - total_doses: total doses in series if stated (integer or null)
 - next_due_date: "YYYY-MM-DD" for next dose/booster if stated
 - site: injection site if visible (e.g. "Left arm")
@@ -56,13 +68,19 @@ Return ONLY a valid JSON object with no markdown fences or commentary:
 {
   "doc_type": "medication" | "vaccine" | "both" | "none",
   "reason": "only present when doc_type is none",
+  "confidence": "high" | "low",
+  "confidence_note": "only present when confidence is low — one short sentence on what's unclear and why the user should double-check the original document",
+  "additional_items_found": false,
+  "additional_items_note": "only present when additional_items_found is true",
   "medication": { ... },
   "vaccine": { ... }
 }
 
 Include only the section(s) relevant to the document type.
 If a field is not visible or not applicable, use null or an empty string.
-If you cannot read the document clearly, still return your best attempt with lower-confidence fields left empty.`;
+Set confidence to "low" whenever ANY field (especially dosage/dose_number) was hard to read, the image quality was
+poor, or you had to choose between two plausible readings — this signal is what lets a parent know to double-check
+the original document before trusting a health record, so use it honestly rather than defaulting to "high."`;
 
 // ── Gemini vision call ─────────────────────────────────────────────────────────
 

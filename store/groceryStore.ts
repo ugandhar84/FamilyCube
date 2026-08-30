@@ -402,6 +402,26 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
         const { error: joinError } = await supabase.from('grocery_run_items')
           .upsert({ run_id: openRun.id, item_id: id, checked_in_run: false }, { onConflict: 'run_id,item_id' });
         if (joinError) console.warn('[groceryStore] addItem auto-join error', joinError);
+
+        // A push, not just the realtime subscription the comment above
+        // relies on — that only helps if the shopper has RunDetailSheet
+        // open right now. `active` only (not `draft`): nobody's actually
+        // out shopping yet for a draft trip, so there's no one to interrupt
+        // mid-aisle. Direct report: "if one partner added the new grocery
+        // while the other partner in the live shop then it should also
+        // notify."
+        if (openRun.status === 'active' && openRun.shopperId && openRun.shopperId !== params.addedBy) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'custom', familyId: params.familyId, memberIds: [openRun.shopperId], persist: true,
+              payload: {
+                title: `🛒 New item added to your ${openRun.store} trip`,
+                body: `"${params.name}" was just added — check the list before you check out.`,
+                data: { type: 'grocery_item_added_live', run_id: openRun.id, item_id: id },
+              },
+            },
+          }).catch(e => console.warn('[groceryStore] live-shop notify failed:', e?.message));
+        }
       }
     }
 

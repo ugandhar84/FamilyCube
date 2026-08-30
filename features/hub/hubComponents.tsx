@@ -491,14 +491,18 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
   // id-based — falls back to name only if the caller hasn't passed an id.
   const viewerMember = activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName);
 
-  const doReassign = (ev: FamilyEvent, name: string) => {
+  const doReassign = (ev: FamilyEvent, name: string, memberId: string | undefined) => {
     const { assigneeRole } = deriveEventActions(
       ev,
       { id: viewerMember?.id ?? '', name: activeName ?? '', role: viewerMember?.role ?? 'parent', hasCar: viewerMember?.hasCar },
       { isPast: false },
     );
     notifyTakeover(ev, name, members, activeName, activeMemberId);
-    const targetMember = members.find(m => m.name === name);
+    // Prefer the id DriverChipRow already resolved from `picked` — was a
+    // members.find by NAME, fragile (two parents sharing a first name
+    // would resolve to the wrong member); falls back to the name lookup
+    // only for a legacy/external caller with no id.
+    const targetMember = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
     if (targetMember) {
       supabase.rpc('reassign_event', {
         p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
@@ -594,13 +598,13 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
               {reassigning === ev.id ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
                   {!viewerIsExcluded && activeName && (
-                    <Pressable onPress={() => doReassign(ev, activeName)}
+                    <Pressable onPress={() => doReassign(ev, activeName, activeMemberId)}
                       style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.parent }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Me</Text>
                     </Pressable>
                   )}
                   {otherParents.map(m => (
-                    <Pressable key={m.id} onPress={() => doReassign(ev, m.name)}
+                    <Pressable key={m.id} onPress={() => doReassign(ev, m.name, m.id)}
                       style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
                     </Pressable>
@@ -697,7 +701,11 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, activeMemberId
   // external, non-member excludeName with no id at all.
   excludeId?: string;
   allowGpTeen: boolean;
-  onAssign: (name: string, reason: string) => void;
+  // memberId is the real id behind `picked` ('me' resolves to
+  // activeMemberId, otherwise an otherParents member id) — undefined only
+  // if activeMemberId itself wasn't passed in (an external/legacy caller).
+  // Callers should prefer this over re-deriving an id from `name`.
+  onAssign: (name: string, reason: string, memberId: string | undefined) => void;
   onOpenPool: (kind: 'gp' | 'teen') => void;
 }) {
   // Was never seeded from the event's actual persisted state — reopening
@@ -819,9 +827,10 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, activeMemberId
             // either, so this recovers silently rather than crashing.
             const resolvedName = picked === 'me' ? activeName : otherParents.find(m => m.id === picked)?.name;
             if (!resolvedName) return null;
+            const resolvedId = picked === 'me' ? activeMemberId : picked ?? undefined;
             return (
               <Pressable
-                onPress={() => onAssign(resolvedName, reason.trim())}
+                onPress={() => onAssign(resolvedName, reason.trim(), resolvedId)}
                 style={{ backgroundColor: colors.parent, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
                   Confirm {picked === 'me' ? 'Me' : resolvedName.split(' ')[0]}
@@ -1428,17 +1437,19 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                       doneToast();
                       onClose();
                     }}
-                    onAssign={(name, reason) => {
+                    onAssign={(name, reason, memberId) => {
                       notifyTakeover(ev, name, members, activeName, activeMemberId);
                       // Assigning it to yourself IS the confirmation — no
                       // separate "accept" step needed (see HelperEventCard's
                       // backlog card, which otherwise asks for one).
-                      // onAssign gives a NAME, not a member id — reassign_event
-                      // takes a member id, so resolve it first. An external
-                      // name with no matching member row (e.g. someone typed
-                      // into a free-text driver field) has no RPC path yet;
-                      // falls back to the old direct write for that case only.
-                      const targetMember = members.find(m => m.name === name);
+                      // DriverChipRow already resolved `picked` to a real id
+                      // before calling onAssign — was a members.find by
+                      // NAME, fragile (two parents sharing a first name);
+                      // falls back to the name lookup only for a legacy/
+                      // external caller with no id (e.g. someone typed into
+                      // a free-text driver field, which has no RPC path
+                      // yet and falls to the old direct write below).
+                      const targetMember = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
                       if (targetMember) {
                         supabase.rpc('reassign_event', {
                           p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,

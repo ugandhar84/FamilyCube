@@ -1255,9 +1255,19 @@ export default function ProfileSettingsScreen() {
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
 
   const savePin = async (memberId: string, pin: string) => {
-    const { error } = await supabase.from('members').update({ pin }).eq('id', memberId);
-    if (error) { showAlert("Couldn't save PIN", error.message); return; }
-    updateMember(memberId, { pin });
+    // Was a raw supabase.from('members').update() + updateMember() bypass
+    // that skipped familyStore's own setMemberPin() entirely — same
+    // duplicated-bypass shape as RosterTab.tsx's identical savePin (both
+    // fixed together). Routing through setMemberPin gets the error handling
+    // this already had AND the co-parent security notify it didn't: this
+    // sheet is reachable by a parent resetting a DIFFERENT member's PIN
+    // (canChangePin={isParent || viewTarget.id === activeMemberId} above),
+    // which previously told nobody else it happened.
+    try {
+      await useFamilyStore.getState().setMemberPin(memberId, pin, activeMemberId ?? undefined);
+    } catch (e: any) {
+      showAlert("Couldn't save PIN", e?.message ?? 'Something went wrong.');
+    }
   };
 
   const saveMember = async (memberId: string, name: string, mRole: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => {

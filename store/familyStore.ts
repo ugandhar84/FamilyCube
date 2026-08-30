@@ -243,7 +243,12 @@ interface FamilyState {
   // whatever balance is actually there, and never rolls back. See
   // clawbackCoins's own comment for why deductCoins is wrong for this.
   clawbackCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
-  setMemberPin: (id: string, pin: string | null) => Promise<void>;
+  // actingMemberId: who is making this change — omitted/undefined means
+  // "assume self" (matches every pre-existing call site, which never passed
+  // one). When it differs from `id` (a parent resetting a DIFFERENT
+  // member's PIN, e.g. a forgotten-PIN reset for a kid), the other parents
+  // are notified — see setMemberPin's own comment for why.
+  setMemberPin: (id: string, pin: string | null, actingMemberId?: string) => Promise<void>;
   loadFromStorage: () => Promise<void>;
   syncFromDB: () => Promise<void>;
   // Clears both the in-memory state AND the AsyncStorage cache. Must run
@@ -375,6 +380,16 @@ function toRow(m: FamilyMember) {
     call_alerts_enabled: m.callAlertsEnabled ?? true,
     invite_status:       m.inviteStatus ?? 'active',
   };
+}
+
+// "Other parents" for a security-relevant change (PIN reset, role change) —
+// every parent in the family besides whoever made the change. Mirrors
+// eventStore.ts's own otherParentIds() (ride assignment ping-pong) — same
+// name/shape kept consistent across stores rather than sharing one import,
+// since eventStore's version already deliberately duplicates hubComponents.tsx's
+// pattern rather than centralizing it.
+function otherParentIds(members: FamilyMember[], excludeId: string | null | undefined): string[] {
+  return members.filter(m => m.role === 'parent' && m.id !== excludeId).map(m => m.id);
 }
 
 function applyActive(members: FamilyMember[], cached: string | null, current: string | null) {
@@ -517,10 +532,12 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   updateMember: async (id, updates) => {
+    const before = get().members.find(m => m.id === id);
     const next = get().members.map(m => m.id === id ? { ...m, ...updates } : m);
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const updated = next.find(m => m.id === id);
+    let writeFailed = false;
     if (updated) {
       // This was a silent await with no error check — every caller of
       // updateMember (GP dispatch prefs, linked_parent_id, role edits,
@@ -528,7 +545,39 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // is exactly the shape of bug found repeatedly this session
       // (RosterTab's saveMember, choreStore's award payouts). Surface it.
       const { error } = await supabase.from('members').update(toRow(updated)).eq('id', id);
-      if (error) console.warn('[familyStore] updateMember failed', error.message);
+      if (error) { console.warn('[familyStore] updateMember failed', error.message); writeFailed = true; }
+    }
+
+    // Role change (kid→teen, promoted to parent, etc) is permission/
+    // security-relevant, unlike the cosmetic fields (name/avatar/DOB/quiet
+    // hours/notification prefs) this same action also carries — every other
+    // caller of updateMember only ever changes those, so gating narrowly on
+    // "did `role` actually change" keeps this from firing on the vast
+    // majority of unrelated saves (own-profile edits, notification-pref
+    // toggles, etc). Skipped if the write above failed — nothing actually
+    // changed on the server, so notifying would be a false alarm. Excludes
+    // the acting member — activeMemberId is who is physically driving this
+    // device right now, which for the shared-device "parent edits a
+    // different member's role" flow (RosterTab/ProfileSettingsScreen's
+    // EditMemberModal) is genuinely the actor, not the member being edited.
+    // Non-blocking: never delays/blocks the write above.
+    if (!writeFailed && before && updates.role && updates.role !== before.role) {
+      const actor = get().activeMemberId ?? id;
+      const familyId = updated?.familyId ?? before.familyId ?? get().members[0]?.familyId;
+      const recipients = otherParentIds(next, actor);
+      if (familyId && recipients.length) {
+        const byName = next.find(m => m.id === actor)?.name;
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'member_role_changed',
+            familyId,
+            memberIds: recipients,
+            excludeMemberId: actor,
+            persist: true,
+            payload: { memberId: id, memberName: updated?.name, byName, oldRole: before.role, newRole: updates.role },
+          },
+        }).catch((e: any) => console.warn('[familyStore] updateMember role-change notify failed', e?.message));
+      }
     }
   },
 
@@ -751,13 +800,57 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       .then(({ error }) => { if (error) console.warn('[familyStore] clawbackCoins', error.message); });
   },
 
-  setMemberPin: async (id, pin) => {
+  setMemberPin: async (id, pin, actingMemberId) => {
+    const before = get().members.find(m => m.id === id);
+    const hadPin = !!before?.pin;
     const next = get().members.map(m =>
       m.id === id ? { ...m, pin: pin ?? undefined, pinEnabled: pin !== null } : m
     );
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    await supabase.from('members').update({ pin: pin ?? null }).eq('id', id);
+    // Was an unchecked await — a failed write (RLS, network) still left the
+    // optimistic local state saying the PIN was changed while the DB kept
+    // the old one, so the member couldn't log in with the PIN they were
+    // just told was set, with zero indication anywhere of why. Roll back
+    // local state and surface the error to the caller (both RosterTab.tsx
+    // and ProfileSettingsScreen.tsx's PIN sheets now route through here and
+    // rely on this throwing to show a real error instead of a false
+    // "PIN saved").
+    const { error } = await supabase.from('members').update({ pin: pin ?? null }).eq('id', id);
+    if (error) {
+      console.warn('[familyStore] setMemberPin failed', error.message);
+      set({ members: get().members.map(m => m.id === id ? { ...m, pin: before?.pin, pinEnabled: !!before?.pin } : m) });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
+      throw error;
+    }
+
+    // Security-relevant event — notify the other parent(s) whenever this
+    // PIN change was made BY someone other than the member it's being made
+    // FOR (a parent resetting a kid's forgotten PIN, or one parent
+    // resetting another parent's PIN). A member changing their OWN PIN
+    // needs no notification — that's expected self-service, not a
+    // co-parent-should-know moment. Non-blocking: never let a failed notify
+    // undo or delay the PIN write above, which has already landed.
+    const actor = actingMemberId ?? id;
+    if (actor !== id) {
+      const target = before;
+      const familyId = target?.familyId ?? get().members[0]?.familyId;
+      const recipients = otherParentIds(next, actor);
+      if (familyId && recipients.length) {
+        const byName = next.find(m => m.id === actor)?.name;
+        const action = pin === null ? 'removed' : hadPin ? 'changed' : 'added';
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'member_pin_changed',
+            familyId,
+            memberIds: recipients,
+            excludeMemberId: actor,
+            persist: true,
+            payload: { memberId: id, memberName: target?.name, byName, action },
+          },
+        }).catch((e: any) => console.warn('[familyStore] setMemberPin notify failed', e?.message));
+      }
+    }
   },
 
   loadFromStorage: async () => {

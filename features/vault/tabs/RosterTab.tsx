@@ -298,18 +298,20 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const savePin = async (memberId: string, pin: string) => {
-    // Was an unchecked await — a failed write (RLS, network) still fell
-    // through to updateMember() below, so the UI showed "saved" while the
-    // DB kept the old PIN. That member then can't log in with the PIN they
-    // were just told was set, with zero indication anywhere of why.
-    const { error } = await supabase.from('members').update({ pin }).eq('id', memberId);
-    if (error) {
-      console.warn('[RosterTab] savePin failed', error.message);
-      Alert.alert("Couldn't save PIN", error.message);
-      return;
+    // Was a raw supabase.from('members').update() + updateMember() bypass
+    // that skipped familyStore's own setMemberPin() entirely — same
+    // duplicated-bypass shape as ProfileSettingsScreen.tsx's identical
+    // savePin (both fixed together). Routing through setMemberPin gets the
+    // error handling this already had AND the co-parent security notify it
+    // didn't: a parent resetting a DIFFERENT member's PIN (the whole point
+    // of this screen's pin section) previously told nobody else it happened.
+    try {
+      await useFamilyStore.getState().setMemberPin(memberId, pin, activeMemberId ?? undefined);
+      showToast('PIN saved');
+    } catch (e: any) {
+      console.warn('[RosterTab] savePin failed', e?.message);
+      Alert.alert("Couldn't save PIN", e?.message ?? 'Something went wrong.');
     }
-    updateMember(memberId, { pin });
-    showToast('PIN saved');
   };
 
   const deleteMember = async (memberId: string) => {

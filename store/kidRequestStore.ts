@@ -116,6 +116,19 @@ const getFamilyId = (): string | null => {
   } catch { return null; }
 };
 
+// Same lazy-require pattern as getFamilyId — choreStore.ts's memberName()
+// equivalent, so assignRequest/completeRequest notifications can put a real
+// name in "X assigned you" / "X marked your request done" copy instead of a
+// raw id.
+const memberName = (memberId: string | undefined | null): string => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useFamilyStore } = require('@/store/familyStore');
+    const m = useFamilyStore.getState().members.find((mm: any) => mm.id === memberId);
+    return m?.name ?? 'Someone';
+  } catch { return 'Someone'; }
+};
+
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal';
@@ -194,7 +207,7 @@ interface KidRequestState {
   sendRequest:     (req: Omit<KidRequest, 'id' | 'requestedAt' | 'status' | 'urgency'> & { urgency?: RequestUrgency }) => KidRequest;
   approveRequest:  (id: string, respondedBy: string, note?: string) => void;
   declineRequest:  (id: string, respondedBy: string, note?: string) => void;
-  assignRequest:   (id: string, helperId: string, note?: string) => void;
+  assignRequest:   (id: string, helperId: string, note?: string, assignedBy?: string) => void;
   completeRequest: (id: string, respondedBy: string) => void;
   cancelRequest:   (id: string) => void;
   toggleGPWelcome: (id: string, value: boolean) => void;
@@ -281,15 +294,36 @@ async function deleteFromDb(id: string) {
     .then(({ error }) => { if (error) console.warn('[kidRequestStore] deleteFromDb failed:', error.message); });
 }
 
-async function notifyKidRequest(fromMemberId: string, type: string, payload: Record<string, unknown>) {
+async function notifyKidRequest(
+  fromMemberId: string,
+  type: string,
+  payload: Record<string, unknown>,
+  excludeMemberId?: string,
+) {
   try {
     const familyId = getFamilyId();
     if (!familyId) return;
     supabase.functions
-      .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
+      .invoke('family-notifier', { body: { type, familyId, payload, persist: true, excludeMemberId } })
       .catch(e => console.warn('[kidRequestStore] notify failed:', e?.message));
   } catch (e: any) {
     console.warn('[kidRequestStore] notify error:', e?.message);
+  }
+}
+
+// Notify one specific member directly (bypasses the type-based auto-route —
+// used for assignRequest's helper leg, where the recipient is neither "all
+// parents" nor derivable from payload.memberId/fromMemberId the way
+// kid_request_decision's kid-facing leg is).
+async function notifyMember(memberId: string, type: string, payload: Record<string, unknown>) {
+  try {
+    const familyId = getFamilyId();
+    if (!familyId || !memberId) return;
+    supabase.functions
+      .invoke('family-notifier', { body: { type, familyId, memberIds: [memberId], payload, persist: true } })
+      .catch(e => console.warn('[kidRequestStore] notifyMember failed:', e?.message));
+  } catch (e: any) {
+    console.warn('[kidRequestStore] notifyMember error:', e?.message);
   }
 }
 
@@ -430,20 +464,51 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     });
   },
 
-  assignRequest: (id, helperId, note) => {
+  assignRequest: (id, helperId, note, assignedBy) => {
+    const req = get().requests.find(r => r.id === id);
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'approved' as RequestStatus, assignedHelper: helperId, respondedAt: new Date().toISOString(), respondedBy: helperId, parentNote: note } : r
     );
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
+    if (req) {
+      // Kid learns their request is being handled — same "approved" copy
+      // approveRequest already uses, since assignRequest IS the approval
+      // path for requests that need a specific helper lined up.
+      notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+        requestId: id, requestType: req.type, detail: req.detail,
+        decision: 'approved', note, fromMemberId: req.fromMemberId,
+      });
+      // The helper themselves only needs a separate ping when someone ELSE
+      // volunteered them (doAssignHelper in HelpDispatchQueue.tsx) — a
+      // self-assign (doSelfAssign / FamilyNeedsHandSection's "You're on it")
+      // has assignedBy === helperId or omitted, and telling someone about
+      // their own tap is noise.
+      if (assignedBy && assignedBy !== helperId) {
+        notifyMember(helperId, 'kid_request_helper_assigned', {
+          requestId: id, requestType: req.type, detail: req.detail,
+          byName: memberName(assignedBy), byMemberId: assignedBy, memberId: helperId, note,
+        });
+      }
+    }
   },
 
   completeRequest: (id, respondedBy) => {
+    const req = get().requests.find(r => r.id === id);
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'completed' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy } : r
     );
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
+    // Kid learns their request was fulfilled — distinct from
+    // kid_request_decision (approved/declined) since "completed" means the
+    // helper actually finished the task, not just agreed to take it on.
+    if (req && req.fromMemberId !== respondedBy) {
+      notifyKidRequest(req.fromMemberId, 'kid_request_completed', {
+        requestId: id, requestType: req.type, detail: req.detail,
+        fromMemberId: req.fromMemberId, byMemberId: respondedBy, byName: memberName(respondedBy),
+      });
+    }
   },
 
   cancelRequest: (id) => {
@@ -479,6 +544,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   approveItems: (requestId, itemIds, approvedBy, note) => {
     const now = new Date().toISOString();
     const idSet = new Set(itemIds);
+    const before = get().requests.find(r => r.id === requestId);
     const all = get().requests.map(r => {
       if (r.id !== requestId || !r.items) return r;
       const items = r.items.map(it =>
@@ -492,11 +558,23 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     });
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
+    // Kid learns which items got the green light — grocery/supplies items
+    // approved individually rather than the whole request at once, so the
+    // generic kid_request_decision copy ("Your request was approved!")
+    // wouldn't tell them which items actually made it in.
+    if (before && before.fromMemberId !== approvedBy) {
+      const names = before.items?.filter(it => idSet.has(it.id)).map(it => it.name) ?? [];
+      notifyKidRequest(before.fromMemberId, 'kid_request_items_decision', {
+        requestId, requestType: before.type, detail: before.detail,
+        decision: 'approved', itemNames: names, note, fromMemberId: before.fromMemberId,
+      });
+    }
   },
 
   rejectItems: (requestId, itemIds, rejectedBy, note) => {
     const now = new Date().toISOString();
     const idSet = new Set(itemIds);
+    const before = get().requests.find(r => r.id === requestId);
     const all = get().requests.map(r => {
       if (r.id !== requestId || !r.items) return r;
       const items = r.items.map(it =>
@@ -510,6 +588,13 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     });
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
+    if (before && before.fromMemberId !== rejectedBy) {
+      const names = before.items?.filter(it => idSet.has(it.id)).map(it => it.name) ?? [];
+      notifyKidRequest(before.fromMemberId, 'kid_request_items_decision', {
+        requestId, requestType: before.type, detail: before.detail,
+        decision: 'rejected', itemNames: names, note, fromMemberId: before.fromMemberId,
+      });
+    }
   },
 
   approveAllItems: (requestId, approvedBy, note) => {

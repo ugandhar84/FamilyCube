@@ -109,6 +109,17 @@ type NotifType =
   | 'reward_decision'
   | 'kid_request'
   | 'kid_request_decision'
+  // store/kidRequestStore.ts's assignRequest/completeRequest/approveItems/
+  // rejectItems — kid-request audit pass. assignRequest's kid-facing leg
+  // reuses kid_request_decision above (assigning a helper IS the approval);
+  // these three cover the gaps that had none: the helper being told they
+  // were volunteered by someone else, the kid being told the (already-
+  // approved) request was actually finished, and the kid being told which
+  // specific grocery/supplies items were approved/rejected rather than the
+  // whole request at once.
+  | 'kid_request_helper_assigned'
+  | 'kid_request_completed'
+  | 'kid_request_items_decision'
   | 'schedule_conflict'
   // Master-flow spec, two of the still-missing nudge timings, added by
   // chore-deadline-notifier: a pooled/open chore unclaimed with under 30
@@ -170,6 +181,14 @@ type NotifType =
   | 'event_assigned'
   | 'event_deleted'
   | 'event_rsvp_response'
+  // Profile/account/security audit (2026-08-29) — store/familyStore.ts's
+  // PIN-change and role-change paths previously notified no one; a co-parent
+  // could have another member's PIN reset, or a member's role changed
+  // (kid→teen, promoted to parent, etc), with zero visibility into it
+  // happening. Excludes the acting member; never blocks the underlying
+  // write if the notify call itself fails (non-blocking .catch()).
+  | 'member_pin_changed'
+  | 'member_role_changed'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -188,6 +207,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
   kid_request: 'requests', kid_request_decision: 'requests',
+  kid_request_helper_assigned: 'requests', kid_request_completed: 'requests', kid_request_items_decision: 'requests',
   schedule_conflict: 'family',
   pool_unclaimed_urgent: 'chores', approval_cutoff_nudge: 'chores', approval_cutoff_escalated: 'chores',
   chore_handoff_offered: 'chores', chore_handoff_accepted: 'chores', chore_handoff_declined: 'chores',
@@ -203,6 +223,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   cashout_requested: 'rewards', cashout_settled: 'rewards', cashout_approved: 'rewards', cashout_denied: 'rewards',
   parent_quest_delegated: 'chores', parent_quest_lock_cancelled: 'chores',
   event_assigned: 'family', event_deleted: 'family', event_rsvp_response: 'family',
+  member_pin_changed: 'family', member_role_changed: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -517,6 +538,38 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
           : `Your request was declined${p.note ? `: ${p.note}` : ''}`,
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
+    // store/kidRequestStore.ts's assignRequest — the ADULT who got
+    // volunteered by someone else (not a self-assign), separate from the
+    // kid_request_decision the requesting kid gets on the same action.
+    case 'kid_request_helper_assigned':
+      return {
+        title: '🙋 You Were Assigned',
+        body: `${p.byName ?? 'Someone'} asked you to help with a request${p.note ? `: ${p.note}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Requests', requestId: p.requestId },
+      };
+    // store/kidRequestStore.ts's completeRequest — the helper marked an
+    // already-approved/assigned request as actually done.
+    case 'kid_request_completed':
+      return {
+        title: '✅ Request Completed',
+        body: `${p.byName ?? 'Someone'} marked your request as done — all set! 🎉`,
+        data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
+      };
+    // store/kidRequestStore.ts's approveItems/rejectItems — per-item
+    // grocery/supplies decisions, distinct from kid_request_decision since
+    // only some items in a multi-item request may have been acted on.
+    case 'kid_request_items_decision': {
+      const names = Array.isArray(p.itemNames) ? (p.itemNames as string[]) : [];
+      const list = names.length ? names.join(', ') : 'items';
+      return {
+        title: p.decision === 'approved' ? '✅ Items Approved' : '❌ Items Declined',
+        body: p.decision === 'approved'
+          ? `${list} approved from your request${p.note ? ` — ${p.note}` : ''}`
+          : `${list} declined from your request${p.note ? `: ${p.note}` : ''}`,
+        data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
+      };
+    }
     case 'schedule_conflict':
       // p.reason mirrors ParentView.tsx's own conflict-reason strings
       // (e.g. "Priya assigned to 2 events") — same wording client-side and
@@ -770,6 +823,21 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Schedule', eventId: p.eventId },
       };
 
+    case 'member_pin_changed':
+      return {
+        title: '🔐 PIN Changed',
+        body: `${p.byName ?? 'A parent'} ${p.action === 'removed' ? 'removed the PIN on' : p.action === 'added' ? 'set a PIN on' : 'changed the PIN for'} ${p.memberName ?? 'a family member'}'s profile.`,
+        sound: 'default',
+        data: { screen: 'Roster', memberId: p.memberId },
+      };
+    case 'member_role_changed':
+      return {
+        title: '👤 Role Changed',
+        body: `${p.byName ?? 'A parent'} changed ${p.memberName ?? 'a family member'}'s role from ${p.oldRole ?? 'their old role'} to ${p.newRole ?? 'a new role'}.`,
+        sound: 'default',
+        data: { screen: 'Roster', memberId: p.memberId },
+      };
+
     case 'custom':
     default:
       return {
@@ -862,7 +930,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'kid_request_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type

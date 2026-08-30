@@ -206,7 +206,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     await new Promise(r => setTimeout(r, 800));
     const req = requests.find(r => r.id === id);
     if (req) handleGroceryApproval(req, activeMemberId);
-    assignRequest(id, activeMemberId, assignNote[id]);
+    assignRequest(id, activeMemberId, assignNote[id], activeMemberId);
     setProcessingAssign(p => ({ ...p, [id]: false }));
   };
 
@@ -217,7 +217,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     await new Promise(r => setTimeout(r, 800));
     const req = requests.find(r => r.id === id);
     if (req) handleGroceryApproval(req, hId);
-    assignRequest(id, hId, assignNote[id]);
+    assignRequest(id, hId, assignNote[id], activeMemberId ?? undefined);
     setProcessingAssign(p => ({ ...p, [id]: false }));
     setHelperOpen(p => ({ ...p, [id]: false }));
   };

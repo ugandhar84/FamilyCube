@@ -127,25 +127,28 @@ serve(async (req) => {
       .update({ status: 'accepted', accepted_at: new Date().toISOString(), accepted_by: user.id, member_id: memberId })
       .eq('id', inv.id);
 
-    // Best-effort notify the inviting parent, same fire-and-forget pattern
-    // join-family already uses.
+    // Notify the rest of the family, same 'custom'-with-no-memberIds bug
+    // (and same fix) as join-family — this used to reach no one at all.
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
-    fetch(notifierUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-      },
-      body: JSON.stringify({
-        type: 'custom',
-        familyId: inv.family_id,
-        persist: true,
-        payload: {
-          title: `🎉 ${displayName} joined the family!`,
-          body:  `${displayName} accepted your invite to ${family?.name ?? 'your family'} and can now log in on their own device.`,
+    const { data: otherMembers } = await supabase
+      .from('members').select('id').eq('family_id', inv.family_id).neq('id', memberId);
+    const notifyIds = (otherMembers ?? []).map((m: any) => m.id);
+    if (notifyIds.length) {
+      fetch(notifierUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
         },
-      }),
-    }).catch(() => {});
+        body: JSON.stringify({
+          type: 'member_joined',
+          familyId: inv.family_id,
+          memberIds: notifyIds,
+          persist: true,
+          payload: { memberName: displayName, familyName: family?.name },
+        }),
+      }).catch(() => {});
+    }
 
     console.log(`[accept-member-invite] ${displayName} (${inv.role}) joined family ${inv.family_id} via email invite`);
 

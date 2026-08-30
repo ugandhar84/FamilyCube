@@ -282,24 +282,33 @@ serve(async (req) => {
       used_by: callerAuthUserId,
     }).eq('id', invite.id);
 
-    // ── 5. Notify existing parents that someone joined ─────────────────────────
+    // ── 5. Notify the rest of the family that someone joined ───────────────────
+    // Was 'custom' with no memberIds at all — 'custom' isn't in
+    // family-notifier's NOTIFY_PARENTS/NOTIFY_SPECIFIC auto-route lists, so
+    // despite this comment's own claim, resolvedMemberIds stayed empty and
+    // this reached literally no one. Explicitly resolves and notifies every
+    // OTHER existing member (parents and kids alike — a kid should know a
+    // new sibling/grandparent joined too), not just parents.
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
-    fetch(notifierUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-      },
-      body: JSON.stringify({
-        type: 'custom',
-        familyId: invite.family_id,
-        persist: true,
-        payload: {
-          title: `👋 ${resolvedName} joined the family!`,
-          body:  `${resolvedName} just joined ${family.name} as ${resolvedRole}`,
+    const { data: otherMembers } = await supabase
+      .from('members').select('id').eq('family_id', invite.family_id).neq('id', member.id);
+    const notifyIds = (otherMembers ?? []).map((m: any) => m.id);
+    if (notifyIds.length) {
+      fetch(notifierUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
         },
-      }),
-    }).catch(() => {});
+        body: JSON.stringify({
+          type: 'member_joined',
+          familyId: invite.family_id,
+          memberIds: notifyIds,
+          persist: true,
+          payload: { memberName: resolvedName, familyName: family.name, role: resolvedRole },
+        }),
+      }).catch(() => {});
+    }
 
     console.log(`[join-family] ${resolvedName} (${resolvedRole}) joined family ${family.name} (${family.id}) via ${invite.member_id ? 'claimed' : 'new'} member row`);
 

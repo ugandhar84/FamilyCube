@@ -232,6 +232,15 @@ type NotifType =
   // real NotifType.
   | 'grocery_daily_digest'
   | 'grocery_run_reminder'
+  // join-family/accept-member-invite — a new member joining previously
+  // routed through 'custom' with NO memberIds at all, so despite both
+  // functions' own comments claiming to "notify existing parents," this
+  // reached literally no one (custom isn't in NOTIFY_PARENTS/SPECIFIC, so
+  // resolvedMemberIds stayed empty). Broadcasts to the WHOLE family
+  // (parents and kids alike — direct report: "if new pers[on] enter[s] by
+  // parent it should notify the kids so they will aware"), excluding the
+  // joiner themselves.
+  | 'member_joined'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -273,6 +282,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   memory_posted: 'family', memory_liked: 'family',
   meal_reminder: 'family',
   grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
+  member_joined: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -992,6 +1002,12 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         title: (p.title as string) ?? `🛒 ${p.store ?? 'Shopping'} run planned in 1 hour`,
         body: (p.body as string) ?? `${p.runName ?? 'Your trip'} — don't forget to add anything you need before they head out.`,
         data: { screen: 'Grocery', runId: p.run_id },
+      };
+    case 'member_joined':
+      return {
+        title: `👋 ${p.memberName ?? 'Someone'} joined the family!`,
+        body: `${p.memberName ?? 'A new member'} just joined ${p.familyName ?? 'your family'}${p.role ? ` as a ${p.role}` : ''}.`,
+        data: { screen: 'Roster' },
       };
     case 'meal_reminder': {
       const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';

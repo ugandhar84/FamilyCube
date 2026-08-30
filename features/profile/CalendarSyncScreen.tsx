@@ -164,22 +164,15 @@ export default function CalendarSyncScreen() {
   const renderProviderRow = (provider: CalendarProvider, purpose: CalendarPurpose) => {
     const connection = connectionFor(provider, purpose);
     const isConnecting = connecting === `${provider}:${purpose}`;
-    // Outlook's Microsoft Entra app registration hasn't been completed yet
-    // for this release — EXPO_PUBLIC_MS_GRAPH_CLIENT_ID is unset, so
-    // connectCalendar would throw a raw "not configured" message. Show a
-    // clear "coming soon" state instead of a confusing error alert.
-    const comingSoon = provider === 'outlook' && !connection;
     return (
-      <View key={`${provider}:${purpose}`} style={[s.card, comingSoon && { opacity: 0.55 }]}>
+      <View key={`${provider}:${purpose}`} style={s.card}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={s.iconChip}>
             <Ionicons name={PROVIDER_ICON[provider]} size={20} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.cardTitle}>{PROVIDER_LABEL[provider]}</Text>
-            {comingSoon ? (
-              <Text style={s.cardSubtitle}>Coming soon</Text>
-            ) : connection ? (
+            {connection ? (
               connection.status === 'error' ? (
                 <Text style={[s.cardSubtitle, { color: colors.danger }]}>Connection error — reconnect to fix</Text>
               ) : (
@@ -197,20 +190,18 @@ export default function CalendarSyncScreen() {
             Last checked {new Date(connection.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </Text>
         )}
-        {!comingSoon && (
-          <TouchableOpacity
-            onPress={() => connection ? handleDisconnect(connection) : handleConnect(provider, purpose)}
-            disabled={isConnecting}
-            style={[s.actionBtn, connection ? s.disconnectBtn : s.connectBtn]}>
-            {isConnecting ? (
-              <ActivityIndicator size="small" color={connection ? colors.danger : '#fff'} />
-            ) : (
-              <Text style={[s.actionBtnText, { color: connection ? colors.danger : '#fff' }]}>
-                {connection ? 'Disconnect' : 'Connect'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={() => connection ? handleDisconnect(connection) : handleConnect(provider, purpose)}
+          disabled={isConnecting}
+          style={[s.actionBtn, connection ? s.disconnectBtn : s.connectBtn]}>
+          {isConnecting ? (
+            <ActivityIndicator size="small" color={connection ? colors.danger : '#fff'} />
+          ) : (
+            <Text style={[s.actionBtnText, { color: connection ? colors.danger : '#fff' }]}>
+              {connection ? 'Disconnect' : 'Connect'}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
     );
   };

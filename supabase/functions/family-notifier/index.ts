@@ -223,6 +223,15 @@ type NotifType =
   // — a planned meal previously had no reminder at all; meal-reminders
   // fires this to parents 1hr before, same T-1h pattern as schedule-alerts.
   | 'meal_reminder'
+  // grocery-reminders — was routed through 'custom' (routing/dedup by
+  // payload.data.type only), which meant this function's own dedup check
+  // (querying notifications.type directly) could never find its own prior
+  // fire, since every 'custom' call persists with type='custom' regardless
+  // of payload.data.type — confirmed live: a 1hr-before run reminder fired
+  // 4 times across 2 sweeps for the same run before this was given its own
+  // real NotifType.
+  | 'grocery_daily_digest'
+  | 'grocery_run_reminder'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -263,6 +272,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   trip_started: 'family', trip_overdue: 'family',
   memory_posted: 'family', memory_liked: 'family',
   meal_reminder: 'family',
+  grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -970,6 +980,18 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         title: `❤️ ${p.likerName ?? 'Someone'} loved your memory`,
         body: (p.caption as string) ? `On "${p.caption}"` : 'Tap to see the reaction.',
         data: { screen: 'Memories', memoryId: p.memoryId },
+      };
+    case 'grocery_daily_digest':
+      return {
+        title: '🛒 Grocery list check-in',
+        body: (p.body as string) ?? `${p.count} item${p.count === 1 ? '' : 's'} waiting on the grocery list`,
+        data: { screen: 'Grocery' },
+      };
+    case 'grocery_run_reminder':
+      return {
+        title: (p.title as string) ?? `🛒 ${p.store ?? 'Shopping'} run planned in 1 hour`,
+        body: (p.body as string) ?? `${p.runName ?? 'Your trip'} — don't forget to add anything you need before they head out.`,
+        data: { screen: 'Grocery', runId: p.run_id },
       };
     case 'meal_reminder': {
       const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';

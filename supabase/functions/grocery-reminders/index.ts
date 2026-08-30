@@ -108,7 +108,13 @@ serve(async (req) => {
       if (hour !== 18) { results.push({ familyId, digest: 'skipped', reason: `not_6pm_local (hour=${hour})` }); continue; }
 
       const today = localDateStr(tz);
-      const dedupKey = `${familyId}:${today}`;
+      // Queries the real 'grocery_daily_digest' NotifType directly — this
+      // used to route through family-notifier's generic 'custom' type,
+      // which always persists as type='custom' regardless of what's inside
+      // payload.data, so this exact dedup check could never find its own
+      // prior fire and re-fired on every hourly sweep once 6pm local hit
+      // (confirmed live: the equivalent bug in the run-reminder sweep below
+      // fired 4x for one run before both were given real NotifTypes).
       const { data: already } = await supabase
         .from('notifications')
         .select('id')
@@ -118,7 +124,6 @@ serve(async (req) => {
         .limit(1);
       if (already?.length) { results.push({ familyId, digest: 'skipped', reason: 'already_sent_today' }); continue; }
 
-      const title = '🛒 Grocery list check-in';
       const notifBody = count === 1 ? '1 item waiting on the grocery list' : `${count} items waiting on the grocery list`;
       const memberIds = parents.map(p => p.id);
 
@@ -126,16 +131,11 @@ serve(async (req) => {
         await fetch(notifierUrl, {
           method: 'POST', headers: authHeader,
           body: JSON.stringify({
-            type: 'custom', memberIds, familyId,
-            payload: { title, body: notifBody, data: { type: 'grocery_daily_digest', count } },
+            type: 'grocery_daily_digest', memberIds, familyId,
+            payload: { count, body: notifBody },
             persist: true,
           }),
         }).catch(e => console.warn('[grocery-reminders] digest notifier error:', e.message));
-
-        await supabase.from('notifications').insert({
-          family_id: familyId, type: 'grocery_daily_digest', title, body: notifBody,
-          data: { count, dedupKey }, read: false,
-        }).catch((e: any) => console.warn('[grocery-reminders] digest insert error:', e?.message));
       }
 
       results.push({ familyId, digest: 'fired', count });
@@ -160,6 +160,10 @@ serve(async (req) => {
         continue;
       }
 
+      // Same real-NotifType fix as the digest dedup above — checks
+      // payload.run_id as persisted directly (family-notifier spreads the
+      // call's own `payload` into the notification row's data column
+      // verbatim, alongside buildMessage's own data fields).
       const { data: already } = await supabase
         .from('notifications')
         .select('id')
@@ -172,24 +176,17 @@ serve(async (req) => {
       const recipients = familyMembers.filter(m => m.role === 'parent' || m.id === run.shopper_id);
       if (recipients.length === 0) { results.push({ runId: run.id, reminder: 'skipped', reason: 'no_recipients' }); continue; }
 
-      const title = `🛒 ${run.store} run planned in 1 hour`;
-      const notifBody = `${run.name} — don't forget to add anything you need before they head out.`;
       const memberIds = recipients.map(m => m.id);
 
       if (!dryRun) {
         await fetch(notifierUrl, {
           method: 'POST', headers: authHeader,
           body: JSON.stringify({
-            type: 'custom', memberIds, familyId: run.family_id,
-            payload: { title, body: notifBody, data: { type: 'grocery_run_reminder', run_id: run.id, store: run.store } },
+            type: 'grocery_run_reminder', memberIds, familyId: run.family_id,
+            payload: { run_id: run.id, store: run.store, runName: run.name },
             persist: true,
           }),
         }).catch(e => console.warn('[grocery-reminders] run notifier error:', e.message));
-
-        await supabase.from('notifications').insert({
-          family_id: run.family_id, type: 'grocery_run_reminder', title, body: notifBody,
-          data: { run_id: run.id, store: run.store }, read: false,
-        }).catch((e: any) => console.warn('[grocery-reminders] run insert error:', e?.message));
       }
 
       results.push({ runId: run.id, reminder: 'fired' });

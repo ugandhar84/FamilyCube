@@ -384,6 +384,57 @@ export async function uploadSponsoredAsset(
 const MEMORIES_BUCKET = 'family-photos';
 const MEMORIES_SIGNED_URL_EXPIRY_SECONDS = 31_536_000; // 1 year
 
+// Video companion to uploadFamilyMemoryPhoto — same storage bucket/path
+// convention and signed-URL retry logic, but video-specific compression
+// (react-native-compressor's Video.compress, not compressImage) and a
+// direct file upload instead of the base64 round-trip photos use. Always
+// stored as video/mp4 + .mp4 extension, same reasoning as
+// uploadRecommendationMedia/uploadAndroidVideo elsewhere in this file:
+// iOS's H.264/AAC QuickTime output is MP4-container-compatible, and
+// forcing the extension/mime lets Android's ExoPlayer decode it
+// regardless of what the source reported.
+export async function uploadFamilyMemoryVideo(
+  familyId: string,
+  localUri: string,
+  suffix?: number,
+): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No session');
+
+  let compressedUri = localUri;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Video } = require('react-native-compressor');
+    compressedUri = await Video.compress(localUri, { compressionMethod: 'auto' });
+  } catch (e: any) {
+    // Matches app/_layout.tsx's own documented fallback for this package —
+    // compression just no-ops and the original file uploads uncompressed
+    // rather than blocking the whole post.
+    console.warn('[uploadFamilyMemoryVideo] compression unavailable, uploading original:', e?.message);
+  }
+
+  const path = `${session.user.id}/${familyId}/memories/${Date.now()}${suffix !== undefined ? `_${suffix}` : ''}.mp4`;
+  const blob = await fetch(compressedUri).then(r => r.blob());
+  if (blob.size === 0) throw new Error('Encoded video upload is 0 bytes — the source file may be empty or unreadable.');
+
+  const { error: upErr } = await supabase.storage
+    .from(MEMORIES_BUCKET)
+    .upload(path, blob, { upsert: false, contentType: 'video/mp4' });
+  if (upErr) throw new Error(upErr.message);
+
+  let signed: { signedUrl: string } | null = null;
+  let signErr: any = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 400 * attempt));
+    const res = await supabase.storage.from(MEMORIES_BUCKET).createSignedUrl(path, MEMORIES_SIGNED_URL_EXPIRY_SECONDS);
+    signed = res.data;
+    signErr = res.error;
+    if (signed?.signedUrl) break;
+  }
+  if (!signed?.signedUrl) throw new Error(signErr?.message ?? 'Failed to sign URL');
+  return signed.signedUrl;
+}
+
 export async function uploadFamilyMemoryPhoto(
   familyId: string,
   localUri: string,

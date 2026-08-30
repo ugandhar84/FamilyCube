@@ -16,6 +16,7 @@
  */
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
+import * as Device from 'expo-device';
 import { supabase } from './supabase';
 import { encryptLocationText } from './locationCrypto';
 
@@ -43,6 +44,14 @@ let lowBatteryAlerted = false;
  * single working pipeline instead of maintaining a second, broken one.
  */
 export async function maybeAlertLowBattery(memberId: string, batteryLevel: number | null): Promise<void> {
+  // The Simulator doesn't have a real device battery — expo-battery reads
+  // whatever the host Mac reports, and its first read right after
+  // launch/reload is known to come back as a bogus near-zero value before
+  // settling, which fired a false "low battery" alert on every single
+  // reload (live-reported: Mac was at 51%, well above the 20% threshold,
+  // yet the alert still fired). Only real devices have trustworthy battery
+  // telemetry worth alerting the family on.
+  if (!Device.isDevice) return;
   if (batteryLevel === null) return;
   if (batteryLevel > LOW_BATTERY_RESET_ABOVE) { lowBatteryAlerted = false; return; }
   if (batteryLevel > LOW_BATTERY_THRESHOLD || lowBatteryAlerted) return;

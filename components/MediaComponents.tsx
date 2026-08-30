@@ -181,14 +181,14 @@ function MediaViewerBase({ visible, mediaType, uri, onClose, urls, startIndex, o
                 key={i}
                 activeOpacity={1}
                 onPress={onClose}
-                style={{ width: screenW, flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <Image source={{ uri: u }} style={{ width: screenW, height: '100%' }}
+                style={{ width: screenW, flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <Image source={{ uri: u }} style={{ width: '100%', height: '100%' }}
                   contentFit="contain" cachePolicy="memory-disk" />
               </TouchableOpacity>
             ))}
           </ScrollView>
         ) : (
-          <TouchableOpacity activeOpacity={1} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} onPress={handleSingleTap}>
+          <TouchableOpacity activeOpacity={1} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} onPress={handleSingleTap}>
             {uri && mediaType === 'video' ? (
               <VideoView player={viewerPlayer} style={{ width: '100%', height: '100%' }}
                 contentFit="contain" nativeControls />

@@ -73,9 +73,9 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       // the shared store. Update unconditionally on success; the
       // seriesId branch additionally propagates to future occurrences.
       if (ev.seriesId && updateEventScoped) {
-        updateEventScoped(ev.id, { driverName: active.name, driverStatus: 'confirmed' }, 'following');
+        updateEventScoped(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }, 'following');
       } else {
-        updateEvent(ev.id, { driverName: active.name, driverStatus: 'confirmed' });
+        updateEvent(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' });
       }
       showToast("You're driving ✓");
     });
@@ -91,7 +91,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // reasoning RideRequestCard's own openToHelpers already documents.
   const openToHelpers = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Open to Helpers" on "${ev.title}" (id=${ev.id}) → updateEvent(openToGrandparents/openToTeens) [features/hub/parent/RideRequiredEventCard.tsx:61]`);
-    updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverStatus: undefined });
+    updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverId: undefined, driverStatus: undefined });
     showToast('Opened to helpers ✓');
   };
 
@@ -117,7 +117,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       // gap as iDrive above; a parent-to-parent handoff starts 'pending'
       // (the new parent still needs to confirm), not 'confirmed' the way
       // iDrive's self-assign is.
-      updateEvent(ev.id, { driverName: m.name, driverStatus: 'pending' });
+      updateEvent(ev.id, { driverName: m.name, driverId: m.id, driverStatus: 'pending' });
       showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
     });
     setReassignOpen(false);

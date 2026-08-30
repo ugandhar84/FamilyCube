@@ -29,6 +29,15 @@ import type { FamilyEvent } from '@/store/eventStore';
 import { eventAssignee } from '@/store/eventStore';
 import { isWorkEvent, hoursUntilEvent } from '../hubUtils';
 
+// viewer.name is only used as a display-name fallback for the rare case
+// an assignee has no real member id (an external, non-member name typed
+// into the free-text fallback field) — the actual "is this ME" check
+// below compares viewer.id against a.id, never viewer.name against
+// a.name. A name compare is fragile (a rename, two members sharing a
+// first name, or any drift between what's stored and a member's current
+// display name all break it silently) and was only ever a stand-in for a
+// real id column, which calendar_events now has (driver_id/helper_id,
+// migration 20260930240000).
 export function classifyEventUrgency(
   events: FamilyEvent[],
   viewer: { id: string; name: string },
@@ -57,7 +66,12 @@ export function classifyEventUrgency(
       continue;
     }
 
-    if (a.name === viewer.name) {
+    // id-based when the assignee is a real member (the normal case); only
+    // an external, non-member assignee (no id at all) falls back to a
+    // name compare, since there's nothing else to compare against for
+    // someone with no member row.
+    const isViewer = a.id ? a.id === viewer.id : a.name === viewer.name;
+    if (isViewer) {
       // Mirrors the original myHelperEvents' date-only bound (no upper
       // hoursUntilEvent cutoff) and its exclusion of confirmed/rejected —
       // a settled commitment belongs in Schedule, not Backlog; a

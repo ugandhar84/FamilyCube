@@ -109,7 +109,17 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                       supabase.rpc('reassign_event', {
                         p_event_id: ev.id, p_new_member_id: active.id, p_role: assigneeRole, p_actor_id: active.id,
                       }).then(({ error }) => {
-                        if (error) { console.warn('[HelperEventCard] Take Over reassign_event failed', error.message); return; }
+                        if (error) {
+                          console.warn('[HelperEventCard] Take Over reassign_event failed', error.message);
+                          showToast("Couldn't take over — please try again", 'error');
+                          return;
+                        }
+                        // Same local-state gap as every other RPC call
+                        // site in this file — DB write succeeds but the
+                        // local Zustand copy never reflected it.
+                        updateEvent(ev.id, assigneeRole === 'driver'
+                          ? { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }
+                          : { helper: active.name, helperId: active.id, helperStatus: 'confirmed' });
                         showToast('Taken over ✓');
                       });
                       const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;

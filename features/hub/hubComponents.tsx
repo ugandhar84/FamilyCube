@@ -381,7 +381,11 @@ export function AlertBanner({
       {neverDispatchedEvents.map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
         const assignee = eventAssignee(ev);
-        const isMe = assignee.name === activeName;
+        // id-based when possible — a name compare only ever stood in for
+        // a real id column, which calendar_events now has
+        // (driver_id/helper_id); falls back to name only for an external
+        // non-member assignee with no id at all.
+        const isMe = assignee.id ? assignee.id === activeMemberId : assignee.name === activeName;
         return (
           <View key={`nd-${ev.id}`} style={{
             backgroundColor: isDark ? colors.danger + '14' : colors.dangerLight,
@@ -502,16 +506,24 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
         // DB write succeeds but nothing updated the local Zustand copy —
         // same gap as EventDetailSheet's own reassign handler, so this
         // card could keep showing the OLD assignee until an unrelated
-        // fetch happened to refresh it.
+        // fetch happened to refresh it. Includes driverId/helperId (not
+        // just the display name) — classifyEventUrgency.ts now compares
+        // by id, so leaving it stale after a reassign would make the
+        // Hub's "is this mine" check keep evaluating against the OLD
+        // assignee's id until a refetch overwrote it.
         updateEvent(ev.id, assigneeRole === 'driver'
-          ? { driverName: name, driverStatus: 'confirmed' as const }
-          : { helper: name, helperStatus: 'confirmed' as const });
+          ? { driverName: name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
+          : { helper: name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
         showToast(`Assigned to ${name.split(' ')[0]} ✓`);
       });
     } else {
+      // No matching member — an external, non-member name typed into the
+      // free-text fallback; there is no id to set, driverId/helperId
+      // stay whatever they were (should already be undefined here since
+      // this branch only runs when no member matched the name).
       updateEvent(ev.id, assigneeRole === 'driver'
-        ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-        : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
+        ? { driverName: name, driverId: undefined, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+        : { helper: name, helperId: undefined, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
       showToast(`Assigned to ${name.split(' ')[0]} ✓`);
     }
     setReassigning(null);
@@ -690,7 +702,17 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   // whose lookup in otherParents came back empty, throwing instead of
   // just not matching.
   const initialPicked = assignee.name && assignee.name !== excludeName
-    ? (assignee.name === activeName ? 'me' : members.find(m => m.name === assignee.name && m.role === 'parent')?.id ?? null)
+    ? (assignee.name === activeName
+        ? 'me'
+        // id-based lookup when the assignee is a real member — was a
+        // members.find by NAME, fragile (two parents sharing a first
+        // name would resolve to the wrong id); assignee.id is now
+        // available directly since calendar_events has driver_id/
+        // helper_id columns. Falls back to the old name-based find only
+        // for an external, non-member assignee with no id at all.
+        : (assignee.id
+            ? members.find(m => m.id === assignee.id && m.role === 'parent')?.id ?? null
+            : members.find(m => m.name === assignee.name && m.role === 'parent')?.id ?? null))
     : null;
   const [picked, setPicked] = useState<string | null>(initialPicked);
   const [reason, setReason] = useState('');
@@ -1412,15 +1434,23 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                           // attempts" before her own view finally showed
                           // it, even though the DB was already correct
                           // after the very first successful call.
+                          // Also sets driverId/helperId (not just the
+                          // display name) — classifyEventUrgency.ts now
+                          // compares by id, so leaving it stale after a
+                          // reassign would make the Hub's "is this mine"
+                          // check keep evaluating against the OLD
+                          // assignee's id until a refetch overwrote it.
                           updateEvent(ev.id, assigneeRole === 'driver'
-                            ? { driverName: name, driverStatus: 'confirmed' as const }
-                            : { helper: name, helperStatus: 'confirmed' as const });
+                            ? { driverName: name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
+                            : { helper: name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
                           showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                         });
                       } else {
+                        // No matching member — an external, non-member
+                        // name with no id to set.
                         updateEvent(ev.id, assigneeRole === 'driver'
-                          ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-                          : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
+                          ? { driverName: name, driverId: undefined, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+                          : { helper: name, helperId: undefined, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
                         showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                       }
                       if (reason) {

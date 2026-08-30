@@ -58,6 +58,12 @@ export interface FamilyEvent {
   allDay?: boolean;
   category?: string;
   helper?: string;
+  // Real member id for the helper assignment — compare against THIS, never
+  // against `helper` (a display-name string), for "is this assigned to
+  // me" checks. helper stays as the display string (also covers an
+  // external non-member helper with no id). Undefined for such an
+  // external helper, or when no helper is assigned at all.
+  helperId?: string;
   helperStatus?: HelperStatus;
   declineReason?: string;
   declinedBy?: string;
@@ -92,6 +98,10 @@ export interface FamilyEvent {
   // distinct, parent-decided need (e.g. Ms. Rao tutors, Dad drives).
   rideRequired?: boolean;
   driverName?: string;
+  // Real member id for the driver assignment — same rationale as helperId
+  // above. Undefined for an external non-member driver, or when no driver
+  // is assigned.
+  driverId?: string;
   driverStatus?: HelperStatus;
 
   // A both-ways ride request forks into 2 fully independent rows (Drop-off
@@ -226,13 +236,23 @@ export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category
 // never saw a driver had already been named (QA Round 11, Critical
 // Finding C2). This normalizes both field pairs into one shape so a
 // filter/component only has to check one thing.
-export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperStatus' | 'driverName' | 'driverStatus'>): {
+export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperId' | 'helperStatus' | 'driverName' | 'driverId' | 'driverStatus'>): {
   name: string | undefined;
+  // Real member id, when the assignee is a real family member (undefined
+  // for an external non-member name typed into the free-text fallback).
+  // "Is this assigned to ME" checks (e.g. classifyEventUrgency.ts) must
+  // compare id-to-id, never name-to-name — a name-string compare is
+  // fragile (a rename, two members sharing a first name, or any drift
+  // between what's stored and a member's current display name all break
+  // it silently) and was never the intended design; it only existed
+  // because calendar_events had no id column for driver/helper until
+  // migration 20260930240000 added one.
+  id: string | undefined;
   status: HelperStatus | undefined;
 } {
-  if (e.helper) return { name: e.helper, status: e.helperStatus };
-  if (e.driverName) return { name: e.driverName, status: e.driverStatus };
-  return { name: undefined, status: undefined };
+  if (e.helper) return { name: e.helper, id: e.helperId, status: e.helperStatus };
+  if (e.driverName) return { name: e.driverName, id: e.driverId, status: e.driverStatus };
+  return { name: undefined, id: undefined, status: undefined };
 }
 
 // Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
@@ -544,6 +564,7 @@ export function fromRow(row: any): FamilyEvent {
     location:          row.location ?? undefined,
     notes:             row.notes ?? undefined,
     helper:            row.helper_name ?? undefined,
+    helperId:          row.helper_id ?? undefined,
     helperStatus:      row.helper_status ?? undefined,
     helperRequestedBy: row.helper_requested_by ?? undefined,
     declineReason:     row.helper_decline_reason ?? undefined,
@@ -564,6 +585,7 @@ export function fromRow(row: any): FamilyEvent {
     rideCoins:              row.ride_coins ?? undefined,
     rideRequired:           row.ride_required ?? false,
     driverName:             row.driver_name ?? undefined,
+    driverId:               row.driver_id ?? undefined,
     driverStatus:           row.driver_status ?? undefined,
     pickupConfirmedAt:      row.pickup_confirmed_at ?? undefined,
     pickupConfirmedBy:      row.pickup_confirmed_by ?? undefined,
@@ -611,6 +633,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     location:              ev.location ?? null,
     notes:                 ev.notes ?? null,
     helper_name:           ev.helper ?? null,
+    helper_id:             ev.helperId ?? null,
     helper_status:         ev.helperStatus ?? null,
     helper_requested_by:   ev.helperRequestedBy ?? null,
     helper_decline_reason: ev.declineReason ?? null,
@@ -631,6 +654,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     ride_coins:                 ev.rideCoins ?? null,
     ride_required:              ev.rideRequired ?? false,
     driver_name:                ev.driverName ?? null,
+    driver_id:                  ev.driverId ?? null,
     driver_status:              ev.driverStatus ?? null,
     pickup_confirmed_at:        ev.pickupConfirmedAt ?? null,
     pickup_confirmed_by:        ev.pickupConfirmedBy ?? null,
@@ -691,7 +715,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   title: 'title', date: 'date', time: 'start_time', endTime: 'end_time', allDay: 'all_day',
   type: 'type', category: 'category', color: 'color', memberId: 'member_id', memberIds: 'member_ids',
   location: 'location', notes: 'notes',
-  helper: 'helper_name', helperStatus: 'helper_status', helperRequestedBy: 'helper_requested_by',
+  helper: 'helper_name', helperId: 'helper_id', helperStatus: 'helper_status', helperRequestedBy: 'helper_requested_by',
   declineReason: 'helper_decline_reason', declinedBy: 'helper_declined_by',
   doctorName: 'doctor_name', subject: 'subject', coachName: 'coach_name',
   pickupLocation: 'pickup_location', dropLocation: 'drop_location',
@@ -699,7 +723,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   tripAlertDismissedAt: 'trip_alert_dismissed_at', tripAlertDismissedBy: 'trip_alert_dismissed_by',
   isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids',
   isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
-  driverName: 'driver_name', driverStatus: 'driver_status',
+  driverName: 'driver_name', driverId: 'driver_id', driverStatus: 'driver_status',
   pickupConfirmedAt: 'pickup_confirmed_at', pickupConfirmedBy: 'pickup_confirmed_by',
   createdBy: 'created_by', createdAt: 'created_at', updatedBy: 'updated_by', updatedAt: 'updated_at',
   deletedBy: 'deleted_by', alertCall: 'alert_call', alertCallLeadMinutes: 'alert_call_lead_minutes',

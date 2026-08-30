@@ -55,8 +55,8 @@ export function RideCoordinationRow({ ev, members, active, colors, isDark }: {
       // 'pending' (the new parent still needs to confirm), same as
       // RideRequiredEventCard's own parent-to-parent reassignTo.
       updateEvent(ev.id, role === 'driver'
-        ? { driverName: m.name, driverStatus: 'pending' }
-        : { helper: m.name, helperStatus: 'pending' });
+        ? { driverName: m.name, driverId: m.id, driverStatus: 'pending' }
+        : { helper: m.name, helperId: m.id, helperStatus: 'pending' });
       showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
     });
     setReassignOpen(false);

@@ -196,7 +196,15 @@ export function deriveEventActions(
   const assigneeRole = eventAssigneeRole(ev);
   const helperPending = assignee.status === 'pending';
   const helperRejected = assignee.status === 'rejected';
-  const isSelfAssigned = !!viewer.name && assignee.name === viewer.name;
+  // id-based when the assignee is a real member (the normal case); only an
+  // external, non-member assignee (no id at all — e.g. a name typed into
+  // the free-text fallback field) falls back to a name compare, since
+  // there's nothing else to compare against for someone with no member
+  // row. A name compare is fragile (a rename, two members sharing a first
+  // name, or any drift between what's stored and the viewer's current
+  // display name) and was only ever a stand-in for a real id column,
+  // which calendar_events now has (driver_id/helper_id).
+  const isSelfAssigned = assignee.id ? assignee.id === viewer.id : (!!viewer.name && assignee.name === viewer.name);
   const helperConfirmed = assignee.status === 'confirmed';
 
   const showRemind = !isPast && !isWork && isViewerParent && !!assignee.name && helperPending && !isSelfAssigned;

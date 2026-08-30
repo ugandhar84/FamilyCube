@@ -769,8 +769,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
           // showing the OLD driver/helper until some unrelated fetch
           // happened to refresh it, even though the DB was already right.
           updateEvent(id, role === 'driver'
-            ? { driverName: targetMember.name, driverStatus: 'confirmed' as const }
-            : { helper: targetMember.name, helperStatus: 'confirmed' as const });
+            ? { driverName: targetMember.name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
+            : { helper: targetMember.name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
         });
       } else {
         // No matching member row for the suggested name — fall back to the

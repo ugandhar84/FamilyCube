@@ -22,12 +22,20 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 // Must exactly match the redirect_uri the client sent in the ORIGINAL
-// authorization request (lib/calendarOAuth.ts's oauthBounceUrl()), not the
-// final familycube:// deep link the bounce page 302s to afterward — the
-// token endpoint checks this against what was registered/used at auth
-// time and rejects a mismatch, even though by this point the code has
-// already carried the user all the way back into the app.
-const REDIRECT_URI = `${Deno.env.get('SUPABASE_URL')!}/functions/v1/calendar-oauth-redirect`;
+// authorization request for that same provider — the token endpoint
+// checks this against what was actually used at auth time and rejects a
+// mismatch. Google's OAuth client is a "Web application" type, which
+// refuses a custom-scheme redirect URI directly, so its auth request (and
+// this token exchange) goes through the HTTPS bounce page instead — see
+// the final familycube:// deep link the bounce page 302s to afterward is
+// NOT what gets sent here. Microsoft Entra's "Mobile and desktop
+// applications" platform has no such restriction and has
+// familycube://calendar-oauth-callback registered directly — using the
+// Google bounce URL for Outlook here was a real bug (both providers
+// shared one constant), producing a hard invalid_request: redirect_uri
+// error on every Outlook connect attempt.
+const GOOGLE_REDIRECT_URI = `${Deno.env.get('SUPABASE_URL')!}/functions/v1/calendar-oauth-redirect`;
+const OUTLOOK_REDIRECT_URI = 'familycube://calendar-oauth-callback';
 
 const GOOGLE_CLIENT_ID     = Deno.env.get('GOOGLE_CALENDAR_CLIENT_ID') ?? '';
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CALENDAR_CLIENT_SECRET') ?? '';
@@ -97,7 +105,7 @@ async function exchangeGoogle(code: string, codeVerifier?: string): Promise<{ ac
       client_secret: GOOGLE_CLIENT_SECRET,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: GOOGLE_REDIRECT_URI,
       ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
     }),
   });
@@ -132,7 +140,7 @@ async function exchangeOutlook(code: string, codeVerifier?: string): Promise<{ a
       client_secret: MS_CLIENT_SECRET,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: OUTLOOK_REDIRECT_URI,
       scope: 'offline_access Calendars.ReadWrite User.Read',
       ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
     }),

@@ -107,9 +107,16 @@ function authUrlFor(provider: CalendarProvider, purpose: CalendarPurpose, client
     });
     return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
+  // Unlike Google's Web-client type, Microsoft Entra's "Mobile and
+  // desktop applications" platform accepts a custom-scheme redirect URI
+  // directly — no HTTPS bounce needed, and using oauthBounceUrl() here by
+  // mistake was a real bug: it sent Microsoft a redirect_uri that was
+  // never actually registered on the app (only familycube://... and the
+  // unrelated msauth://... MSAL-style URI are), producing a hard
+  // invalid_request: redirect_uri error every time.
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: oauthBounceUrl(),
+    redirect_uri: REDIRECT_URI,
     response_type: 'code',
     response_mode: 'query',
     scope: scopeFor(provider, purpose),

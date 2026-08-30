@@ -68,6 +68,13 @@ async function ensurePermission(): Promise<boolean> {
 // unrelated events) would be far more intrusive than opting into a
 // clearly-labeled, easy-to-hide-or-delete calendar of its own. Created
 // once per device, reused after.
+//
+// Exported (as ensureSyncCalendarIdForUI) so CalendarSyncScreen's toggle
+// handler can verify creation actually succeeded before claiming "Apple
+// Calendar sync on" — this can fail silently for device-specific reasons
+// (no usable calendar source, iCloud not signed in) and previously did so
+// with zero feedback to the member at all.
+export { ensureSyncCalendarId as ensureSyncCalendarIdForUI };
 async function ensureSyncCalendarId(): Promise<string | null> {
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   const existing = calendars.find(c => c.title === SYNC_CALENDAR_NAME);
@@ -76,6 +83,10 @@ async function ensureSyncCalendarId(): Promise<string | null> {
   try {
     if (Platform.OS === 'ios') {
       const defaultCal = await Calendar.getDefaultCalendarAsync();
+      if (!defaultCal?.source) {
+        console.warn('[calendarSync2Way] getDefaultCalendarAsync returned no usable source', defaultCal);
+        return null;
+      }
       return await Calendar.createCalendarAsync({
         title: SYNC_CALENDAR_NAME,
         color: '#DF613C',
@@ -90,7 +101,10 @@ async function ensureSyncCalendarId(): Promise<string | null> {
     // Android needs a real account-backed source — reuse whatever source
     // the device's existing calendars already use rather than fabricating one.
     const source = calendars[0]?.source;
-    if (!source) return null;
+    if (!source) {
+      console.warn('[calendarSync2Way] no existing calendar source found on Android to attach the sync calendar to');
+      return null;
+    }
     return await Calendar.createCalendarAsync({
       title: SYNC_CALENDAR_NAME,
       color: '#DF613C',
@@ -102,7 +116,12 @@ async function ensureSyncCalendarId(): Promise<string | null> {
       accessLevel: Calendar.CalendarAccessLevel.OWNER,
     });
   } catch (e) {
-    console.warn('[calendarSync2Way] could not create sync calendar', e);
+    // Was a silent catch-and-return-null — the ONE call site
+    // (CalendarSyncScreen's toggle handler) has no visibility into why
+    // "nothing shows up on-device at all" happens, since every failure
+    // here looks identical from the caller's side. Logging the real
+    // error is the only way to diagnose this without a device debugger.
+    console.warn('[calendarSync2Way] could not create sync calendar', e instanceof Error ? e.message : e);
     return null;
   }
 }

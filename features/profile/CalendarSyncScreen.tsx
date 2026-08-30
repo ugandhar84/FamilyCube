@@ -66,6 +66,24 @@ export default function CalendarSyncScreen() {
           return;
         }
       }
+      if (next) {
+        // Verify the on-device "FamilyCube" calendar actually gets
+        // created BEFORE claiming success — ensureSyncCalendarId can fail
+        // silently for several device-specific reasons (no usable default
+        // calendar source, iCloud not signed in, etc.), and the toggle
+        // previously showed "Apple Calendar sync on" regardless, leaving
+        // the member with a toggle that looks enabled but never syncs
+        // anything at all with no way to tell why.
+        const { ensureSyncCalendarIdForUI } = await import('@/lib/calendarSync2Way');
+        const calendarId = await ensureSyncCalendarIdForUI();
+        if (!calendarId) {
+          showAlert(
+            "Couldn't set up Apple Calendar sync",
+            'FamilyCube could not create its calendar on this device. Make sure you have at least one calendar account set up (iCloud, or another account) in the iOS Settings app, then try again.',
+          );
+          return;
+        }
+      }
       await updateMember(activeMemberId, { appleCalendarSyncEnabled: next });
       showToast(next ? 'Apple Calendar sync on' : 'Apple Calendar sync off');
       if (next) {

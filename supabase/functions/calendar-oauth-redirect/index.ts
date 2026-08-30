@@ -12,9 +12,15 @@
 // domain-shape bounce, the real exchange still happens in
 // calendar-oauth-exchange after the app receives the deep link.
 //
-// Register this exact URL as the Authorized redirect URI on the Google
-// Web client (and the Microsoft Entra app):
+// Register this exact URL as the Authorized redirect URI on the GOOGLE
+// Web client ONLY:
 //   https://<project-ref>.supabase.co/functions/v1/calendar-oauth-redirect
+// Microsoft Entra needs familycube://calendar-oauth-callback registered
+// DIRECTLY instead (under "Mobile and desktop applications") — Entra has
+// no equivalent restriction on custom-scheme redirect URIs, so it never
+// needs this bounce at all. Sending Microsoft this bounce URL instead was
+// a real bug (both providers briefly shared one constant) that produced
+// invalid_request: redirect_uri on every Outlook connect attempt.
 //
 // Deploy: supabase functions deploy calendar-oauth-redirect --no-verify-jwt
 // (must be reachable with no Supabase auth header — Google/Microsoft call

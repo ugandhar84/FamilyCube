@@ -19,6 +19,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
+import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { decodeRideLate } from './KidModals';
@@ -59,6 +60,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 }) {
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
+  // events (from selectDate) is scoped to a single day tied to whatever
+  // date the Calendar tab last had open — a ride/helper assignment made
+  // for any OTHER date never reached Household Backlog's "is this
+  // assigned to me" check at all, live or otherwise (confirmed live:
+  // "Pick up from Office," assigned days out, never appeared on the
+  // Hub). KidView/TeenView/SeniorView already solved this correctly via
+  // useUpcomingOpenEvents (its own real-time-subscribed, multi-day
+  // window, independent of the Calendar tab's single selected date) —
+  // ParentView was the one view still missing it. Matching that existing,
+  // proven pattern here instead of introducing a fourth different
+  // data-fetching mechanism.
+  const { events: backlogWindowEvents } = useUpcomingOpenEvents((active as any).familyId);
   // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
   // trial ended, not subscribed yet — a dismissible nag, not a lock.
   // trialDaysLeft === -1 means "family data hasn't loaded yet" (computeTrial's
@@ -139,8 +152,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // e.helper only, silently dropping driverName-paired events from a
   // parent's own Household Backlog; the same unconfirmed ride could
   // previously show in both AlertBanner and Action Needed at once).
+  // upcomingEvents may be briefly empty right after mount (its own fetch
+  // hasn't resolved yet) — fall back to the day-scoped `events` rather
+  // than showing an empty backlog for a moment; it settles to the real,
+  // wider data within one render once useUpcomingOpenEvents' fetch lands.
   const { unassigned, myPending, coParentPending } = classifyEventUrgency(
-    events, { id: active.id, name: active.name }, today,
+    backlogWindowEvents.length > 0 ? backlogWindowEvents : events, { id: active.id, name: active.name }, today,
   );
   // ActionNeededSection still renders 2 distinct card types (RideRequestCard
   // vs RideRequiredEventCard) — this split is purely about which card to

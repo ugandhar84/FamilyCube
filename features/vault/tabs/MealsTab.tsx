@@ -18,13 +18,11 @@ import {
 } from './meals/types';
 import FlatSectionHeader from './meals/FlatSectionHeader';
 import RecipeModal from './meals/RecipeModal';
-import EditMealModal from './meals/EditMealModal';
 import DayCard from './meals/DayCard';
 import AiPlannerBanner from './meals/AiPlannerBanner';
 import MealSelectionPhase from './meals/MealSelectionPhase';
-import AddMealSheet from './meals/AddMealSheet';
+import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
-import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
@@ -56,17 +54,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
   const [editMeal, setEditMeal]         = useState<Meal | null>(null);
   const [addDay, setAddDay]             = useState<string | null>(null);
-  const [addTitle, setAddTitle]         = useState('');
-  const [addType, setAddType]           = useState('dinner');
-  const [addEmoji, setAddEmoji]         = useState('🍽️');
-  const [addChefId, setAddChefId]       = useState('');
-  const [addPrepMins, setAddPrepMins]   = useState('');
-  const [addKidRating, setAddKidRating] = useState(3);
-  const [addDietTags, setAddDietTags]   = useState<string[]>([]);
-  const [addIngredients, setAddIngredients] = useState('');
-  const [addPrepSteps, setAddPrepSteps]     = useState('');
-  const [addShowEmoji, setAddShowEmoji]     = useState(false);
-  const [addStartTime, setAddStartTime]     = useState<Date | null>(null);
+  const [savingMeal, setSavingMeal]     = useState(false);
 
   // Pulse animation for the AI dot
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -218,13 +206,6 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     setAddedCart(true);
   };
 
-  const resetAddForm = () => {
-    setAddDay(null); setAddTitle(''); setAddType('dinner'); setAddEmoji('🍽️');
-    setAddChefId(''); setAddPrepMins(''); setAddKidRating(3);
-    setAddDietTags([]); setAddIngredients(''); setAddPrepSteps(''); setAddShowEmoji(false);
-    setAddStartTime(null);
-  };
-
   // Create a cooking quest for the assigned chef
   const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null) => {
     const DAYS_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -260,38 +241,40 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     });
   };
 
-  const addManualMeal = async () => {
-    if (!addDay || !addTitle.trim()) return;
-    const chefId = addChefId || null;
-    const prepMins = addPrepMins ? parseInt(addPrepMins) : null;
-    const { data } = await supabase.from('family_meals').insert({
-      id: `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`,
-      family_id: familyId, week_of: curWeek,
-      day: addDay, title: addTitle.trim(), type: addType,
-      emoji: addEmoji,
-      chef_id: chefId,
-      prep_minutes: prepMins,
-      dietary_tags: addDietTags,
-      ingredients: addIngredients.split('\n').map(s => s.trim()).filter(Boolean),
-      prep_steps: addPrepSteps.split('\n').map(s => s.trim()).filter(Boolean),
-      ai_generated: false,
-      start_time: addStartTime ? fmtTimeLabel(addStartTime) : null,
-      timezone: addStartTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
-    }).select().single();
-    if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
-    if (chefId) createCookingQuest(addTitle.trim(), chefId, addDay, prepMins);
-    resetAddForm();
-  };
-
-  const updateMeal = async (id: string, patch: Partial<Meal>) => {
-    const prev = meals.find(m => m.id === id);
-    await supabase.from('family_meals').update(patch).eq('id', id);
-    setMeals(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m));
-    showToast('Meal updated');
-    // Create quest if chef was newly assigned (or changed)
-    if (patch.chef_id && patch.chef_id !== prev?.chef_id && prev) {
-      const meal = { ...prev, ...patch };
-      createCookingQuest(meal.title, patch.chef_id, meal.day, meal.prep_minutes);
+  // Single save handler for both MealFormSheet modes — add mode needs
+  // addDay set (which day this new meal belongs to), edit mode needs
+  // editMeal set (the row being patched). Was two separate functions
+  // (addManualMeal/updateMeal) each hand-maintaining their own insert/
+  // update + cooking-quest logic; merged since MealFormSheet.tsx itself
+  // is now the single component backing both flows.
+  const saveMeal = async (patch: {
+    title: string; type: string; emoji: string; chef_id: string | null;
+    prep_minutes: number | null; dietary_tags: string[]; ingredients: string[];
+    prep_steps: string[]; start_time: string | null; timezone: string | null;
+  }) => {
+    setSavingMeal(true);
+    try {
+      if (editMeal) {
+        const prevChefId = editMeal.chef_id;
+        await supabase.from('family_meals').update(patch).eq('id', editMeal.id);
+        setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...patch } : m));
+        showToast('Meal updated');
+        if (patch.chef_id && patch.chef_id !== prevChefId) {
+          createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
+        }
+        setEditMeal(null);
+      } else if (addDay) {
+        const { data } = await supabase.from('family_meals').insert({
+          id: `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`,
+          family_id: familyId, week_of: curWeek, day: addDay,
+          ...patch, ai_generated: false,
+        }).select().single();
+        if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
+        if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+        setAddDay(null);
+      }
+    } finally {
+      setSavingMeal(false);
     }
   };
 
@@ -368,7 +351,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
               onRecipe={m => setActiveRecipe(m)}
               onEdit={m => setEditMeal(m)}
               onDelete={isKid ? undefined : m => deleteMeal(m.id)}
-              onAdd={() => { setAddDay(day); setAddTitle(''); setAddType('Dinner'); }}
+              onAdd={() => setAddDay(day)}
             />
           ))}
         </View>
@@ -406,23 +389,15 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
         )}
       </View>
 
-      {/* ── Add Meal Sheet ─────────────────────────────── */}
-      <AddMealSheet
-        colors={colors} isDark={isDark}
-        addDay={addDay}
-        addTitle={addTitle} setAddTitle={setAddTitle}
-        addType={addType} setAddType={setAddType}
-        addEmoji={addEmoji} setAddEmoji={setAddEmoji}
-        addChefId={addChefId} setAddChefId={setAddChefId}
-        addPrepMins={addPrepMins} setAddPrepMins={setAddPrepMins}
-        addDietTags={addDietTags} setAddDietTags={setAddDietTags}
-        addIngredients={addIngredients} setAddIngredients={setAddIngredients}
-        addPrepSteps={addPrepSteps} setAddPrepSteps={setAddPrepSteps}
-        addShowEmoji={addShowEmoji} setAddShowEmoji={setAddShowEmoji}
-        addStartTime={addStartTime} setAddStartTime={setAddStartTime}
-        members={members}
-        resetAddForm={resetAddForm}
-        addManualMeal={addManualMeal}
+      {/* ── Meal Form Sheet — shared Add/Edit stepper ────── */}
+      <MealFormSheet
+        visible={!!addDay || !!editMeal}
+        day={addDay}
+        editingMeal={editMeal}
+        members={members} colors={colors} isDark={isDark}
+        onClose={() => { setAddDay(null); setEditMeal(null); }}
+        onSave={saveMeal}
+        saving={savingMeal}
       />
 
       {/* Modals */}
@@ -431,11 +406,6 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
         onAddToGrocery={addGroceryItems}
         senderId={activeMember?.id ?? ''}
         colors={colors} isDark={isDark} />
-
-      <EditMealModal meal={editMeal} visible={!!editMeal}
-        onClose={() => setEditMeal(null)}
-        onSave={updateMeal}
-        members={members} colors={colors} isDark={isDark} />
     </>
   );
 }

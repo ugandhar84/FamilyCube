@@ -94,6 +94,35 @@ export default function HubScreen() {
     })();
   }, [familyId]);
 
+  // Personal Google connections' inbound sync — Google's channels.watch
+  // push requires the webhook domain to be verified in Search Console
+  // under the same Cloud project as the OAuth client, which isn't
+  // achievable on a supabase.co domain we don't control DNS for (confirmed
+  // live: watch registration succeeds but Google never actually delivers
+  // a push here). Polling on the same reactive-on-Hub-open + 10-minute
+  // throttle pattern as the FreeBusy sync above is the real inbound-sync
+  // path — sync_token keeps each poll cheap. Outlook keeps its own real
+  // push subscription (no equivalent domain requirement), so this is
+  // Google-only.
+  useEffect(() => {
+    if (!familyId) return;
+    const THROTTLE_MS = 10 * 60_000;
+    const key = `calendar_google_poll_last_sync_${familyId}`;
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const last = await AsyncStorage.getItem(key);
+        if (last && Date.now() - Number(last) < THROTTLE_MS) return;
+        await AsyncStorage.setItem(key, String(Date.now()));
+        const { supabase } = await import('@/lib/supabase');
+        supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
+          .catch(e => console.warn('[HubScreen] calendar-google-poll failed', e?.message));
+      } catch (e) {
+        console.warn('[HubScreen] google poll throttle check failed', e);
+      }
+    })();
+  }, [familyId]);
+
   // Apple/EventKit 2-way sync's inbound half — no push/webhook mechanism
   // exists for a local device calendar, so this reconciles on foreground
   // instead (lib/calendarSync2Way.ts's own throttle keeps this to once

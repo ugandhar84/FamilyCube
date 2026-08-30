@@ -3,18 +3,26 @@
 // connection (registered via the `watch` API — see
 // calendar-channel-renewal, which only ever registers channels for
 // purpose='personal' connections; work-purpose connections use FreeBusy
-// polling instead and never have a channel). Google's push is a PING
-// ONLY, never a diff — on receiving one, this fetches the actual
-// incremental change set via the stored sync_token and reconciles it into
-// calendar_events.
+// polling instead and never have a channel).
+//
+// IMPORTANT: Google's channels.watch push requires the webhook `address`
+// domain to be verified in Google Search Console under the SAME Cloud
+// project as the OAuth client — not achievable on a supabase.co domain we
+// don't control DNS for. In practice Google never actually calls this
+// endpoint on this project (confirmed: watch registration "succeeds" but
+// no push ever arrives). calendar-google-poll is the real inbound-sync
+// path today, on a schedule instead of push. This function is kept as a
+// harmless no-op-safe fallback in case a custom domain + Search Console
+// verification is set up later, at which point real pushes would start
+// arriving here with zero further code changes needed.
 //
 // Deploy: supabase functions deploy calendar-webhook-google --no-verify-jwt
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getValidAccessToken, type CalendarConnectionRow } from '../_shared/calendarTokens.ts';
-import { googleBodyToPortablePatch } from '../_shared/calendarFieldMapping.ts';
+import type { CalendarConnectionRow } from '../_shared/calendarTokens.ts';
+import { reconcileGoogleChanges } from '../_shared/googleReconcile.ts';
 
 serve(async (req) => {
   const channelId = req.headers.get('X-Goog-Channel-Id');
@@ -48,79 +56,3 @@ serve(async (req) => {
     return new Response('error logged', { status: 200 });
   }
 });
-
-async function reconcileGoogleChanges(supabase: any, connection: CalendarConnectionRow): Promise<void> {
-  const accessToken = await getValidAccessToken(supabase, connection);
-  const calendarId = encodeURIComponent(connection.external_calendar_id ?? 'primary');
-  let syncToken = connection.sync_token;
-  let pageToken: string | undefined;
-  const changedItems: any[] = [];
-
-  do {
-    const params = new URLSearchParams();
-    if (pageToken) params.set('pageToken', pageToken);
-    else if (syncToken) params.set('syncToken', syncToken);
-    else params.set('timeMin', new Date().toISOString());
-
-    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?${params}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.status === 410) {
-      await supabase.from('calendar_connections').update({ sync_token: null }).eq('id', connection.id);
-      return reconcileGoogleChanges(supabase, { ...connection, sync_token: null });
-    }
-    if (!res.ok) throw new Error(`Google events.list failed: ${res.status} ${await res.text()}`);
-    const json = await res.json();
-    changedItems.push(...(json.items ?? []));
-    pageToken = json.nextPageToken;
-    if (json.nextSyncToken) syncToken = json.nextSyncToken;
-  } while (pageToken);
-
-  for (const item of changedItems) {
-    await reconcileOneGoogleEvent(supabase, connection, item);
-  }
-
-  if (syncToken) await supabase.from('calendar_connections').update({ sync_token: syncToken }).eq('id', connection.id);
-}
-
-async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<void> {
-  const { data: link } = await supabase.from('event_external_links')
-    .select('*').eq('connection_id', connection.id).eq('external_event_id', item.id).maybeSingle();
-
-  if (item.status === 'cancelled') {
-    if (link) {
-      await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:google' }).eq('id', link.event_id);
-      await supabase.from('event_external_links').delete().eq('id', link.id);
-    }
-    return;
-  }
-
-  const patch = googleBodyToPortablePatch(item);
-
-  if (link) {
-    const { data: localRow } = await supabase.from('calendar_events').select('updated_at, deleted_at').eq('id', link.event_id).maybeSingle();
-    if (!localRow || localRow.deleted_at) return;
-    const externalModified = item.updated ? new Date(item.updated).getTime() : Date.now();
-    const localModified = localRow.updated_at ? new Date(localRow.updated_at).getTime() : 0;
-    if (externalModified <= localModified) return; // conflict rule: local wins, next outbound push corrects the external side
-    await supabase.from('calendar_events').update({
-      title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
-      all_day: patch.allDay, location: patch.location, notes: patch.notes,
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
-    }).eq('id', link.event_id);
-    await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item.etag ?? null }).eq('id', link.id);
-  } else {
-    const newId = crypto.randomUUID();
-    await supabase.from('calendar_events').insert({
-      id: newId, family_id: connection.family_id, member_id: connection.member_id,
-      title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
-      all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
-      type: 'event', category: 'Event',
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
-    });
-    await supabase.from('event_external_links').insert({
-      event_id: newId, connection_id: connection.id, external_event_id: item.id,
-      external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
-    });
-  }
-}

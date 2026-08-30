@@ -150,13 +150,30 @@ function uid() { return `hr_${Date.now()}_${Math.random().toString(36).slice(2, 
 function now() { return new Date().toISOString(); }
 
 // Fire-and-forget push via family-notifier. Resolves familyId from requesterId.
-async function notifyHelp(requesterId: string, type: string, payload: Record<string, unknown>) {
+// `targetMemberId` is who the notification should actually reach — for
+// help_requested this is unused (family-notifier auto-routes to all
+// parents); for every member-specific type (help_resolved,
+// help_offered/accepted/declined below) family-notifier's NOTIFY_SPECIFIC
+// resolution reads payload.memberId to pick the one recipient, which none
+// of this file's call sites were ever setting — they passed `requesterId`
+// as a payload FIELD NAME (not `memberId`), so every help_resolved
+// notification silently failed to resolve a recipient and reached no one.
+async function notifyHelp(
+  requesterId: string, type: string, payload: Record<string, unknown>,
+  targetMemberId?: string, excludeMemberId?: string,
+) {
   try {
     const { data } = await supabase.from('members').select('family_id').eq('id', requesterId).single();
     const familyId = data?.family_id;
     if (!familyId) return;
     supabase.functions
-      .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
+      .invoke('family-notifier', {
+        body: {
+          type, familyId, persist: true,
+          payload: { ...payload, memberId: targetMemberId ?? requesterId },
+          excludeMemberId,
+        },
+      })
       .catch(e => console.warn('[helpStore] notify failed:', e?.message));
   } catch (e: any) {
     console.warn('[helpStore] notify error:', e?.message);
@@ -345,6 +362,10 @@ export const useHelpStore = create<HelpState>((set, get) => ({
       status: 'assigned', assigned_helper: memberName, assigned_helper_id: memberId,
       offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
     });
+    const req = get().requests.find(r => r.id === id);
+    if (req) notifyHelp(req.requesterId, 'help_offered', {
+      requestId: id, title: req.title, helperName: memberName,
+    }, req.requesterId, memberId);
   },
 
   // ── Offer to members ──────────────────────────────────────────────────────
@@ -363,6 +384,24 @@ export const useHelpStore = create<HelpState>((set, get) => ({
       offered_to_ids: toIds, offered_by_name: byName, offered_by_id: byId ?? null,
       offer_note: note ?? null,
     });
+    // Unlike the other help_* notifications, the recipients here are the
+    // people the request was offered TO, not the requester — a direct
+    // family-notifier call rather than notifyHelp's single-target helper.
+    const req = get().requests.find(r => r.id === id);
+    if (req && toIds.length) {
+      supabase.from('members').select('family_id').eq('id', req.requesterId).single()
+        .then(({ data }) => {
+          const familyId = data?.family_id;
+          if (!familyId) return;
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'help_offered', familyId, memberIds: toIds, persist: true,
+              excludeMemberId: byId,
+              payload: { requestId: id, title: req.title, helperName: byName, note },
+            },
+          }).catch(e => console.warn('[helpStore] offer notify failed:', e?.message));
+        });
+    }
   },
 
   // ── Accept offer ──────────────────────────────────────────────────────────
@@ -381,6 +420,10 @@ export const useHelpStore = create<HelpState>((set, get) => ({
       status: 'assigned', assigned_helper: byName, assigned_helper_id: byId,
       offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
     });
+    const req = get().requests.find(r => r.id === id);
+    if (req) notifyHelp(req.requesterId, 'help_accepted', {
+      requestId: id, title: req.title, helperName: byName,
+    }, req.requesterId, byId);
   },
 
   // ── Decline offer ─────────────────────────────────────────────────────────
@@ -403,6 +446,7 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     });
     set({ requests: next });
     saveCache(next);
+    const original = get().requests.find(r => r.id === id);
     const updated = next.find(r => r.id === id);
     if (updated) {
       patchRow(id, {
@@ -414,6 +458,16 @@ export const useHelpStore = create<HelpState>((set, get) => ({
         last_declined_by_name: byName,
         last_decline_comment: comment,
       });
+    }
+    // Tell whoever ROUTED the offer (offeredById), not the original
+    // requester — they're the one who needs to know it was turned down and
+    // may need to re-route to someone else. offeredById is read from the
+    // PRE-decline state since declining clears it once the pool is empty.
+    if (updated && original?.offeredById) {
+      notifyHelp(original.requesterId, 'help_declined', {
+        requestId: id, title: updated.title, byName,
+        backToPending: updated.status === 'pending',
+      }, original.offeredById, byId);
     }
   },
 

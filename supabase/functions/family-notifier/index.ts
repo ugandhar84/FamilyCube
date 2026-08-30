@@ -105,6 +105,14 @@ type NotifType =
   | 'chore_auto_released'
   | 'help_requested'
   | 'help_resolved'
+  // store/helpStore.ts audit (2026-08-29) — selfAssign/offerToMembers/
+  // acceptOffer/declineOffer previously updated status with zero
+  // notification; a requester had no way to know their help request had
+  // been picked up, offered to someone else, or turned down short of
+  // manually reopening the Help screen.
+  | 'help_offered'
+  | 'help_accepted'
+  | 'help_declined'
   | 'reward_redeemed'
   | 'reward_decision'
   // store/rewardStore.ts's deleteReward — reward/store audit pass. A parent
@@ -226,6 +234,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   chat_mention: 'chat',
   coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards', reward_removed: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
+  help_offered: 'requests', help_accepted: 'requests', help_declined: 'requests',
   kid_request: 'requests', kid_request_decision: 'requests',
   kid_request_helper_assigned: 'requests', kid_request_completed: 'requests', kid_request_items_decision: 'requests',
   schedule_conflict: 'family',
@@ -517,6 +526,38 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: p.outcome === 'completed'
           ? `"${p.title}" was completed by ${p.byName} — great teamwork! 🎉`
           : `"${p.title}" was rejected${p.reason ? `: ${p.reason}` : ''}`,
+        data: { screen: 'Help', requestId: p.requestId },
+      };
+    case 'help_offered':
+      // Two distinct audiences share this type: the requester being told
+      // someone picked up their request (selfAssign — has helperName, no
+      // note), vs. the person(s) a request was routed TO, being asked if
+      // they'll take it (offerToMembers — carries `note` as the ask/context,
+      // even when empty string, which selfAssign's payload never sets).
+      return p.note !== undefined
+        ? {
+            title: `🙋 ${p.helperName ?? 'Someone'} could use your help`,
+            body: (p.note as string) ? `"${p.title}" — ${p.note}` : `Can you help with "${p.title}"?`,
+            sound: 'default',
+            data: { screen: 'Help', requestId: p.requestId },
+          }
+        : {
+            title: '🙋 Someone\'s helping!',
+            body: `${p.helperName} is taking care of "${p.title}"`,
+            data: { screen: 'Help', requestId: p.requestId },
+          };
+    case 'help_accepted':
+      return {
+        title: '✅ Help Offer Accepted',
+        body: `${p.helperName} accepted and will help with "${p.title}"`,
+        data: { screen: 'Help', requestId: p.requestId },
+      };
+    case 'help_declined':
+      return {
+        title: '👋 Help Offer Declined',
+        body: p.backToPending
+          ? `${p.byName} can't help with "${p.title}" right now — it's back open for anyone else.`
+          : `${p.byName} can't help with "${p.title}" right now.`,
         data: { screen: 'Help', requestId: p.requestId },
       };
 
@@ -999,7 +1040,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type

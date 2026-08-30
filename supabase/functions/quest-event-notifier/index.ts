@@ -102,6 +102,16 @@ serve(async (req) => {
     // pass memberIds only, not tokens, so family-notifier's own lookup (and
     // its category-preference filter) is the single source of truth instead
     // of this function racing it with a stale single-column snapshot.
+    //
+    // excludeMemberId — was never threaded through to family-notifier even
+    // though triggeredById is available on every call, so a broadcast to a
+    // role-based group (approverIds/parentOnlyIds) that happens to include
+    // the acting member (e.g. a parent reassigning a chore, who is also in
+    // approverIds) sent that parent a redundant "you just did this" push
+    // about their own action. Every targeted single-recipient fire() call
+    // in this file (quest_assigned, force_assigned, etc.) is unaffected
+    // (the actor is never the sole target there); this only changes the
+    // group-broadcast cases.
     const fire = (type: string, targetIds: string[], payload: Record<string, unknown>) =>
       fetch(notifierUrl, {
         method: 'POST',
@@ -112,6 +122,7 @@ serve(async (req) => {
           familyId,
           payload,
           persist: true,
+          excludeMemberId: triggeredById ?? undefined,
         }),
       }).catch(e => console.warn('[quest-event-notifier] notifier failed:', e.message));
 

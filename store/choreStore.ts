@@ -2266,6 +2266,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
                 () => onLost('claimed'),
               );
           }
+          return;
+        }
+        // Audit finding — the comment on claimBountySlot above (and this
+        // file's own quest-event-notifier routing-matrix doc comment) both
+        // claimed claimBounty already fired 'quest_claimed' alongside it;
+        // verified false — this single-claimant path called nothing at all.
+        // Tells parents/seniors a kid just claimed a bounty, same event
+        // claimBountySlot fires for the multi-slot case.
+        if (chore.familyId) {
+          supabase.functions.invoke('quest-event-notifier', {
+            body: {
+              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+              familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
+            },
+          }).catch(e => console.warn('[choreStore] claimBounty notify failed', e?.message));
         }
       });
   },
@@ -2334,6 +2349,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           return;
         }
         showToast('Claimed ✓');
+        // Audit finding — same gap as claimBounty above: this is the actual
+        // reachable "Claim" action from every live screen (KidView, TeenView,
+        // QuestsScreen), and it fired zero notification to parents/seniors.
+        if (chore.familyId) {
+          supabase.functions.invoke('quest-event-notifier', {
+            body: {
+              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+              familyId: chore.familyId, triggeredById: memberId, assigneeId: memberId,
+            },
+          }).catch(e => console.warn('[choreStore] claimPoolQuest notify failed', e?.message));
+        }
       });
   },
 

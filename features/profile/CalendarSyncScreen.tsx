@@ -116,11 +116,19 @@ export default function CalendarSyncScreen() {
         // time something triggers a refresh.
         supabase.functions.invoke('calendar-freebusy-sync', { body: { memberId: activeMemberId } })
           .catch(e => console.warn('[CalendarSyncScreen] initial freebusy sync failed', e?.message));
+      } else {
+        // Personal connections need a webhook channel registered before
+        // inbound sync (an event added directly on Google/Outlook) works
+        // at all — calendar-channel-renewal picks up any connection with
+        // no channel yet (channel_expires_at is null), so calling it right
+        // after connect registers the channel immediately instead of
+        // leaving the member with no inbound sync until the next daily
+        // cron pass. Outbound push already happens naturally the next
+        // time any event is created/edited, so no separate kick needed
+        // for that direction.
+        supabase.functions.invoke('calendar-channel-renewal', { body: {} })
+          .catch(e => console.warn('[CalendarSyncScreen] initial channel registration failed', e?.message));
       }
-      // Personal connections don't need an initial kick — the webhook
-      // channel registers on the next calendar-channel-renewal cron pass,
-      // and outbound push already happens naturally the next time any
-      // event is created/edited.
     } catch (e: any) {
       if (e?.message !== 'Connection cancelled.') {
         showAlert("Couldn't connect", e?.message ?? 'Please try again.');

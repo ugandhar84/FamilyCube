@@ -50,7 +50,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    let query = supabase.from('calendar_connections').select('*').eq('status', 'active');
+    // purpose='work' only — a 'personal' connection's token only carries
+    // calendar.events scope (no calendar.freebusy), so calling FreeBusy
+    // against one 403s with ACCESS_TOKEN_SCOPE_INSUFFICIENT and this
+    // function's own catch block then marks that connection 'error',
+    // silently breaking its outbound/inbound sync too (a real incident:
+    // HubScreen's reactive freebusy-sync call was sweeping every
+    // connection regardless of purpose before this filter existed).
+    let query = supabase.from('calendar_connections').select('*').eq('status', 'active').eq('purpose', 'work');
     query = memberId ? query.eq('member_id', memberId) : query.eq('family_id', familyId!);
     const { data: connections, error } = await query;
     if (error) throw new Error(error.message);

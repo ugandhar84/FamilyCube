@@ -118,6 +118,19 @@ function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparent
     if (!sponsor) return;
     const msg = `👋 ${kid?.name.split(' ')[0] ?? 'Your grandchild'} submitted "${c.title}" a bit ago — it's waiting on you to review and cheer!`;
     useChatStore.getState().sendMessage(sponsor.id, active.id, msg);
+    // Live-reported: "Nudge also should trigger the push along sending the
+    // chat" — was chat-DM-only, easy to miss and never populates the
+    // notification bell/push. Chat message above stays as the in-thread
+    // record; this adds a real push alongside it.
+    if (c.familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'custom', familyId: c.familyId, memberIds: [sponsor.id], persist: true,
+          excludeMemberId: active.id,
+          payload: { title: '👋 Nudge', body: msg, data: { screen: 'Quests', questId: c.id } },
+        },
+      }).catch((e: any) => console.warn('[ChoreReviewSection] nudgeSponsor push failed', e?.message));
+    }
     Alert.alert('Nudge sent!', `A reminder was sent to ${sponsor.name.split(' ')[0]}.`);
   };
 

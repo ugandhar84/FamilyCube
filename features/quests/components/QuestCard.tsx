@@ -1033,6 +1033,21 @@ export function QuestCard({
                     }).then(({ error }) => {
                       if (error) { console.warn('[QuestCard] Take It reassign_chore failed', error.message); return; }
                       showToast('Taken ✓');
+                      // Self-claim onto an unassigned adult task — the
+                      // acting parent doesn't need telling about their own
+                      // action, but the co-parent(s) do (mirrors
+                      // quest_claimed's own "parents get told when a task
+                      // gets claimed" routing, which claimPoolQuest/
+                      // claimBounty also newly fire for the kid-pool case).
+                      const familyId = useChoreStore.getState().chores.find(c => c.id === q.id)?.familyId;
+                      if (familyId) {
+                        supabase.functions.invoke('quest-event-notifier', {
+                          body: {
+                            event: 'quest_claimed', questId: q.id, questTitle: q.title,
+                            familyId, triggeredById: activeMember.id, assigneeId: activeMember.id,
+                          },
+                        }).catch((e: any) => console.warn('[QuestCard] Take It notify failed', e?.message));
+                      }
                     });
                   },
                 }]
@@ -1162,6 +1177,18 @@ export function QuestCard({
                   }).then(({ error }) => {
                     if (error) { console.warn('[QuestCard] GP claim reassign_chore failed', error.message); return; }
                     showToast("You're on it ✓");
+                    // Same self-claim gap as "Take It" above — the claiming
+                    // GP doesn't need telling about their own action, but
+                    // parents do.
+                    const familyId = useChoreStore.getState().chores.find(c => c.id === q.id)?.familyId;
+                    if (familyId) {
+                      supabase.functions.invoke('quest-event-notifier', {
+                        body: {
+                          event: 'quest_claimed', questId: q.id, questTitle: q.title,
+                          familyId, triggeredById: activeMember.id, assigneeId: activeMember.id,
+                        },
+                      }).catch((e: any) => console.warn('[QuestCard] GP claim notify failed', e?.message));
+                    }
                   });
                 },
               }]

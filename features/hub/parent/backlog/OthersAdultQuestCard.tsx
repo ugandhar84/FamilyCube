@@ -41,6 +41,18 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
         console.warn('[OthersAdultQuestCard] sendNudge failed', e?.message ?? e);
         Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
       });
+    // Live-reported: "Nudge also should trigger the push along sending the
+    // chat" — was chat-DM-only. Chat message above stays as the in-thread
+    // record; this adds a real push alongside it.
+    if (assignee?.id && choreData?.familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'custom', familyId: choreData.familyId, memberIds: [assignee.id], persist: true,
+          excludeMemberId: active.id,
+          payload: { title: '👋 Nudge', body: msg, data: { screen: 'Quests', questId: q.id } },
+        },
+      }).catch((e: any) => console.warn('[OthersAdultQuestCard] nudge push failed', e?.message));
+    }
   };
 
   const reclaim = () => {
@@ -59,6 +71,22 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
           .then(({ error }) => {
             if (error) { console.warn('[OthersAdultQuestCard] reassign_chore failed', error.message); return; }
             showToast('Reclaimed ✓');
+            // Live-reported: "reclaim — not even working" — this RPC call
+            // bypasses choreStore.updateChore entirely (a direct RPC, not a
+            // store action), so it never got updateChore's own
+            // notifyChoreReassigned coverage. The co-parent losing the task
+            // gets zero signal otherwise; this fires the same
+            // quest-event-notifier 'quest_reassigned' event every other
+            // reassignment path uses.
+            if (assignee?.id && assignee.id !== active.id) {
+              supabase.functions.invoke('quest-event-notifier', {
+                body: {
+                  event: 'quest_reassigned', questId: q.id, questTitle: q.title,
+                  familyId: choreData?.familyId, triggeredById: active.id,
+                  assigneeId: assignee.id, newAssigneeId: active.id, coins: q.coins,
+                },
+              }).catch((e: any) => console.warn('[OthersAdultQuestCard] reassign notify failed', e?.message));
+            }
           });
       } },
     ]

@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, Clock, Undo2, MessageCircle } from 'lucide-reac
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { showToast } from '@/components/AppToast';
+import { supabase } from '@/lib/supabase';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -42,6 +43,18 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
         console.warn('[OutgoingPendingCard] sendNudge failed', e?.message ?? e);
         Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
       });
+    // Live-reported: "Nudge also should trigger the push along sending the
+    // chat" — was chat-DM-only. Chat message above stays as the in-thread
+    // record; this adds a real push alongside it.
+    if (chore.familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'custom', familyId: chore.familyId, memberIds: [a.assignedTo], persist: true,
+          excludeMemberId: active.id,
+          payload: { title: '👋 Nudge', body: msg, data: { screen: 'Quests', questId: chore.id } },
+        },
+      }).catch((e: any) => console.warn('[OutgoingPendingCard] nudge push failed', e?.message));
+    }
   };
   const isSnoozed = a.status === 'SNOOZED' && a.snoozeUntil && a.snoozeUntil > new Date().toISOString();
   const isBounced = a.status === 'PARKED';

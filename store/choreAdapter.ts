@@ -7,32 +7,19 @@
  */
 import { useChoreStore } from './choreStore';
 import type { ChoreTask, ChoreCategoryType } from './choreStore';
-import { supabase } from '@/lib/supabase';
 import type {
   Quest, QuestStatus, QuestDifficulty, QuestCategory, QuestType,
   QuestRecurrence,
 } from './questStore';
 
-// 6.1 — shared by both reassignQuest implementations below (the instance
-// hook and the static .getState() shim) so a manual reassignment from
-// EITHER call path actually tells someone it happened, matching every
-// other quest mutation (approve/decline/submit/etc.) which already fires
-// quest-event-notifier. The edge function's 'quest_reassigned' case was
-// fully built (notifies new assignee + parents) but nothing ever called it.
-function notifyQuestReassigned(chore: ChoreTask, prevAssigneeId: string | undefined, newAssigneeId: string, triggeredById: string) {
-  supabase.functions.invoke('quest-event-notifier', {
-    body: {
-      event: 'quest_reassigned',
-      questId: chore.id,
-      questTitle: chore.title,
-      familyId: chore.familyId,
-      triggeredById,
-      assigneeId: prevAssigneeId,
-      newAssigneeId,
-      coins: chore.basePoints > 0 ? chore.basePoints : chore.coinsReward,
-    },
-  }).catch(e => console.warn('[choreAdapter] reassignQuest notify', e?.message));
-}
+// 6.1 — reassignQuest below (both the instance hook and the static
+// .getState() shim) reassigns purely by calling store.updateChore with a new
+// assignedToId. The "tell someone it happened" notification (quest-event-
+// notifier's 'quest_reassigned' event — notifies new assignee + parents)
+// used to be fired explicitly from here, but now fires from inside
+// choreStore.ts's updateChore itself instead, so every assignedToId-
+// changing call site gets it uniformly (not just the two paths that happen
+// to go through this adapter) — see updateChore's own notifyChoreReassigned.
 
 // ─── ChoreTask → Quest mapping ────────────────────────────────────────────────
 
@@ -454,7 +441,6 @@ export function useQuestStore() {
         }
       }
       const chore = store.chores.find(c => c.id === id);
-      const prevAssigneeId = chore?.assignedToId;
       // Live QA audit found reassigning a chore that was mid-review
       // (status='pending_approval', with the previous assignee's
       // submission note/photo still attached) only ever patched
@@ -492,12 +478,12 @@ export function useQuestStore() {
       // 6.1 — reassigning a quest silently moved it to a new kid with zero
       // notification to either the new assignee or the parents who'd expect
       // to know it happened. quest-event-notifier already has a fully-built
-      // 'quest_reassigned' case (notifies new assignee + parents) that
-      // nothing was ever calling. Skip when memberId is '' — that's the
-      // pool-release/decline path above, not a real reassignment.
-      if (memberId && chore?.familyId) {
-        notifyQuestReassigned(chore, prevAssigneeId, memberId, _by);
-      }
+      // 'quest_reassigned' case (notifies new assignee + parents). Now fired
+      // from inside choreStore.ts's updateChore itself (see its own
+      // notifyChoreReassigned call) so every assignedToId-changing path —
+      // this one included — notifies uniformly instead of each call site
+      // needing its own copy; the explicit call that used to live here was
+      // removed to avoid double-firing now that updateChore does it.
     },
 
     cheerQuest: (id: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => {
@@ -624,7 +610,6 @@ useQuestStore.getState = () => {
         }
       }
       const chore = store.chores.find(c => c.id === id);
-      const prevAssigneeId = chore?.assignedToId;
       // See the instance-hook reassignQuest above for why a mid-review
       // reassignment must also reset status/submission fields to a clean
       // 'todo' state, not just move assignedToId — and why any genuine
@@ -643,9 +628,9 @@ useQuestStore.getState = () => {
           rejectionReason: undefined,
         } : {}),
       });
-      if (memberId && chore?.familyId) {
-        notifyQuestReassigned(chore, prevAssigneeId, memberId, _by ?? '');
-      }
+      // Notification now fires from inside updateChore itself — see the
+      // instance-hook reassignQuest above for why the explicit call that
+      // used to live here was removed.
     },
   };
   return shim;

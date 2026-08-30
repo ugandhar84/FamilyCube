@@ -6,6 +6,7 @@ import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { showToast } from '@/components/AppToast';
+import { supabase } from '@/lib/supabase';
 
 // Money-green — "Accept" action accent, distinct from brand amber used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -60,8 +61,21 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           // on its own (respondToParentQuest has no sendMessage call) — the
           // assigner otherwise only finds out by noticing the card changed
           // next time they happen to open the app.
-          useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo,
-            `✅ ${assignee?.name?.split(' ')[0] ?? 'They'} accepted "${chore.title}"`);
+          const acceptMsg = `✅ ${assignee?.name?.split(' ')[0] ?? 'They'} accepted "${chore.title}"`;
+          useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo, acceptMsg);
+          // Live-reported: "Nudge also should trigger the push along
+          // sending the chat" — this card's pings were all chat-DM-only.
+          // Chat message above stays as the in-thread record; this adds a
+          // real push alongside it.
+          if (chore.familyId) {
+            supabase.functions.invoke('family-notifier', {
+              body: {
+                type: 'custom', familyId: chore.familyId, memberIds: [a.assignedBy], persist: true,
+                excludeMemberId: a.assignedTo,
+                payload: { title: '✅ Accepted', body: acceptMsg, data: { screen: 'Quests', questId: chore.id } },
+              },
+            }).catch((e: any) => console.warn('[DirectPendingCard] accept push failed', e?.message));
+          }
         }}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 8 }}>
@@ -94,7 +108,26 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           // either way, since a queued message will go out automatically
           // once the connection is back (see lib/networkStore.ts's
           // flushOfflineQueue wiring).
-          .then(() => showToast(`Let ${assigner?.name?.split(' ')[0] ?? 'them'} know you're on it ✓`))
+          .then(() => {
+            showToast(`Let ${assigner?.name?.split(' ')[0] ?? 'them'} know you're on it ✓`);
+            // Live-reported: "Nudge also should trigger the push along
+            // sending the chat" — was chat-DM-only. Chat message above
+            // stays as the in-thread record; this adds a real push
+            // alongside it.
+            if (chore.familyId) {
+              supabase.functions.invoke('family-notifier', {
+                body: {
+                  type: 'custom', familyId: chore.familyId, memberIds: [a.assignedBy], persist: true,
+                  excludeMemberId: a.assignedTo,
+                  payload: {
+                    title: '👋 On It',
+                    body: `${assignee?.name?.split(' ')[0] ?? 'They'} saw "${chore.title}" — on it!`,
+                    data: { screen: 'Quests', questId: chore.id },
+                  },
+                },
+              }).catch((e: any) => console.warn('[DirectPendingCard] "on it" push failed', e?.message));
+            }
+          })
           .catch((e: any) => {
             console.warn('[DirectPendingCard] "on it" nudge failed', e?.message ?? e);
             Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");

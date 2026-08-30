@@ -454,7 +454,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const myClaimedRides = upcomingEvents.filter(e => {
     if (!e.isOpenToGrandparents) return false;
     const a = eventAssignee(e);
-    return a.name === active.name && a.status === 'confirmed';
+    // id-based — was a name compare, which is exactly the collision
+    // described above; falls back to name only for an external,
+    // non-member assignee with no id at all.
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed';
   });
   // Weekly cap counts everything claimed this week, past included; the list
   // shown in dispatch only carries what's still ahead.
@@ -629,12 +633,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // surface here at all (QA Round 11, Critical Finding C2).
   const myDrivingToday = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    return a.name === active.name && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
+    // id-based — falls back to name only for an external, non-member
+    // assignee with no id at all.
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    return a.name === active.name && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
   // has not been reviewed by a parent yet — GP should not see it as an
@@ -705,7 +713,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (!e.date || e.date !== today) return false;
     if (isWorkEvent(e)) return false;
     if (!e.helper || e.helperStatus !== 'pending') return false;
-    if (e.helper === active.name) return false;      // already assigned to me
+    // id-based — e.helperId is undefined only for an external, non-member
+    // helper, which can't be this senior anyway.
+    if (e.helperId ? e.helperId === active.id : e.helper === active.name) return false; // already assigned to me
     if (e.approvalPending) return false;             // kid-initiated, parent hasn't approved
     // Scenarios 2.6/5.5 — same sensitive-event gate as openRequests above.
     if (isEventSensitive(e) && canViewSensitiveEventDetail(e, 'senior', active.id, active.name) !== 'full') return false;
@@ -817,7 +827,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           // Real Pick-up Radar signal, not just the clock — master-flow
           // audit finding, see KidRideBanner.tsx's driverDispatched doc.
           driverDispatched={!!activeTrips?.some(t =>
-            t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+            t.driverMemberId === eventAssignee(confirmedRide).id
           )}
           conflictReason={conflictReasons.get(confirmedRide.id)}
         />

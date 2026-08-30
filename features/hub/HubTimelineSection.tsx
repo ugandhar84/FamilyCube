@@ -5,7 +5,7 @@ import { TimelineCard, LiveDot, SectionCard } from './hubComponents';
 import { TYPO } from '@/constants/theme';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
-import { isEventSensitive } from '@/store/eventStore';
+import { isEventSensitive, eventAssignee } from '@/store/eventStore';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -44,12 +44,11 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
     if (!hasAnyAssignee) return true; // family-wide event, e.g. "Family Dinner"
     if (e.memberId === active.id) return true;
     if (e.memberIds?.includes(active.id)) return true;
-    if (e.helper === active.name) return true;
-    // Was helper-only — a kid/teen named as driverName (not helper) for a
-    // sibling's ride never showed up on their own timeline at all, so a
-    // driver had no on-Hub reminder they're supposed to be driving (QA
-    // sweep, kid-role audit, Medium).
-    if (e.driverName === active.name) return true;
+    // id-based — a name-string compare breaks silently on rename or two
+    // members sharing a first name; falls back to name only when the
+    // assignee has no member id at all (an external, non-member name).
+    const assignee = eventAssignee(e);
+    if (assignee.id ? assignee.id === active.id : assignee.name === active.name) return true;
     // A sibling's event that ISN'T actually sensitive (not Medical/private/
     // Ride, no rideRequired) is ordinary family awareness, not something
     // that needs hiding — matches canViewSensitiveEventDetail's own "hidden
@@ -129,7 +128,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
             <TimelineCard
               key={ev.id} ev={ev} members={members} allNames={allNames}
               colors={colors} isDark={isDark}
-              updateEvent={updateEvent} activeName={active.name}
+              updateEvent={updateEvent} activeName={active.name} activeMemberId={active.id}
               isFirst={idx === 0} isLast={idx === upcoming.length - 1}
               conflictReason={conflictReasons.get(ev.id)}
             />
@@ -154,7 +153,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
                 <TimelineCard
                   key={ev.id} ev={ev} members={members} allNames={allNames}
                   colors={colors} isDark={isDark}
-                  updateEvent={updateEvent} activeName={active.name}
+                  updateEvent={updateEvent} activeName={active.name} activeMemberId={active.id}
                   isFirst={idx === 0} isLast={idx === past.length - 1}
                 />
               ))}

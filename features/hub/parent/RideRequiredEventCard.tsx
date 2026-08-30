@@ -104,7 +104,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // the way "I'll Drive" is.
   const reassignTo = (m: FamilyMember) => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Reassign to ${m.name}" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx]`);
-    notifyTakeover(ev, m.name, members, active.name);
+    notifyTakeover(ev, m.name, members, active.name, active.id);
     supabase.rpc('reassign_event', {
       p_event_id: ev.id, p_new_member_id: m.id, p_role: 'driver', p_actor_id: active.id,
     }).then(({ error }) => {

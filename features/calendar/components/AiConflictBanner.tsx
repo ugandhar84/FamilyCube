@@ -48,6 +48,12 @@ export interface AiConflict {
   eventsInvolved: string[];
   suggestedFix?: string;
   recommendedDriverSwap?: string;
+  // Real member id for recommendedDriverSwap, when it names an actual
+  // family member (always true today — freeAdult is a real member row —
+  // but kept optional in case a future AI-derived conflict names someone
+  // with no id). Lets Apply Swap resolve the target member directly
+  // instead of re-deriving it via a name lookup.
+  recommendedDriverSwapId?: string;
   // Real event id(s) this conflict is actually about — lets Apply Swap
   // patch the correct event(s) directly instead of re-guessing from title
   // text or a stale `.conflict` flag.

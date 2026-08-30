@@ -25,7 +25,12 @@ export function RideCoordinationRow({ ev, members, active, colors, isDark }: {
   const updateEvent = useEventStore(s => s.updateEvent);
   const creator = members.find(m => m.id === ev.createdBy);
   const assignee = eventAssignee(ev);
-  const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id && m.name !== assignee.name);
+  // id-based exclusion when the assignee is a real member; falls back to
+  // name only for an external, non-member assignee with no id at all.
+  const otherParents = members.filter(m =>
+    m.role === 'parent' && m.id !== active.id &&
+    (assignee.id ? m.id !== assignee.id : m.name !== assignee.name)
+  );
   // Was binary (no assignee vs "claimed, awaiting confirmation") — the
   // whole point of this row is "so you know," but it couldn't actually
   // tell a co-parent whether the ride was fully resolved (confirmed
@@ -41,7 +46,7 @@ export function RideCoordinationRow({ ev, members, active, colors, isDark }: {
 
   const reassignTo = (m: FamilyMember) => {
     const role = eventAssigneeRole(ev);
-    notifyTakeover(ev, m.name, members, active.name);
+    notifyTakeover(ev, m.name, members, active.name, active.id);
     supabase.rpc('reassign_event', {
       p_event_id: ev.id, p_new_member_id: m.id, p_role: role, p_actor_id: active.id,
     }).then(({ error }) => {

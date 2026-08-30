@@ -131,11 +131,15 @@ export default function TasksScreen() {
       // reported live via screenshot. Mirror the same visibility rule here
       // so the count never promises more than the list underneath it has.
       if (!isSenior) return true;
+      // id-based assignee check — falls back to name only for an
+      // external, non-member assignee with no id at all.
+      const assignee = eventAssignee(e);
+      const isAssignee = !!assignee.name &&
+        (assignee.id ? assignee.id === activeMemberId : assignee.name === activeMember?.name);
       const isSubjectOrAssignee =
         e.memberId === activeMemberId ||
         e.memberIds?.includes(activeMemberId ?? '') ||
-        (e.helper && e.helper === activeMember?.name) ||
-        (e.driverName && e.driverName === activeMember?.name);
+        isAssignee;
       const isOpenUnassigned = !e.memberId && !e.memberIds?.length &&
         (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents);
       return isSubjectOrAssignee || isOpenUnassigned;

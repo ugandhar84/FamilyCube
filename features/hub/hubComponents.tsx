@@ -331,11 +331,14 @@ export function UrgencyBadge({ hours, hasIssue }: { hours: number; hasIssue: boo
 // separate components (AlertBanner and EventDetailSheet) both drive
 // DriverChipRow's onAssign. Call BEFORE updateEvent so `ev` still holds
 // the outgoing assignee's name.
-export function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[], activeName?: string) {
+export function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[], activeName?: string, activeMemberId?: string) {
   const prevName = ev.helper ?? ev.driverName;
   if (!prevName || prevName === newName) return;
-  const actor = members.find(m => m.name === activeName);
-  const prevMember = members.find(m => m.name === prevName);
+  // id-based when available — falls back to name only for a caller that
+  // hasn't threaded activeMemberId through yet.
+  const actor = activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName);
+  const prevId = ev.helper ? ev.helperId : ev.driverId;
+  const prevMember = prevId ? members.find(m => m.id === prevId) : members.find(m => m.name === prevName);
   // Was relationalNameByName ("Dad"/"Mom") — this is a parent-to-parent
   // driver-reassignment broadcast, where knowing exactly WHO by name
   // matters more than the familiar/kid-facing "Dad"/"Mom" framing the
@@ -456,7 +459,7 @@ export function AlertBanner({
           <ConflictClusterCard
             key={reason} reason={reason} events={evs}
             members={members} colors={colors} isDark={isDark}
-            activeName={activeName} updateEvent={updateEvent}
+            activeName={activeName} activeMemberId={activeMemberId} updateEvent={updateEvent}
           />
         ));
       })()}
@@ -477,14 +480,16 @@ export function AlertBanner({
 //     double-booking). Persists conflictAcknowledged on every event in
 //     the cluster so it stays dismissed rather than reappearing on
 //     reload or for another parent viewing the same Hub.
-function ConflictClusterCard({ reason, events, members, colors, isDark, activeName, updateEvent }: {
+function ConflictClusterCard({ reason, events, members, colors, isDark, activeName, activeMemberId, updateEvent }: {
   reason: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
+  activeMemberId?: string;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
 }) {
   const [reassigning, setReassigning] = useState<string | null>(null); // event id currently showing its chip row
   const [dismissing, setDismissing] = useState(false);
-  const viewerMember = members.find(m => m.name === activeName);
+  // id-based — falls back to name only if the caller hasn't passed an id.
+  const viewerMember = activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName);
 
   const doReassign = (ev: FamilyEvent, name: string) => {
     const { assigneeRole } = deriveEventActions(
@@ -492,7 +497,7 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
       { id: viewerMember?.id ?? '', name: activeName ?? '', role: viewerMember?.role ?? 'parent', hasCar: viewerMember?.hasCar },
       { isPast: false },
     );
-    notifyTakeover(ev, name, members, activeName);
+    notifyTakeover(ev, name, members, activeName, activeMemberId);
     const targetMember = members.find(m => m.name === name);
     if (targetMember) {
       supabase.rpc('reassign_event', {
@@ -563,8 +568,14 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
         {events.map(ev => {
           const assignee = eventAssignee(ev);
           const excludeName = assignee.name; // whoever's currently double-booked on THIS event
-          const otherParents = members.filter(m => m.role === 'parent' && m.name !== excludeName && m.name !== activeName);
-          const viewerIsExcluded = activeName === excludeName;
+          // id-based exclusion when the assignee is a real member; falls
+          // back to name only for an external, non-member assignee with no id.
+          const otherParents = members.filter(m =>
+            m.role === 'parent' &&
+            (assignee.id ? m.id !== assignee.id : m.name !== excludeName) &&
+            (activeMemberId ? m.id !== activeMemberId : m.name !== activeName)
+          );
+          const viewerIsExcluded = assignee.id ? assignee.id === activeMemberId : activeName === excludeName;
           // Same allowGpTeen gate DriverChipRow uses elsewhere — a Work
           // event never offers Grandparent/Teen as a resolution. Also
           // requires an actual senior/teen member to exist in the family;
@@ -675,10 +686,16 @@ function LocationLink({ addr, color, fontSize = 13 }: { addr: string; color: str
 // immediately; a reason field only appears afterward, and only when there
 // was a prior helper to explain the swap to. "Me" leads when the viewer can
 // drive, since taking it yourself is the most common real case.
-function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, allowGpTeen, onAssign, onOpenPool }: {
+function DriverChipRow({ ev, members, colors, isDark, activeName, activeMemberId, excludeName, excludeId, allowGpTeen, onAssign, onOpenPool }: {
   ev: FamilyEvent; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
+  activeMemberId?: string;
   excludeName?: string;
+  // Real member id of whoever this row should exclude from the chip list
+  // (the currently-assigned driver backing out, or being overridden).
+  // Preferred over excludeName when available — undefined only for an
+  // external, non-member excludeName with no id at all.
+  excludeId?: string;
   allowGpTeen: boolean;
   onAssign: (name: string, reason: string) => void;
   onOpenPool: (kind: 'gp' | 'teen') => void;
@@ -701,8 +718,9 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   // never render as a chip) but still rendered an active Confirm button
   // whose lookup in otherParents came back empty, throwing instead of
   // just not matching.
-  const initialPicked = assignee.name && assignee.name !== excludeName
-    ? (assignee.name === activeName
+  const isExcluded = assignee.id && excludeId ? assignee.id === excludeId : assignee.name === excludeName;
+  const initialPicked = assignee.name && !isExcluded
+    ? ((assignee.id ? assignee.id === activeMemberId : assignee.name === activeName)
         ? 'me'
         // id-based lookup when the assignee is a real member — was a
         // members.find by NAME, fragile (two parents sharing a first
@@ -716,7 +734,7 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
     : null;
   const [picked, setPicked] = useState<string | null>(initialPicked);
   const [reason, setReason] = useState('');
-  const viewer = members.find(m => m.name === activeName);
+  const viewer = activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName);
   // Deliberately NOT gated on viewer.hasCar — members.hasCar defaults to
   // false in the DB for any parent who was never routed through the one
   // profile-edit sheet that seeds it true for new parents
@@ -729,9 +747,11 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   // has already shown intent to potentially drive; only excludeName (the
   // person being reassigned away from) should ever be excluded from
   // "Me," not an unrelated, easy-to-never-set profile flag.
-  const viewerCanDrive = !!viewer && viewer.name !== excludeName;
+  const viewerCanDrive = !!viewer && (excludeId ? viewer.id !== excludeId : viewer.name !== excludeName);
   const otherParents = members.filter(m =>
-    m.role === 'parent' && m.name !== excludeName && m.name !== activeName
+    m.role === 'parent' &&
+    (excludeId ? m.id !== excludeId : m.name !== excludeName) &&
+    (activeMemberId ? m.id !== activeMemberId : m.name !== activeName)
   );
   const gpOpen = !!ev.isOpenToGrandparents && !assignee.name;
   const teenOpen = !!ev.isOpenToTeens && !assignee.name;
@@ -817,9 +837,10 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
 
 // ─── EventDetailSheet — bottom-sheet modal for full event details + actions ───
 
-export function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent, onClose, conflictReason, onEditFull }: {
+export function EventDetailSheet({ ev, members, colors, isDark, activeName, activeMemberId, updateEvent, onClose, conflictReason, onEditFull }: {
   ev: FamilyEvent; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
+  activeMemberId?: string;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   onClose: () => void;
   // Reason string from ParentView's own conflict detection (double-booked
@@ -875,8 +896,10 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // it via HubTimelineSection too, not just ParentView) — but reassigning a
   // helper, opening a slot to GP/Teen, or backing out of one are all parent
   // actions. Derived from members rather than threading a new activeRole
-  // prop through three call sites just for this one gate.
-  const viewerMember   = members.find(m => m.name === activeName);
+  // prop through three call sites just for this one gate. id-based when
+  // activeMemberId is available, falling back to name only for a caller
+  // that hasn't threaded it through.
+  const viewerMember   = activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName);
   const isViewerParent = viewerMember?.role === 'parent';
   // Single shared derivation (deriveCardActions.ts) instead of a hand-rolled
   // copy — this block WAS the original source of truth those showX booleans
@@ -1100,7 +1123,9 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
 
           {/* Helper section */}
           {assignee.name && !ev.approvalPending && (() => {
-            const helperMember = members.find(m => m.name === assignee.name);
+            // id-based when the assignee is a real member; falls back to
+            // name only for an external, non-member assignee with no id.
+            const helperMember = assignee.id ? members.find(m => m.id === assignee.id) : members.find(m => m.name === assignee.name);
             const isRejected = assignee.status === 'rejected';
             const isPending  = assignee.status === 'pending';
             // A declined driver is a scheduling problem for a PARENT to
@@ -1356,8 +1381,9 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                     {helperMissing || !hadPriorHelper || cancelledSelfName ? 'Who\'s driving?' : 'Reassign to'}
                   </Text>
                   <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                    activeName={activeName}
+                    activeName={activeName} activeMemberId={activeMemberId}
                     excludeName={cancelledSelfName ?? assignee.name}
+                    excludeId={cancelledSelfName ? viewerMember?.id : assignee.id}
                     allowGpTeen={cat !== 'Work'}
                     onOpenPool={(kind) => {
                       // Coming from Can't Make It — opening the pool IS the
@@ -1403,7 +1429,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       onClose();
                     }}
                     onAssign={(name, reason) => {
-                      notifyTakeover(ev, name, members, activeName);
+                      notifyTakeover(ev, name, members, activeName, activeMemberId);
                       // Assigning it to yourself IS the confirmation — no
                       // separate "accept" step needed (see HelperEventCard's
                       // backlog card, which otherwise asks for one).
@@ -1477,10 +1503,11 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
 // Compact schedule-list row: time text on the left + thin connecting line,
 // category-accented card on the right. Tap opens the detail bottom sheet.
 
-export function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent, activeName, isFirst, isLast, conflictReason }: {
+export function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent, activeName, activeMemberId, isFirst, isLast, conflictReason }: {
   ev: FamilyEvent; members: FamilyMember[]; allNames: string[];
   colors: any; isDark: boolean;
   activeName?: string;
+  activeMemberId?: string;
   isFirst?: boolean; isLast?: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   // Reason string from ParentView's conflict detection, if this event has one.
@@ -1489,7 +1516,9 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const isPast = hoursUntilEvent(ev.date, ev.time) < 0;
-  const isViewerParent = members.find(m => m.name === activeName)?.role === 'parent';
+  // id-based when available, falling back to name only for a caller that
+  // hasn't threaded activeMemberId through.
+  const isViewerParent = (activeMemberId ? members.find(m => m.id === activeMemberId) : members.find(m => m.name === activeName))?.role === 'parent';
 
   return (
     <>
@@ -1534,7 +1563,7 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
       {sheetOpen && (
         <EventDetailSheet
           ev={ev} members={members} colors={colors} isDark={isDark}
-          activeName={activeName} updateEvent={updateEvent}
+          activeName={activeName} activeMemberId={activeMemberId} updateEvent={updateEvent}
           onClose={() => setSheetOpen(false)}
           conflictReason={conflictReason}
         />

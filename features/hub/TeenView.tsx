@@ -161,18 +161,25 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // to SeniorView/KidView/EventDetailSheet.
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    return a.name === active.name && a.status === 'pending' && !e.approvalPending && e.date >= today;
+    // id-based — falls back to name only for an external, non-member
+    // assignee with no id at all.
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'pending' && !e.approvalPending && e.date >= today;
   });
   const openPickups = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
     return e.isOpenToTeens && a.status !== 'confirmed' && a.status !== 'rejected' && e.date >= today;
   });
-  // Exact name match — the previous fuzzy includes()-based match ("Sam"
-  // vs. "Sam Wilson") could show a DIFFERENT member's confirmed ride as
-  // this teen's own the moment two names happened to share a first name.
+  // id-based match — was an exact name compare (itself a fix for an
+  // earlier fuzzy includes()-based match that could show a DIFFERENT
+  // member's confirmed ride as this teen's own when two names shared a
+  // first name); id is stronger still since a.id can't collide at all.
+  // Falls back to name only for an external, non-member assignee with no
+  // id at all.
   const myPickups = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    return a.name === active.name && a.status === 'confirmed' && e.date >= today;
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed' && e.date >= today;
   });
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
   // Single derivation — was independently recomputed here (badge count),
@@ -264,7 +271,9 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     // a race; deductCoins' race guard would silently refuse the whole
     // deduction and let the teen keep the coins in exactly that case (QA
     // sweep, teen-role audit, Critical).
-    const clawedBack = a?.name === active.name && paidCoins > 0;
+    // id-based — a?.id is undefined only for an external, non-member
+    // assignee, which can't be this teen anyway.
+    const clawedBack = (a?.id ? a.id === active.id : a?.name === active.name) && paidCoins > 0;
     const role = rideRoleFor(ev, active.name);
     supabase.rpc('decline_event_assignment', {
       p_event_id: evId, p_member_id: active.id, p_role: role, p_reason: null,
@@ -423,7 +432,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           // Real Pick-up Radar signal, not just the clock — master-flow
           // audit finding, see KidRideBanner.tsx's driverDispatched doc.
           driverDispatched={!!activeTrips?.some(t =>
-            t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+            t.driverMemberId === eventAssignee(confirmedRide).id
           )}
           conflictReason={conflictReasons.get(confirmedRide.id)}
         />

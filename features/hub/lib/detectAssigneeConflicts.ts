@@ -28,10 +28,15 @@ export function detectAssigneeConflicts(events: FamilyEvent[]): Map<string, stri
     for (let j = i + 1; j < timed.length; j++) {
       const a = timed[i], b = timed[j];
       if (a.date !== b.date) continue;
-      const aName = eventAssignee(a).name, bName = eventAssignee(b).name;
-      if (aName !== bName) continue;
+      const assigneeA = eventAssignee(a), assigneeB = eventAssignee(b);
+      // id-based — falls back to name only when either side is an
+      // external, non-member assignee with no id at all.
+      const sameAssignee = assigneeA.id && assigneeB.id
+        ? assigneeA.id === assigneeB.id
+        : assigneeA.name === assigneeB.name;
+      if (!sameAssignee) continue;
       if (minutesBetween(a.time!, b.time!) < 30) {
-        const label = `${aName!.split(' ')[0]} assigned to 2 events`;
+        const label = `${assigneeA.name!.split(' ')[0]} assigned to 2 events`;
         if (!reasons.has(a.id)) reasons.set(a.id, label);
         if (!reasons.has(b.id)) reasons.set(b.id, label);
       }
@@ -78,8 +83,12 @@ export function detectWorkConflicts(events: FamilyEvent[], workEvents: FamilyEve
   // one at work — resolve the name to a member id first, same as
   // ParentView.tsx's own case D, then match that id against workEv.memberId.
   for (const familyEv of timedHelperAssignments) {
-    const helperName = eventAssignee(familyEv).name;
-    const helperMember = members.find(m => m.name === helperName);
+    const assignee = eventAssignee(familyEv);
+    // id-based when the assignee is a real member; falls back to name
+    // only for an external, non-member assignee with no id at all.
+    const helperMember = assignee.id
+      ? members.find(m => m.id === assignee.id)
+      : members.find(m => m.name === assignee.name);
     if (!helperMember) continue;
     for (const workEv of workEvents) {
       if (workEv.memberId !== helperMember.id || familyEv.date !== workEv.date || !workEv.time) continue;

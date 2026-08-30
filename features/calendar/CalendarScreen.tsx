@@ -29,7 +29,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility, eventAssignee } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
@@ -295,6 +295,7 @@ function detectRealConflicts(events: FamilyEvent[], members: { id: string; name:
               ? `${freeAdult.name.split(' ')[0]} is free during this window and can help`
               : 'No adult is currently free during this window — consider rescheduling one event',
             recommendedDriverSwap: freeAdult?.name,
+            recommendedDriverSwapId: freeAdult?.id,
           });
         }
       }
@@ -313,6 +314,7 @@ function detectRealConflicts(events: FamilyEvent[], members: { id: string; name:
           eventIds: [ev.id],
           suggestedFix: freeAdult ? `${freeAdult.name.split(' ')[0]} is available to help instead` : 'Find another available parent or grandparent',
           recommendedDriverSwap: freeAdult?.name,
+          recommendedDriverSwapId: freeAdult?.id,
         });
       });
     }
@@ -479,16 +481,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // cancellation by silently watching the pickup time pass"), not
   // something that arrives passively in a group channel.
   const notifyDeleteIfAssigned = (ev: FamilyEvent) => {
-    const claimantName =
-      (ev.driverName && ev.driverName !== activeMemberName && (ev.driverStatus === 'pending' || ev.driverStatus === 'confirmed'))
-        ? ev.driverName
-        : (ev.helper && ev.helper !== activeMemberName && (ev.helperStatus === 'pending' || ev.helperStatus === 'confirmed'))
-          ? ev.helper
-          : undefined;
+    // id-based "is this assigned to someone other than me" — was a plain
+    // name compare (ev.driverName !== activeMemberName), fragile the same
+    // way every other assignee-identity check in the app was.
+    const assignee = eventAssignee(ev);
+    const isOtherAssignee = !!assignee.name &&
+      (assignee.id ? assignee.id !== activeMemberId : assignee.name !== activeMemberName) &&
+      (assignee.status === 'pending' || assignee.status === 'confirmed');
+    const claimantName = isOtherAssignee ? assignee.name : undefined;
     const actorLabel = relationalNameByName(activeMemberName, members);
     if (claimantName) {
       const msg = `🗑️ ${actorLabel} removed "${ev.title}" — ${relationalNameByName(claimantName, members)} is no longer needed for it.`;
-      const claimantMember = members.find(m => m.name === claimantName);
+      const claimantMember = assignee.id ? members.find(m => m.id === assignee.id) : members.find(m => m.name === claimantName);
       if (claimantMember) {
         useChatStore.getState().sendMessage(claimantMember.id, activeMemberId ?? '', msg);
       } else {
@@ -751,7 +755,12 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     // than one conflict was in play.
     const targetIds = conflict.eventIds?.length ? conflict.eventIds : [events[0]?.id].filter(Boolean) as string[];
     console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Apply Swap" on conflict idx=${idx} (eventIds=${targetIds.join(',')}) → updateEvent helper=${conflict.recommendedDriverSwap} [features/calendar/CalendarScreen.tsx:718]`);
-    const targetMember = members.find(m => m.name === conflict.recommendedDriverSwap);
+    // id-based when available (set directly from the free adult member row
+    // that produced this suggestion) — falls back to name only for an
+    // older/external conflict object with no id.
+    const targetMember = conflict.recommendedDriverSwapId
+      ? members.find(m => m.id === conflict.recommendedDriverSwapId)
+      : members.find(m => m.name === conflict.recommendedDriverSwap);
     targetIds.forEach(id => {
       if (targetMember) {
         const targetEvent = events.find(e => e.id === id);

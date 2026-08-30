@@ -177,7 +177,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // NeedsYouRideRow inside KidNeedsYouSection.tsx duplicates its state
   // machine and needs the same signal passed in separately).
   const confirmedRideDispatched = !!confirmedRide && !!activeTrips?.some(t =>
-    t.driverMemberId === members.find(m => m.name === eventAssignee(confirmedRide).name)?.id
+    t.driverMemberId === eventAssignee(confirmedRide).id
   );
   // Same "driver double-booked" signal ParentView shows the parent —
   // a kid whose ride's driver is also assigned to a different event at

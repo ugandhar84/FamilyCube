@@ -131,14 +131,18 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
   const assignee = members.find(m => m.id === ev.memberId);
   const rs = roleStyle(assignee?.role, colors);
   const timeParts = fmtTimePartsLocal(ev.time);
-  // Driver/accompanying-adult is a free-text name field, not a memberId
-  // reference — resolved by name match against the real family roster so a
-  // real avatar can show instead of just a text pill. Rides use
-  // ev.driverName; every other category (Medical/Study/Sports/etc) uses the
-  // more general ev.helper field for "who's accompanying/escorting" — check
-  // both so this isn't Ride-only.
-  const driverName = ev.driverName || ev.helper;
-  const driver = driverName ? members.find(m => m.name === driverName || m.name.split(' ')[0] === driverName) : undefined;
+  // Driver/accompanying-adult — calendar_events now has real driver_id/
+  // helper_id columns, so resolve by id when available instead of a name
+  // match against the roster; the name fallback only matters for an older
+  // row saved before those columns existed, or a genuinely external
+  // non-member name (e.g. a coach). Rides use ev.driverName; every other
+  // category (Medical/Study/Sports/etc) uses the more general ev.helper
+  // field for "who's accompanying/escorting" — eventAssignee() checks both.
+  const driverAssignee = eventAssignee(ev);
+  const driverName = driverAssignee.name;
+  const driver = driverAssignee.id
+    ? members.find(m => m.id === driverAssignee.id)
+    : (driverName ? members.find(m => m.name === driverName || m.name.split(' ')[0] === driverName) : undefined);
   // Dimmed once the event's date/time has passed — matches Day view's
   // existing opacity:0.5 treatment for completed events, applied here so
   // Agenda (and any other row-variant caller) gets it too.
@@ -381,13 +385,17 @@ export function EventCardTimeline({
   const assignee = members.find(m => m.id === ev.memberId);
   const cat = ev.category ?? 'Event';
   const accentColor = isConf ? colors.warning : cs.dot;
-  // ev.helper/ev.driverName is a free-text name (driver/tutor/coach/
-  // escort), not a memberId — resolved by name match against the roster so
-  // a real avatar can be shown instead of just initials/text. Was
-  // ev.helper-only, so a driverName-based ride (every kid ride request)
-  // never showed its driver here at all (QA sweep UI pass).
-  const assigneeName = eventAssignee(ev).name;
-  const helperMember = assigneeName ? members.find(m => m.name === assigneeName || m.name.split(' ')[0] === assigneeName) : undefined;
+  // calendar_events has real driver_id/helper_id columns now — resolve by
+  // id when available so a real avatar can be shown; the name-match
+  // fallback only matters for an older row saved before those columns
+  // existed, or a genuinely external non-member name. Was ev.helper-only,
+  // so a driverName-based ride (every kid ride request) never showed its
+  // driver here at all (QA sweep UI pass).
+  const helperAssignee = eventAssignee(ev);
+  const assigneeName = helperAssignee.name;
+  const helperMember = helperAssignee.id
+    ? members.find(m => m.id === helperAssignee.id)
+    : (assigneeName ? members.find(m => m.name === assigneeName || m.name.split(' ')[0] === assigneeName) : undefined);
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>

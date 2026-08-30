@@ -1554,10 +1554,18 @@ export const useEventStore = create<EventState>((set, get) => ({
       // the "other parent" stakeholder side of the ping-pong.
       if ((justAssignedHelper || justAssignedDriver) && !justDeclined) {
         const newAssigneeName = justAssignedDriver ? updates.driverName : updates.helper;
+        // updates.driverId/helperId is set directly by every caller that
+        // assigns a new driver/helper name (alongside the display name) —
+        // prefer it over a name lookup, which is fragile (rename, two
+        // parents sharing a first name) and only needed as a fallback for
+        // a caller that hasn't been updated to also send the id.
+        const newAssigneeId = justAssignedDriver ? updates.driverId : updates.helperId;
         const newAssignee = (() => {
           try {
             const { useFamilyStore } = require('@/store/familyStore');
-            return (useFamilyStore.getState().members as any[]).find(m => m.role === 'parent' && m.name === newAssigneeName) ?? null;
+            const members = useFamilyStore.getState().members as any[];
+            if (newAssigneeId) return members.find(m => m.role === 'parent' && m.id === newAssigneeId) ?? null;
+            return members.find(m => m.role === 'parent' && m.name === newAssigneeName) ?? null;
           } catch { return null; }
         })();
         const recipientIds = new Set<string>();
@@ -1892,22 +1900,25 @@ export const useEventStore = create<EventState>((set, get) => ({
     // Audit finding — deleting an event told nobody it was gone: not the
     // person it was for (memberId), not a confirmed driver/helper. Same
     // "this left your hands with zero signal" gap as choreStore.ts's
-    // deleteChore. driver/helper are stored as names, not ids (matches
-    // this file's own newAssignee lookup pattern in updateEvent above), so
-    // resolve by name the same way.
+    // deleteChore. eventAssignee() now returns a real member id directly
+    // (driver_id/helper_id columns) — was resolving by name via a members
+    // lookup, fragile (rename, shared first name) and no longer necessary.
     if (deletedEvent) {
       const familyId = getFamilyId();
       if (familyId) {
         const recipientIds = new Set<string>();
         if (deletedEvent.memberId && deletedEvent.memberId !== actorId) recipientIds.add(deletedEvent.memberId);
         try {
-          const { useFamilyStore } = require('@/store/familyStore');
-          const members = useFamilyStore.getState().members as any[];
-          const assigneeName = deletedEvent.driverName ?? deletedEvent.helper;
-          if (assigneeName) {
-            const assignee = members.find(m => m.name === assigneeName);
-            if (assignee?.id && assignee.id !== actorId) recipientIds.add(assignee.id);
+          const assignee = eventAssignee(deletedEvent);
+          let assigneeId = assignee.id;
+          // Fallback only for an external, non-member assignee with no id
+          // at all (or an older row from before the id columns existed).
+          if (!assigneeId && assignee.name) {
+            const { useFamilyStore } = require('@/store/familyStore');
+            const members = useFamilyStore.getState().members as any[];
+            assigneeId = members.find(m => m.name === assignee.name)?.id;
           }
+          if (assigneeId && assigneeId !== actorId) recipientIds.add(assigneeId);
         } catch (e) {
           console.warn('[eventStore] deleteEvent assignee lookup failed', e);
         }

@@ -1390,8 +1390,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // a correctly-seeded value-diff is fragile against this class of bug.
   const [helperName, setHelperName] = useState(event.helper ?? '');
   const [helperTouched, setHelperTouched] = useState(false);
+  // event.helperId is the real column now (calendar_events.helper_id) —
+  // prefer it directly instead of re-deriving via a name lookup, which is
+  // fragile (rename, two members sharing a first name) and only a
+  // fallback for an older row saved before that column existed.
   const [helperId,   setHelperId]   = useState<string | undefined>(
-    members.find((m: any) => m.name === event.helper)?.id
+    event.helperId ?? members.find((m: any) => m.name === event.helper)?.id
   );
   const [editMemberIds, setEditMemberIds] = useState<string[]>(
     event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : []
@@ -1424,8 +1428,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editPickupLocation, setEditPickupLocation] = useState(event.pickupLocation ?? '');
   const [editDropLocation,   setEditDropLocation]   = useState(event.dropLocation ?? '');
   const [editDriverName,   setEditDriverName]   = useState(event.driverName ?? '');
+  // event.driverId is the real column now (calendar_events.driver_id) —
+  // prefer it directly instead of re-deriving via a name lookup; the name
+  // fallback only matters for an older row saved before that column
+  // existed.
   const [editDriverId,     setEditDriverId]     = useState<string | undefined>(
-    members.find((m: any) => m.name === event.driverName)?.id
+    event.driverId ?? members.find((m: any) => m.name === event.driverName)?.id
   );
   const [alertCall,            setAlertCall]            = useState(event.alertCall ?? false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(event.alertCallLeadMinutes ?? 10);

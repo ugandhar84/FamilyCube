@@ -248,7 +248,7 @@ export function TodayView({
                     <TimelineCard
                       key={ev.id} ev={ev} members={members} allNames={allNames}
                       colors={colors} isDark={isDark}
-                      updateEvent={updateEvent} activeName={activeMember.name}
+                      updateEvent={updateEvent} activeName={activeMember.name} activeMemberId={activeMember.id}
                       isFirst={idx === 0} isLast={idx === upcoming.length - 1}
                       conflictReason={conflictReasons?.get(ev.id)}
                     />

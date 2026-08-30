@@ -248,8 +248,11 @@ export default function SmartTaskComposer({
     if (!touchedPickup) setPickupLocation(d.locations.pickup ?? '');
     if (!touchedDrop) setDropLocation(d.locations.dropoff ?? '');
     if (!touchedHelper && d.driverName) {
-      const match = members.find(m => m.name === d.driverName);
-      if (match) setHelperId(match.id);
+      // d.driverId is resolved directly by extractDriver against the same
+      // members array — prefer it over re-deriving by name (was fragile:
+      // two members sharing a first name could resolve to the wrong id).
+      const matchId = d.driverId ?? members.find(m => m.name === d.driverName)?.id;
+      if (matchId) setHelperId(matchId);
     }
     // A dollar amount mentioned ("groceries, about $50") only overwrites
     // the untouched default coin value — never a value the user already
@@ -328,6 +331,7 @@ export default function SmartTaskComposer({
       urgent: false,
       kindOverride: task.kind,
       driverName: null,
+      driverId: null,
       alertCall: false,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond

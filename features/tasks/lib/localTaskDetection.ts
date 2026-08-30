@@ -363,7 +363,7 @@ export function extractLocations(rawInput: string): ExtractedLocations {
 // from who the ride is FOR (extractPerson/extractMemberNames). Returns the
 // matching family member's full name so it can be resolved straight to a
 // MemberPicker selection.
-export function extractDriver(rawInput: string, members: { id: string; name: string; role: string }[]): string | null {
+export function extractDriver(rawInput: string, members: { id: string; name: string; role: string }[]): { id: string; name: string } | null {
   const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
   for (const m of adults) {
     const first = escapeRegex(m.name.split(' ')[0]);
@@ -372,7 +372,10 @@ export function extractDriver(rawInput: string, members: { id: string; name: str
       'driven\\s+by\\s+' + first,
       first + '\\s+(?:should\\s+drive|is\\s+driving|will\\s+drive|would\\s+drive|to\\s+drive)',
     ];
-    if (patterns.some(p => new RegExp('\\b' + p + '\\b', 'i').test(rawInput))) return m.name;
+    // Matched directly against this member row, so its id is already
+    // resolved here — return it alongside the name instead of making a
+    // caller re-derive the id from the name later.
+    if (patterns.some(p => new RegExp('\\b' + p + '\\b', 'i').test(rawInput))) return { id: m.id, name: m.name };
   }
   return null;
 }
@@ -448,6 +451,10 @@ export interface LocalDetectionResult {
   // FOR) — see extractDriver's own comment. Full name, ready to resolve to
   // a MemberPicker selection; null when no driver phrase was found.
   driverName: string | null;
+  // Real member id for the same driver, resolved directly by extractDriver
+  // (it matched against the actual members array) — prefer this over a
+  // name-based members.find() downstream. Null whenever driverName is.
+  driverId: string | null;
   // "enable call reminder"/"call notification" typed directly into the
   // free-text box — see CALL_REMINDER_RE.
   alertCall: boolean;
@@ -568,7 +575,9 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   const when = extractDateTime(input);
   const locations = extractLocations(rawInput);
   const person = extractPerson(rawInput);
-  const driverName = extractDriver(rawInput, members);
+  const driver = extractDriver(rawInput, members);
+  const driverName = driver?.name ?? null;
+  const driverId = driver?.id ?? null;
   // The driver isn't also an assignee — "the driver should be Priya" names
   // Priya as who's DOING the driving, not who the ride is for. Without
   // this exclusion she'd land in both the driver picker AND the "For"
@@ -608,6 +617,7 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
     urgent,
     kindOverride,
     driverName,
+    driverId,
     alertCall,
   };
 }

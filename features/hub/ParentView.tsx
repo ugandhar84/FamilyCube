@@ -506,8 +506,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // Pick-up Radar's "Up Next" card links to this instead of only ever
   // offering the manual "pick anyone" dispatch modal.
   const myUpcomingRides = todayEvents
-    .filter(e => { const a = eventAssignee(e); return a.name === active.name && a.status === 'confirmed' && !!e.memberId
-      && hoursUntilEvent(e.date, e.time) >= -0.5; })
+    .filter(e => {
+      const a = eventAssignee(e);
+      // id-based — falls back to name only for an external, non-member
+      // assignee with no id at all.
+      const isMine = a.id ? a.id === active.id : a.name === active.name;
+      return isMine && a.status === 'confirmed' && !!e.memberId
+      && hoursUntilEvent(e.date, e.time) >= -0.5;
+    })
     .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
   const nextRide = myUpcomingRides[0];
   // pendingReviews (Chore Reviews) intentionally excluded — GreetingHeader

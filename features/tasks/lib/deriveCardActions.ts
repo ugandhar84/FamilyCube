@@ -173,7 +173,10 @@ export function eventAssigneeRole(ev: Pick<FamilyEvent, 'driverName' | 'helper' 
 }
 
 export interface EventActions {
-  assignee: { name: string | undefined; status: HelperStatus | undefined };
+  // Mirrors eventAssignee()'s own return shape (this IS that return value,
+  // just passed through) — id is the real member id when the assignee is
+  // a real family member, undefined for an external non-member name.
+  assignee: { name: string | undefined; id: string | undefined; status: HelperStatus | undefined };
   assigneeRole: 'helper' | 'driver';
   isSelfAssigned: boolean;
   showRemind: boolean;

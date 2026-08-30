@@ -662,7 +662,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
     case 'kid_request_helper_assigned':
       return {
         title: '🙋 You Were Assigned',
-        body: `${p.byName ?? 'Someone'} asked you to help with a request${p.note ? `: ${p.note}` : ''}`,
+        body: `${p.byName ?? 'Someone'} asked you to help with${p.detail ? `: "${decodeRequestDetail(p.detail as string)}"` : ' a request'}${p.note ? ` — ${p.note}` : ''}`,
         sound: 'default',
         data: { screen: 'Requests', requestId: p.requestId },
       };
@@ -959,7 +959,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return p.toSelf
         ? {
             title: '🔑 Approval Access Granted',
-            body: `You can now approve/decline routine chore submissions until ${p.untilLabel}.`,
+            body: `${p.byName ?? 'A parent'} gave you approval access until ${p.untilLabel} — you can approve/decline routine chore submissions until then.`,
             sound: 'default',
             data: { screen: 'Roster' },
           }
@@ -972,7 +972,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return p.toSelf
         ? {
             title: '🔒 Approval Access Ended',
-            body: 'Your temporary approval access was ended early.',
+            body: `${p.byName ?? 'A parent'} ended your temporary approval access early.`,
             data: { screen: 'Roster' },
           }
         : {

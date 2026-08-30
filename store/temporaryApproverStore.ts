@@ -248,19 +248,28 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
     }
 
     if (grant) {
+      // byName resolved once and passed to BOTH calls — was previously only
+      // computed for the other-parents FYI, so the grantee's own "ended
+      // early" push never said WHO ended it.
+      let granterName: string | undefined;
+      let granteeName: string | undefined;
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const members = useFamilyStore.getState().members;
+        granterName = members.find((m: any) => m.id === grant.grantedByMemberId)?.name;
+        granteeName = members.find((m: any) => m.id === grant.grantedToMemberId)?.name;
+      } catch (e) { console.warn('[temporaryApproverStore] revoke name-lookup error', e); }
+
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'temp_approver_revoked', familyId: grant.familyId, memberIds: [grant.grantedToMemberId],
-          persist: true, payload: { toSelf: true },
+          persist: true, payload: { toSelf: true, byName: granterName },
         },
       }).catch(e => console.warn('[temporaryApproverStore] revoke notify (self) failed:', e?.message));
 
       try {
         const { useFamilyStore } = require('./familyStore');
-        const members = useFamilyStore.getState().members;
-        const granterName = members.find((m: any) => m.id === grant.grantedByMemberId)?.name;
-        const granteeName = members.find((m: any) => m.id === grant.grantedToMemberId)?.name;
-        const otherParentIds = members
+        const otherParentIds = useFamilyStore.getState().members
           .filter((m: any) => m.role === 'parent' && m.id !== grant.grantedToMemberId)
           .map((m: any) => m.id);
         if (otherParentIds.length) {

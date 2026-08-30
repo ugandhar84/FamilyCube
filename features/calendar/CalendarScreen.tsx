@@ -41,6 +41,7 @@ import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
 import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
+import { showToast } from '@/components/AppToast';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
 import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } from './components/EventCard';
@@ -758,7 +759,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         supabase.rpc('reassign_event', {
           p_event_id: id, p_new_member_id: targetMember.id, p_role: role, p_actor_id: activeMemberId,
         }).then(({ error }) => {
-          if (error) console.warn('[CalendarScreen] handleApplySwap reassign_event failed', error.message);
+          if (error) {
+            console.warn('[CalendarScreen] handleApplySwap reassign_event failed', error.message);
+            showToast("Couldn't reassign — please try again", 'error');
+            return;
+          }
+          // The RPC writes the DB correctly, but nothing here told the
+          // local Zustand store — without this, the swap could keep
+          // showing the OLD driver/helper until some unrelated fetch
+          // happened to refresh it, even though the DB was already right.
+          updateEvent(id, role === 'driver'
+            ? { driverName: targetMember.name, driverStatus: 'confirmed' as const }
+            : { helper: targetMember.name, helperStatus: 'confirmed' as const });
         });
       } else {
         // No matching member row for the suggested name — fall back to the

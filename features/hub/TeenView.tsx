@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
+import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
@@ -279,6 +280,12 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         showToast("Couldn't drop — try again", 'info');
         return;
       }
+      // DB write succeeds but nothing told the local Zustand store — same
+      // gap as every other decline call site; updateEvent's own
+      // clearOnDecline/autoOpenOnDecline logic handles clearing the right
+      // field pair and reopening the GP/Teen pool from this 'rejected'
+      // transition.
+      updateEvent(evId, { [role === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
       if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
       showToast(clawedBack ? `Dropped — ${paidCoins} coins clawed back` : 'Dropped ✓');
     });
@@ -300,6 +307,9 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         showToast("Couldn't confirm — try again", 'info');
         return;
       }
+      // DB write succeeds but nothing told the local Zustand store — same
+      // gap as every other confirm call site in the app.
+      updateEvent(evId, { [role === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>);
       showToast('Confirmed ✓');
     });
   };

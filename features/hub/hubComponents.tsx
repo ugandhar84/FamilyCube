@@ -494,7 +494,18 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
       supabase.rpc('reassign_event', {
         p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
       }).then(({ error }: { error: any }) => {
-        if (error) { console.warn('[ConflictClusterCard] reassign_event failed', error.message); return; }
+        if (error) {
+          console.warn('[ConflictClusterCard] reassign_event failed', error.message);
+          showToast("Couldn't reassign — please try again", 'error');
+          return;
+        }
+        // DB write succeeds but nothing updated the local Zustand copy —
+        // same gap as EventDetailSheet's own reassign handler, so this
+        // card could keep showing the OLD assignee until an unrelated
+        // fetch happened to refresh it.
+        updateEvent(ev.id, assigneeRole === 'driver'
+          ? { driverName: name, driverStatus: 'confirmed' as const }
+          : { helper: name, helperStatus: 'confirmed' as const });
         showToast(`Assigned to ${name.split(' ')[0]} ✓`);
       });
     } else {
@@ -1235,7 +1246,17 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('confirm_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember?.id, p_role: assigneeRole,
                         }).then(({ error }) => {
-                          if (error) { console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message); return; }
+                          if (error) {
+                            console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message);
+                            showToast("Couldn't confirm — please try again", 'error');
+                            return;
+                          }
+                          // Same local-state gap as every other RPC call
+                          // site here — the DB write succeeds but nothing
+                          // told the shared Zustand store, so this sheet
+                          // kept showing "Pending" until an unrelated fetch
+                          // happened to refresh it.
+                          updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>);
                           showToast('Confirmed ✓');
                         });
                       }}
@@ -1288,6 +1309,11 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                             showToast("Couldn't save — try again", 'info');
                             return;
                           }
+                          // DB write succeeds but nothing told the shared
+                          // Zustand store — updateEvent's own clearOnDecline
+                          // logic clears the right field pair based on this
+                          // 'rejected' transition.
+                          updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
                           showToast("Marked — you're off this one ✓");
                           setChangeOpen(false);
                           setCancelledSelfName(undefined);
@@ -1335,6 +1361,16 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                             showToast("Couldn't save — try again", 'info');
                             return;
                           }
+                          // DB write succeeds (and the RPC auto-opens both
+                          // GP/Teen pools server-side for a Ride/
+                          // rideRequired event) but nothing told the local
+                          // Zustand store — mirror both here so the sheet
+                          // doesn't keep showing the pre-decline assignee
+                          // after it closes.
+                          updateEvent(ev.id, {
+                            [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected',
+                            isOpenToGrandparents: true, isOpenToTeens: true,
+                          } as Partial<FamilyEvent>);
                           doneToast();
                           onClose();
                         });
@@ -1359,7 +1395,26 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('reassign_event', {
                           p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
                         }).then(({ error }) => {
-                          if (error) { console.warn('[EventDetailSheet] reassign_event failed', error.message); return; }
+                          if (error) {
+                            console.warn('[EventDetailSheet] reassign_event failed', error.message);
+                            showToast("Couldn't reassign — please try again", 'error');
+                            return;
+                          }
+                          // Was missing entirely on this branch (the
+                          // no-matching-member fallback below DID call
+                          // updateEvent, but the real RPC path — the common
+                          // case — never did) — the DB write succeeded but
+                          // the local Zustand cache kept its pre-reassign
+                          // value, so the detail sheet (and Hub) could keep
+                          // showing the OLD assignee until some unrelated
+                          // fetch happened to refresh it. Confirmed live:
+                          // reassigning to Praveena required "multiple
+                          // attempts" before her own view finally showed
+                          // it, even though the DB was already correct
+                          // after the very first successful call.
+                          updateEvent(ev.id, assigneeRole === 'driver'
+                            ? { driverName: name, driverStatus: 'confirmed' as const }
+                            : { helper: name, helperStatus: 'confirmed' as const });
                           showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                         });
                       } else {

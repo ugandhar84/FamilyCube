@@ -55,6 +55,10 @@ export function YourRidesSection({
         showToast("Couldn't save — try again", 'info');
         return;
       }
+      // DB write succeeds but nothing told the local Zustand store — same
+      // gap as every other decline call site; updateEvent's own
+      // clearOnDecline/autoOpenOnDecline logic handles the rest.
+      updateEvent(ev.id, { helperStatus: 'rejected' });
       setDeclineId(null); setDeclineText('');
     });
   };
@@ -107,6 +111,10 @@ export function YourRidesSection({
                           showToast("Couldn't save — try again", 'info');
                           return;
                         }
+                        // DB write succeeds but nothing told the local
+                        // Zustand store — same gap as every other confirm
+                        // call site in the app.
+                        updateEvent(ev.id, { helperStatus: 'confirmed' });
                         showToast('Ride accepted ✓');
                       });
                   }}

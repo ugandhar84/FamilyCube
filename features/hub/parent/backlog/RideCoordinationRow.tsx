@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Car, UserCog } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { eventAssignee } from '@/store/eventStore';
+import { eventAssignee, useEventStore } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
@@ -22,6 +22,7 @@ export function RideCoordinationRow({ ev, members, active, colors, isDark }: {
   ev: FamilyEvent; members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
 }) {
   const [reassignOpen, setReassignOpen] = useState(false);
+  const updateEvent = useEventStore(s => s.updateEvent);
   const creator = members.find(m => m.id === ev.createdBy);
   const assignee = eventAssignee(ev);
   const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id && m.name !== assignee.name);
@@ -44,7 +45,18 @@ export function RideCoordinationRow({ ev, members, active, colors, isDark }: {
     supabase.rpc('reassign_event', {
       p_event_id: ev.id, p_new_member_id: m.id, p_role: role, p_actor_id: active.id,
     }).then(({ error }) => {
-      if (error) { console.warn('[RideCoordinationRow] reassignTo reassign_event failed', error.message); return; }
+      if (error) {
+        console.warn('[RideCoordinationRow] reassignTo reassign_event failed', error.message);
+        showToast("Couldn't reassign — please try again", 'error');
+        return;
+      }
+      // DB write succeeds but nothing told the local Zustand store — same
+      // gap as every other reassign call site; a co-parent handoff starts
+      // 'pending' (the new parent still needs to confirm), same as
+      // RideRequiredEventCard's own parent-to-parent reassignTo.
+      updateEvent(ev.id, role === 'driver'
+        ? { driverName: m.name, driverStatus: 'pending' }
+        : { helper: m.name, helperStatus: 'pending' });
       showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
     });
     setReassignOpen(false);

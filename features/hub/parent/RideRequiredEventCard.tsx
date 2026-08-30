@@ -61,9 +61,21 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
     supabase.rpc('reassign_event', {
       p_event_id: ev.id, p_new_member_id: active.id, p_role: 'driver', p_actor_id: active.id,
     }).then(({ error }) => {
-      if (error) { console.warn('[RideRequiredEventCard] iDrive reassign_event failed', error.message); return; }
+      if (error) {
+        console.warn('[RideRequiredEventCard] iDrive reassign_event failed', error.message);
+        showToast("Couldn't reassign — please try again", 'error');
+        return;
+      }
+      // Was gated behind `ev.seriesId && updateEventScoped` — a plain
+      // one-off event (no seriesId) never got its local Zustand copy
+      // updated after a successful reassign, so this card kept showing
+      // the old/no driver until some unrelated fetch happened to refresh
+      // the shared store. Update unconditionally on success; the
+      // seriesId branch additionally propagates to future occurrences.
       if (ev.seriesId && updateEventScoped) {
         updateEventScoped(ev.id, { driverName: active.name, driverStatus: 'confirmed' }, 'following');
+      } else {
+        updateEvent(ev.id, { driverName: active.name, driverStatus: 'confirmed' });
       }
       showToast("You're driving ✓");
     });
@@ -96,7 +108,16 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
     supabase.rpc('reassign_event', {
       p_event_id: ev.id, p_new_member_id: m.id, p_role: 'driver', p_actor_id: active.id,
     }).then(({ error }) => {
-      if (error) { console.warn('[RideRequiredEventCard] reassignTo reassign_event failed', error.message); return; }
+      if (error) {
+        console.warn('[RideRequiredEventCard] reassignTo reassign_event failed', error.message);
+        showToast("Couldn't reassign — please try again", 'error');
+        return;
+      }
+      // DB write succeeds but nothing told the local Zustand store — same
+      // gap as iDrive above; a parent-to-parent handoff starts 'pending'
+      // (the new parent still needs to confirm), not 'confirmed' the way
+      // iDrive's self-assign is.
+      updateEvent(ev.id, { driverName: m.name, driverStatus: 'pending' });
       showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
     });
     setReassignOpen(false);

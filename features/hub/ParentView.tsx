@@ -715,7 +715,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <MedicationsCard
         meds={parentMeds} medsTaken={parentMedsTaken} toggleMed={toggleParentMed}
         onAddMed={addParentMed} onRemoveMed={deleteParentMed}
-        colors={colors} isDark={isDark} active={active}
+        colors={colors} isDark={isDark} active={active} allMembers={members}
       />
 
       {/* Scenarios 9.2/9.3 — temporary-approver / caregiver-mode grants. */}

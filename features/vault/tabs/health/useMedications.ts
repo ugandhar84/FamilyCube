@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useEventStore } from '@/store/eventStore';
+import { useFamilyStore } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
 import { Medication, MedForm, today } from './types';
 
@@ -47,12 +48,18 @@ export function useMedications(familyId: string | undefined, memberId: string | 
   // escalation, PLUS a real recurring calendar reminder (daily, from
   // start_date through end_date if set), not just a bare DB row with no
   // schedule anywhere.
-  const addMed = useCallback(async (form: MedForm) => {
-    if (!familyId || !memberId) return;
+  // targetMemberId lets a caller with a wider member list (e.g. a Hub
+  // card's "Assigned To" picker covering the whole family, not just the
+  // profile this hook is scoped to) insert the medication under a
+  // DIFFERENT member than the hook's own memberId — defaults to memberId
+  // so every existing self-only call site is unaffected.
+  const addMed = useCallback(async (form: MedForm, targetMemberId?: string) => {
+    const subjectId = targetMemberId ?? memberId;
+    if (!familyId || !subjectId) return;
     const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
     const { data } = await supabase.from('family_medications').insert({
       family_id: familyId,
-      member_id: memberId,
+      member_id: subjectId,
       assigned_by: memberId,
       name: form.name.trim(),
       dosage: form.dosage.trim(),
@@ -73,7 +80,11 @@ export function useMedications(familyId: string | undefined, memberId: string | 
       escalation_after_min: parseInt(form.escalation_after_min) || 60,
     }).select().single();
     if (data) {
-      setMeds(prev => [data as Medication, ...prev]);
+      // Only inject into this hook's own list if the med was actually
+      // added for the member THIS hook is scoped to — a parent adding a
+      // med for a kid from a picker covering the whole family must not
+      // have it silently appear under the parent's own "my meds" list.
+      if (subjectId === memberId) setMeds(prev => [data as Medication, ...prev]);
       supabase.rpc('upsert_med_suggestion', {
         p_name: form.name.trim(),
         p_category: form.category,
@@ -85,13 +96,32 @@ export function useMedications(familyId: string | undefined, memberId: string | 
       // this used to make (which silently dropped every dose time past
       // the first — live-reported: selecting "2x Daily" only ever asked
       // for a single reminder time with nowhere to enter a second).
+      // A parent can add a med for a DIFFERENT member (kid, senior) than
+      // themselves via a picker covering the whole family — that member
+      // previously had no way to know a new medication was added to their
+      // own record. Self-adds (subjectId === memberId) stay silent, same
+      // rule HealthTab.tsx's own addMed already uses.
+      if (subjectId !== memberId) {
+        const byName = useFamilyStore.getState().members.find(m => m.id === memberId)?.name;
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'medication_added', familyId, memberIds: [subjectId], persist: true,
+            excludeMemberId: memberId,
+            payload: { memberId: subjectId, medName: form.name.trim(), dosage: form.dosage.trim() ? `${form.dosage} ${form.dosage_unit}` : undefined, byName },
+          },
+        }).catch(e => console.warn('[useMedications] addMed notify failed:', e?.message));
+      }
+
+      // Reminder goes to subjectId (the actual patient), not memberId (the
+      // acting parent) — otherwise a parent adding a kid's medication would
+      // wrongly schedule the "take your pill" reminder on their own profile.
       times.forEach(time => {
         useEventStore.getState().addRecurringEvent(
           {
             title: `Take ${form.name.trim()}`,
             date: form.start_date || today(),
             time,
-            memberId,
+            memberId: subjectId,
             type: 'reminder',
             category: 'Medication',
             notes: form.instructions || undefined,

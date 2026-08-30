@@ -12,7 +12,7 @@ import { Medication, FREQ_LABELS } from '@/features/vault/tabs/health/types';
 // app) — kept as one local constant.
 const MONEY_GREEN = '#10B981';
 
-export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemoveMed, colors, isDark, active }: {
+export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemoveMed, colors, isDark, active, allMembers }: {
   meds: Medication[];
   medsTaken: Record<string, boolean>;
   toggleMed: (med: Medication) => void;
@@ -20,11 +20,21 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
   // HealthTab.tsx's Health screen uses) instead of the old name+time-only
   // stub — a medication feature with no dosage, recurrence, or start/end
   // date wasn't a real medication tracker (live-reported: "not a good
-  // form... like any generic app does").
-  onAddMed: (form: any) => Promise<void>;
+  // form... like any generic app does"). Second arg lets a parent target a
+  // DIFFERENT family member than the active profile — was always [active]
+  // only, so the "Assigned To" picker never appeared here even though
+  // AddMedModal/useMedications both support it (direct report: "can we
+  // also add medicines for others in the family from parents?").
+  onAddMed: (form: any, targetMemberId?: string) => Promise<void>;
   onRemoveMed: (id: string) => void;
   colors: any; isDark: boolean;
   active: { id: string; name: string };
+  // Full family, so AddMedModal's member picker has more than one option
+  // and so each row can show WHO added it when it wasn't the viewer
+  // themselves (this card's list itself stays filtered to just `active`'s
+  // own meds — a kid's Hub never shows anyone else's medications, only who
+  // added their own).
+  allMembers: { id: string; name: string }[];
 }) {
   const [showAddMed, setShowAddMed] = useState(false);
 
@@ -43,6 +53,13 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
             med.dosage ? `${med.dosage}${med.dosage_unit ? ' ' + med.dosage_unit : ''}` : null,
             FREQ_LABELS[med.frequency] ?? med.frequency,
           ].filter(Boolean).join(' · ');
+          // Only shown when someone ELSE added it — self-added meds (the
+          // common case) stay uncluttered. Was invisible either way before;
+          // now that a parent can add a med here for a different member
+          // (see onAddMed above), the receiving member's own Hub should be
+          // able to tell it wasn't something they added themselves.
+          const addedByOther = med.assigned_by && med.assigned_by !== active.id;
+          const addedByName = addedByOther ? allMembers.find(m => m.id === med.assigned_by)?.name?.split(' ')[0] : null;
           return (
             <View key={med.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: i < meds.length - 1 ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
               <Pill size={22} color={taken ? colors.textTertiary : BRAND.teal} />
@@ -50,6 +67,7 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
                 <Text style={{ fontSize: GP.sub, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
                 <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>
                   {med.frequency_times?.length ? med.frequency_times.join(' & ') : 'Anytime'}{scheduleLine ? ` · ${scheduleLine}` : ''}
+                  {addedByName ? ` · Added by ${addedByName}` : ''}
                 </Text>
               </View>
               <Pressable onPress={() => toggleMed(med)} style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: taken ? MONEY_GREEN + '20' : BRAND.teal, borderWidth: taken ? 1 : 0, borderColor: MONEY_GREEN + '40' }}>
@@ -90,13 +108,15 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
       <AddMedModal
         visible={showAddMed}
         onClose={() => setShowAddMed(false)}
-        // AddMedModal's own onSave signature is (memberId, form) — it
-        // supports picking who a medication is for when given multiple
-        // members, but this card is scoped to ONE person (the active Hub
-        // profile), so only [active] is ever passed below and the picker
-        // never actually appears; memberId here is always active.id.
-        onSave={async (_memberId, form) => { await onAddMed(form); setShowAddMed(false); }}
-        members={[active]}
+        // Full family, not just [active] — AddMedModal's own "Assigned To"
+        // picker now actually appears, and the picked memberId is threaded
+        // through to onAddMed as an explicit target (undefined when it's
+        // still `active` themselves, since that's this hook's own default).
+        onSave={async (memberId, form) => {
+          await onAddMed(form, memberId !== active.id ? memberId : undefined);
+          setShowAddMed(false);
+        }}
+        members={allMembers}
         colors={colors}
         isDark={isDark}
       />

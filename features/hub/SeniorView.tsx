@@ -839,7 +839,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         conflictReasons={conflictReasons}
       />
 
-      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} />
+      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
 
       {/* A parent (or this GP themselves) directly assigned a task via
           addParentQuest — same Accept/Respond, Nudge-back, and locked-item

@@ -247,7 +247,8 @@ export default function CalendarSyncScreen() {
           <Text style={s.sectionLabel}>Personal Calendar</Text>
           <Text style={s.intro}>
             Full 2-way sync — FamilyCube events are added to this calendar, and this calendar's
-            own events are brought into FamilyCube's Schedule.
+            own events are brought into FamilyCube's Schedule. For Google, tasks from your
+            Google Tasks list also come in as Quests.
           </Text>
           <View style={{ gap: 12, marginBottom: 24 }}>
             {(['google', 'outlook'] as const).map(p => renderProviderRow(p, 'personal'))}

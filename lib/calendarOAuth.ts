@@ -76,10 +76,12 @@ function randomToken(): Promise<string> {
 function scopeFor(provider: CalendarProvider, purpose: CalendarPurpose): string {
   if (provider === 'google') {
     // calendar.freebusy: read-only busy/free blocks, no event content at
-    // all. calendar.events: full read/write on real events (personal sync).
+    // all. calendar.events + tasks.readonly: full read/write on real
+    // events, plus read-only Google Tasks (synced into Chores/Quests —
+    // Tasks is a completely separate API from Calendar, its own scope).
     return purpose === 'work'
       ? 'https://www.googleapis.com/auth/calendar.freebusy'
-      : 'https://www.googleapis.com/auth/calendar.events';
+      : 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks.readonly';
   }
   // Graph has no dedicated freebusy-only scope — Calendars.Read is the
   // narrowest that still permits getSchedule (freebusy) for a work

@@ -46,11 +46,22 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
         // occurrence of every recurring series again.
         params.set('syncToken', syncToken);
       } else {
-        // Start of today, not the current instant — using `now` here
-        // would exclude an event created earlier today, before this sync
-        // happened to run.
+        // Start of today in UTC (this Deno process's local timezone),
+        // not the current instant — using `now` here would exclude an
+        // event created earlier today, before this sync happened to run.
+        // No per-connection timezone is stored, so this is UTC-midnight,
+        // not the connected user's actual local midnight — the practical
+        // effect is always a slightly WIDER window than the user's true
+        // "today" (their local midnight always falls at or after UTC
+        // midnight for a positive offset, and at or after for a negative
+        // one measured the other direction — worked through both cases:
+        // it's over-inclusive either way, never excludes a same-day
+        // event). Fine for this use — the goal is "don't miss today,"
+        // not pixel-precise day boundaries, and matches the same
+        // UTC-based approach calendar-freebusy-sync's SYNC_WINDOW_DAYS
+        // already uses elsewhere in this codebase.
         const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
+        startOfToday.setUTCHours(0, 0, 0, 0);
         params.set('timeMin', startOfToday.toISOString());
         // Bounds how far a recurring series (yearly birthday/bill
         // reminders etc.) gets expanded on this FIRST sync — without it,

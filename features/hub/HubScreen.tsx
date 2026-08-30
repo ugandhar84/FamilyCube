@@ -117,6 +117,15 @@ export default function HubScreen() {
         const { supabase } = await import('@/lib/supabase');
         supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
           .catch(e => console.warn('[HubScreen] calendar-google-poll failed', e?.message));
+        // Google Tasks is a completely separate API from Calendar (its
+        // own tasks.readonly scope) — a Task created via the Calendar
+        // app's "+ -> Task" flow never appears in calendar.events at all
+        // (confirmed live: a real test task was invisible to
+        // calendar-google-poll for exactly this reason). Synced into
+        // Chores/Quests, not Schedule. Same throttle key/window as the
+        // Calendar poll above — one Hub-open check covers both.
+        supabase.functions.invoke('calendar-google-tasks-poll', { body: { familyId } })
+          .catch(e => console.warn('[HubScreen] calendar-google-tasks-poll failed', e?.message));
       } catch (e) {
         console.warn('[HubScreen] google poll throttle check failed', e);
       }

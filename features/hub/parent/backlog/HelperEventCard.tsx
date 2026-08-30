@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
@@ -87,7 +88,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
       {assignee.status !== 'confirmed' && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
           {showAssignToMe && (
-            <Pressable
+            <AnimatedPressable
               onPress={() => {
                 console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${assignee.name} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
                 Alert.alert(
@@ -121,11 +122,11 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                 borderWidth: 1, borderColor: colors.parent + '40' }}>
               <Repeat size={12} color={colors.parent} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>Take Over</Text>
-            </Pressable>
+            </AnimatedPressable>
           )}
           {(showConfirm || showCantMakeIt) && (
             <>
-              <Pressable
+              <AnimatedPressable
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
                   // Confirming yourself as the already-named driver IS the
@@ -164,13 +165,13 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   borderWidth: 1, borderColor: `${CONFIRMED_GREEN}40` }}>
                 <CheckCircle2 size={12} color={CONFIRMED_GREEN} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: CONFIRMED_GREEN }}>Confirm I'll do it</Text>
-              </Pressable>
+              </AnimatedPressable>
               {/* Previously the only action offered to the named-but-
                   unconfirmed parent was Confirm — no way to say no without
                   leaving this card for the Calendar's detail sheet. The
                   teen and GP equivalents of this card both already pair
                   confirm with a decline (QA Round 11, Medium Finding M4). */}
-              <Pressable
+              <AnimatedPressable
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → decline_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);
                   // Now the same decline_event_assignment RPC every other
@@ -219,7 +220,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: colors.danger + '40' }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Can't</Text>
-              </Pressable>
+              </AnimatedPressable>
             </>
           )}
         </View>

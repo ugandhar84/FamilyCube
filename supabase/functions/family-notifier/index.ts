@@ -248,6 +248,12 @@ type NotifType =
   // parent changes any perk that also should trigger that notify for
   // kids/teens."
   | 'perk_updated'
+  // HealthTab.tsx's addMed — a parent can add a medication for a DIFFERENT
+  // member (kid, senior) than themselves; that member previously had no way
+  // to know a new medication was added to their own record. Also
+  // med-reminders' missed-dose escalation to parents.
+  | 'medication_added'
+  | 'medication_missed'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -291,6 +297,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
   member_joined: 'family',
   perk_updated: 'rewards',
+  medication_added: 'family', medication_missed: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -1030,6 +1037,20 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Store', rewardId: p.rewardId },
       };
     }
+    case 'medication_added':
+      return {
+        title: `💊 New medication added`,
+        body: `${p.byName ?? 'A parent'} added "${p.medName}" to your medications${p.dosage ? ` (${p.dosage})` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Health', memberId: p.memberId },
+      };
+    case 'medication_missed':
+      return {
+        title: `⏰ Missed medication — ${p.memberName ?? 'a family member'}`,
+        body: `"${p.medName}" hasn't been logged as taken, ${p.minutesLate ?? 30}+ min past the scheduled time.`,
+        sound: 'default',
+        data: { screen: 'Health', memberId: p.subjectMemberId },
+      };
     case 'meal_reminder': {
       const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';
       return {
@@ -1131,7 +1152,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type

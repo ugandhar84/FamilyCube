@@ -304,6 +304,21 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     }).select().single();
     if (data) {
       setMeds(prev => [data as Medication, ...prev]);
+
+      // A parent can add a med for a DIFFERENT member (kid, senior) than
+      // themselves — that member previously had no way to know a new
+      // medication was added to their own record short of opening Health
+      // themselves. Self-adds (memberId === activeMember.id) stay silent.
+      if (memberId !== activeMember?.id) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'medication_added', familyId, memberIds: [memberId], persist: true,
+            excludeMemberId: activeMember?.id,
+            payload: { memberId, medName: form.name.trim(), dosage: form.dosage.trim() ? `${form.dosage} ${form.dosage_unit}` : undefined, byName: activeMember?.name },
+          },
+        }).catch(e => console.warn('[HealthTab] addMed notify failed:', e?.message));
+      }
+
       // Persist to global suggestions so other families see it; increment use_count on conflict
       supabase.rpc('upsert_med_suggestion', {
         p_name: form.name.trim(),

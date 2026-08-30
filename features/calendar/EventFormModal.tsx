@@ -512,12 +512,19 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
         : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
-      // Helper — always starts pending, even when picking yourself. Staying
-      // in the pending flow (rather than auto-confirming self-picks) is what
-      // surfaces "Can't Make It"/reassign/Open to GP/Open to Teen right away
-      // instead of only after an extra explicit confirm step.
+      // Helper — auto-confirmed when assigning yourself, matching every
+      // other self-assignment path in the app (reassign_event's own status
+      // logic, HelperEventCard's Take Over, RideRequiredEventCard's "I'll
+      // Drive"). Previously always started 'pending' even for a self-pick,
+      // deliberately, to surface Can't-Make-It/reassign/Open-to-GP/Open-to-
+      // Teen immediately rather than only after an explicit decline — but
+      // that read as "my own assignment is waiting for someone else's
+      // acceptance," confirmed confusing live. Auto-confirming here doesn't
+      // remove those options; Reassign/Cancel still reach them from a
+      // confirmed assignment too.
       helper,
-      helperStatus:    helper ? 'pending' : undefined,
+      helperId,
+      helperStatus:    helper ? (helperId === activeMemberId ? 'confirmed' : 'pending') : undefined,
       helperRequestedBy: isKid ? activeMember?.name : undefined,
       // Medical
       doctorName:      doctorName.trim() || undefined,
@@ -1527,10 +1534,23 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           const otherParents = members.filter(m => m.role === 'parent' && m.id !== activeMemberId && m.hasCar !== false);
           if (otherParents.length === 1) newHelperName = otherParents[0].name;
         }
+        // Real bug, confirmed live: this unconditionally hardcoded
+        // 'pending' even when the parent editing the event assigned
+        // THEMSELVES as helper/driver — self-assignment is already the
+        // confirmation everywhere else in the app (reassign_event's own
+        // status logic, HelperEventCard's Take Over, RideRequiredEventCard's
+        // "I'll Drive"), so this was the one inconsistent path, producing
+        // exactly the user-reported "why is my own assignment waiting for
+        // acceptance" confusion. The referenced "matching comment in
+        // AddEventModal" this cited doesn't exist in this file — whatever
+        // justified it originally is not recoverable, and it directly
+        // contradicts the established, otherwise-universal rule. Also now
+        // sets helperId (was never included in this patch at all), needed
+        // for classifyEventUrgency.ts's id-based "is this mine" check.
+        const assignedSelf = newHelperName && helperId === activeMemberId;
         patch.helper = newHelperName || undefined;
-        // Always starts pending, even reassigning to yourself — see the
-        // matching comment in AddEventModal's create path for why.
-        patch.helperStatus = newHelperName ? 'pending' : undefined;
+        patch.helperId = newHelperName ? helperId : undefined;
+        patch.helperStatus = newHelperName ? (assignedSelf ? 'confirmed' : 'pending') : undefined;
       }
       const origIds = event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : [];
       if (JSON.stringify(editMemberIds) !== JSON.stringify(origIds)) {
@@ -1549,6 +1569,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
         if (editDriverName !== (event.driverName ?? '')) {
           patch.driverName = editDriverName.trim() || undefined;
+          // driverId was never included in this patch — needed for
+          // classifyEventUrgency.ts's id-based "is this mine" check.
+          patch.driverId = editDriverName.trim() ? editDriverId : undefined;
           patch.driverStatus = editDriverName.trim() ? (editDriverId === activeMemberId ? 'confirmed' : 'pending') : undefined;
         }
       }

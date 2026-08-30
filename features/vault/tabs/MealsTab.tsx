@@ -24,6 +24,7 @@ import AiPlannerBanner from './meals/AiPlannerBanner';
 import MealSelectionPhase from './meals/MealSelectionPhase';
 import AddMealSheet from './meals/AddMealSheet';
 import { showToast } from '@/components/AppToast';
+import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const [addIngredients, setAddIngredients] = useState('');
   const [addPrepSteps, setAddPrepSteps]     = useState('');
   const [addShowEmoji, setAddShowEmoji]     = useState(false);
+  const [addStartTime, setAddStartTime]     = useState<Date | null>(null);
 
   // Pulse animation for the AI dot
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -220,6 +222,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     setAddDay(null); setAddTitle(''); setAddType('dinner'); setAddEmoji('🍽️');
     setAddChefId(''); setAddPrepMins(''); setAddKidRating(3);
     setAddDietTags([]); setAddIngredients(''); setAddPrepSteps(''); setAddShowEmoji(false);
+    setAddStartTime(null);
   };
 
   // Create a cooking quest for the assigned chef
@@ -272,6 +275,8 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
       ingredients: addIngredients.split('\n').map(s => s.trim()).filter(Boolean),
       prep_steps: addPrepSteps.split('\n').map(s => s.trim()).filter(Boolean),
       ai_generated: false,
+      start_time: addStartTime ? fmtTimeLabel(addStartTime) : null,
+      timezone: addStartTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
     }).select().single();
     if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
     if (chefId) createCookingQuest(addTitle.trim(), chefId, addDay, prepMins);
@@ -414,6 +419,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
         addIngredients={addIngredients} setAddIngredients={setAddIngredients}
         addPrepSteps={addPrepSteps} setAddPrepSteps={setAddPrepSteps}
         addShowEmoji={addShowEmoji} setAddShowEmoji={setAddShowEmoji}
+        addStartTime={addStartTime} setAddStartTime={setAddStartTime}
         members={members}
         resetAddForm={resetAddForm}
         addManualMeal={addManualMeal}

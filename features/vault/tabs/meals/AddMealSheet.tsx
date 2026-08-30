@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ScrollView, Modal,
   KeyboardAvoidingView, Platform, StyleSheet,
@@ -6,6 +7,8 @@ import { X } from 'lucide-react-native';
 import { MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { em } from './styles';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
 
 // ─── Add Meal Sheet ─────────────────────────────────────────────────────────
 
@@ -15,6 +18,7 @@ export default function AddMealSheet({
   addChefId, setAddChefId, addPrepMins, setAddPrepMins,
   addDietTags, setAddDietTags, addIngredients, setAddIngredients,
   addPrepSteps, setAddPrepSteps, addShowEmoji, setAddShowEmoji,
+  addStartTime, setAddStartTime,
   members, resetAddForm, addManualMeal,
 }: {
   colors: any; isDark: boolean;
@@ -28,11 +32,13 @@ export default function AddMealSheet({
   addIngredients: string; setAddIngredients: (v: string) => void;
   addPrepSteps: string; setAddPrepSteps: (v: string) => void;
   addShowEmoji: boolean; setAddShowEmoji: React.Dispatch<React.SetStateAction<boolean>>;
+  addStartTime: Date | null; setAddStartTime: (v: Date | null) => void;
   members: any[];
   resetAddForm: () => void;
   addManualMeal: () => void;
 }) {
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   return (
     <Modal visible={!!addDay} transparent animationType="slide" onRequestClose={resetAddForm}>
@@ -138,6 +144,24 @@ export default function AddMealSheet({
                   );
                 })}
               </View>
+
+              {/* Meal time (optional — powers the 1hr-before reminder) */}
+              <Text style={em.label}>Meal Time (optional — for a reminder)</Text>
+              <TouchableOpacity onPress={() => setShowTimePicker(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
+                  marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
+                  borderColor: colors.border }}>
+                <Text style={{ fontSize: 13, fontWeight: '600',
+                  color: addStartTime ? colors.textPrimary : colors.textTertiary }}>
+                  🕐 {addStartTime ? fmtTimeLabel(addStartTime) : 'No reminder set'}
+                </Text>
+                {addStartTime && (
+                  <TouchableOpacity onPress={() => setAddStartTime(null)} hitSlop={8}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
 
               {/* Chef + prep time */}
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -247,6 +271,18 @@ export default function AddMealSheet({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <PickerOverlay
+        showDate={false}
+        showTime={showTimePicker}
+        value={addStartTime ?? new Date()}
+        onChangeDate={() => {}}
+        onChangeTime={(d) => setAddStartTime(d)}
+        onDone={() => setShowTimePicker(false)}
+        accentColor={MEAL_TYPE_COLOR[addType] ?? colors.amber}
+        colors={colors}
+        timeLabel="🕐 What time is this meal?"
+      />
     </Modal>
   );
 }

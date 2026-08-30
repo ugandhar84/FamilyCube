@@ -9,6 +9,11 @@ export interface Meal {
   emoji?: string | null; prep_minutes?: number | null; dietary_tags?: string[];
   kid_friendly_rating?: number | null; prep_steps?: string[];
   ai_generated?: boolean;
+  // Display string from the time picker, e.g. "6:00 PM" — same convention
+  // as calendar_events.start_time — plus the IANA zone it was entered in.
+  // Both optional: a meal with no time set gets no reminder.
+  start_time?: string | null;
+  timezone?: string | null;
 }
 
 export interface AiMealOption {

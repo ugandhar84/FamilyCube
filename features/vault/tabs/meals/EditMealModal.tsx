@@ -3,6 +3,24 @@ import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView,
 import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { em } from './styles';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
+
+// "6:00 PM" → a Date holding today's date with that wall-clock time, so
+// PickerOverlay's spinner has something concrete to show. Only the
+// hours/minutes are ever read back out (see handleSave below) — the date
+// portion is discarded.
+function parseTimeLabel(label: string | null | undefined): Date | null {
+  if (!label) return null;
+  const m = label.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  if (m[3] === 'PM' && h !== 12) h += 12;
+  if (m[3] === 'AM' && h === 12) h = 0;
+  const d = new Date();
+  d.setHours(h, parseInt(m[2], 10), 0, 0);
+  return d;
+}
 
 // ─── Edit Meal Modal ──────────────────────────────────────────────────────────
 
@@ -22,6 +40,8 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
   const [prepSteps,   setPrepSteps]   = useState('');
   const [saving,      setSaving]      = useState(false);
   const [showEmoji,   setShowEmoji]   = useState(false);
+  const [startTime,   setStartTime]   = useState<Date | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
     if (meal) {
@@ -34,6 +54,7 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
       setDietTags(meal.dietary_tags ?? []);
       setIngredients((meal.ingredients ?? []).join('\n'));
       setPrepSteps((meal.prep_steps ?? []).join('\n'));
+      setStartTime(parseTimeLabel(meal.start_time));
     }
   }, [meal]);
 
@@ -53,6 +74,8 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
       dietary_tags:        dietTags,
       ingredients:         ingredients.split('\n').map(s => s.trim()).filter(Boolean),
       prep_steps:          prepSteps.split('\n').map(s => s.trim()).filter(Boolean),
+      start_time:          startTime ? fmtTimeLabel(startTime) : null,
+      timezone:            startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
     });
     setSaving(false);
     onClose();
@@ -141,6 +164,24 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
                   );
                 })}
               </View>
+
+              {/* Meal time (optional — powers the 1hr-before reminder) */}
+              <Text style={em.label}>Meal Time (optional — for a reminder)</Text>
+              <TouchableOpacity onPress={() => setShowTimePicker(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
+                  marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
+                  borderColor: colors.border }}>
+                <Text style={{ fontSize: 13, fontWeight: '600',
+                  color: startTime ? colors.textPrimary : colors.textTertiary }}>
+                  🕐 {startTime ? fmtTimeLabel(startTime) : 'No reminder set'}
+                </Text>
+                {startTime && (
+                  <TouchableOpacity onPress={() => setStartTime(null)} hitSlop={8}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
 
               {/* Chef + prep time */}
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -241,6 +282,18 @@ export default function EditMealModal({ meal, visible, onClose, onSave, members,
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <PickerOverlay
+        showDate={false}
+        showTime={showTimePicker}
+        value={startTime ?? new Date()}
+        onChangeDate={() => {}}
+        onChangeTime={(d) => setStartTime(d)}
+        onDone={() => setShowTimePicker(false)}
+        accentColor={typeColor}
+        colors={colors}
+        timeLabel="🕐 What time is this meal?"
+      />
     </Modal>
   );
 }

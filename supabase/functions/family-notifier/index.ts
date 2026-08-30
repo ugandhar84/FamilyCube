@@ -205,6 +205,10 @@ type NotifType =
   // know unless they happened to open the Memories tab themselves.
   | 'memory_posted'
   | 'memory_liked'
+  // family_meals.start_time (MealsTab's Add/Edit Meal, optional time field)
+  // — a planned meal previously had no reminder at all; meal-reminders
+  // fires this to parents 1hr before, same T-1h pattern as schedule-alerts.
+  | 'meal_reminder'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -242,6 +246,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   member_pin_changed: 'family', member_role_changed: 'family',
   trip_started: 'family', trip_overdue: 'family',
   memory_posted: 'family', memory_liked: 'family',
+  meal_reminder: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -893,6 +898,14 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: (p.caption as string) ? `On "${p.caption}"` : 'Tap to see the reaction.',
         data: { screen: 'Memories', memoryId: p.memoryId },
       };
+    case 'meal_reminder': {
+      const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';
+      return {
+        title: `${emoji} ${p.mealTitle ?? 'A meal'} in 1 hour`,
+        body: `${p.day ?? 'Today'}'s ${p.mealType ?? 'meal'}${p.chefName ? ` — ${p.chefName} is cooking` : ''} at ${p.timeLabel ?? 'the planned time'}.`,
+        data: { screen: 'Vault', tab: 'Meals', mealId: p.mealId },
+      };
+    }
 
     case 'custom':
     default:

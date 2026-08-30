@@ -28,6 +28,7 @@
  */
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
 const REDIRECT_URI = 'familycube://calendar-oauth-callback';
@@ -42,14 +43,18 @@ function oauthBounceUrl(): string {
 
 export type CalendarProvider = 'google' | 'outlook';
 
-// Read at call time (not module load) so a missing env var fails loudly
-// with a clear message the moment someone actually tries to connect,
-// rather than silently building a broken auth URL at import time.
+// Read at call time (not module load) so a missing value fails loudly with
+// a clear message the moment someone actually tries to connect, rather
+// than silently building a broken auth URL at import time. Sourced from
+// app.config.js's extra (via expo-constants) rather than process.env
+// directly — eas build --local was found to silently drop these two
+// specific EXPO_PUBLIC_* vars during its own env-inlining step even
+// though .env and Expo's env loader both resolve them correctly in
+// isolation; app.config.js's own process.env read at config-eval time is
+// unaffected by that bug, so extra is the reliable path here.
 function clientIdFor(provider: CalendarProvider): string {
-  const key = provider === 'google'
-    ? 'EXPO_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID'
-    : 'EXPO_PUBLIC_MS_GRAPH_CLIENT_ID';
-  const value = process.env[key];
+  const key = provider === 'google' ? 'googleCalendarClientId' : 'msGraphClientId';
+  const value = Constants.expoConfig?.extra?.[key];
   if (!value) throw new Error(`${key} is not configured — calendar connect is unavailable until it's set`);
   return value;
 }

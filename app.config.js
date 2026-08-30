@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "25",
+    buildNumber: "26",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -221,6 +221,14 @@ const config = {
     eas: {
       projectId: "6c9a2b2c-44d1-40cf-9310-5dc37687be14",
     },
+    // eas build --local was silently dropping these two EXPO_PUBLIC_* vars
+    // from its own env-inlining step (confirmed in isolation: .env and
+    // @expo/env both load them correctly on their own — the bug is specific
+    // to the local build plugin's orchestration). Routing them through
+    // extra/expo-constants instead, since app.config.js's own process.env
+    // read at config-eval time is unaffected by that bug.
+    googleCalendarClientId: process.env.EXPO_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID ?? null,
+    msGraphClientId: process.env.EXPO_PUBLIC_MS_GRAPH_CLIENT_ID ?? null,
   },
   owner: "peopleontechs-team",
 };

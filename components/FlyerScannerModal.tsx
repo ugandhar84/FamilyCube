@@ -14,12 +14,21 @@
  *   Kid-picker chips — choose which kid(s) this goes to
  *   "Add to Schedule" saves an event per selected kid via useEventStore
  *   Parent can tap any field to edit before confirming
+ *
+ * Migrated onto the canonical AppBottomSheet shell (was a hand-rolled
+ * Modal duplicating AppBottomSheet's own keyboard-height tracking, with
+ * every step's Rescan/Submit action row living inside its ScrollView
+ * instead of a sticky footer — same anti-patterns already found and fixed
+ * across HelpRequestModal/RequestHelpModal/SubmitProofSheet/
+ * CreateQuestModal/EditQuestModal this session). AppBottomSheet's own
+ * `footer` slot renders per-step below, and `children` renders whichever
+ * step's body is active.
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, Modal, Pressable, ScrollView, TextInput,
+  View, Text, Pressable, ScrollView, TextInput,
   StyleSheet, Image, ActivityIndicator, Alert, Platform,
-  KeyboardAvoidingView, Animated, Keyboard, Dimensions,
+  Animated,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -38,6 +47,7 @@ import { useSchoolStore } from '@/store/schoolStore';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import AppBottomSheet from '@/components/AppBottomSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,19 +143,6 @@ function dateToTimeStr(d: Date) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-// ─── Editable field row ───────────────────────────────────────────────────────
-function FieldRow({ label, value, onEdit, accent, colors }: {
-  label: string; value: string; onEdit?: () => void; accent?: string; colors: any;
-}) {
-  return (
-    <Pressable onPress={onEdit} style={f.fieldRow}>
-      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, width: 88 }}>{label}</Text>
-      <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: accent ?? colors.textPrimary, flex: 1 }} numberOfLines={2}>{value || '—'}</Text>
-      {onEdit && <Ionicons name="pencil" size={13} color={colors.textTertiary} />}
-    </Pressable>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -155,32 +152,6 @@ interface Props {
 
 export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
-
-  // This sheet rolls its own Modal (not the canonical AppBottomSheet) and
-  // has real TextInputs throughout the review/timetable steps (title,
-  // location, cost, description, per-period subject/teacher/room/times).
-  // f.sheet's maxHeight: '94%' below is a static CSS percentage of the
-  // FULL screen — it doesn't shrink when the keyboard opens, so a sheet
-  // already close to that ceiling has nowhere to go but up past the top
-  // of the screen (the same class of bug found and fixed in
-  // AppBottomSheet.tsx). Tracking the real keyboard height here and
-  // clamping the sheet's own maxHeight style to it directly, mirroring
-  // that fix, since migrating this ~1000-line multi-step wizard onto
-  // AppBottomSheet wholesale is a much larger, riskier change than this
-  // component needs just to close the actual bug.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-  const screenHeight = Dimensions.get('window').height;
-  const TOP_SAFE_MARGIN = 60;
-  const sheetMaxHeight = keyboardHeight > 0
-    ? Math.max(300, screenHeight - keyboardHeight - TOP_SAFE_MARGIN)
-    : screenHeight * 0.94;
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
   const { schedules, addSchedule, updateSchedule } = useSchoolStore();
@@ -223,8 +194,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
 
   // Edit pickers (single event review)
   const [pickerField, setPickerField] = useState<'date' | 'time' | 'endTime' | 'rsvp' | null>(null);
-  const [editingField, setEditField]  = useState<keyof ExtractedEvent | null>(null);
-  const [editText, setEditText]       = useState('');
+  const [editField, setEditField]     = useState<keyof ExtractedEvent | null>(null);
 
   // ── Image helpers ──
   const addImage = useCallback((img: CapturedImage) => {
@@ -232,12 +202,6 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   }, []);
 
   const removeImage = (i: number) => setImages(prev => prev.filter((_, idx) => idx !== i));
-
-  const uriToBase64 = async (uri: string): Promise<string> => {
-    if (uri.startsWith('data:')) return uri.split(',')[1];
-    const b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
-    return b64;
-  };
 
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -429,666 +393,630 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const updateEvent = (field: keyof ExtractedEvent, value: any) =>
     setFlyerResult(prev => prev?.type === 'event' ? { ...prev, event: { ...prev.event, [field]: value } } : prev);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── Per-step title/subtitle ──
+  const title = step === 'timetable' ? 'Class Schedule' : step === 'multi' ? 'School Calendar' : 'Scan Activity Flyer';
+  const subtitle =
+    step === 'capture'    ? 'Up to 3 photos or 1 PDF → AI extracts the schedule'
+    : step === 'processing' ? 'Analysing with Gemini Vision…'
+    : 'Review & assign to your kid(s)';
+
+  // ── Per-step footer ──
+  const footer = step === 'capture' ? (
+    <>
+      {errorMsg ? (
+        <View style={{ backgroundColor: '#EF444420', borderRadius: 14, padding: 12, marginBottom: 10 }}>
+          <Text style={{ fontSize: TYPO.caption, color: '#EF4444', fontWeight: '700' }}>⚠️ {errorMsg}</Text>
+        </View>
+      ) : null}
+      <Pressable onPress={processImages}
+        style={[f.submitBtn, { backgroundColor: images.length ? BRAND.purple : colors.border }]}>
+        <Ionicons name="sparkles" size={16} color={images.length ? '#fff' : colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: images.length ? '#fff' : colors.textTertiary }}>
+          Analyse with AI →
+        </Text>
+      </Pressable>
+    </>
+  ) : step === 'review' && event ? (
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <Pressable onPress={() => { setStep('capture'); setFlyerResult(null); }}
+        style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+      </Pressable>
+      <Pressable onPress={handleConfirmEvent}
+        style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length ? BRAND.teal : colors.border }]}>
+        <Ionicons name="calendar-outline" size={16} color={selectedKids.length ? '#fff' : colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length ? '#fff' : colors.textTertiary }}>
+          Add to Schedule →
+        </Text>
+      </Pressable>
+    </View>
+  ) : step === 'timetable' && timetable ? (
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+      </Pressable>
+      <Pressable onPress={handleConfirmTimetable}
+        style={[f.submitBtn, { flex: 2, backgroundColor: timetableKidId ? BRAND.purple : colors.border }]}>
+        <Ionicons name="book-outline" size={16} color={timetableKidId ? '#fff' : colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: timetableKidId ? '#fff' : colors.textTertiary }}>Save Schedule →</Text>
+      </Pressable>
+    </View>
+  ) : step === 'multi' && multiCal ? (
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+      </Pressable>
+      <Pressable onPress={handleConfirmMulti}
+        style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length && selectedEvents.size ? BRAND.teal : colors.border }]}>
+        <Ionicons name="calendar-outline" size={16} color={selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary }}>
+          Import {selectedEvents.size} Event{selectedEvents.size !== 1 ? 's' : ''} →
+        </Text>
+      </Pressable>
+    </View>
+  ) : null; // 'processing' has no footer
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={resetAndClose}>
-      <Pressable style={f.backdrop} onPress={resetAndClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
-        {/* Shadow lives on this OUTER view (no overflow/borderRadius clipping
-            of its own) — a shadow needs to paint outside the view's bounds to
-            be visible at all, but overflow:'hidden' clips to the rounded
-            bounds. Putting both (shadow + overflow:'hidden' + borderRadius)
-            on the SAME View, as this used to, made iOS render a rectangular
-            sliver of the shadow's own layer bleeding through above the
-            rounded top corners — live-reported as a boxy/square finish at
-            the top instead of a clean curve. AppBottomSheet.tsx elsewhere in
-            this app avoids the conflict a different way (it has a shadow but
-            no overflow:'hidden' at all); this sheet DOES need the clip
-            (image thumbnails/scroll content would otherwise bleed past the
-            rounded corners), so splitting shadow and clip onto two nested
-            views is the fix here instead. */}
-        <View style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
-          <View style={[f.sheet, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: sheetMaxHeight }]}>
-          <View style={[f.handle, { backgroundColor: colors.border }]} />
+    <AppBottomSheet
+      visible={visible}
+      onClose={resetAndClose}
+      title={title}
+      subtitle={subtitle}
+      accentColor={BRAND.purple}
+      minHeight={step === 'processing' ? '40%' : '55%'}
+      maxHeight="92%"
+      footer={footer}
+    >
+      {/* ── TOAST ── */}
+      <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 8, left: 0, right: 0, zIndex: 99, opacity: toastOpacity }}>
+        <View style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+          backgroundColor: toastMsg.success ? '#059669' : '#EF4444',
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
+          <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{toastMsg.text}</Text>
+        </View>
+      </Animated.View>
 
-          {/* ── TOAST ── */}
-          <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 50, left: 20, right: 20, zIndex: 99, opacity: toastOpacity }}>
-            <View style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
-              backgroundColor: toastMsg.success ? '#059669' : '#EF4444',
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-              shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{toastMsg.text}</Text>
-            </View>
-          </Animated.View>
-
-          {/* ── HEADER ── */}
-          <View style={f.hdr}>
-            <View style={[f.hdrIcon, { backgroundColor: BRAND.purple + '20' }]}>
-              <Ionicons name="scan" size={20} color={BRAND.purple} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[f.title, { color: colors.textPrimary }]}>Scan Activity Flyer</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                {step === 'capture'    ? 'Up to 3 photos or 1 PDF → AI extracts the schedule'
-                : step === 'processing' ? 'Analysing with Gemini Vision…'
-                : 'Review & assign to your kid(s)'}
-              </Text>
-            </View>
-            <Pressable onPress={resetAndClose}
-              style={[f.closeBtn, { backgroundColor: colors.surface }]}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Ionicons name="close" size={16} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-
-          {/* ── STEP 1: CAPTURE ── */}
-          {step === 'capture' && (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={f.body}>
-
-              {/* Thumbnail strip */}
-              {images.length > 0 && (
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-                  {images.map((img, i) => (
-                    <View key={i} style={{ position: 'relative' }}>
-                      <Image source={{ uri: img.uri }} style={f.thumb} />
-                      <Pressable onPress={() => removeImage(i)}
-                        style={f.thumbClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="close-circle" size={20} color="#EF4444" />
-                      </Pressable>
-                      {img.mimeType === 'application/pdf' && (
-                        <View style={f.pdfBadge}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>PDF</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                  {/* Remaining slots */}
-                  {Array.from({ length: 3 - images.length }).map((_, i) => (
-                    <View key={`empty-${i}`} style={[f.thumb, f.thumbEmpty, { borderColor: colors.border }]}>
-                      <Ionicons name="add" size={22} color={colors.textTertiary} />
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Add buttons */}
-              <View style={{ gap: 10, marginBottom: 20 }}>
-                {images.length < 3 && (
-                  <>
-                    <Pressable onPress={pickFromCamera}
-                      style={[f.addBtn, { backgroundColor: BRAND.purple + '18', borderColor: BRAND.purple + '40' }]}>
-                      <Ionicons name="camera" size={22} color={BRAND.purple} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>Take a Photo</Text>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Point camera at the flyer</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={BRAND.purple} />
-                    </Pressable>
-
-                    <Pressable onPress={pickFromGallery}
-                      style={[f.addBtn, { backgroundColor: BRAND.teal + '15', borderColor: BRAND.teal + '40' }]}>
-                      <Ionicons name="images" size={22} color={BRAND.teal} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>Browse Gallery</Text>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                          Pick up to {3 - images.length} photo{3 - images.length !== 1 ? 's' : ''}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={BRAND.teal} />
-                    </Pressable>
-
-                    {!images.some(img => img.mimeType === 'application/pdf') && (
-                      <Pressable onPress={pickPDF}
-                        style={[f.addBtn, { backgroundColor: BRAND.amber + '15', borderColor: BRAND.amber + '40' }]}>
-                        <Ionicons name="document-text" size={22} color={BRAND.amber} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>Pick a PDF</Text>
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Multi-page flyers, permission slips</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={16} color={BRAND.amber} />
-                      </Pressable>
-                    )}
-                  </>
-                )}
-              </View>
-
-              {errorMsg ? (
-                <View style={{ backgroundColor: '#EF444420', borderRadius: 14, padding: 12, marginBottom: 14 }}>
-                  <Text style={{ fontSize: TYPO.caption, color: '#EF4444', fontWeight: '700' }}>⚠️ {errorMsg}</Text>
-                </View>
-              ) : null}
-
-              <Pressable onPress={processImages}
-                style={[f.submitBtn, { backgroundColor: images.length ? BRAND.purple : colors.border }]}>
-                <Ionicons name="sparkles" size={16} color={images.length ? '#fff' : colors.textTertiary} />
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: images.length ? '#fff' : colors.textTertiary }}>
-                  Analyse with AI →
-                </Text>
-              </Pressable>
-            </ScrollView>
-          )}
-
-          {/* ── STEP 2: PROCESSING ── */}
-          {step === 'processing' && (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40, gap: 16 }}>
-              <ActivityIndicator size="large" color={BRAND.purple} />
-              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Reading your flyer…</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Gemini Vision is extracting the schedule</Text>
-            </View>
-          )}
-
-          {/* ── STEP 3: REVIEW ── */}
-          {step === 'review' && event && (
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
-              contentContainerStyle={f.body}>
-
-              {/* Extracted event card */}
-              <View style={[f.eventCard, { backgroundColor: isDark ? '#0F172A' : '#F8FAFF', borderColor: BRAND.purple + '40' }]}>
-                {/* Category badge + title */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <View style={[f.catBadge, { backgroundColor: BRAND.purple + '20' }]}>
-                    <Text style={{ fontSize: TYPO.subheading }}>{CAT_EMOJI[event.category] ?? '📋'}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <TextInput
-                      value={event.title}
-                      onChangeText={v => updateEvent('title', v)}
-                      style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary, padding: 0 }}
-                      placeholder="Event title"
-                      placeholderTextColor={colors.textTertiary}
-                    />
-                    {/* Category chips */}
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                      {CATEGORIES.map(cat => (
-                        <Pressable key={cat} onPress={() => updateEvent('category', cat)}
-                          style={[f.catChip, {
-                            backgroundColor: event.category === cat ? BRAND.purple + '20' : colors.surface,
-                            borderColor: event.category === cat ? BRAND.purple : colors.border,
-                          }]}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: event.category === cat ? BRAND.purple : colors.textTertiary }}>
-                            {CAT_EMOJI[cat]} {cat}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-
-                {/* Date */}
-                <Pressable onPress={() => setPickerField('date')} style={f.fieldRow}>
-                  <Text style={f.fieldLabel}>📅 Date</Text>
-                  <Text style={[f.fieldValue, { color: event.date ? colors.textPrimary : colors.textTertiary }]}>
-                    {fmtDateDisplay(event.date)}
-                  </Text>
-                  <Ionicons name="pencil" size={13} color={colors.textTertiary} />
-                </Pressable>
-                {pickerField === 'date' && (
-                  <DateTimePicker value={parseDateToObj(event.date)} mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    minimumDate={new Date()}
-                    themeVariant={isDark ? 'dark' : 'light'}
-                    onChange={(_, d) => { if (d) updateEvent('date', dateToStr(d)); setPickerField(null); }} />
-                )}
-
-                {/* Time */}
-                <Pressable onPress={() => setPickerField('time')} style={f.fieldRow}>
-                  <Text style={f.fieldLabel}>🕐 Start</Text>
-                  <Text style={[f.fieldValue, { color: event.time ? colors.textPrimary : colors.textTertiary }]}>
-                    {fmtTime12(event.time)}
-                  </Text>
-                  <Ionicons name="pencil" size={13} color={colors.textTertiary} />
-                </Pressable>
-                {pickerField === 'time' && (
-                  <DateTimePicker value={parseTimeToObj(event.time)} mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    themeVariant={isDark ? 'dark' : 'light'}
-                    onChange={(_, d) => { if (d) updateEvent('time', dateToTimeStr(d)); setPickerField(null); }} />
-                )}
-
-                {/* End time */}
-                <Pressable onPress={() => setPickerField('endTime')} style={f.fieldRow}>
-                  <Text style={f.fieldLabel}>🕐 End</Text>
-                  <Text style={[f.fieldValue, { color: event.end_time ? colors.textPrimary : colors.textTertiary }]}>
-                    {fmtTime12(event.end_time)}
-                  </Text>
-                  <Ionicons name="pencil" size={13} color={colors.textTertiary} />
-                </Pressable>
-                {pickerField === 'endTime' && (
-                  <DateTimePicker value={parseTimeToObj(event.end_time)} mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    themeVariant={isDark ? 'dark' : 'light'}
-                    onChange={(_, d) => { if (d) updateEvent('end_time', dateToTimeStr(d)); setPickerField(null); }} />
-                )}
-
-                {/* Location */}
-                <View style={f.fieldRow}>
-                  <Text style={f.fieldLabel}>📍 Place</Text>
-                  <TextInput
-                    value={event.location ?? ''}
-                    onChangeText={v => updateEvent('location', v || null)}
-                    placeholder="Location"
-                    placeholderTextColor={colors.textTertiary}
-                    style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
-                  />
-                </View>
-
-                {/* Organizer */}
-                {event.organizer ? (
-                  <View style={f.fieldRow}>
-                    <Text style={f.fieldLabel}>🏫 By</Text>
-                    <TextInput
-                      value={event.organizer ?? ''}
-                      onChangeText={v => updateEvent('organizer', v || null)}
-                      style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
-                    />
-                  </View>
-                ) : null}
-
-                {/* Cost */}
-                {event.cost !== null && (
-                  <View style={f.fieldRow}>
-                    <Text style={f.fieldLabel}>💵 Cost</Text>
-                    <TextInput
-                      value={event.cost !== null ? String(event.cost) : ''}
-                      onChangeText={v => updateEvent('cost', v ? parseFloat(v) : null)}
-                      keyboardType="decimal-pad"
-                      style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
-                    />
-                  </View>
-                )}
-
-                {/* RSVP deadline */}
-                {event.rsvp_deadline && (
-                  <Pressable onPress={() => setPickerField('rsvp')} style={f.fieldRow}>
-                    <Text style={f.fieldLabel}>📬 RSVP by</Text>
-                    <Text style={[f.fieldValue, { color: '#EF4444' }]}>{fmtDateDisplay(event.rsvp_deadline)}</Text>
-                    <Ionicons name="pencil" size={13} color={colors.textTertiary} />
+      {/* ── STEP 1: CAPTURE ── */}
+      {step === 'capture' && (
+        <>
+          {/* Thumbnail strip */}
+          {images.length > 0 && (
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              {images.map((img, i) => (
+                <View key={i} style={{ position: 'relative' }}>
+                  <Image source={{ uri: img.uri }} style={f.thumb} />
+                  <Pressable onPress={() => removeImage(i)}
+                    style={f.thumbClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close-circle" size={20} color="#EF4444" />
                   </Pressable>
-                )}
-                {pickerField === 'rsvp' && (
-                  <DateTimePicker value={parseDateToObj(event.rsvp_deadline)} mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    themeVariant={isDark ? 'dark' : 'light'}
-                    onChange={(_, d) => { if (d) updateEvent('rsvp_deadline', dateToStr(d)); setPickerField(null); }} />
-                )}
+                  {img.mimeType === 'application/pdf' && (
+                    <View style={f.pdfBadge}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>PDF</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+              {/* Remaining slots */}
+              {Array.from({ length: 3 - images.length }).map((_, i) => (
+                <View key={`empty-${i}`} style={[f.thumb, f.thumbEmpty, { borderColor: colors.border }]}>
+                  <Ionicons name="add" size={22} color={colors.textTertiary} />
+                </View>
+              ))}
+            </View>
+          )}
 
-                {/* Description */}
-                {event.description ? (
-                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', marginBottom: 6 }}>Summary</Text>
-                    <TextInput
-                      value={event.description ?? ''}
-                      onChangeText={v => updateEvent('description', v)}
-                      multiline
-                      style={{ fontSize: TYPO.caption, color: colors.textSecondary, padding: 0 }}
-                    />
+          {/* Add buttons */}
+          <View style={{ gap: 10 }}>
+            {images.length < 3 && (
+              <>
+                <Pressable onPress={pickFromCamera}
+                  style={[f.addBtn, { backgroundColor: BRAND.purple + '18', borderColor: BRAND.purple + '40' }]}>
+                  <Ionicons name="camera" size={22} color={BRAND.purple} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>Take a Photo</Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Point camera at the flyer</Text>
                   </View>
-                ) : null}
+                  <Ionicons name="chevron-forward" size={16} color={BRAND.purple} />
+                </Pressable>
 
-                {/* Notes */}
-                {event.notes ? (
-                  <View style={{ marginTop: 10, backgroundColor: BRAND.amber + '15', borderRadius: 12, padding: 10 }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber, marginBottom: 4 }}>📋 Notes</Text>
-                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>{event.notes}</Text>
-                  </View>
-                ) : null}
-
-                {/* Recurring badge */}
-                {event.recurring && (
-                  <View style={{ marginTop: 8, backgroundColor: BRAND.teal + '15', borderRadius: 12, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                    <Ionicons name="repeat" size={15} color={BRAND.teal} />
-                    <Text style={{ fontSize: TYPO.label, color: BRAND.teal, fontWeight: '700', flex: 1 }}>
-                      Recurring: {event.recurrence_desc ?? 'Regular event'}
+                <Pressable onPress={pickFromGallery}
+                  style={[f.addBtn, { backgroundColor: BRAND.teal + '15', borderColor: BRAND.teal + '40' }]}>
+                  <Ionicons name="images" size={22} color={BRAND.teal} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>Browse Gallery</Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                      Pick up to {3 - images.length} photo{3 - images.length !== 1 ? 's' : ''}
                     </Text>
                   </View>
-                )}
-              </View>
-
-              {/* Kid picker */}
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 }}>
-                Add to whose schedule?
-              </Text>
-              {kids.length === 0 ? (
-                <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 16 }}>No kids in the family yet.</Text>
-              ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-                  {kids.map(k => {
-                    const sel = selectedKids.includes(k.id);
-                    return (
-                      <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
-                        style={[f.kidChip, {
-                          backgroundColor: sel ? BRAND.teal + '20' : colors.surface,
-                          borderColor: sel ? BRAND.teal : colors.border,
-                        }]}>
-                        <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl}
-                          siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
-                        <View>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>
-                            {k.name.split(' ')[0]}
-                          </Text>
-                          {sel && <Text style={{ fontSize: TYPO.micro, color: BRAND.teal, fontWeight: '700' }}>✓ Selected</Text>}
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-
-              {/* Actions */}
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Pressable onPress={() => { setStep('capture'); setFlyerResult(null); }}
-                  style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                  <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+                  <Ionicons name="chevron-forward" size={16} color={BRAND.teal} />
                 </Pressable>
-                <Pressable onPress={handleConfirmEvent}
-                  style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length ? BRAND.teal : colors.border }]}>
-                  <Ionicons name="calendar-outline" size={16} color={selectedKids.length ? '#fff' : colors.textTertiary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length ? '#fff' : colors.textTertiary }}>
-                    Add to Schedule →
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          )}
-          {/* ── STEP: TIMETABLE ── */}
-          {step === 'timetable' && timetable && (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={f.body} keyboardShouldPersistTaps="handled">
 
-              {/* Header */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📚 Class Schedule</Text>
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
-                    {[timetable.school, timetable.grade].filter(Boolean).join(' · ')}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{editablePeriods.length} periods</Text>
-              </View>
-
-              {/* Term tabs — only shown when multiple terms detected */}
-              {(() => {
-                const terms = [...new Set(editablePeriods.map(p => p.term).filter(Boolean) as string[])];
-                if (terms.length < 2) return null;
-                const ALL_TERMS = [null, ...terms]; // null = "All"
-                return (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                    style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}>
-                    {ALL_TERMS.map(t => {
-                      const sel = selectedTerm === t;
-                      return (
-                        <Pressable key={t ?? 'all'} onPress={() => { setSelectedTerm(t); setExpandedIdx(null); }}
-                          style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                            backgroundColor: sel ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
-                            borderWidth: 1.5, borderColor: sel ? BRAND.purple : colors.border }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? '#fff' : colors.textSecondary }}>
-                            {t ?? 'All terms'}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                );
-              })()}
-
-              {/* Editable period rows */}
-              <View style={{ gap: 6, marginBottom: 14 }}>
-                {editablePeriods.map((p, i) => {
-                  // Filter by selected term (null = show all)
-                  if (selectedTerm && p.term && p.term !== selectedTerm) return null;
-                  const expanded = expandedPeriodIdx === i;
-                  const ALL_DAYS_LIST = ['mon','tue','wed','thu','fri','sat','sun'];
-                  const DAY_ABBR: Record<string,string> = { mon:'M',tue:'T',wed:'W',thu:'Th',fri:'F',sat:'Sa',sun:'Su' };
-                  const updateP = (patch: Partial<ExtractedPeriod>) =>
-                    setEditablePeriods(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x));
-
-                  return (
-                    <View key={i} style={{ borderRadius: 14, borderWidth: 1.5,
-                      borderColor: expanded ? BRAND.purple + '60' : (isDark ? colors.border : '#E8E8F0'),
-                      backgroundColor: expanded ? (isDark ? BRAND.purple + '10' : BRAND.purple + '06') : (isDark ? colors.card : '#fff'),
-                      overflow: 'hidden' }}>
-
-                      {/* Collapsed row — tap to expand */}
-                      <Pressable onPress={() => setExpandedIdx(expanded ? null : i)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
-                        {/* Time block — primary */}
-                        <View style={{ alignItems: 'center', width: 52, backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
-                          borderRadius: 10, paddingVertical: 6 }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple, fontVariant: ['tabular-nums'] }}>
-                            {p.startTime ? fmtTime12(p.startTime).replace(' AM','a').replace(' PM','p') : '—'}
-                          </Text>
-                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontVariant: ['tabular-nums'] }}>
-                            {p.endTime ? fmtTime12(p.endTime).replace(' AM','a').replace(' PM','p') : ''}
-                          </Text>
-                        </View>
-                        {/* Subject + meta */}
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: p.isLunch ? '#D97706' : colors.textPrimary }} numberOfLines={1}>
-                            {p.subject || 'Untitled'}
-                          </Text>
-                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
-                            {[p.teacher, p.room].filter(Boolean).join(' · ') || 'Tap to edit'}
-                          </Text>
-                        </View>
-                        {/* Days + expand icon */}
-                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.teal }}>
-                            {p.days.map(d => DAY_ABBR[d] ?? d[0].toUpperCase()).join('')}
-                          </Text>
-                          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textTertiary} />
-                        </View>
-                      </Pressable>
-
-                      {/* Expanded inline editor */}
-                      {expanded && (
-                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8, borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#EEF0F4' }}>
-                          {/* Subject */}
-                          <TextInput value={p.subject} onChangeText={v => updateP({ subject: v })}
-                            placeholder="Subject" placeholderTextColor={colors.textTertiary}
-                            style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary,
-                              borderBottomWidth: 1, borderBottomColor: BRAND.purple + '40', paddingVertical: 6 }} />
-
-                          {/* Teacher + Room */}
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <TextInput value={p.teacher ?? ''} onChangeText={v => updateP({ teacher: v || null })}
-                              placeholder="Teacher" placeholderTextColor={colors.textTertiary}
-                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
-                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
-                            <TextInput value={p.room ?? ''} onChangeText={v => updateP({ room: v || null })}
-                              placeholder="Room" placeholderTextColor={colors.textTertiary}
-                              style={{ width: 90, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
-                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
-                          </View>
-
-                          {/* Times */}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <TextInput value={p.startTime ?? ''} onChangeText={v => updateP({ startTime: v || null })}
-                              placeholder="08:20" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
-                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
-                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
-                            <Text style={{ color: colors.textTertiary }}>→</Text>
-                            <TextInput value={p.endTime ?? ''} onChangeText={v => updateP({ endTime: v || null })}
-                              placeholder="09:05" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
-                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
-                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
-                          </View>
-
-                          {/* Days */}
-                          <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-                            {ALL_DAYS_LIST.map(d => {
-                              const on = p.days.includes(d);
-                              return (
-                                <Pressable key={d} onPress={() => updateP({ days: on ? p.days.filter(x=>x!==d) : [...p.days,d] })}
-                                  style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                                    backgroundColor: on ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
-                                    borderWidth: 1.5, borderColor: on ? BRAND.purple : colors.border }}>
-                                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: on ? '#fff' : colors.textSecondary }}>
-                                    {DAY_ABBR[d]}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                            <Pressable onPress={() => updateP({ isLunch: !p.isLunch })}
-                              style={{ paddingHorizontal: 10, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                                backgroundColor: p.isLunch ? '#F59E0B' : (isDark ? '#1E293B' : '#F1F5F9'),
-                                borderWidth: 1.5, borderColor: p.isLunch ? '#F59E0B' : colors.border }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: p.isLunch ? '#fff' : colors.textSecondary }}>🍱 Lunch</Text>
-                            </Pressable>
-                          </View>
-
-                          {/* Delete */}
-                          <Pressable onPress={() => { setEditablePeriods(prev => prev.filter((_,j) => j !== i)); setExpandedIdx(null); }}
-                            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
-                            <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                            <Text style={{ fontSize: TYPO.caption, color: '#EF4444', fontWeight: '700' }}>Remove period</Text>
-                          </Pressable>
-                        </View>
-                      )}
+                {!images.some(img => img.mimeType === 'application/pdf') && (
+                  <Pressable onPress={pickPDF}
+                    style={[f.addBtn, { backgroundColor: BRAND.amber + '15', borderColor: BRAND.amber + '40' }]}>
+                    <Ionicons name="document-text" size={22} color={BRAND.amber} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>Pick a PDF</Text>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Multi-page flyers, permission slips</Text>
                     </View>
-                  );
-                })}
-              </View>
-
-              {/* Add period */}
-              <Pressable onPress={() => {
-                const last = editablePeriods[editablePeriods.length - 1];
-                const newP: ExtractedPeriod = { periodName: '', subject: '', teacher: null, room: null,
-                  startTime: last?.endTime ?? null, endTime: null, days: ['mon','tue','wed','thu','fri'] };
-                setEditablePeriods(prev => [...prev, newP]);
-                setExpandedIdx(editablePeriods.length);
-              }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 12, paddingVertical: 12, borderWidth: 1.5, borderStyle: 'dashed',
-                borderColor: BRAND.purple + '50', marginBottom: 16 }}>
-                <Ionicons name="add" size={18} color={BRAND.purple} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Add period</Text>
-              </Pressable>
-
-              {/* Kid picker */}
-              <Text style={f.sectionLabel}>Assign to</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-                {kids.map(k => {
-                  const sel = timetableKidId === k.id;
-                  return (
-                    <Pressable key={k.id} onPress={() => setTTKid(k.id)}
-                      style={[f.kidChip, { backgroundColor: sel ? BRAND.purple + '20' : colors.surface, borderColor: sel ? BRAND.purple : colors.border }]}>
-                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.purple : colors.textTertiary} />
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.purple : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                  <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
-                </Pressable>
-                <Pressable onPress={handleConfirmTimetable}
-                  style={[f.submitBtn, { flex: 2, backgroundColor: timetableKidId ? BRAND.purple : colors.border }]}>
-                  <Ionicons name="book-outline" size={16} color={timetableKidId ? '#fff' : colors.textTertiary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: timetableKidId ? '#fff' : colors.textTertiary }}>Save Schedule →</Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          )}
-
-          {/* ── STEP: MULTI CALENDAR ── */}
-          {step === 'multi' && multiCal && (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={f.body}>
-              <View style={{ backgroundColor: BRAND.teal + '12', borderRadius: 16, padding: 14, marginBottom: 16, gap: 4 }}>
-                <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📅 School Calendar</Text>
-                {multiCal.school && <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>{multiCal.school}</Text>}
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
-                  {multiCal.events.length} events found · {selectedEvents.size} selected
-                </Text>
-              </View>
-
-              {/* Toggle all */}
-              <Pressable onPress={() => setSelEvts(selectedEvents.size === multiCal.events.length ? new Set() : new Set(multiCal.events.map((_, i) => i)))}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>
-                  {selectedEvents.size === multiCal.events.length ? 'Deselect all' : 'Select all'}
-                </Text>
-              </Pressable>
-
-              {/* Event list */}
-              <View style={{ gap: 6, marginBottom: 16 }}>
-                {multiCal.events.map((ev, i) => {
-                  const sel = selectedEvents.has(i);
-                  const isHoliday = ev.category === 'Holiday';
-                  return (
-                    <Pressable key={i} onPress={() => setSelEvts(prev => { const s = new Set(prev); sel ? s.delete(i) : s.add(i); return s; })}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                        backgroundColor: sel ? (isHoliday ? '#FEF3C7' : BRAND.teal + '10') : (isDark ? colors.card : '#F8FAFF'),
-                        borderRadius: 12, padding: 10, borderWidth: 1.5,
-                        borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : (isDark ? colors.border : '#E8E8F0') }}>
-                      <Text style={{ fontSize: 16 }}>{CAT_EMOJI[ev.category] ?? '📋'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{ev.title}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                          {ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date'}
-                          {ev.time ? ` · ${fmtTime12(ev.time)}` : ''}
-                        </Text>
-                      </View>
-                      <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-                        borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : colors.border,
-                        backgroundColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : 'transparent',
-                        alignItems: 'center', justifyContent: 'center' }}>
-                        {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {/* Kid picker */}
-              <Text style={f.sectionLabel}>Add to whose schedule?</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-                {kids.map(k => {
-                  const sel = selectedKids.includes(k.id);
-                  return (
-                    <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
-                      style={[f.kidChip, { backgroundColor: sel ? BRAND.teal + '20' : colors.surface, borderColor: sel ? BRAND.teal : colors.border }]}>
-                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                  <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
-                </Pressable>
-                <Pressable onPress={handleConfirmMulti}
-                  style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length && selectedEvents.size ? BRAND.teal : colors.border }]}>
-                  <Ionicons name="calendar-outline" size={16} color={selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary }}>
-                    Import {selectedEvents.size} Event{selectedEvents.size !== 1 ? 's' : ''} →
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          )}
-
+                    <Ionicons name="chevron-forward" size={16} color={BRAND.amber} />
+                  </Pressable>
+                )}
+              </>
+            )}
           </View>
+        </>
+      )}
+
+      {/* ── STEP 2: PROCESSING ── */}
+      {step === 'processing' && (
+        <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 16 }}>
+          <ActivityIndicator size="large" color={BRAND.purple} />
+          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Reading your flyer…</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Gemini Vision is extracting the schedule</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      )}
+
+      {/* ── STEP 3: REVIEW ── */}
+      {step === 'review' && event && (
+        <>
+          {/* Extracted event card */}
+          <View style={[f.eventCard, { backgroundColor: isDark ? '#0F172A' : '#F8FAFF', borderColor: BRAND.purple + '40' }]}>
+            {/* Category badge + title */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <View style={[f.catBadge, { backgroundColor: BRAND.purple + '20' }]}>
+                <Text style={{ fontSize: TYPO.subheading }}>{CAT_EMOJI[event.category] ?? '📋'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  value={event.title}
+                  onChangeText={v => updateEvent('title', v)}
+                  style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary, padding: 0 }}
+                  placeholder="Event title"
+                  placeholderTextColor={colors.textTertiary}
+                />
+                {/* Category chips */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                  {CATEGORIES.map(cat => (
+                    <Pressable key={cat} onPress={() => updateEvent('category', cat)}
+                      style={[f.catChip, {
+                        backgroundColor: event.category === cat ? BRAND.purple + '20' : colors.surface,
+                        borderColor: event.category === cat ? BRAND.purple : colors.border,
+                      }]}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: event.category === cat ? BRAND.purple : colors.textTertiary }}>
+                        {CAT_EMOJI[cat]} {cat}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Date */}
+            <Pressable onPress={() => setPickerField('date')} style={f.fieldRow}>
+              <Text style={f.fieldLabel}>📅 Date</Text>
+              <Text style={[f.fieldValue, { color: event.date ? colors.textPrimary : colors.textTertiary }]}>
+                {fmtDateDisplay(event.date)}
+              </Text>
+              <Ionicons name="pencil" size={13} color={colors.textTertiary} />
+            </Pressable>
+            {pickerField === 'date' && (
+              <DateTimePicker value={parseDateToObj(event.date)} mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                minimumDate={new Date()}
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(_, d) => { if (d) updateEvent('date', dateToStr(d)); setPickerField(null); }} />
+            )}
+
+            {/* Time */}
+            <Pressable onPress={() => setPickerField('time')} style={f.fieldRow}>
+              <Text style={f.fieldLabel}>🕐 Start</Text>
+              <Text style={[f.fieldValue, { color: event.time ? colors.textPrimary : colors.textTertiary }]}>
+                {fmtTime12(event.time)}
+              </Text>
+              <Ionicons name="pencil" size={13} color={colors.textTertiary} />
+            </Pressable>
+            {pickerField === 'time' && (
+              <DateTimePicker value={parseTimeToObj(event.time)} mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(_, d) => { if (d) updateEvent('time', dateToTimeStr(d)); setPickerField(null); }} />
+            )}
+
+            {/* End time */}
+            <Pressable onPress={() => setPickerField('endTime')} style={f.fieldRow}>
+              <Text style={f.fieldLabel}>🕐 End</Text>
+              <Text style={[f.fieldValue, { color: event.end_time ? colors.textPrimary : colors.textTertiary }]}>
+                {fmtTime12(event.end_time)}
+              </Text>
+              <Ionicons name="pencil" size={13} color={colors.textTertiary} />
+            </Pressable>
+            {pickerField === 'endTime' && (
+              <DateTimePicker value={parseTimeToObj(event.end_time)} mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(_, d) => { if (d) updateEvent('end_time', dateToTimeStr(d)); setPickerField(null); }} />
+            )}
+
+            {/* Location */}
+            <View style={f.fieldRow}>
+              <Text style={f.fieldLabel}>📍 Place</Text>
+              <TextInput
+                value={event.location ?? ''}
+                onChangeText={v => updateEvent('location', v || null)}
+                placeholder="Location"
+                placeholderTextColor={colors.textTertiary}
+                style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
+              />
+            </View>
+
+            {/* Organizer */}
+            {event.organizer ? (
+              <View style={f.fieldRow}>
+                <Text style={f.fieldLabel}>🏫 By</Text>
+                <TextInput
+                  value={event.organizer ?? ''}
+                  onChangeText={v => updateEvent('organizer', v || null)}
+                  style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
+                />
+              </View>
+            ) : null}
+
+            {/* Cost */}
+            {event.cost !== null && (
+              <View style={f.fieldRow}>
+                <Text style={f.fieldLabel}>💵 Cost</Text>
+                <TextInput
+                  value={event.cost !== null ? String(event.cost) : ''}
+                  onChangeText={v => updateEvent('cost', v ? parseFloat(v) : null)}
+                  keyboardType="decimal-pad"
+                  style={[f.inlineInput, { color: colors.textPrimary, flex: 1 }]}
+                />
+              </View>
+            )}
+
+            {/* RSVP deadline */}
+            {event.rsvp_deadline && (
+              <Pressable onPress={() => setPickerField('rsvp')} style={f.fieldRow}>
+                <Text style={f.fieldLabel}>📬 RSVP by</Text>
+                <Text style={[f.fieldValue, { color: '#EF4444' }]}>{fmtDateDisplay(event.rsvp_deadline)}</Text>
+                <Ionicons name="pencil" size={13} color={colors.textTertiary} />
+              </Pressable>
+            )}
+            {pickerField === 'rsvp' && (
+              <DateTimePicker value={parseDateToObj(event.rsvp_deadline)} mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(_, d) => { if (d) updateEvent('rsvp_deadline', dateToStr(d)); setPickerField(null); }} />
+            )}
+
+            {/* Description */}
+            {event.description ? (
+              <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', marginBottom: 6 }}>Summary</Text>
+                <TextInput
+                  value={event.description ?? ''}
+                  onChangeText={v => updateEvent('description', v)}
+                  multiline
+                  style={{ fontSize: TYPO.caption, color: colors.textSecondary, padding: 0 }}
+                />
+              </View>
+            ) : null}
+
+            {/* Notes */}
+            {event.notes ? (
+              <View style={{ marginTop: 10, backgroundColor: BRAND.amber + '15', borderRadius: 12, padding: 10 }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber, marginBottom: 4 }}>📋 Notes</Text>
+                <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>{event.notes}</Text>
+              </View>
+            ) : null}
+
+            {/* Recurring badge */}
+            {event.recurring && (
+              <View style={{ marginTop: 8, backgroundColor: BRAND.teal + '15', borderRadius: 12, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <Ionicons name="repeat" size={15} color={BRAND.teal} />
+                <Text style={{ fontSize: TYPO.label, color: BRAND.teal, fontWeight: '700', flex: 1 }}>
+                  Recurring: {event.recurrence_desc ?? 'Regular event'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Kid picker */}
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 }}>
+            Add to whose schedule?
+          </Text>
+          {kids.length === 0 ? (
+            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No kids in the family yet.</Text>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {kids.map(k => {
+                const sel = selectedKids.includes(k.id);
+                return (
+                  <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
+                    style={[f.kidChip, {
+                      backgroundColor: sel ? BRAND.teal + '20' : colors.surface,
+                      borderColor: sel ? BRAND.teal : colors.border,
+                    }]}>
+                    <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl}
+                      siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
+                    <View>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>
+                        {k.name.split(' ')[0]}
+                      </Text>
+                      {sel && <Text style={{ fontSize: TYPO.micro, color: BRAND.teal, fontWeight: '700' }}>✓ Selected</Text>}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </>
+      )}
+
+      {/* ── STEP: TIMETABLE ── */}
+      {step === 'timetable' && timetable && (
+        <>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📚 Class Schedule</Text>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+                {[timetable.school, timetable.grade].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{editablePeriods.length} periods</Text>
+          </View>
+
+          {/* Term tabs — only shown when multiple terms detected */}
+          {(() => {
+            const terms = [...new Set(editablePeriods.map(p => p.term).filter(Boolean) as string[])];
+            if (terms.length < 2) return null;
+            const ALL_TERMS = [null, ...terms]; // null = "All"
+            return (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}>
+                {ALL_TERMS.map(t => {
+                  const sel = selectedTerm === t;
+                  return (
+                    <Pressable key={t ?? 'all'} onPress={() => { setSelectedTerm(t); setExpandedIdx(null); }}
+                      style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                        backgroundColor: sel ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
+                        borderWidth: 1.5, borderColor: sel ? BRAND.purple : colors.border }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? '#fff' : colors.textSecondary }}>
+                        {t ?? 'All terms'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            );
+          })()}
+
+          {/* Editable period rows */}
+          <View style={{ gap: 6, marginBottom: 14 }}>
+            {editablePeriods.map((p, i) => {
+              // Filter by selected term (null = show all)
+              if (selectedTerm && p.term && p.term !== selectedTerm) return null;
+              const expanded = expandedPeriodIdx === i;
+              const ALL_DAYS_LIST = ['mon','tue','wed','thu','fri','sat','sun'];
+              const DAY_ABBR: Record<string,string> = { mon:'M',tue:'T',wed:'W',thu:'Th',fri:'F',sat:'Sa',sun:'Su' };
+              const updateP = (patch: Partial<ExtractedPeriod>) =>
+                setEditablePeriods(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x));
+
+              return (
+                <View key={i} style={{ borderRadius: 14, borderWidth: 1.5,
+                  borderColor: expanded ? BRAND.purple + '60' : (isDark ? colors.border : '#E8E8F0'),
+                  backgroundColor: expanded ? (isDark ? BRAND.purple + '10' : BRAND.purple + '06') : (isDark ? colors.card : '#fff'),
+                  overflow: 'hidden' }}>
+
+                  {/* Collapsed row — tap to expand */}
+                  <Pressable onPress={() => setExpandedIdx(expanded ? null : i)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
+                    {/* Time block — primary */}
+                    <View style={{ alignItems: 'center', width: 52, backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                      borderRadius: 10, paddingVertical: 6 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple, fontVariant: ['tabular-nums'] }}>
+                        {p.startTime ? fmtTime12(p.startTime).replace(' AM','a').replace(' PM','p') : '—'}
+                      </Text>
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontVariant: ['tabular-nums'] }}>
+                        {p.endTime ? fmtTime12(p.endTime).replace(' AM','a').replace(' PM','p') : ''}
+                      </Text>
+                    </View>
+                    {/* Subject + meta */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: p.isLunch ? '#D97706' : colors.textPrimary }} numberOfLines={1}>
+                        {p.subject || 'Untitled'}
+                      </Text>
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
+                        {[p.teacher, p.room].filter(Boolean).join(' · ') || 'Tap to edit'}
+                      </Text>
+                    </View>
+                    {/* Days + expand icon */}
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.teal }}>
+                        {p.days.map(d => DAY_ABBR[d] ?? d[0].toUpperCase()).join('')}
+                      </Text>
+                      <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textTertiary} />
+                    </View>
+                  </Pressable>
+
+                  {/* Expanded inline editor */}
+                  {expanded && (
+                    <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8, borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#EEF0F4' }}>
+                      {/* Subject */}
+                      <TextInput value={p.subject} onChangeText={v => updateP({ subject: v })}
+                        placeholder="Subject" placeholderTextColor={colors.textTertiary}
+                        style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary,
+                          borderBottomWidth: 1, borderBottomColor: BRAND.purple + '40', paddingVertical: 6 }} />
+
+                      {/* Teacher + Room */}
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TextInput value={p.teacher ?? ''} onChangeText={v => updateP({ teacher: v || null })}
+                          placeholder="Teacher" placeholderTextColor={colors.textTertiary}
+                          style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
+                            borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                        <TextInput value={p.room ?? ''} onChangeText={v => updateP({ room: v || null })}
+                          placeholder="Room" placeholderTextColor={colors.textTertiary}
+                          style={{ width: 90, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
+                            borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                      </View>
+
+                      {/* Times */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TextInput value={p.startTime ?? ''} onChangeText={v => updateP({ startTime: v || null })}
+                          placeholder="08:20" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
+                          style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
+                            borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                        <Text style={{ color: colors.textTertiary }}>→</Text>
+                        <TextInput value={p.endTime ?? ''} onChangeText={v => updateP({ endTime: v || null })}
+                          placeholder="09:05" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
+                          style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
+                            borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                      </View>
+
+                      {/* Days */}
+                      <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                        {ALL_DAYS_LIST.map(d => {
+                          const on = p.days.includes(d);
+                          return (
+                            <Pressable key={d} onPress={() => updateP({ days: on ? p.days.filter(x=>x!==d) : [...p.days,d] })}
+                              style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: on ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
+                                borderWidth: 1.5, borderColor: on ? BRAND.purple : colors.border }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: on ? '#fff' : colors.textSecondary }}>
+                                {DAY_ABBR[d]}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                        <Pressable onPress={() => updateP({ isLunch: !p.isLunch })}
+                          style={{ paddingHorizontal: 10, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: p.isLunch ? '#F59E0B' : (isDark ? '#1E293B' : '#F1F5F9'),
+                            borderWidth: 1.5, borderColor: p.isLunch ? '#F59E0B' : colors.border }}>
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: p.isLunch ? '#fff' : colors.textSecondary }}>🍱 Lunch</Text>
+                        </Pressable>
+                      </View>
+
+                      {/* Delete */}
+                      <Pressable onPress={() => { setEditablePeriods(prev => prev.filter((_,j) => j !== i)); setExpandedIdx(null); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
+                        <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                        <Text style={{ fontSize: TYPO.caption, color: '#EF4444', fontWeight: '700' }}>Remove period</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Add period */}
+          <Pressable onPress={() => {
+            const last = editablePeriods[editablePeriods.length - 1];
+            const newP: ExtractedPeriod = { periodName: '', subject: '', teacher: null, room: null,
+              startTime: last?.endTime ?? null, endTime: null, days: ['mon','tue','wed','thu','fri'] };
+            setEditablePeriods(prev => [...prev, newP]);
+            setExpandedIdx(editablePeriods.length);
+          }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            borderRadius: 12, paddingVertical: 12, borderWidth: 1.5, borderStyle: 'dashed',
+            borderColor: BRAND.purple + '50', marginBottom: 16 }}>
+            <Ionicons name="add" size={18} color={BRAND.purple} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Add period</Text>
+          </Pressable>
+
+          {/* Kid picker */}
+          <Text style={f.sectionLabel}>Assign to</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {kids.map(k => {
+              const sel = timetableKidId === k.id;
+              return (
+                <Pressable key={k.id} onPress={() => setTTKid(k.id)}
+                  style={[f.kidChip, { backgroundColor: sel ? BRAND.purple + '20' : colors.surface, borderColor: sel ? BRAND.purple : colors.border }]}>
+                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.purple : colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.purple : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {/* ── STEP: MULTI CALENDAR ── */}
+      {step === 'multi' && multiCal && (
+        <>
+          <View style={{ backgroundColor: BRAND.teal + '12', borderRadius: 16, padding: 14, marginBottom: 16, gap: 4 }}>
+            <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📅 School Calendar</Text>
+            {multiCal.school && <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>{multiCal.school}</Text>}
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
+              {multiCal.events.length} events found · {selectedEvents.size} selected
+            </Text>
+          </View>
+
+          {/* Toggle all */}
+          <Pressable onPress={() => setSelEvts(selectedEvents.size === multiCal.events.length ? new Set() : new Set(multiCal.events.map((_, i) => i)))}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>
+              {selectedEvents.size === multiCal.events.length ? 'Deselect all' : 'Select all'}
+            </Text>
+          </Pressable>
+
+          {/* Event list */}
+          <View style={{ gap: 6, marginBottom: 16 }}>
+            {multiCal.events.map((ev, i) => {
+              const sel = selectedEvents.has(i);
+              const isHoliday = ev.category === 'Holiday';
+              return (
+                <Pressable key={i} onPress={() => setSelEvts(prev => { const s = new Set(prev); sel ? s.delete(i) : s.add(i); return s; })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    backgroundColor: sel ? (isHoliday ? '#FEF3C7' : BRAND.teal + '10') : (isDark ? colors.card : '#F8FAFF'),
+                    borderRadius: 12, padding: 10, borderWidth: 1.5,
+                    borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : (isDark ? colors.border : '#E8E8F0') }}>
+                  <Text style={{ fontSize: 16 }}>{CAT_EMOJI[ev.category] ?? '📋'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{ev.title}</Text>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                      {ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date'}
+                      {ev.time ? ` · ${fmtTime12(ev.time)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                    borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : colors.border,
+                    backgroundColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : 'transparent',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Kid picker */}
+          <Text style={f.sectionLabel}>Add to whose schedule?</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {kids.map(k => {
+              const sel = selectedKids.includes(k.id);
+              return (
+                <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
+                  style={[f.kidChip, { backgroundColor: sel ? BRAND.teal + '20' : colors.surface, borderColor: sel ? BRAND.teal : colors.border }]}>
+                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
+    </AppBottomSheet>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const f = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, minHeight: 400, overflow: 'hidden' },
-  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
-  hdr:        { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
-  hdrIcon:    { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  title:      { fontSize: TYPO.caption, fontWeight: '900' },
-  closeBtn:   { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  body:       { paddingHorizontal: 20, paddingBottom: 40 },
   thumb:      { width: 90, height: 90, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1E293B' },
   thumbEmpty: { borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   thumbClose: { position: 'absolute', top: -6, right: -6 },

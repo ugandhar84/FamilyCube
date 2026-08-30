@@ -107,9 +107,9 @@ interface RewardState {
   syncFromDB:              () => Promise<void>;
 
   addReward:               (r: Omit<Reward, 'id' | 'createdAt'>) => Reward;
-  updateReward:            (id: string, updates: Partial<Omit<Reward, 'id' | 'createdAt'>>) => void;
+  updateReward:            (id: string, updates: Partial<Omit<Reward, 'id' | 'createdAt'>>, actingMemberId?: string) => void;
   deleteReward:            (id: string) => void;
-  toggleAvailability:      (id: string) => void;
+  toggleAvailability:      (id: string, actingMemberId?: string) => void;
 
   // Now async — redeem_reward is a real atomic RPC (row-locked eligibility
   // check + stock decrement + insert in one transaction), not a client-side
@@ -153,6 +153,31 @@ const SEED_REWARDS: Reward[] = [
 
 const REWARDS_KEY     = '@familycube_rewards_v2';
 const REDEMPTIONS_KEY = '@familycube_redemptions_v2';
+
+// Recipients for a perk-catalog change: whoever could actually redeem it —
+// eligibleMemberIds if the reward is restricted, otherwise every kid/teen
+// in the family (parents don't redeem rewards themselves, so they're never
+// a recipient here regardless of who made the change).
+function perkAudienceIds(reward: { eligibleMemberIds?: string[] }, excludeMemberId?: string): string[] {
+  const members = useFamilyStore.getState().members;
+  const pool = reward.eligibleMemberIds?.length
+    ? members.filter(m => reward.eligibleMemberIds!.includes(m.id))
+    : members.filter(m => m.role !== 'parent');
+  return pool.filter(m => m.id !== excludeMemberId).map(m => m.id);
+}
+
+function notifyPerkUpdated(reward: Reward, change: 'price' | 'available' | 'unavailable' | 'other', actingMemberId?: string) {
+  const familyId = getFamilyId();
+  const memberIds = perkAudienceIds(reward, actingMemberId);
+  if (!familyId || !memberIds.length) return;
+  supabase.functions.invoke('family-notifier', {
+    body: {
+      type: 'perk_updated', familyId, memberIds, persist: true,
+      excludeMemberId: actingMemberId,
+      payload: { rewardId: reward.id, rewardTitle: reward.title, change, cost: reward.cost },
+    },
+  }).catch(e => console.warn('[rewardStore] perk notify failed:', e?.message));
+}
 
 async function notifyReward(memberId: string, type: string, payload: Record<string, unknown>) {
   try {
@@ -236,13 +261,27 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     return reward;
   },
 
-  updateReward: (id, updates) => {
+  updateReward: (id, updates, actingMemberId) => {
+    const prev = get().rewards.find(r => r.id === id);
     const next = get().rewards.map(r => r.id === id ? { ...r, ...updates } : r);
     set({ rewards: next }); save(next, get().redemptions);
     const updated = next.find(r => r.id === id);
     if (updated) {
       supabase.from('rewards').update(rewardToRow(updated)).eq('id', id)
         .then(({ error }) => { if (error) console.warn('[rewardStore] updateReward', error.message); });
+
+      // Only a genuinely perk-affecting change is worth interrupting a kid
+      // for — cost or availability, not a wording/emoji tweak. Was: this
+      // whole action notified no one at all; a kid had no way to know a
+      // perk they were saving up for changed price, short of reopening the
+      // Store tab.
+      if (prev && updated.available) {
+        if (typeof updates.cost === 'number' && updates.cost !== prev.cost) {
+          notifyPerkUpdated(updated, 'price', actingMemberId);
+        } else if (updates.available === true && prev.available === false) {
+          notifyPerkUpdated(updated, 'available', actingMemberId);
+        }
+      }
     }
   },
 
@@ -274,9 +313,14 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     }
   },
 
-  toggleAvailability: (id) => {
+  toggleAvailability: (id, actingMemberId) => {
+    const prev = get().rewards.find(r => r.id === id);
     const next = get().rewards.map(r => r.id === id ? { ...r, available: !r.available } : r);
     set({ rewards: next }); save(next, get().redemptions);
+    const updated = next.find(r => r.id === id);
+    if (prev && updated) {
+      notifyPerkUpdated(updated, updated.available ? 'available' : 'unavailable', actingMemberId);
+    }
   },
 
   redeemReward: async (rewardId, memberId, wallet) => {

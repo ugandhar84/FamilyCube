@@ -241,6 +241,13 @@ type NotifType =
   // parent it should notify the kids so they will aware"), excluding the
   // joiner themselves.
   | 'member_joined'
+  // store/rewardStore.ts's updateReward/toggleAvailability — a parent
+  // changing a perk's price, availability, or eligibility previously
+  // notified no one; kids/teens who could redeem it had no way to know it
+  // changed short of happening to reopen the Store tab. Direct report: "if
+  // parent changes any perk that also should trigger that notify for
+  // kids/teens."
+  | 'perk_updated'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -283,6 +290,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   meal_reminder: 'family',
   grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
   member_joined: 'family',
+  perk_updated: 'rewards',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -1009,6 +1017,19 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `${p.memberName ?? 'A new member'} just joined ${p.familyName ?? 'your family'}${p.role ? ` as a ${p.role}` : ''}.`,
         data: { screen: 'Roster' },
       };
+    case 'perk_updated': {
+      const changeLabel = p.change === 'unavailable' ? 'is no longer available'
+        : p.change === 'available' ? 'is back and available'
+        : p.change === 'price' ? `now costs ${p.cost}🪙`
+        : 'was updated';
+      return {
+        title: `🎁 "${p.rewardTitle}" ${changeLabel}`,
+        body: p.change === 'price'
+          ? `The price changed to ${p.cost}🪙 in the Store.`
+          : `Check the Store for the latest details.`,
+        data: { screen: 'Store', rewardId: p.rewardId },
+      };
+    }
     case 'meal_reminder': {
       const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';
       return {

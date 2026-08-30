@@ -762,7 +762,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         colors={colors}
         onClose={() => { setShowCreate(false); setEditing(null); }}
         onSave={data => {
-          if (editing) { updateReward?.(editing.id, data); showToast('Reward updated'); }
+          if (editing) { updateReward?.(editing.id, data, activeMemberId ?? undefined); showToast('Reward updated'); }
           else { addReward?.({ available: true, requiresApproval: true,
             createdAt: new Date().toISOString(), ...data } as any); showToast('Reward added'); }
         }}

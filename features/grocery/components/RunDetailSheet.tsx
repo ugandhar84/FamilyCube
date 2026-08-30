@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Image, ActivityIndicator, TextInput,
 } from 'react-native';
@@ -84,14 +84,19 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   // Realtime subscription for run items
   const runItemSubRef = useRef<any>(null);
 
-  useEffect(() => {
+  const refetch = useCallback(() => {
     if (!run || !visible) return;
-
     loadRunDetail(run.id).then(detail => {
       const items = detail?.runItems ?? [];
       setRunItems(items);
       if (items.length === 0) setTab('add');
     });
+  }, [run?.id, visible, loadRunDetail]);
+
+  useEffect(() => {
+    if (!run || !visible) return;
+
+    refetch();
 
     // Subscribe to check-off changes for this run
     const sub = supabase
@@ -119,6 +124,28 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     runItemSubRef.current = sub;
     return () => { supabase.removeChannel(sub); runItemSubRef.current = null; };
   }, [run?.id, visible]);
+
+  // checkRunItem/uncheckRunItem/addItemToRun/removeItemFromRun write straight
+  // to Supabase without touching useGroceryStore's `runs` — only
+  // loadRunDetail (called above, and from groceryStore's own realtime
+  // handlers) refreshes `runs[].runItems` — so this sheet's separate
+  // `runItems` useState only ever hears about a same-session change made
+  // elsewhere (e.g. another sheet instance, or a future call site that goes
+  // through the store instead of this sheet's local optimistic setRunItems)
+  // via this sheet's own realtime round-trip. Subscribing to the store
+  // directly closes that gap, matching useUpcomingOpenEvents.ts's pattern.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const unsubscribe = useGroceryStore.subscribe((state, prevState) => {
+      if (state.runs === prevState.runs) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => { debounceRef.current = null; refetch(); }, 200);
+    });
+    return () => {
+      unsubscribe();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [refetch]);
 
   if (!run) return null;
 

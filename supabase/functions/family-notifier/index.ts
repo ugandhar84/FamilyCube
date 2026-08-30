@@ -107,6 +107,10 @@ type NotifType =
   | 'help_resolved'
   | 'reward_redeemed'
   | 'reward_decision'
+  // store/rewardStore.ts's deleteReward — reward/store audit pass. A parent
+  // deleted a reward out from under a kid's still-pending redemption; coins
+  // are refunded, this just tells them why it's gone.
+  | 'reward_removed'
   | 'kid_request'
   | 'kid_request_decision'
   // store/kidRequestStore.ts's assignRequest/completeRequest/approveItems/
@@ -204,7 +208,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   chore_still_on: 'chores', chore_auto_released: 'chores',
   geofence_exit: 'family', geofence_arrive: 'family', low_battery: 'family',
   chat_mention: 'chat',
-  coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards',
+  coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards', reward_removed: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
   kid_request: 'requests', kid_request_decision: 'requests',
   kid_request_helper_assigned: 'requests', kid_request_completed: 'requests', kid_request_items_decision: 'requests',
@@ -511,6 +515,18 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: p.decision === 'approved'
           ? `"${p.rewardTitle}" approved! Enjoy it 🎉${p.note ? ` — ${p.note}` : ''}`
           : `"${p.rewardTitle}" was declined${p.note ? `: ${p.note}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Rewards', redemptionId: p.redemptionId },
+      };
+    // store/rewardStore.ts's deleteReward — a parent removed a reward from
+    // the catalog while the kid still had a pending (not yet approved)
+    // redemption of it. Their coins are refunded (see deleteReward's own
+    // comment) but the reward itself is gone, so they need to know why it
+    // disappeared from "My Redemptions" instead of just vanishing.
+    case 'reward_removed':
+      return {
+        title: `${p.rewardEmoji ?? '🎁'} Reward No Longer Available`,
+        body: `"${p.rewardTitle}" was removed from the store — your ${p.cost}🪙 has been refunded.`,
         sound: 'default',
         data: { screen: 'Rewards', redemptionId: p.redemptionId },
       };
@@ -930,7 +946,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type

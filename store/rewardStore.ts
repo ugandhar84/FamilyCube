@@ -247,11 +247,31 @@ export const useRewardStore = create<RewardState>((set, get) => ({
   },
 
   deleteReward: (id) => {
+    const reward = get().rewards.find(r => r.id === id);
+    // Was: silently dropped any in-flight redemption of this reward from
+    // local state along with the catalog row, with no refund and no word
+    // to the kid — a kid who redeemed something a parent then deletes from
+    // the store (StoreScreen.tsx's PerkModal onDelete) lost both the reward
+    // AND the coins they paid for it, with zero visibility into why it
+    // vanished. Only 'pending' redemptions get refunded here, same rule
+    // rejectRedemption/cancelRedemption already use — an 'approved'
+    // redemption means the reward was already granted/is being fulfilled
+    // outside the app, so refunding it on top of that would be wrong.
+    const affectedPending = get().redemptions.filter(rd => rd.rewardId === id && rd.status === 'pending');
     const nextR  = get().rewards.filter(r => r.id !== id);
     const nextRd = get().redemptions.filter(rd => rd.rewardId !== id);
     set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
     supabase.from('rewards').delete().eq('id', id)
       .then(({ error }) => { if (error) console.warn('[rewardStore] deleteReward', error.message); });
+    for (const rd of affectedPending) {
+      if (rd.deductedCoins > 0) {
+        useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
+      }
+      notifyReward(rd.memberId, 'reward_removed', {
+        redemptionId: rd.id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
+        cost: rd.deductedCoins, memberId: rd.memberId,
+      });
+    }
   },
 
   toggleAvailability: (id) => {

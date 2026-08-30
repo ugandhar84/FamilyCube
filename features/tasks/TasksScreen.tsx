@@ -66,7 +66,22 @@ export default function TasksScreen() {
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const events = useEventStore(s => s.events);
+  const rangeEvents = useEventStore(s => s.rangeEvents);
+  const loadRange = useEventStore(s => s.loadRange);
   const chores = useChoreStore(s => s.chores);
+  // scheduleCounts below needs the same multi-day window CalendarScreen's
+  // own Agenda view uses (loadRange, today -> +60 days) — it previously
+  // filtered `events`, which is scoped to a single day (whatever date was
+  // last selected elsewhere) and only got populated at all if
+  // CalendarScreen happened to have already mounted and loaded a range
+  // first. Loading it here directly means the badge is accurate the
+  // instant this screen mounts, regardless of which segment/screen was
+  // visited previously.
+  useEffect(() => {
+    const from = localDateStr();
+    const to = localDateStr(new Date(Date.now() + 60 * 86400_000));
+    loadRange(from, to);
+  }, [loadRange]);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   // Matches QuestsScreen's own quest-creation gate (parent/teen only — a
@@ -120,7 +135,12 @@ export default function TasksScreen() {
   // badge, not a substitute for either screen's own filtered list.
   const isSenior = activeMember?.role === 'senior';
   const scheduleCounts = useMemo(() => {
-    const upcoming = events.filter(e => {
+    // rangeEvents may be briefly empty right after mount (loadRange above
+    // hasn't resolved yet) — fall back to the day-scoped `events` rather
+    // than showing a zero count for a moment; settles to the real,
+    // wider data within one render once loadRange's fetch lands.
+    const source = rangeEvents.length > 0 ? rangeEvents : events;
+    const upcoming = source.filter(e => {
       if (e.date < localDateStr()) return false;
       // A senior/GP's own Agenda (CalendarScreen.tsx's scopedRangeEvents)
       // only ever shows events they're actually assigned to, or unassigned
@@ -152,7 +172,7 @@ export default function TasksScreen() {
       else if (a.status === 'confirmed') active++;
     }
     return { pending, active };
-  }, [events, isSenior, activeMemberId, activeMember?.name]);
+  }, [events, rangeEvents, isSenior, activeMemberId, activeMember?.name]);
 
   // Reported live: a kid's "1 pending" badge here counted a chore assigned
   // to nobody (assignedToId: null) and not even in the pool (isPool:

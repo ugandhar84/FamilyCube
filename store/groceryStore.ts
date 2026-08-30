@@ -468,11 +468,34 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   },
 
   restoreItem: async (itemId) => {
-    await supabase.from('grocery_items').update({ is_bought: false, bought_by: null, bought_at: null }).eq('id', itemId);
-    // Realtime will re-add it to the list
+    // Was relying entirely on realtime to re-add the row to `items` — fine
+    // as long as this store's own grocery_items channel is alive, but a
+    // dead/slow socket left the item stuck out of the pending list on the
+    // acting device itself until an unrelated load() re-ran. GroceryScreen
+    // doesn't even read `items` for the bought section (it keeps its own
+    // separate boughtItems fetch), but patching here still matters for the
+    // canonical store state (`items`) that any other consumer relies on.
+    const { data } = await supabase.from('grocery_items')
+      .update({ is_bought: false, bought_by: null, bought_at: null })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (data) {
+      const restored = rowToItem(data);
+      set(s => ({ items: s.items.some(i => i.id === restored.id) ? s.items : [restored, ...s.items] }));
+    }
   },
 
   markReturning: async (itemIds, questId) => {
+    // Was DB-write-only — GroceryScreen.tsx's handleCreateReturn papers over
+    // this with a guessed `setTimeout(refreshBought, 600)` against its own
+    // separate boughtItems fetch, but this store's own `items` state (the
+    // canonical source for any other/future consumer) never reflected the
+    // is_returning flag itself. Patch it here so the store stays correct
+    // regardless of what any particular screen happens to re-fetch.
+    set(s => ({
+      items: s.items.map(i => itemIds.includes(i.id) ? { ...i, isReturning: true, returnQuestId: questId } : i),
+    }));
     await supabase.from('grocery_items')
       .update({ is_returning: true, return_quest_id: questId })
       .in('id', itemIds);
@@ -631,21 +654,35 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
 
   // ── Run items ─────────────────────────────────────────────────────────────
 
+  // grocery_run_items has no realtime subscription anywhere in the app (only
+  // grocery_items/grocery_runs do, set up in load() above) — these four
+  // actions used to write straight to the DB and return, so `runs[].runItems`
+  // in THIS store never reflected the change; the only reason it looked
+  // fine in practice is that RunDetailSheet.tsx keeps its own separate
+  // useState + manual loadRunDetail() call after every one of these calls.
+  // Any other/future consumer of useGroceryStore().runs would see stale
+  // run-item state indefinitely. Reusing loadRunDetail's existing correct
+  // fetch-and-patch (it already fixes the joined-item-name bug, see its own
+  // comment) closes that gap at the store level instead of per-caller.
   addItemToRun: async (runId, itemId) => {
     await supabase.from('grocery_run_items').upsert({ run_id: runId, item_id: itemId, checked_in_run: false }, { onConflict: 'run_id,item_id' });
+    await get().loadRunDetail(runId);
   },
 
   removeItemFromRun: async (runId, itemId) => {
     await supabase.from('grocery_run_items').delete().eq('run_id', runId).eq('item_id', itemId);
+    await get().loadRunDetail(runId);
   },
 
   checkRunItem: async (runId, itemId, memberId) => {
     const now = new Date().toISOString();
     await supabase.from('grocery_run_items').update({ checked_in_run: true, checked_by: memberId, checked_at: now }).eq('run_id', runId).eq('item_id', itemId);
+    await get().loadRunDetail(runId);
   },
 
   uncheckRunItem: async (runId, itemId) => {
     await supabase.from('grocery_run_items').update({ checked_in_run: false, checked_by: null, checked_at: null }).eq('run_id', runId).eq('item_id', itemId);
+    await get().loadRunDetail(runId);
   },
 
   loadRunDetail: async (runId) => {

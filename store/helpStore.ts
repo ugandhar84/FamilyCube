@@ -294,6 +294,18 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   // ── Realtime subscription — pushes remote changes to local state ──────────
   subscribeRealtime: () => {
     if (get()._realtimeSub) return; // already subscribed
+    // Same hot-reload defensive sweep as choreStore.ts's/familyStore.ts's
+    // ensureRealtime — this store was missing it, leaving it exposed to the
+    // dev-mode "cannot add postgres_changes callbacks ... after subscribe()"
+    // crash a prior session fixed elsewhere. Fixed topic name (not
+    // family-scoped, unlike its siblings — help_requests has no per-family
+    // filter here, same RLS-is-the-real-boundary trust choreStore.ts's
+    // parent_quest_assignments handler documents) so there's only ever one
+    // possible stale topic to sweep.
+    const staleTopic = 'realtime:help_requests_changes';
+    const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+    if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
+
     const channel = supabase
       .channel('help_requests_changes')
       .on('postgres_changes',
@@ -314,7 +326,17 @@ export const useHelpStore = create<HelpState>((set, get) => ({
           saveCache(next);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — the
+        // guard above only checks "does a _realtimeSub exist," never "is it
+        // actually connected," so a socket killed by backgrounding left it
+        // trusted forever. Clearing on a terminal bad status makes the next
+        // subscribeRealtime() call actually reconnect.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[helpStore] realtime help_requests_changes unhealthy (${status}) — clearing so the next call resubscribes`);
+          set({ _realtimeSub: null });
+        }
+      });
 
     const unsub = () => { supabase.removeChannel(channel); };
     set({ _realtimeSub: unsub });

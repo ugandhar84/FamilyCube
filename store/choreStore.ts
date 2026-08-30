@@ -2199,7 +2199,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (allSlotsResolved) {
       set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'approved' } : c) }));
       supabase.from('chore_tasks').update({ status: 'approved' }).eq('id', choreId)
-        .then(({ error }) => { if (error) console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message); });
+        .then(({ error }) => {
+          if (error) {
+            console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message);
+            // Bug-hunt finding: the optimistic set() above already flipped
+            // the parent chore to status:'approved' — the per-slot payout
+            // above is unaffected either way (already fired, independent of
+            // this rollup write), but on failure the LOCAL rollup status
+            // itself never actually landed, so this device would show the
+            // bounty as fully resolved while every other device (and a
+            // fresh resync) would still show it as claimable/in-progress.
+            set(s => ({ chores: s.chores.map(c => c.id === choreId && c.status === 'approved' ? { ...c, status: chore.status } : c) }));
+          }
+        });
     }
     // Audit finding — the kid whose multi-slot claim was just approved (and
     // paid, above) got zero notice; they'd only see it if they reopened the
@@ -3556,6 +3568,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     if (!casData || casData.length === 0) {
       console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; no payout applied here (see 4.7 dispute handling)`);
+      // Bug-hunt finding: the optimistic updateChore(...) call above already
+      // flipped this device's local state to status:'approved' before the
+      // CAS ran — on a lost race that write never actually happened, but
+      // nothing rolled the optimistic patch back, so THIS device kept
+      // showing "approved" (as if reviewerId personally approved it) even
+      // though someone else's decision is what actually landed in the DB.
+      // Same guarded-rollback shape claimGPErrand/offerChoreHandoff/etc.
+      // already use elsewhere in this file: only revert if nothing newer
+      // has changed reviewedById out from under this rollback in the
+      // meantime (e.g. a realtime echo of the winning write already patched
+      // it in). A real resync (syncFromDB) will still correct this
+      // regardless, same as every other lost-race branch in this file.
+      set(s => ({
+        chores: s.chores.map(c =>
+          c.id === choreId && c.reviewedById === reviewerId && c.status === 'approved'
+            ? { ...c, status: previousStatus, approvedAt: chore.approvedAt, reviewedAt: chore.reviewedAt, reviewedById: chore.reviewedById }
+            : c
+        ),
+      }));
+      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
       return;
     }
 
@@ -3702,6 +3734,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       .then(({ error }) => {
         if (error) {
           console.warn(`[choreStore] requestRedo RPC rejected ${choreId} — likely a concurrent approval landed first or authorization failed:`, error.message);
+          // Bug-hunt finding: the optimistic updateChore(...) above already
+          // flipped local state to status:'redo_requested' before this RPC
+          // ran — on rejection (lost CAS race, or the server-side
+          // authorization check catching something the client's canApprove
+          // read missed) that transition never actually happened in the DB,
+          // but nothing rolled it back, so this device kept showing
+          // "redo requested" for a chore whose real state is whatever the
+          // winning write actually set (e.g. already approved). Same
+          // guarded-rollback shape approveChore's own CAS lost-race branch
+          // uses: only revert if nothing newer has changed reviewedById out
+          // from under this rollback in the meantime.
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.reviewedById === reviewerId && c.status === 'redo_requested'
+                ? { ...c, status: chore.status, rejectionReason: chore.rejectionReason, reviewedAt: chore.reviewedAt, reviewedById: chore.reviewedById, redoCount: chore.redoCount }
+                : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
         }
       });
 
@@ -4368,7 +4419,29 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       xp_delta:    xp,
       wallet:      wallet === 'gpCoins' ? 'gp' : 'main',
     }).then(({ error }) => {
-      if (error) console.warn('[choreStore] award_coins', error.message);
+      if (error) {
+        console.warn('[choreStore] award_coins', error.message);
+        // Bug-hunt finding: the familyStore balance patch below runs
+        // unconditionally right after this RPC is DISPATCHED, not gated on
+        // it actually succeeding — so a genuine award_coins failure (RPC
+        // error, not a race) still left the local balance showing the
+        // increment as if it had been paid. Reverse the same delta this
+        // call applied, by decrement (not overwrite), so it can't clobber a
+        // concurrent, unrelated award that landed on this member in the
+        // meantime.
+        try {
+          const { useFamilyStore } = require('@/store/familyStore');
+          useFamilyStore.setState((s: any) => ({
+            members: s.members.map((m: any) => m.id === userId
+              ? wallet === 'gpCoins'
+                ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) - points), xp: Math.max(0, (m.xp ?? 0) - xp) }
+                : { ...m, coins: Math.max(0, (m.coins ?? 0) - points),
+                    mainCoins: Math.max(0, (m.mainCoins ?? 0) - points),
+                    xp: Math.max(0, (m.xp ?? 0) - xp) }
+              : m),
+          }));
+        } catch { /* familyStore not mounted — nothing to roll back on-screen */ }
+      }
     });
 
     // The RPC above is the source of truth in Postgres, but familyStore's

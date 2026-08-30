@@ -53,6 +53,18 @@ function ensureRealtime(setState: (s: Partial<RewardState>) => void, getState: (
         })
       .subscribe((status) => {
         console.log(`[rewardStore] realtime reward_redemptions subscribe status=${status}`);
+        // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — the
+        // guard above only checks "does _rtChannel exist," never "is it
+        // actually connected," so a socket killed by backgrounding would
+        // leave _rtChannel non-null but dead forever, blocking every later
+        // ensureRealtime() call from resubscribing. Clearing on a terminal
+        // bad status makes the next call actually reconnect. Matters more
+        // now that syncFromDB() (and therefore this channel) actually runs
+        // — see loadFromStorage's own comment for why it didn't before.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[rewardStore] realtime reward_redemptions unhealthy (${status}) — clearing so the next sync resubscribes`);
+          _rtSubscribed = false; _rtChannel = null;
+        }
       });
   } catch (e: any) {
     console.warn('[rewardStore] ensureRealtime subscribe failed', e?.message ?? e);
@@ -228,6 +240,21 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     } catch {
       set({ rewards: SEED_REWARDS, redemptions: [], loaded: true });
     }
+    // Was: cache-only — every single call site across the app (HubScreen,
+    // StoreScreen) only ever calls loadFromStorage(), and syncFromDB (the
+    // only thing that reads rewards/reward_redemptions from Supabase, and
+    // the only thing that calls ensureRealtime — see this file's own
+    // ensureRealtime doc comment above) was never invoked from anywhere in
+    // the app at all. Confirmed via a full-codebase search: nothing calls
+    // it. So beyond the seeded defaults, the reward catalog and every
+    // redemption ever made were only ever visible on the ONE device that
+    // happened to create them (persisted to that device's own AsyncStorage
+    // only) — a reward a parent added, or a redemption a kid requested, was
+    // invisible on every other family member's device, forever, with no
+    // realtime channel ever even subscribing. Same cache-first-then-
+    // background-sync shape helpStore.ts's loadFromStorage already
+    // documents as "the pattern" for this codebase; wiring it in here too.
+    get().syncFromDB();
   },
 
   syncFromDB: async () => {

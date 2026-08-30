@@ -35,6 +35,10 @@ import { useNotifStore } from '@/store/notifStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
+import { useTripStore } from '@/store/tripStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { useRewardStore } from '@/store/rewardStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
@@ -667,7 +671,21 @@ function RootNavigator() {
           }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // No dead-channel self-heal wired here (unlike the store-level
+        // ensureRealtime patterns) — this channel is scoped to a component
+        // useEffect keyed on rtUserId, not a module-level singleton, so a
+        // genuine reconnect already happens for free whenever that
+        // dependency changes (sign-out/in). A same-session silent socket
+        // death (e.g. backgrounding) is still covered by a different
+        // mechanism: this file's own AppState foreground handler
+        // unconditionally re-fetches via useSubscriptionStore.loadSubscription
+        // on every foreground regardless of this channel's health, so a log
+        // line here is enough for diagnostics rather than a full resubscribe.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[_layout] realtime sub-tier-${rtUserId} unhealthy (${status})`);
+        }
+      });
     return () => { supabase.removeChannel(ch); };
   }, [rtUserId]);
 
@@ -725,7 +743,18 @@ function RootNavigator() {
           showInAppToast({ title: row?.title ?? 'New notification', body: row?.body ?? row?.message, type: row?.type, data: row?.data ?? row?.meta });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Same reasoning as the sub-tier channel above — this is a
+        // useEffect-scoped channel (fresh resubscribe for free whenever
+        // activeMemberIdForNotifs changes), and a same-session dead socket
+        // is already covered by this file's AppState foreground handler
+        // unconditionally calling useNotifStore.getState().fetchAll(...) on
+        // every foreground regardless of this channel's health. Logging
+        // here is for diagnostics, not a resubscribe trigger.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[_layout] realtime global-notif-${activeMemberIdForNotifs} unhealthy (${status})`);
+        }
+      });
     return () => { supabase.removeChannel(ch); };
   }, [activeMemberIdForNotifs]);
 
@@ -847,6 +876,34 @@ function RootNavigator() {
       // selectDate, which reaches ensureRealtime the same way choreStore's
       // does.
       useEventStore.getState().syncFromDB().catch(() => {});
+      // Same gap, same fix, one more sibling system — familyStore's own
+      // `members:${familyId}` channel (role/PIN/avatar/coin-balance changes
+      // made by another family member) had no foreground-triggered recovery
+      // either, confirmed via the same audit. familyStore.syncFromDB() is
+      // already the exact idempotent re-fetch-and-resubscribe function 3
+      // other call sites in this codebase use (ChildChoreBoard.tsx,
+      // ParentReviewDeck.tsx, familyStore's own loadFromStorage).
+      useFamilyStore.getState().syncFromDB().catch(() => {});
+      // Same gap, same fix, three more sibling systems, all confirmed via
+      // the same audit as having zero foreground-triggered recovery:
+      //  - tripStore's `trips:${familyId}` channel is the most exposed of
+      //    all of them — a driving parent backgrounding the app mid-trip
+      //    (the single most likely real-world moment for this exact socket
+      //    to die) would otherwise leave every other family member's
+      //    ETA/completion view frozen until a manual Hub reload.
+      //  - kidRequestStore's `kid_requests:${familyId}` channel (ride/help
+      //    requests a kid/teen sends a parent).
+      //  - temporaryApproverStore's `temporary_approvers:${familyId}`
+      //    channel (caregiver-mode grants/revokes).
+      // rewardStore is deliberately NOT added here — its own
+      // loadFromStorage() now calls syncFromDB() directly (see that file's
+      // comment), and every screen that mounts it already re-runs
+      // loadFromStorage on its own effect, unlike these three which have no
+      // other foreground-adjacent re-entry point.
+      const familyIdForForegroundSync = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
+      if (familyIdForForegroundSync) useTripStore.getState().loadFromStorage(familyIdForForegroundSync).catch(() => {});
+      useKidRequestStore.getState().loadFromStorage().catch(() => {});
+      useTemporaryApproverStore.getState().loadFromStorage().catch(() => {});
 
       if (awayMs < LOCK_AFTER_MS) return;
       if (!bootCompleted.current) return;

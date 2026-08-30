@@ -306,6 +306,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         dietary_tags: [], prep_steps: d.prepSteps ?? [], ai_generated: true,
       });
       if (insError) throw insError;
+      // Was DB-write-only — weekMealsCache (this component's own local
+      // "does this slot already have a meal?" lookup, read by
+      // AskCubeMealDayPicker's existingMealTitle above) never learned about
+      // the meal just added, so adding a second meal to the SAME week in the
+      // same AskCube session wouldn't see it and could offer to silently
+      // double-book/replace a slot that (from this cache's stale view) still
+      // looked empty. There's no store or realtime subscription for
+      // family_meals anywhere in the app to catch this some other way.
+      setWeekMealsCache(prev => {
+        const existing = (prev[weekOf] ?? []).filter(m => !(m.day === day && m.type === mealType.toLowerCase()));
+        return { ...prev, [weekOf]: [...existing, { day, type: mealType.toLowerCase(), title: d.title }] };
+      });
       return true;
     } catch (e: any) {
       console.warn('[AskCubeChat] addMealToPlan failed', e?.message ?? e);

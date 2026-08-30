@@ -797,6 +797,13 @@ function ensureRealtime(
 ) {
   if (_rtFamilyId === familyId && _rtChannel) return; // already subscribed for this family
   if (_rtChannel) { supabase.removeChannel(_rtChannel); _rtChannel = null; }
+  // Same hot-reload defensive sweep as choreStore.ts's/familyStore.ts's/
+  // kidRequestStore.ts's ensureRealtime — this store was missing it,
+  // leaving it exposed to the dev-mode "cannot add postgres_changes
+  // callbacks ... after subscribe()" crash a prior session fixed elsewhere.
+  const staleTopic = `realtime:cal:${familyId}`;
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
   _rtFamilyId = familyId;
 
   _rtChannel = supabase

@@ -688,8 +688,18 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               .select('id')
               .single();
             if (!runErr && runRow?.id) {
-              const rows = itemIds.map(itemId => ({ run_id: runRow.id, item_id: itemId, checked_in_run: false }));
-              await supabase.from('grocery_run_items').insert(rows);
+              // Was a raw bulk insert into grocery_run_items — that table has
+              // no realtime subscription anywhere in the app, and this run
+              // was itself just created via a raw insert too (not
+              // createRun()), so useGroceryStore's own `runs[].runItems`
+              // never picked up these items until something happened to open
+              // the run's detail sheet. addItemToRun now self-heals via its
+              // own loadRunDetail() call, so routing through it here closes
+              // that gap instead of leaving the store silently stale.
+              const groceryStore = useGroceryStore.getState();
+              for (const itemId of itemIds) {
+                await groceryStore.addItemToRun(runRow.id, itemId);
+              }
             }
           }
           // Update local cache immediately so next form open has suggestions

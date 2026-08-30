@@ -127,33 +127,59 @@ let _rtFamilyId = '';
 function ensureRealtime(familyId: string, set: (fn: (s: TripState) => Partial<TripState>) => void) {
   if (_rtFamilyId === familyId && _rtChannel) return;
   if (_rtChannel) { supabase.removeChannel(_rtChannel); _rtChannel = null; }
+  // Same hot-reload defensive sweep as choreStore.ts's/familyStore.ts's/
+  // kidRequestStore.ts's ensureRealtime — this store was missing it
+  // entirely (confirmed via audit as the least defensive channel setup of
+  // its siblings), leaving it exposed to the dev-mode "cannot add
+  // postgres_changes callbacks ... after subscribe()" crash a prior session
+  // fixed everywhere else.
+  const staleTopic = `realtime:trips:${familyId}`;
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
   _rtFamilyId = familyId;
 
-  _rtChannel = supabase
-    .channel(`trips:${familyId}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'trips', filter: `family_id=eq.${familyId}` },
-      (payload) => {
-        const row = (payload.new ?? payload.old) as TripRow | undefined;
-        if (!row) return;
-        const trip = fromRow(row as TripRow);
+  try {
+    _rtChannel = supabase
+      .channel(`trips:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trips', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as TripRow | undefined;
+          if (!row) return;
+          const trip = fromRow(row as TripRow);
 
-        set((state) => {
-          // Patch just the ONE trip that changed, keyed by id — never
-          // replace the whole list off a single row. A prior version did
-          // `set({ activeTrip: next })` on every insert/update, which meant
-          // any OTHER family member starting their own trip would overwrite
-          // (and appear to delete) everyone else's view of an unrelated,
-          // still-running trip.
-          const withoutThis = state.activeTrips.filter(t => t.id !== trip.id);
-          const nextTrips = trip.completedAt ? withoutThis : [...withoutThis, trip];
-          persist(nextTrips);
-          return { activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) };
-        });
-      }
-    )
-    .subscribe();
+          set((state) => {
+            // Patch just the ONE trip that changed, keyed by id — never
+            // replace the whole list off a single row. A prior version did
+            // `set({ activeTrip: next })` on every insert/update, which meant
+            // any OTHER family member starting their own trip would overwrite
+            // (and appear to delete) everyone else's view of an unrelated,
+            // still-running trip.
+            const withoutThis = state.activeTrips.filter(t => t.id !== trip.id);
+            const nextTrips = trip.completedAt ? withoutThis : [...withoutThis, trip];
+            persist(nextTrips);
+            return { activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) };
+          });
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[tripStore] realtime trips:${familyId} subscribe status=${status}`);
+        // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — this
+        // store had NO status handling at all, meaning a dead socket (most
+        // plausibly here: the driving parent backgrounding the app mid-trip
+        // — exactly the scenario this feature exists for) would silently
+        // stop every other family member's ETA/completion updates with no
+        // recovery short of a manual Hub reload. Clearing on a terminal bad
+        // status makes the next ensureRealtime() call actually resubscribe.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[tripStore] realtime trips:${familyId} unhealthy (${status}) — clearing so the next load resubscribes`);
+          if (_rtFamilyId === familyId) { _rtChannel = null; _rtFamilyId = ''; }
+        }
+      });
+  } catch (e: any) {
+    console.warn('[tripStore] ensureRealtime subscribe failed', e?.message ?? e);
+  }
 }
 
 export const useTripStore = create<TripState>((set, get) => ({

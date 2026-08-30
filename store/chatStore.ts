@@ -581,7 +581,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (channelId === _openChannelId) return;
           set(s => ({ unreadCounts: { ...s.unreadCounts, [channelId]: (s.unreadCounts[channelId] ?? 0) + 1 } }));
         })
-        .subscribe();
+        .subscribe((status) => {
+          // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime —
+          // the guard above only checks "does _globalUnreadSub exist,"
+          // never "is it actually connected," so a socket killed by
+          // backgrounding left the chat-tab badge permanently unable to
+          // learn about new messages until a full app restart. Clearing on
+          // a terminal bad status makes the next
+          // ensureGlobalUnreadSubscription() call actually reconnect.
+          if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn(`[chatStore] realtime chat-unread:${memberId} unhealthy (${status}) — clearing so the next call resubscribes`);
+            if (_globalUnreadMemberId === memberId) { _globalUnreadSub = null; _globalUnreadMemberId = null; }
+          }
+        });
     } catch (e: any) {
       console.warn('[chatStore] ensureGlobalUnreadSubscription failed', e?.message ?? e);
     }
@@ -673,6 +685,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Subscribe to new messages on this channel
       if (!get()._subs[channelId]) {
+        // Same hot-reload defensive sweep as choreStore.ts's/familyStore.ts's
+        // ensureRealtime — this per-channel subscription was missing it,
+        // leaving it exposed to the dev-mode "cannot add postgres_changes
+        // callbacks ... after subscribe()" crash a prior session fixed
+        // elsewhere (this app opens/closes chat channels far more often
+        // than most other realtime-backed screens, so a Fast Refresh while
+        // a channel is open hits this path easily).
+        const staleTopic = `realtime:chat:${channelId}`;
+        const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+        if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
+
         const sub = supabase
           .channel(`chat:${channelId}`)
           .on('postgres_changes', {
@@ -727,7 +750,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
               get()._removeMessage(channelId, (payload.old as DBRow).id);
             }
           })
-          .subscribe();
+          .subscribe((status) => {
+            // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime —
+            // loadChannel's own guard above only checks "does a sub exist
+            // in _subs," never "is it actually connected," so a socket
+            // killed by backgrounding left a channel open with this Chat
+            // screen mounted (the most common real-world case: leaving the
+            // app backgrounded mid-conversation) unable to ever receive a
+            // new message live again for the rest of that mount. Clearing
+            // the tracked sub on a terminal bad status makes the next
+            // loadChannel() call for this channel actually resubscribe.
+            if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.warn(`[chatStore] realtime chat:${channelId} unhealthy (${status}) — clearing so the next loadChannel resubscribes`);
+              set(s => { const subs = { ...s._subs }; delete subs[channelId]; return { _subs: subs }; });
+            }
+          });
 
         set(s => ({ _subs: { ...s._subs, [channelId]: sub } }));
       }

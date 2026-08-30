@@ -93,6 +93,16 @@ function ensureRealtime(
       })
       .subscribe((status) => {
         console.log(`[kidRequestStore] realtime kid_requests:${familyId} subscribe status=${status}`);
+        // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — the
+        // guard above only checks "does _rtChannel exist," never "is it
+        // actually connected," so a socket killed by backgrounding left
+        // _rtChannel non-null but dead forever, blocking every later
+        // ensureRealtime() call from resubscribing. Clearing on a terminal
+        // bad status makes the next call actually reconnect.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[kidRequestStore] realtime kid_requests:${familyId} unhealthy (${status}) — clearing so the next sync resubscribes`);
+          if (_rtFamilyId === familyId) { _rtChannel = null; _rtFamilyId = ''; }
+        }
       });
   } catch (e: any) {
     console.warn('[kidRequestStore] ensureRealtime subscribe failed', e?.message ?? e);

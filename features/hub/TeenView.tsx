@@ -14,6 +14,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
@@ -108,6 +109,19 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   useEffect(() => {
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
+
+  // temporaryApproverStore's own doc comment names a Teen as a valid grant
+  // recipient (Scenarios 9.2/9.3 caregiver mode isn't Senior/GP-only), and
+  // QuestCard.tsx reads useTemporaryApproverStore's isActiveApprover(myId)
+  // for whichever role is active — but only ParentView.tsx/SeniorView.tsx
+  // ever called loadFromStorage/triggered its realtime subscription. A teen
+  // granted approver status would have an empty local `grants` array
+  // forever (never loaded, never subscribed), so isActiveApprover always
+  // read false and their Approve/Decline actions silently never appeared,
+  // even with a live, unexpired grant in the DB. Same defensive load
+  // SeniorView.tsx already uses, applied here.
+  const { loaded: approverGrantsLoaded, loadFromStorage: loadApproverGrants } = useTemporaryApproverStore();
+  useEffect(() => { if (!approverGrantsLoaded) loadApproverGrants(); }, [approverGrantsLoaded]);
 
   const siblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
 

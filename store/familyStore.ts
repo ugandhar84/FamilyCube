@@ -67,6 +67,16 @@ function ensureRealtime(
       })
       .subscribe((status) => {
         console.log(`[familyStore] realtime members:${familyId} subscribe status=${status}`);
+        // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — the
+        // guard above only checks "does _rtChannel exist," never "is it
+        // actually connected," so a socket killed by iOS backgrounding left
+        // _rtChannel non-null but dead forever, silently blocking every
+        // later ensureRealtime() call from ever resubscribing. Clearing on
+        // a terminal bad status makes the next call actually reconnect.
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[familyStore] realtime members:${familyId} unhealthy (${status}) — clearing so the next sync resubscribes`);
+          if (_rtFamilyId === familyId) { _rtChannel = null; _rtFamilyId = ''; }
+        }
       });
   } catch (e: any) {
     console.warn('[familyStore] ensureRealtime subscribe failed', e?.message ?? e);

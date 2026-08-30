@@ -91,7 +91,7 @@ STEP 3 — Extract items. Return ONLY valid JSON (no markdown, no code fences, n
       "unit": "each",
       "unitPrice": 0.00,
       "totalPrice": 0.00,
-      "category": "produce|dairy|meat|seafood|bakery|frozen|snacks|beverages|grains|cleaning|personal_care|other"
+      "category": "Produce|Dairy|Meat|Seafood|Bakery|Frozen|Snacks|Beverages|Grains|Cleaning|Personal Care|Supplies|Clothing|Other"
     }
   ]
 }
@@ -99,7 +99,8 @@ STEP 3 — Extract items. Return ONLY valid JSON (no markdown, no code fences, n
 Rules for extraction:
 - Skip tax lines, subtotals, discounts, payment method lines — only real products
 - If quantity is unclear use 1; if price is unclear use 0
-- category must be exactly one of the listed values
+- category must be EXACTLY one of the listed values, spelled and capitalized exactly as shown (e.g. "Produce" not "produce")
+- School/office/household supplies (notebooks, pens, batteries, paper towels not used for cleaning) go in "Supplies"; clothing/apparel (shirts, socks, shoes) go in "Clothing" — these are common on Target/Walmart/department-store receipts alongside groceries
 - Output raw JSON only — no \`\`\` fences, no markdown`,
                 },
               ],
@@ -165,6 +166,20 @@ Rules for extraction:
       );
     }
 
+    // Category values must exactly match the client's CAT_ICON/CATEGORIES
+    // keys (features/grocery/components/types.tsx) — previously the prompt
+    // asked for lowercase ("produce") while the client only recognizes
+    // Title-Case ("Produce"), so every scanned-receipt item's category
+    // icon silently fell back to the generic ShoppingCart regardless of
+    // its real category. Normalize here as a backstop even though the
+    // prompt above now asks for the right casing directly — an AI
+    // response that ignores the instruction shouldn't reintroduce the bug.
+    const VALID_CATEGORIES = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Bakery', 'Frozen', 'Snacks', 'Beverages', 'Grains', 'Cleaning', 'Personal Care', 'Supplies', 'Clothing', 'Other'];
+    const normalizeCategory = (raw: string): string => {
+      const match = VALID_CATEGORIES.find(c => c.toLowerCase() === raw.trim().toLowerCase());
+      return match ?? 'Other';
+    };
+
     // Normalise items
     const items: ExtractedItem[] = extracted.items.map((item) => ({
       name: String(item.name ?? "Unknown item"),
@@ -172,7 +187,7 @@ Rules for extraction:
       unit: String(item.unit ?? "each"),
       unitPrice: Number(item.unitPrice) || 0,
       totalPrice: Number(item.totalPrice) || 0,
-      category: String(item.category ?? "other"),
+      category: normalizeCategory(String(item.category ?? "Other")),
     }));
 
     const receiptTotal = items.reduce((sum, i) => sum + i.totalPrice, 0);
@@ -254,6 +269,25 @@ Rules for extraction:
       if (itemsError) {
         console.error("Items insert error:", itemsError);
       }
+    }
+
+    // Once a receipt confirms a REAL price for an item, any still-pending
+    // (not yet bought) grocery_items row with that same name should show
+    // this instead of whatever AI/Kroger guess it had (or none at all) —
+    // live-requested: "actuals right from receipt instead displaying
+    // estimated." Case-insensitive, trimmed match; only touches rows still
+    // pending (is_bought = false) so a completed purchase's own historical
+    // price isn't rewritten.
+    for (const item of items) {
+      const trimmedName = item.name.trim();
+      if (!trimmedName || !item.totalPrice) continue;
+      const { error: matchError } = await supabase
+        .from("grocery_items")
+        .update({ estimated_price: item.totalPrice, price_source: "receipt" })
+        .eq("family_id", familyId)
+        .eq("is_bought", false)
+        .ilike("name", trimmedName);
+      if (matchError) console.warn("grocery_items receipt-price match failed for", trimmedName, matchError);
     }
 
     // Async: update staples (fire-and-forget)

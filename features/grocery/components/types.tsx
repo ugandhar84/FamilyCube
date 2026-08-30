@@ -2,13 +2,17 @@ import { ComponentType } from 'react';
 import {
   Apple, Milk, Wheat, Beef, Carrot, Cookie, Snowflake,
   ShoppingBasket, Sandwich, Wine, Croissant, Fish,
-  Nut, ShoppingCart,
+  Nut, ShoppingCart, Pencil, Shirt,
 } from 'lucide-react-native';
 import { GroceryItem } from '@/store/groceryStore';
 
 // ─── Category suggestions ─────────────────────────────────────────────────────
 
-export const CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Spices', 'Meat', 'Snacks', 'Beverages', 'Frozen', 'Cleaning', 'Personal Care', 'Bakery', 'Seafood', 'Deli', 'Frozen Meals', 'Other'];
+// Supplies/Clothing added alongside Groceries' existing categories —
+// parse-grocery-receipt (receipt scanning) and kroger-prices (price
+// estimation) both now recognize these too, since a Target/Walmart
+// receipt commonly mixes groceries with school supplies or clothing.
+export const CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Spices', 'Meat', 'Snacks', 'Beverages', 'Frozen', 'Cleaning', 'Personal Care', 'Bakery', 'Seafood', 'Deli', 'Frozen Meals', 'Supplies', 'Clothing', 'Other'];
 export const CAT_ICON: Record<string, ComponentType<{ size?: number; color?: string; strokeWidth?: number }>> = {
   Produce:        Carrot,
   Dairy:          Milk,
@@ -24,12 +28,15 @@ export const CAT_ICON: Record<string, ComponentType<{ size?: number; color?: str
   Seafood:        Fish,
   Deli:           Sandwich,
   'Frozen Meals': Snowflake,
+  Supplies:       Pencil,
+  Clothing:       Shirt,
   Other:          ShoppingCart,
 };
 export const CAT_EMOJI: Record<string, string> = {
   Produce: '🥦', Dairy: '🥛', Grains: '🌾', Spices: '🌶️', Meat: '🥩',
   Snacks: '🍿', Beverages: '🧃', Frozen: '🧊', Cleaning: '🧹', 'Personal Care': '🧴',
-  Bakery: '🥐', Seafood: '🐟', Deli: '🥪', 'Frozen Meals': '🧊', Other: '📦',
+  Bakery: '🥐', Seafood: '🐟', Deli: '🥪', 'Frozen Meals': '🧊',
+  Supplies: '📚', Clothing: '👕', Other: '📦',
 };
 
 export function CatIcon({ category, size = 20, color }: { category?: string; size?: number; color?: string }) {

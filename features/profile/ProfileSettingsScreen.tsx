@@ -44,10 +44,16 @@ import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
 // — keep these two lists in sync if categories ever change on either side.
-const NOTIF_CATEGORIES: { key: 'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery'; label: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+// 'mentions' split out from 'chat' — live-requested: a person should be
+// able to choose whether @mentions ping them independently from general
+// chat message notifications (e.g. mute a busy group channel but still get
+// pinged when actually @mentioned). See family-notifier's chat_message vs
+// chat_mention CATEGORY_BY_TYPE entries for the server-side half of this.
+const NOTIF_CATEGORIES: { key: 'chores' | 'family' | 'chat' | 'mentions' | 'rewards' | 'requests' | 'grocery'; label: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'chores',   label: 'Chores & Schedules', subtitle: 'Assignments, approvals, deadlines, bonuses', icon: 'checkbox-outline' },
   { key: 'family',   label: 'Family & Location',  subtitle: 'Arrivals, low battery, safety alerts',        icon: 'people-circle-outline' },
-  { key: 'chat',     label: 'Chat',               subtitle: 'Mentions in family chat',                      icon: 'chatbubble-outline' },
+  { key: 'chat',     label: 'Chat Messages',      subtitle: 'New messages in your channels and DMs',       icon: 'chatbubble-outline' },
+  { key: 'mentions', label: 'Mentions',           subtitle: 'When someone @mentions you in family chat',   icon: 'at-outline' },
   { key: 'rewards',  label: 'Rewards',             subtitle: 'Coins earned, redemption decisions',           icon: 'gift-outline' },
   { key: 'requests', label: 'Requests',            subtitle: 'Kid requests, help requests',                  icon: 'hand-left-outline' },
   { key: 'grocery',  label: 'Grocery',             subtitle: 'Shopping trips, store proximity',              icon: 'cart-outline' },
@@ -474,6 +480,14 @@ function InviteMemberSheet({
   const [loadingInvites, setLoadingInvites] = useState(true);
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // generateCodeFor previously called showAlert() while this sheet was
+  // still open — AppAlert renders its OWN native Modal, and stacking a
+  // second Modal on top of this sheet's own (AppBottomSheet) reproduced the
+  // exact same total-touch-freeze class of bug already fixed above for the
+  // DOB picker (live-reported: "after closing that sheet... touch is not
+  // working"). Same fix as resendInviteFor's sibling comment describes —
+  // render the result inline instead of alerting over an open Modal.
+  const [codeStatus, setCodeStatus] = useState<{ memberId: string; kind: 'error' | 'info'; text: string } | null>(null);
 
   // Closing the sheet while the DOB picker is still open left its native
   // inline DateTimePicker mounted underneath the parent AppBottomSheet's
@@ -481,9 +495,10 @@ function InviteMemberSheet({
   // touch-freeze after closing the invite sheet, same class of bug as the
   // earlier photo-picker-over-Modal freeze this session already fixed
   // elsewhere. The picker isn't itself a Modal here, so nothing else resets
-  // it on close.
+  // it on close. codeStatus reset alongside it for the same reason (stale
+  // banner shouldn't reappear from a previous open).
   useEffect(() => {
-    if (!visible) setShowDobPicker(false);
+    if (!visible) { setShowDobPicker(false); setCodeStatus(null); }
   }, [visible]);
 
   // ── Validation ──────────────────────────────────────────────────────────
@@ -528,6 +543,7 @@ function InviteMemberSheet({
 
   const generateCodeFor = async (targetMemberId: string) => {
     setRegenerating(targetMemberId);
+    setCodeStatus(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -549,15 +565,15 @@ function InviteMemberSheet({
         // entirely when there's none, which is the normal/expected case
         // for PIN-only kids/GPs, not something to alert about.
         if (json.emailError) {
-          showAlert('Code generated', `The code was created, but the email couldn't be sent (${json.emailError}). Share the code directly instead.`);
+          setCodeStatus({ memberId: targetMemberId, kind: 'error', text: `Code created, but the email couldn't be sent (${json.emailError}). Share the code directly instead.` });
         } else if (json.emailSent) {
-          showAlert('Invite sent', 'The code was emailed to them.');
+          setCodeStatus({ memberId: targetMemberId, kind: 'info', text: 'The code was emailed to them.' });
         }
       } else {
-        showAlert("Couldn't generate code", json.error ?? 'Something went wrong.');
+        setCodeStatus({ memberId: targetMemberId, kind: 'error', text: json.error ?? 'Something went wrong.' });
       }
     } catch (e: any) {
-      showAlert("Couldn't generate code", e?.message ?? 'Network error.');
+      setCodeStatus({ memberId: targetMemberId, kind: 'error', text: e?.message ?? 'Network error.' });
     } finally {
       setRegenerating(null);
     }
@@ -816,6 +832,20 @@ function InviteMemberSheet({
                     </>
                   )}
                 </TouchableOpacity>
+              )}
+              {/* Inline result instead of showAlert() — this sheet is itself
+                  a Modal, and alerting over it while still open reproduced a
+                  real total-touch-freeze (see codeStatus's own comment above). */}
+              {codeStatus?.memberId === m.id && (
+                <View style={{ marginTop: 8, padding: 10, borderRadius: RADIUS.sm,
+                  backgroundColor: codeStatus.kind === 'error' ? colors.danger + '18' : colors.tealLight,
+                  flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                  <Ionicons name={codeStatus.kind === 'error' ? 'alert-circle' : 'checkmark-circle'} size={15}
+                    color={codeStatus.kind === 'error' ? colors.danger : colors.teal} style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, fontSize: TYPO.caption, color: codeStatus.kind === 'error' ? colors.danger : colors.teal, lineHeight: 17 }}>
+                    {codeStatus.text}
+                  </Text>
+                </View>
               )}
             </View>
           );

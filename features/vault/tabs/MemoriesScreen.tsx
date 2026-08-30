@@ -11,13 +11,15 @@
  * focused, exactly like Tasks' own openTaskComposerRequested. MemoriesTab
  * itself reads that flag to open ComposeMemoryModal.
  */
+import { useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ImageIcon } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { useNotifStore } from '@/store/notifStore';
 import MemoriesTabComp from './MemoriesTab';
 
 export default function MemoriesScreen({ hideHeader = false }: { hideHeader?: boolean }) {
@@ -25,6 +27,40 @@ export default function MemoriesScreen({ hideHeader = false }: { hideHeader?: bo
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const readOnly = activeMember?.role === 'senior';
+
+  // memory_posted/memory_liked push taps (app/_layout.tsx) deep-link here
+  // with ?memoryId=... — this screen owns the actual ScrollView (MemoriesTab
+  // itself just renders a plain list inside it), so it's the one that can
+  // scroll to the target card once MemoriesTab reports that card's
+  // measured Y offset back up via onFocusMemoryLayout.
+  const { memoryId } = useLocalSearchParams<{ memoryId?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const [scrolledToFocus, setScrolledToFocus] = useState(false);
+  // MemoriesTab owns the real pagination logic (loadMore/hasMore) but has
+  // no ScrollView of its own to detect "user scrolled near the bottom" —
+  // it hands its loadMore function up once via onLoadMoreReady so this
+  // screen's own onScroll (the ScrollView it actually renders) can call it.
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  // Clears the Hub pill's "new memory" dot (AppsQuickAccessPills.tsx) the
+  // moment this screen is actually opened — live-requested: "once user
+  // opens clear it," not just when the separate notification panel happens
+  // to mark it read. Real DB write (not just local state) so the dot stays
+  // cleared across app restarts, same durability as every other read
+  // receipt in the app.
+  useFocusEffect(() => {
+    import('@/lib/db/notifications').then(({ markAllNotificationsRead }) => {
+      markAllNotificationsRead('', ['memory_posted', 'memory_liked']).catch(() => {});
+    }).catch(() => {});
+    // Optimistic local update — don't wait on the DB round-trip for the
+    // pill's dot to disappear.
+    const notifications = useNotifStore.getState().notifications;
+    if (notifications?.some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'))) {
+      useNotifStore.getState().markCachedRead(
+        notifications.filter(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked')).map(n => n.id)
+      );
+    }
+  });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
@@ -49,9 +85,26 @@ export default function MemoriesScreen({ hideHeader = false }: { hideHeader?: bo
       {/* The shared Ask Cube FAB is visible on this tab (morphs to a "+"
           for Memories' composer) — same overlap risk fixed on
           Hub/Quests/School/Health & Records. */}
-      <ScrollView showsVerticalScrollIndicator={false}
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => {
+          const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
+          if (contentSize.height - (contentOffset.y + layoutMeasurement.height) < 600) {
+            loadMoreRef.current();
+          }
+        }}
+        scrollEventThrottle={200}
         contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 140, paddingTop: 14 }}>
-        <MemoriesTabComp colors={colors} isDark={isDark} readOnly={readOnly} />
+        <MemoriesTabComp colors={colors} isDark={isDark} readOnly={readOnly}
+          focusMemoryId={memoryId}
+          onLoadMoreReady={(fn) => { loadMoreRef.current = fn; }}
+          onFocusMemoryLayout={(y) => {
+            // Only auto-scroll once — onLayout can re-fire on later
+            // relayouts (e.g. an image finishing its own load), and
+            // re-scrolling every time would fight the user's own scrolling.
+            if (scrolledToFocus) return;
+            scrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+            setScrolledToFocus(true);
+          }} />
       </ScrollView>
     </SafeAreaView>
   );

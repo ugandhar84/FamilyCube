@@ -589,8 +589,17 @@ function RootNavigator() {
         return;
       }
 
-      if (data?.type === 'chat_message') {
-        router.push('/(tabs)/chat' as any);
+      if (data?.type === 'chat_message' || data?.type === 'chat_mention') {
+        // Both carry data.channelId (family-notifier's chat_message/
+        // chat_mention cases) — deep-link straight into that channel/DM
+        // instead of always landing on the tab's default "all" channel
+        // (live-reported: tapping a chat push should open the actual
+        // conversation, not just the Chat tab root).
+        if (data?.channelId) {
+          router.push({ pathname: '/(tabs)/chat' as any, params: { channelId: data.channelId } });
+        } else {
+          router.push('/(tabs)/chat' as any);
+        }
       } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
         // Family Cube grocery notifications (notify-shopping-trip-started
         // edge function / storeGeofencing.ts's local proximity reminder) —
@@ -1024,6 +1033,7 @@ function RootNavigator() {
         <Stack.Screen name="onboarding/family-choice" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/setup-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/join-family" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/permissions" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="onboarding/complete-profile" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="profile-settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile-settings/terms" options={{ animation: 'slide_from_right' }} />

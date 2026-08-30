@@ -80,6 +80,8 @@ export interface Reward {
   requiresApproval:  boolean;         // false = auto-approve on claim
   createdAt:         string;
   createdById?:      string;
+  updatedAt?:        string;          // set on every updateReward() call, undefined until first edit
+  updatedById?:      string;          // memberId of whoever last edited this perk
 }
 
 export interface Redemption {
@@ -263,7 +265,12 @@ export const useRewardStore = create<RewardState>((set, get) => ({
 
   updateReward: (id, updates, actingMemberId) => {
     const prev = get().rewards.find(r => r.id === id);
-    const next = get().rewards.map(r => r.id === id ? { ...r, ...updates } : r);
+    // Stamp who/when on every real edit — the Store perk detail sheet's
+    // "last updated by X" line reads this. Not stamped for toggleAvailability
+    // below (a separate, lighter-weight action) since that already has its
+    // own dedicated function; this covers PerkModal's actual edit form.
+    const stamped = { ...updates, updatedAt: new Date().toISOString(), updatedById: actingMemberId };
+    const next = get().rewards.map(r => r.id === id ? { ...r, ...stamped } : r);
     set({ rewards: next }); save(next, get().redemptions);
     const updated = next.find(r => r.id === id);
     if (updated) {
@@ -509,6 +516,7 @@ function rewardToRow(r: Reward) {
     eligible_member_ids: r.eligibleMemberIds ?? null, max_per_member: r.maxPerMember ?? null,
     expires_at: r.expiresAt ?? null, icon_color: r.iconColor ?? null,
     requires_approval: r.requiresApproval, created_at: r.createdAt, created_by_id: r.createdById ?? null,
+    updated_at: r.updatedAt ?? null, updated_by_id: r.updatedById ?? null,
   };
 }
 
@@ -521,6 +529,7 @@ function rewardFromRow(row: any): Reward {
     expiresAt: row.expires_at ?? undefined, iconColor: row.icon_color ?? undefined,
     requiresApproval: Boolean(row.requires_approval ?? true),
     createdAt: row.created_at, createdById: row.created_by_id ? String(row.created_by_id) : undefined,
+    updatedAt: row.updated_at ?? undefined, updatedById: row.updated_by_id ? String(row.updated_by_id) : undefined,
   };
 }
 

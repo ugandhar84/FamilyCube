@@ -15,7 +15,7 @@ export function KidRequestsSection({
   selectedIds: Set<string>;
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   isSelecting: boolean;
-  priceMap: Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>;
+  priceMap: Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' }>;
   setDetailItem: (item: GroceryItem | null) => void;
   handleBuyItem: (item: GroceryItem) => void;
   setEditingItem: (item: GroceryItem | undefined) => void;

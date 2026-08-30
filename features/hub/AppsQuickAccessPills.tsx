@@ -23,6 +23,7 @@ import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
+import { useNotifStore } from '@/store/notifStore';
 
 type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store' | 'profile';
 
@@ -308,6 +309,15 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
   if (available.length === 0) return null;
   const visible = orderPills(available, savedOrder);
 
+  // "New memory" dot on the Memories pill — live-requested: "if any new
+  // memories, just show indicator on memory pill on top pills." Reuses the
+  // real notifications table (memory_posted/memory_liked, already
+  // persisted by MemoriesTab.tsx's postMemory/heartMemory) rather than a
+  // separate last-viewed-timestamp mechanism — same source of truth the
+  // bell icon's own unread badge already reads.
+  const notifications = useNotifStore(s => s.notifications);
+  const hasUnreadMemory = (notifications ?? []).some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'));
+
   return (
     <View style={{ paddingBottom: 12 }}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -332,9 +342,15 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
                 // deeper-saturated icon/text color from the same hue.
                 backgroundColor: isDark ? deep + '30' : light,
                 borderWidth: 1, borderColor: isDark ? deep + '50' : deep + '25',
+                position: 'relative',
               }}>
               <p.Icon size={12} color={isDark ? light : deep} />
               <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? light : deep, lineHeight: 15 }}>{p.label}</Text>
+              {p.id === 'memories' && hasUnreadMemory && (
+                <View pointerEvents="none" style={{ position: 'absolute', top: 4, right: 4,
+                  width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger,
+                  borderWidth: 1.5, borderColor: isDark ? '#0E0C13' : '#FAF8F4' }} />
+              )}
             </TouchableOpacity>
           );
         })}

@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
+import type { FamilyMember } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -19,6 +20,8 @@ import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import AppBottomSheet from '@/components/AppBottomSheet';
+import { fmtDateShort } from '@/lib/dates';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
@@ -137,7 +140,7 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, isGoal, onToggleGoal }: {
+function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, onOpenDetail, isGoal, onToggleGoal }: {
   reward: Reward; index?: number; myCoins: number; isKid: boolean; isParent: boolean;
   // Was isKid-only, so teen and senior roles — both of whom earn coins
   // elsewhere in the app with nowhere else to spend them — got a
@@ -146,6 +149,12 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
   canRedeemSelf: boolean;
   colors: any; isDark: boolean;
   onRedeem: (r: Reward) => void; onEdit: (r: Reward) => void;
+  // A plain tap now opens a read-only detail sheet (last-updated-by info,
+  // Edit button inside) instead of doing nothing for non-parents and
+  // requiring a long-press for parents — live-requested: "one tap
+  // bottomsheet for read only details, with edit button to open the edit
+  // model." Long-press-to-edit stays as a parent shortcut on top of that.
+  onOpenDetail: (r: Reward) => void;
   isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
   const canRedeem = canRedeemSelf && myCoins >= reward.cost;
@@ -155,6 +164,7 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
   const accent = categoryAccent(reward.category, colors, index);
   return (
     <Pressable
+      onPress={() => onOpenDetail(reward)}
       onLongPress={isParent ? () => onEdit(reward) : undefined}
       delayLongPress={350}
       style={[s.perkCard, { backgroundColor: isDark ? accent + '20' : accent + '1E', borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
@@ -201,7 +211,7 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
         </>
       ) : isParent ? (
         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
-          Hold to edit
+          Tap for details · Hold to edit
         </Text>
       ) : (
         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
@@ -209,6 +219,84 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
         </Text>
       )}
     </Pressable>
+  );
+}
+
+// ─── Perk detail sheet — read-only, Edit opens the real form ──────────────────
+// Live-requested: a plain tap on a perk should show its details (including
+// who last changed it and when) without immediately dropping the viewer
+// into edit mode — Edit is a deliberate second step, not the only option.
+function PerkDetailSheet({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
+  reward: Reward | null; allMembers: FamilyMember[]; colors: any; isDark: boolean; isParent: boolean;
+  onClose: () => void; onEdit: (r: Reward) => void;
+}) {
+  const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
+  const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
+  return (
+    <AppBottomSheet visible={!!reward} onClose={onClose} title={reward?.title ?? 'Perk'}
+      subtitle={reward?.category} minHeight="40%" maxHeight="70%"
+      footer={isParent && reward ? (
+        <Pressable onPress={() => onEdit(reward)}
+          style={{ backgroundColor: colors.teal, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Edit Perk</Text>
+        </Pressable>
+      ) : undefined}>
+      {reward && (
+        <View style={{ gap: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.amberLight,
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 26 }}>{reward.emoji ?? '🎁'}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>{reward.title}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, marginTop: 2 }}>{reward.cost} Coins 🪙</Text>
+            </View>
+          </View>
+
+          {reward.description ? (
+            <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{reward.description}</Text>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: reward.available ? colors.success : colors.textTertiary }}>
+                {reward.available ? 'Available' : 'Unavailable'}
+              </Text>
+            </View>
+            {typeof reward.stock === 'number' && (
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>{reward.stock} in stock</Text>
+              </View>
+            )}
+            {reward.requiresApproval && (
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Needs approval</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Last-updated tracking — the actual ask: "when parent changes
+              the perk, we should have the last updated by and date/time on
+              that card." Falls back to created info when never edited. */}
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
+            {reward.updatedAt ? (
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                Last updated by {updater?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.updatedAt.slice(0, 10))} at{' '}
+                {new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            ) : (
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>Not edited since it was created</Text>
+            )}
+            {reward.createdAt && (
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                Added by {creator?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.createdAt.slice(0, 10))}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+    </AppBottomSheet>
   );
 }
 
@@ -358,6 +446,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [showCreate,  setShowCreate]  = useState(false);
   const [editing,     setEditing]     = useState<Reward | null>(null);
+  const [detailPerk,  setDetailPerk]  = useState<Reward | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   // Jar picker — only shown when the kid actually has a choice (both
   // wallets non-zero and at least one alone can't cover it, or both can).
@@ -744,6 +833,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                   isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}
+                  onOpenDetail={r => setDetailPerk(r)}
                   isGoal={isKid && activeMember?.goalRewardId === r.id}
                   onToggleGoal={isKid ? (target) => {
                     if (!activeMember) return;
@@ -768,6 +858,16 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             createdAt: new Date().toISOString(), ...data } as any); showToast('Reward added'); }
         }}
         onDelete={r => { setShowCreate(false); setEditing(null); handleDelete(r); }}
+      />
+
+      <PerkDetailSheet
+        reward={detailPerk}
+        allMembers={members}
+        colors={colors}
+        isDark={isDark}
+        isParent={isParent}
+        onClose={() => setDetailPerk(null)}
+        onEdit={r => { setDetailPerk(null); setEditing(r); setShowCreate(true); }}
       />
 
       <JarPickerModal

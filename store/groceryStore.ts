@@ -31,6 +31,10 @@ export interface GroceryItem {
   notes?: string;
   aiGenerated: boolean;
   estimatedPrice?: number;
+  // 'receipt' = a real scanned-purchase price (parse-grocery-receipt
+  // matched this item by name to a receipt line item) — trusted over any
+  // fresh AI/Kroger guess. 'estimate' or undefined = AI-guessed.
+  priceSource?: 'receipt' | 'estimate';
   createdAt: string;
   isReturning?: boolean;
   returnQuestId?: string;
@@ -101,6 +105,7 @@ function rowToItem(r: any): GroceryItem {
     notes:           r.notes ?? undefined,
     aiGenerated:     r.ai_generated ?? false,
     estimatedPrice:  r.estimated_price ?? undefined,
+    priceSource:     r.price_source ?? undefined,
     createdAt:       r.created_at,
     isReturning:     r.is_returning ?? false,
     returnQuestId:   r.return_quest_id ?? undefined,
@@ -152,6 +157,14 @@ interface GroceryState {
   // has pinned a real-world location for, keyed by store name.
   pinnedStores: Record<string, { lat: number; lng: number }>;
 
+  // family_store_preferences — the family's own curated store list, grown
+  // by whoever adds a custom store name in the "move to store" picker.
+  // Distinct from pastStores (client-derived from run history, resets to
+  // nothing for a brand-new family) and DEFAULT_GROCERY_STORES (static
+  // app-wide list) — this is the one that actually persists a family's own
+  // additions for future suggestion (live-requested).
+  savedStorePrefs: string[];
+
   // Realtime subscriptions
   _itemSub: any | null;
   _runSub:  any | null;
@@ -185,6 +198,9 @@ interface GroceryState {
 
   loadPinnedStores:  (familyId: string) => Promise<void>;
   pinStoreLocation:  (params: { familyId: string; store: string; latitude: number; longitude: number; pinnedBy: string }) => Promise<void>;
+
+  loadSavedStores: (familyId: string) => Promise<void>;
+  addSavedStore:   (params: { familyId: string; name: string; createdBy: string }) => Promise<void>;
 }
 
 function uuid() {
@@ -204,6 +220,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   pastStores:    [],
   pastItemNames: [],
   pinnedStores:  {},
+  savedStorePrefs: [],
   _itemSub:      null,
   _runSub:       null,
 
@@ -676,5 +693,28 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       family_id: familyId, store, latitude, longitude, pinned_by: pinnedBy,
     }, { onConflict: 'family_id,store' });
     if (error) console.warn('[groceryStore] pinStoreLocation error', error);
+  },
+
+  loadSavedStores: async (familyId) => {
+    const { data, error } = await supabase
+      .from('family_store_preferences')
+      .select('name')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: true });
+    if (error) { console.warn('[groceryStore] loadSavedStores error', error); return; }
+    set({ savedStorePrefs: (data ?? []).map(r => r.name) });
+  },
+
+  addSavedStore: async ({ familyId, name, createdBy }) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Optimistic — the picker adds it to the suggestion list immediately;
+    // the unique(family_id, name) constraint makes a duplicate insert a
+    // harmless no-op server-side rather than an error worth surfacing.
+    set(s => s.savedStorePrefs.includes(trimmed) ? s : { savedStorePrefs: [...s.savedStorePrefs, trimmed] });
+    const { error } = await supabase.from('family_store_preferences')
+      .insert({ family_id: familyId, name: trimmed, created_by: createdBy })
+      .select().single();
+    if (error && error.code !== '23505') console.warn('[groceryStore] addSavedStore error', error);
   },
 }));

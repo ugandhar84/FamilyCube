@@ -9,7 +9,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
   item: GroceryItem | null; members: any[];
   onClose: () => void; onEdit: () => void; onBuy: () => void; onDelete?: () => void;
   colors: any; isDark: boolean;
-  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
+  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' };
 }) {
   if (!item) return null;
   const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
@@ -35,12 +35,24 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
               <Text style={{ fontSize: 12, fontWeight: '700', color: dotColor, marginTop: 1 }}>{item.category}</Text>
             )}
           </View>
-          {priceInfo?.price != null && (
-            <View style={{ backgroundColor: priceInfo.source === 'kroger' ? colors.successLight : colors.warningLight, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: priceInfo.source === 'kroger' ? colors.success : colors.warning }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: priceInfo.source === 'kroger' ? colors.success : colors.warningDark }}>${priceInfo.price.toFixed(2)}</Text>
-              <Text style={{ fontSize: 9, fontWeight: '700', color: priceInfo.source === 'kroger' ? colors.success : colors.warningDark }}>{priceInfo.source === 'kroger' ? 'Kroger' : '~est'}</Text>
+          {priceInfo?.price != null ? (() => {
+            const trusted = priceInfo.source === 'kroger' || priceInfo.source === 'receipt';
+            const label = priceInfo.source === 'kroger' ? 'Kroger' : priceInfo.source === 'receipt' ? 'Receipt' : '~est';
+            return (
+              <View style={{ backgroundColor: trusted ? colors.successLight : colors.warningLight, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: trusted ? colors.success : colors.warning }}>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: trusted ? colors.success : colors.warningDark }}>${priceInfo.price.toFixed(2)}</Text>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: trusted ? colors.success : colors.warningDark }}>{label}</Text>
+              </View>
+            );
+          })() : priceInfo?.source === 'unrecognized' ? (
+            // Same "say so, don't stay blank" fix as ItemCard.tsx — the
+            // price-fetch ran and explicitly couldn't recognize this as a
+            // real shopping item, rather than still being in progress.
+            <View style={{ backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: colors.border, maxWidth: 120 }}>
+              <Ionicons name="help-circle-outline" size={16} color={colors.textTertiary} />
+              <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary, textAlign: 'center' }}>not recognized</Text>
             </View>
-          )}
+          ) : null}
         </View>
 
         <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: 20, marginBottom: 14 }} />

@@ -1014,6 +1014,26 @@ export default function ChatScreen() {
                 const canScroll = contentSize.height > layoutMeasurement.height + 1;
                 if (!canScroll || contentOffset.y < 0) return;
 
+                // Reaching the TOP of history (max offset in this inverted
+                // list — the oldest message, nothing further to load) with
+                // the header still collapsed from scrolling up to get here
+                // had no way back: the only re-expand condition below fires
+                // on the NEXT scroll event, but there isn't one once the
+                // user is at rest against the end of real content — no more
+                // messages ever arrive above to keep triggering onScroll.
+                // Header stayed permanently collapsed (live-reported: "im
+                // still scrolling... nothing is there... header is still
+                // stuck", a blank gap where it used to be). Re-expand the
+                // instant the list is within a few px of its true max
+                // extent, regardless of direction.
+                const atTop = contentOffset.y >= contentSize.height - layoutMeasurement.height - 4;
+                if (atTop && headerCollapsed) {
+                  setHeaderCollapsed(false);
+                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+                  lastScrollY.current = contentOffset.y;
+                  return;
+                }
+
                 // Inverted list: a GROWING offset.y means the user is
                 // scrolling toward older messages (visually "up"); a
                 // shrinking one means back toward the latest ("down").

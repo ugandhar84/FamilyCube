@@ -954,6 +954,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .invoke('mention-notify', { body: { messageId: msgId, channelId, senderId, text, mentions } })
           .catch(e => console.warn('[chatStore] mention-notify failed:', e?.message));
       }
+      // Plain chat message push — previously ONLY @mentions ever notified
+      // anyone (live-reported: "why chat notifications are not coming").
+      // A system-event card (trip started, chore posted as a chat card,
+      // etc.) has its own dedicated notification already fired by whatever
+      // store created it — don't double-push here. mentions is passed
+      // through so chat-notify can skip anyone mention-notify already pinged.
+      if (text?.trim() && !systemEvent) {
+        supabase.functions
+          .invoke('chat-notify', { body: { channelId, senderId, text, mentions } })
+          .catch(e => console.warn('[chatStore] chat-notify failed:', e?.message));
+      }
       // Layer 2 moderation — fire-and-forget, runs AFTER the message is
       // already visible; only ever adds a parent-only flag, never blocks
       // or removes anything. Plain text messages only (a system_event card

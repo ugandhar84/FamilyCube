@@ -8,7 +8,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { ShoppingCart } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { CAT_ICON } from './types';
+import { CAT_ICON, CAT_EMOJI } from './types';
+
+// Groups a receipt's line items by category — live-requested: "Put
+// category wise" — so a scanned receipt mixing groceries with supplies or
+// clothing reads as clearly segregated sections instead of one flat list.
+// Order follows a rough "most items first" convention rather than
+// alphabetical, with 'Other' always last since it's the least specific.
+function groupItemsByCategory(items: any[]): [string, any[]][] {
+  const byCategory: Record<string, any[]> = {};
+  for (const item of items) {
+    const cat = item.category || 'Other';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(item);
+  }
+  return Object.entries(byCategory).sort(([a], [b]) => {
+    if (a === 'Other') return 1;
+    if (b === 'Other') return -1;
+    return byCategory[b].length - byCategory[a].length;
+  });
+}
 
 // ─── History Tab ──────────────────────────────────────────────────────────────
 
@@ -111,36 +130,44 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
                 <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
               </Pressable>
             </View>
-            {/* Expanded item list */}
+            {/* Expanded item list — grouped by category */}
             {isOpen && items.length > 0 && (
               <View style={{ paddingBottom: 8 }}>
-                {items.map((item: any, idx: number) => {
-                  const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
-                  return (
-                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
-                      borderBottomWidth: idx < items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
-                      {/* Category SVG icon thumbnail */}
-                      <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.surface,
-                        alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                        <CatIcon size={16} color={colors.primary} strokeWidth={1.8} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>{item.name}</Text>
-                        {item.quantity ? <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.quantity}</Text> : null}
-                      </View>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginRight: 10 }}>
-                        ${(item.total_price ?? 0).toFixed(2)}
-                      </Text>
-                      {/* Return to quest button */}
-                      <Pressable onPress={() => handleReturnItem(item, r.store ?? '')}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: colors.surface,
-                          alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 14 }}>↩️</Text>
-                      </Pressable>
-                    </View>
-                  );
-                })}
+                {groupItemsByCategory(items).map(([category, catItems], gIdx, groups) => (
+                  <View key={category} style={{ marginBottom: gIdx < groups.length - 1 ? 12 : 0 }}>
+                    <Text style={{ fontSize: 10.5, fontWeight: '800', color: colors.primary, textTransform: 'uppercase',
+                      letterSpacing: 0.6, marginBottom: 4 }}>
+                      {CAT_EMOJI[category] ?? '📦'} {category} ({catItems.length})
+                    </Text>
+                    {catItems.map((item: any, idx: number) => {
+                      const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
+                      return (
+                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
+                          borderBottomWidth: idx < catItems.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
+                          {/* Category SVG icon thumbnail */}
+                          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.surface,
+                            alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                            <CatIcon size={16} color={colors.primary} strokeWidth={1.8} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>{item.name}</Text>
+                            {item.quantity ? <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.quantity}</Text> : null}
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginRight: 10 }}>
+                            ${(item.total_price ?? 0).toFixed(2)}
+                          </Text>
+                          {/* Return to quest button */}
+                          <Pressable onPress={() => handleReturnItem(item, r.store ?? '')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: colors.surface,
+                              alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 14 }}>↩️</Text>
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
             )}
           </View>
@@ -177,29 +204,37 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
                   <Text style={{ fontSize: 22, fontWeight: '900', color: colors.primary }}>${(dr.total ?? 0).toFixed(2)}</Text>
                 </View>
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-                  {drItems.map((item: any, idx: number) => {
-                    const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
-                    return (
-                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-                        borderBottomWidth: idx < drItems.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border, gap: 10 }}>
-                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.surface,
-                          alignItems: 'center', justifyContent: 'center' }}>
-                          <CatIcon size={18} color={colors.primary} strokeWidth={1.8} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
-                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.category ?? ''}{item.quantity ? ` · ${item.quantity}` : ''}</Text>
-                        </View>
-                        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>${(item.total_price ?? 0).toFixed(2)}</Text>
-                        <Pressable onPress={() => { setDetailReceipt(null); setTimeout(() => handleReturnItem(item, dr.store ?? ''), 300); }}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.surface,
-                            alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ fontSize: 15 }}>↩️</Text>
-                        </Pressable>
-                      </View>
-                    );
-                  })}
+                  {groupItemsByCategory(drItems).map(([category, catItems], gIdx, groups) => (
+                    <View key={category} style={{ marginBottom: gIdx < groups.length - 1 ? 14 : 0 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary, textTransform: 'uppercase',
+                        letterSpacing: 0.6, marginBottom: 6 }}>
+                        {CAT_EMOJI[category] ?? '📦'} {category} ({catItems.length})
+                      </Text>
+                      {catItems.map((item: any, idx: number) => {
+                        const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
+                        return (
+                          <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+                            borderBottomWidth: idx < catItems.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border, gap: 10 }}>
+                            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.surface,
+                              alignItems: 'center', justifyContent: 'center' }}>
+                              <CatIcon size={18} color={colors.primary} strokeWidth={1.8} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
+                              {item.quantity ? <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.quantity}</Text> : null}
+                            </View>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>${(item.total_price ?? 0).toFixed(2)}</Text>
+                            <Pressable onPress={() => { setDetailReceipt(null); setTimeout(() => handleReturnItem(item, dr.store ?? ''), 300); }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.surface,
+                                alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 15 }}>↩️</Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
                 </ScrollView>
               </View>
             </View>

@@ -31,7 +31,7 @@ export function DraggableItemRow({
 }: {
   item: GroceryItem; members: any[];
   selected: boolean; selecting: boolean; isLast?: boolean;
-  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
+  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' };
   onPress: () => void; onBuy: () => void; onLongPress: () => void; onToggleSelect: () => void;
   onEdit: () => void; onDelete?: () => void; onMoveStore?: () => void;
   colors: any; isDark: boolean;

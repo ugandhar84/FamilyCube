@@ -63,28 +63,60 @@ function iconFor(type: string): string {
 export function routeForNotification(type: string, data?: Record<string, any> | null): string | null {
   const screen = data?.screen as string | undefined;
   switch (screen) {
-    case 'Quests':   return '/(tabs)/quests';
+    // 'quests' and 'calendar' merged into the unified Tasks tab (see
+    // app/(tabs)/_layout.tsx's own comment) — /(tabs)/quests still resolves
+    // (kept registered for compat) but isn't the real destination anymore.
+    case 'Quests':   return '/(tabs)/tasks';
     case 'Hub':      return '/(tabs)';
     case 'Chat':     return '/(tabs)/chat';
-    case 'Rewards':  return '/(tabs)/store';
+    case 'Rewards':
+    // reward_removed/reward_decision etc. use screen:'Rewards'; the
+    // dedicated reward-alert case below (screen:'Store') is a separate
+    // family-notifier payload shape for the same destination — both are
+    // the real Store tab, not a distinct screen.
+    case 'Store':    return '/(tabs)/store';
     // Ride/driver assignment notifications (ride_assignment_*/
     // ride_confirmed_for_kid) — deep-link to the Schedule tab where the
-    // event and its driver-status chips live.
-    case 'Schedule': return '/(tabs)/calendar';
-    // Kid requests are reviewed inline on the parent Hub (ActionNeededSection),
-    // there's no dedicated Requests screen/tab to deep-link into further.
-    case 'Requests': return '/(tabs)';
+    // event and its driver-status chips live. Schedule is the calendar's
+    // own segment inside the merged Tasks tab (features/tasks/TasksScreen.tsx).
+    case 'Schedule': return '/(tabs)/tasks';
+    // Kid requests / help requests are reviewed inline on the parent Hub
+    // (ActionNeededSection) — there's no dedicated Requests/Help screen to
+    // deep-link into further.
+    case 'Requests':
+    case 'Help':     return '/(tabs)';
     // Geofence/battery alerts are about a member's location — FindFam is
     // its own dedicated tab (app/(tabs)/gps.tsx), same route
     // FamilyRadarSection's own "view on map" uses.
     case 'Hearth':   return '/(tabs)/gps';
+    // Member/profile management (PIN changed, role changed, temp-approver
+    // grant/revoke, new member joined) all live on the Profile tab's member
+    // list — there's no separate "Roster" route.
+    case 'Roster':   return '/(tabs)/profile';
+    // Grocery/meal/medication alerts previously had NO case here at all —
+    // every one of them fell through the type-based fallback below (which
+    // also didn't cover most of these types) straight to the generic Hub
+    // route, regardless of what the notification was actually about
+    // (live-reported: "grocery, meals, medications... all alerts should
+    // respect those navigations"). These are real, separate top-level tabs
+    // (app/(tabs)/grocery.tsx, meals.tsx, family-health.tsx), not sub-tabs
+    // of one shared "Vault" screen the way this app used to be structured.
+    case 'Grocery':  return '/(tabs)/grocery';
+    // family-notifier's meal_reminder/meal alerts still send the legacy
+    // screen:'Vault', tab:'Meals' label from when Grocery/Meals/Health were
+    // sub-tabs of one shared Vault screen — that screen no longer exists,
+    // each is its own dedicated route now, so this maps straight to Meals.
+    // Health alerts use their own dedicated screen:'Health' below instead.
+    case 'Vault':    return '/(tabs)/meals';
+    case 'Health':   return '/(tabs)/family-health';
+    case 'Memories': return '/(tabs)/memories';
     default: break;
   }
   // Fall back on the notification `type` itself when no screen hint is set.
   if (type.startsWith('quest_') || type === 'force_assigned' || type === 'chore_ghosted'
       || type === 'deadline_reminder' || type === 'deadline_overdue' || type === 'penalty_applied'
-      || type === 'bonus_activated' || type === 'bonus_expiring' || type.startsWith('chore_handoff_')) return '/(tabs)/quests';
-  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid' || type === 'ride_pool_opened') return '/(tabs)/calendar';
+      || type === 'bonus_activated' || type === 'bonus_expiring' || type.startsWith('chore_handoff_')) return '/(tabs)/tasks';
+  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid' || type === 'ride_pool_opened') return '/(tabs)/tasks';
   if (type === 'coins_awarded' || type === 'reward_redeemed' || type === 'reward_decision') return '/(tabs)/store';
   if (type === 'chat_message') return '/(tabs)/chat';
   if (type.startsWith('kid_request')) return '/(tabs)';
@@ -97,9 +129,17 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
   // uses. Was missing here entirely, so tapping one of these rows from the
   // in-app notification panel (as opposed to the OS push banner) silently
   // did nothing (live-reported).
-  if (type === 'shopping_trip_started' || type === 'store_proximity') {
+  if (type === 'shopping_trip_started' || type === 'store_proximity'
+      || type === 'grocery_daily_digest' || type === 'grocery_run_reminder') {
     return '/(tabs)/grocery';
   }
+  // Type-based safety net for meal/medication/memory alerts, mirroring
+  // their real screen values above — covers the case where a persisted
+  // notification_logs row lost its `data.screen` field somewhere along the
+  // way and only `type` survived.
+  if (type === 'meal_reminder') return '/(tabs)/meals';
+  if (type === 'medication_added' || type === 'medication_missed') return '/(tabs)/family-health';
+  if (type === 'memory_posted' || type === 'memory_liked') return '/(tabs)/memories';
   // No specific deep link known for this type — fall back to the Hub
   // rather than doing nothing at all when tapped (live-reported: tapping a
   // notification should always take you somewhere).

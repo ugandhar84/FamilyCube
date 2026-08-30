@@ -282,9 +282,12 @@ export default function TabLayout() {
   // state.index] is synchronous and authoritative.
   const activeTabName = useUIStore(s => s.activeTabName);
   const onChatTab = activeTabName === 'chat';
-  // Grocery has its own dedicated "+" (add item) FAB in the same bottom-
-  // right position — the shared Ask Cube sparkle would otherwise stack
-  // directly on top of it. Same treatment as Chat below.
+  // Grocery now joins the shared-FAB "+" pattern (Tasks/Memories/Health/
+  // School) instead of having its own separate always-"+" local FAB —
+  // live-requested: "Grocery + FAB should be similar like in the other
+  // pages... that sparkling FAB should convert to + dynamically." Adding a
+  // grocery item isn't parent-only, so like Memories this is read OUTSIDE
+  // the parent-only gate below (see the FAB render's own comment).
   const onGroceryTab = activeTabName === 'grocery';
   // One shared FAB (not two separate ones) swaps between Ask Cube
   // (sparkle, every tab except Chat/Tasks) and Tasks' own smart-create
@@ -493,43 +496,42 @@ export default function TabLayout() {
         <Tabs.Screen name="family-health"        options={{ href: null }} />
       </Tabs>
 
-      {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Grocery/
-          Store/FindFam/Tasks/Memories/Health & Records; morphs in place
+      {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Store/
+          FindFam/Tasks/Memories/Grocery/Health & Records; morphs in place
           into Tasks' own "+" (opens SmartTaskComposer via the one-shot
           openTaskComposerRequested flag TasksScreen consumes), Memories'
-          own "+" (openMemoryComposerRequested, MemoriesTab consumes), or
-          Health & Records' own "+" (openHealthRecordsComposerRequested,
-          HealthTab/RecordsTab each consume it for whichever segment is
-          mounted) depending on which is focused. One physical button, one
-          position, crossfading icon — not separate FABs swapping in and
-          out. Ask Cube itself (the sparkle face, Tasks' "+", and Health &
-          Records' "+") stays parent-only — Ask Cube can act broadly across
-          the household on the parent's behalf, which isn't something a
-          kid/teen/GP account should trigger, Tasks' kid/teen creation path
-          uses its own separate header buttons instead of this shared
-          button, and Health & Records' own add-medication/add-record
-          controls are already parent(-visible)-only inside
+          own "+" (openMemoryComposerRequested, MemoriesTab consumes),
+          Grocery's own "+" (openGroceryComposerRequested, GroceryScreen
+          consumes — replaces that screen's previous separate always-"+"
+          local FAB), or Health & Records' own "+"
+          (openHealthRecordsComposerRequested, HealthTab/RecordsTab each
+          consume it for whichever segment is mounted) depending on which
+          is focused. One physical button, one position, crossfading icon —
+          not separate FABs swapping in and out. Ask Cube itself (the
+          sparkle face, Tasks' "+", and Health & Records' "+") stays
+          parent-only — Ask Cube can act broadly across the household on
+          the parent's behalf, which isn't something a kid/teen/GP account
+          should trigger, Tasks' kid/teen creation path uses its own
+          separate header buttons instead of this shared button, and
+          Health & Records' own add-medication/add-record controls are
+          already parent(-visible)-only inside
           HealthRecordsList.tsx/RecordsTab.tsx (kidView hides them) — so a
           kid/teen there correctly just gets the FAB hidden, same as Store/
-          FindFam. Memories' "+" is the one exception carved out of the
-          gate below — posting a memory isn't a parent-only action the way
-          Ask Cube is. */}
-      {(activeMember?.role === 'parent' || onMemoriesTab) && (
+          FindFam. Memories' and Grocery's "+" are the two exceptions
+          carved out of the gate below — posting a memory or adding a
+          grocery item isn't a parent-only action the way Ask Cube is. */}
+      {(activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (
         <>
           {/* Hidden on the Chat tab — a second AI entry point on top of the
               family's own messaging surface was redundant/confusing there.
               If it's already open when the user navigates to Chat, leave it
               open rather than yanking it away mid-conversation — only the
-              launcher button hides. Also hidden on Grocery — that screen
-              has its own dedicated "+" (add item) FAB in the same
-              bottom-right spot, and stacking the sparkle directly on top
-              of it was redundant/confusing the same way. Also hidden on
-              Store and FindFam — both are focused, single-purpose screens
-              (redeem/approve perks; check the family map) where a
-              household-wide AI launcher doesn't add anything and just
-              clutters the corner. */}
-          {!onChatTab && !onGroceryTab && !onStoreTab && !onGpsTab && !fullBleedScreenActive
-            && (activeMember?.role === 'parent' || onMemoriesTab) && (() => {
+              launcher button hides. Also hidden on Store and FindFam —
+              both are focused, single-purpose screens (redeem/approve
+              perks; check the family map) where a household-wide AI
+              launcher doesn't add anything and just clutters the corner. */}
+          {!onChatTab && !onStoreTab && !onGpsTab && !fullBleedScreenActive
+            && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (() => {
             // Health & Records has its own inner segmented switch (Health/
             // Immunizations/Records) nested inside one route — the FAB
             // tracks that too, not just which top-level route is focused,
@@ -538,12 +540,14 @@ export default function TabLayout() {
             const fabColor = onFamilyHealthTab
               ? (healthRecordsActiveSegment === 'health' ? colors.danger : colors.teal)
               : onSchoolTab ? colors.amber
+              : onGroceryTab ? colors.teal
               : colors.primary;
             return (
               <Pressable
                 onPress={() => {
                   if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
                   else if (onMemoriesTab) useUIStore.getState().setOpenMemoryComposerRequested(true);
+                  else if (onGroceryTab) useUIStore.getState().setOpenGroceryComposerRequested(true);
                   else if (onFamilyHealthTab) useUIStore.getState().setOpenHealthRecordsComposerRequested(true);
                   else if (onSchoolTab) useUIStore.getState().setOpenSchoolScheduleComposerRequested(true);
                   else setAskCubeOpen(true);
@@ -555,7 +559,7 @@ export default function TabLayout() {
                   shadowColor: fabColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
                   elevation: 6,
                 }}>
-                {(onTasksTab || onMemoriesTab || onFamilyHealthTab || onSchoolTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
+                {(onTasksTab || onMemoriesTab || onGroceryTab || onFamilyHealthTab || onSchoolTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
               </Pressable>
             );
           })()}

@@ -624,7 +624,7 @@ export default function JoinFamilyScreen() {
                 </Text>
                 <TouchableOpacity
                   style={[s.btn, { backgroundColor: colors.primary, marginTop: 32 }]}
-                  onPress={() => router.replace('/onboarding/complete-profile')}
+                  onPress={() => router.replace('/onboarding/permissions')}
                 >
                   <Text style={s.btnText}>Let's Go →</Text>
                 </TouchableOpacity>

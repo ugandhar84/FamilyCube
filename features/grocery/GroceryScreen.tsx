@@ -10,7 +10,9 @@
  *  "New run" → create run sheet → pick items from pool
  *  Active run card → RunDetailSheet (live check-off)
  */
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useUIStore } from '@/store/uiStore';
 import { ReceiptScanSheet } from './components/ReceiptScanSheet';
 import { SmartRestockBanner } from './components/SmartRestockBanner';
 import { PartnerStatusBar } from './components/PartnerStatusBar';
@@ -56,6 +58,24 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
   const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
+
+  // Shared FAB's Grocery-tab "+" face (app/(tabs)/_layout.tsx) fires this
+  // one-shot flag instead of opening Ask Cube — same pattern
+  // MemoriesTab.tsx uses for openMemoryComposerRequested. Replaces this
+  // screen's own previously-separate always-"+" local FAB.
+  const openGroceryComposerRequested = useUIStore(s => s.openGroceryComposerRequested);
+  useEffect(() => {
+    if (openGroceryComposerRequested) {
+      useUIStore.getState().setOpenGroceryComposerRequested(false);
+      setShowAddItem(true);
+    }
+  }, [openGroceryComposerRequested]);
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().openGroceryComposerRequested) {
+      useUIStore.getState().setOpenGroceryComposerRequested(false);
+      setShowAddItem(true);
+    }
+  }, []));
   const [editingItem, setEditingItem]   = useState<GroceryItem | undefined>(undefined);
   const [detailItem,  setDetailItem]    = useState<GroceryItem | null>(null);
   const [showNewRun,  setShowNewRun]    = useState(false);
@@ -72,31 +92,42 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const [showReceiptScan, setShowReceiptScan] = useState(false);
 
   // Price comparison state
-  const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>>({});
+  const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' }>>({});
   const [priceLoading, setPriceLoading] = useState(false);
   const [pricesLoaded, setPricesLoaded] = useState(false);
 
-  // Seed priceMap from stored estimatedPrice whenever items load
+  // Seed priceMap from stored estimatedPrice whenever items load. A
+  // receipt-sourced price (parse-grocery-receipt matched this item to a
+  // real scanned purchase) always wins over whatever's already in
+  // priceMap, including a previously-fetched AI guess — live-requested:
+  // "actuals right from receipt instead displaying estimated." A plain
+  // AI-estimate re-seed still only fills gaps, same as before.
   useEffect(() => {
     if (!items.length) return;
     const seeded: typeof priceMap = {};
     let any = false;
     for (const item of items) {
-      if (item.estimatedPrice != null && !priceMap[item.name]) {
+      if (item.estimatedPrice == null) continue;
+      const isReceipt = item.priceSource === 'receipt';
+      if (isReceipt && priceMap[item.name]?.source !== 'receipt') {
+        seeded[item.name] = { price: item.estimatedPrice, unit: null, source: 'receipt' };
+        any = true;
+      } else if (!isReceipt && !priceMap[item.name]) {
         seeded[item.name] = { price: item.estimatedPrice, unit: null, source: 'estimate' };
         any = true;
       }
     }
     if (any) {
-      setPriceMap(prev => ({ ...seeded, ...prev }));
+      setPriceMap(prev => ({ ...prev, ...seeded }));
       setPricesLoaded(true);
     }
   }, [items]);
 
   const checkPrices = async () => {
     const unbought = items.filter(i => !i.isBought);
-    // Only fetch delta items — skip those already priced
-    const toFetch = unbought.filter(i => !priceMap[i.name]);
+    // Only fetch delta items — skip those already priced, and never
+    // re-fetch an AI guess for something a real receipt already priced.
+    const toFetch = unbought.filter(i => !priceMap[i.name] && i.priceSource !== 'receipt');
     if (!toFetch.length) return;
     setPriceLoading(true);
     try {
@@ -505,6 +536,8 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             pinnedStores={geofencingEnabled ? pinnedStores : undefined}
             onPinStore={geofencingEnabled ? (store) => setPinningStore(store) : undefined}
             onAutoScroll={handleAutoScroll}
+            familyId={familyId}
+            activeMemberId={activeMemberId ?? ''}
           />
 
           <RecentlyBoughtSection
@@ -572,14 +605,6 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
           <Ionicons name="chevron-up" size={22} color={P} />
         </Pressable>
       </Animated.View>
-
-      {/* Add FAB */}
-      <Pressable
-        onPress={() => setShowAddItem(true)}
-        style={[s.fab, { backgroundColor: P, bottom: insets.bottom + 80 }]}
-      >
-        <Ionicons name="add" size={28} color="#FFF" />
-      </Pressable>
 
       {/* Sheets */}
       <ReceiptScanSheet

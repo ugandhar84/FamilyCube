@@ -95,6 +95,13 @@ type NotifType =
   | 'geofence_arrive'
   | 'low_battery'
   | 'chat_mention'
+  // Plain (non-@mention) chat messages previously sent ZERO push
+  // notifications at all — chatStore.ts's sendMessage only ever fired
+  // mention-notify, and only when the text actually contained an @handle.
+  // Live-reported: "why chat notifications are not coming." Broadcasts to
+  // the other channel/DM participants (excluding the sender), same
+  // channel-membership resolution mention-notify already does server-side.
+  | 'chat_message'
   | 'coins_awarded'
   | 'chore_ghosted'
   // Master-flow spec's "Gone quiet — still on?" check-in — fires once,
@@ -265,7 +272,11 @@ type NotifType =
 // Category a member's notification_prefs toggles by — coarser than
 // NotifType's 20+ individual values, since that's the granularity a person
 // actually thinks in terms of ("chores", not "bonus_expired_penalty").
-type NotifCategory = 'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery';
+// 'mentions' split out from 'chat' (live-requested: "user can choose notify
+// when mentioned" as its OWN toggle, independent from general chat message
+// pushes) — someone can now get all chat activity but skip mention pings,
+// or the reverse.
+type NotifCategory = 'chores' | 'family' | 'chat' | 'mentions' | 'rewards' | 'requests' | 'grocery';
 
 const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   quest_approved: 'chores', quest_declined: 'chores', quest_claimed: 'chores',
@@ -274,7 +285,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   penalty_applied: 'chores', force_assigned: 'chores', chore_ghosted: 'chores',
   chore_still_on: 'chores', chore_auto_released: 'chores',
   geofence_exit: 'family', geofence_arrive: 'family', low_battery: 'family',
-  chat_mention: 'chat',
+  chat_mention: 'mentions', chat_message: 'chat',
   coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards', reward_removed: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
   help_offered: 'requests', help_accepted: 'requests', help_declined: 'requests',
@@ -513,6 +524,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return {
         title: `💬 ${p.senderName} mentioned you`,
         body: p.preview as string ?? 'You were mentioned in family chat',
+        sound: 'default',
+        data: { screen: 'Chat', channelId: p.channelId },
+      };
+    case 'chat_message':
+      return {
+        title: `💬 ${p.senderName}${p.channelLabel ? ` in ${p.channelLabel}` : ''}`,
+        body: p.preview as string ?? 'Sent a message',
         sound: 'default',
         data: { screen: 'Chat', channelId: p.channelId },
       };

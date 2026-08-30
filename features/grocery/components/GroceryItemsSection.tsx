@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Alert, Pressable, findNodeHandle, UIManager, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
@@ -6,6 +6,7 @@ import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { FlatSectionHeader } from './FlatSectionHeader';
 import { DraggableItemRow } from './DraggableItemRow';
+import { StorePickerSheet } from './StorePickerSheet';
 import { s } from './styles';
 
 // ─── Main store-grouped grocery list (with empty state) ───────────────────────
@@ -16,6 +17,7 @@ export function GroceryItemsSection({
   setDetailItem, handleBuyItem, setEditingItem, setShowAddItem, removeItem,
   isKid, members, colors, isDark,
   pinnedStores, onPinStore, onAutoScroll,
+  familyId, activeMemberId,
 }: {
   groceryItems: GroceryItem[];
   groupedItems: [string, GroceryItem[]][];
@@ -23,7 +25,7 @@ export function GroceryItemsSection({
   selectedIds: Set<string>;
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   isSelecting: boolean;
-  priceMap: Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>;
+  priceMap: Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' }>;
   setDetailItem: (item: GroceryItem | null) => void;
   handleBuyItem: (item: GroceryItem) => void;
   setEditingItem: (item: GroceryItem | undefined) => void;
@@ -42,31 +44,44 @@ export function GroceryItemsSection({
   // itself — this component has no ref to that ScrollView, only the
   // screen that owns it does. Pass null to stop scrolling.
   onAutoScroll?: (delta: number | null) => void;
+  // Needed to persist a brand-new store name typed into StorePickerSheet
+  // into family_store_preferences (live-requested).
+  familyId: string;
+  activeMemberId: string;
 }) {
   const P = colors.primary;
   const updateItem = useGroceryStore(s => s.updateItem);
   const pastStores = useGroceryStore(s => s.pastStores);
+  const savedStorePrefs = useGroceryStore(s => s.savedStorePrefs);
+  const loadSavedStores = useGroceryStore(s => s.loadSavedStores);
+  const addSavedStore = useGroceryStore(s => s.addSavedStore);
 
-  // Every store currently in play on this list, plus past-run stores and
-  // the app defaults — the full pool a "move to store" prompt should offer,
-  // not just the handful already grouped here.
+  // Every store currently in play on this list, plus past-run stores, the
+  // family's own saved preferences, and the app defaults — the full pool a
+  // "move to store" picker should offer, not just the handful already
+  // grouped here. savedStorePrefs first — a family's own curated additions
+  // are the most likely re-pick, ahead of static app defaults.
   const knownStores = [...new Set([
     ...groupedItems.map(([store]) => store).filter(s => s !== 'Any store'),
+    ...savedStorePrefs,
     ...pastStores,
     ...DEFAULT_GROCERY_STORES,
   ])];
 
-  const promptMoveStore = (item: GroceryItem) => {
-    const others = knownStores.filter(s => s !== item.storePreference);
-    Alert.alert(
-      'Move to Store',
-      `"${item.name}" — pick where it belongs:`,
-      [
-        ...(item.storePreference ? [{ text: 'Any store (no preference)', onPress: () => updateItem(item.id, { storePreference: undefined }) }] : []),
-        ...others.map(store => ({ text: store, onPress: () => updateItem(item.id, { storePreference: store }) })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ]
-    );
+  useEffect(() => { if (familyId) loadSavedStores(familyId); }, [familyId, loadSavedStores]);
+
+  const [pickerTarget, setPickerTarget] = useState<GroceryItem | null>(null);
+  const promptMoveStore = (item: GroceryItem) => setPickerTarget(item);
+
+  const handleStoreSelect = (store: string | undefined) => {
+    if (!pickerTarget) return;
+    updateItem(pickerTarget.id, { storePreference: store });
+    // A brand-new store name (not already in knownStores) gets saved for
+    // future suggestion — the actual "add new store" half of the request.
+    if (store && !knownStores.some(s => s.toLowerCase() === store.toLowerCase())) {
+      addSavedStore({ familyId, name: store, createdBy: activeMemberId });
+    }
+    setPickerTarget(null);
   };
 
   // ── Drag-and-drop between store sections ─────────────────────────────────
@@ -219,6 +234,16 @@ export function GroceryItemsSection({
           </View>
         </View>
       ))}
+
+      <StorePickerSheet
+        visible={!!pickerTarget}
+        onClose={() => setPickerTarget(null)}
+        onSelect={handleStoreSelect}
+        currentStore={pickerTarget?.storePreference}
+        knownStores={knownStores}
+        colors={colors}
+        isDark={isDark}
+      />
     </>
   );
 }

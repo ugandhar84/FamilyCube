@@ -2146,10 +2146,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     // Audit finding — the kid whose multi-slot claim was just approved (and
     // paid, above) got zero notice; they'd only see it if they reopened the
-    // app. Mirrors approveChore's own quest_approved call.
+    // app. Was routed through quest-event-notifier's generic 'quest_approved'
+    // event, which forwards straight to family-notifier's own generic
+    // quest_approved copy — family-notifier already has a bounty-specific
+    // 'bounty_claim_approved' type with richer copy ("Claim Approved! ...
+    // +N🪙!") that was fully built but never actually called from anywhere
+    // (dead-code audit). Call family-notifier directly with the real type
+    // instead, since this is a single known recipient, not a broadcast that
+    // needs quest-event-notifier's own resolution logic.
     if (chore.familyId) {
-      supabase.functions.invoke('quest-event-notifier', {
-        body: { event: 'quest_approved', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId, coins: pts },
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'bounty_claim_approved', familyId: chore.familyId, memberIds: [childId],
+          payload: { questTitle: chore.title, questId: choreId, coins: pts },
+          persist: true,
+        },
       }).catch(e => console.warn('[choreStore] approveBountyClaim notify', e?.message));
     }
   },
@@ -2178,10 +2189,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       .eq('id', claim.id)
       .then(({ error }) => { if (error) console.warn('[choreStore] declineBountyClaim DB update failed', error.message); });
     // Audit finding — same gap as approveBountyClaim above, decline side:
-    // the kid whose claim was just turned down got zero notice.
+    // the kid whose claim was just turned down got zero notice. Same fix —
+    // call family-notifier directly with the bounty-specific
+    // 'bounty_claim_declined' type instead of quest-event-notifier's
+    // generic quest_declined forwarding, so the kid gets the actual
+    // "Claim Declined" copy (with reason) family-notifier already has
+    // built for this, rather than generic quest-decline wording.
     if (chore?.familyId) {
-      supabase.functions.invoke('quest-event-notifier', {
-        body: { event: 'quest_declined', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId, declineReason: reason },
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'bounty_claim_declined', familyId: chore.familyId, memberIds: [childId],
+          payload: { questTitle: chore.title, questId: choreId, reason },
+          persist: true,
+        },
       }).catch(e => console.warn('[choreStore] declineBountyClaim notify', e?.message));
     }
   },

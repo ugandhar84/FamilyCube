@@ -18,7 +18,7 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
   // moving doesn't make sense (kid view, bulk-select mode).
   onMoveStore?: () => void;
   colors: any; isDark: boolean;
-  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
+  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' };
 }) {
   const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
   const isBought = item.isBought;
@@ -71,11 +71,19 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
 
       {/* Right: price + buy */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        {priceInfo?.price != null && (
-          <Text style={{ fontSize: 12, fontWeight: '800', color: priceInfo.source === 'kroger' ? colors.success : colors.warningDark }}>
+        {priceInfo?.price != null ? (
+          <Text style={{ fontSize: 12, fontWeight: '800', color: (priceInfo.source === 'kroger' || priceInfo.source === 'receipt') ? colors.success : colors.warningDark }}>
             ${priceInfo.price.toFixed(2)}
           </Text>
-        )}
+        ) : priceInfo?.source === 'unrecognized' ? (
+          // Was silently showing nothing here — the price-fetch DID run,
+          // it just correctly refused to invent a number for something
+          // that isn't a real shopping item. Say so instead of leaving a
+          // blank space that reads as "still loading."
+          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary, fontStyle: 'italic', maxWidth: 90, textAlign: 'right' }}>
+            not recognized
+          </Text>
+        ) : null}
         {onMoveStore && !isBought && !selecting && (
           <Pressable onPress={onMoveStore} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }}>

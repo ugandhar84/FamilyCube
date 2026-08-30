@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "23",
+    buildNumber: "24",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -65,6 +65,12 @@ const config = {
       NSLocationAlwaysAndWhenInUseUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
       NSLocationAlwaysUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
       NSFaceIDUsageDescription: "Family Cube uses Face ID to sign you in quickly and securely.",
+      // Was missing entirely — chat voice notes/dictation (expo-audio's
+      // AudioModule.requestRecordingPermissionsAsync, ChatScreen.tsx) is a
+      // real, live mic use with no NSMicrophoneUsageDescription string at
+      // all, which Apple requires; without it the request throws/instantly
+      // denies rather than showing a prompt.
+      NSMicrophoneUsageDescription: "Family Cube uses your microphone for voice notes and voice-to-text in Chat.",
       NSPhotoLibraryAddUsageDescription: "Family Cube saves photos to your library.",
       NSCalendarsUsageDescription: "Family Cube adds family events to Calendar so you never miss them.",
       NSCalendarsFullAccessUsageDescription: "Family Cube adds family events to Calendar so you never miss them.",

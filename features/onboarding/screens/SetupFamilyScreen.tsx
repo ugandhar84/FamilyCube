@@ -660,7 +660,7 @@ export default function SetupFamilyScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary, marginTop: 12 }]} onPress={handleInvite} disabled={invitingMember}>
                   {invitingMember ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Get Their Invite Code →</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity style={{ marginTop: 14 }} onPress={() => router.replace('/onboarding/complete-profile')}>
+                <TouchableOpacity style={{ marginTop: 14 }} onPress={() => router.replace('/onboarding/permissions')}>
                   <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: TYPO.caption }}>Skip for now — I'll invite people later</Text>
                 </TouchableOpacity>
               </View>
@@ -678,7 +678,7 @@ export default function SetupFamilyScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary, marginTop: 24 }]} onPress={handleShare}>
                   <Text style={s.btnText}>📤 Share Code</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary, marginTop: 10 }]} onPress={() => router.replace('/onboarding/complete-profile')}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary, marginTop: 10 }]} onPress={() => router.replace('/onboarding/permissions')}>
                   <Text style={[s.btnText, { color: colors.primary }]}>Enter App →</Text>
                 </TouchableOpacity>
                 <Text style={[{ color: colors.textSecondary, fontSize: 12, marginTop: 16, textAlign: 'center' }]}>

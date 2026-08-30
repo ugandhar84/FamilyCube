@@ -32,6 +32,14 @@ interface UIState {
   // currently-selected kid, then clears it immediately.
   openSchoolScheduleComposerRequested: boolean;
   setOpenSchoolScheduleComposerRequested: (v: boolean) => void;
+  // Same one-shot pattern, for the shared FAB's Grocery-tab "+" face —
+  // GroceryScreen previously had its OWN separate always-"+" local FAB
+  // instead of joining the shared sparkle-everywhere-else/+-on-this-tab
+  // pattern every other composer tab already uses (live-requested:
+  // "Grocery + FAB should be similar like in the other pages"). Reads this
+  // once on focus to open AddItemSheet, then clears it immediately.
+  openGroceryComposerRequested: boolean;
+  setOpenGroceryComposerRequested: (v: boolean) => void;
   // Live-updated (not one-shot) by HealthRecordsScreen/HealthTab so the
   // shared FAB's own background color in app/(tabs)/_layout.tsx can track
   // which inner segment (Health/Medications vs. Immunizations) is actually
@@ -61,6 +69,8 @@ export const useUIStore = create<UIState>((set) => ({
   setOpenHealthRecordsComposerRequested: (v) => set({ openHealthRecordsComposerRequested: v }),
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
+  openGroceryComposerRequested: false,
+  setOpenGroceryComposerRequested: (v) => set({ openGroceryComposerRequested: v }),
   healthRecordsActiveSegment: 'health',
   setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),
   activeTabName: undefined,

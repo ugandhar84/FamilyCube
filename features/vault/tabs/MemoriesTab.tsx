@@ -146,6 +146,7 @@ interface Memory {
   hearts: number; hearted_by: string[]; created_by: string | null;
   tagged_member_ids?: string[]; tag?: string | null;
   media_types?: string[] | null;
+  created_at?: string | null;
 }
 
 // ─── Compose sheet — pick up to 2 photos + a caption ───────────────────────────
@@ -552,8 +553,9 @@ function ComposeMemoryModal({ visible, onClose, onPost, members, myId, colors, i
 // caption, who-was-there + occasion, matching the composer's own header
 // treatment ───
 
-function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDark, onHeart, onDelete, onOpenViewer }: {
+function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDark, highlighted, onHeart, onDelete, onOpenViewer }: {
   mem: Memory; myId: string; poster?: FamilyMember; allMembers: FamilyMember[]; siblings: string[]; colors: any; isDark: boolean;
+  highlighted?: boolean;
   onHeart: () => void; onDelete: () => void;
   onOpenViewer: (urls: string[], startIndex: number, types?: ('photo' | 'video')[]) => void;
 }) {
@@ -561,6 +563,13 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
   const [activeSlide, setActiveSlide] = useState(0);
   const mediaRef = useRef<MemoryMediaHandle>(null);
   const hearted = mem.hearted_by?.includes(myId);
+  // Was unconditional — any family member (kid/teen/senior included) could
+  // delete anyone else's posted memory, no matter who posted it (live-
+  // flagged: "if one pasted the memories should other can have delete
+  // option?"). Only the poster or a parent can delete — same rule now
+  // enforced server-side too (family_memories_delete RLS policy).
+  const myRole = allMembers.find(m => m.id === myId)?.role;
+  const canDelete = mem.created_by === myId || myRole === 'parent';
   const heartColor = hearted ? colors.danger : colors.textSecondary;
   // Each card picks up the poster's own role color instead of one flat
   // accent tint for every post — parent posts read sage, kid posts read
@@ -597,16 +606,35 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
     .map(id => allMembers.find(m => m.id === id))
     .filter((m): m is FamilyMember => !!m);
 
+  // Album date-stamp — "Saturday, August 29 · 6:42pm", the handwritten-
+  // ledger detail from the mock. Weekday+full date comes from mem.date
+  // (a plain YYYY-MM-DD, no time); the clock time comes from created_at,
+  // the one column that actually has a timestamp — shown only when present
+  // rather than fabricating a time the DB never recorded.
+  const [dsY, dsM, dsD] = mem.date.split('-').map(Number);
+  const dsDate = dsY && dsM && dsD ? new Date(dsY, dsM - 1, dsD) : null;
+  const dsDateLabel = dsDate && !isNaN(dsDate.getTime())
+    ? dsDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    : fmtDateShort(mem.date);
+  const dsTimeLabel = mem.created_at
+    ? new Date(mem.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
+    : null;
+
   return (
     // Keepsake card — matches the composer's own "photo in an album page,
     // not a feed post" language instead of the generic Instagram-style
     // header/media/actions/caption stack this used to be. Slight tilt +
     // corner mounts on the media, note-style caption in a serif face,
     // hearts read as "N loved this" rather than a raw like-button row.
-    <View style={{ marginHorizontal: 16, marginBottom: 22 }}>
-      <View style={{ backgroundColor: isDark ? '#26222E' : '#F2ECE1', borderRadius: 4, padding: 14, paddingBottom: 16,
-        transform: [{ rotate: '-0.4deg' }],
-        shadowColor: '#000', shadowOpacity: isDark ? 0.35 : 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
+    <View style={{ marginHorizontal: 16, marginBottom: 30, marginTop: 6 }}>
+      <View style={{ backgroundColor: isDark ? '#26222E' : '#EBE2D2', borderRadius: 4, padding: 14, paddingBottom: 16,
+        transform: [{ rotate: '-1.1deg' }],
+        shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.22, shadowRadius: 20, shadowOffset: { width: 0, height: 12 },
+        elevation: 8,
+        // Momentary highlight ring when this is the memory a push
+        // notification deep-linked to, so the auto-scroll lands somewhere
+        // visibly confirmable rather than an unmarked card among many.
+        ...(highlighted ? { borderWidth: 2, borderColor: colors.primary } : null) }}>
 
         {/* Header — same eyebrow/title treatment as the composer's own
             header ("for the family album" / "Tuck away a memory"): a small
@@ -625,9 +653,11 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
               {poster?.name?.split(' ')[0] ?? 'Family'} · {fmtDateShort(mem.date)}
             </Text>
           </View>
-          <TouchableOpacity onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Trash2 size={14} color={colors.textTertiary} />
-          </TouchableOpacity>
+          {canDelete && (
+            <TouchableOpacity onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Trash2 size={14} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Media — capped height, cropped to fill, framed like a print
@@ -635,10 +665,22 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
             own available space (screen - 16px outer margin*2 - 14px inner
             padding*2) so the photo stays CONTAINED inside the keepsake
             frame instead of overflowing past it. */}
-        <View style={{ borderRadius: 3, overflow: 'hidden', alignItems: 'center' }}>
-          <MemoryMedia ref={mediaRef} urls={allUrls} mediaTypes={mem.media_types} captionOverlay={mem.caption_overlay} caption={mem.description}
-            width={SCREEN_W - 60} onIndexChange={setActiveSlide}
-            onPress={(index) => onOpenViewer(allUrls, index, allUrls.map((_, i) => typeAtIdx(i)))} />
+        <View style={{ position: 'relative' }}>
+          <View style={{ borderRadius: 3, overflow: 'hidden', alignItems: 'center' }}>
+            <MemoryMedia ref={mediaRef} urls={allUrls} mediaTypes={mem.media_types} captionOverlay={mem.caption_overlay} caption={mem.description}
+              width={SCREEN_W - 60} onIndexChange={setActiveSlide}
+              onPress={(index) => onOpenViewer(allUrls, index, allUrls.map((_, i) => typeAtIdx(i)))} />
+          </View>
+          {/* Photo-corner mounts — the physical scrapbook detail (from the
+              approved mock) that makes this read as a page tucked into an
+              album rather than a cropped image tile: two triangular paper
+              tabs pinning opposite corners of the print, built with RN's
+              border-triangle trick (a zero-size box whose two adjoining
+              borders form the diagonal). */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: -2, left: -2, width: 0, height: 0,
+            borderTopWidth: 32, borderRightWidth: 32, borderTopColor: colors.primary, borderRightColor: 'transparent' }} />
+          <View pointerEvents="none" style={{ position: 'absolute', bottom: -2, right: -2, width: 0, height: 0,
+            borderBottomWidth: 32, borderLeftWidth: 32, borderBottomColor: colors.primary, borderLeftColor: 'transparent' }} />
         </View>
 
         {/* Thumbnail row — same tilted "pile of prints" language as the
@@ -671,7 +713,9 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
         )}
 
         {/* Note — the caption, written like something under a photo in an
-            album, not an Instagram-style "name: text" line */}
+            album, not an Instagram-style "name: text" line — followed by a
+            stitched dashed rule and an italic date-stamp, matching the
+            mock's "ledger entry" bottom-of-page treatment. */}
         {showBelowCaption && (
           <TouchableOpacity activeOpacity={1} onPress={() => setCaptionExpanded(v => !v)}
             style={{ marginTop: 14 }}>
@@ -682,6 +726,11 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
             {!captionExpanded && (mem.description?.length ?? 0) > 90 && (
               <Text style={{ fontSize: 12, color: posterColor, marginTop: 2, fontWeight: '700' }}>more</Text>
             )}
+            <View style={{ borderBottomWidth: 1, borderStyle: 'dashed', borderColor: colors.textTertiary + '4D', marginTop: 12 }} />
+            <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
+              fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
+              {dsDateLabel}{dsTimeLabel ? ` · ${dsTimeLabel}` : ''}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -730,8 +779,23 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
 
 // ─── MemoriesTab ────────────────────────────────────────────────────────────────
 
-export default function MemoriesTab({ colors, isDark, readOnly = false }: {
+export default function MemoriesTab({ colors, isDark, readOnly = false, focusMemoryId, onFocusMemoryLayout, onLoadMoreReady }: {
   colors: any; isDark: boolean; readOnly?: boolean;
+  // Tapping a memory_posted/memory_liked push should land on this screen
+  // scrolled straight to the memory the alert was about, not just the tab
+  // root (live-reported: "go to respective memory auto scroll"). This tab
+  // renders inside the SCREEN's own ScrollView (MemoriesScreen.tsx), not
+  // its own — so it can't scroll itself; it just reports the matching
+  // card's measured Y offset back up via onFocusMemoryLayout, and the
+  // screen (which owns the ScrollView ref) does the actual scrollTo.
+  focusMemoryId?: string | null;
+  onFocusMemoryLayout?: (y: number) => void;
+  // Same "screen owns the ScrollView" story as focusMemoryId above — this
+  // tab has its own real pagination (loadMore), but only the screen can
+  // detect "user scrolled near the bottom" since it owns the actual
+  // ScrollView's onScroll. Hands the loadMore function up once so the
+  // screen can call it from its own scroll handler.
+  onLoadMoreReady?: (fn: () => void) => void;
 }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
@@ -739,6 +803,8 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]   = useState(true);
   const [showModal, setShowModal] = useState(false);
 
   // Shared FAB's Memories-tab "+" face (app/(tabs)/_layout.tsx) fires this
@@ -759,26 +825,103 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
     }
   }, []));
 
+  // Real keyset pagination, not a single ever-growing fixed-size fetch
+  // (was `.limit(200)` unconditionally on every screen visit — every memory
+  // ever posted loaded at once, no "load more" affordance at all;
+  // live-flagged: "see if we are only fetching few for the pagination like
+  // a [social app] feeds page"). created_at is the cursor (paired with id
+  // as a tiebreak for same-millisecond inserts) rather than `date`, which
+  // is day-granularity and ties for every post made the same day.
+  const PAGE_SIZE = 12;
+  const cursorRef = useRef<{ created_at: string; id: string } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
-    // `date` alone (day-granularity, no time) ties for every post made the
-    // same day — order by created_at too so same-day posts still sort
-    // newest-first instead of an unspecified tie order.
-    // Was unbounded — every memory ever posted loaded on every screen visit,
-    // an ever-growing feed with no cap. Capped at a generous recent window;
-    // real pagination/"load more" UI is a separate follow-up, not just a
-    // query tweak, since this screen has no infinite-scroll affordance today.
+    cursorRef.current = null;
     const { data, error } = await supabase.from('family_memories')
       .select('*').eq('family_id', familyId)
-      .order('date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(200);
+      .order('id', { ascending: false })
+      .limit(PAGE_SIZE);
     if (error) console.error('[MemoriesTab] load failed:', error.message, error);
-    if (data) setMemories(data as Memory[]);
+    if (data) {
+      setMemories(data as Memory[]);
+      setHasMore(data.length === PAGE_SIZE);
+      const last = data[data.length - 1] as Memory | undefined;
+      cursorRef.current = last ? { created_at: last.created_at!, id: last.id } : null;
+    }
     setLoading(false);
   }, [familyId]);
 
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !cursorRef.current) return;
+    setLoadingMore(true);
+    // Keyset pagination via (created_at, id) composite cursor — a plain
+    // .lt('created_at', cursor) alone would silently skip/duplicate rows
+    // that share the cursor row's exact created_at timestamp; the OR
+    // clause below also catches those via the id tiebreak.
+    const { created_at, id } = cursorRef.current;
+    const { data, error } = await supabase.from('family_memories')
+      .select('*').eq('family_id', familyId)
+      .or(`created_at.lt.${created_at},and(created_at.eq.${created_at},id.lt.${id})`)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(PAGE_SIZE);
+    if (error) { console.error('[MemoriesTab] loadMore failed:', error.message, error); setLoadingMore(false); return; }
+    if (data?.length) {
+      setMemories(prev => {
+        const seen = new Set(prev.map(m => m.id));
+        return [...prev, ...(data as Memory[]).filter(m => !seen.has(m.id))];
+      });
+      const last = data[data.length - 1] as Memory;
+      cursorRef.current = { created_at: last.created_at!, id: last.id };
+    }
+    setHasMore((data?.length ?? 0) === PAGE_SIZE);
+    setLoadingMore(false);
+  }, [familyId, hasMore, loadingMore]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { onLoadMoreReady?.(loadMore); }, [onLoadMoreReady, loadMore]);
+
+  // A memory_posted/memory_liked push can deep-link to a memory older than
+  // the first page — fetch it directly and splice it in so the auto-scroll
+  // target (MemoriesScreen's focusMemoryId) always actually exists on
+  // screen instead of silently doing nothing for anything not on page 1.
+  useEffect(() => {
+    if (!focusMemoryId || loading) return;
+    if (memories.some(m => m.id === focusMemoryId)) return;
+    supabase.from('family_memories').select('*').eq('id', focusMemoryId).maybeSingle()
+      .then(({ data }) => {
+        if (data) setMemories(prev => prev.some(m => m.id === data.id) ? prev : [...prev, data as Memory]);
+      });
+  }, [focusMemoryId, loading, memories]);
+
+  // Realtime — new/edited/removed memories from other family members show
+  // up live instead of only appearing after a manual reload. Same
+  // channel/cleanup pattern as choreStore.ts's ensureRealtime (stale-topic
+  // sweep guards against a hot-reload leaving a duplicate subscription).
+  useEffect(() => {
+    if (!familyId) return;
+    const topic = `family_memories:${familyId}`;
+    const stale = supabase.getChannels().filter(c => c.topic === `realtime:${topic}`);
+    stale.forEach(c => supabase.removeChannel(c));
+    const channel = supabase.channel(topic)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_memories', filter: `family_id=eq.${familyId}` },
+        ({ eventType, new: newRow, old: oldRow }) => {
+          if (eventType === 'INSERT') {
+            const row = newRow as Memory;
+            setMemories(prev => prev.some(m => m.id === row.id) ? prev : [row, ...prev]);
+          } else if (eventType === 'UPDATE') {
+            const row = newRow as Memory;
+            setMemories(prev => prev.map(m => m.id === row.id ? row : m));
+          } else if (eventType === 'DELETE') {
+            const row = oldRow as { id: string };
+            setMemories(prev => prev.filter(m => m.id !== row.id));
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [familyId]);
 
   const postMemory = async (media: { uri: string; type: 'photo' | 'video' }[], caption: string, captionOverlay: boolean, taggedMemberIds: string[], tag: string | null) => {
     // Mixed photo/video upload — each slot routes to its own upload
@@ -902,12 +1045,20 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
       ) : (
         <View>
           {memories.map(mem => (
-            <MemoryPostCard key={mem.id} mem={mem} myId={myId}
-              poster={members.find(m => m.id === mem.created_by)} allMembers={members} siblings={members.map(m => m.name)}
-              colors={colors} isDark={isDark}
-              onHeart={() => heartMemory(mem)} onDelete={() => deleteMemory(mem.id)}
-              onOpenViewer={openViewer} />
+            <View key={mem.id}
+              onLayout={mem.id === focusMemoryId ? (e) => onFocusMemoryLayout?.(e.nativeEvent.layout.y) : undefined}>
+              <MemoryPostCard mem={mem} myId={myId}
+                poster={members.find(m => m.id === mem.created_by)} allMembers={members} siblings={members.map(m => m.name)}
+                colors={colors} isDark={isDark} highlighted={mem.id === focusMemoryId}
+                onHeart={() => heartMemory(mem)} onDelete={() => deleteMemory(mem.id)}
+                onOpenViewer={openViewer} />
+            </View>
           ))}
+          {loadingMore && (
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <CubeSpinner size={22} />
+            </View>
+          )}
         </View>
       )}
 

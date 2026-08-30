@@ -178,14 +178,55 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
         .then(({ error }) => { if (error) console.warn('[temporaryApproverStore] supersede failed', error.message); });
     }
 
+    const untilLabel = new Date(expiresAt).toLocaleString(undefined, { hour12: true });
     try {
       const { useChatStore } = require('./chatStore');
-      const untilLabel = new Date(expiresAt).toLocaleString(undefined, { hour12: true });
       useChatStore.getState().sendMessage(grantedToMemberId, grantedByMemberId,
         `🔑 You've been granted temporary approval access until ${untilLabel} — you can approve/decline routine chore submissions until then.`);
     } catch (e) {
       console.warn('[temporaryApproverStore] grant notification failed', e);
     }
+
+    // Real push+persist, not just the chat DM above (invisible if the
+    // grantee's app is backgrounded) — a privilege grant, even bounded and
+    // auto-expiring, is exactly the kind of thing this app already treats
+    // as security-relevant (mirrors member_pin_changed/member_role_changed).
+    // Two calls: one to the grantee themselves, one broadcast to other
+    // parents as an FYI on the grant having happened.
+    const granterName = (() => {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        return useFamilyStore.getState().members.find((m: any) => m.id === grantedByMemberId)?.name;
+      } catch { return undefined; }
+    })();
+    const granteeName = (() => {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        return useFamilyStore.getState().members.find((m: any) => m.id === grantedToMemberId)?.name;
+      } catch { return undefined; }
+    })();
+    supabase.functions.invoke('family-notifier', {
+      body: {
+        type: 'temp_approver_granted', familyId, memberIds: [grantedToMemberId], persist: true,
+        excludeMemberId: grantedByMemberId,
+        payload: { toSelf: true, untilLabel, byName: granterName },
+      },
+    }).catch(e => console.warn('[temporaryApproverStore] grant notify (self) failed:', e?.message));
+
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const otherParentIds = useFamilyStore.getState().members
+        .filter((m: any) => m.role === 'parent' && m.id !== grantedByMemberId && m.id !== grantedToMemberId)
+        .map((m: any) => m.id);
+      if (otherParentIds.length) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'temp_approver_granted', familyId, memberIds: otherParentIds, persist: true,
+            payload: { toSelf: false, untilLabel, byName: granterName, granteeName },
+          },
+        }).catch(e => console.warn('[temporaryApproverStore] grant notify (parents) failed:', e?.message));
+      }
+    } catch (e) { console.warn('[temporaryApproverStore] grant parent-notify error', e); }
   },
 
   revokeTemporaryApprover: (grantId) => {
@@ -204,6 +245,33 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
       }
     } catch (e) {
       console.warn('[temporaryApproverStore] revoke notification failed', e);
+    }
+
+    if (grant) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'temp_approver_revoked', familyId: grant.familyId, memberIds: [grant.grantedToMemberId],
+          persist: true, payload: { toSelf: true },
+        },
+      }).catch(e => console.warn('[temporaryApproverStore] revoke notify (self) failed:', e?.message));
+
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const members = useFamilyStore.getState().members;
+        const granterName = members.find((m: any) => m.id === grant.grantedByMemberId)?.name;
+        const granteeName = members.find((m: any) => m.id === grant.grantedToMemberId)?.name;
+        const otherParentIds = members
+          .filter((m: any) => m.role === 'parent' && m.id !== grant.grantedToMemberId)
+          .map((m: any) => m.id);
+        if (otherParentIds.length) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'temp_approver_revoked', familyId: grant.familyId, memberIds: otherParentIds,
+              persist: true, payload: { toSelf: false, byName: granterName, granteeName },
+            },
+          }).catch(e => console.warn('[temporaryApproverStore] revoke notify (parents) failed:', e?.message));
+        }
+      } catch (e) { console.warn('[temporaryApproverStore] revoke parent-notify error', e); }
     }
   },
 

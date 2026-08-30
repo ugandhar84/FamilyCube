@@ -201,6 +201,12 @@ type NotifType =
   // write if the notify call itself fails (non-blocking .catch()).
   | 'member_pin_changed'
   | 'member_role_changed'
+  // store/temporaryApproverStore.ts — granting approval authority to a
+  // non-parent is a real (if bounded/auto-expiring) privilege escalation;
+  // previously only a chat DM to the grantee, invisible if their app is
+  // backgrounded, and co-parents had no visibility into the grant at all.
+  | 'temp_approver_granted'
+  | 'temp_approver_revoked'
   // store/tripStore.ts's "Pick-up Radar" — dispatch/overdue previously only
   // posted to family chat (useChatStore.sendMessage), invisible to anyone
   // with the app backgrounded or closed. Real push+persist alongside the
@@ -253,6 +259,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   parent_quest_delegated: 'chores', parent_quest_lock_cancelled: 'chores',
   event_assigned: 'family', event_deleted: 'family', event_rsvp_response: 'family',
   member_pin_changed: 'family', member_role_changed: 'family',
+  temp_approver_granted: 'family', temp_approver_revoked: 'family',
   trip_started: 'family', trip_overdue: 'family',
   memory_posted: 'family', memory_liked: 'family',
   meal_reminder: 'family',
@@ -913,6 +920,31 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Roster', memberId: p.memberId },
       };
+    case 'temp_approver_granted':
+      return p.toSelf
+        ? {
+            title: '🔑 Approval Access Granted',
+            body: `You can now approve/decline routine chore submissions until ${p.untilLabel}.`,
+            sound: 'default',
+            data: { screen: 'Roster' },
+          }
+        : {
+            title: '🔑 Temporary Approver Granted',
+            body: `${p.byName ?? 'A parent'} gave ${p.granteeName ?? 'a family member'} approval access until ${p.untilLabel}.`,
+            data: { screen: 'Roster' },
+          };
+    case 'temp_approver_revoked':
+      return p.toSelf
+        ? {
+            title: '🔒 Approval Access Ended',
+            body: 'Your temporary approval access was ended early.',
+            data: { screen: 'Roster' },
+          }
+        : {
+            title: '🔒 Temporary Approver Revoked',
+            body: `${p.byName ?? 'A parent'} ended ${p.granteeName ?? 'a family member'}'s temporary approval access early.`,
+            data: { screen: 'Roster' },
+          };
 
     case 'trip_started':
       return {

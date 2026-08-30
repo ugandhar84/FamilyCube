@@ -23,6 +23,7 @@ import { useHelpStore, HelpCategory, HelpUrgency, RideMode } from '@/store/helpS
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Suggestion pills ─────────────────────────────────────────────────────────
 const SUGGESTIONS: { label: string; icon: string; category: HelpCategory }[] = [
@@ -117,6 +118,7 @@ interface Props {
 export default function HelpRequestModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
   const { members, activeMemberId } = useFamilyStore();
   const addRequest = useHelpStore(s => s.addRequest);
 
@@ -199,7 +201,8 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
         {/* Backdrop — absolute so it covers the full modal window including tab bar area */}
         <Pressable style={StyleSheet.absoluteFill} onPress={resetAndClose} />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[s.sheet, { backgroundColor: isDark ? '#111827' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+        <View style={[s.sheet, { backgroundColor: isDark ? '#111827' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' },
+          keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : null]}>
           <View style={[s.handle, { backgroundColor: isDark ? '#334155' : '#CBD5E1' }]} />
 
           {/* Header */}
@@ -397,22 +400,26 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
               <DTRow label="Needed by (date)" date={date} mode="date" colors={colors} isDark={isDark} open={picker === 'date'} onOpen={() => tog('date')} onPick={d => { setDate(d); setPicker(null); }} />
             )}
 
-            {/* ── Submit ── */}
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-              <Pressable onPress={resetAndClose}
-                style={[s.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={handleSubmit}
-                style={[s.submitBtn, { backgroundColor: canSubmit ? BRAND.purple : colors.border, flex: 2 }]}>
-                <Ionicons name="send" size={15} color={canSubmit ? '#fff' : colors.textTertiary} />
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                  {isAdult ? 'Send Request →' : 'Submit to Family →'}
-                </Text>
-              </Pressable>
-            </View>
-
           </ScrollView>
+
+          {/* ── Sticky footer — was inside the ScrollView, so on a long
+              form (ride mode toggles, date/time pickers, preferred-helper
+              picker) Send/Cancel could scroll out of view or end up below
+              the keyboard with nothing to bring it back on screen. ── */}
+          <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
+            borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+            <Pressable onPress={resetAndClose}
+              style={[s.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={handleSubmit}
+              style={[s.submitBtn, { backgroundColor: canSubmit ? BRAND.purple : colors.border, flex: 2 }]}>
+              <Ionicons name="send" size={15} color={canSubmit ? '#fff' : colors.textTertiary} />
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: canSubmit ? '#fff' : colors.textTertiary }}>
+                {isAdult ? 'Send Request →' : 'Submit to Family →'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
         {/* Filler — covers the gap between sheet and screen bottom (tab bar area) */}
         <View style={{ backgroundColor: isDark ? '#111827' : '#FFFFFF', height: insets.bottom + 4 }} />

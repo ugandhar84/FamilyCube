@@ -256,23 +256,26 @@ export function CreateQuestModal({
             Child must submit photo proof
           </Text>
         </Pressable>
-
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable onPress={onClose}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-              borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
-            <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-          </Pressable>
-          <Pressable onPress={onCreate}
-            style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-              backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
-            <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
-              {editing ? 'Save Changes' : 'Send to Parent for Review'}
-            </Text>
-          </Pressable>
-        </View>
       </View>
             </ScrollView>
+
+            {/* Sticky footer — was inside the ScrollView, could end up
+                below the keyboard while typing the quest title/description. */}
+            <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              <Pressable onPress={onClose}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                  borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={onCreate}
+                style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                  backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
+                  {editing ? 'Save Changes' : 'Send to Parent for Review'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>

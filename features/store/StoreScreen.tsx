@@ -18,6 +18,7 @@ import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
 import { showToast } from '@/components/AppToast';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
@@ -225,6 +226,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
   const [cost,  setCost]  = useState('50');
   const [emoji, setEmoji] = useState('🎁');
   const [cat,   setCat]   = useState('Special');
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   useEffect(() => {
     if (visible) {
@@ -249,7 +251,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card,
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
 

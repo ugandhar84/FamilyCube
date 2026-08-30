@@ -111,21 +111,26 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
             placeholder="Add a note (optional)…" placeholderTextColor={colors.textTertiary}
             style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 40 }} multiline />
         </View>
-        <Pressable
-          disabled={!uri}
-          onPress={() => {
-            if (!quest || !uri) return;
-            submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined }, activeMemberId ?? undefined);
-            close();
-          }}
-          style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
-            backgroundColor: uri ? MONEY_GREEN : colors.border,
-            opacity: uri ? 1 : 0.5 }}>
-          <CheckCircle2 size={17} color="#fff" />
-          <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#fff' }}>Submit for Review</Text>
-        </Pressable>
       </View>
             </ScrollView>
+
+            {/* Sticky footer — was inside the ScrollView, could end up
+                below the keyboard once the note field is focused. */}
+            <View style={{ padding: 20, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              <Pressable
+                disabled={!uri}
+                onPress={() => {
+                  if (!quest || !uri) return;
+                  submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined }, activeMemberId ?? undefined);
+                  close();
+                }}
+                style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+                  backgroundColor: uri ? MONEY_GREEN : colors.border,
+                  opacity: uri ? 1 : 0.5 }}>
+                <CheckCircle2 size={17} color="#fff" />
+                <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#fff' }}>Submit for Review</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>

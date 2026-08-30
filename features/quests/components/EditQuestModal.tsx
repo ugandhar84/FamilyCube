@@ -678,51 +678,55 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </View>
               </TouchableOpacity>
 
-              {/* Save + Delete */}
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                {onDelete && (
-                  <TouchableOpacity
-                    style={{ paddingHorizontal: 16, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
-                    onPress={() => {
-                      if (locked) {
-                        // Active quest — prompt for reason before deleting
-                        Alert.prompt(
-                          'Delete Active Chore',
-                          `"${quest.title}" is in progress. Add a note for the assignee (required):`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: (note: string | undefined) => {
-                              if (!note?.trim()) { Alert.alert('Note required', 'Please add a reason so the assignee knows why this was removed.'); return; }
-                              onDelete(quest.id);
-                              onClose();
-                            }},
-                          ],
-                          'plain-text',
-                        );
-                      } else {
-                        Alert.alert('Delete Chore', `Remove "${quest.title}"? This cannot be undone.`, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Delete', style: 'destructive', onPress: () => { onDelete(quest.id); onClose(); } },
-                        ]);
-                      }
-                    }}>
-                    <I.X c="#EF4444" />
-                    <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
-                  onPress={save} disabled={saving || !title.trim()}>
-                  {saving
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <>
-                        <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Save Changes</Text>
-                        <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}</Text>
-                      </>}
-                </TouchableOpacity>
-              </View>
-
             </ScrollView>
+
+            {/* Sticky footer — Save + Delete was inside the ScrollView,
+                could scroll out of view on this form's many sections
+                (title/description/coins/bonus/category/difficulty/due-date/
+                repeats/assignment) or end up below the keyboard. */}
+            <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              {onDelete && (
+                <TouchableOpacity
+                  style={{ paddingHorizontal: 16, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                  onPress={() => {
+                    if (locked) {
+                      // Active quest — prompt for reason before deleting
+                      Alert.prompt(
+                        'Delete Active Chore',
+                        `"${quest.title}" is in progress. Add a note for the assignee (required):`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Delete', style: 'destructive', onPress: (note: string | undefined) => {
+                            if (!note?.trim()) { Alert.alert('Note required', 'Please add a reason so the assignee knows why this was removed.'); return; }
+                            onDelete(quest.id);
+                            onClose();
+                          }},
+                        ],
+                        'plain-text',
+                      );
+                    } else {
+                      Alert.alert('Delete Chore', `Remove "${quest.title}"? This cannot be undone.`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: () => { onDelete(quest.id); onClose(); } },
+                      ]);
+                    }
+                  }}>
+                  <I.X c="#EF4444" />
+                  <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+                onPress={save} disabled={saving || !title.trim()}>
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <>
+                      <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Save Changes</Text>
+                      <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}</Text>
+                    </>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>

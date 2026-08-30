@@ -15,6 +15,7 @@ import type { RequestType, RequestUrgency } from '@/store/kidRequestStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -148,6 +149,7 @@ interface Props {
 
 export default function RequestHelpModal({ visible, onClose, activeMemberId }: Props) {
   const { colors } = useTheme();
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(70, 40);
   const members    = useFamilyStore(s => s.members);
   const sendRequest = useKidRequestStore(s => s.sendRequest);
 
@@ -236,7 +238,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={m.body} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: keyboardAwareMaxHeight ?? 480 }} contentContainerStyle={m.body} keyboardShouldPersistTaps="handled">
               {/* Child selector — adults only */}
               {isAdult && kids.length > 0 && (
                 <View style={m.field}>
@@ -335,7 +337,11 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
                 </View>
               )}
 
-              {/* Submit */}
+            </ScrollView>
+
+            {/* Sticky footer — was inside the ScrollView, could scroll out
+                of view on a long form or end up below the keyboard. */}
+            <View style={{ padding: 20, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
               <TouchableOpacity
                 style={[m.submitBtn, { backgroundColor: BRAND.purple, opacity: submitting ? 0.6 : 1 }]}
                 onPress={handleSubmit}
@@ -355,7 +361,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
                   </>
                 )}
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </View>

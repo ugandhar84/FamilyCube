@@ -144,7 +144,6 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
 
             <ScrollView
               keyboardShouldPersistTaps="always"
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}>
           {/* Name input */}

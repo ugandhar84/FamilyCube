@@ -99,22 +99,46 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       alreadyNotified.add(region.identifier);
 
       const notifs = getNotifications();
-      if (!notifs) return;
-
       const total = count ?? pending.length;
       const names = pending.map((p: any) => p.name).join(', ');
       const extra = total - pending.length;
       const body = extra > 0 ? `${names} + ${extra} more on your list` : `${names} on your list`;
 
-      await notifs.scheduleNotificationAsync({
-        content: {
-          title: `🛒 You're near ${meta.store}`,
-          body,
-          data: { type: 'store_proximity', store: meta.store },
-          sound: true,
-        },
-        trigger: null,
-      });
+      if (notifs) {
+        await notifs.scheduleNotificationAsync({
+          content: {
+            title: `🛒 You're near ${meta.store}`,
+            body,
+            data: { type: 'store_proximity', store: meta.store },
+            sound: true,
+          },
+          trigger: null,
+        });
+      }
+
+      // The above is LOCAL to this device only — the rest of the family
+      // never hears about it. Direct report: "when the parent in the near
+      // proximity of the grocery stores then they should get notify" (the
+      // OTHER partner, not just whoever's phone is actually there). Best-
+      // effort real push via family-notifier, excluding the person who's
+      // physically at the store.
+      try {
+        const { data: self } = await supabase.from('members').select('name').eq('id', activeMemberIdRef).single();
+        const { data: others } = await supabase.from('members').select('id')
+          .eq('family_id', meta.familyId).neq('id', activeMemberIdRef ?? '');
+        const memberIds = (others ?? []).map((m: any) => m.id);
+        if (memberIds.length) {
+          await supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'store_proximity_arrived', familyId: meta.familyId, memberIds, persist: true,
+              excludeMemberId: activeMemberIdRef ?? undefined,
+              payload: { memberName: self?.name, store: meta.store, itemNames: names, extraCount: extra },
+            },
+          });
+        }
+      } catch (e) {
+        console.warn('[storeGeofencing] family-notifier push failed', e);
+      }
     } catch (e) {
       console.warn('[storeGeofencing] enter-handler failed', e);
     }

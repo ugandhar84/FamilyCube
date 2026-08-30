@@ -17,7 +17,7 @@
  * "who would this go to" suggestion inline once a category is known.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Platform, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { Mic, Calendar, ClipboardList, Sparkles, AlertTriangle, PenLine, X } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -70,25 +70,6 @@ export default function SmartTaskComposer({
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // AppBottomSheet sets an explicit pixel `height` (content-driven, capped
-  // at maxHeight) and wraps everything in a KeyboardAvoidingView with
-  // behavior="padding" — when the keyboard opens, that padding shifts the
-  // WHOLE fixed-height sheet upward on top of its own height, so a sheet
-  // already near its cap visually overshoots past the top of the screen.
-  // EventFormModal's sheets use a pure CSS maxHeight (no explicit height)
-  // so they just shrink-to-fit instead of hitting this; matching that here
-  // would mean not using AppBottomSheet's measured-height mechanism at all.
-  // Cheaper, scoped fix: shrink the cap itself while the keyboard is open,
-  // so sheet-height + keyboard-height never exceeds the screen, then let it
-  // grow back to the normal cap once the keyboard closes.
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvt, () => setKeyboardOpen(true));
-    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardOpen(false));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
   const addEvent = useEventStore(s => s.addEvent);
   const { addQuest, createParticipants } = useQuestStore();
 
@@ -616,7 +597,18 @@ export default function SmartTaskComposer({
       // the sheet looked oversized on open (live-reported). Once the user
       // starts typing (or dictation fills in text), grow to 60% so there's
       // room for the detected fields/results that appear below the input.
-      minHeight={input.trim() ? '60%' : '28%'} maxHeight={keyboardOpen ? '55%' : '85%'} bodyPaddingBottom={40 + insets.bottom}>
+      //
+      // maxHeight used to also toggle 55%/85% based on a LOCAL keyboard
+      // listener here — added (Aug 23) before AppBottomSheet itself gained
+      // its own internal keyboard-aware height clamp (Aug 27, see
+      // AppBottomSheet.tsx's keyboardHeight/maxPx logic). Left in place
+      // afterward, the two independent keyboard-triggered resizes fought
+      // each other on the same event, and automaticallyAdjustKeyboardInsets
+      // tried to scroll content within a container whose height was being
+      // recalculated twice — live-reported as this sheet's text box getting
+      // shoved down behind a large blank gap. AppBottomSheet's own clamp is
+      // sufficient now; this sheet only needs its content-driven max.
+      minHeight={input.trim() ? '60%' : '28%'} maxHeight="85%" bodyPaddingBottom={40 + insets.bottom}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 14 }}>
         <View style={{ position: 'relative' }}>
           <TextInput

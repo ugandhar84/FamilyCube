@@ -117,9 +117,22 @@ export default function AddMealSheet({
 
               {/* Meal name */}
               <Text style={em.label}>Meal Name</Text>
+              {/* No autoFocus — combined with automaticallyAdjustKeyboardInsets
+                  above, a field already focused on the very first render (the
+                  keyboard is up before the sheet has a "pre-keyboard" scroll
+                  position to compare against) makes iOS's auto-scroll shove
+                  the whole ScrollView down, leaving a large blank gap above
+                  this field until the user manually scrolls (same bug
+                  confirmed live on AddItemSheet.tsx/CreateRunSheet.tsx's
+                  identical autoFocus+automaticallyAdjustKeyboardInsets
+                  combination — screenshot: "Add to List" sheet with an empty
+                  gap where the name field should be). Removing autoFocus here
+                  keeps the fix for the field this prop was ADDED for
+                  (Ingredients/Steps further down) while dropping the one
+                  combination that breaks. */}
               <TextInput value={addTitle} onChangeText={setAddTitle}
                 placeholder="e.g. Grilled Chicken & Veggies"
-                placeholderTextColor={colors.textTertiary} autoFocus
+                placeholderTextColor={colors.textTertiary}
                 style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, fontWeight: '600',
                   marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
                   borderColor: colors.border, color: colors.textPrimary }} />

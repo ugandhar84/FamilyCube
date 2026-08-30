@@ -254,6 +254,12 @@ type NotifType =
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
   | 'medication_missed'
+  // lib/storeGeofencing.ts's geofence-enter handler — was a LOCAL-only
+  // notification to whoever's device entered a pinned store's radius,
+  // invisible to the rest of the family. Direct report: "when the parent in
+  // the near proximity of the grocery stores then they should get notify"
+  // (the OTHER parent, not just the one who's there).
+  | 'store_proximity_arrived'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -298,6 +304,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   member_joined: 'family',
   perk_updated: 'rewards',
   medication_added: 'family', medication_missed: 'family',
+  store_proximity_arrived: 'grocery',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -1051,6 +1058,16 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Health', memberId: p.subjectMemberId },
       };
+    case 'store_proximity_arrived': {
+      const list = p.itemNames as string | undefined;
+      return {
+        title: `📍 ${p.memberName ?? 'Someone'} is near ${p.store ?? 'a store'}`,
+        body: list
+          ? `${list}${(p.extraCount as number) > 0 ? ` + ${p.extraCount} more` : ''} on the list — good time to add anything else you need.`
+          : `They're near ${p.store} — good time to add anything else you need to the list.`,
+        data: { screen: 'Grocery', store: p.store },
+      };
+    }
     case 'meal_reminder': {
       const emoji = p.mealType === 'breakfast' ? '🌅' : p.mealType === 'lunch' ? '☀️' : p.mealType === 'snack' ? '🍎' : '🌙';
       return {

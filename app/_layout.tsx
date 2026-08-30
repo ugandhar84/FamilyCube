@@ -39,6 +39,7 @@ import NotificationPanel, { routeForNotification } from '@/components/Notificati
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
+import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
@@ -882,6 +883,24 @@ function RootNavigator() {
     if (!activeMemberId) { stopBatteryPolling(); return; }
     startBatteryPolling(activeMemberId);
     return () => stopBatteryPolling();
+  }, [activeMemberId]);
+
+  // Store-proximity geofences (lib/storeGeofencing.ts) — was ONLY ever
+  // registered from GroceryScreen.tsx (on mount, and after pinning a new
+  // store), unlike background GPS tracking's own cold-start re-check a few
+  // effects up. A user who force-quits and relaunches without happening to
+  // open the Grocery tab again would silently lose the geofence even though
+  // they'd expect a "you're near the store" push to keep working in the
+  // background — same class of bug as the reinstall-resets-to-off issue
+  // location sharing already had fixed for it. Re-registers on every
+  // cold start / active-member change; registerStoreGeofences itself
+  // already no-ops when the family has no pinned stores or the feature
+  // flag is off.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    if (!familyId) return;
+    registerStoreGeofences(familyId, activeMemberId).catch(() => {});
   }, [activeMemberId]);
 
   useEffect(() => {

@@ -136,9 +136,26 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   supabase.rpc('confirm_event_assignment', {
                     p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole,
                   }).then(({ error }) => {
-                    if (error) { console.warn('[HelperEventCard] confirm_event_assignment failed', error.message); return; }
+                    if (error) {
+                      console.warn('[HelperEventCard] confirm_event_assignment failed', error.message);
+                      showToast("Couldn't confirm — please try again", 'error');
+                      return;
+                    }
+                    // Was gated behind `ev.seriesId && updateEventScoped` —
+                    // a real bug: a plain one-off event (no seriesId) never
+                    // got its local Zustand copy updated after a successful
+                    // confirm, so the Hub kept showing "Pending" until some
+                    // OTHER screen's fetch happened to refresh the shared
+                    // store, even though the DB (and any screen that
+                    // refetched fresh, e.g. Tasks) correctly showed
+                    // Confirmed. Update local state unconditionally on
+                    // success; the seriesId branch additionally propagates
+                    // to future occurrences.
+                    const statusPatch = { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>;
                     if (ev.seriesId && updateEventScoped) {
-                      updateEventScoped(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>, 'following');
+                      updateEventScoped(ev.id, statusPatch, 'following');
+                    } else {
+                      updateEvent(ev.id, statusPatch);
                     }
                     showToast('Confirmed ✓');
                   });
@@ -170,7 +187,21 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   supabase.rpc('decline_event_assignment', {
                     p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole, p_reason: null,
                   }).then(({ error }) => {
-                    if (error) { console.warn('[HelperEventCard] decline_event_assignment failed', error.message); return; }
+                    if (error) {
+                      console.warn('[HelperEventCard] decline_event_assignment failed', error.message);
+                      showToast("Couldn't update — please try again", 'error');
+                      return;
+                    }
+                    // Same local-state gap as the Confirm button above — the
+                    // RPC succeeded server-side but nothing told the shared
+                    // Zustand store, so the Hub kept showing the pre-decline
+                    // state (name + "Pending") until some unrelated fetch
+                    // happened to refresh it, even though the DB and other
+                    // screens (e.g. Tasks, which fetches fresh) were already
+                    // correct. updateEvent's own clearOnDecline logic
+                    // handles clearing the right field pair based on the
+                    // 'rejected' status transition passed in here.
+                    updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
                     showToast("Marked — you're off this one ✓");
                     try {
                       const recipients = new Set<string>();

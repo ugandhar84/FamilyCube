@@ -1697,6 +1697,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       }).catch(e => console.warn('[choreStore] addChore quest_assigned notify', e?.message));
     }
 
+    // A chore with a real due DATE+TIME (not just a vague "due today")
+    // materializes a linked calendar_events row, the same way Medications'
+    // addMed already does via addRecurringEvent — this is what lets a
+    // timed chore ride the existing 2-way calendar sync engine
+    // (calendar-sync-push/Apple EventKit) for free, with zero new sync
+    // logic of its own (user decision: funnel every syncable domain
+    // through calendar_events rather than giving chores their own push
+    // path). linkedEventId already existed as a column but was previously
+    // always null — this is the first real writer of it.
+    if (chore.dueDate && chore.dueTime && !chore.linkedEventId) {
+      try {
+        const { useEventStore } = require('./eventStore');
+        const linkedEventId = useEventStore.getState().addEvent({
+          title: chore.title,
+          date: chore.dueDate,
+          time: chore.dueTime,
+          memberId: chore.assignedToId,
+          type: 'reminder',
+          category: 'Chore',
+          createdBy: chore.createdById ?? getActiveMemberId() ?? undefined,
+        });
+        get().updateChore(chore.id, { linkedEventId } as any);
+      } catch (e) {
+        console.warn('[choreStore] addChore calendar materialization failed', e);
+      }
+    }
+
     return chore;
   },
 
@@ -1940,6 +1967,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         }
       });
     }
+    // Keep a chore's linked calendar_events row (addChore's materialization,
+    // above) in sync when its due date/time actually changes — otherwise
+    // the calendar reminder (and anything synced from it externally) would
+    // silently drift out of date with the chore itself.
+    if (prevChore?.linkedEventId && ('dueDate' in updates || 'dueTime' in updates)) {
+      const newDueDate = (updates as any).dueDate ?? prevChore.dueDate;
+      const newDueTime = (updates as any).dueTime ?? prevChore.dueTime;
+      if (newDueDate && newDueTime) {
+        try {
+          const { useEventStore } = require('./eventStore');
+          useEventStore.getState().updateEvent(prevChore.linkedEventId, { date: newDueDate, time: newDueTime });
+        } catch (e) {
+          console.warn('[choreStore] updateChore linked-event sync failed', e);
+        }
+      }
+    }
     if (prevChore) logChoreUpdateActivity(prevChore, updates, id);
     // See notifyChoreReassigned's own comment above — logChoreUpdateActivity
     // (just above) already logs this transition to the silent activity_log,
@@ -1986,6 +2029,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const familyId = getFamilyId();
     const actorId = getActiveMemberId();
     const deletedChore = get().chores.find(c => c.id === id);
+    // A chore materialized as a linked calendar_events row (addChore,
+    // above) would otherwise stay behind forever — including on any
+    // connected external calendar, since deleteEvent is what actually
+    // triggers calendar-sync-push/Apple EventKit's own delete. Deleting
+    // the CHORE should delete its calendar reminder too, the same way
+    // deleting a FamilyCube event deletes it from a connected calendar.
+    if (deletedChore?.linkedEventId) {
+      try {
+        const { useEventStore } = require('./eventStore');
+        useEventStore.getState().deleteEvent(deletedChore.linkedEventId);
+      } catch (e) {
+        console.warn('[choreStore] deleteChore linked-event cleanup failed', e);
+      }
+    }
     set(s => ({ chores: s.chores.filter(c => c.id !== id) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     supabase.from('chore_tasks').delete().eq('id', id).then(({ error }) => {

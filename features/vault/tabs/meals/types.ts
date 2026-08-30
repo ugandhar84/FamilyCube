@@ -14,6 +14,7 @@ export interface Meal {
   // Both optional: a meal with no time set gets no reminder.
   start_time?: string | null;
   timezone?: string | null;
+  linked_event_id?: string | null;
 }
 
 export interface AiMealOption {

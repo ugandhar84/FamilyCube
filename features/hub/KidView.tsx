@@ -11,8 +11,8 @@ import { useDismissedHubItemsStore } from '@/store/dismissedHubItemsStore';
 import { withinLast24h } from '@/lib/dates';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
-import { localToday, fmtTime, hoursUntilEvent, useCountdown } from './hubUtils';
-import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { localToday, fmtTime, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
+import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { driverLabelByName } from '@/lib/format';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
@@ -187,7 +187,14 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // since the conflict is about the DRIVER's schedule, which spans events
   // that may not even involve this kid.
   const assigneeConflicts = detectAssigneeConflicts(events);
-  const confirmedRideConflict = confirmedRide ? assigneeConflicts.get(confirmedRide.id) : undefined;
+  // Same idea, extended to a connected parent's real work calendar (auto-
+  // synced Work events, see calendar-freebusy-sync) — a kid's ride
+  // colliding with their driving parent's actual work schedule (live
+  // direction: "Kid's also show on their card parent is conflict with work").
+  const workConflicts = detectWorkConflicts(events, events.filter(isWorkEvent), members);
+  const confirmedRideConflict = confirmedRide
+    ? (assigneeConflicts.get(confirmedRide.id) ?? workConflicts.get(confirmedRide.id))
+    : undefined;
 
   // A driver has been named but hasn't confirmed yet — the gap between
   // "nobody's looked at my request" (myPendingRides below, already

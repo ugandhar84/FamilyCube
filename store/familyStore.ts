@@ -120,6 +120,7 @@ export interface FamilyMember {
   gpWeeklyRideCap?: number;           // Max rides they'll take per calendar week
   linkedParentId?: string;            // Which parent this GP belongs to (e.g. Priya's mother -> Priya's id) — informational, both parents can still review either side's GP quests
   storeProximityRemindersEnabled?: boolean; // Opt-out for the geofenced "you're near X, items pending" reminder (store_proximity_reminders feature flag) — defaults true
+  appleCalendarSyncEnabled?: boolean; // Opt-IN (defaults false) for lib/calendarSync2Way.ts — writes FamilyCube events into the device Calendar app and pulls its events back in
   // A kid/teen's self-chosen savings goal (a specific Reward id from the
   // Perks Store) — previously auto-derived as "whichever reward you're
   // closest to affording," which the kid never actually picked; this lets
@@ -319,6 +320,7 @@ function fromRow(row: any): FamilyMember {
     lastCelebrationSeenAt: row.last_celebration_seen_at ?? undefined,
     pillOrder:          row.pill_order ?? undefined,
     storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
+    appleCalendarSyncEnabled: row.apple_calendar_sync_enabled ?? false,
     authUserId:         row.auth_user_id ?? undefined,
     deletedAt:          row.deleted_at ?? undefined,
     createdAt:          row.created_at ?? undefined,
@@ -372,6 +374,7 @@ function toRow(m: FamilyMember) {
     date_of_birth:         m.dateOfBirth ?? null,
     pill_order:            m.pillOrder ?? null,
     store_proximity_reminders_enabled: m.storeProximityRemindersEnabled ?? true,
+    apple_calendar_sync_enabled: m.appleCalendarSyncEnabled ?? false,
     notification_prefs: m.notificationPrefs ?? {},
     quiet_hours_enabled: m.quietHoursEnabled ?? false,
     quiet_hours_start:   m.quietHoursStart ?? null,

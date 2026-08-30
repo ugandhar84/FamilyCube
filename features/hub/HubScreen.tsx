@@ -67,6 +67,53 @@ export default function HubScreen() {
     if (familyId) loadTrip(familyId);
   }, [familyId]);
 
+  // Refresh connected work-calendar FreeBusy data reactively whenever the
+  // Hub is opened (live direction: "dynamic", not a fixed background
+  // schedule) — throttled to once per 10 minutes per family so switching
+  // tabs back and forth doesn't refetch on every mount. A brand-new
+  // conflict from a change on the connected calendar itself (no
+  // FamilyCube-side edit) only becomes visible on the next of these
+  // checks, which is an acceptable trade for not hammering the FreeBusy
+  // API on every Hub focus.
+  useEffect(() => {
+    if (!familyId) return;
+    const THROTTLE_MS = 10 * 60_000;
+    const key = `calendar_freebusy_last_sync_${familyId}`;
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const last = await AsyncStorage.getItem(key);
+        if (last && Date.now() - Number(last) < THROTTLE_MS) return;
+        await AsyncStorage.setItem(key, String(Date.now()));
+        const { supabase } = await import('@/lib/supabase');
+        supabase.functions.invoke('calendar-freebusy-sync', { body: { familyId } })
+          .catch(e => console.warn('[HubScreen] calendar-freebusy-sync failed', e?.message));
+      } catch (e) {
+        console.warn('[HubScreen] freebusy throttle check failed', e);
+      }
+    })();
+  }, [familyId]);
+
+  // Apple/EventKit 2-way sync's inbound half — no push/webhook mechanism
+  // exists for a local device calendar, so this reconciles on foreground
+  // instead (lib/calendarSync2Way.ts's own throttle keeps this to once
+  // per 15 minutes per member even though the effect itself re-runs on
+  // every Hub mount/activeMemberId change).
+  useEffect(() => {
+    if (!activeMemberId || !familyId) return;
+    const active = members.find(m => m.id === activeMemberId);
+    if (!active?.appleCalendarSyncEnabled) return;
+    (async () => {
+      try {
+        const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
+        const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+        await reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent });
+      } catch (e) {
+        console.warn('[HubScreen] Apple calendar reconcile failed', e);
+      }
+    })();
+  }, [activeMemberId, familyId]);
+
   useEffect(() => {
     const id = setInterval(() => setClock(fmtClock()), 30_000);
     return () => clearInterval(id);

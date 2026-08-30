@@ -19,7 +19,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
-import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { decodeRideLate } from './KidModals';
 import { TodayView, GreetingHeader } from './TodayView';
@@ -197,39 +197,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     if (!conflictReasons.has(id)) conflictReasons.set(id, label);
   }
 
-  // C: family event vs. Work event overlap — only for upcoming work events too
+  // C + D: family event vs. a Work event (real, hand-typed OR auto-synced
+  // from a connected calendar's FreeBusy blocks — see
+  // calendar-freebusy-sync) — extracted to detectWorkConflicts so every
+  // role's Hub view can show the same "conflicts with a parent's work"
+  // signal, not just the parent Hub banner (live direction: "Kid's also
+  // show on their card parent is conflict with work").
   const upcomingWorkEvents = workEvents.filter(e => hoursUntilEvent(e.date, e.time) >= 0);
-  for (const familyEv of timedMemberEvents) {
-    for (const workEv of upcomingWorkEvents) {
-      if (familyEv.memberId !== workEv.memberId) continue;
-      if (!workEv.time) continue;
-      if (minutesBetween(familyEv.time!, workEv.time) < 30) {
-        const memberName = members.find(m => m.id === familyEv.memberId)?.name.split(' ')[0] ?? 'their';
-        if (!conflictReasons.has(familyEv.id)) {
-          conflictReasons.set(familyEv.id, `Conflicts with ${memberName}'s work`);
-        }
-      }
-    }
-  }
-
-  // D: family event vs. THE OTHER PARENT's work block — e.g. a ride
-  // assigned to Alex during a window Alex is actually at work. Distinct
-  // from check C, which only catches a kid's own event colliding with a
-  // work event for that same person — this catches a helper assignment
-  // colliding with the helper's own work schedule.
-  const timedHelperAssignments = upcomingEvents.filter(e => !!e.time && !!eventAssignee(e).name && eventAssignee(e).status !== 'rejected');
-  for (const familyEv of timedHelperAssignments) {
-    const helperMember = members.find(m => m.name === eventAssignee(familyEv).name);
-    if (!helperMember) continue;
-    for (const workEv of upcomingWorkEvents) {
-      if (workEv.memberId !== helperMember.id) continue;
-      if (!workEv.time) continue;
-      if (minutesBetween(familyEv.time!, workEv.time) < 30) {
-        if (!conflictReasons.has(familyEv.id)) {
-          conflictReasons.set(familyEv.id, `Conflicts with ${helperMember.name.split(' ')[0]}'s work`);
-        }
-      }
-    }
+  for (const [id, label] of detectWorkConflicts(upcomingEvents, upcomingWorkEvents, members)) {
+    if (!conflictReasons.has(id)) conflictReasons.set(id, label);
   }
 
   // Other parents' Work events today, for the read-only coordination strip

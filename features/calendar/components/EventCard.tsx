@@ -234,6 +234,19 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
               {showLocation && ev.location && (
                 <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
               )}
+              {/* Live-requested: "Show on the email indicator that it is
+                  coming from where" — a personal-calendar inbound sync
+                  (calendar-webhook-google/outlook) marks which connected
+                  account last changed this event, so it doesn't look like
+                  an unexplained edit inside FamilyCube itself. */}
+              {!!ev.lastExternalSyncProvider && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 9 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : '🟩'}</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                    {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : 'Outlook')}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
           {/* "For" + accompanied-by/driver avatars, overlapped into one
@@ -405,6 +418,17 @@ export function EventCardTimeline({
               </Text>
             </View>
           </View>
+
+          {/* Which connected account last synced this event in — same
+              indicator as the compact row card, see its own comment. */}
+          {!!ev.lastExternalSyncProvider && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -4, marginBottom: 2 }}>
+              <Text style={{ fontSize: 10 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : '🟩'}</Text>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary }} numberOfLines={1}>
+                Synced from {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : 'Outlook')}
+              </Text>
+            </View>
+          )}
 
           {isConf && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, marginTop: 2 }}>

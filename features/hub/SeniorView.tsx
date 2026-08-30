@@ -19,7 +19,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
 import { withinLast24h, localDateStr } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
-import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 
 import { GroupBand } from './senior/seniorTheme';
 import { EmergencySosCard } from './senior/EmergencySosCard';
@@ -72,6 +72,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // the DRIVER's whole schedule, which may span events this senior isn't
   // otherwise involved in.
   const conflictReasons = detectAssigneeConflicts(events);
+  // Extended to a connected parent's real work calendar (auto-synced Work
+  // events, see calendar-freebusy-sync) — a grandparent's own ride
+  // colliding with a driving parent's actual work schedule (live
+  // direction: "Kid's also show on their card parent is conflict with work").
+  for (const [id, label] of detectWorkConflicts(events, events.filter(isWorkEvent), members)) {
+    if (!conflictReasons.has(id)) conflictReasons.set(id, label);
+  }
   const sendMessage = useChatStore(s => s.sendMessage);
   // Scenarios 9.2/9.3 — caregiver mode: if a parent has granted this GP
   // temporary approval access, isActiveApprover flips true and the review

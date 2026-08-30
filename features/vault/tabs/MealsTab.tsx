@@ -10,6 +10,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { useEventStore } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
 
 import {
@@ -206,19 +207,71 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     setAddedCart(true);
   };
 
-  // Create a cooking quest for the assigned chef
-  const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null) => {
+  // Shared "Mon"/"Tue"/etc -> real YYYY-MM-DD for THIS week, used by both
+  // the cooking-quest due date and the meal's own linked calendar event.
+  const dayNameToDate = (day: string): string => {
     const DAYS_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const todayIdx = new Date().getDay(); // 0=Sun
     const dayIdx = DAYS_ORDER.indexOf(day);
-    // Calculate due date as the day in this week
     const daysUntil = ((dayIdx - (todayIdx === 0 ? 6 : todayIdx - 1) + 7) % 7);
-    const due = new Date();
-    due.setDate(due.getDate() + daysUntil);
+    const d = new Date();
+    d.setDate(d.getDate() + daysUntil);
     // Was due.toISOString() (UTC date) — for anyone west of UTC in the
-    // evening this silently wrote a due_date one calendar day off from what
+    // evening this silently wrote a date one calendar day off from what
     // the day picker showed (e.g. picking "Fri" could write Saturday's date).
-    const dueDate = localDateStr(due);
+    return localDateStr(d);
+  };
+
+  // "6:00 PM" -> "18:00" (24h, for calendar_events.start_time). Same
+  // simple format MealFormSheet.tsx's own picker writes and parses.
+  const parseTimeLabelTo24h = (label: string | null | undefined): string | null => {
+    if (!label) return null;
+    const m = label.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    if (m[3] === 'PM' && h !== 12) h += 12;
+    if (m[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m[2]}`;
+  };
+
+  const addMinutesToTime = (hhmm: string, minutes: number): string => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const total = (h * 60 + m + minutes) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
+
+  // Materializes/updates/removes a meal's linked calendar_events row based
+  // on whether it currently has a start_time — same "funnel every
+  // syncable domain through calendar_events" pattern chores' addChore/
+  // updateChore/deleteChore got, so a timed meal rides the existing 2-way
+  // calendar sync engine (calendar-sync-push/Apple EventKit) for free.
+  // Includes an end time (start + prep_minutes, defaulting to 30min) so a
+  // synced external calendar entry covers the actual cooking window
+  // instead of being open-ended (live-requested: "put end time too").
+  const syncMealCalendarEvent = async (meal: { id: string; day: string; title: string; start_time?: string | null; prep_minutes?: number | null; linked_event_id?: string | null }): Promise<string | null> => {
+    const time24 = parseTimeLabelTo24h(meal.start_time);
+    const { addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+
+    if (!time24) {
+      if (meal.linked_event_id) deleteEvent(meal.linked_event_id);
+      return null;
+    }
+    const date = dayNameToDate(meal.day);
+    const endTime = addMinutesToTime(time24, meal.prep_minutes || 30);
+    if (meal.linked_event_id) {
+      updateEvent(meal.linked_event_id, { title: meal.title, date, time: time24, endTime });
+      return meal.linked_event_id;
+    }
+    return addEvent({
+      title: meal.title, date, time: time24, endTime,
+      type: 'reminder', category: 'Meal',
+      createdBy: activeMemberId ?? undefined,
+    });
+  };
+
+  // Create a cooking quest for the assigned chef
+  const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null) => {
+    const dueDate = dayNameToDate(day);
 
     addQuest({
       title:            `🍳 Cook ${mealTitle}`,
@@ -256,18 +309,22 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     try {
       if (editMeal) {
         const prevChefId = editMeal.chef_id;
-        await supabase.from('family_meals').update(patch).eq('id', editMeal.id);
-        setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...patch } : m));
+        const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...patch });
+        const fullPatch = { ...patch, linked_event_id: linkedEventId };
+        await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
+        setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
         showToast('Meal updated');
         if (patch.chef_id && patch.chef_id !== prevChefId) {
           createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
         }
         setEditMeal(null);
       } else if (addDay) {
+        const newId = `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`;
+        const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
         const { data } = await supabase.from('family_meals').insert({
-          id: `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`,
+          id: newId,
           family_id: familyId, week_of: curWeek, day: addDay,
-          ...patch, ai_generated: false,
+          ...patch, ai_generated: false, linked_event_id: linkedEventId,
         }).select().single();
         if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
         if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
@@ -279,6 +336,8 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   };
 
   const deleteMeal = async (id: string) => {
+    const meal = meals.find(m => m.id === id);
+    if (meal?.linked_event_id) useEventStore.getState().deleteEvent(meal.linked_event_id);
     await supabase.from('family_meals').delete().eq('id', id);
     setMeals(prev => prev.filter(m => m.id !== id));
     showToast('Meal deleted');

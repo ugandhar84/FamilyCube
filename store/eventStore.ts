@@ -188,6 +188,17 @@ export interface FamilyEvent {
   // responded — someone invited but silent simply has no key here (renders
   // as "awaiting" rather than defaulting to any particular answer).
   rsvps?: Record<string, 'going' | 'not_going' | 'maybe'>;
+  // Set only when this event's last change came from an inbound
+  // personal-calendar sync (calendar-webhook-google/outlook) — powers a
+  // small "updated from Google/Outlook" indicator on the event card.
+  // Undefined for an event that's never had an inbound sync apply to it.
+  lastExternalSyncAt?: string;
+  lastExternalSyncProvider?: 'google' | 'outlook';
+  // The connected account's own email (e.g. "priya@gmail.com") — more
+  // specific than the provider alone once someone can connect the same
+  // provider twice (a work Gmail and a separate personal Gmail). Live-
+  // requested: "we can show alias name of that account."
+  lastExternalSyncAccount?: string;
 }
 
 // Scenario 5.5 generalizes 2.6's rule to "any medical/health-tagged item,"
@@ -397,6 +408,18 @@ function getFamilyId(): string | null {
   } catch { return null; }
 }
 
+// Same reach-into-useFamilyStore pattern as getFamilyId() above — checks
+// whether a specific member has opted into Apple/EventKit 2-way sync
+// (off by default) before ever touching the device calendar on their behalf.
+function isAppleCalendarSyncEnabled(memberId: string): boolean {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const s = useFamilyStore.getState();
+    const m = s.members.find((mem: any) => mem.id === memberId);
+    return !!(m as any)?.appleCalendarSyncEnabled;
+  } catch { return false; }
+}
+
 // Same reach-into-useFamilyStore pattern as getFamilyId() above — avoids
 // threading an actor id through every addEvent/updateEvent/deleteEvent call
 // site across the app just to stamp who made the change.
@@ -560,6 +583,13 @@ export function fromRow(row: any): FamilyEvent {
     sharedWithSiblings:     row.shared_with_siblings ?? false,
     isOptionalRsvp:         row.is_optional_rsvp ?? false,
     rsvps:                  (typeof row.rsvps === 'object' && row.rsvps) ? row.rsvps : undefined,
+    // Set by calendar-webhook-google/outlook whenever a personal-calendar
+    // inbound sync auto-applies a change from that provider — powers a
+    // "from Google/Outlook" indicator on the event card (live-requested:
+    // "Show on the email indicator that it is coming from where").
+    lastExternalSyncAt:       row.last_external_sync_at ?? undefined,
+    lastExternalSyncProvider: row.last_external_sync_provider ?? undefined,
+    lastExternalSyncAccount: row.last_external_sync_account ?? undefined,
     linkedLegId:            row.linked_leg_id ?? undefined,
   };
 }
@@ -641,12 +671,14 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
 // pass one; call sites are being migrated one at a time to pass a rollback
 // that restores the pre-update local state, plus a shared failure toast so
 // the failure is at least visible before every site has real rollback.
-function dbUpdate(id: string, patch: Record<string, unknown>, onFailure?: () => void) {
+function dbUpdate(id: string, patch: Record<string, unknown>, onFailure?: () => void, onSuccess?: () => void) {
   supabase.from('calendar_events').update(patch).eq('id', id).then(({ error }) => {
     if (error) {
       console.warn('[eventStore] update failed', id, error.message);
       onFailure?.();
       showToast("Couldn't save — check your connection and try again", 'error');
+    } else {
+      onSuccess?.();
     }
   });
 }
@@ -1336,6 +1368,23 @@ export const useEventStore = create<EventState>((set, get) => ({
             },
           }).catch(e => console.warn('[eventStore] addEvent notify failed:', e?.message));
         }
+        // Personal-calendar 2-way sync — pushes this event to every active
+        // PERSONAL-purpose Google/Outlook connection the CREATOR has
+        // (fire-and-forget, same shape as the family-notifier call above).
+        // Work-purpose connections are never pushed to — see
+        // calendar-sync-push's own header comment.
+        if (familyId && event.createdBy) {
+          supabase.functions.invoke('calendar-sync-push', {
+            body: { eventId: event.id, familyId, memberId: event.createdBy, action: 'create' },
+          }).catch(e => console.warn('[eventStore] addEvent calendar-sync-push failed:', e?.message));
+        }
+        // Apple/EventKit 2-way sync — device-local, gated behind the
+        // creator's own opt-in preference (off by default).
+        if (event.createdBy && isAppleCalendarSyncEnabled(event.createdBy)) {
+          import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+            pushEventToAppleCalendar(event.createdBy!, event, event.id, 'create')
+          ).catch(e => console.warn('[eventStore] addEvent Apple sync failed:', e?.message));
+        }
       }
     });
 
@@ -1419,6 +1468,22 @@ export const useEventStore = create<EventState>((set, get) => ({
             events: s.events.map(e => e.id === id ? prevEvent : e),
             rangeEvents: s.rangeEvents.map(e => e.id === id ? prevEvent : e),
           }));
+        }
+      }, () => {
+        // Personal-calendar 2-way sync — only push once the write is
+        // CONFIRMED, not optimistically, since a failed update would
+        // otherwise push a change to Google/Outlook that just got reverted
+        // locally.
+        const familyId = getFamilyId();
+        if (familyId && updated.createdBy) {
+          supabase.functions.invoke('calendar-sync-push', {
+            body: { eventId: id, familyId, memberId: updated.createdBy, action: 'update' },
+          }).catch(e => console.warn('[eventStore] updateEvent calendar-sync-push failed:', e?.message));
+        }
+        if (updated.createdBy && isAppleCalendarSyncEnabled(updated.createdBy)) {
+          import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+            pushEventToAppleCalendar(updated.createdBy!, updated, id, 'update')
+          ).catch(e => console.warn('[eventStore] updateEvent Apple sync failed:', e?.message));
         }
       });
       if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
@@ -1783,6 +1848,20 @@ export const useEventStore = create<EventState>((set, get) => ({
           events: [...s.events, deletedEvent],
           rangeEvents: [...s.rangeEvents, deletedEvent],
         }));
+      }
+    }, () => {
+      // Personal-calendar 2-way sync — only push the delete once
+      // confirmed, same reasoning as updateEvent's onSuccess above.
+      const familyId = getFamilyId();
+      if (familyId && deletedEvent?.createdBy) {
+        supabase.functions.invoke('calendar-sync-push', {
+          body: { eventId: id, familyId, memberId: deletedEvent.createdBy, action: 'delete' },
+        }).catch(e => console.warn('[eventStore] deleteEvent calendar-sync-push failed:', e?.message));
+      }
+      if (deletedEvent?.createdBy && isAppleCalendarSyncEnabled(deletedEvent.createdBy)) {
+        import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+          pushEventToAppleCalendar(deletedEvent.createdBy!, null, id, 'delete')
+        ).catch(e => console.warn('[eventStore] deleteEvent Apple sync failed:', e?.message));
       }
     });
     logActivity({ entityType: 'event', entityId: id, familyId: getFamilyId(), actorId, action: 'deleted' });

@@ -1788,6 +1788,22 @@ export default function ProfileSettingsScreen() {
           />
         )}
 
+        {/* Calendar Sync — parent-only, per-member OAuth connection used
+            purely for FreeBusy conflict detection (not full 2-way sync,
+            see CalendarSyncScreen.tsx's own header comment). */}
+        {isParent && (
+          <View style={{ marginBottom: 24 }}>
+            <SectionHeader label="Calendar" colors={colors} />
+            <Row
+              icon="calendar-outline"
+              label="Calendar Sync"
+              subtitle="Connect your work calendar to catch scheduling conflicts"
+              onPress={() => router.push('/profile-settings/calendar-sync')}
+              colors={colors} isDark={isDark}
+            />
+          </View>
+        )}
+
         {/* Legal */}
         <View style={{ marginBottom: 24 }}>
           <SectionHeader label="Legal" colors={colors} />

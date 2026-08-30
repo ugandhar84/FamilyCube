@@ -16,8 +16,8 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
-import { localToday, hoursUntilEvent, useCountdown } from './hubUtils';
-import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { localToday, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
+import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
@@ -76,6 +76,13 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // it passed in directly too, since that banner isn't rendered BY
   // HubTimelineSection.
   const conflictReasons = detectAssigneeConflicts(events);
+  // Extended to a connected parent's real work calendar (auto-synced Work
+  // events, see calendar-freebusy-sync) — a teen's ride colliding with
+  // their driving parent's actual work schedule (live direction: "Kid's
+  // also show on their card parent is conflict with work").
+  for (const [id, label] of detectWorkConflicts(events, events.filter(isWorkEvent), members)) {
+    if (!conflictReasons.has(id)) conflictReasons.set(id, label);
+  }
   const familyIdForRides = (active as any).familyId as string | undefined;
   // eventStore's `events` is a single-day cache tied to whatever date the
   // Calendar tab last selected — a pickup/ride pool scoped to it silently

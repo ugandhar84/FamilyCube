@@ -1037,6 +1037,7 @@ function RootNavigator() {
         <Stack.Screen name="onboarding/complete-profile" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
         <Stack.Screen name="profile-settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile-settings/terms" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="profile-settings/calendar-sync" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
 

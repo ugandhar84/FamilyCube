@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { todayLocal, localDateStr } from '@/lib/dates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEventStore } from './eventStore';
+
+// 'mon'|'tue'|... (ClassPeriod.days) -> 0=Sun..6=Sat (EventRecurrenceRule.days)
+const DAY_NAME_TO_INDEX: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -24,6 +28,13 @@ export interface ClassPeriod {
   notes?:     string;
   days?:      string[];    // ['mon','tue','wed','thu','fri'] — which days this period occurs
   term?:      string;      // e.g. 'Q1', 'Q2', 'Fall', 'Spring' — optional term grouping
+  // Materialized calendar_events series-anchor id (store/eventStore.ts's
+  // addRecurringEvent) — device-local like the rest of this store today
+  // (School has no Supabase table yet), so the linked event only exists on
+  // whichever device the period was entered on. Skipped entirely for
+  // lunch/break rows (isLunch/isBreak) — those aren't "my class," just a
+  // schedule marker with nothing meaningful to sync.
+  linkedEventId?: string;
 }
 
 export interface Homework {
@@ -179,6 +190,34 @@ export function subjectColor(subject: string): string {
   return SUBJECT_COLORS[subject] ?? '#6366F1';
 }
 
+// Materializes a class period as a weekly-recurring calendar_events series
+// (store/eventStore.ts's addRecurringEvent) — same "funnel every syncable
+// domain through calendar_events" pattern Chores/Meals got, so a class
+// period rides the existing 2-way calendar sync engine for free. Lunch/
+// break periods are skipped (isLunch/isBreak) — a schedule marker, not a
+// real class, nothing meaningful to put on an external calendar. Returns
+// the new series anchor id, or undefined if this period shouldn't
+// materialize (lunch/break, or no real days set).
+function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod, 'id'> & { id: string }): string | undefined {
+  if (period.isLunch || period.isBreak) return undefined;
+  const days = (period.days ?? []).map(d => DAY_NAME_TO_INDEX[d.toLowerCase()]).filter(d => d !== undefined);
+  if (!days.length) return undefined;
+  return useEventStore.getState().addRecurringEvent(
+    {
+      title: period.subject,
+      date: todayLocal(),
+      time: period.startTime,
+      endTime: period.endTime,
+      memberId,
+      type: 'reminder',
+      category: 'School',
+      location: period.room || undefined,
+      notes: period.teacher ? `Teacher: ${period.teacher}` : undefined,
+    },
+    { frequency: 'weekly', days },
+  );
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useSchoolStore = create<SchoolState>((set, get) => ({
@@ -222,10 +261,12 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   // ─── Period CRUD ────────────────────────────────────────────────────────────
 
   addPeriod: (memberId, period) => {
+    const linkedEventId = materializePeriodEvent(memberId, { ...period, id: '' });
+    const withLink = linkedEventId ? { ...period, linkedEventId } : period;
     const next = get().schedules.map(s =>
       s.memberId !== memberId ? s : {
         ...s,
-        periods: [...s.periods, { ...period, id: 'p' + Date.now() }]
+        periods: [...s.periods, { ...withLink, id: 'p' + Date.now() }]
           .sort((a, b) => a.startTime.localeCompare(b.startTime)),
       }
     );
@@ -233,15 +274,31 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   },
 
   updatePeriod: (memberId, periodId, updates) => {
-    const next = get().schedules.map(s =>
-      s.memberId !== memberId ? s : {
-        ...s, periods: s.periods.map(p => p.id === periodId ? { ...p, ...updates } : p),
-      }
-    );
+    const next = get().schedules.map(s => {
+      if (s.memberId !== memberId) return s;
+      return {
+        ...s, periods: s.periods.map(p => {
+          if (p.id !== periodId) return p;
+          const merged = { ...p, ...updates };
+          // Only re-materialize when a field the calendar event actually
+          // cares about changed — avoids a needless delete+recreate churn
+          // on every unrelated edit (e.g. just the room number).
+          const relevantChanged = ['subject', 'startTime', 'endTime', 'days', 'isLunch', 'isBreak'].some(k => k in updates);
+          if (relevantChanged) {
+            if (p.linkedEventId) useEventStore.getState().deleteEvent(p.linkedEventId);
+            const linkedEventId = materializePeriodEvent(memberId, merged);
+            return { ...merged, linkedEventId };
+          }
+          return merged;
+        }),
+      };
+    });
     set({ schedules: next }); save(next, get().homeworks);
   },
 
   deletePeriod: (memberId, periodId) => {
+    const target = get().schedules.find(s => s.memberId === memberId)?.periods.find(p => p.id === periodId);
+    if (target?.linkedEventId) useEventStore.getState().deleteEvent(target.linkedEventId);
     const next = get().schedules.map(s =>
       s.memberId !== memberId ? s : { ...s, periods: s.periods.filter(p => p.id !== periodId) }
     );

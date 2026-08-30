@@ -236,8 +236,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={m.body} keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets>
+            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={m.body} keyboardShouldPersistTaps="handled">
               {/* Child selector — adults only */}
               {isAdult && kids.length > 0 && (
                 <View style={m.field}>

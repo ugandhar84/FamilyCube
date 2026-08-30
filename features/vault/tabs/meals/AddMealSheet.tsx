@@ -81,23 +81,18 @@ export default function AddMealSheet({
             </View>
 
             {/* Scrollable body */}
-            {/* automaticallyAdjustKeyboardInsets — iOS's own UIScrollView
-                keyboard-avoidance: scrolls the currently-focused TextInput
-                into view above the keyboard automatically. Without it, the
-                sheet's outer maxHeight correctly shrinks around the
-                keyboard (useKeyboardAwareMaxHeight above), but nothing
-                actually moved the SCROLL POSITION when a lower field like
-                Ingredients/Steps got focus — the field stayed at its
-                pre-keyboard on-screen position, which now fell behind the
-                keyboard (live-reported, screenshot showed the field
-                clipped under the keyboard while Cancel/Add Meal stayed
-                correctly visible above it — confirming the height clamp
-                itself was fine, only the scroll-into-view step was
-                missing). Genuinely new prop for this codebase, but it's a
-                standard RN/iOS 13+ ScrollView behavior, not a new pattern —
-                composes safely alongside the existing KeyboardAvoidingView. */}
+            {/* No automaticallyAdjustKeyboardInsets — was added here to fix
+                a lower field (Ingredients/Steps) staying hidden behind the
+                keyboard when focused, but it double-compensates alongside
+                this sheet's own KeyboardAvoidingView (behavior="padding")
+                for the same keyboard event, producing a large blank gap
+                above the real content instead (confirmed live on the
+                sibling AddItemSheet/CreateRunSheet sheets, same combination
+                — see AppBottomSheet.tsx's identical fix for the full
+                writeup). EventFormModal's proven sheet pattern never uses
+                this prop either, relying only on KeyboardAvoidingView +
+                useKeyboardAwareMaxHeight — matching that here instead. */}
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ paddingBottom: 40 }}>
 
               {/* Emoji picker */}
@@ -117,19 +112,6 @@ export default function AddMealSheet({
 
               {/* Meal name */}
               <Text style={em.label}>Meal Name</Text>
-              {/* No autoFocus — combined with automaticallyAdjustKeyboardInsets
-                  above, a field already focused on the very first render (the
-                  keyboard is up before the sheet has a "pre-keyboard" scroll
-                  position to compare against) makes iOS's auto-scroll shove
-                  the whole ScrollView down, leaving a large blank gap above
-                  this field until the user manually scrolls (same bug
-                  confirmed live on AddItemSheet.tsx/CreateRunSheet.tsx's
-                  identical autoFocus+automaticallyAdjustKeyboardInsets
-                  combination — screenshot: "Add to List" sheet with an empty
-                  gap where the name field should be). Removing autoFocus here
-                  keeps the fix for the field this prop was ADDED for
-                  (Ingredients/Steps further down) while dropping the one
-                  combination that breaks. */}
               <TextInput value={addTitle} onChangeText={setAddTitle}
                 placeholder="e.g. Grilled Chicken & Veggies"
                 placeholderTextColor={colors.textTertiary}

@@ -136,11 +136,28 @@ export default function AppBottomSheet({
             </View>
 
             {/* Scrollable body */}
+            {/* No automaticallyAdjustKeyboardInsets here — EventFormModal.tsx's
+                own sheet (the proven-working "old event form" pattern) never
+                used it either, relying only on KeyboardAvoidingView +
+                useKeyboardAwareMaxHeight to shrink the sheet's own bound
+                around the keyboard. This component already does the
+                equivalent via sheetHeight/maxPx (see the keyboardHeight
+                effect above). automaticallyAdjustKeyboardInsets was added
+                later specifically to also auto-scroll a newly-focused LOWER
+                field into view, but it double-compensates for the same
+                keyboard event that KeyboardAvoidingView's own padding
+                already handles — live-reported (screenshot):
+                SmartTaskComposer's sheet content shoved down behind a large
+                blank gap. Net effect of removing it: a field far down a
+                long form (AddMealSheet's Ingredients/Steps) may need a
+                manual scroll to bring fully into view again, same as
+                EventFormModal's own fields always have — a real but much
+                smaller regression than a sheet whose content is
+                unreachable without scrolling past a mystery gap. */}
             <ScrollView
               keyboardShouldPersistTaps="handled"
               onScrollBeginDrag={Keyboard.dismiss}
               onContentSizeChange={(_w, h) => setContentHeight(h)}
-              automaticallyAdjustKeyboardInsets
               style={{ flex: 1 }}
               contentContainerStyle={{ padding: 20, paddingBottom: bodyPaddingBottom }}
               showsVerticalScrollIndicator={false}>

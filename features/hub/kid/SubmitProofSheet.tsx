@@ -74,7 +74,6 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
 
             <ScrollView
               keyboardShouldPersistTaps="always"
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 16 }}
               showsVerticalScrollIndicator={false}>
       <View style={{ gap: 12 }}>

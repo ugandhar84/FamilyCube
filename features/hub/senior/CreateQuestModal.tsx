@@ -81,7 +81,6 @@ export function CreateQuestModal({
 
             <ScrollView
               keyboardShouldPersistTaps="always"
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}>
       <View style={{ gap: 14 }}>

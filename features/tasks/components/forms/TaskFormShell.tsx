@@ -114,11 +114,14 @@ export function TaskFormShell({
 
             {/* ── Scrollable step body. flexShrink:1 here + on the sheet is
                 the footer-clipping fix, applied once for both modals. ── */}
+            {/* No automaticallyAdjustKeyboardInsets — see AppBottomSheet.tsx's
+                own comment on this same fix: it double-compensates alongside
+                the KeyboardAvoidingView wrapping this whole sheet, producing
+                a blank gap above the real content. */}
             <ScrollView
               style={{ flexShrink: 1 }}
               keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={{ paddingBottom: isReview ? Math.max(48, insets.bottom + 32) : 48 }}
             >
               <StepTransition stepKey={currentStepId}>

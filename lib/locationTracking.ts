@@ -154,12 +154,22 @@ let batteryPollMemberId: string | null = null;
 async function writeBatteryStatus(memberId: string): Promise<void> {
   const { level, isCharging } = await readBatteryStatus();
   if (level === null && isCharging === null) return;
+  const patch = {
+    ...(level !== null ? { battery_level: level } : {}),
+    ...(isCharging !== null ? { is_charging: isCharging } : {}),
+  };
   try {
-    await supabase.from('member_locations').upsert({
-      member_id: memberId,
-      ...(level !== null ? { battery_level: level } : {}),
-      ...(isCharging !== null ? { is_charging: isCharging } : {}),
-    }, { onConflict: 'member_id' });
+    // Battery polling runs unconditionally for every signed-in member
+    // (app/_layout.tsx, independent of whether they've ever touched "Share
+    // My Location") — it must never be the write that FIRST creates this
+    // member's member_locations row, since an upsert's insert branch falls
+    // back to share_location_enabled's schema DEFAULT of false, silently
+    // pre-deciding a choice this code has no opinion on (and doesn't know
+    // family_id either, which a real insert here would also need). Deliberate
+    // UPDATE-only: if no row exists yet this simply no-ops for that poll —
+    // the real GPS-fix writer (which does know both the correct sharing
+    // value and family_id) creates the row moments later regardless.
+    await supabase.from('member_locations').update(patch).eq('member_id', memberId);
     if (!isCharging) maybeAlertLowBattery(memberId, level);
   } catch { /* best-effort — next poll will retry */ }
 }
@@ -332,6 +342,18 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       ...(isCharging !== null ? { is_charging: isCharging } : {}),
       speed_mph: loc.coords.speed ? Math.max(0, Math.round(loc.coords.speed * 2.237)) : 0,
       last_updated: now,
+      // This callback only ever runs while the native background task is
+      // genuinely active, so sharing is unconditionally "on" here — explicit,
+      // not left to the column's DEFAULT false. Was: omitted entirely, so if
+      // this upsert's INSERT branch won the race against GpsTab.tsx's own
+      // `share_location_enabled: true` write (both fire around
+      // startBackgroundLocationTracking — this task can deliver its first
+      // fix before that write lands), it created member_locations' row with
+      // the column defaulting to false, silently overwriting the user's
+      // real "on" choice (direct report: "share my location toggle... i see
+      // it is on reinstall reset to false in UI" — same root cause, a race
+      // rather than only the reinstall path this column was first added for).
+      share_location_enabled: true,
     }, { onConflict: 'member_id' });
 
     if (lastFamilyId) {

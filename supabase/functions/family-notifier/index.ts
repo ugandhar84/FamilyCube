@@ -193,6 +193,18 @@ type NotifType =
   // write if the notify call itself fails (non-blocking .catch()).
   | 'member_pin_changed'
   | 'member_role_changed'
+  // store/tripStore.ts's "Pick-up Radar" — dispatch/overdue previously only
+  // posted to family chat (useChatStore.sendMessage), invisible to anyone
+  // with the app backgrounded or closed. Real push+persist alongside the
+  // existing chat broadcast, not a replacement for it.
+  | 'trip_started'
+  | 'trip_overdue'
+  // features/vault/tabs/MemoriesTab.tsx's postMemory/heartMemory — a new
+  // photo posted, or someone hearting an existing one, previously notified
+  // no one; a family member could post/react and nobody else would ever
+  // know unless they happened to open the Memories tab themselves.
+  | 'memory_posted'
+  | 'memory_liked'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -228,6 +240,8 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   parent_quest_delegated: 'chores', parent_quest_lock_cancelled: 'chores',
   event_assigned: 'family', event_deleted: 'family', event_rsvp_response: 'family',
   member_pin_changed: 'family', member_role_changed: 'family',
+  trip_started: 'family', trip_overdue: 'family',
+  memory_posted: 'family', memory_liked: 'family',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
   // profile-removed safety notice), discriminated below by payload shape
@@ -852,6 +866,32 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `${p.byName ?? 'A parent'} changed ${p.memberName ?? 'a family member'}'s role from ${p.oldRole ?? 'their old role'} to ${p.newRole ?? 'a new role'}.`,
         sound: 'default',
         data: { screen: 'Roster', memberId: p.memberId },
+      };
+
+    case 'trip_started':
+      return {
+        title: `🚗 ${p.driverName ?? 'A parent'} is en route`,
+        body: `Heading to pick up ${p.kidName ?? 'the kids'} · ETA ${p.etaMinutes} min`,
+        data: { screen: 'Hub', tripId: p.tripId },
+      };
+    case 'trip_overdue':
+      return {
+        title: '🚨 Pickup not confirmed yet',
+        body: `${p.driverName ?? 'The driver'} was due to pick up ${p.kidName ?? 'the kids'} ${p.etaMinutes} min ago`,
+        sound: 'default',
+        data: { screen: 'Hub', tripId: p.tripId },
+      };
+    case 'memory_posted':
+      return {
+        title: `📸 ${p.posterName ?? 'Someone'} shared a new memory`,
+        body: (p.caption as string) || 'Tap to see what they posted.',
+        data: { screen: 'Memories', memoryId: p.memoryId },
+      };
+    case 'memory_liked':
+      return {
+        title: `❤️ ${p.likerName ?? 'Someone'} loved your memory`,
+        body: (p.caption as string) ? `On "${p.caption}"` : 'Tap to see the reaction.',
+        data: { screen: 'Memories', memoryId: p.memoryId },
       };
 
     case 'custom':

@@ -473,6 +473,18 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
       throw new Error(error.message);
     }
     if (data) setMemories(prev => [data as Memory, ...prev]);
+
+    const posterName = members.find(m => m.id === myId)?.name ?? 'Someone';
+    const recipientIds = members.filter(m => m.id !== myId).map(m => m.id);
+    if (recipientIds.length) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'memory_posted', familyId, memberIds: recipientIds,
+          payload: { posterName, caption: caption || undefined, memoryId: data?.id },
+          persist: true, excludeMemberId: myId,
+        },
+      }).catch(e => console.warn('[MemoriesTab] postMemory notify failed:', e?.message));
+    }
   };
 
   const heartMemory = async (mem: Memory) => {
@@ -487,6 +499,20 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: {
       setMemories(prev => prev.map(m =>
         m.id === mem.id ? { ...m, hearts: newHearts, hearted_by: newHearted } : m
       ));
+
+      // Only the like transition notifies (not unliking), and only the
+      // memory's own poster — not a broadcast to everyone else, unlike
+      // postMemory above.
+      if (!alreadyHearted && mem.created_by && mem.created_by !== myId) {
+        const likerName = members.find(m => m.id === myId)?.name ?? 'Someone';
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'memory_liked', familyId, memberIds: [mem.created_by],
+            payload: { likerName, caption: mem.description || undefined, memoryId: mem.id },
+            persist: true, excludeMemberId: myId,
+          },
+        }).catch(e => console.warn('[MemoriesTab] heartMemory notify failed:', e?.message));
+      }
     }
   };
 

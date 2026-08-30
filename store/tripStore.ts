@@ -20,6 +20,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { useFamilyStore } from '@/store/familyStore';
 
 export interface Trip {
   id: string;
@@ -88,6 +89,36 @@ function deriveActiveTrip(trips: Trip[]): Trip | null {
 
 function persist(trips: Trip[]) {
   AsyncStorage.setItem(DISK_TRIP, JSON.stringify(trips));
+}
+
+function memberName(memberId: string | undefined | null): string | undefined {
+  if (!memberId) return undefined;
+  return useFamilyStore.getState().members.find(m => m.id === memberId)?.name;
+}
+
+// Everyone who should see a trip's live progress, per this file's own header
+// comment — the requester, any other kid/teen, and every parent — minus the
+// driver themselves (they don't need a push about their own trip). Was:
+// dispatch/overdue only ever posted to family chat (invisible if the app is
+// backgrounded/closed); this adds a real push+persisted notification
+// alongside that existing broadcast, not instead of it.
+function tripRecipientIds(driverMemberId: string): string[] {
+  return useFamilyStore.getState().members
+    .filter(m => m.id !== driverMemberId)
+    .map(m => m.id);
+}
+
+function notifyTrip(
+  type: 'trip_started' | 'trip_overdue',
+  familyId: string,
+  driverMemberId: string,
+  payload: Record<string, unknown>,
+) {
+  const memberIds = tripRecipientIds(driverMemberId);
+  if (!memberIds.length) return;
+  supabase.functions.invoke('family-notifier', {
+    body: { type, familyId, memberIds, payload, persist: true, excludeMemberId: driverMemberId },
+  }).catch(e => console.warn('[tripStore] notify failed:', e?.message));
 }
 
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -176,6 +207,13 @@ export const useTripStore = create<TripState>((set, get) => ({
       pickup_member_id: pickupMemberId ?? null, eta_minutes: etaMinutes,
       started_at: startedAt,
     });
+
+    notifyTrip('trip_started', familyId, driverMemberId, {
+      tripId: id,
+      driverName: memberName(driverMemberId) ?? 'A parent',
+      kidName: memberName(pickupMemberId) ?? 'the kids',
+      etaMinutes,
+    });
   },
 
   updateEta: async (tripId, etaMinutes) => {
@@ -196,6 +234,13 @@ export const useTripStore = create<TripState>((set, get) => ({
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
     await supabase.from('trips').update({ overdue_alert_sent: true }).eq('id', tripId);
+
+    notifyTrip('trip_overdue', trip.familyId, trip.driverMemberId, {
+      tripId: trip.id,
+      driverName: memberName(trip.driverMemberId) ?? 'The driver',
+      kidName: memberName(trip.pickupMemberId) ?? 'the kids',
+      etaMinutes: trip.etaMinutes,
+    });
   },
 
   complete: async (tripId) => {

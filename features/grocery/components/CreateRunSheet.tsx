@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGroceryStore, GroceryRun } from '@/store/groceryStore';
 import { sh } from './styles';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 
 // ─── Create Run Sheet ─────────────────────────────────────────────────────────
 
@@ -21,6 +22,8 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   const [name,    setName]   = useState('');
   const [store,   setStore]  = useState('');
   const [saving,  setSaving] = useState(false);
+  const [plannedAt, setPlannedAt] = useState<Date | null>(null);
+  const [pickerMode, setPickerMode] = useState<'none' | 'date' | 'time'>('none');
 
   const DEFAULT_STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
   const STORE_SUGGESTIONS = [...new Set([...pastStores, ...DEFAULT_STORE_SUGGESTIONS])].slice(0, 9);
@@ -34,9 +37,10 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
       store: store.trim(),
       createdBy: memberId,
       shopperId: memberId,
+      plannedAt: plannedAt?.toISOString(),
     });
     setSaving(false);
-    if (run) { setName(''); setStore(''); onCreated(run); }
+    if (run) { setName(''); setStore(''); setPlannedAt(null); onCreated(run); }
   };
 
   const inputBg = colors.surface;
@@ -102,6 +106,33 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
             placeholderTextColor={colors.textTertiary}
             value={name} onChangeText={setName}
           />
+
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+            When are you going? (optional)
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
+            <Pressable
+              onPress={() => setPickerMode('date')}
+              style={[sh.catChip, { flex: 1, backgroundColor: inputBg, borderColor: border, alignItems: 'center' }]}
+            >
+              <Text style={{ fontSize: 12, color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
+                📅 {plannedAt ? plannedAt.toLocaleDateString() : 'Pick a date'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setPickerMode('time')}
+              style={[sh.catChip, { flex: 1, backgroundColor: inputBg, borderColor: border, alignItems: 'center' }]}
+            >
+              <Text style={{ fontSize: 12, color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
+                🕐 {plannedAt ? plannedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Pick a time'}
+              </Text>
+            </Pressable>
+            {plannedAt && (
+              <Pressable onPress={() => setPlannedAt(null)} style={{ justifyContent: 'center', paddingHorizontal: 4 }}>
+                <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+              </Pressable>
+            )}
+          </View>
             </ScrollView>
 
             {/* Sticky footer */}
@@ -120,6 +151,27 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <PickerOverlay
+        showDate={pickerMode === 'date'}
+        showTime={pickerMode === 'time'}
+        value={plannedAt ?? new Date()}
+        onChangeDate={(d) => setPlannedAt(prev => {
+          const next = prev ? new Date(prev) : new Date();
+          next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+          return next;
+        })}
+        onChangeTime={(d) => setPlannedAt(prev => {
+          const next = prev ? new Date(prev) : new Date();
+          next.setHours(d.getHours(), d.getMinutes(), 0, 0);
+          return next;
+        })}
+        onDone={() => setPickerMode('none')}
+        accentColor={colors.primary}
+        colors={colors}
+        dateLabel="📅 When are you going?"
+        timeLabel="🕐 What time?"
+      />
     </Modal>
   );
 }

@@ -32,7 +32,7 @@ export function RunCard({ run, onPress, onDelete, colors, isDark, isLast }: {
           </View>
         </View>
         <Text style={[rc.store, { color: colors.textSecondary }]}>🏪 {run.store}</Text>
-        {run.plannedAt && <Text style={[rc.store, { color: colors.textTertiary }]}>📅 {new Date(run.plannedAt).toLocaleDateString()}</Text>}
+        {run.plannedAt && <Text style={[rc.store, { color: colors.textTertiary }]}>📅 {new Date(run.plannedAt).toLocaleDateString()} · {new Date(run.plannedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>}
         <Text style={[rc.ago, { color: colors.textTertiary }]}>{fmtDate(run.createdAt)}</Text>
       </View>
       <View style={{ gap: 6, alignItems: 'flex-end' }}>

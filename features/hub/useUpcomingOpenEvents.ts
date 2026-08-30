@@ -15,10 +15,10 @@
  * its own realtime subscription, scoped to family_id, independent of
  * whatever the Calendar tab is doing.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import { fromRow, type FamilyEvent } from '@/store/eventStore';
+import { fromRow, useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { localToday } from './hubUtils';
 
 const WINDOW_DAYS = 14;
@@ -49,6 +49,34 @@ export function useUpcomingOpenEvents(familyId: string | undefined) {
   }, [familyId]);
 
   useEffect(() => { refetch(); }, [refetch]);
+
+  // Confirm/Can't/Reassign/Take Over etc. all write through useEventStore's
+  // updateEvent — a same-session, same-device change — which updates ONLY
+  // the Zustand store's own events/dayEvents/rangeEvents. This hook's state
+  // is a separate useState with no knowledge of that store at all, so
+  // without this it could only ever learn about the change via its own
+  // realtime subscription round-tripping back from Postgres — confirmed
+  // live: tapping Confirm updated the DB correctly, but the Household
+  // Backlog card (reading from this hook) still showed "Pending" on a
+  // fresh load minutes later. Subscribing directly to the store and
+  // refetching on any change closes that gap for every current and future
+  // write path, without threading a refetch callback through every RPC
+  // call site that touches an event (reassign_event, confirm_event_
+  // assignment, decline_event_assignment, plain updateEvent calls, etc.)
+  // — one connection point here instead of N callback wires elsewhere.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const unsubscribe = useEventStore.subscribe((state, prevState) => {
+      if (state.events === prevState.events && state.dayEvents === prevState.dayEvents
+          && state.rangeEvents === prevState.rangeEvents) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => { debounceRef.current = null; refetch(); }, 200);
+    });
+    return () => {
+      unsubscribe();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [refetch]);
 
   useEffect(() => {
     if (!familyId) return;

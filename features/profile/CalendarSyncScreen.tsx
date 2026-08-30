@@ -123,11 +123,18 @@ export default function CalendarSyncScreen() {
         // no channel yet (channel_expires_at is null), so calling it right
         // after connect registers the channel immediately instead of
         // leaving the member with no inbound sync until the next daily
-        // cron pass. Outbound push already happens naturally the next
-        // time any event is created/edited, so no separate kick needed
-        // for that direction.
+        // cron pass.
         supabase.functions.invoke('calendar-channel-renewal', { body: {} })
           .catch(e => console.warn('[CalendarSyncScreen] initial channel registration failed', e?.message));
+        // Outbound push only fires from addEvent/updateEvent/deleteEvent,
+        // so anything created BEFORE this connection existed would
+        // otherwise never reach the external calendar — one-time backfill
+        // pushes the member's full existing event history now.
+        const familyId = (activeMember as any)?.familyId;
+        if (familyId) {
+          supabase.functions.invoke('calendar-backfill-sync', { body: { memberId: activeMemberId, familyId } })
+            .catch(e => console.warn('[CalendarSyncScreen] initial backfill failed', e?.message));
+        }
       }
     } catch (e: any) {
       if (e?.message !== 'Connection cancelled.') {

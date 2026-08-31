@@ -18,6 +18,29 @@ function minutesBetween(a: string, b: string): number {
   return Math.abs((ah * 60 + am) - (bh * 60 + bm));
 }
 
+function toMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Live QA finding: the old check only compared START times, <30 minutes
+// apart — two rides scheduled exactly 31 minutes apart (leaving zero
+// actual travel buffer) never triggered a warning, even though the same
+// parent genuinely can't be in two places. Now checks REAL interval
+// overlap (including a 30-minute travel buffer after the first event ends)
+// whenever both events have an endTime; falls back to the original
+// start-time-only heuristic when either side has no endTime, since there's
+// nothing else to compare.
+function eventsConflict(a: FamilyEvent, b: FamilyEvent): boolean {
+  if (a.endTime && b.endTime) {
+    const aStart = toMinutes(a.time!), aEnd = toMinutes(a.endTime);
+    const bStart = toMinutes(b.time!), bEnd = toMinutes(b.endTime);
+    const BUFFER = 30;
+    return aStart < bEnd + BUFFER && bStart < aEnd + BUFFER;
+  }
+  return minutesBetween(a.time!, b.time!) < 30;
+}
+
 /** eventId → conflict reason label, for every event with an assignee double-booked against another same-day event. */
 export function detectAssigneeConflicts(events: FamilyEvent[]): Map<string, string> {
   const reasons = new Map<string, string>();
@@ -35,7 +58,7 @@ export function detectAssigneeConflicts(events: FamilyEvent[]): Map<string, stri
         ? assigneeA.id === assigneeB.id
         : assigneeA.name === assigneeB.name;
       if (!sameAssignee) continue;
-      if (minutesBetween(a.time!, b.time!) < 30) {
+      if (eventsConflict(a, b)) {
         const label = `${assigneeA.name!.split(' ')[0]} assigned to 2 events`;
         if (!reasons.has(a.id)) reasons.set(a.id, label);
         if (!reasons.has(b.id)) reasons.set(b.id, label);

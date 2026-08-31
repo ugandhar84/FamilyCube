@@ -874,7 +874,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // INCLUDE a busy-block event (rather than drop it) and EventCard can
   // render the stripped variant instead of full detail.
   const sensitiveVisibility = (e: FamilyEvent): SensitiveEventVisibility =>
-    !isEventSensitive(e) ? 'full' : canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined, activeMemberName);
+    !isEventSensitive(e, members) ? 'full' : canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined, activeMemberName);
 
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
@@ -1761,6 +1761,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
           members={members}
           colors={colors} isDark={isDark}
           activeName={activeMemberName}
+          activeMemberId={activeMemberId ?? undefined}
           updateEvent={updateEvent}
           onClose={() => setDetailEv(null)}
           onEditFull={() => { const ev = detailEv; console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Edit full details" on "${ev.title}" (id=${ev.id}) → open EditEventModal [features/calendar/CalendarScreen.tsx:1691]`); setDetailEv(null); setEditEv(ev); }}

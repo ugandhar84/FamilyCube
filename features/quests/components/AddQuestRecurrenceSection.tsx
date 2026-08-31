@@ -19,6 +19,7 @@ export function AddQuestRecurrenceSection({
   colors, isDark,
   isAdultTask, toggleAdultTask,
   inviteGrandparent, toggleGPInvite,
+  teensOnly, toggleTeensOnly,
   routineFreq, setRoutineFreq,
   isRoutine, setIsRoutine,
   routineType, setRoutineType,
@@ -34,6 +35,9 @@ export function AddQuestRecurrenceSection({
   colors: any; isDark: boolean;
   isAdultTask: boolean; toggleAdultTask: (val: boolean) => void;
   inviteGrandparent: boolean; toggleGPInvite: (val: boolean) => void;
+  // Live QA finding: no real "teens only" restriction existed anywhere in
+  // this form despite a same-named DB field — wired up for real now.
+  teensOnly: boolean; toggleTeensOnly: (val: boolean) => void;
   // Scenario 1.5 — a Teen creator doesn't get the "Parent Only" (delegate
   // to another adult) or "Invite Grandparent" (GP-sponsored quest)
   // toggles; both are parent-oriented concepts. isAdultTask/inviteGrandparent
@@ -93,6 +97,21 @@ export function AddQuestRecurrenceSection({
           </Text>
           <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
             {inviteGrandparent ? 'Can claim it' : 'Let GP claim it'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
+            backgroundColor: teensOnly ? colors.pinkLight : colors.surface,
+            borderWidth: 1.5, borderColor: teensOnly ? colors.pink : colors.border }}
+          onPress={() => toggleTeensOnly(!teensOnly)}
+          activeOpacity={0.8}
+        >
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: teensOnly ? colors.pink : colors.textPrimary }}>
+            🚗 Teens Only
+          </Text>
+          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
+            {teensOnly ? 'Hidden from kids' : 'Any kid can claim'}
           </Text>
         </TouchableOpacity>
       </View>}

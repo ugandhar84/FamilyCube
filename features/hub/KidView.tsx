@@ -117,7 +117,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // 5.4's "no scheduling dependency by default" for siblings). Own events
   // (this kid IS the subject) always pass through unaffected.
   const visibleEvents = events.filter(e =>
-    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name));
+    !isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name));
   // Was e.memberId-only — a kid tagged via memberIds as "going with" a
   // sibling's ride (KidRequestModal's sibling-tagging feature) was
   // completely absent from their own Hub: no ride banner, no pending/
@@ -135,7 +135,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const { events: kidUpcomingEvents } = useUpcomingOpenEvents((active as any).familyId);
   const myUpcomingEvents = kidUpcomingEvents.filter(e =>
     (e.memberId === active.id || e.memberIds?.includes(active.id) || !e.memberId) && e.category !== 'Work' &&
-    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name)));
+    (!isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name)));
 
   // Confirmed ride — QA sweep Critical Finding C3: these 5 filters were all
   // helper/helperStatus-only, so a kid's OWN ride request (which now always
@@ -239,7 +239,11 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const myQuests       = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id) || q.pendingHandoffTo === active.id) && !q.awaitingParentApproval);
   // inviteGrandparents-flagged chores stay GP-pool-only even while
   // isPool/todo (e.g. after a GP backs out) — excluded here too.
-  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents);
+  // Live QA finding: "teens only" had no working restriction anywhere —
+  // a young kid could see and claim a chore a parent meant to reserve for
+  // a teenager. isOpenToTeens now means exactly that: excludes it from a
+  // kid's own pool (still shows in TeenView's).
+  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents && !q.isOpenToTeens);
   const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');

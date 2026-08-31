@@ -45,8 +45,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   onScanFlyer: () => void;
   // Dispatches immediately, no modal — memberId is nextRide's kid when one
   // is linked, else undefined for a generic "family" broadcast. Matches the
-  // mock's plain in-card toggle exactly (no picker ever).
-  onDispatchDirect: (memberId: string | undefined, etaMinutes: number) => void;
+  // mock's plain in-card toggle exactly (no picker ever). eventId links the
+  // resulting trip to the specific calendar event being driven, when one is
+  // known — closes a real gap where reassigning a DIFFERENT event's driver
+  // could otherwise silently complete this trip too (see reassign_event's
+  // event-scoped trip completion, this session).
+  onDispatchDirect: (memberId: string | undefined, etaMinutes: number, eventId?: string) => void;
   onPickupDone: (tripId: string) => void;
   onCancelTrip: (tripId: string) => void;
   activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number } | null;
@@ -156,7 +160,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // hasn't resolved yet) — fall back to the day-scoped `events` rather
   // than showing an empty backlog for a moment; it settles to the real,
   // wider data within one render once useUpcomingOpenEvents' fetch lands.
-  const { unassigned, myPending, coParentPending } = classifyEventUrgency(
+  const { unassigned, myPending } = classifyEventUrgency(
     backlogWindowEvents.length > 0 ? backlogWindowEvents : events, { id: active.id, name: active.name }, today,
   );
   // ActionNeededSection still renders 2 distinct card types (RideRequestCard
@@ -511,12 +515,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // above (myPending) — see that file for the exact rule.
   const myHelperEvents = myPending;
 
-  // A co-parent's own outstanding ride assignment (self-claimed, opened to
-  // GP/teen, or directly reassigned to them) — read-only awareness only,
-  // deliberately no claim/assign action here, since offering one would
-  // reopen the exact claim-race class the RPC migration closed elsewhere.
-  // Sourced from classifyEventUrgency above (coParentPending).
-
   const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length;
 
   // The next confirmed ride THIS parent is driving today, soonest first —
@@ -635,7 +633,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
         myDirectPending={myDirectPending} myLockedItems={myLockedItems}
         myOutgoingPending={myOutgoingPending}
-        myHelperEvents={myHelperEvents} coParentPending={coParentPending} systemBIds={systemBIds} parentAssignments={parentAssignments}
+        myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
         cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}
@@ -675,7 +673,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         <EnRouteBanner
           colors={colors} isDark={isDark}
           members={members} activeMemberId={active.id}
-          onDispatchRide={(etaMinutes, memberId) => onDispatchDirect(memberId ?? nextRide?.memberId, etaMinutes)}
+          onDispatchRide={(etaMinutes, memberId) => onDispatchDirect(memberId ?? nextRide?.memberId, etaMinutes, nextRide?.id)}
           onPickupDone={() => activeTrip && onPickupDone(activeTrip.tripId)}
           onCancelTrip={() => activeTrip && onCancelTrip(activeTrip.tripId)}
           nextRide={nextRide ? {

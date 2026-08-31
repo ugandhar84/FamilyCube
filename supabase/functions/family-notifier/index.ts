@@ -150,6 +150,11 @@ type NotifType =
   | 'pool_unclaimed_urgent'
   | 'approval_cutoff_nudge'
   | 'approval_cutoff_escalated'
+  // Ride equivalents of the two above — chore_tasks had this urgency
+  // machinery, calendar_events/rides had none at all (master-flow-v2 QA
+  // audit, gap #4/#26/#27) until ride-deadline-notifier added it.
+  | 'ride_pool_unclaimed_urgent'
+  | 'ride_still_on'
   // Chore handoff (offer/accept/decline a chore to a specific person, master
   // flow's "hand it to someone" path) — previously fired zero notifications
   // at all; see store/choreStore.ts's offerChoreHandoff/acceptChoreHandoff/
@@ -619,14 +624,20 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `${p.helperName} accepted and will help with "${p.title}"`,
         data: { screen: 'Help', requestId: p.requestId },
       };
-    case 'help_declined':
+    case 'help_declined': {
+      // Live QA finding: a decline comment was captured client-side and
+      // saved to the DB, but never reached this notification — the
+      // requester was told only "can't help right now," with no reason
+      // even when one was given.
+      const suffix = p.comment ? ` — "${p.comment}"` : '';
       return {
         title: '👋 Help Offer Declined',
         body: p.backToPending
-          ? `${p.byName} can't help with "${p.title}" right now — it's back open for anyone else.`
-          : `${p.byName} can't help with "${p.title}" right now.`,
+          ? `${p.byName} can't help with "${p.title}" right now${suffix} — it's back open for anyone else.`
+          : `${p.byName} can't help with "${p.title}" right now${suffix}.`,
         data: { screen: 'Help', requestId: p.requestId },
       };
+    }
 
     // ── Rewards ───────────────────────────────────────────────────────────────
     case 'reward_redeemed':
@@ -740,12 +751,25 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Schedule', eventId: p.eventId },
       };
     case 'ride_assignment_declined':
-      return {
-        title: '🚫 Pickup/Drop-off Declined',
-        body: `${p.byName ?? 'They'} can't make the pickup/drop-off for "${p.eventTitle}" — it's back open for someone else.`,
-        sound: 'default',
-        data: { screen: 'Schedule', eventId: p.eventId },
-      };
+      // Live QA finding: this used to be identical, delivery-wise, to a
+      // routine confirmation — Expo's push priority is already maxed at
+      // 'high' for every notification this function sends, so there's no
+      // higher transport tier to reach for. The fix is in the copy itself:
+      // a decline within the hour of the ride now reads as genuinely
+      // urgent, not just informational.
+      return p.imminent
+        ? {
+            title: '🚨 Urgent — No Driver!',
+            body: `${p.byName ?? 'They'} just dropped "${p.eventTitle}" — it's happening soon and still needs someone!`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '🚫 Pickup/Drop-off Declined',
+            body: `${p.byName ?? 'They'} can't make the pickup/drop-off for "${p.eventTitle}" — it's back open for someone else.`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
     case 'ride_confirmed_for_kid':
       return {
         title: '🚗 Ride Confirmed',
@@ -779,6 +803,29 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
             sound: 'default',
             data: { screen: 'Quests', questId: p.questId },
           };
+    case 'ride_pool_unclaimed_urgent':
+      // Same forParent split as pool_unclaimed_urgent, for a ride instead
+      // of a chore.
+      return p.forParent
+        ? {
+            title: '⚠️ Ride Still Unclaimed',
+            body: `Nobody's picked up "${p.eventTitle}" yet — due in ${p.minutesUntilDue}min. Cover it yourself, or move the time?`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '🚗 Ride Needed Soon',
+            body: `"${p.eventTitle}" still needs a driver — due in ${p.minutesUntilDue}min!`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
+    case 'ride_still_on':
+      return {
+        title: '👋 Still on?',
+        body: `"${p.eventTitle}" is due in ${p.minutesUntilDue}min — tap to confirm you're on your way.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
     case 'approval_cutoff_nudge':
       return {
         title: '📋 Waiting on Your Yes or No',

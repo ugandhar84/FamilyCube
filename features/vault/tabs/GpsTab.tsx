@@ -30,6 +30,13 @@ interface MemberLocation {
   street?: string | null;
   neighborhood: string;
   share_exact_address?: boolean;
+  // Logged QA gap, fixed: turning "Share my location" off only stopped
+  // future writes — it never cleared lat/lng, so a stale pin kept showing
+  // on the map indefinitely, contradicting the toggle's own "your family
+  // can't see your location" copy. Gating the pin/roster "live" state on
+  // this flag (in addition to lat/lng being non-null) below closes that
+  // without destroying the last-known-location data itself.
+  share_location_enabled?: boolean;
   lat: number | null;
   lng: number | null;
   battery_level: number;
@@ -448,8 +455,11 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     }
   };
 
-  const pinned = useMemo(() => locations.filter(l => l.lat != null && l.lng != null), [locations]);
-  const unpinned = useMemo(() => locations.filter(l => l.lat == null || l.lng == null), [locations]);
+  // share_location_enabled defaults true for a legacy row with no such
+  // column value yet (undefined) — only an EXPLICIT false (opted out)
+  // should pull the pin, not the absence of the flag.
+  const pinned = useMemo(() => locations.filter(l => l.lat != null && l.lng != null && l.share_location_enabled !== false), [locations]);
+  const unpinned = useMemo(() => locations.filter(l => l.lat == null || l.lng == null || l.share_location_enabled === false), [locations]);
 
   const initialRegion = useMemo(() => {
     if (pinned.length === 0) {
@@ -771,7 +781,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           const m   = members.find(mb => mb.id === loc.member_id);
           const isMe = loc.member_id === activeMemberId;
           const isRefreshing = refreshingId === loc.member_id;
-          const isLive = loc.lat != null && loc.lng != null;
+          const isLive = loc.lat != null && loc.lng != null && loc.share_location_enabled !== false;
+          const sharingOff = loc.share_location_enabled === false;
 
           return (
             <TouchableOpacity key={loc.member_id} activeOpacity={0.6}
@@ -820,7 +831,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                     </View>
                   )}
                   <Text style={{ fontSize: 11, color: colors.textTertiary }}>
-                    {isLive ? fmtRelative(loc.last_updated) : 'No live GPS'}
+                    {isLive ? fmtRelative(loc.last_updated) : sharingOff ? 'Location sharing off' : 'No live GPS'}
                   </Text>
                 </View>
               </View>

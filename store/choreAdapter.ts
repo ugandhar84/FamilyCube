@@ -206,6 +206,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     // Shopping runs MUST be adult-only (kids never see grocery shopping tasks per spec)
     isAdultTask:      c.isPrivateParent || c.categoryType === 'parent_only_quest' || c.categoryType === 'shopping',
     inviteGrandparents: c.inviteGrandparents ?? false,
+    isOpenToTeens:    c.isOpenToTeens ?? false,
     gpWithdrawnIds:   c.gpWithdrawnIds,
     pendingHandoffTo:        c.pendingHandoffTo,
     pendingHandoffReason:    c.pendingHandoffReason,
@@ -290,6 +291,7 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     isPrivateParent:    q.isAdultTask ?? false,
     isPool:             q.isPool ?? false,
     inviteGrandparents: q.inviteGrandparents ?? false,
+    isOpenToTeens:      q.isOpenToTeens ?? false,
     shoppingItems:      q.shoppingItems,
     shoppingStore:      q.shoppingStore,
     shoppingBudget:     q.shoppingBudget,
@@ -414,6 +416,7 @@ export function useQuestStore() {
           s === 'done'             ? 'approved' : 'todo';
       }
       if ((updates as any).inviteGrandparents !== undefined) choreUpdates.inviteGrandparents = (updates as any).inviteGrandparents;
+      if ((updates as any).isOpenToTeens !== undefined) choreUpdates.isOpenToTeens = (updates as any).isOpenToTeens;
       if ((updates as any).gpWithdrawnIds     !== undefined) choreUpdates.gpWithdrawnIds     = (updates as any).gpWithdrawnIds;
       store.updateChore(id, choreUpdates);
     },
@@ -594,6 +597,7 @@ useQuestStore.getState = () => {
       }
       if ((updates as any).inviteGrandparents !== undefined) choreUpdates.inviteGrandparents = (updates as any).inviteGrandparents;
       if ((updates as any).gpWithdrawnIds     !== undefined) choreUpdates.gpWithdrawnIds     = (updates as any).gpWithdrawnIds;
+      if ((updates as any).isOpenToTeens !== undefined) choreUpdates.isOpenToTeens = (updates as any).isOpenToTeens;
       store.updateChore(id, choreUpdates);
     },
     addQuest:      (q: any) => store.addChore(questInputToChoreInput(q) as any),

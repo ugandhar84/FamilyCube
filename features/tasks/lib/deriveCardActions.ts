@@ -79,6 +79,7 @@ export interface QuestActions {
   canSubmit: boolean;
   canResubmit: boolean;
   canKidDecline: boolean;
+  canGiveBack: boolean;
   canAcceptGp: boolean;
   canGpClaimPool: boolean;
   canGpDone: boolean;
@@ -128,6 +129,16 @@ export function deriveQuestActions(
   const canSubmit = isKidOrTeen && todo && !!myId && isAssignedTo(q, myId);
   const canResubmit = isKidOrTeen && declined && !!myId && isAssignedTo(q, myId);
   const canKidDecline = isKidOrTeen && todo && !q.isPool && !!myId && isAssignedTo(q, myId);
+  // Live QA finding: only grandparents had a quick "give it back before
+  // starting" undo (backoutGpWelcomeChore) — a kid/teen who claimed an
+  // ordinary pool chore had no equivalent, only the heavier Can't-Make-It
+  // flow (asks for a reason, offers a named handoff). claimedAt is only
+  // ever set by a real self-claim from the pool (claimPoolQuest) — never
+  // by a parent's direct assignment — so it's a reliable signal for "this
+  // is genuinely a change-of-mind on my own claim," distinct from
+  // canKidDecline's broader "I can't do this assigned chore" case.
+  const canGiveBack = isKidOrTeen && (q.status === 'todo' || q.status === 'in_progress') &&
+    !!myId && isAssignedTo(q, myId) && !!q.claimedAt;
   const canAcceptGp = isKidOrTeen && !!myId && isAssignedTo(q, myId) &&
     choreExtra?.categoryType === 'grandparent_quest' && choreExtra?.status === 'todo';
   const canGpClaimPool = isSenior && q.status === 'todo' && !!q.inviteGrandparents && !q.assignedToId;
@@ -146,7 +157,7 @@ export function deriveQuestActions(
   const canDelete = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !done;
 
   return {
-    canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canKidDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   };
 }

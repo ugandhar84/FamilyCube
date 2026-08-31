@@ -25,6 +25,24 @@ export function fmtHumanDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+// Compact inline variant for card subtitles (e.g. "Praveena · Today ·
+// 9:00 PM") — fmtHumanDate's full "August 30, 2026" is too long for a
+// one-line card, and doesn't call out Today/Tomorrow, the two dates a
+// glance actually needs. Live-reported gap: an Action Needed ride card
+// showed only the time, with no way to tell a ride happening in the next
+// hour apart from one 10 days out.
+export function fmtHumanDateShort(dateStr: string): string {
+  const today = localToday();
+  if (dateStr === today) return 'Today';
+  const t = new Date(today + 'T00:00:00');
+  t.setDate(t.getDate() + 1);
+  const tomorrow = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  if (dateStr === tomorrow) return 'Tomorrow';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function hoursUntilEvent(dateStr: string, timeStr?: string): number {
   if (!timeStr) return 999;
   const [year, month, day] = dateStr.split('-').map(Number);

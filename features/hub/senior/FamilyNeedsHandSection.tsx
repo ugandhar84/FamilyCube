@@ -87,7 +87,17 @@ export function FamilyNeedsHandSection({
                 <Car size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
               </Pressable>
-              <Pressable onPress={() => { updateEvent(ev.id, { approvalPending: false }); }}
+              <Pressable onPress={() => {
+                // Live QA finding: this used to write approvalPending:false
+                // — a shared, event-wide field with nothing to do with
+                // "hide this from MY OWN feed" — so tapping Pass here
+                // didn't actually behave like the ride card's own Pass
+                // right above it (which correctly appends to
+                // grandparentPassedIds, a per-viewer, persisted list).
+                // Now uses the same mechanism, so Pass means the same
+                // thing everywhere in this section.
+                updateEvent(ev.id, { grandparentPassedIds: [...new Set([...(ev.grandparentPassedIds ?? []), active.id])] });
+              }}
                 style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
               </Pressable>
@@ -245,9 +255,28 @@ export function FamilyNeedsHandSection({
                     {
                       text: "Yes, I'll Drive",
                       onPress: () => {
-                        updateEvent(ev.id, {
-                          helper: active.name,
-                          helperStatus: 'confirmed',
+                        // Live QA finding: this was a plain updateEvent()
+                        // with no server-side race guard — unlike every
+                        // other claim/reassign path in the app. Two
+                        // grandparents both tapping "Step In" on the same
+                        // stalled ride within the same moment could both
+                        // believe, on their own screens, that they'd taken
+                        // it, with whichever write landed last silently
+                        // winning and the other seeing no error at all.
+                        // reassign_event is the same RPC every other
+                        // reassign action uses — row-locked, and since
+                        // active.id === active.id (self-assign) it
+                        // auto-confirms, matching the prior behavior.
+                        supabase.rpc('reassign_event', {
+                          p_event_id: ev.id, p_new_member_id: active.id, p_role: 'helper', p_actor_id: active.id,
+                        }).then(({ error }) => {
+                          if (error) {
+                            console.warn('[FamilyNeedsHandSection] Step In reassign_event failed', error.message);
+                            showToast("Couldn't step in — please try again", 'error');
+                            return;
+                          }
+                          updateEvent(ev.id, { helper: active.name, helperId: active.id, helperStatus: 'confirmed' });
+                          showToast("You're driving ✓");
                         });
                       },
                     },

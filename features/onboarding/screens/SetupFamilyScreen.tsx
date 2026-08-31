@@ -294,33 +294,26 @@ export default function SetupFamilyScreen() {
 
       const expoPushToken = await registerForPushNotifications().catch(() => null);
 
-      // 1. Create family
-      const { data: family, error: famErr } = await supabase
-        .from('families')
-        .insert({ name: familyName.trim(), created_by: user.id })
-        .select()
-        .single();
-      if (famErr || !family) throw new Error(famErr?.message ?? 'Failed to create family');
-
-      // 2. Create parent member — auth_user_id ties this row to the device's
-      // real Supabase Auth session, which is what every RLS policy actually
-      // checks (see migration 20260818192700). Without this, every write
-      // this parent makes afterward silently fails RLS.
+      // 1+2. Create family and the first parent member atomically — logged
+      // QA gap, fixed: these were previously two separate inserts with no
+      // transaction wrapping them, so a crash/network failure between them
+      // left a permanently orphaned families row with zero members. Both
+      // now happen inside one database transaction via a single RPC —
+      // either both succeed or neither does.
       const memberId = crypto.randomUUID();
-      const { error: memErr } = await supabase.from('members').insert({
-        id:              memberId,
-        name:            name.trim(),
-        role:            'parent',
-        avatar,
-        color,
-        family_id:       family.id,
-        auth_user_id:    user.id,
-        coins:           0, xp: 0, level: 1, max_xp: 100, streak: 0,
-        pin,
-        expo_push_token: expoPushToken ?? null,
-        last_active:     new Date().toISOString(),
+      const { data: created, error: createErr } = await supabase.rpc('create_family_with_first_parent', {
+        p_family_name: familyName.trim(),
+        p_member_id: memberId,
+        p_member_name: name.trim(),
+        p_avatar: avatar,
+        p_color: color,
+        p_pin: pin,
+        p_expo_push_token: expoPushToken ?? null,
       });
-      if (memErr) throw new Error(memErr.message);
+      if (createErr) throw new Error(createErr.message);
+      const createdRow = Array.isArray(created) ? created[0] : created;
+      const family = { id: createdRow?.family_id as string };
+      if (!family.id) throw new Error('Failed to create family');
 
       // 2b. Upload the photo (if picked) now that the member row exists —
       // family-media's storage RLS resolves the uploader's family via

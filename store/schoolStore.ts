@@ -253,9 +253,17 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     set({ schedules: next }); save(next, get().homeworks);
   },
 
+  // Logged QA gap, fixed: this previously only ever dropped the member's
+  // schedule, never their homework rows (memberId-keyed, same table) —
+  // familyStore.removeMember() didn't call this at all until this fix, so
+  // both were left dangling in AsyncStorage forever, the same
+  // orphaned-on-member-removal class of bug already fixed elsewhere this
+  // session for chores/events/locations, just local-storage-scoped here.
   removeSchedule: (memberId) => {
-    const next = get().schedules.filter(s => s.memberId !== memberId);
-    set({ schedules: next }); save(next, get().homeworks);
+    const nextSchedules = get().schedules.filter(s => s.memberId !== memberId);
+    const nextHomeworks = get().homeworks.filter(h => h.memberId !== memberId);
+    set({ schedules: nextSchedules, homeworks: nextHomeworks });
+    save(nextSchedules, nextHomeworks);
   },
 
   // ─── Period CRUD ────────────────────────────────────────────────────────────

@@ -190,6 +190,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
 
   // Grandparent invitation (Workflow 2 — parent proposes, GP sees claimable invite)
   const [inviteGrandparent, setInviteGrandparent] = useState(false);
+  // Live QA finding: "teens only" had NO working toggle anywhere in this
+  // form — the is_open_to_teens column/field existed but was actually
+  // read/written exclusively by the ride-scheduling system, never by
+  // chores. A parent believing this restriction existed had zero real
+  // enforcement: any kid could see and claim a chore meant to be
+  // teen-restricted. This wires up a real one, reusing the same field
+  // name correctly for chores now.
+  const [teensOnly, setTeensOnly] = useState(false);
 
   // Grocery run attachment (Errand / Shopping categories)
   const [linkGroceries,    setLinkGroceries]    = useState(false);
@@ -602,6 +610,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       shoppingStore:  shoppingStore.trim() || undefined,
       shoppingBudget: shoppingBudget.trim() ? parseFloat(shoppingBudget) : undefined,
       inviteGrandparents: inviteGrandparent || undefined,
+      isOpenToTeens: teensOnly || undefined,
       linkedEventId: linkedEventId,
     } as any);
     if (newQ?.id) {
@@ -1156,6 +1165,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               colors={colors} isDark={isDark}
               isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
               inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
+              teensOnly={teensOnly} toggleTeensOnly={setTeensOnly}
               hideAdultToggles={creatorIsTeen}
               routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
               recurrenceDays={recurrenceDays} setRecurrenceDays={setRecurrenceDays}

@@ -3,7 +3,7 @@ import { View, Text, Pressable, TextInput } from 'react-native';
 import { Hand, Car, Repeat, MapPinCheck, Flag, HandHelping, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
-import { fmtTime } from '../hubUtils';
+import { fmtTime, fmtHumanDateShort } from '../hubUtils';
 import { applyAssignment } from '@/lib/responsibilityCategories';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
@@ -125,7 +125,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
               {isBothWays ? 'Both ways · ' : isDropoff ? 'Drop-off · ' : isPickup ? 'Pickup · ' : 'Ride · '}{ev.title}
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.warning, opacity: 0.8 }}>
-              {requester} · {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
+              {requester} · {fmtHumanDateShort(ev.date)} · {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
               {isBothWays && returnTimeStr ? ` · pickup ${returnTimeStr}` : ''}
             </Text>
           </View>

@@ -159,6 +159,7 @@ export interface Quest {
 
   isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
   inviteGrandparents?: boolean; // true = grandparents can also see/claim this adult task
+  isOpenToTeens?: boolean;    // true = restricted to teens (and up); hidden from a kid's own pool
   gpWithdrawnIds?:   string[]; // memberIds of grandparents who Passed on this GP invitation
   // Master-flow named handoff — set while awaiting the receiver's Accept/
   // Pass-again response (offerChoreHandoff/acceptChoreHandoff/

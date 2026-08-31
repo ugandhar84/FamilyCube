@@ -445,11 +445,24 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   setActiveMember: (id) => {
+    const previousActiveId = get().activeMemberId;
     set({ activeMemberId: id });
     AsyncStorage.setItem(ACTIVE_KEY, id);
-    // Save push token to the newly active member row
-    import('@/lib/notifications').then(({ saveTokenToMember }) => {
+    // Save push token to the newly active member row. saveTokenToMember
+    // itself already deletes any OTHER member's member_device_tokens row
+    // for this exact device — real dedup, zero tolerance for two members
+    // both claiming the same physical device at once. The one remaining
+    // gap: the OUTGOING member's members.expo_push_token fallback column
+    // (only ever consulted for a member with zero member_device_tokens
+    // rows — e.g. their very first switch on a fresh install, before this
+    // function has run for them even once) could still hold this device's
+    // token until THEY happen to switch again. Clearing it explicitly here
+    // closes that window immediately rather than leaving it to chance.
+    import('@/lib/notifications').then(({ saveTokenToMember, clearTokenFromMember }) => {
       saveTokenToMember(id).catch(() => {});
+      if (previousActiveId && previousActiveId !== id) {
+        clearTokenFromMember(previousActiveId).catch(() => {});
+      }
     });
     // ── Restore-on-return: a soft-deleted (Roster "delete profile" or
     // Profile "delete account") member whose PIN gets used again within 7
@@ -957,6 +970,32 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       ]);
       if (error || !data) return;
       const members = dedupeMembers(data.map(fromRow));
+      // Logged QA gap, fixed: a member's school schedule/homework (local-
+      // only AsyncStorage data — schoolStore has no server table at all)
+      // was never cleaned up on removal, the same dangling-reference class
+      // of bug already fixed elsewhere this session for chores/events/
+      // locations. removeMember()'s own soft-delete can't purge this yet —
+      // the 7-day restore window means their row (and by extension their
+      // school data) needs to survive until the member-purge-sweep cron
+      // actually removes them server-side. This is the correct hook point:
+      // any previously-known member id that's now genuinely gone from the
+      // server's response (not soft-deleted, actually purged) gets their
+      // local school data cleared here, on the next sync after that happens.
+      // Guarded on members.length > 0 — an empty/short result from a
+      // transient sync race (the exact "no cache AND the fetch came back
+      // empty" scenario documented above) must never be trusted enough to
+      // wipe local data; only a genuine, populated member list is used to
+      // detect who's actually gone.
+      if (members.length > 0) {
+        const prevIds = new Set(get().members.map(m => m.id));
+        const stillPresentIds = new Set(members.map(m => m.id));
+        const trulyGoneIds = [...prevIds].filter(id => !stillPresentIds.has(id));
+        if (trulyGoneIds.length) {
+          import('@/store/schoolStore').then(({ useSchoolStore }) => {
+            for (const id of trulyGoneIds) useSchoolStore.getState().removeSchedule(id);
+          }).catch(() => {});
+        }
+      }
       set({
         members,
         activeMemberId: applyActive(members, activeId, get().activeMemberId),

@@ -51,6 +51,7 @@ serve(async (req) => {
       bonusCoins,  // number — for bonus_activated
       bonusExpiresAt, // ISO string
       declineReason, // string — for declined
+      reason, // string — for quest_reopened (why a redo was requested)
       coinPenalty, // number — for penalty
       inviteGrandparents, // boolean — for quest_posted, whether seniors are eligible too
       note, // string — for chore_cheered
@@ -198,12 +199,16 @@ serve(async (req) => {
         break;
 
       case 'quest_reopened':
-        // Parent gave kid another chance
+        // Parent gave kid another chance. Live QA finding: the reason a
+        // parent typed for the redo was captured client-side but never
+        // reached this notification — a kid got "try again" with zero
+        // indication of what was actually wrong. Now included when present.
         if (assigneeId) {
           await fire('quest_reopened', [assigneeId], {
             ...base,
             title: '🔄 Another Chance!',
-            body: `"${questTitle}" was reopened — give it another try and earn ${coins}🪙!`,
+            body: `"${questTitle}" was reopened — give it another try and earn ${coins}🪙!${reason ? ` (${reason})` : ''}`,
+            reason,
           });
         }
         break;

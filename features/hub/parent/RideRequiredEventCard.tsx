@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2, HandHelping, Repeat, MapPinCheck, Flag, UserCog } from 'lucide-react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2, HandHelping, Repeat, MapPinCheck, Flag, UserCog, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { CollapsibleCard, notifyTakeover } from '../hubComponents';
-import { fmtTime } from '../hubUtils';
+import { fmtTime, fmtHumanDateShort } from '../hubUtils';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
+import { useChatStore } from '@/store/chatStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -91,8 +92,38 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // reasoning RideRequestCard's own openToHelpers already documents.
   const openToHelpers = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Open to Helpers" on "${ev.title}" (id=${ev.id}) → updateEvent(openToGrandparents/openToTeens) [features/hub/parent/RideRequiredEventCard.tsx:61]`);
-    updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverId: undefined, driverStatus: undefined });
+    // approvalPending: false was missing here (unlike RideRequestCard's own
+    // openToHelpers) — a kid-initiated ride request (always approvalPending:
+    // true per KidRequestModal) stayed flagged as "awaiting parent approval"
+    // forever after being opened to helpers, inflating TodayView's
+    // needsAttention badge count indefinitely even though the ride was
+    // already correctly open and claimable.
+    updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverId: undefined, driverStatus: undefined, approvalPending: false });
     showToast('Opened to helpers ✓');
+  };
+
+  // Live QA finding: there was NO way for a parent to turn down a kid's
+  // ride request at all except deleting the event outright via the
+  // Calendar tab — a plain "Delete Event?" confirmation with no reason
+  // field, no notification, and no explanation reaching the kid; the
+  // request just silently vanished from their Schedule. Only meaningful
+  // for a genuinely kid-initiated request — approvalPending is only ever
+  // true for those (KidRequestModal always sets it; a parent creating
+  // their own ride never does), so this button only shows for that case.
+  const declineRequest = (reason?: string) => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Decline" on "${ev.title}" (id=${ev.id}) → updateEvent(declined) [features/hub/parent/RideRequiredEventCard.tsx]`);
+    updateEvent(ev.id, { approvalPending: false, driverStatus: 'rejected', driverName: undefined, driverId: undefined, notes: reason ? `Declined: ${reason}` : ev.notes });
+    try {
+      if (ev.memberId && ev.memberId !== active.id) {
+        const msg = reason
+          ? `🚫 "${ev.title}" wasn't approved — ${reason}`
+          : `🚫 "${ev.title}" wasn't approved this time.`;
+        useChatStore.getState().sendMessage(ev.memberId, active.id, msg);
+      }
+    } catch (e) {
+      console.warn('[RideRequiredEventCard] decline notification failed', e);
+    }
+    showToast('Declined');
   };
 
   // Parent-to-parent handoff — a third option alongside "I'll Drive"
@@ -154,7 +185,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
                   only shown for isBothWays, so a pickup-only card's summary
                   line showed the activity's start time and never the
                   actual pickup time a parent needs to plan around. */}
-              {isPickup && returnTimeStr ? `Pickup · ${returnTimeStr}` : ev.time ? fmtTime(ev.time) : 'time TBD'}
+              {fmtHumanDateShort(ev.date)} · {isPickup && returnTimeStr ? `Pickup · ${returnTimeStr}` : ev.time ? fmtTime(ev.time) : 'time TBD'}
               {ev.location ? ` · ${ev.location}` : ''}
               {isBothWays && returnTimeStr ? ` · pickup ${returnTimeStr}` : ''}
             </Text>
@@ -238,6 +269,22 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warning }} numberOfLines={1}>Helpers</Text>
             </Pressable>
           </View>
+          {ev.approvalPending && (
+            <Pressable
+              onPress={() => Alert.prompt(
+                'Decline Request',
+                `Let ${(members.find(m => m.id === ev.memberId)?.name ?? 'them').split(' ')[0]} know why (optional).`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Decline', style: 'destructive', onPress: (reason?: string) => declineRequest(reason?.trim() || undefined) },
+                ],
+                'plain-text',
+              )}
+              style={{ alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 4, paddingVertical: 7 }}>
+              <X size={11} color={colors.danger} />
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.danger }}>Decline this request</Text>
+            </Pressable>
+          )}
           {reassignOpen && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {otherParents.map(m => (

@@ -438,6 +438,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // myPendingAssignments already do further down this file.
   const openRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
+    // Matches openRequests'/volunteerPool's own approvalPending guard
+    // (Spec 2.4) — was missing here, the one selector of the three that
+    // feeds a real claim action. Currently masked in practice by
+    // RideRequiredEventCard.openToHelpers now correctly clearing
+    // approvalPending on open, but a kid-initiated ride sitting
+    // unopened-but-somehow-isOpenToGrandparents (e.g. a future code path)
+    // would otherwise be claimable before a parent ever approved it.
+    !e.approvalPending &&
     !eventAssignee(e).name &&
     !(e.grandparentPassedIds ?? []).includes(active.id) &&
     !cheerleaderMode &&
@@ -660,12 +668,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // unless a parent explicitly shared it for this GP's care occasion.
   const openRequests = events.filter(e =>
     e.date === today && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e) &&
+    // Was missing this exclusion entirely — this senior's own Pass on this
+    // exact list (FamilyNeedsHandSection.tsx) now correctly saves to
+    // grandparentPassedIds, but without checking it here, passing did
+    // nothing visible: the card would just reappear on the next refresh.
+    !(e.grandparentPassedIds ?? []).includes(active.id) &&
     // A claimable "needs a hand" opportunity is meaningless as a busy-block
     // stub (can't volunteer for a mystery slot) — this one stays a hard
     // exclude unless truly shared, unlike the Day/Week/Agenda calendar
     // views (CalendarScreen.tsx), which now correctly show a busy-block
     // placeholder for an already-scheduled event instead of hiding it.
-    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
+    (!isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
   );
   // Confirmed ride where THIS grandparent is being picked up (the ride's
   // subject/rider — e.g. a parent or another family member driving them
@@ -718,7 +731,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (e.helperId ? e.helperId === active.id : e.helper === active.name) return false; // already assigned to me
     if (e.approvalPending) return false;             // kid-initiated, parent hasn't approved
     // Scenarios 2.6/5.5 — same sensitive-event gate as openRequests above.
-    if (isEventSensitive(e) && canViewSensitiveEventDetail(e, 'senior', active.id, active.name) !== 'full') return false;
+    if (isEventSensitive(e, members) && canViewSensitiveEventDetail(e, 'senior', active.id, active.name) !== 'full') return false;
     const hrs = hoursUntilEvent(e.date, e.time);
     if (hrs < 0 || hrs > 4) return false;            // only 0–4 hr window
     // Don't offer if I'd create a driver conflict with my confirmed drives

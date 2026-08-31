@@ -158,7 +158,17 @@ export default function ChatScreen() {
     memberMap, activeMember, isParent, isSenior, kids, coParents,
     rawGroupChannels, groupChannels, allChannels, FULL_LABELS,
   } = useMemo(() => {
-    const memberMap    = Object.fromEntries(members.map(m => [m.id, m]));
+    // Logged QA gap, fixed: familyStore's own members query has no
+    // deleted_at filter, so a soft-deleted member (kept for the 7-day
+    // restore window before the nightly purge) stayed fully resolvable
+    // here — their real name/avatar kept showing on old messages instead
+    // of the intended "Removed member" fallback below, which never
+    // actually triggered as a result. Excluding a soft-deleted member from
+    // this specific lookup (not from the shared members array itself,
+    // which other screens rely on for the restore flow) makes the
+    // fallback trigger correctly the instant a member is removed, rather
+    // than only after the 7-day purge actually deletes their row.
+    const memberMap    = Object.fromEntries(members.filter(m => !m.deletedAt).map(m => [m.id, m]));
     const activeMember = members.find(m => m.id === activeMemberId);
     const isParent     = activeMember?.role === 'parent';
     const isSenior     = activeMember?.role === 'senior';

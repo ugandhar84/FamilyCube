@@ -31,6 +31,14 @@ export interface Trip {
   startedAt: string;       // ISO
   completedAt?: string;    // ISO
   overdueAlertSent: boolean;
+  // Real gap fixed: reassign_event's "close out the prior driver's trip"
+  // side effect used to match on driver_member_id alone, so reassigning
+  // one event's driver could silently complete that same driver's
+  // genuinely unrelated in-progress trip for a DIFFERENT event. Optional
+  // — the manual "dispatch now" flow (no specific linked event) leaves
+  // this unset, same as before; the "Up Next" ride-linked dispatch sets
+  // it to the real calendar event id.
+  eventId?: string;
 }
 
 interface TripRow {
@@ -42,6 +50,7 @@ interface TripRow {
   started_at: string;
   completed_at: string | null;
   overdue_alert_sent: boolean;
+  event_id: string | null;
 }
 
 function fromRow(row: TripRow): Trip {
@@ -54,6 +63,7 @@ function fromRow(row: TripRow): Trip {
     startedAt: row.started_at,
     completedAt: row.completed_at ?? undefined,
     overdueAlertSent: row.overdue_alert_sent,
+    eventId: row.event_id ?? undefined,
   };
 }
 
@@ -75,7 +85,7 @@ interface TripState {
   loadFromStorage: (familyId: string) => Promise<void>;
   dispatch: (params: {
     familyId: string; driverMemberId: string;
-    pickupMemberId?: string; etaMinutes: number;
+    pickupMemberId?: string; etaMinutes: number; eventId?: string;
   }) => Promise<void>;
   updateEta: (tripId: string, etaMinutes: number) => Promise<void>;
   markOverdueAlertSent: (tripId: string) => Promise<void>;
@@ -210,7 +220,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     persist(trips);
   },
 
-  dispatch: async ({ familyId, driverMemberId, pickupMemberId, etaMinutes }) => {
+  dispatch: async ({ familyId, driverMemberId, pickupMemberId, etaMinutes, eventId }) => {
     // Same-driver guard only: one person can't sanely be "en route" to two
     // places simultaneously. A DIFFERENT driver dispatching their own trip
     // while this one is active is a normal two-parent scenario and must NOT
@@ -222,7 +232,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     const startedAt = new Date().toISOString();
     const optimistic: Trip = {
       id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
-      overdueAlertSent: false,
+      overdueAlertSent: false, eventId,
     };
     const nextTrips = [...get().activeTrips, optimistic];
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
@@ -231,7 +241,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     await supabase.from('trips').insert({
       id, family_id: familyId, driver_member_id: driverMemberId,
       pickup_member_id: pickupMemberId ?? null, eta_minutes: etaMinutes,
-      started_at: startedAt,
+      started_at: startedAt, event_id: eventId ?? null,
     });
 
     notifyTrip('trip_started', familyId, driverMemberId, {

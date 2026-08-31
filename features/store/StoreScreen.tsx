@@ -140,8 +140,16 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, onOpenDetail, isGoal, onToggleGoal }: {
-  reward: Reward; index?: number; myCoins: number; isKid: boolean; isParent: boolean;
+function PerkCard({ reward, index = 0, myCoins, myMaxAffordable, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, onOpenDetail, isGoal, onToggleGoal }: {
+  reward: Reward; index?: number; myCoins: number;
+  // Logged QA gap, fixed: a single redemption only ever spends from ONE
+  // jar, never a pooled sum across mainCoins+gpCoins — this is the larger
+  // of the two jars alone, the signal that actually matches real
+  // redemption behavior. myCoins (the true pooled total) is still used
+  // for the "need N more" copy below, which is honest about the real gap
+  // even though it can't be closed by combining both jars in one purchase.
+  myMaxAffordable: number;
+  isKid: boolean; isParent: boolean;
   // Was isKid-only, so teen and senior roles — both of whom earn coins
   // elsewhere in the app with nowhere else to spend them — got a
   // permanently-disabled card with no redeem action at all (QA sweep,
@@ -157,7 +165,7 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
   onOpenDetail: (r: Reward) => void;
   isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
-  const canRedeem = canRedeemSelf && myCoins >= reward.cost;
+  const canRedeem = canRedeemSelf && myMaxAffordable >= reward.cost;
   // Each category gets its own brand tint instead of every card defaulting
   // to amber — see categoryAccent() — so the grid reads as distinct
   // categories at a glance instead of one repeated tan tile.
@@ -196,7 +204,7 @@ function PerkCard({ reward, index = 0, myCoins, isKid, isParent, canRedeemSelf, 
           <Pressable onPress={() => onRedeem(reward)} disabled={!canRedeem}
             style={[s.redeemBtn, { backgroundColor: canRedeem ? colors.teal : colors.border, marginTop: 8 }]}>
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: canRedeem ? colors.textInverse : colors.textTertiary }}>
-              {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myCoins} more 🪙`}
+              {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myMaxAffordable} more 🪙`}
             </Text>
           </Pressable>
           {isKid && onToggleGoal && (
@@ -437,7 +445,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
 
 export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, loaded, loadFromStorage, deductCoins, awardCoins } = useFamilyStore();
+  const { members, activeMemberId, loaded, loadFromStorage, awardCoins } = useFamilyStore();
   const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
   const currencySymbol = useChoreStore(s => s.householdSettings.currencySymbol);
@@ -476,6 +484,19 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const myMainCoins = (activeMember as any)?.mainCoins ?? 0;
   const myGpCoins   = (activeMember as any)?.gpCoins ?? 0;
   const myCoins  = myMainCoins + myGpCoins;
+  // Logged QA gap, fixed: every "can you afford this" signal in the Store
+  // (this header balance display excepted — that one honestly shows the
+  // true combined total) used to compare against the POOLED sum of both
+  // jars — but a single redemption only ever spends from ONE jar
+  // (redeem_reward and JarPickerModal both require one jar alone to cover
+  // the full cost, never a split purchase across both). A kid with, say,
+  // 60 mainCoins and 60 gpCoins could be shown as "you can afford this
+  // 100-coin reward" everywhere (header, perk-card styling, the Hub's own
+  // goal-progress bar), then open the redeem flow and find both jar
+  // choices in JarPickerModal disabled, since neither jar alone covers
+  // 100. myMaxAffordable — the larger of the two jars alone — is the
+  // signal that actually matches real redemption behavior.
+  const myMaxAffordable = Math.max(myMainCoins, myGpCoins);
   const kids     = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
   // A kid's own chosen goal (goalRewardId, set via "Set as My Goal" on their
@@ -495,14 +516,24 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
     return affordable.find(r => r.cost >= kidCoins) ?? affordable[affordable.length - 1];
   };
 
-  // Redeems from a specific wallet — real deduction (deductCoins) + a real
-  // Redemption record (redeemReward), replacing the old stub that only
-  // showed an alert and never touched any balance or persisted anything.
+  // Live QA finding: this used to call redeemReward's RPC (grant the
+  // reward, decrement stock) and THEN deductCoins as a second, entirely
+  // separate real database write — a failure between the two (app killed,
+  // connection dropped, a stale-balance race on deductCoins' own .gte()
+  // guard) could leave a reward granted with the coins never actually
+  // taken, with nothing anywhere to catch or reverse it. redeem_reward
+  // (20260930390000) now checks the balance and deducts it atomically in
+  // the SAME transaction that grants the reward — one commit, no window.
+  // Only a LOCAL optimistic balance update is needed here now; calling
+  // deductCoins for real would double-charge on top of what the RPC
+  // already took.
   const redeemFrom = async (r: Reward, wallet: 'mainCoins' | 'gpCoins') => {
     if (!activeMember) return;
     const ok = await redeemReward(r.id, activeMember.id, wallet);
     if (!ok) { Alert.alert('Unable to Redeem', 'This perk is no longer available.'); return; }
-    deductCoins(activeMember.id, r.cost, wallet);
+    useFamilyStore.setState(s => ({
+      members: s.members.map(m => m.id === activeMember.id ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) - r.cost) } : m),
+    }));
     Alert.alert('🎉 Redeemed!', `"${r.title}" redeemed for ${r.cost} 🪙 from your ${wallet === 'gpCoins' ? 'Grandparent Bonus jar' : 'Main Coins'}! Ask a parent for your reward.`);
   };
 
@@ -686,6 +717,64 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           );
         })()}
 
+        {/* ── Redemption History ── logged QA gap: parents had no way to
+            see past redemptions at all once they left the pending queue —
+            only a transient list of what's still awaiting a decision.
+            Approved/rejected/cancelled redemptions vanished from view the
+            instant they were resolved, with no record. Newest first,
+            capped at 20 so this doesn't grow unbounded on a long-running
+            family. */}
+        {isParent && (() => {
+          const history = redemptions
+            .filter(r => r.status !== 'pending')
+            .sort((a, b) => (b.respondedAt ?? b.redeemedAt ?? '').localeCompare(a.respondedAt ?? a.redeemedAt ?? ''))
+            .slice(0, 20);
+          if (history.length === 0) return null;
+          const statusMeta: Record<string, { label: string; color: string }> = {
+            approved:  { label: 'Approved',  color: colors.teal },
+            rejected:  { label: 'Declined',  color: colors.danger },
+            cancelled: { label: 'Cancelled', color: colors.textTertiary },
+          };
+          return (
+            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
+              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
+                Redemption History
+              </Text>
+              <View style={{ gap: 8 }}>
+                {history.map(rd => {
+                  const reward = rewards.find(r => r.id === rd.rewardId);
+                  const kid = members.find(m => m.id === rd.memberId);
+                  const meta = statusMeta[rd.status] ?? { label: rd.status, color: colors.textTertiary };
+                  return (
+                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+                      paddingHorizontal: 12, paddingVertical: 10 }}>
+                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+                          {reward?.title ?? rd.rewardTitle ?? 'Perk (removed)'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
+                          {/* Logged QA gap, fixed: falls back to the DB's
+                              own member_name snapshot (taken at redemption
+                              time) once the redeemer is no longer in the
+                              live member list, instead of just showing
+                              "A kid" for a since-removed member's history. */}
+                          {kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
+                        </Text>
+                      </View>
+                      <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: meta.color + '18' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })()}
+
         {/* ── Kids' Piggy Banks & Wishlists ── parent-only at-a-glance view
             of every kid/teen's balance and their closest wishlist goal —
             replaces the old standalone Ledger tab, which is now removed;
@@ -703,10 +792,18 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                 balance of legibility vs. density). */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               {kids.map(kid => {
-                const kidCoins = ((kid as any).mainCoins ?? 0) + ((kid as any).gpCoins ?? 0);
+                const kidMainCoins = (kid as any).mainCoins ?? 0;
+                const kidGpCoins = (kid as any).gpCoins ?? 0;
+                const kidCoins = kidMainCoins + kidGpCoins;
                 const dollars = (kidCoins * pointsToFiatRatio).toFixed(2);
                 const goal = goalForKid(kid.id, kidCoins);
-                const pct = goal ? Math.min(kidCoins / goal.cost, 1) : 0;
+                // Logged QA gap, fixed: this used the pooled sum, so a
+                // parent could see a kid's goal shown as 100%+ funded even
+                // when neither jar alone actually covers the goal's cost —
+                // the one thing that matters for real redeemability, since
+                // a single redemption only ever spends from one jar.
+                const kidMaxAffordable = Math.max(kidMainCoins, kidGpCoins);
+                const pct = goal ? Math.min(kidMaxAffordable / goal.cost, 1) : 0;
                 const streak = (kid as any).streak ?? 0;
                 return (
                   <View key={kid.id} style={{
@@ -829,7 +926,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           ) : (
             <View style={s.grid}>
               {rewards.map((r, i) => (
-                <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins}
+                <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins} myMaxAffordable={myMaxAffordable}
                   isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}

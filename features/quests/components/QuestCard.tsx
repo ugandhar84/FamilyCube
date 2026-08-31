@@ -107,7 +107,7 @@ export function QuestCard({
   // matching the original inline consts' behavior of evaluating false in
   // that same edge case.
   const {
-    canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canKidDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   } = deriveQuestActions(
     q,
@@ -138,7 +138,7 @@ export function QuestCard({
     !!q.pendingTerms ||
     canClaim || canAcceptGp || canGpClaimPool || canGpDone ||
     (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
-    canResubmit || canKidDecline ||
+    canResubmit || canKidDecline || canGiveBack ||
     (canApprove && q.participants.length <= 1) ||
     (isPoolCard && isParentOrSenior) ||
     (isParent && q.isAdultTask && isTodoCard && !q.assignedToId) ||
@@ -960,6 +960,20 @@ export function QuestCard({
             }}
           >
             <Text style={[s.actionBtnText, { color: colors.danger }]}>{canAcceptGp ? 'Decline' : "Can't do this"}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Live QA finding: only grandparents had a quick, no-reason-needed
+            "give it back" undo for a chore they'd claimed but not started
+            — kids/teens had to go through the heavier Can't-Make-It flow
+            (pick a reason, optionally hand it to someone) even for a
+            plain change of mind on their own pool claim. */}
+        {!q.pendingTerms && canGiveBack && !canKidDecline && (
+          <TouchableOpacity
+            style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.textTertiary }]}
+            onPress={() => useChoreStore.getState().giveBackChore(q.id, myId ?? '')}
+          >
+            <Text style={[s.actionBtnText, { color: colors.textSecondary }]}>Give it back</Text>
           </TouchableOpacity>
         )}
 

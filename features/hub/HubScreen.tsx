@@ -256,9 +256,9 @@ export default function HubScreen() {
           <ParentView
             active={active} members={members} colors={colors} isDark={isDark}
             onScanFlyer={() => setFlyerVisible(true)}
-            onDispatchDirect={(memberId, etaMinutes) => {
+            onDispatchDirect={(memberId, etaMinutes, eventId) => {
               if (!familyId) return;
-              dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes });
+              dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes, eventId });
             }}
             onPickupDone={(tripId) => {
               const v = tripViews.find(tv => tv.tripId === tripId);

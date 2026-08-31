@@ -333,6 +333,19 @@ export async function saveTokenToMember(memberId: string): Promise<void> {
     const familyId = (memberRow as { family_id?: string } | null)?.family_id;
 
     if (familyId) {
+      // Zero-tolerance requirement: exactly one member may ever be
+      // registered for this physical device at a time — the DB now
+      // enforces this with a real UNIQUE(device_id) constraint
+      // (20260930380000), not just client discipline. That means any OTHER
+      // member's row for this device MUST be cleared first — upserting
+      // this member's row before doing so would violate the constraint
+      // outright if a different member currently holds this device.
+      await supabase
+        .from('member_device_tokens')
+        .delete()
+        .eq('device_id', deviceId)
+        .neq('member_id', memberId);
+
       await supabase.from('member_device_tokens').upsert(
         {
           member_id: memberId,
@@ -344,15 +357,6 @@ export async function saveTokenToMember(memberId: string): Promise<void> {
         },
         { onConflict: 'member_id,device_id' }
       );
-
-      // Only one member can be "active" on this physical device at a time —
-      // any OTHER member's row for this exact device_id is now stale and
-      // would falsely claim the device still belongs to them.
-      await supabase
-        .from('member_device_tokens')
-        .delete()
-        .eq('device_id', deviceId)
-        .neq('member_id', memberId);
     }
 
     // Keep the old column updated too — see comment above.

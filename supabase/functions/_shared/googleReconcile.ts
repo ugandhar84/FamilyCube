@@ -99,43 +99,59 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
 }
 
 async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<void> {
+  // A recurring Google event, expanded via singleEvents=true, returns one
+  // item PER OCCURRENCE — each with its own instance id (item.id, e.g.
+  // "abc123_20270513T210000Z") but also item.recurringEventId pointing
+  // back to the series MASTER id (absent on a genuinely one-off event).
+  // Live-confirmed bug: a recurring series pushed out via calendar-sync-
+  // push never ended up linked at all (its own event_external_links
+  // insert either failed or raced), so EVERY instance looked brand-new on
+  // every poll — recreating ~84-250+ duplicate local rows repeatedly, even
+  // right after being manually cleaned up, since nothing remembered "this
+  // whole series has already been seen" between poll runs.
+  //
+  // Fix: key the identity check on the MASTER id (recurringEventId, or
+  // the item's own id for a non-recurring event) rather than each
+  // instance's own id — collapses every occurrence of one recurring
+  // series onto exactly one local row/link, symmetric with the outbound
+  // side (calendar-sync-push only ever links the master id too). This is
+  // self-healing regardless of why the original link never got created —
+  // the first instance of a series seen after this fix creates and links
+  // the master id; every subsequent instance (including ones already
+  // queued in a page of results) matches that link and is skipped.
+  const identityId = item.recurringEventId || item.id;
+
   const { data: link } = await supabase.from('event_external_links')
-    .select('*').eq('connection_id', connection.id).eq('external_event_id', item.id).maybeSingle();
+    .select('*').eq('connection_id', connection.id).eq('external_event_id', identityId).maybeSingle();
 
   if (item.status === 'cancelled') {
-    if (link) {
+    // A cancelled INSTANCE of a still-live recurring series must not
+    // delete the whole series' local row — only a cancelled event whose
+    // own id IS the identity (a genuinely single event, or the master
+    // itself being cancelled) should.
+    if (link && item.id === identityId) {
       await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:google' }).eq('id', link.event_id);
       await supabase.from('event_external_links').delete().eq('id', link.id);
     }
     return;
   }
 
-  const patch = googleBodyToPortablePatch(item);
+  // Already represented locally (either a genuinely one-off event we've
+  // seen before, or ANY instance of a recurring series we've already
+  // linked via its master id) — nothing further to do for this item.
+  if (link) return;
 
-  if (link) {
-    const { data: localRow } = await supabase.from('calendar_events').select('updated_at, deleted_at').eq('id', link.event_id).maybeSingle();
-    if (!localRow || localRow.deleted_at) return;
-    const externalModified = item.updated ? new Date(item.updated).getTime() : Date.now();
-    const localModified = localRow.updated_at ? new Date(localRow.updated_at).getTime() : 0;
-    if (externalModified <= localModified) return; // conflict rule: local wins, next outbound push corrects the external side
-    await supabase.from('calendar_events').update({
-      title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
-      all_day: patch.allDay, location: patch.location, notes: patch.notes,
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
-    }).eq('id', link.event_id);
-    await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item.etag ?? null }).eq('id', link.id);
-  } else {
-    const newId = crypto.randomUUID();
-    await supabase.from('calendar_events').insert({
-      id: newId, family_id: connection.family_id, member_id: connection.member_id,
-      title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
-      all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
-      type: 'event', category: 'Event',
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
-    });
-    await supabase.from('event_external_links').insert({
-      event_id: newId, connection_id: connection.id, external_event_id: item.id,
-      external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
-    });
-  }
+  const patch = googleBodyToPortablePatch(item);
+  const newId = crypto.randomUUID();
+  await supabase.from('calendar_events').insert({
+    id: newId, family_id: connection.family_id, member_id: connection.member_id,
+    title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
+    all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
+    type: 'event', category: 'Event',
+    last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
+  });
+  await supabase.from('event_external_links').insert({
+    event_id: newId, connection_id: connection.id, external_event_id: identityId,
+    external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
+  });
 }

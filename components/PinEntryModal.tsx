@@ -5,6 +5,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { FamilyMember } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PIN_LENGTH = 4;
@@ -97,6 +98,8 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
 
   const accentColor = member?.role === 'parent' ? colors.parent : colors.kid;
 
+  const [verifying, setVerifying] = useState(false);
+
   // Reset state when a new member is targeted
   useEffect(() => {
     if (visible) {
@@ -105,14 +108,21 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
       setLocked(false);
       setLockRemaining(0);
       setErrorMsg('');
+      setVerifying(false);
       if (lockInterval.current) clearInterval(lockInterval.current);
     }
   }, [visible, member?.id]);
 
-  // Lockout countdown
-  useEffect(() => {
-    if (!locked) return;
-    setLockRemaining(LOCKOUT_SECONDS);
+  // Lockout countdown — driven by the server's own locked_until timestamp
+  // (see startLockout below), not just a local timer, so this correctly
+  // reflects a lockout that's still active even if the app was closed and
+  // reopened mid-lockout.
+  const startLockout = (lockedUntil: string | Date) => {
+    const untilMs = new Date(lockedUntil).getTime();
+    const remaining = Math.max(1, Math.ceil((untilMs - Date.now()) / 1000));
+    setLocked(true);
+    setLockRemaining(remaining);
+    if (lockInterval.current) clearInterval(lockInterval.current);
     lockInterval.current = setInterval(() => {
       setLockRemaining(prev => {
         if (prev <= 1) {
@@ -126,27 +136,45 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
         return prev - 1;
       });
     }, 1000);
-    return () => { if (lockInterval.current) clearInterval(lockInterval.current); };
-  }, [locked]);
+  };
+  useEffect(() => () => { if (lockInterval.current) clearInterval(lockInterval.current); }, []);
 
-  // Auto-verify when 4 digits entered
+  // Auto-verify when 4 digits entered — routed through verify_member_pin,
+  // a real server-side RPC, instead of a plain client-side string compare.
+  // Logged QA gap, fixed: attempt count and lockout now live on the
+  // member's row in the database, not local React state — force-quitting
+  // and reopening the app (or leaving/re-entering this sheet) no longer
+  // resets a lockout or a partial attempt count, since the server is the
+  // one keeping score now, not the component.
   useEffect(() => {
-    if (entered.length < PIN_LENGTH || !member) return;
-    const correct = member.pin === entered;
-    if (correct) {
-      onSuccess(member);
-      setEntered('');
-      setAttempts(0);
-      setErrorMsg('');
-    } else {
-      const next = attempts + 1;
-      setAttempts(next);
-      shakeAndClear(next >= MAX_ATTEMPTS
-        ? `Too many attempts. Try again in ${LOCKOUT_SECONDS}s`
-        : `Wrong PIN · ${MAX_ATTEMPTS - next} attempt${MAX_ATTEMPTS - next === 1 ? '' : 's'} left`
-      );
-      if (next >= MAX_ATTEMPTS) setLocked(true);
-    }
+    if (entered.length < PIN_LENGTH || !member || verifying) return;
+    setVerifying(true);
+    const submittedPin = entered;
+    supabase.rpc('verify_member_pin', { p_member_id: member.id, p_entered_pin: submittedPin })
+      .then(({ data, error }) => {
+        setVerifying(false);
+        if (error) {
+          console.warn('[PinEntryModal] verify_member_pin failed', error.message);
+          shakeAndClear('Could not verify — check your connection and try again');
+          return;
+        }
+        const result = Array.isArray(data) ? data[0] : data;
+        if (result?.ok) {
+          onSuccess(member);
+          setEntered('');
+          setAttempts(0);
+          setErrorMsg('');
+          return;
+        }
+        if (result?.locked_until) {
+          startLockout(result.locked_until);
+          shakeAndClear(`Too many attempts. Try again in a moment`);
+          return;
+        }
+        const remaining = result?.attempts_remaining ?? Math.max(0, MAX_ATTEMPTS - (attempts + 1));
+        setAttempts(a => a + 1);
+        shakeAndClear(`Wrong PIN · ${remaining} attempt${remaining === 1 ? '' : 's'} left`);
+      });
   }, [entered]);
 
   const shakeAndClear = (msg: string) => {

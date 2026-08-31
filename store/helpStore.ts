@@ -489,6 +489,11 @@ export const useHelpStore = create<HelpState>((set, get) => ({
       notifyHelp(original.requesterId, 'help_declined', {
         requestId: id, title: updated.title, byName,
         backToPending: updated.status === 'pending',
+        // Live QA finding: comment was saved to the DB (last_decline_comment
+        // above) but never actually sent to the notification itself — the
+        // requester's push said only "can't help right now," dropping
+        // whatever reason was typed.
+        comment,
       }, original.offeredById, byId);
     }
   },

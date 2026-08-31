@@ -39,10 +39,27 @@ serve(async (req) => {
     // Only this member's OWN events — calendar-sync-push already scopes a
     // push to the event creator's connections, so backfilling someone
     // else's events here would just be wasted invocations that push 0.
+    //
+    // Exclude non-anchor recurring occurrences (series_id set, is_series_
+    // anchor false/null): addRecurringEvent's own push (via calendar-
+    // sync-push's calendarFieldMapping.ts) only ever sends an RRULE on the
+    // ANCHOR row, so Google represents the whole series as one recurring
+    // event expanded from that single push. Backfilling every individual
+    // occurrence row on top of that created a second, separately-pushed
+    // plain event per day, duplicating the anchor's own recurring series
+    // on Google — confirmed live via event_external_links: every
+    // occurrence had its own linked external id in addition to the
+    // recurring series Google itself was already expanding via
+    // singleEvents=true on the inbound poll, which then reconciled the
+    // series' per-day instances back in as yet more new local rows. Only
+    // the anchor (or a genuinely non-recurring event) needs a real push;
+    // the other occurrence rows are local-only materializations already
+    // covered by the anchor's own recurrence rule.
     const { data: events, error } = await supabase.from('calendar_events')
       .select('id')
       .eq('created_by', memberId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .or('series_id.is.null,is_series_anchor.eq.true');
     if (error) throw new Error(error.message);
     if (!events?.length) return json({ ok: true, backfilled: 0, reason: 'no existing events' });
 

@@ -98,8 +98,16 @@ export interface Reward {
 
 export interface Redemption {
   id:            string;
-  rewardId:      string;
+  rewardId?:     string;      // null once the underlying reward is deleted (reward_id is SET NULL, not CASCADE) — rewardTitle survives regardless
+  rewardTitle?:  string;      // snapshot of the reward's title at redemption time, stored redundantly so history stays readable after a delete
   memberId:      string;
+  // Logged QA gap, fixed: the DB already snapshots the redeemer's name at
+  // redemption time (written by redeem_reward itself) for exactly the
+  // same "survive a deletion" purpose as rewardTitle above — but this
+  // field was never read into the client type, so a removed member's
+  // historical redemptions lost their attribution in any UI that only
+  // knew how to look up a live memberId against the current member list.
+  memberName?:   string;
   redeemedAt:    string;
   status:        RedemptionStatus;
   deductedCoins: number;     // snapshot of cost at time of redemption
@@ -332,7 +340,20 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     // outside the app, so refunding it on top of that would be wrong.
     const affectedPending = get().redemptions.filter(rd => rd.rewardId === id && rd.status === 'pending');
     const nextR  = get().rewards.filter(r => r.id !== id);
-    const nextRd = get().redemptions.filter(rd => rd.rewardId !== id);
+    // Logged QA gap, fixed: previously filtered every redemption of this
+    // reward out of local state entirely, and the DB's own CASCADE FK
+    // erased the rows outright on delete — a reward with real redemption
+    // history (approved-and-fulfilled, not just pending) lost that history
+    // completely the instant a parent deleted it from the catalog. The
+    // reward_id FK is now SET NULL (not CASCADE), and a pending redemption
+    // is explicitly marked 'cancelled' here rather than removed — history
+    // survives, non-pending (already approved/rejected/cancelled) rows are
+    // untouched either way.
+    const nextRd = get().redemptions.map(rd =>
+      rd.rewardId === id && rd.status === 'pending'
+        ? { ...rd, status: 'cancelled' as RedemptionStatus, respondedAt: new Date().toISOString() }
+        : rd
+    );
     set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
     supabase.from('rewards').delete().eq('id', id)
       .then(({ error }) => { if (error) console.warn('[rewardStore] deleteReward', error.message); });
@@ -340,6 +361,8 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       if (rd.deductedCoins > 0) {
         useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
       }
+      supabase.from('reward_redemptions').update({ status: 'declined', declined_at: new Date().toISOString(), declined_reason: 'Reward removed from store' }).eq('id', rd.id)
+        .then(({ error }) => { if (error) console.warn('[rewardStore] deleteReward cancel redemption', error.message); });
       notifyReward(rd.memberId, 'reward_removed', {
         redemptionId: rd.id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
         cost: rd.deductedCoins, memberId: rd.memberId,
@@ -430,13 +453,15 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       r.id === id ? { ...r, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : r
     );
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
-    // reward_redemptions has no rejected_by/note/responded_at columns —
-    // approved_by isn't tracked server-side either, only the timestamp and
-    // status. approvedBy/note stay local-only (same limitation the DB
-    // schema already has), same as before this fix; not silently inventing
-    // new columns here.
-    supabase.from('reward_redemptions').update({ status: 'approved', approved_at: now }).eq('id', id)
-      .then(({ error }) => { if (error) console.warn('[rewardStore] approveRedemption update', error.message); });
+    // Fixed: was a bare client .update() gated only by this device's local
+    // cache, not server-verified — two co-parents racing to act on the same
+    // redemption could last-write-wins each other's decision. Now routed
+    // through resolve_reward_redemption, which row-locks the redemption and
+    // re-checks status='pending' server-side before acting; the loser of
+    // the race gets a clean rejection instead of silently overwriting.
+    supabase.rpc('resolve_reward_redemption', {
+      p_redemption_id: id, p_approve: true, p_actor_id: approverId, p_note: note ?? null,
+    }).then(({ error }) => { if (error) console.warn('[rewardStore] approveRedemption rpc', error.message); });
     if (rd) {
       const reward = get().rewards.find(r => r.id === rd.rewardId);
       notifyReward(rd.memberId, 'reward_decision', {
@@ -450,12 +475,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     // Spec (8.3): a declined redemption must not permanently cost the kid
     // their coins. deductCoins fires at *request* time (StoreScreen.redeemFrom),
     // not at approval time, so a decline here must explicitly refund the same
-    // wallet the redemption was originally debited from — previously this
-    // function only restored `stock`, never the coins, so a rejected
-    // redemption silently vaporized the kid's balance with no way to get it
-    // back. Also fixes a dead-code bug: the old stock-restore branch did an
-    // early `return` before the notifyReward call below ever ran, so any
-    // stock-limited reward's rejection notification was silently skipped.
+    // wallet the redemption was originally debited from.
     const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
     // Same status guard as approveRedemption above — without it a
@@ -470,11 +490,17 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       ? get().rewards.map(r => r.id === rd.rewardId ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
       : get().rewards;
     set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
-    supabase.from('reward_redemptions').update({ status: 'declined', declined_at: now, declined_reason: note ?? null }).eq('id', id)
-      .then(({ error }) => { if (error) console.warn('[rewardStore] rejectRedemption update', error.message); });
-    if (rd.deductedCoins > 0) {
-      useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
-    }
+    // Fixed: the status flip, coin refund, and stock restore are now one
+    // atomic server-side transaction (resolve_reward_redemption), row-locked
+    // against approveRedemption/another rejectRedemption racing on the same
+    // row — closes the double-refund / silently-reversed-decision risk a
+    // bare client .update() + separate unconditioned awardCoins call had.
+    // The local optimistic refund/stock bump above stays for responsiveness;
+    // if this device lost the race the RPC throws and the next realtime
+    // sync corrects local state back to the server's actual outcome.
+    supabase.rpc('resolve_reward_redemption', {
+      p_redemption_id: id, p_approve: false, p_actor_id: rejectorId, p_note: note ?? null,
+    }).then(({ error }) => { if (error) console.warn('[rewardStore] rejectRedemption rpc', error.message); });
     notifyReward(rd.memberId, 'reward_decision', {
       redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
       decision: 'rejected', note, memberId: rd.memberId,
@@ -490,13 +516,35 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     // own richer 'cancelled' distinction for the UI.
     const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
+    const wasPending = rd?.status === 'pending';
+    const reward = rd ? get().rewards.find(r => r.id === rd.rewardId) : undefined;
     const nextRd = get().redemptions.map(r =>
       r.id === id ? { ...r, status: 'cancelled' as RedemptionStatus, respondedAt: now } : r
     );
-    set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    // Logged QA gap, fixed: unlike its sibling rejectRedemption,
+    // cancelRedemption never restored the reward's stock at all — a kid
+    // self-cancelling their own pending redemption permanently burned one
+    // unit of stock with nothing to show for it. Repeated redeem→cancel
+    // cycles could exhaust an entire stock-limited reward's inventory with
+    // zero actual fulfillments. Mirrors rejectRedemption's local + DB
+    // restore exactly, including the DB write that function was ALSO
+    // missing until this same fix.
+    const nextR = wasPending && reward?.stock !== undefined
+      ? get().rewards.map(r => r.id === reward.id ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
+      : get().rewards;
+    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
     supabase.from('reward_redemptions').update({ status: 'declined', declined_at: now, declined_reason: 'Cancelled by requester' }).eq('id', id)
       .then(({ error }) => { if (error) console.warn('[rewardStore] cancelRedemption update', error.message); });
-    if (rd && rd.status === 'pending' && rd.deductedCoins > 0) {
+    if (wasPending && reward?.stock !== undefined && reward.id) {
+      supabase.from('rewards').select('stock').eq('id', reward.id).maybeSingle()
+        .then(({ data }) => {
+          if (data && data.stock !== null) {
+            supabase.from('rewards').update({ stock: data.stock + 1 }).eq('id', reward.id)
+              .then(({ error }) => { if (error) console.warn('[rewardStore] cancelRedemption stock restore', error.message); });
+          }
+        });
+    }
+    if (rd && wasPending && rd.deductedCoins > 0) {
       useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
     }
   },
@@ -574,7 +622,13 @@ function rewardFromRow(row: any): Reward {
 // not silently invented as a new column here).
 function redemptionFromRow(row: any): Redemption {
   return {
-    id: String(row.id), rewardId: String(row.reward_id), memberId: String(row.member_id ?? ''),
+    // reward_id is SET NULL once the reward is deleted (fixed this session,
+    // was CASCADE-erasing the whole row) — String(null) would otherwise
+    // become the literal string "null" here.
+    id: String(row.id), rewardId: row.reward_id ? String(row.reward_id) : undefined,
+    rewardTitle: row.reward_title ?? undefined,
+    memberId: String(row.member_id ?? ''),
+    memberName: row.member_name ?? undefined,
     redeemedAt: row.requested_at ?? row.created_at ?? new Date().toISOString(),
     status: row.status === 'declined' ? 'rejected' : (row.status ?? 'pending'),
     deductedCoins: row.coin_cost ?? 0,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
-import { ChevronUp, ChevronDown, Check, Send, MessageCircle } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Check, Send, MessageCircle, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore } from '@/store/choreStore';
@@ -98,21 +98,59 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
         </View>
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
       </Pressable>
+      {/* A co-parent edited the coins/due-date on this already-claimed
+          task mid-flow (propose_terms_change) — the chore correctly
+          paused at status='terms_changed' rather than silently applying
+          the change, but until now nothing anywhere rendered the
+          claimant's Accept/Hand-back choice for the PARENT-side version
+          of this flow (the kid-side equivalent already existed in
+          KidQuestCard.tsx). Same pattern, same copy tone, mirrored here. */}
+      {q.pendingTerms && (
+        <View style={{ marginHorizontal: 12, marginBottom: 10, backgroundColor: colors.warning + '14', borderRadius: 10, padding: 10, gap: 4 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>The terms changed</Text>
+          {q.pendingTerms.old.coinsReward !== q.pendingTerms.new.coinsReward && (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              Coins: <Text style={{ textDecorationLine: 'line-through', color: colors.textTertiary }}>{q.pendingTerms.old.coinsReward}</Text> → {q.pendingTerms.new.coinsReward} 🪙
+            </Text>
+          )}
+          {q.pendingTerms.old.dueDate !== q.pendingTerms.new.dueDate && (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              Due: <Text style={{ textDecorationLine: 'line-through', color: colors.textTertiary }}>{q.pendingTerms.old.dueDate ?? 'none'}</Text> → {q.pendingTerms.new.dueDate ?? 'none'}
+            </Text>
+          )}
+        </View>
+      )}
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={() => {
-          const a = useChoreStore.getState().getLiveAssignmentForChore(q.id);
-          if (a) completeParentQuest(a.id, active.id);
-          else updateQuest(q.id, { status: 'done' });
-        }}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8 }}>
-          <Check size={13} color="#fff" />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>
-        </Pressable>
-        <Pressable onPress={() => onDelegate(q.id, q.title)}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1.5, borderColor: colors.warning + '60', borderRadius: 10, paddingVertical: 8 }}>
-          <Send size={12} color={colors.warning} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Reassign</Text>
-        </Pressable>
+        {q.pendingTerms ? (
+          <>
+            <Pressable onPress={() => useChoreStore.getState().acceptTermsChange(q.id, active.id)}
+              style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8 }}>
+              <CheckCircle2 size={13} color="#fff" />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Still fine by me</Text>
+            </Pressable>
+            <Pressable onPress={() => useChoreStore.getState().rejectTermsChange(q.id, active.id)}
+              style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.danger + '50', paddingVertical: 8, alignItems: 'center' }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Hand it back</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Pressable onPress={() => {
+              const a = useChoreStore.getState().getLiveAssignmentForChore(q.id);
+              if (a) completeParentQuest(a.id, active.id);
+              else updateQuest(q.id, { status: 'done' });
+            }}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8 }}>
+              <Check size={13} color="#fff" />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>
+            </Pressable>
+            <Pressable onPress={() => onDelegate(q.id, q.title)}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1.5, borderColor: colors.warning + '60', borderRadius: 10, paddingVertical: 8 }}>
+              <Send size={12} color={colors.warning} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Reassign</Text>
+            </Pressable>
+          </>
+        )}
       </View>
       {assigner && (
         <Pressable onPress={sendNudgeBack}

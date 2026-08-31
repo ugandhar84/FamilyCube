@@ -371,7 +371,7 @@ export function AlertBanner({
   // Lets the confirmed driver start the trip directly from their own
   // never-dispatched card, instead of having to scroll down to Pick-up
   // Radar and find the right nextRide slot themselves.
-  onDispatch?: (memberId: string | undefined, etaMinutes: number) => void;
+  onDispatch?: (memberId: string | undefined, etaMinutes: number, eventId?: string) => void;
 }) {
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
@@ -412,7 +412,7 @@ export function AlertBanner({
                 {kid ? ` ${kid.name.split(' ')[0]}'s pickup` : ' this ride'} for {fmtTime(ev.time)}, but never started the trip.
               </Text>
               {isMe && onDispatch ? (
-                <Pressable onPress={() => onDispatch(ev.memberId, 10)}
+                <Pressable onPress={() => onDispatch(ev.memberId, 10, ev.id)}
                   style={{ backgroundColor: colors.danger, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Car size={13} color="#fff" />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Start Trip Now</Text>
@@ -503,9 +503,13 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
     // would resolve to the wrong member); falls back to the name lookup
     // only for a legacy/external caller with no id.
     const targetMember = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
-    if (targetMember) {
+    const actorId = viewerMember?.id;
+    if (targetMember && !actorId) {
+      console.warn('[ConflictClusterCard] reassign_event: no viewerMember resolved — activeMemberId not passed to ConflictClusterCard');
+      showToast("Couldn't reassign — please try again", 'error');
+    } else if (targetMember && actorId) {
       supabase.rpc('reassign_event', {
-        p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
+        p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: actorId,
       }).then(({ error }: { error: any }) => {
         if (error) {
           console.warn('[ConflictClusterCard] reassign_event failed', error.message);
@@ -1450,9 +1454,24 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                       // a free-text driver field, which has no RPC path
                       // yet and falls to the old direct write below).
                       const targetMember = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
-                      if (targetMember) {
+                      // viewerMember must be the one actually resolved —
+                      // falling back to targetMember.id (the person being
+                      // assigned TO, not the one doing the reassigning)
+                      // silently misattributed p_actor_id whenever they
+                      // differ (the common case), which the RPC's own
+                      // resolve_active_member_id() check now correctly
+                      // rejects as "caller is not member" — surfaced to
+                      // the user as a confusing "Couldn't reassign." A
+                      // missing viewerMember means activeMemberId wasn't
+                      // threaded through to this sheet; fail loudly here
+                      // instead of guessing at the wrong actor.
+                      const actorId = viewerMember?.id;
+                      if (targetMember && !actorId) {
+                        console.warn('[EventDetailSheet] reassign_event: no viewerMember resolved — activeMemberId not passed to EventDetailSheet');
+                        showToast("Couldn't reassign — please try again", 'error');
+                      } else if (targetMember && actorId) {
                         supabase.rpc('reassign_event', {
-                          p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
+                          p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: actorId,
                         }).then(({ error }) => {
                           if (error) {
                             console.warn('[EventDetailSheet] reassign_event failed', error.message);

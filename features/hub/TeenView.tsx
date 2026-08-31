@@ -97,7 +97,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // sibling is hidden from this teen entirely (never even a busy block).
   // Own events pass through unaffected.
   const visibleEvents = events.filter(e =>
-    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
+    !isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
   const { quests, submitQuest, claimQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
   const familyId = (active as any).familyId ?? 'family-1';
@@ -195,15 +195,20 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     const isMine = a.id ? a.id === active.id : a.name === active.name;
     return isMine && a.status === 'confirmed' && e.date >= today;
   });
-  const [passedPickups, setPassedPickups] = useState<string[]>([]);
+  // Live QA finding: this used to be pure local React state — a teen's
+  // Pass only hid the ride for as long as the screen stayed mounted,
+  // forgotten the instant the app was closed/reopened, unlike a
+  // grandparent's Pass (grandparentPassedIds), which is saved to the
+  // event and sticks permanently. Now reads the same kind of persisted
+  // per-event array (teenPassedIds), symmetric with the grandparent side.
   // Single derivation — was independently recomputed here (badge count),
   // in urgentPickups below, and a third time inside
   // TeenCarDispatchSection.tsx's own openVisible, all as the identical
-  // `openPickups.filter(e => !passedPickups.includes(e.id))` expression.
-  // Three copies of the same filter risk silently diverging if any one of
-  // them is edited later without the others following — the tile's badge
-  // count could then stop matching what's actually inside the sheet.
-  const openPickupsVisible = openPickups.filter(e => !passedPickups.includes(e.id));
+  // filter expression. Three copies of the same filter risk silently
+  // diverging if any one of them is edited later without the others
+  // following — the tile's badge count could then stop matching what's
+  // actually inside the sheet.
+  const openPickupsVisible = openPickups.filter(e => !(e.teenPassedIds ?? []).includes(active.id));
   const urgentPickups = openPickupsVisible.filter(e =>
     hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
 
@@ -533,7 +538,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <TeenCarDispatchSection
           hasCar={hasCar} onToggleCar={toggleCar}
           openPickups={openPickupsVisible} myPickups={myPickups} myPendingAssignments={myPendingAssignments}
-          onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup} onDrop={dropPickup} onConfirmAssignment={confirmAssignment}
+          onPass={(id) => {
+            const ev = events.find(e => e.id === id) ?? openPickups.find(e => e.id === id);
+            updateEvent(id, { teenPassedIds: [...new Set([...(ev?.teenPassedIds ?? []), active.id])] });
+          }} onClaim={claimPickup} onDrop={dropPickup} onConfirmAssignment={confirmAssignment}
           rideEarnings={rideEarnings} members={members} colors={colors} isDark={isDark}
         />
       </TeenTileSheet>

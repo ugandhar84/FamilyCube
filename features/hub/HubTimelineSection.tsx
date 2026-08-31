@@ -56,7 +56,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
     // sensitive event stays hidden unless the parent explicitly flipped
     // sharedWithSiblings for it — the same opt-in that already governs
     // whether a sibling sees the event's full DETAIL elsewhere in the app.
-    if (!isEventSensitive(e)) return true;
+    if (!isEventSensitive(e, members)) return true;
     if (e.sharedWithSiblings) return true;
     return false;
   };

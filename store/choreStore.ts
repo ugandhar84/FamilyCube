@@ -111,6 +111,9 @@ export interface ChoreTask {
   inviteGrandparents?: boolean;  // parent-proposed: open invitation to grandparents
   isOpenToTeens?: boolean;       // parent-proposed: open invitation to teens (mirrors inviteGrandparents)
   isPrivateParent: boolean;
+  // Server-stamped, auto-updated on every write — used to detect a
+  // concurrent edit before a checked write (see update_chore_task_checked).
+  updatedAt?: string;
   isPool?: boolean;               // unassigned quest open for anyone to claim
   // Set when a single-slot chore is claimed via claimPoolQuest (in_progress),
   // cleared on release back to the pool. Used by chore-noshow-sweep to detect
@@ -741,6 +744,7 @@ function choreFromRow(row: any): ChoreTask {
     inviteGrandparents:      row.invite_grandparents ?? false,
     isOpenToTeens:           row.is_open_to_teens ?? false,
     isPrivateParent:         row.category_type === 'parent_only_quest',
+    updatedAt:               row.updated_at ?? undefined,
     requiresPhotoProof:      row.requires_photo ?? row.requires_photo_proof ?? false,
     recurrenceRule:          (typeof row.recurrence_rule === 'object' && row.recurrence_rule)
                                ? row.recurrence_rule
@@ -1030,6 +1034,7 @@ interface ChoreState {
   // QuestApprovalCard.tsx already documents for parents.
   completeGpWelcomeChore:  (choreId: string, gpMemberId: string) => void;
   backoutGpWelcomeChore:   (choreId: string, gpMemberId: string) => void;
+  giveBackChore:           (choreId: string, memberId: string) => void;
 
   // ── Scenarios 9.2/9.3 — temporary-approver / caregiver-mode ──────────────
   // Single source of truth for "is this member currently allowed to
@@ -1461,6 +1466,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // specifically the assignee — not blanket visibility into every
       // parent-only task in the family, which parent_only_quest's own name
       // still implies should stay parent-scoped by default.
+      // Live user-reported gap, confirmed against the actual RLS policy
+      // (not just this client-side query): a chore assigned directly to a
+      // parent was only excluded from a kid/teen's own device if the
+      // creating parent had explicitly toggled "Parent Only"
+      // (category_type='parent_only_quest') — an ordinary chore that just
+      // happens to be assigned to a parent, with nobody remembering to
+      // flip that toggle, was fetched raw by every kid/teen device.
+      // Parents shouldn't have to remember to mark something private just
+      // because it's for another adult.
+      //
+      // The REAL fix is the database's own row-level security rule
+      // (20260930400000_chore_tasks_hide_parent_assignee_by_default.sql),
+      // which now also excludes any row assigned to a parent-role member
+      // regardless of category_type — that's the actual, unbypassable
+      // boundary, since expressing "assignee's role is parent" cleanly in
+      // this client-side filter syntax (which can't easily join against
+      // members) isn't reliable enough to be the real protection. This
+      // query is intentionally left matching its OLD, narrower shape —
+      // it's just a bandwidth pre-filter to skip an unnecessary round
+      // trip for the common case, not a security boundary; the server
+      // will correctly withhold rows this filter still lets through.
       if (role === 'senior') {
         const activeId = (() => { try { const { useFamilyStore } = require('@/store/familyStore'); return useFamilyStore.getState().activeMemberId; } catch { return null; } })();
         choreQuery = choreQuery.or(`category_type.neq.parent_only_quest,assigned_to_id.eq.${activeId}`);
@@ -1738,7 +1764,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // declined, the terms are final — reject any further edit here instead
     // of trusting the client to never ask.
     if (prevChore?.categoryType === 'grandparent_quest' && prevChore.status !== 'pending_parent_approval') {
-      const editableFields = ['title', 'description', 'basePoints', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
+      // Deep QA trace found this list didn't include coinsReward — a
+      // claimed grandparent_quest blocked a basePoints edit outright as
+      // "already reviewed, final" but let the functionally equivalent
+      // coinsReward edit fall through to the general propose_terms_change
+      // path instead, an inconsistent lock on the same underlying "how
+      // much does this quest pay" concept.
+      const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
       if (editableFields.some(f => f in rawUpdates)) {
         console.warn(`[choreStore] blocked edit to grandparent_quest ${id} — status is ${prevChore.status}, not pending_parent_approval`);
         showToast("This quest has already been reviewed — it can't be edited anymore", 'error');
@@ -1887,6 +1919,49 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+
+    // Live QA trace of the P2P (parent-to-parent) lane found this was a
+    // real, reproducible race: two parents editing the same chore's
+    // title/note/date within the same instant silently last-write-wins,
+    // with zero signal to whichever parent's edit was discarded. When the
+    // patch touches ONLY the collision-prone free-text/scalar fields a
+    // person types directly into an edit sheet, route through
+    // update_chore_task_checked instead of the plain patch below — it
+    // rejects the write with a clear error if the row moved on since
+    // prevChore was last loaded, rather than silently overwriting.
+    const CHECKED_FIELDS = ['title', 'description', 'parentNote', 'dueDate', 'dueTime', 'coinsReward', 'basePoints'] as const;
+    const updateKeys = Object.keys(updates);
+    if (prevChore && updateKeys.length > 0 && updateKeys.every(k => (CHECKED_FIELDS as readonly string[]).includes(k))) {
+      supabase.rpc('update_chore_task_checked', {
+        p_chore_id: id,
+        p_title: 'title' in updates ? (updates as any).title ?? null : null,
+        p_has_title: 'title' in updates,
+        p_description: 'description' in updates ? (updates as any).description ?? null : null,
+        p_has_description: 'description' in updates,
+        p_parent_note: 'parentNote' in updates ? (updates as any).parentNote ?? null : null,
+        p_has_parent_note: 'parentNote' in updates,
+        p_due_date: 'dueDate' in updates ? (updates as any).dueDate ?? null : null,
+        p_has_due_date: 'dueDate' in updates,
+        p_due_time: 'dueTime' in updates ? (updates as any).dueTime ?? null : null,
+        p_has_due_time: 'dueTime' in updates,
+        p_coins_reward: 'coinsReward' in updates ? (updates as any).coinsReward ?? null : null,
+        p_has_coins_reward: 'coinsReward' in updates,
+        p_base_points: 'basePoints' in updates ? (updates as any).basePoints ?? null : null,
+        p_has_base_points: 'basePoints' in updates,
+        p_expected_updated_at: prevChore.updatedAt ?? null,
+      }).then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] update_chore_task_checked FAILED', error.message);
+          set(s => ({ chores: s.chores.map(c => c.id === id ? prevChore : c) }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          const isStale = error.message?.includes('stale_write');
+          showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
+          return;
+        }
+        get().syncFromDB(true);
+      });
+      return;
+    }
 
     // Map to DB fields. Uses `in` (key presence), not `!== undefined`, so a
     // caller that explicitly passes `{ approvedAt: undefined }` to CLEAR a
@@ -2322,13 +2397,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // WHERE assigned_to_id IS NULL: only the first request to actually
     // land can succeed, and the loser's optimistic local claim is rolled
     // back once the 0-row result comes back.
+    // Deep QA trace found this diverged from every sibling claim path
+    // (claimPoolQuest, claimBountySlot) in two ways: it left status at
+    // 'todo' instead of 'in_progress' (meaning propose_terms_change's
+    // status==='in_progress' guard rejected editing terms on a claimed
+    // single-claimant bounty, unlike a pool-quest claim), AND it never
+    // set isPool: false at all — so a claimed bounty stayed isPool:true,
+    // status:'todo', letting it re-appear as still-open in any pool
+    // filter that checks isPool+status without also checking
+    // !assignedToId (several of the app's own pool filters do exactly
+    // that). Both are fixed here to match every other claim path.
     set(s => ({
-      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'todo' } : c),
+      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'in_progress', isPool: false } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
     supabase.from('chore_tasks')
-      .update({ assigned_to_id: childId, status: 'todo' })
+      .update({ assigned_to_id: childId, status: 'in_progress', is_pool: false })
       .eq('id', choreId)
       .is('assigned_to_id', null)
       .select('id')
@@ -2339,9 +2424,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         }
         if (!data || data.length === 0) {
           console.warn('[choreStore] claimBounty lost the race on', choreId, '— rolling back local claim');
+          // Was only reverting assignedToId — left status/isPool stuck on
+          // the optimistic claimed values even after the claim itself was
+          // rolled back, the same status/isPool desync just fixed above
+          // for the success path.
           set(s => ({
             chores: s.chores.map(c =>
-              c.id === choreId && c.assignedToId === childId ? { ...c, assignedToId: undefined } : c
+              c.id === choreId && c.assignedToId === childId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true } : c
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
@@ -2598,8 +2687,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         if (chore.familyId) {
           try {
             const { useFamilyStore } = require('./familyStore');
+            // Live QA finding: this excluded only the disputing kid — the
+            // one parent who genuinely CANNOT act on this dispute
+            // (resolve_redo_dispute's own RPC blocks reviewedById from
+            // resolving their own call) still got the "second opinion
+            // needed" push alongside everyone else, which isn't a clean
+            // escalation to someone new and could read as the app asking
+            // that same parent to reconsider their own decision.
             const approverIds = (useFamilyStore.getState().members as any[])
-              .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId)
+              .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId && m.id !== chore.reviewedById)
               .map(m => m.id);
             if (approverIds.length) {
               supabase.functions.invoke('family-notifier', {
@@ -2759,9 +2855,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     _fetchedAt = 0;
     supabase.rpc('claim_gp_errand', { p_chore_id: choreId, p_gp_member_id: gpMemberId })
       .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] claimGPErrand RPC failed', error.message); return; }
+        if (error) {
+          console.warn('[choreStore] claimGPErrand RPC failed', error.message);
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.gpOfferById === gpMemberId ? { ...c, status: 'todo', gpOfferById: undefined } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          showToast("Couldn't send offer — please try again", 'error');
+          return;
+        }
         const claimed = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
         if (!claimed) {
+          // Live QA finding: this rollback previously had zero visible
+          // feedback — a losing grandparent's card just silently reverted
+          // (a console.warn only), which read as the tap having done
+          // nothing at all. The spec's own claim-race gap (#10) calls for
+          // "the second sees 'already taken'" — this toast is that signal.
           console.warn('[choreStore] claimGPErrand lost the race on', choreId, '— another GP already offered, rolling back local state');
           set(s => ({
             chores: s.chores.map(c =>
@@ -2769,6 +2880,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          showToast('Already taken by another grandparent', 'info');
           return;
         }
         showToast('Offer sent ✓');
@@ -2910,14 +3022,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!chore) return;
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
-        ...c, assignedToId: undefined,
-        // Matches the RPC's own guard (20260927150000_fix_later_date_orphan.sql)
-        // — was hardcoded false, leaving the chore optimistically invisible
-        // in the pool until the next resync overwrote it, even though the
-        // server-side fix already makes it reappear immediately. Adult-only
-        // tasks still stay out of the kid/teen pool.
-        isPool: c.categoryType !== 'parent_only_quest', claimedAt: undefined,
-        rejectionReason: reason ?? c.rejectionReason, declinedAt: new Date().toISOString(),
+        ...c,
+        // Live QA finding: this used to release the chore to the open
+        // pool (assignedToId: undefined, isPool: true) the instant a
+        // later-date was requested — before a parent had even answered.
+        // Anyone else could claim it out from under the requester while
+        // the request was still pending, and neither approving NOR
+        // declining ever gave it back. The server-side RPCs no longer
+        // touch assignment at all for this flow (20260930350000) — the
+        // requester keeps the chore the whole time, matching every other
+        // "asking for a change" flow (e.g. propose_terms_change).
         pendingLaterDate: newDate, pendingLaterReason: reason,
         pendingLaterRequestedBy: byMemberId, pendingLaterRequestedAt: new Date().toISOString(),
       } : c),
@@ -2994,7 +3108,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   // Parent declines a pending later-date proposal — clears it, original
-  // dueDate stands, chore is already unassigned from proposeLaterDate.
+  // dueDate stands. The chore was never unassigned in the first place
+  // (fixed 20260930350000) — this is now a genuine no-op on assignment.
   declineLaterDate: (choreId, parentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.pendingLaterDate) return;
@@ -3449,6 +3564,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     showToast('Given back to the pool ✓');
   },
 
+  // Live QA finding: only grandparents had a "give it back before starting"
+  // action (backoutGpWelcomeChore above) — a kid or teen who claimed an
+  // ordinary pool chore and changed their mind had no equivalent, only the
+  // heavier "Can't make it?" flow (which asks for a reason and offers a
+  // named handoff, not a quick undo). Mirrors backoutGpWelcomeChore's exact
+  // shape for any pool chore, any non-GP claimant.
+  giveBackChore: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.assignedToId !== memberId) return;
+    if (!['todo', 'in_progress'].includes(chore.status)) return;
+
+    get().updateChore(choreId, {
+      status: 'todo', assignedToId: undefined,
+      isPool: chore.categoryType !== 'parent_only_quest',
+      claimedAt: undefined,
+    });
+    showToast('Given back to the pool ✓');
+  },
+
   // ─────────────────────────────────────────────────────────────────────────
   // PARENT REVIEW
   // ─────────────────────────────────────────────────────────────────────────
@@ -3772,6 +3906,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           familyId: chore.familyId,
           assigneeId: chore.assignedToId,
           coins: chore.coinsReward,
+          // Live QA finding: the reason a parent typed for the redo was
+          // captured locally (rejectionReason above) but never sent here —
+          // a kid got a generic "try again" push with zero indication of
+          // what was actually wrong, forcing them to open the app and find
+          // the reason in the chore detail screen themselves.
+          reason,
         },
       }).catch(e => console.warn('[choreStore] requestRedo quest_reopened notify', e?.message));
     }
@@ -3808,6 +3948,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           familyId: chore.familyId,
           assigneeId: chore.assignedToId,
           coins: chore.coinsReward,
+          reason,
         },
       }).catch(e => console.warn('[choreStore] requestGrandparentRedo quest_reopened notify', e?.message));
     }
@@ -4650,6 +4791,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       created_at:       tx.createdAt,
       wallet:           'mainCoins',
     });
+    // Logged QA gap, fixed: getMemberBalance's derived ledger correctly
+    // treats a pending CASH_OUT as an instant deduction (the transaction
+    // row inserted above), but members.main_coins — the literal column
+    // the Store tab and redeem_reward's own balance check both read
+    // directly — was never touched by a mainCoins cash-out request. A kid
+    // could request a cash-out for their whole balance, then immediately
+    // spend that same (still-literally-present) main_coins balance on a
+    // Store reward before a parent ever approved the cash-out — the same
+    // coins spent twice. Mirrors gpCoins' own earmark-at-request-time
+    // pattern (see the gpCoins branch above), refunded by denyCashOut
+    // below if the parent declines.
+    try {
+      const { useFamilyStore } = require('@/store/familyStore');
+      useFamilyStore.getState().awardCoins(userId, -points, 'mainCoins');
+    } catch (e) { console.warn('[choreStore] requestCashOut mainCoins earmark failed', e); }
     notifyCashOutRequested(userId, points);
   },
 
@@ -4725,15 +4881,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
       set(s => ({ transactions: s.transactions.map(t => t.id === transactionId && tx ? tx : t) }));
     }).then(({ ok }) => {
-      if (ok && tx?.wallet === 'gpCoins' && tx.userId) {
-        // Explicit refund — gpCoins is a literal balance, not derived from
-        // transactions the way getMemberBalance computes mainCoins, so a
-        // denied request must be credited back directly rather than relying
-        // on an excluded-row reducer that doesn't exist for this wallet.
-        get().awardPoints(tx.userId, '', tx.amount, 0, 'gpCoins');
+      if (ok && tx?.userId && (tx.wallet === 'gpCoins' || tx.wallet === 'mainCoins')) {
+        // Explicit refund of the LITERAL column for both wallets now.
+        // gpCoins never had a derived-balance reducer (members.gpCoins IS
+        // the literal balance). mainCoins used to rely entirely on
+        // getMemberBalance's [Denied]-exclusion reducer for the Quests
+        // tab — but requestCashOut's mainCoins branch now also earmarks
+        // the literal main_coins column at request time (logged QA gap,
+        // fixed, to close a real double-spend against the Store tab,
+        // which reads that column directly) — so a denied mainCoins
+        // request must now be credited back here too, not just excluded
+        // from the ledger.
+        get().awardPoints(tx.userId, '', tx.amount, 0, tx.wallet);
       }
       // Audit finding — the kid never learned their cash-out was denied.
-      if (ok) notifyCashOutDecision('cashout_denied', tx, { refunded: tx?.wallet === 'gpCoins' });
+      if (ok) notifyCashOutDecision('cashout_denied', tx, { refunded: tx?.wallet === 'gpCoins' || tx?.wallet === 'mainCoins' });
     });
   },
 
@@ -4943,8 +5105,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // it lands in their "Assigned to you" list with a Done button and the
     // Accept/Respond card never gets a chance to render.
     if (mode === 'PULL') {
-      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED); syncing chore ${choreId} → assignedToId=${finalAssignedTo} status=in_progress`);
-      get().updateChore(choreId, { assignedToId: finalAssignedTo, status: 'in_progress' });
+      // Live QA trace found this path had NO race protection — unlike
+      // claim_pool_quest (used for the Quest-shim pool items), a plain
+      // updateChore() here is an unconditional write with no row lock and
+      // no check that the chore was still actually unclaimed. Two parents
+      // tapping "Take It" on the same ordinary pool chore within the same
+      // instant both succeeded, second write silently winning, with the
+      // loser's own UI still showing them as the claimant. Route through
+      // the same race-safe, compare-and-set RPC claim_pool_quest already
+      // uses (only writes if assigned_to_id is still null and is_pool is
+      // still true) BEFORE touching local state, instead of writing
+      // optimistically first and only finding out about the race after.
+      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED); claiming chore ${choreId} via claim_pool_quest`);
+      supabase.rpc('claim_pool_quest', { p_chore_id: choreId, p_member_id: finalAssignedTo }).then(({ data, error }) => {
+        const claimed = !error && (Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed);
+        if (!claimed) {
+          console.warn(`[choreStore] addParentQuest PULL — chore ${choreId} claim failed (already taken or error: ${error?.message ?? 'n/a'}); reverting assignment ${assignment.id}`);
+          set(s => ({ parentAssignments: s.parentAssignments.filter(a => a.id !== assignment.id) }));
+          dbUpdate('parent_quest_assignments', assignment.id, { status: 'COMPLETED' });
+          showToast('Someone else already took that', 'info');
+          get().syncFromDB(true);
+          return;
+        }
+        // Claim landed — now safe to reflect it in local state; syncFromDB
+        // will also pick up the RPC's own writes (assigned_to_id/is_pool/
+        // status) on its next pass, this just avoids a UI flicker/delay.
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: finalAssignedTo, status: 'in_progress', isPool: false } : c) }));
+        AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+      });
     } else if (chore.assignedToId) {
       // A RE-delegation (DelegateSheet reassigning a chore that was already
       // assigned to someone via a PRIOR cycle) left the chore's own

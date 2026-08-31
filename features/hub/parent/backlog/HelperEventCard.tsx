@@ -85,9 +85,9 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
           </Text>
         </Pressable>
       ) : null}
-      {assignee.status !== 'confirmed' && (
+      {(assignee.status !== 'confirmed' || showCantMakeIt) && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
-          {showAssignToMe && (
+          {showAssignToMe && assignee.status !== 'confirmed' && (
             <AnimatedPressable
               onPress={() => {
                 console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${assignee.name} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
@@ -136,6 +136,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
           )}
           {(showConfirm || showCantMakeIt) && (
             <>
+              {showConfirm && (
               <AnimatedPressable
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
@@ -176,11 +177,20 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                 <CheckCircle2 size={12} color={CONFIRMED_GREEN} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: CONFIRMED_GREEN }}>Confirm I'll do it</Text>
               </AnimatedPressable>
+              )}
               {/* Previously the only action offered to the named-but-
                   unconfirmed parent was Confirm — no way to say no without
                   leaving this card for the Calendar's detail sheet. The
                   teen and GP equivalents of this card both already pair
-                  confirm with a decline (QA Round 11, Medium Finding M4). */}
+                  confirm with a decline (QA Round 11, Medium Finding M4).
+                  Also the ONLY way to back out once already confirmed —
+                  live-traced QA finding: this whole action row used to be
+                  gated on assignee.status !== 'confirmed', hiding Can't
+                  Make It the moment a parent confirmed, even though
+                  deriveEventActions already computed showCantMakeIt:true
+                  for exactly that state. The only path left was the
+                  Calendar tab's EventDetailSheet — this restores Hub
+                  parity with that. */}
               <AnimatedPressable
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → decline_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);

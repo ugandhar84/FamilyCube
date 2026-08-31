@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { logActivity, type ActivityAction } from '@/lib/activityLog';
 import { showToast } from '@/components/AppToast';
+import type { FamilyMember } from '@/store/familyStore';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 export type EventType    = 'event' | 'reminder' | 'appointment' | 'birthday';
@@ -90,6 +91,7 @@ export interface FamilyEvent {
   approvalPending?: boolean;
   isOpenToGrandparents?: boolean;
   grandparentPassedIds?: string[];  // seniors who tapped Pass — hidden from their feed
+  teenPassedIds?: string[];         // teens who tapped Pass — hidden from their own pool, symmetric with grandparentPassedIds
   isOpenToTeens?: boolean;          // parent flag — shows in teen Junior Dispatch pool
   rideCoins?: number;               // optional coins reward set by parent — visible to teens only, never GPs
 
@@ -218,8 +220,25 @@ export interface FamilyEvent {
 // Ride requests count as sensitive too — see sharedWithSiblings above for
 // why. Needs rideRequired/category alongside the existing checks, so the
 // Pick type widens to match.
-export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category' | 'rideRequired'>): boolean {
-  return e.privacyLevel === 'private' || e.category === 'Medical' || e.category === 'Ride' || !!e.rideRequired;
+// `members` is optional (defaults to skipping the kid/teen-default-private
+// check when unavailable) so every existing call site keeps compiling —
+// pass it wherever the caller already has the family's member list handy,
+// same list the RLS-mirroring rule at the database level (migration
+// 20260930510000) checks against, so client and server logic agree.
+export function isEventSensitive(
+  e: Pick<FamilyEvent, 'privacyLevel' | 'category' | 'rideRequired' | 'memberId' | 'memberIds'>,
+  members?: Pick<FamilyMember, 'id' | 'role'>[],
+): boolean {
+  if (e.privacyLevel === 'private' || e.category === 'Medical' || e.category === 'Ride' || !!e.rideRequired) return true;
+  // A kid/teen's own single-subject personal event defaults to sensitive
+  // too — same "you shouldn't have to remember to ask for privacy"
+  // principle already applied to parent-owned chores/events earlier this
+  // session, extended to the other side of the family.
+  if (members && e.memberId && !(e.memberIds?.length)) {
+    const subject = members.find(m => m.id === e.memberId);
+    if (subject?.role === 'kid' || subject?.role === 'teen') return true;
+  }
+  return false;
 }
 
 // A category:'Ride' event's assignee lives in helper/helperStatus. A
@@ -581,6 +600,7 @@ export function fromRow(row: any): FamilyEvent {
     tripAlertDismissedBy:   row.trip_alert_dismissed_by ?? undefined,
     isOpenToGrandparents:   row.is_open_to_grandparents ?? false,
     grandparentPassedIds:   row.grandparent_passed_ids ?? [],
+    teenPassedIds:          row.teen_passed_ids ?? [],
     isOpenToTeens:          row.is_open_to_teens ?? false,
     rideCoins:              row.ride_coins ?? undefined,
     rideRequired:           row.ride_required ?? false,
@@ -650,6 +670,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     trip_alert_dismissed_by:    ev.tripAlertDismissedBy ?? null,
     is_open_to_grandparents:    ev.isOpenToGrandparents ?? false,
     grandparent_passed_ids:     ev.grandparentPassedIds ?? [],
+    teen_passed_ids:            ev.teenPassedIds ?? [],
     is_open_to_teens:           ev.isOpenToTeens ?? false,
     ride_coins:                 ev.rideCoins ?? null,
     ride_required:              ev.rideRequired ?? false,
@@ -721,7 +742,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   pickupLocation: 'pickup_location', dropLocation: 'drop_location',
   approvalPending: 'approval_pending', conflict: 'conflict', conflictAcknowledged: 'conflict_acknowledged',
   tripAlertDismissedAt: 'trip_alert_dismissed_at', tripAlertDismissedBy: 'trip_alert_dismissed_by',
-  isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids',
+  isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids', teenPassedIds: 'teen_passed_ids',
   isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
   driverName: 'driver_name', driverId: 'driver_id', driverStatus: 'driver_status',
   pickupConfirmedAt: 'pickup_confirmed_at', pickupConfirmedBy: 'pickup_confirmed_by',
@@ -1424,6 +1445,51 @@ export const useEventStore = create<EventState>((set, get) => ({
 
   updateEvent: (id, updates) => {
     const prevEvent = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    // Logged QA gap, fixed: two co-parents editing the same free-text
+    // field on the same event within the same instant used to silently
+    // last-write-win with zero warning — the same class of bug already
+    // fixed for chores via a compare-and-set RPC. When the patch touches
+    // ONLY the collision-prone text/date-time fields a person types
+    // directly into an edit sheet, route through that same style of check
+    // BEFORE any of the elaborate status-transition logic below runs (this
+    // function also handles decline-reopen/auto-confirm/notifications,
+    // which a broad version-check could break — scoped narrowly on
+    // purpose, see the migration's own comment).
+    const TEXT_CHECKED_FIELDS = ['title', 'notes', 'location', 'date', 'time', 'endTime'] as const;
+    const updateKeys = Object.keys(updates);
+    if (prevEvent && updateKeys.length > 0 && updateKeys.every(k => (TEXT_CHECKED_FIELDS as readonly string[]).includes(k))) {
+      supabase.rpc('update_calendar_event_text_checked', {
+        p_event_id: id,
+        p_title: 'title' in updates ? (updates as any).title ?? null : null,
+        p_has_title: 'title' in updates,
+        p_notes: 'notes' in updates ? (updates as any).notes ?? null : null,
+        p_has_notes: 'notes' in updates,
+        p_location: 'location' in updates ? (updates as any).location ?? null : null,
+        p_has_location: 'location' in updates,
+        p_date: 'date' in updates ? (updates as any).date ?? null : null,
+        p_has_date: 'date' in updates,
+        p_start_time: 'time' in updates ? (updates as any).time ?? null : null,
+        p_has_start_time: 'time' in updates,
+        p_end_time: 'endTime' in updates ? (updates as any).endTime ?? null : null,
+        p_has_end_time: 'endTime' in updates,
+        p_expected_updated_at: prevEvent.updatedAt ?? null,
+      }).then(({ error }) => {
+        if (error) {
+          console.warn('[eventStore] update_calendar_event_text_checked FAILED', error.message);
+          const isStale = error.message?.includes('stale_write');
+          showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
+          get().syncFromDB();
+          return;
+        }
+        const stamped = { ...updates, updatedAt: new Date().toISOString() };
+        set(s => ({
+          dayEvents: sortByTime(s.dayEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
+          events: sortByTime(s.events.map(e => e.id === id ? { ...e, ...stamped } : e)),
+          rangeEvents: sortByTime(s.rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
+        }));
+      });
+      return;
+    }
     // A parent-assigned ride that gets declined shouldn't just sit there —
     // auto-open it to the GP/Teen pool so it's immediately claimable by
     // someone else, instead of requiring the creating parent to notice the
@@ -1608,8 +1674,24 @@ export const useEventStore = create<EventState>((set, get) => ({
         const recipients = new Set<string>();
         if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
         if (recipients.size) {
+          // Live QA finding: every push fires at the same delivery priority
+          // regardless of urgency (Expo's own transport has no higher tier
+          // than 'high', which every notification already uses) — a driver
+          // bailing 10 minutes before pickup looked identical, at the
+          // recipient's phone, to a routine confirmation. Since the
+          // transport priority can't go any higher, the fix is making a
+          // near-term decline READ as urgent — a distinct title/copy the
+          // family-notifier case below branches on.
+          let minutesUntil: number | undefined;
+          if (updated.date && updated.time) {
+            const [h, m] = updated.time.split(':').map(Number);
+            const at = new Date(`${updated.date}T00:00:00`);
+            at.setHours(h, m, 0, 0);
+            minutesUntil = (at.getTime() - Date.now()) / 60000;
+          }
           notifyRideAssignment('ride_assignment_declined', [...recipients], actorId, {
             eventTitle: updated.title, eventId: updated.id, byName: declinerName,
+            imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
           });
         }
       }
@@ -2172,7 +2254,28 @@ export const useEventStore = create<EventState>((set, get) => ({
         // them here and does one batched local update + one batched DB
         // write instead of looping the single-row path.
         const idSet = new Set(ids);
-        const stamped = { ...updates, updatedBy: getActiveMemberId() ?? undefined, updatedAt: new Date().toISOString() };
+        // Assignment status (confirmed/pending/rejected) is a per-
+        // OCCURRENCE decision, not a bulk property of the series — live-
+        // reported bug: editing ONE recurring Ride while self-assigned as
+        // helper/driver correctly auto-confirms (per the self-assignment
+        // rule elsewhere in this file), but that confirm then got bulk-
+        // applied to all ~84 occurrences via a single 'following'/'all'
+        // edit, retroactively confirming rides months out that were never
+        // individually reviewed. Drop the incoming status here — a
+        // genuine per-occurrence confirm/decline still goes through
+        // updateEvent (scope 'this') or the RPCs (confirm/decline/
+        // reassign_event), never this batched path. If the bulk patch DOES
+        // change who the helper/driver actually is, every occurrence's
+        // status resets to 'pending' instead (never silently keeping
+        // whatever the PREVIOUS assignee's status happened to be, which
+        // would otherwise misattribute a stale 'confirmed' to someone new
+        // who never confirmed anything) — otherwise status is left alone.
+        const { helperStatus: _hs, driverStatus: _ds, ...restUpdates } = updates;
+        const statusReset = {
+          ...(('helperId' in updates || 'helper' in updates) ? { helperStatus: 'pending' as const } : {}),
+          ...(('driverId' in updates || 'driverName' in updates) ? { driverStatus: 'pending' as const } : {}),
+        };
+        const stamped = { ...restUpdates, ...statusReset, updatedBy: getActiveMemberId() ?? undefined, updatedAt: new Date().toISOString() };
         const patchOne = (e: FamilyEvent) => idSet.has(e.id) ? { ...e, ...stamped } : e;
         set({
           dayEvents:   sortByTime(get().dayEvents.map(patchOne)),

@@ -74,7 +74,7 @@ serve(async (req) => {
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
 
     const cutoff = new Date(Date.now() - SEVEN_DAYS_MS).toISOString();
-    const report = { membersPurged: 0, profilesPurged: 0, choresReleased: 0, dryRun };
+    const report = { membersPurged: 0, profilesPurged: 0, choresReleased: 0, eventMemberIdsScrubbed: 0, dryRun };
 
     // ── 1. Purge soft-deleted `members` rows past 7 days ─────────────────────
     const { data: expiredMembers, error: membersErr } = await db
@@ -117,6 +117,42 @@ serve(async (req) => {
       // chat_messages.sender_id is intentionally left as-is (user
       // decision — see header comment). The client renders "Removed
       // member" when a sender lookup misses.
+
+      // Logged QA gap: calendar_events.member_ids is a jsonb array, which
+      // Postgres can't constrain with a foreign key the way the scalar
+      // member_id column already is (that one correctly SET NULLs on
+      // delete). removeMember()'s own client-side cleanup strips a
+      // removed id out of member_ids on the normal removal path, but
+      // explicitly skips approval-pending events, and nothing at all ran
+      // at this later hard-purge stage — so a dead id could linger in an
+      // event's member list indefinitely if it was still approval-pending
+      // when its member got removed. Scrub any purged id out of every
+      // event's member_ids here, the same way chores are released above.
+      const { data: liveEvents, error: eventsErr } = await db
+        .from('calendar_events')
+        .select('id, member_ids')
+        .not('member_ids', 'is', null);
+      if (eventsErr) {
+        console.warn('[member-purge-sweep] event fetch failed:', eventsErr.message);
+      } else {
+        const expiredSet = new Set(expiredIds);
+        const eventsToScrub = (liveEvents ?? []).filter((e: { member_ids: unknown }) =>
+          Array.isArray(e.member_ids) && e.member_ids.some((id: string) => expiredSet.has(id))
+        );
+        if (eventsToScrub.length && !dryRun) {
+          for (const e of eventsToScrub as { id: string; member_ids: string[] }[]) {
+            const scrubbed = e.member_ids.filter(id => !expiredSet.has(id));
+            const { error: scrubErr } = await db
+              .from('calendar_events')
+              .update({ member_ids: scrubbed })
+              .eq('id', e.id);
+            if (scrubErr) console.warn(`[member-purge-sweep] event member_ids scrub failed for ${e.id}:`, scrubErr.message);
+            else report.eventMemberIdsScrubbed += 1;
+          }
+        } else {
+          report.eventMemberIdsScrubbed += eventsToScrub.length;
+        }
+      }
 
       // Member deletion itself stays per-row (not batched) — a single
       // member's FK constraint issue or delete failure should be isolated

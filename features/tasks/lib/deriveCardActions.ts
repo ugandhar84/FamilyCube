@@ -148,7 +148,26 @@ export function deriveQuestActions(
   // already grants the store WRITE to an active temporary approver; this is
   // the button-visibility half that was previously missing, so a temp
   // approver saw no Approve button despite being authorized to tap one.
-  const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review;
+  //
+  // review (isReviewCard) is true for the SHIM-collapsed Quest status
+  // 'pending_approval', which choreAdapter's choreStatusToQuestStatus also
+  // maps 'pending_grandparent_approval' and 'gp_offer_pending' onto (see
+  // that function's own comments) — those two are a GRANDPARENT's own
+  // review, not a parent's. approveQuest ultimately calls choreStore's
+  // approveChore, which requires the RAW status === 'pending_approval' and
+  // silently no-ops on anything else (same guard ParentReviewDeck.tsx's
+  // pendingSubmissions filter was fixed to respect — see its comment on
+  // gpOffersPending). Without this exclusion, QuestsScreen's Review tab and
+  // QuestCard rendered a live, tappable "Approve" button for a parent on a
+  // GP-sponsored offer/completion that only the sponsoring grandparent can
+  // actually act on — a dead button producing zero visible effect, the
+  // exact class of bug already found and fixed once in ParentReviewDeck but
+  // never propagated to this shared derivation. Only gate on choreExtra when
+  // it's actually been supplied (some callers, e.g. multi-participant rows,
+  // don't have a single ChoreTask row to pass) — undefined stays permissive
+  // rather than silently hiding the button where no raw status is available.
+  const gpOnlyReview = choreExtra?.status === 'pending_grandparent_approval' || choreExtra?.status === 'gp_offer_pending';
+  const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review && !gpOnlyReview;
   const canReopen = isParentOrSenior && declined;
   const canEditFull = isParent && (pool || (q.status === 'todo' && !q.assignedToId));
   const canEditRestricted = isParent && !done && !declined &&

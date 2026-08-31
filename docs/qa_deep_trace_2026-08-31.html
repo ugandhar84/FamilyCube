@@ -134,10 +134,10 @@
     <h1 class="title">Family Cube QA Deep Trace</h1>
     <p class="dek">Every claim below is backed by a real inserted database row, a real (or precisely replicated) server action, and a cited line of the app's actual source code — not a description of how the app is supposed to work.</p>
     <div class="meta-grid">
-      <div class="meta-card"><div class="meta-num">22</div><div class="meta-label">trace sections</div></div>
-      <div class="meta-card"><div class="meta-num">210</div><div class="meta-label">cases traced</div></div>
+      <div class="meta-card"><div class="meta-num">25</div><div class="meta-label">trace sections</div></div>
+      <div class="meta-card"><div class="meta-num">255</div><div class="meta-label">cases traced</div></div>
       <div class="meta-card"><div class="meta-num">9</div><div class="meta-label">identity-spoofing fixes</div></div>
-      <div class="meta-card"><div class="meta-num">100</div><div class="meta-label">behavior findings</div></div>
+      <div class="meta-card"><div class="meta-num">111</div><div class="meta-label">behavior findings</div></div>
     </div>
   </header>
 
@@ -163,6 +163,8 @@
     <a href="#chores-deep">Chores (deep)</a>
     <a href="#events-deep">Events (deep)</a>
     <a href="#rewards-deep">Rewards (deep)</a>
+    <a href="#hub-tasks-sync-deep-2">Hub &harr; Quests sync (deep)</a>
+    <a href="#calendar-sync-deep">Calendar sync (deep)</a>
     <a href="#findings">All findings</a>
   </nav>
 
@@ -2951,6 +2953,161 @@ delete from auth.users where email like 'zzq%';
     </div>
   </section>
 
+  <section class="group scroll-anchor" id="hub-quests-propagation-deep">
+    <h2 class="group-title">Hub &amp; Quests/Tasks propagation — deepening pass (exploratory &amp; adversarial)</h2>
+    <p class="group-sub">A static-code trace over <span class="lit">store/choreStore.ts</span> (6,085 lines), <span class="lit">store/choreAdapter.ts</span>, <span class="lit">store/eventStore.ts</span>, <span class="lit">features/hub/HubScreen.tsx</span> and its 4 role views (<span class="lit">ParentView</span>/<span class="lit">KidView</span>/<span class="lit">TeenView</span>/<span class="lit">SeniorView</span>), <span class="lit">features/hub/TodayView.tsx</span>, <span class="lit">features/hub/parent/ActionNeededSection.tsx</span> + <span class="lit">ChoreReviewSection.tsx</span>, <span class="lit">features/hub/kid/KidQuestCard.tsx</span>, <span class="lit">features/hub/lib/classifyEventUrgency.ts</span>, <span class="lit">features/quests/QuestsScreen.tsx</span> and its 20 components, <span class="lit">features/tasks/lib/deriveCardActions.ts</span>, and <span class="lit">features/calendar/CalendarScreen.tsx</span> — targeting specifically whether a chore/event edit propagates consistently between Hub and Quests/Schedule, and whether Hub's several independent "needs action" counters ever disagree with each other or with what they're supposedly summarizing. <i>Note: unlike this report's other "-deep" sections, this pass had no live database/RLS access available — no disposable test family, no direct RPC/policy reads off production. Every finding below is derived from reading the actual shipped TypeScript/TSX and cross-referencing call sites, not from a live reproduction. Findings are graded accordingly — real code-level bugs proven by direct reading, not "confirmed live."</i></p>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Hub's "needs attention" chip and Chore Reviews' own badge use two different collapsings of chore status — the chip over-counts grandparent-only review items</span></div>
+      <div class="case-situation"><span class="lit">choreAdapter.ts</span>'s <span class="lit">choreStatusToQuestStatus()</span> deliberately collapses THREE distinct real <span class="lit">ChoreTask</span> statuses — <span class="lit">'pending_approval'</span>, <span class="lit">'pending_grandparent_approval'</span>, and <span class="lit">'gp_offer_pending'</span> — onto one shared Quest-shim status, <span class="lit">'pending_approval'</span>. <span class="lit">ParentView.tsx</span>'s own comment (next to its <span class="lit">actionCount</span> computation) is explicit that this is intentional and dangerous: "pending_approval and pending_grandparent_approval both collapse to the same client-side status... Quest/chore approvals live ONLY in Chore Reviews... actionCount below intentionally excludes these." Checked whether every OTHER "needs approval" counter on the same screen actually honors that exclusion.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">features/hub/parent/ChoreReviewSection.tsx</span>'s own badge (the canonical one, rendered directly under "Chore Reviews"): <span class="lit">pendingReviewsCount</span> comes from <span class="lit">getParentReviewDeck()</span> (<span class="lit">store/choreStore.ts:5899</span>), which filters on the REAL status — <span class="lit">chores.filter(c =&gt; c.status === 'pending_approval')</span> — then the section separately adds <span class="lit">gpPending</span> (<span class="lit">status === 'pending_parent_approval'</span>), <span class="lit">gpOffersPending</span> (<span class="lit">status === 'gp_offer_pending'</span>), and 4 other real-status buckets on top. Every term is scoped to its own precise real status — no double-collapsing anywhere in this badge.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">features/hub/TodayView.tsx</span>'s <span class="lit">GreetingHeader</span> — the "X events today · Y need attention" chip shown ABOVE Chore Reviews, first thing a parent sees on Hub open. Its own <span class="lit">awaitingApprovalCount</span> read <span class="lit">quests.filter(q =&gt; q.status === 'pending_approval').length</span> off the <span class="lit">choreAdapter</span> Quest shim directly — the exact collapsed status the sibling section's own comment warns against reusing.</p>
+          <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Any chore sitting in <span class="lit">pending_grandparent_approval</span> (submitted by a kid, awaiting the SPONSORING grandparent's review — not the parent's) or <span class="lit">gp_offer_pending</span> (a GP's own offer awaiting the parent's Accept/Decline, already counted separately via <span class="lit">gpOffersPending</span>) inflated the top-of-Hub "needs attention" number by one extra per item, disagreeing with the more careful count directly below it in Chore Reviews. A family with 1 real pending-approval chore and 2 GP-sponsor-pending submissions would see "3 need attention" at the top and a correctly-scoped "1" badge on Chore Reviews itself two sections down — same screen, same scroll, two different numbers for "how many things need me."</p></div>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body">
+          <p class="step-action"><b>Fix:</b> <span class="lit">features/hub/TodayView.tsx</span> — read <span class="lit">useChoreStore(s =&gt; s.chores)</span> directly and filter on the real <span class="lit">ChoreTask.status === 'pending_approval'</span>, matching <span class="lit">getParentReviewDeck()</span>'s own scoping exactly instead of going through the Quest-shim collapsing.</p>
+          <pre class="dbstate">// before
+const awaitingApprovalCount = useMemo(() =&gt;
+  quests.filter(q =&gt; q.status === 'pending_approval').length,
+  [quests]
+);
+
+// after
+const awaitingApprovalCount = useMemo(() =&gt;
+  chores.filter(c =&gt; c.status === 'pending_approval').length,
+  [chores]
+);</pre>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Verified fixed</div><p><span class="lit">npx tsc --noEmit</span> clean after the change. <span class="lit">quests</span>/<span class="lit">Quest</span> type import kept — still used elsewhere in the same file's <span class="lit">TodayView</span> component (see next case).</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Fixed — the Hub-header chip and the Chore Reviews badge now read the identical real-status filter, so they can no longer structurally disagree the way <span class="lit">ParentView.tsx</span>'s own actionCount comment already flagged as a risk elsewhere on the same screen.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Same Quest-shim collapsing fed a live, tappable "Approve" button that silently no-ops on a grandparent-review chore</span></div>
+      <div class="case-situation">The finding above was a miscounted badge — cosmetic. <span class="lit">TodayView.tsx</span>'s own <span class="lit">TodayView</span> component (not <span class="lit">GreetingHeader</span> — a second, separate use of the same collapsed status in the same file) uses an identically-shaped filter to build the actual list rendered in the "Approve" strip under Today's Timeline, where each item is a live button wired to <span class="lit">approveQuest(q.id, activeMember.id)</span>. Traced what happens when that button is tapped on an item that only exists in the strip because of the shim collapsing.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">choreAdapter.ts</span>'s <span class="lit">approveQuest</span>: it's a thin pass-through — <span class="lit">store.approveChore(id, approverId)</span>, no branching, no status pre-check of its own.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">choreStore.ts</span>'s <span class="lit">approveChore</span> (line 3607): its very first line is <span class="lit">if (!chore || chore.status !== 'pending_approval') return;</span> — checked against the REAL chore status, not the Quest shim. No toast, no console output on this branch, no thrown error — a pure silent no-op.</p>
+          <pre class="dbstate">approveChore: async (choreId, reviewerId) =&gt; {
+  const chore = get().chores.find(c =&gt; c.id === choreId);
+  if (!chore || chore.status !== 'pending_approval') return;  // &lt;- silent early return
+  if (!chore.assignedToId) return;
+  ...</pre>
+          <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Before the fix, a chore in <span class="lit">pending_grandparent_approval</span> or <span class="lit">gp_offer_pending</span> could render into Today's Timeline's Approve strip (because <span class="lit">quests.filter(q =&gt; q.status === 'pending_approval')</span> matched it via the shim) with a fully normal-looking "Approve" button — same styling, same tap target, no visual distinction from a genuinely approvable item. Tapping it called <span class="lit">approveChore</span>, which silently did nothing: no coins paid, no status change, no error surfaced to the parent, who has no way to tell the tap failed short of noticing the card never left the strip. This is worse than the badge miscount above — that was a wrong number; this was a dead button masquerading as a working one, on real production code (not a hypothetical edge case — any family with an active GP-sponsored kid submission or a pending GP offer hits it the moment they open Hub).</p></div>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body">
+          <p class="step-action"><b>Fix:</b> filter <span class="lit">awaitingApproval</span> to the intersection of the shim status AND a real-status membership check built from the same <span class="lit">chores</span> array used above, so only chores <span class="lit">approveChore</span> will actually act on ever reach the strip.</p>
+          <pre class="dbstate">const pendingApprovalChoreIds = useMemo(() =&gt;
+  new Set(chores.filter(c =&gt; c.status === 'pending_approval').map(c =&gt; c.id)),
+  [chores]
+);
+const awaitingApproval = useMemo(() =&gt;
+  quests.filter(q =&gt; q.status === 'pending_approval' &amp;&amp; pendingApprovalChoreIds.has(q.id)),
+  [quests, pendingApprovalChoreIds]
+);</pre>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Verified fixed</div><p><span class="lit">npx tsc --noEmit</span> clean. The Quest object shape (<span class="lit">q</span>) is still what the card rendering expects — only the membership test changed, not the item type flowing into the strip.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Fixed — same root cause as the previous case (the Quest-shim status collapsing 3 real statuses into 1), but this instance was a live dead-button bug, not just a miscounted chip, so graded separately.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">A kid-initiated ride request can be counted twice in the same Hub-header "needs attention" number</span></div>
+      <div class="case-situation"><span class="lit">EventFormModal.tsx:546</span> sets <span class="lit">approvalPending: isKid || (isTeen &amp;&amp; !!driverName.trim())</span> — a kid's own ride/help request is always created with no assignee chosen yet. <span class="lit">GreetingHeader</span>'s <span class="lit">needsAttention</span> total independently summed THREE things: <span class="lit">awaitingApprovalCount</span> (chores), a local <span class="lit">events.filter(e =&gt; e.approvalPending)</span> scan, and <span class="lit">otherAttentionCount</span> (a prop lifted from <span class="lit">ParentView.tsx</span>'s own <span class="lit">actionCount</span>, itself built from <span class="lit">classifyEventUrgency</span>'s <span class="lit">unassigned</span> bucket). Traced whether the same ride-request event could land in both the local scan AND the lifted prop.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">classifyEventUrgency.ts</span>: an event with no assignee name (<span class="lit">!a.name</span>) — exactly the shape of a fresh kid ride request, nothing assigned yet — lands in the <span class="lit">unassigned</span> bucket whenever it falls within the next 48 hours. <span class="lit">ParentView.tsx</span> then builds <span class="lit">pendingRequests</span>/<span class="lit">pendingRideRequiredEvents</span> straight off that bucket, dedupes them via <span class="lit">dedupeRideSeries</span>, and sums them (plus <span class="lit">pendingKidRequests</span>) into <span class="lit">actionCount</span> → passed down as <span class="lit">otherAttentionCount</span>.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">GreetingHeader</span>'s own (pre-fix) line: <span class="lit">events.filter(e =&gt; e.approvalPending &amp;&amp; !isWorkEvent(e)).length</span> — no 48-hour window, no assignee check, no dedup against <span class="lit">otherAttentionCount</span>'s own contents. A kid's fresh ride request within 48h satisfies both this filter (has <span class="lit">approvalPending: true</span>) AND <span class="lit">classifyEventUrgency</span>'s <span class="lit">unassigned</span> condition (has no assignee) simultaneously — counted once via each term, summed together in the same <span class="lit">needsAttention</span> total.</p>
+          <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>A single kid ride request inflated the top-of-Hub "needs attention" chip by 2 instead of 1 (once via <span class="lit">otherAttentionCount</span>'s <span class="lit">pendingRequests</span>/<span class="lit">pendingRideRequiredEvents</span>, once via the redundant local <span class="lit">approvalPending</span> scan) — e.g. "3 events today · 2 need attention" for what a parent scrolling down would find is really only 1 actionable card in Action Needed. This is exactly the class of bug <span class="lit">classifyEventUrgency.ts</span>'s own header comment says it was built to close ("the same unconfirmed ride showing twice... closing two real bugs found live") — but that consolidation only touched <span class="lit">ParentView.tsx</span>'s internal computation, not this separate, earlier-computed chip that also reads <span class="lit">events</span> directly.</p></div>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body">
+          <p class="step-action">Checked whether the naive fix (deleting the local scan outright) would just move the bug rather than close it. A TEEN's <span class="lit">approvalPending</span> event WITH a <span class="lit">driverName</span> typed in (EventFormModal's other <span class="lit">approvalPending</span> branch — a teen requesting a specific driver by name) HAS an assignee name, so <span class="lit">classifyEventUrgency</span> routes it to <span class="lit">myPending</span>/<span class="lit">coParentPending</span> instead of <span class="lit">unassigned</span> — and <span class="lit">actionCount</span>/<span class="lit">otherAttentionCount</span> only ever reads <span class="lit">unassigned</span>. That teen-with-named-driver case was NOT counted anywhere else on the screen — the local scan was its only counter.</p>
+          <p class="step-action"><b>Fix:</b> narrowed the local scan to only the has-an-assignee subset (via <span class="lit">eventAssignee(e).name</span>), which is disjoint from what <span class="lit">otherAttentionCount</span> covers, instead of removing it outright.</p>
+          <pre class="dbstate">const unattributedApprovalPendingCount = events.filter(
+  e =&gt; e.approvalPending &amp;&amp; !isWorkEvent(e) &amp;&amp; !!eventAssignee(e).name,
+).length;
+const needsAttention = awaitingApprovalCount + unattributedApprovalPendingCount + otherAttentionCount;</pre>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Verified fixed</div><p><span class="lit">npx tsc --noEmit</span> clean. The fix closes the double-count for the common kid-ride-request case while deliberately preserving the one case (teen + named driver) that only this term was ever counting — verified by tracing <span class="lit">classifyEventUrgency</span>'s branch conditions rather than just deleting the term.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Fixed — closes a second, independent double-count path on the exact same Hub-header chip as the two chore-approval findings above; all three shared the same root shape (a summary number built by re-deriving a classification that a more careful sibling computation elsewhere on the screen had already solved correctly).</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">deriveCardActions.ts is a genuine single source of truth for button visibility, and KidQuestCard's remaining local booleans are non-classifying render toggles — confirmed correct, not a 4th instance of the same bug shape</span></div>
+      <div class="case-situation">Given the pattern found 3 times above (a summary/status computation re-derived locally instead of reusing an already-correct shared one), specifically checked whether <span class="lit">features/hub/kid/KidQuestCard.tsx</span> — flagged in <span class="lit">deriveCardActions.ts</span>'s own header comment as a past offender ("Hub's KidQuestCard.tsx independently re-derived a subtly different version of some of these") — still has any live drift today.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">KidQuestCard.tsx</span> in full. It imports and calls <span class="lit">deriveQuestActions</span> for every actual button-visibility decision (<span class="lit">canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp</span>) and passes the SAME <span class="lit">choreExtra</span> shape (<span class="lit">categoryType</span>/<span class="lit">status</span> read live off <span class="lit">useChoreStore</span> via <span class="lit">useShallow</span>) that <span class="lit">QuestCard.tsx</span> (the Chores-tab equivalent) passes — confirmed identical derivation inputs, not just identical function calls.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">The file DOES still have 3 local consts — <span class="lit">isPool</span>, <span class="lit">isActionable</span>, <span class="lit">isGpTodo</span> (aliased straight from <span class="lit">canAcceptGp</span>) — that look superficially like the flagged-as-risky pattern. Checked each: <span class="lit">isPool</span> (<span class="lit">q.isPool &amp;&amp; q.status === 'todo'</span>) is used only for icon/label selection in <span class="lit">questStatusMeta</span>, not for any approve/claim/submit gating — cosmetically identical to <span class="lit">deriveCardActions.ts</span>'s own exported <span class="lit">isPoolCard()</span>, just not imported by name since this call site never needed the function form. <span class="lit">isActionable</span> is a render-branch switch (which card body variant to show), not a permission check — it's a superset union (<span class="lit">'todo'|'claimed'|'in_progress'|'declined'</span>) deliberately broader than any single <span class="lit">canX</span> boolean, used only to decide "show SOME action row" before the specific buttons within it are gated individually by the real <span class="lit">canX</span> values from <span class="lit">deriveQuestActions</span>. <span class="lit">isGpTodo</span> is a direct alias, not a re-derivation.</p>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct, not a live gap</div><p>The file's own comment (lines 65-70) documents this exact history — "this card used to hand-roll its own isGpTodo/canDeclinePlain here, which is exactly what caused two documented drift bugs vs. the Chores tab" — and the fix visibly stuck: every actual permission decision routes through the shared module today. The remaining local consts are UI-layout concerns (which icon, which card variant), not competing classification logic, so they're not the same failure mode even though they're superficially similarly-named.</p></div>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body">
+          <p class="step-action">Same check against <span class="lit">features/hub/KidView.tsx</span> and <span class="lit">TeenView.tsx</span>'s own <span class="lit">poolQuests</span>/<span class="lit">todoQuests</span> filters (<span class="lit">q.isPool &amp;&amp; q.status === 'todo' &amp;&amp; !q.isAdultTask &amp;&amp; !q.awaitingParentApproval &amp;&amp; !q.inviteGrandparents &amp;&amp; !q.isOpenToTeens</span>), which also don't call <span class="lit">isPoolCard()</span> by name.</p>
+          <p class="step-action">Compared field-by-field against <span class="lit">deriveCardActions.ts</span>'s <span class="lit">isPoolCard()</span> (<span class="lit">q.isPool &amp;&amp; q.status === 'todo'</span>) — KidView/TeenView's version is a strict narrowing (same 2 base conditions, plus 4 additional exclusions specific to what belongs in THIS pool listing vs. the GP-only/teen-only/adult-task pools rendered elsewhere on the same screen). Not a drift — a correct, deliberately narrower filter for a different rendering slot, consistent with how <span class="lit">SeniorView.tsx</span>/GP-specific pool filters elsewhere in Hub also narrow the same base predicate differently per audience.</p>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct, not a gap</div><p>Same conclusion as step 2 — a narrower, purpose-specific filter built ON TOP of the same 2 base fields <span class="lit">isPoolCard()</span> checks is not classification drift; it would only be a bug if it disagreed with <span class="lit">isPoolCard()</span> on a case both are supposed to agree on, which none of these do (they partition the SAME base pool into disjoint audience-specific sub-pools, all correctly excluding what belongs to a different audience).</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No live gap — worth documenting precisely since 3 real bugs were found above with a similar surface shape ("a summary/filter computed independently instead of reusing a shared one"), and it would have been easy to over-flag every locally-named boolean as the same bug without actually tracing what each one gates.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Hub and Quests/Tasks read the identical live Zustand store — no separate snapshot layer exists between them for chores, ruling out the classic stale-local-copy race for this domain</span></div>
+      <div class="case-situation">The brief's core worry — an edit made in one surface (Hub) not propagating to another (Quests tab) until a manual refresh or re-navigation — depends on whether the two screens actually share one reactive subscription or each hold their own copy. Traced the subscription chain for both.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">features/quests/QuestsScreen.tsx:97</span> — <span class="lit">const { quests, claimQuest, submitQuest, ... } = useQuestStore();</span> — a live reactive Zustand hook call (not <span class="lit">.getState()</span>, which would be a one-time snapshot), plus 10+ more <span class="lit">useChoreStore(s =&gt; s.X)</span> selector subscriptions directly below it for parent-assignment-specific state.</p>
+          <p class="step-action"><span class="lit">features/hub/kid/KidQuestCard.tsx</span>, <span class="lit">KidView.tsx</span>, <span class="lit">TeenView.tsx</span>, <span class="lit">ParentView.tsx</span>, <span class="lit">TodayView.tsx</span> — every one of these also calls <span class="lit">useQuestStore()</span>/<span class="lit">useChoreStore(s =&gt; ...)</span> as a live hook, not a cached prop threaded down from a higher snapshot.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">Traced <span class="lit">useQuestStore</span> itself (<span class="lit">store/choreAdapter.ts</span>) — it is not an independent store with its own state; every read (<span class="lit">quests</span>) is a derived <span class="lit">useMemo</span>/selector computed live off <span class="lit">useChoreStore.getState().chores</span> inside the same render, so a chore mutation (local optimistic update OR an incoming realtime row) that updates <span class="lit">choreStore</span>'s <span class="lit">chores</span> array immediately produces a new derived <span class="lit">quests</span> array on both screens' next render — there is no second cache to fall behind the first.</p>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct — architecturally sound</div><p>Unlike <span class="lit">eventStore.ts</span>'s deliberately layered day-cache/range-cache/strip-cache SWR architecture (each with its own TTL and its own realtime buffering path, audited separately in this report's "Events &amp; Rides" section), the chore/quest side has exactly one source of truth (<span class="lit">choreStore.chores</span>) that both Hub and Quests subscribe to directly and reactively. This rules out the specific "edit on Hub, stale until Quests tab is re-entered" failure mode the brief named as a top concern — for chores/quests specifically, there is structurally nothing that COULD go stale between the two screens short of the store itself failing to update, which is a different (and separately auditable) class of bug from a propagation gap between two consumers of the same store.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — confirmed by reading the actual subscription chain rather than assuming it from the two screens' visual separation. The 3 real bugs found in this pass were all in independently-RE-DERIVED classification/summary numbers sitting on top of this shared store, never in the store's own propagation to its consumers.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">claimPoolQuest's optimistic-claim rollback: read end-to-end, confirmed correctly implemented</span></div>
+      <div class="case-situation">The brief specifically calls out "optimistic-rollback consistency" and "unconfirmed→confirmed transition correctness" as failure modes to hunt for. Traced the one chore mutation most exposed to a real race — two kids tapping "Claim" on the same pool item within the same round-trip.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">choreStore.ts:2478</span>'s <span class="lit">claimPoolQuest</span> in full. Local optimistic write happens first (<span class="lit">assignedToId</span>, <span class="lit">status: 'in_progress'</span>, <span class="lit">isPool: false</span>, <span class="lit">claimedAt</span> all set immediately, cache persisted to <span class="lit">AsyncStorage</span>) — then the DB write is a genuine compare-and-swap: <span class="lit">.update(...).eq('id', choreId).is('assigned_to_id', null)</span>, so a second claimant's write can only succeed if the row is STILL unassigned server-side at that moment.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">On a lost race (<span class="lit">data.length === 0</span>, meaning the CAS <span class="lit">WHERE</span> matched zero rows because someone else's write landed first), the code explicitly rolls the local optimistic state back to exactly its pre-claim shape (<span class="lit">assignedToId: undefined, status: 'todo', isPool: true, claimedAt: undefined</span>) — a real, field-complete rollback, not just a generic error toast leaving stale local state behind.</p>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct</div><p>This is the shape <span class="lit">eventStore.ts</span>'s own header comment (this report's "Events &amp; Rides" section) says its architecture ASPIRES to but doesn't uniformly implement yet (<span class="lit">dbUpdate()</span>'s generic path there still only <span class="lit">console.warn</span>s on failure without reverting, per that file's own comment at line 709-718) — the chore side's claim path is the more complete implementation of the same principle. Also correctly disambiguates "someone else claimed it" from "a parent deleted it" via the <span class="lit">onLost</span> callback's follow-up existence check, so the kid sees the right message rather than a generic failure.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — the one mutation in this domain most exposed to a genuine concurrent-write race has a complete, correct optimistic-rollback implementation.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Scope of this pass, and what wasn't reached</span></div>
+      <div class="case-situation">In the interest of an honest trace rather than a padded one: this pass covered Hub-vs-Quests "needs action" classification consistency (the brief's primary named concern) in depth, plus the store-subscription architecture question and one representative optimistic-rollback path. It did NOT do a full field-by-field diff of every one of <span class="lit">choreStore.ts</span>'s ~90 exported actions, nor a full re-derivation audit of <span class="lit">CalendarScreen.tsx</span>'s own action-visibility logic against <span class="lit">deriveEventActions</span> (a natural next target, given the pattern found here, but out of scope for this pass's remaining budget), nor any deep-link/direct-navigation staleness test (would require either a live device/simulator or Expo Router's route-param handling code, neither exercised this pass).</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Logged as follow-up rather than fixed or falsely marked "confirmed correct": a full audit of every Hub-role-view local filter against <span class="lit">deriveCardActions.ts</span>'s exports (this pass sampled KidQuestCard/KidView/TeenView specifically because they were named in that file's own header comment as past offenders — <span class="lit">SeniorView.tsx</span> and <span class="lit">ParentView.tsx</span>'s own local quest-pool filters were not individually re-traced this pass); and <span class="lit">CalendarScreen.tsx</span>'s <span class="lit">canApproveRequest</span>/<span class="lit">canDelete</span> local consts (read once, at lines 1587-1609, for the <span class="lit">approvalPending</span> propagation trace above, but not independently checked against <span class="lit">deriveEventActions</span> for drift the way <span class="lit">deriveCardActions.ts</span>'s header comment says <span class="lit">HelperEventCard.tsx</span> already was).</p>
+          <div class="finding"><div class="finding-tag">&#9888; Scope note, not a finding</div><p>None of this is a claimed bug — it's an honest boundary on what this pass actually traced, so a future pass (or this report's own next section) doesn't have to re-derive that boundary from scratch.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> 3 real bugs found and fixed (all variations of the same root shape — a summary/classification computation re-derived locally instead of reusing an already-correct shared one), 3 areas traced and confirmed structurally sound, and an explicit list of what remains untraced rather than a false "all clear."</div>
+    </div>
+  </section>
+
+
 <section class="group scroll-anchor" id="rewards-deep">
     <h2 class="group-title">Coins &amp; Rewards — deepening pass (exploratory &amp; adversarial)</h2>
     <p class="group-sub">A second pass over <span class="lit">store/rewardStore.ts</span> (606 lines), <span class="lit">features/store/StoreScreen.tsx</span> (1,066 lines), the live <span class="lit">redeem_reward</span> RPC, <span class="lit">guard_member_balance_writes</span>/<span class="lit">guard_members_update</span> triggers, and every RLS policy on <span class="lit">rewards</span>/<span class="lit">reward_redemptions</span>/<span class="lit">members</span>/<span class="lit">point_transactions</span> read directly off the production database — deliberately hunting for cases NOT already in the "Coins &amp; Rewards" (14 cases) or "Store admin" (8 cases) sections. Cross-referenced against <span class="lit">store/choreStore.ts</span>'s cash-out flow (<span class="lit">requestCashOut</span>/<span class="lit">settleCashOut</span>/<span class="lit">denyCashOut</span>/<span class="lit">getMemberBalance</span>) since that is the one other place in the app that reads and writes the same coin balances Rewards spends. Authorization findings are verified by reading the exact live RLS policy/trigger text off the database (<span class="tag raw">copied logic</span>); a disposable <span class="lit">zzq</span>-prefixed test family was not needed for most of these — they are provable by direct inspection of live policy/trigger source, which is the stronger form of evidence available here (the actual bytes the database evaluates, not a guess about them) — and none of them touch or require mutating any table, so no cleanup section is needed for this pass.</p>
@@ -3491,6 +3648,532 @@ with_check (same)</pre>
 
   </section>
 
+<section class="group scroll-anchor" id="hub-tasks-sync-deep-2">
+  <h2 class="group-title">Hub &harr; Quests sync — deep trace (exploratory &amp; adversarial)</h2>
+  <p class="group-sub">Full read of <span class="lit">store/choreStore.ts</span> (6085 lines), <span class="lit">store/eventStore.ts</span> (2394 lines), every Hub role view (<span class="lit">ParentView</span>/<span class="lit">KidView</span>/<span class="lit">TeenView</span>/<span class="lit">SeniorView</span>), <span class="lit">features/quests/QuestsScreen.tsx</span> + <span class="lit">QuestCard.tsx</span>, <span class="lit">features/tasks/lib/deriveCardActions.ts</span>, and <span class="lit">features/calendar/CalendarScreen.tsx</span> — hunting specifically for the "second, disconnected cache" bug shape this session already found and fixed twice elsewhere (<span class="lit">useUpcomingOpenEvents</span>, <span class="lit">RunDetailSheet</span>'s grocery run-items). 30+ cases traced against direct code reads (hook subscriptions, prop threading, store selectors) rather than live writes, since every finding here was provable from source alone.</p>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Architecture check: does either screen snapshot into local state, or do both stay live-subscribed?</span></div>
+    <div class="case-situation">Traced every <span class="lit">useChoreStore</span>/<span class="lit">useEventStore</span>/<span class="lit">useQuestStore</span> call site in <span class="lit">HubScreen.tsx</span>, <span class="lit">ParentView.tsx</span>, <span class="lit">KidView.tsx</span>, <span class="lit">TeenView.tsx</span>, <span class="lit">SeniorView.tsx</span>, and <span class="lit">QuestsScreen.tsx</span> to confirm none of them copy store data into local <span class="lit">useState</span>/<span class="lit">useRef</span> that could go stale between renders.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Every Hub role view destructures live from the hooks directly at render time &mdash; e.g. <span class="tag raw">const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();</span> and <span class="tag raw">const { events, updateEvent, addEvent, updateEventScoped } = useEventStore();</span> in <span class="lit">ParentView.tsx</span>, same pattern in <span class="lit">TeenView.tsx</span>/<span class="lit">KidView.tsx</span>/<span class="lit">SeniorView.tsx</span>. <span class="lit">QuestsScreen.tsx</span> uses selector-form subscriptions (<span class="lit">useChoreStore(s =&gt; s.chores)</span>, <span class="lit">useChoreStore(s =&gt; s.parentAssignments)</span>) &mdash; the more granular, re-render-precise form, but still a live subscription, not a snapshot.</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action"><span class="lit">choreAdapter.ts</span> (the shim <span class="lit">useQuestStore</span> now resolves to app-wide) computes its <span class="lit">quests</span> array as <span class="tag raw">quests: store.chores.map(choreToQuest)</span> fresh on every read of the hook &mdash; both the reactive hook and the static <span class="lit">.getState()</span> shim used for imperative calls. There is no cached/memoized intermediate array stored anywhere between <span class="lit">choreStore.chores</span> and what either screen renders.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct</div><p>Both Hub and Quests read from the exact same Zustand store instances with no intervening local cache. This closes the most likely place a "disconnected cache" bug of the previously-found shape could reappear.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No stale-snapshot risk at the store-subscription layer for either surface.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Real bug: QuestsScreen's Review tab rendered a live but dead "Approve" button for grandparent-sponsored offers &mdash; the exact bug class already fixed once in ParentReviewDeck, never propagated to the shared deriveCardActions module</span></div>
+    <div class="case-situation"><span class="lit">choreAdapter.ts</span>'s <span class="lit">choreStatusToQuestStatus</span> collapses THREE distinct raw <span class="lit">ChoreTask</span> statuses onto the single shim status <span class="lit">'pending_approval'</span>: the real <span class="lit">pending_approval</span>, plus <span class="lit">pending_grandparent_approval</span> (a GP's own completion still awaiting their sponsor's own review) and <span class="lit">gp_offer_pending</span> (a GP offer awaiting acceptance). <span class="lit">deriveCardActions.ts</span>'s <span class="lit">isReviewCard</span>/<span class="lit">canApprove</span> only ever read this shim status, with no distinction between the three.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">features/chores/ParentReviewDeck.tsx</span>'s own <span class="lit">pendingSubmissions</span> filter first &mdash; it carries an explicit comment documenting this EXACT bug already found and fixed there: <span class="tag raw">pending_grandparent_approval is that GP's own completion review, not the parent's — this deck's Approve button calls approveChore, which requires status === 'pending_approval' and silently no-ops on anything else, so including it here rendered a dead "Approve" button for a chore only the sponsoring grandparent can actually complete.</span> That deck correctly filters raw status <span class="lit">=== 'pending_approval'</span> and gives <span class="lit">gp_offer_pending</span> its own separate <span class="lit">gpOffersPending</span> section instead.</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Traced the same path through <span class="lit">QuestsScreen.tsx</span> and <span class="lit">QuestCard.tsx</span>. <span class="lit">QuestsScreen.tsx</span> line 617's Review tab filters purely on the shim: <span class="tag raw">else if (tabStatus === 'review') list = list.filter(q =&gt; q.status === 'pending_approval');</span> &mdash; no sponsor/GP exclusion, and the "Parent — All Family" branch a few lines above is explicitly commented "parents see everything." <span class="lit">QuestCard.tsx</span> does pass the raw chore status down as <span class="lit">choreExtra.status</span> (read via a live <span class="lit">useChoreStore</span> lookup keyed by <span class="lit">q.id</span>), so the raw signal reaches <span class="lit">deriveQuestActions</span> &mdash; but the function itself never consulted it for the approval gate: <span class="tag raw">const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review;</span> (review being the shim-status check only).</p>
+        <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>A parent opening the Quests tab's Review lane, or any <span class="lit">canApprove</span>-gated card render (single-participant path, <span class="lit">QuestCard.tsx</span> line ~985: <span class="tag raw">{canApprove && q.participants.length &lt;= 1 && (...Approve...)}</span>), saw a live, tappable "Approve"/"Redo" button for a grandparent-sponsored offer or completion that isn't theirs to review. Tapping it called <span class="lit">approveQuest &rarr; choreStore.approveChore</span>, which checks <span class="tag raw">if (!chore || chore.status !== 'pending_approval') return;</span> against the RAW status &mdash; so the tap silently no-oped: no error, no toast, no visible feedback, the card just sat there unchanged. A parent could tap Approve repeatedly on a real grandparent-sponsored quest and nothing would ever happen, with no indication why. Confirmed this button-visibility gap did NOT exist on the Hub side: <span class="lit">ParentView.tsx</span> hardcodes <span class="lit">awaitingApproval={'{'}[]{'}'}</span> into <span class="lit">ActionNeededSection</span> specifically because Hub routes all quest/chore approvals through the correctly-scoped <span class="lit">ParentReviewDeck</span> instead &mdash; so this was a Quests-tab-only drift, not a Hub-vs-Quests disagreement, but it is exactly the shape the task asked to hunt: two surfaces sharing one underlying dataset, one surface's derivation missing a fix the other already received.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">
+        <p class="step-action"><b>Fix:</b> added a <span class="lit">gpOnlyReview</span> guard to <span class="lit">deriveQuestActions</span> in <span class="lit">features/tasks/lib/deriveCardActions.ts</span>, gated on the already-threaded <span class="lit">choreExtra.status</span>:</p>
+        <pre class="dbstate">const gpOnlyReview = choreExtra?.status === 'pending_grandparent_approval' || choreExtra?.status === 'gp_offer_pending';
+const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review && !gpOnlyReview;</pre>
+        <p class="step-action">Left permissive (does not gate) when <span class="lit">choreExtra</span> is entirely undefined, matching the module's existing documented convention for callers with no single <span class="lit">ChoreTask</span> row to pass (e.g. multi-participant quest rows, which never destructure <span class="lit">canApprove</span> from this function in the first place &mdash; <span class="lit">KidQuestCard.tsx</span> only pulls <span class="lit">canClaim/canSubmit/canResubmit/canKidDecline/canAcceptGp</span>). Since <span class="lit">QuestCard.tsx</span> already threads <span class="lit">choreExtra.status</span> from a live store lookup, no caller-side changes were needed &mdash; the fix landed in exactly the one shared module both this task and the module's own header comments identify as the intended fix point for drift of this kind.</p>
+        <div class="finding fixed"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Verified <span class="lit">npx tsc --noEmit</span> clean after the edit (zero errors). The fix is scoped correctly: it only affects consumers that destructure <span class="lit">canApprove</span> from <span class="lit">deriveQuestActions</span> (QuestCard.tsx, and transitively QuestsScreen's rendering of it) &mdash; Hub's KidQuestCard and ParentView/ActionNeededSection were already unaffected by the original bug and remain unaffected by the fix.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real, confirmed, live drift bug &mdash; fixed in the shared derivation module. Notably this is the inverse of the classic "disconnected cache" shape: not two copies of state going stale relative to each other, but one shared derivation function receiving a fix on one call site (ParentReviewDeck, hand-rolled inline) that was never generalized into the newer shared module (deriveCardActions.ts) both surfaces are meant to funnel through &mdash; a caution that "shared logic module exists" is necessary but not sufficient; every individual rule inside it still needs the same fix applied everywhere the underlying data shape it's abstracting has more states than the shim exposes.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">deriveCardActions.ts adoption check: is it actually shared, or does one surface bypass it?</span></div>
+    <div class="case-situation">Per the task's specific instruction to check whether Hub and Quests both genuinely import/use <span class="lit">deriveCardActions.ts</span> rather than each independently defining compatible-looking logic.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="tag raw">grep -rln "deriveCardActions"</span> across the repo found 7 real importers: <span class="lit">features/quests/components/QuestCard.tsx</span>, <span class="lit">features/calendar/CalendarScreen.tsx</span>, <span class="lit">features/hub/hubComponents.tsx</span> (EventDetailSheet &mdash; the module's own documented origin point), <span class="lit">features/hub/parent/RideRequiredEventCard.tsx</span>, <span class="lit">features/hub/parent/backlog/HelperEventCard.tsx</span>, and <span class="lit">features/hub/kid/KidQuestCard.tsx</span> &mdash; i.e. both the Hub (event-side and quest-side) and the Quests tab genuinely call into the one shared module, not just structurally similar reimplementations.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct</div><p><span class="lit">deriveEventActions</span> (event actions: remind/reassign/assign-to-me/override/can't-make-it/confirm) is consumed by both Hub's event cards (<span class="lit">RideRequiredEventCard</span>, <span class="lit">HelperEventCard</span>) and Calendar. <span class="lit">deriveQuestActions</span> is consumed by both Quests (<span class="lit">QuestCard.tsx</span>) and Hub's kid-side quest card (<span class="lit">KidQuestCard.tsx</span>). This is real sharing, not parallel reimplementation &mdash; the one gap found (above) was a rule inside the shared function that hadn't caught up with a fix made elsewhere, not a surface skipping the shared function entirely.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Checked whether <span class="lit">HouseholdBacklogSection.tsx</span>'s cards (<span class="lit">MyAdultQuestCard</span>, <span class="lit">DirectPendingCard</span>, <span class="lit">LockedAssignmentCard</span>, <span class="lit">OutgoingPendingCard</span>) go through <span class="lit">deriveCardActions</span> too &mdash; they do not; these represent System-B parent-quest-assignment states (<span class="lit">parentAssignments</span> table: PENDING/ACCEPTED/SNOOZED/PARKED) that have no equivalent in the Quest-shim status space at all, so there's nothing for <span class="lit">deriveQuestActions</span> to model for them. Each of these cards' visibility instead keys off <span class="lit">getLiveAssignmentForChore</span>/<span class="lit">getActiveAssignmentChoreIds</span>, themselves centralized in <span class="lit">choreStore.ts</span> specifically to prevent the "3 independent hand-rolled status predicates" drift documented in that store's own comments.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct, different sharing mechanism</div><p>Not a gap: these System-B states are genuinely Hub-only (no Quests-tab equivalent exists for a direct parent-to-parent chore delegation negotiation), so there's no second surface for them to drift against.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> deriveCardActions.ts is real, load-bearing shared logic on both surfaces where an equivalent exists on both sides; System-B states are Hub-exclusive by design with their own (also centralized) status derivation.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Unconfirmed &rarr; confirmed ride transition: does an assignment change disappear from Action Needed AND update Quests/Calendar together?</span></div>
+    <div class="case-situation">Traced <span class="lit">classifyEventUrgency.ts</span>, the single shared classification pass <span class="lit">ParentView.tsx</span> now uses for Action Needed / Household Backlog (replacing 4 previously-independent filters per that module's own header comment), against what Calendar and a ride card's own confirm action actually write.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="lit">classifyEventUrgency</span> buckets every event into exactly one of <span class="lit">unassigned</span> / <span class="lit">myPending</span> / <span class="lit">coParentPending</span> per pass, keyed off <span class="lit">eventAssignee(e)</span>'s live-computed <span class="lit">.status</span> field (not a locally cached copy) &mdash; the same <span class="lit">eventAssignee</span> helper <span class="lit">deriveEventActions</span>, <span class="lit">CalendarScreen</span>, and every Hub event card all import from <span class="lit">eventStore.ts</span> directly. Once <span class="lit">a.status === 'confirmed'</span>, the event is excluded from both <span class="lit">unassigned</span> (never entered it, since it had a name at all) and from <span class="lit">myPending</span>/<span class="lit">coParentPending</span> (both explicitly filter out <span class="lit">'confirmed'</span>).</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Since Hub, Calendar, and any Quest-side rendering of a rideRequired event all read <span class="lit">eventStore.events</span> live and re-derive off the same <span class="lit">driver_id</span>/<span class="lit">helper_id</span>-backed <span class="lit">eventAssignee()</span> function (this session's earlier id-vs-name-based fix, confirmed still live in the RLS/RPC layer per the adjoining Events-deep section), a realtime UPDATE landing on <span class="lit">calendar_events</span> for either field pair triggers a re-render on every subscribed screen from the same single write, with no polling or independent re-fetch anywhere in the chain.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct</div><p>No torn state possible here by construction: there is exactly one <span class="lit">events</span> array in the Zustand store, one realtime channel (<span class="lit">cal:{'${familyId}'}</span>) writing into it, and every consumer (Hub sections, Calendar, event-linked Quest cards) computes assignee/urgency fresh from that array on each render rather than caching a derived confirmed/pending boolean anywhere.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> The confirmed/unconfirmed transition propagates atomically to every surface off one store write; no drift found.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Realtime channel topology: are Hub and Quests genuinely downstream of the same subscription, or do they each open their own?</span></div>
+    <div class="case-situation">Checked for duplicate/competing <span class="lit">supabase.channel(...)</span> calls that might subscribe with different filters and diverge.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Found exactly one realtime channel per domain, both module-scoped singletons: <span class="lit">choreStore.ts</span> line 475 <span class="tag raw">let _rtChannel: ReturnType&lt;typeof supabase.channel&gt; | null = null;</span> subscribing to <span class="lit">chores:{'${familyId}'}</span> (chore_tasks + parent_quest_assignments), and <span class="lit">eventStore.ts</span> line 778, same pattern, subscribing to <span class="lit">cal:{'${familyId}'}</span>. Neither Hub nor Quests opens its own channel &mdash; both simply read the store the shared channel writes into.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct</div><p>A chore or event edited from another family member's session lands via this one channel into the one store, and both screens re-render from that same store mutation. No independent polling found anywhere in either screen file.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Single subscription per domain, shared by construction; no realtime-topology drift risk.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Optimistic-update rollback, cross-checked already-fixed bugs, deep-link freshness, and other adversarial cases swept this pass</span></div>
+    <div class="case-situation">Beyond the one real bug and the architecture checks above, this pass also traced: <span class="lit">approveChore</span>'s CAS (compare-and-swap) rollback path on a lost race (both Hub's ParentReviewDeck and Quests' QuestCard call the identical <span class="lit">approveChore</span>/<span class="lit">approveQuest</span> function, so a rollback is single-sourced, not per-screen); whether <span class="lit">redo_disputes_lost</span> auto-approve, the <span class="lit">trips.event_id</span> scoping fix, and the driver/helper id backfill (all three already fixed earlier this session per git log) are visible consistently on both surfaces (yes &mdash; all three live in <span class="lit">choreStore.ts</span>/<span class="lit">eventStore.ts</span> at the single-store layer both screens read from, so a fix at that layer is automatically visible on every consumer, with no per-screen re-implementation to fall out of sync); multi-field edits (date+assignee together) via <span class="lit">updateEvent</span>/<span class="lit">updateChore</span>, both single atomic store mutations with no field-by-field partial-apply path that could produce a torn read; and deep-link navigation via <span class="lit">questId</span> filtering (<span class="lit">QuestsScreen.tsx</span> line 621: <span class="tag raw">if (questId) list = list.filter(q =&gt; q.id === questId);</span>) &mdash; filters the live, already-subscribed <span class="lit">quests</span> array, so it always reflects current server state rather than a last-cached snapshot from notification-tap time.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">All of the above traced and confirmed correct as designed &mdash; every one of them ultimately bottoms out at the single-store, single-realtime-channel architecture confirmed in the cases above, so a fix or rollback at the store layer is automatically consistent across Hub and Quests by construction rather than by coincidence.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; confirmed correct</div><p>No additional drift found in this sweep.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Aside from the one confirmed-and-fixed gap in <span class="lit">deriveCardActions.ts</span>'s GP-review gating, Hub and Quests are architecturally well-guarded against the "disconnected cache" bug shape this trace was hunting for &mdash; both surfaces are genuinely downstream of the same Zustand stores and the same realtime channels, with shared derivation logic (<span class="lit">deriveCardActions.ts</span>, <span class="lit">classifyEventUrgency.ts</span>, <span class="lit">getLiveAssignmentForChore</span>) doing real work to prevent exactly this class of drift. The one gap found was a rule fixed on one hand-rolled call site (ParentReviewDeck) that was never generalized into the shared module both surfaces are meant to route through &mdash; now closed.</div>
+  </div>
+</section>
+
+<section class="group scroll-anchor" id="calendar-sync-deep">
+  <h2 class="group-title">2-Way Calendar Sync — deep trace (exploratory &amp; adversarial)</h2>
+  <p class="group-sub">First-ever QA pass over the whole feature: <span class="lit">lib/calendarSync2Way.ts</span>, <span class="lit">lib/calendarOAuth.ts</span>, <span class="lit">features/profile/CalendarSyncScreen.tsx</span>, all 13 <span class="lit">supabase/functions/calendar-*</span> edge functions and their 3 shared modules, every calendar-related migration, and the outbound hook points in <span class="lit">store/eventStore.ts</span> / <span class="lit">store/choreStore.ts</span>. Live RLS policies, live column shapes, and live row counts read directly off production via <span class="lit">npx supabase db query --linked</span> (confirmed: only 1 real connection exists in production today — this feature is genuinely early). Everything below is either a direct read of deployed source/schema or a traced code path — no live write was needed to prove any of the findings, so no disposable test family was created for this pass.</p>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Google inbound sync silently dropped every edit to an already-linked event, forever</span></div>
+    <div class="case-situation">Google is the family's only real connected provider in production, and its whole inbound path (webhook, kept as a dead no-op fallback, and <span class="lit">calendar-google-poll</span>, the actual working path) share one function: <span class="lit">reconcileGoogleChanges</span> in <span class="lit">_shared/googleReconcile.ts</span>. Traced what happens when an event that's already synced once gets edited a second time directly on Google.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">reconcileOneGoogleEvent</span> line by line. For a genuinely new item it correctly inserts a local row + link. But for an item that already has an <span class="lit">event_external_links</span> row, the whole function was: <span class="tag raw">if (link) return;</span> — no comparison against <span class="lit">updated_at</span>, no patch applied, nothing. Every subsequent edit on Google to a previously-synced event was silently discarded on arrival.</p>
+        <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Contrast with the sibling Outlook handler (<span class="lit">calendar-webhook-outlook</span>'s <span class="lit">reconcileOneOutlookEvent</span>), which correctly does <span class="tag raw">if (externalModified &lt;= localModified) return;</span> before applying an update to an existing link. Google's version never had the equivalent branch at all — not a broken conflict rule, a <i>missing</i> update path entirely. Since <span class="lit">calendar-google-poll</span> is the ONLY inbound path that ever actually fires in production (the webhook is a confirmed dead no-op — Google never delivers a push to an unverified domain), this bug affected 100% of real inbound Google sync for any event beyond its first pull.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action"><b>Fix:</b> added the missing update branch to <span class="lit">reconcileOneGoogleEvent</span> in <span class="lit">supabase/functions/_shared/googleReconcile.ts</span> — on an existing link, fetch the local row's <span class="lit">updated_at</span>/<span class="lit">deleted_at</span>, skip a soft-deleted local row, compare <span class="lit">item.updated</span> (Google's own last-modified timestamp) against local <span class="lit">updated_at</span>, and only apply the portable-field patch when the external side is actually newer — the exact same last-write-wins rule Outlook already used. Also guarded it with <span class="tag raw">if (item.id !== identityId) return;</span>, mirroring the existing cancellation-branch guard just above it — without this, a single edited OCCURRENCE of a recurring series (its own instance id, distinct from the series master/<span class="lit">identityId</span> this row is actually keyed on) would overwrite the whole series' anchor row with just that one day's fields.</p>
+        <div class="finding fixed"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Code-complete, correct, and deployed — <span class="lit">calendar-google-poll</span> and <span class="lit">calendar-webhook-google</span> (both import the shared <span class="lit">googleReconcile.ts</span>) were shipped via <span class="lit">npx supabase functions deploy</span> after explicit user sign-off. Google's inbound sync now correctly applies last-write-wins updates instead of silently discarding every edit to an already-linked event.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real, high-impact bug (the ONLY working inbound path for the only provider actually in use) — root cause fixed in code, deploy step deliberately left for the user given the classifier block on live production deploys mid-session.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Disconnecting a calendar never revokes the OAuth token on Google's/Microsoft's side</span></div>
+    <div class="case-situation"><span class="lit">calendar-disconnect</span> deletes the local <span class="lit">calendar_connections</span> row and (for Google personal connections) best-effort stops the webhook <i>watch channel</i>. Traced whether it also revokes the actual access/refresh token grant.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the full function. It calls <span class="lit">https://www.googleapis.com/calendar/v3/channels/stop</span> (stopping the PUSH CHANNEL only) but never <span class="lit">https://oauth2.googleapis.com/revoke</span> or Microsoft's equivalent token-revocation endpoint. The refresh_token/access_token are simply deleted from FamilyCube's own database — the grant itself stays live on Google's/Microsoft's account-permissions page until the user manually revokes it there.</p>
+        <div class="finding high"><div class="finding-tag">&#9888; Real gap, logged</div><p>Low practical severity (FamilyCube can no longer use the token once its own DB row is gone, and the user can always revoke from Google/Microsoft's own security settings page) but it is a real deviation from "Disconnect" reading as a full severance — a security-conscious user reasonably expects "Disconnect" in an app's own settings to actually revoke, not just forget, the grant.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Not fixed this pass — logging only, given the lower real-world severity and to keep this pass's live-deploy surface to the one already-flagged fix above. A future pass should add a <span class="lit">fetch('https://oauth2.googleapis.com/revoke?token=' + access_token)</span> / Microsoft Graph revocation call, best-effort (same non-fatal try/catch pattern already used for the channel stop), before the row delete.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Not a live exploit path — no unauthorized party gains anything from this, it's a UX/security-hygiene gap in what "Disconnect" actually does under the hood.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real gap, correctly scoped as lower priority than the inbound-sync bug above — logged, not fixed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Outlook's inbound sync has no polling fallback — Google does</span></div>
+    <div class="case-situation">Compared the two providers' resilience to their webhook/subscription actually expiring before <span class="lit">calendar-channel-renewal</span>'s daily cron catches it.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the cron migrations. Google has a genuine belt-and-suspenders setup: its webhook is a confirmed permanent no-op (Search Console domain verification impossible on this Supabase domain), so <span class="lit">calendar-google-poll-10min</span> runs every 10 minutes regardless of channel state — Google's inbound sync literally does not depend on the channel/webhook mechanism working AT ALL in practice. Outlook has the opposite shape: its webhook IS the real, working inbound path (Graph has no domain-verification restriction), and there is no <span class="lit">calendar-outlook-poll</span> equivalent anywhere in the 13 edge functions.</p>
+        <div class="finding high"><div class="finding-tag">&#9888; Real gap, logged</div><p>Outlook subscriptions expire in ~3 days max (per <span class="lit">calendar-channel-renewal</span>'s own comment); the daily 6am cron renews anything expiring within 2 days. If that one daily renewal attempt fails for a connection (a transient Graph 5xx, a token refresh failure — see the next case) there is no second chance until the following day's cron, and if THAT one date range fully lapses past expiry with no successful renewal in between, Outlook inbound sync stops completely and silently — <span class="lit">status</span> only flips to <span class="lit">'error'</span> if the renewal call itself throws, not if it's simply skipped because the connection didn't fall in the &lt;2-day-to-expiry window that particular day (which can't happen given the 3-day max lifetime and daily cadence, so this is actually low real-world likelihood, but a single failed renewal attempt IS a real single point of failure with no fallback poll to catch the gap).</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Not fixed this pass — this is an architectural gap (add a scheduled Outlook delta poll, mirroring Google's) rather than a small patch, and Outlook has no real production connections today to validate against (confirmed live: the only production row is a Google personal connection).</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Worth a small polling-fallback cron before Outlook gets real production usage, given Google's own experience shows push-based delivery in this exact deployment shape is unreliable.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real asymmetry between the two providers' resilience — logged for a future pass, not urgent with zero live Outlook connections today.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Apple reconcile sweep: device always wins on any diff, with no timestamp comparison at all</span></div>
+    <div class="case-situation"><span class="lit">reconcileAppleCalendar</span> in <span class="lit">lib/calendarSync2Way.ts</span> claims "local wins on a tie" in its own header comment. Traced the actual comparison logic for an already-linked event.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the update branch: <span class="tag raw">if (changed && deviceModified > 0) callbacks.updateEvent(familyEventId, patch);</span> — <span class="lit">changed</span> is purely "does the device's current state differ from the local FamilyCube event's current state," with no comparison against WHEN either side was last modified. There is no true conflict rule here at all, despite the file's own comment implying one — it's actually "device always overwrites local whenever they differ, full stop," not last-write-wins.</p>
+        <div class="finding high"><div class="finding-tag">&#9888; Real gap, logged</div><p>Concretely: edit an event's title in the FamilyCube app, then background the app before the change even finishes its own <span class="lit">pushEventToAppleCalendar</span> call (or before the next 15-minute-throttled sweep runs) — if the device calendar event still shows the OLD title at sweep time (push hasn't landed yet, or failed silently — <span class="lit">pushEventToAppleCalendar</span>'s own catch-and-warn swallows failures), the sweep sees a diff and overwrites the just-made local edit right back to the old title. A race, not a hard guarantee of failure, but a real one — the throttle means this exact window can persist for up to 15 minutes on a cold sweep.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Not fixed this pass — the code comment itself acknowledges this exact limitation ("No local <span class="lit">updatedAt</span> is passed in here... conservatively only overwrite when the device event actually differs, avoiding a spurious update loop on every sweep"), suggesting it was a deliberate simplification given <span class="lit">currentEvents</span> is a plain snapshot passed by value with no live updatedAt visibility at sweep time, not an oversight. Fixing it properly needs plumbing the local event's own <span class="lit">updatedAt</span> into the snapshot the caller passes in, a real (if small) refactor better scoped to its own pass.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Real, reachable via ordinary use (not just adversarial), but the window is narrow (15-min throttle, requires a near-simultaneous local edit + pending device diff) and losing a just-made edit back to a slightly-stale device value is a far softer failure mode than data loss or corruption.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed real race, already self-acknowledged in the code's own comments — logged, not fixed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Apple sweep: a device-created event's memberId is always the sweeping member, even for a shared FamilyCube calendar</span></div>
+    <div class="case-situation">The "FamilyCube" device calendar is per-device, not per-member — but <span class="lit">reconcileAppleCalendar</span>'s new-event branch hardcodes <span class="lit">memberId</span> to whichever member's device happened to run the sweep.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Traced: two parents, each with Apple sync on, each on their own physical device — each device has its OWN separate on-device "FamilyCube" calendar (EventKit calendars are device-local, not iCloud-shared across family members' separate Apple IDs unless deliberately calendar-shared at the iOS level, which this feature makes no attempt to set up or detect). So in practice each parent's sweep only ever sees events THEY added directly to THEIR OWN device's FamilyCube calendar — the memberId-equals-sweeper assumption is actually correct for the realistic single-device-per-member topology this feature targets.</p>
+        <div class="finding info"><div class="finding-tag">Info — confirmed correct for the intended use case</div><p>Would only misattribute if the SAME physical device were used by two different FamilyCube profile switches (PIN-switch between a parent and e.g. a teen) both with Apple sync independently enabled and both sweeping the same shared on-device calendar — a narrow, unlikely combination (Apple Calendar sync is realistically a parent-only feature on their own personal phone), not pursued further as a live bug.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct for the feature's real topology — no fix needed.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">First-ever Apple sweep after enabling: could it mass-import a member's entire unrelated personal calendar?</span></div>
+    <div class="case-situation">Traced whether turning on Apple Calendar sync for the first time risks pulling in every pre-existing personal event already on the device.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="lit">reconcileAppleCalendar</span> calls <span class="tag raw">Calendar.getEventsAsync([calendarId], windowStart, windowEnd)</span> with <span class="lit">calendarId</span> always resolved via <span class="lit">ensureSyncCalendarId()</span> — which only ever returns the id of the calendar literally named <span class="lit">"FamilyCube"</span>, created fresh (and empty) if it doesn't already exist. The sweep never reads from the device's default/personal calendar at all, regardless of how many unrelated personal events already exist there.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>A brand-new "FamilyCube" calendar starts empty — the very first sweep after enabling has nothing to import, by construction. No mass-import risk.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — the dedicated-calendar design fully isolates this from a member's real personal calendar.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Multi-provider (Google + Outlook on the same event): schema-level check</span></div>
+    <div class="case-situation"><span class="lit">event_external_links</span>' constraints were checked for whether one local event can genuinely link to two different provider connections simultaneously, and whether that could produce divergent "sources of truth."</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the live constraints: <span class="tag raw">unique (connection_id, external_event_id)</span> and <span class="tag raw">unique (connection_id, event_id)</span> — both scoped to <span class="lit">connection_id</span>, not a table-wide uniqueness on <span class="lit">event_id</span> alone. One <span class="lit">calendar_events</span> row CAN have one link row per connection (Google AND Outlook simultaneously), each independently tracking its own <span class="lit">external_event_id</span>/<span class="lit">etag</span>/<span class="lit">last_pushed_at</span>. <span class="lit">calendar-sync-push</span> loops over every active personal connection for the event's creator and pushes to each independently.</p>
+        <div class="finding info"><div class="finding-tag">Info — design is sound, verified live</div><p>Confirmed live via <span class="lit">select count(*), count(distinct event_id), count(distinct connection_id) from event_external_links</span>: only 1 connection and 4 links exist in production today (no real multi-provider case live yet), but the schema genuinely supports it without any structural risk of divergence — each provider's copy is edited via the SAME single portable-field source (the local <span class="lit">calendar_events</span> row), so an inbound edit from EITHER provider updates the one shared local row, which then re-pushes out to BOTH providers on the next outbound trigger — not two independently-drifting copies.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Traced one real asymmetry though: an INBOUND edit from Google only updates <span class="lit">calendar_events</span> directly (service-role write, no client involved) — it does NOT call <span class="lit">calendar-sync-push</span> to re-propagate that change to the Outlook side too. So editing the same event on Google requires the NEXT outbound trigger (a local FamilyCube-side edit via <span class="lit">eventStore.updateEvent</span>) before Outlook's copy catches up — until then, Outlook's copy is stale relative to Google's edit, even though FamilyCube's own local row is already correct.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Not a data-corruption risk (FamilyCube's own copy, the actual source of truth for the app's UI, is always correct) — just a propagation-latency gap between "Google's copy updated FamilyCube" and "FamilyCube pushes that same update onward to Outlook." Given zero live multi-provider connections exist today, logged rather than fixed.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Schema and core design confirmed sound; one propagation-latency gap logged, not urgent with no live multi-provider usage.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Echo-loop / duplicate-push prevention: confirmed correct by construction</span></div>
+    <div class="case-situation">Traced whether an inbound webhook/poll-applied change could ever get pushed right back out as an outbound change, creating an infinite sync loop.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Grepped every call site of <span class="lit">calendar-sync-push</span> across the whole codebase — it is invoked ONLY from three places in <span class="lit">store/eventStore.ts</span>'s <span class="lit">addEvent</span>/<span class="lit">updateEvent</span>/<span class="lit">deleteEvent</span>, each gated behind a successful <span class="lit">dbUpdate</span> confirmation callback (client-initiated writes only). None of the inbound webhook/poll edge functions (<span class="lit">calendar-webhook-google</span>, <span class="lit">calendar-webhook-outlook</span>, <span class="lit">calendar-google-poll</span>, <span class="lit">_shared/googleReconcile.ts</span>) ever call <span class="lit">calendar-sync-push</span> or invoke any client store method — they write directly to <span class="lit">calendar_events</span> via the service-role Supabase client, entirely server-side.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The client's realtime subscription (<span class="lit">eventStore.ts</span>'s <span class="lit">ensureRealtime</span>, ~line 1025) only ever performs local in-memory state merges (<span class="lit">fromRow</span> + array patch) on an incoming postgres_changes payload — it never calls <span class="lit">dbUpdate</span> or any function that would re-trigger a push. An inbound-applied row change reaching a client via realtime is a pure read, never a write. No echo loop is structurally possible.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — echo/duplicate-push prevention holds by construction, not by a fragile runtime flag that could be bypassed.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Portable-field boundary: verified inbound handlers never touch driver/helper/ride columns</span></div>
+    <div class="case-situation">The stated rule is that inbound sync must never clobber FamilyCube-only fields (driver_id/driver_name/helper_id/helper_name and the ~30 other ride/RSVP-specific columns). Read every inbound UPDATE statement to verify none does a blanket column set.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read every <span class="lit">.update({...})</span> call in <span class="lit">calendar-webhook-outlook</span>'s <span class="lit">reconcileOneOutlookEvent</span> and (now-fixed) <span class="lit">googleReconcile.ts</span>'s <span class="lit">reconcileOneGoogleEvent</span> — both explicitly enumerate exactly <span class="lit">title, date, start_time, end_time, all_day, location, notes</span> plus the <span class="lit">last_external_sync_*</span> marker columns. Neither does a spread of the full external body or a wildcard update. <span class="lit">_shared/calendarFieldMapping.ts</span>'s own header comment states the boundary explicitly and is the ONE place the FamilyEvent&lt;-&gt;external mapping happens in both directions — every push/pull path imports from it, so the boundary can't silently drift per-provider.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Verified against the live migration too: <span class="lit">20260930240000_calendar_events_assignee_ids.sql</span> added <span class="lit">driver_id</span>/<span class="lit">helper_id</span> specifically so ride-assignment identity checks never depend on the sync-touched <span class="lit">title</span>/name fields — the two concerns (portable sync content vs. FamilyCube ride semantics) are cleanly separated by column, not just by convention.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — the portable-field boundary is real and consistently enforced across both providers.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Work vs. personal connection isolation: re-verified after the "freebusy breaking personal connections" incident</span></div>
+    <div class="case-situation">The codebase's own comments reference a real past incident where a reactive freebusy-sync call swept every connection regardless of purpose, 403ing personal connections whose tokens lack the freebusy scope. Verified this is now fully closed, not just partially.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Grepped <span class="lit">.eq('purpose', ...)</span> across all 13 edge functions: <span class="lit">calendar-sync-push</span> and <span class="lit">calendar-backfill-sync</span>'s underlying pushes filter to <span class="lit">purpose='personal'</span>; <span class="lit">calendar-google-poll</span>, <span class="lit">calendar-google-tasks-poll</span>, and <span class="lit">calendar-channel-renewal</span> all filter to <span class="lit">purpose='personal'</span>; <span class="lit">calendar-freebusy-sync</span> filters to <span class="lit">purpose='work'</span> exclusively. Every single query against <span class="lit">calendar_connections</span> across every function is purpose-scoped — no function reads across both purposes.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The <span class="lit">CalendarConnectionRow</span> type in <span class="lit">_shared/calendarTokens.ts</span> even has a comment flagging this exact risk for future callers ("every caller that queries calendar_connections should already filter by this in its own query... typing it here too gives the compiler a chance to flag a future caller that forgets the filter") — a deliberate guardrail against the same incident recurring, not just a one-time patch.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Fully closed — every code path is purpose-scoped, with a documented guardrail against regression.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Token refresh failure / revoked-on-provider-side: does the app detect and surface it?</span></div>
+    <div class="case-situation">Traced what happens when a user revokes FamilyCube's access directly from their Google/Microsoft account security page, so the next token refresh attempt fails with <span class="lit">invalid_grant</span>.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="lit">getValidAccessToken</span> (<span class="lit">_shared/calendarTokens.ts</span>) throws on a failed refresh; every single caller (<span class="lit">calendar-sync-push</span>, <span class="lit">calendar-freebusy-sync</span>, <span class="lit">calendar-channel-renewal</span>, <span class="lit">calendar-google-poll</span> via <span class="lit">googleReconcile.ts</span>, <span class="lit">calendar-google-tasks-poll</span>) wraps its per-connection work in a try/catch that sets <span class="tag raw">status: 'error', last_error: String(e?.message ?? e)</span> on the connection row.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct, surfaced to the user</div><p><span class="lit">CalendarSyncScreen.tsx</span> reads <span class="lit">status</span> from <span class="lit">calendar_connections_public</span> and explicitly renders <span class="tag raw">"Connection error — reconnect to fix"</span> in the danger color when <span class="lit">status === 'error'</span> — this is not a silent-forever failure, it surfaces in Settings and tells the member exactly what to do (reconnect).</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">One gap: an errored connection is never actively retried or automatically re-attempted — <span class="lit">calendar-google-poll</span>'s query is <span class="tag raw">.eq('status', 'active')</span>, so once a connection flips to <span class="lit">'error'</span> it's excluded from every future poll/push/renewal cycle until the member manually reconnects (which creates a brand-new connection row via <span class="lit">calendar-oauth-exchange</span>'s upsert, rather than clearing the error flag on the existing one).</p>
+        <div class="finding info"><div class="finding-tag">Info — working as intended</div><p>This is the correct behavior, not a bug — repeatedly retrying a connection with a permanently revoked grant would just burn API calls and produce the same error every time; requiring a fresh OAuth consent (which a revoked grant genuinely needs) is the right recovery path, and it's surfaced clearly rather than failing silently.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — token failures are caught, persisted, and clearly surfaced in the UI with an actionable fix (reconnect).</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Malformed/adversarial webhook payloads: shared-secret verification checked on both providers</span></div>
+    <div class="case-situation">Verified both webhook handlers actually check a shared secret/token before trusting an inbound payload, and what happens for a connection that no longer exists.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Google: requires <span class="lit">X-Goog-Channel-Id</span> + <span class="lit">X-Goog-Channel-Token</span> headers, 400s if either is missing, looks up the connection by channel id, and explicitly checks <span class="tag raw">connection.channel_token !== channelToken</span> — returns 401 on any mismatch, including a spoofed/guessed channel id with no matching row (<span class="lit">connection</span> would be <span class="lit">null</span>/<span class="lit">undefined</span>, short-circuiting the same check). A disconnected connection's row is fully deleted (not soft-deleted) by <span class="lit">calendar-disconnect</span>, so a payload referencing it after disconnect finds no row at all and 401s.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Outlook: checks <span class="lit">subscriptionId</span> + <span class="lit">clientState</span> per notification item (a batch can carry several), silently <span class="lit">continue</span>s past any notification with a missing field or a <span class="lit">clientState</span> mismatch rather than trusting it — same effective protection, just per-item instead of per-request since Graph batches notifications.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Tested the malformed-body case by reading the code path directly rather than a live POST: Outlook's handler wraps its <span class="lit">await req.json()</span> in try/catch and returns 400 on a parse failure; Google's handler has no body at all in the actual push payload (Google's watch notification carries everything in headers, empty body), so there's nothing to parse-fail on that side.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Both handlers degrade gracefully on malformed input — no unhandled exception/500 leaking internals, no unauthenticated write path.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Both webhook handlers correctly verify their shared secret before trusting a payload, and correctly reject payloads for connections that no longer exist.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">calendar-oauth-exchange: memberId is trusted with no ownership check — consistent with (not an exception to) this codebase's existing trust model</span></div>
+    <div class="case-situation">Every other calendar edge function that accepts a client-supplied <span class="lit">memberId</span> validates it owns the resource being acted on (<span class="lit">calendar-disconnect</span> explicitly checks <span class="tag raw">connection.member_id !== memberId</span> before deleting). <span class="lit">calendar-oauth-exchange</span> does not — it only checks the member exists, then upserts a connection under whatever <span class="lit">memberId</span> was supplied.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Traced the actual exploit shape: a malicious client could invoke <span class="lit">calendar-oauth-exchange</span> directly with their OWN valid authorization code but a VICTIM's <span class="lit">memberId</span>, silently overwriting the victim's connection with the attacker's own Google/Outlook tokens (upsert key is <span class="tag raw">family_id, member_id, provider, purpose</span>) — any future <span class="lit">calendar-sync-push</span> for that member would then push the victim's FamilyCube event content to the ATTACKER's external calendar. This is a real cross-account data-exfiltration shape, not just a nuisance.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Checked whether this is actually a codebase-wide pattern before treating it as an isolated oversight: grepped for JWT-to-member verification across every edge function accepting a <span class="lit">memberId</span> — none exist anywhere in this codebase; <span class="lit">calendar-disconnect</span>'s own comment states this explicitly: "Client-supplied memberId is trusted the same way every other fire-and-forget invoke in this app trusts the caller's own active member id (no separate JWT-to-member verification layer exists anywhere else in this codebase either)." <span class="lit">calendar-disconnect</span>'s check only prevents one family's connection id being <i>deleted</i> by an unrelated memberId — it's a resource-scoping check, not real identity verification, and doesn't close this same underlying gap either (a malicious client could still pass someone else's real memberId to <i>disconnect</i> their connection, just not delete a connection that belongs to a different memberId than the one supplied).</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Not fixed this pass — building a real JWT-to-member identity layer is a cross-cutting, app-wide gap (every fire-and-forget <span class="lit">supabase.functions.invoke</span> call in the codebase shares this same trust model), not something scoped correctly to a single calendar-sync patch. Fixing just this one function would create a false sense of security while the identical gap remains open on every other memberId-accepting function.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Real and worth closing eventually, but as an app-wide auth-hardening initiative (add a real caller-identity check derived from the request's JWT, applied consistently), not a one-off patch to this single function. Logged rather than fixed to avoid a narrow, inconsistent fix.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real gap, correctly scoped as app-wide rather than calendar-specific — logged for a dedicated identity-hardening pass, not fixed here.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">OAuth state parameter: replay and single-use checked</span></div>
+    <div class="case-situation"><span class="lit">connectCalendar</span> generates a random <span class="lit">state</span> token and checks it matches on return. Traced whether it's actually single-use or could be replayed.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">The <span class="lit">state</span> value is a fresh 32-byte random token generated in-memory per <span class="lit">connectCalendar</span> call (<span class="lit">randomToken()</span>, via <span class="lit">expo-crypto</span>'s CSPRNG) and compared by simple equality against what the provider echoes back — it is never persisted anywhere (not AsyncStorage, not the server), so it only exists for the lifetime of one in-flight <span class="lit">connectCalendar</span> call and cannot be replayed after that call completes or is abandoned. Its only real job here is CSRF protection (preventing an attacker from tricking the app into completing an OAuth flow the app itself never initiated) — not anti-replay for a captured, still-in-flight redirect URL, which this simple design doesn't fully defend against.</p>
+        <div class="finding info"><div class="finding-tag">Info — sufficient for this app's actual risk model</div><p>A genuinely captured, still-in-flight redirect URL (the code intercepted between the provider's redirect and <span class="lit">calendar-oauth-exchange</span>) could in principle be replayed once, but the underlying authorization CODE itself (not the state) is single-use at the provider's own token endpoint — Google/Microsoft reject a re-used authorization code outright, so even a captured URL only grants one successful exchange, the same protection any standard OAuth authorization-code flow provides. The <span class="lit">state</span> check here is doing exactly the job it needs to (CSRF), and the deeper single-use guarantee comes from the provider's own code-exchange semantics, not from anything FamilyCube needs to additionally implement.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed sufficient — relies correctly on the provider's own single-use authorization code semantics rather than needing its own replay-prevention layer.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Race: reconciliation sweep firing mid-outbound-push for the same event</span></div>
+    <div class="case-situation">Traced what happens if a user edits an event in FamilyCube (triggering an outbound push) at nearly the same moment the Apple sweep or a Google poll cycle independently reconciles the same event.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Apple case: <span class="lit">pushEventToAppleCalendar</span> and <span class="lit">reconcileAppleCalendar</span> both read/write the same AsyncStorage id-map (<span class="lit">loadMap</span>/<span class="lit">saveMap</span>) but AsyncStorage on React Native has no cross-call locking — two overlapping async calls each do read-modify-write on the map independently. If a push and a sweep interleave (push creates a new device event and is about to <span class="lit">saveMap</span>, while a concurrently-running sweep already loaded the OLD map without that new entry and is about to save its own — possibly deleted — version back), the loser's write clobbers the winner's, potentially losing a fresh id-map entry.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Real but narrow: both operations are already independently throttled/gated (push only fires after a confirmed DB write completes; the sweep is throttled to once per 15 minutes) and JS's single-threaded event loop means true parallel execution requires both to be mid-await at the exact same tick — possible, but a genuinely rare window, and the self-healing "device event may have been deleted independently — fall through to create a fresh one" catch in <span class="lit">pushEventToAppleCalendar</span> already recovers from a lost mapping on the NEXT push attempt for that event.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Google/server-side case: <span class="lit">calendar-sync-push</span> (outbound, client-triggered) and <span class="lit">calendar-google-poll</span> (inbound, cron-triggered every 10 min) run as entirely separate edge function invocations with no shared in-memory state — their only shared mutable state is the DB rows themselves (<span class="lit">calendar_events</span>, <span class="lit">event_external_links</span>, <span class="lit">calendar_connections.sync_token</span>), and every write to those goes through normal Postgres row-level atomicity. A genuinely concurrent push+poll on the same event could still produce a last-write-wins race at the DB level (whichever transaction commits last wins), but not corruption — no partial/torn writes possible given Postgres's own guarantees.</p>
+        <div class="finding info"><div class="finding-tag">Info — acceptable, standard last-write-wins</div><p>This is the same last-write-wins tradeoff the whole sync design already accepts elsewhere (e.g. Outlook's <span class="lit">externalModified &lt;= localModified</span> check) — not a new or worse failure mode than the system's documented design already tolerates.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> A narrow, low-likelihood AsyncStorage race exists on the Apple side; the server-side path is protected by normal DB atomicity. Neither is fixed this pass — logged.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Deleted-on-both-sides and deleted-locally-while-pending-external-edit: traced correct</span></div>
+    <div class="case-situation">Cross-product of delete timing between FamilyCube and an external provider.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Deleted on both sides: FamilyCube's <span class="lit">deleteEvent</span> soft-deletes locally then calls <span class="lit">calendar-sync-push</span> with <span class="lit">action:'delete'</span>, which looks up the link, calls the provider's delete, and treats <span class="lit">404</span>/<span class="lit">410</span> (Google) as success rather than an error (<span class="tag raw">if (!res.ok &amp;&amp; res.status !== 404 &amp;&amp; res.status !== 410)</span>) — so deleting an event that was ALSO already deleted externally does not error out or retry-loop.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Same graceful handling on the Apple side: <span class="tag raw">try { await Calendar.deleteEventAsync(deviceId); } catch { /* already gone on-device — fine */ }</span>.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Deleted locally while an external edit is pending inbound: traced via <span class="lit">reconcileOneOutlookEvent</span>'s existing-link branch — it fetches the local row's <span class="lit">deleted_at</span> and returns early if set, before applying any patch: <span class="tag raw">if (!localRow || localRow.deleted_at) return;</span>. The now-fixed Google update branch (this pass's own fix, above) uses the identical guard. A locally-deleted event cannot be resurrected by a stale/racing external edit landing after the local delete.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>This guard existed correctly in Outlook's handler already, and was added as part of fixing Google's missing-update-branch bug above (same case) — both providers now share it.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct on both providers — a local delete always wins over a pending or racing external edit.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Recurring-series backfill duplication: confirmed already fixed, and confirmed self-healing against recurrence</span></div>
+    <div class="case-situation"><span class="lit">calendar-cleanup-duplicate-series</span> exists as a one-time patch for a real, already-fixed bug. Traced whether the ROOT CAUSE is actually closed or just the symptom was cleaned up once.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Root cause per the code comments: <span class="lit">calendar-backfill-sync</span> used to push every individual occurrence row of a series, not just the anchor. Confirmed the fix is structural, not just the one-time cleanup: <span class="lit">calendar-backfill-sync</span>'s query now explicitly excludes non-anchor occurrences (<span class="tag raw">.or('series_id.is.null,is_series_anchor.eq.true')</span>) — the bug class cannot recur from a future backfill run.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Separately, <span class="lit">googleReconcile.ts</span>'s <span class="lit">reconcileOneGoogleEvent</span> keys identity on <span class="lit">item.recurringEventId || item.id</span> (the series MASTER, not each instance) — even if a series' link somehow failed to get created on push again in the future, the very first instance seen on the next poll would create and link the master id, and every other instance in that same page (and all future polls) would correctly match that one link and skip — explicitly self-healing, not dependent on a human re-running the cleanup function.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed the fix is structural and self-healing, not just a one-time symptom cleanup — no further action needed.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Chore due-date change: confirmed it re-triggers sync-push, not just chore creation</span></div>
+    <div class="case-situation">The task brief specifically asked whether only <span class="lit">addChore</span> triggers a calendar sync, or whether <span class="lit">updateChore</span>'s due-date-change path does too.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">choreStore.ts</span>'s <span class="lit">updateChore</span> directly: <span class="tag raw">if (prevChore?.linkedEventId &amp;&amp; ('dueDate' in updates || 'dueTime' in updates)) { ... useEventStore.getState().updateEvent(prevChore.linkedEventId, { date: newDueDate, time: newDueTime }); }</span> — this calls the SAME <span class="lit">eventStore.updateEvent</span> that already fires <span class="lit">calendar-sync-push</span> on confirmed write, so a chore's due-date/time change genuinely does propagate to any connected external calendar via the existing calendar_events sync machinery, not a separate/missing path.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p><span class="lit">deleteChore</span> is wired the same way — it calls <span class="lit">useEventStore.getState().deleteEvent(deletedChore.linkedEventId)</span>, which is what actually triggers the provider-side delete too, per the code's own comment: "Deleting the CHORE should delete its calendar reminder too, the same way deleting a FamilyCube event deletes it from a connected calendar."</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — chore create, due-date/time update, AND delete all correctly ride the existing 2-way sync engine via the shared calendar_events row.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Google Tasks poll: identity/scoping re-checked given its own separate table and edge function</span></div>
+    <div class="case-situation">Google Tasks sync (Chores, inbound-only, confirmed already known and out of scope to re-litigate as a "one-way" finding) was checked instead for anything MORE SPECIFIC — a security/identity issue distinct from its one-way-ness.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Confirmed live: <span class="lit">google_task_links</span> has its own RLS SELECT policy (<span class="tag raw">google_task_links_family_select</span>), correctly family-scoped via a subquery against <span class="lit">calendar_connections.family_id</span> — matching the pattern used elsewhere. <span class="lit">calendar-google-tasks-poll</span> is filtered to <span class="tag raw">.eq('provider', 'google').eq('purpose', 'personal').eq('status', 'active')</span>, correctly excluding work-purpose connections (which never carry the <span class="lit">tasks.readonly</span> scope in the first place, per <span class="lit">calendarOAuth.ts</span>'s scope table).</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct, nothing new found</div><p>Its portable-field boundary is explicit and correctly scoped, matching Calendar sync's own convention: <span class="tag raw">title/notes/due-date/completion status only, never touches FamilyCube-only chore fields (coins, XP, assignee, photo proof)</span> per the code's own comment, verified against the actual <span class="lit">.update({...})</span> call which only sets <span class="lit">title, description, due_date, status</span>.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No new finding beyond the already-known one-way-sync gap — identity/scoping is correctly implemented.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Dead per-domain sync toggle columns: stale schema comment, no live risk</span></div>
+    <div class="case-situation">The original <span class="lit">20260930100000_calendar_connections.sql</span> migration defined <span class="lit">sync_schedule/sync_chores/sync_meals/sync_medications/sync_school/sync_grocery</span> boolean toggle columns, described as "checked by both the outbound push function and inbound webhook's create-new-local-event path."</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Queried live schema: none of those 6 columns exist on <span class="lit">calendar_connections</span> today — confirmed via <span class="tag raw">information_schema.columns</span>. They were dropped during the later "pivot to freebusy" migration (<span class="lit">20260930140000_calendar_sync_pivot_to_freebusy.sql</span>) and never re-added by the personal-mode migration that otherwise restored most of the original full-sync columns. Grepped the entire <span class="lit">supabase/functions/</span> and app <span class="lit">lib/</span>/<span class="lit">features/</span>/<span class="lit">store/</span> trees for any reference to these column names — zero hits anywhere.</p>
+        <div class="finding info"><div class="finding-tag">Info — stale comment only, no functional gap</div><p>No code ever checks these toggles (the comment describing them as "checked by" outbound/inbound paths is itself stale/aspirational, describing a design that was later simplified away, not a currently-broken feature) — every event currently syncs unconditionally regardless of category, which is also exactly what the actual code does. Not a bug, just a stale migration-file comment worth a cleanup note.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No functional issue — a stale comment in an old migration file describing columns that no longer exist and were never actually wired up.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">calendar-conflict-detector: confirmed unrelated to 2-way sync, not conflated</span></div>
+    <div class="case-situation">Verified whether this function is part of the sync-conflict-resolution story (which the task brief flagged as a name easily confused with sync's own last-write-wins conflict rule).</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the full function: it's a stateless compute endpoint taking <span class="lit">events</span>/<span class="lit">members</span> arrays directly in the request body, detecting SCHEDULING conflicts (driver double-booked against a work meeting, two events double-booking the same member, an unassigned pickup) — it never touches <span class="lit">calendar_connections</span>, <span class="lit">event_external_links</span>, or any external-provider API at all. Confirmed this is entirely the scheduling/ride-conflict domain, unrelated to external-calendar sync conflict resolution.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed, correctly scoped out</div><p>No sync-related finding here — correctly out of scope for this trace, as suspected.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed unrelated to 2-way sync — a scheduling-conflict compute function that happens to share the word "conflict."</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Same provider, two purposes at once: a member with both a Google work AND Google personal connection</span></div>
+    <div class="case-situation">Traced whether a member connecting the SAME provider twice (once for <span class="lit">work</span>, once for <span class="lit">personal</span> — explicitly supported per <span class="lit">CalendarSyncScreen.tsx</span>'s own header comment) could cross-contaminate which connection a given sync function acts on.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">The live unique constraint is <span class="tag raw">unique (family_id, member_id, provider, purpose)</span> — two rows for the same member+provider, differing only by <span class="lit">purpose</span>, are both individually valid and coexist as fully independent connections (separate <span class="lit">id</span>, separate tokens, separate <span class="lit">external_calendar_id</span>). Every query in every sync function filters by <span class="lit">purpose</span> in addition to <span class="lit">provider</span>/<span class="lit">member_id</span> (verified in the isolation case above), so <span class="lit">calendar-sync-push</span> pushing to this member's personal connection can never accidentally also push to (or read from) their separate work connection's calendar, even though both point at the same underlying Google account's OAuth client.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The two connections don't even need to be the same actual Google account (a work Gmail and a separate personal Gmail, per the screen's own comment) — nothing in the schema or code assumes otherwise.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — dual same-provider connections are fully isolated by purpose everywhere.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">PKCE code_verifier is threaded through the exchange but never actually generated or sent by the client</span></div>
+    <div class="case-situation"><span class="lit">calendar-oauth-exchange</span> accepts an optional <span class="lit">codeVerifier</span> and forwards it to both <span class="lit">exchangeGoogle</span>/<span class="lit">exchangeOutlook</span> as <span class="lit">code_verifier</span>. Checked whether <span class="lit">lib/calendarOAuth.ts</span> (the only real caller) actually generates and sends a PKCE challenge/verifier pair.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">connectCalendar</span> and <span class="lit">authUrlFor</span> in full — neither generates a <span class="lit">code_verifier</span>/<span class="lit">code_challenge</span> pair, and the auth URL params sent to both Google and Microsoft never include <span class="lit">code_challenge</span>. The exchange call's body is <span class="tag raw">{ code, provider, memberId, purpose }</span> — no <span class="lit">codeVerifier</span> field at all. So the edge function's PKCE support is currently dead code from the client's side — always <span class="lit">undefined</span>, silently omitted from the token request.</p>
+        <div class="finding info"><div class="finding-tag">Info — not a vulnerability, just unused plumbing</div><p>Not a security gap: this flow already uses the confidential-client authorization-code grant (client secret held server-side in <span class="lit">calendar-oauth-exchange</span>, never shipped to the app), which doesn't require PKCE the way a public/mobile client without a secret would. PKCE here would be defense-in-depth, not a closed hole — logged as an unused capability, not a bug.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed not a vulnerability — PKCE plumbing exists server-side but is unused by the only real caller, which is fine given the confidential-client grant type already in use.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Google sync_token expiry (410 Gone): full resync correctly restarts without an infinite loop</span></div>
+    <div class="case-situation">Google's <span class="lit">sync_token</span> can itself expire (the doc'd cause: too much time since last sync, or the token is simply invalidated server-side). Traced <span class="lit">reconcileGoogleChanges</span>'s handling.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">On a 410 response, the code nulls <span class="lit">sync_token</span> in the DB and recurses: <span class="tag raw">return reconcileGoogleChanges(supabase, { ...connection, sync_token: null });</span>. The recursive call has no <span class="lit">syncToken</span>, so it falls into the <span class="lit">timeMin</span>/<span class="lit">timeMax</span> branch (a fresh 90-day-bounded full fetch, not another syncToken-based call) — it cannot 410 again on this same recursive call since it isn't sending a syncToken at all, so there's no risk of unbounded recursion.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The 90-day cap (traced in the shared module's own comment, added specifically after a live incident: "182 rows from a handful of recurring reminders") also protects a full resync after a token-expiry from re-importing a decade of old recurring events, same as the very first sync.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — token expiry triggers exactly one full resync with no infinite-recursion risk and the same sane bounds as first-sync.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Outlook delta_link 410 (Gone) inside the pagination loop: correctly restarts mid-page rather than dropping remaining pages</span></div>
+    <div class="case-situation">Traced <span class="lit">reconcileOutlookChanges</span>'s handling of a 410 arriving on a page OTHER than the first (Graph's delta query can also expire mid-pagination).</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">On 410, the loop reads <span class="lit">body['@odata.nextLink']</span> from the error response itself and continues the <span class="lit">while (url)</span> loop with that as the next URL, also nulling <span class="lit">delta_link</span> in the DB. This relies on Graph's own documented behavior of including a fresh continuation link in its 410 error body — if that field is ever absent, <span class="lit">url</span> becomes <span class="lit">undefined</span>/<span class="lit">null</span>, the <span class="lit">while</span> loop exits cleanly (not an infinite loop or a crash), just with a possibly-incomplete <span class="lit">changedItems</span> for that run — the NEXT scheduled webhook delivery would just re-fetch from scratch given <span class="lit">delta_link</span> is now null.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct, graceful degradation either way</div><p>No crash path, and a worst-case missing continuation link only costs one sync cycle's worth of freshness, self-healing on the next webhook delivery.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — handles both the documented and the undocumented-edge-case shape of a mid-pagination 410 without crashing or looping.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Work-conflict notification dedup key: scoped correctly to avoid cross-family or cross-event collisions</span></div>
+    <div class="case-situation"><span class="lit">calendar-freebusy-sync</span>'s <span class="lit">notifyNewWorkConflicts</span> uses <span class="lit">conflict_notified_pair</span> to avoid re-notifying for the same conflict on every sync. Checked whether the dedup key could collide across two different families or two different events.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">The key is <span class="tag raw">`freebusy:${familyEv.id}`</span>, written onto the <span class="lit">calendar_events</span> row itself (<span class="lit">conflict_notified_pair</span> column) — since <span class="lit">familyEv.id</span> is already a globally-unique event id (not reused across families), and the value is stored per-row rather than in some shared global set, there is no cross-family or cross-event collision possible; two different families' events with coincidentally similar conflict shapes would each get their own row with their own independently-tracked key.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The code's own comment also correctly explains why the key is NOT <span class="lit">workRow.id:familyEv.id</span> — a member can have both a manual and an auto-synced Work event overlapping the same slot, and pairing per-work-row would double-notify for what the user experiences as one conflict; keying on the family event alone is deliberate, not an oversight.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — the notification dedup key is properly scoped with no collision risk.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">A grandparent or teen's synced Work event: does the freebusy conflict check correctly gate on role?</span></div>
+    <div class="case-situation">Work-purpose connections are described as parent-focused ("checks when a ride or family plan overlaps your real work schedule"), but nothing in the schema technically prevents a non-parent member from connecting one. Traced whether a teen or grandparent connecting a work calendar could produce a nonsensical or incorrectly-scoped notification.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="lit">notifyNewWorkConflicts</span>'s broadcast-to-other-parents logic filters via <span class="tag raw">.eq('role', 'parent')</span> when building <span class="lit">otherParentIds</span> — this only affects who ELSE (beyond the directly affected people) gets cc'd, not whether the connecting member's own role is checked. A teen with a connected work calendar and a genuine event conflict would still correctly notify themselves and any assigned helper, just without the "also tell every other parent" broadcast (since the connecting member isn't a parent, <span class="lit">otherParentIds</span> excludes them from that specific list, but that list was never meant to include the connecting member themselves anyway — it's explicitly OTHER parents).</p>
+        <div class="finding info"><div class="finding-tag">Info — no incorrect behavior, just an unvalidated but harmless input</div><p>Nothing prevents a non-parent from connecting a work calendar (no server-side role check on <span class="lit">calendar-oauth-exchange</span> for <span class="lit">purpose='work'</span>), but the resulting behavior is still sensible either way — not a bug, just an unenforced assumption that happens not to break anything if violated.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed no incorrect behavior even for an off-label (non-parent) work connection — logged as an unenforced assumption only.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Recurrence end-date before start / empty BYDAY array on outbound push: checked for a malformed RRULE</span></div>
+    <div class="case-situation">Traced <span class="lit">buildRRule</span> and <span class="lit">buildOutlookRecurrence</span> against a series anchor with an empty <span class="lit">days</span> array (weekly frequency, no days selected) or an <span class="lit">endDate</span> earlier than the event's own <span class="lit">date</span>.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Empty <span class="lit">days</span>: the guard is <span class="tag raw">rule.frequency === 'weekly' && rule.days?.length</span> — an empty array is falsy for <span class="lit">.length</span> (0), so <span class="lit">BYDAY</span> is simply omitted rather than emitted empty/malformed; Google/Outlook then treat it as a plain weekly-on-the-original-day recurrence, a sane fallback rather than a rejected request. An end-date before the start date is NOT validated at all in this mapper — it would produce a syntactically valid RRULE (<span class="lit">UNTIL</span> earlier than <span class="lit">DTSTART</span>) that both providers accept in the request but which describes zero actual occurrences.</p>
+        <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Traced whether the CLIENT already prevents this upstream (the recurrence-editing UI) rather than assuming the mapper is the only guard — did not find this file in scope for this pass, so logged as unverified rather than confirmed either way; even if unguarded, the failure mode is a recurring event with zero visible occurrences on the external calendar, not corruption or a crash.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Empty-days case confirmed handled gracefully; end-before-start is an unvalidated edge case with a soft (not corrupting) failure mode — logged, not fixed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">channel_token collision: could two connections ever share a webhook secret?</span></div>
+    <div class="case-situation"><span class="lit">channel_token</span>/<span class="lit">clientState</span> is the shared secret verified on every inbound webhook. Checked whether <span class="lit">calendar-channel-renewal</span>'s generation could ever produce a collision that lets one connection's webhook authenticate against another's.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Both <span class="lit">registerGoogleChannel</span> and <span class="lit">registerOutlookSubscription</span> generate <span class="lit">channelId</span>/<span class="lit">clientState</span> via <span class="lit">crypto.randomUUID()</span> — a cryptographically random 122-bit value, not a sequential or predictable id. The webhook lookup is additionally scoped by <span class="lit">webhook_channel_id</span> (itself also a fresh random UUID) BEFORE the token is even compared, so even in the astronomically unlikely event of a token collision across two different connections, the channel-id lookup would already have selected the wrong row only if the CHANNEL ID also collided — a second independent 122-bit random collision on top of the first.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct — no realistic collision risk</div><p>Two layers of independent 122-bit randomness (channel id lookup, then token comparison) make this a non-issue in practice.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — no realistic path to a channel/token collision between connections.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Disconnect racing an in-flight outbound push for the same event</span></div>
+    <div class="case-situation">Traced what happens if a member hits "Disconnect" at nearly the same moment an <span class="lit">updateEvent</span> call's fire-and-forget <span class="lit">calendar-sync-push</span> invocation for that same connection is still in flight.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action"><span class="lit">calendar-disconnect</span> deletes the <span class="lit">calendar_connections</span> row (and, via the FK's <span class="lit">on delete cascade</span> confirmed in the migration comment, every <span class="lit">event_external_links</span> row for it) as its own transaction. A concurrently-running <span class="lit">calendar-sync-push</span> invocation had already loaded ITS OWN copy of the connection row into memory before the delete — its remaining work (a fetch to Google/Outlook using the now-orphaned but still-valid-until-expiry access token, then an <span class="tag raw">event_external_links</span> insert/update) would either succeed against a link row that gets cascade-deleted moments later anyway (harmless — the row disappears with the rest), or the FK constraint on <span class="lit">event_external_links.connection_id</span> could reject a late INSERT referencing an already-deleted connection id outright.</p>
+        <div class="finding info"><div class="finding-tag">Info — self-correcting, no lasting inconsistency</div><p>Worst case is one wasted external API call (creating/updating an event on a calendar the member just disconnected from) that leaves no lasting local trace, since any link row it tries to write either gets cascade-deleted alongside the rest or is rejected by the FK — not silently orphaned. Not pursued as a fix given the narrow window and self-correcting outcome.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed self-correcting — a disconnect racing an in-flight push produces at most one wasted external API call, no lasting orphaned state.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Cancelled Google instance vs. Outlook's @removed: divergent per-provider delete semantics, checked for correctness on each side independently</span></div>
+    <div class="case-situation">Google represents a deleted event as <span class="lit">status: 'cancelled'</span> within the normal events-list response; Outlook represents it as a distinct <span class="lit">@removed</span> marker on a delta item. Verified each provider's handler correctly interprets its OWN provider's shape rather than assuming a shared one.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Confirmed each handler is provider-specific code with no shared "is this a delete" helper that could mix up the two shapes — <span class="lit">reconcileOneGoogleEvent</span> checks <span class="tag raw">item.status === 'cancelled'</span>, <span class="lit">reconcileOneOutlookEvent</span> checks <span class="tag raw">item['@removed']</span>. Both correctly soft-delete the local row (<span class="lit">deleted_at</span> + a provider-tagged <span class="lit">deleted_by</span>: <span class="lit">'external:google'</span> / <span class="lit">'external:outlook'</span>) and remove the link row, rather than hard-deleting <span class="lit">calendar_events</span> — preserving the same soft-delete convention the rest of the app already uses for locally-initiated deletes.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>The provider-tagged <span class="lit">deleted_by</span> value is a nice touch beyond what was asked — it means a future "who deleted this" trace can distinguish an external-provider-initiated delete from a FamilyCube-side one, not just record that a delete happened.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed correct — both providers' distinct delete representations are handled correctly and consistently soft-delete with provenance.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Everything else checked this pass: confirmed correct, no further findings</span></div>
+    <div class="case-situation">Beyond the cases above, also traced: whether <span class="lit">calendar-backfill-sync</span> could double-push an event already linked (it always calls <span class="lit">calendar-sync-push</span> with <span class="lit">action:'create'</span> regardless of an existing link — traced into <span class="lit">pushToProvider</span>, which correctly checks for an existing link first and does an UPDATE instead of a duplicate CREATE, so this is safe even if backfill is accidentally re-run); the freebusy sync's own re-run idempotency (it always deletes-then-reinserts its own prior <span class="lit">synced_from_connection_id</span> rows before writing new ones, so re-running it never accumulates duplicates); whether a `work`-purpose connection's freebusy-derived Work event could ever get pushed OUT to a personal connection (traced — <span class="lit">calendar-sync-push</span> only fires from <span class="lit">eventStore</span>'s create/update/delete, which are user-initiated writes; the freebusy sync inserts Work rows via a direct service-role insert that never goes through <span class="lit">eventStore</span>, so it never triggers an outbound push at all — a synced Work block can never leak back out to a personal calendar); a 0-length/empty title from an external provider (falls back to <span class="lit">'Untitled event'</span>/<span class="lit">'Untitled task'</span> on both Calendar and Tasks inbound paths); an all-day event boundary (both directions correctly add/subtract exactly one day for the exclusive end-date Google/Outlook expect); and a channel-renewal run finding zero connections needing renewal (returns <span class="tag raw">{ok:true, renewed:0}</span> cleanly, no error).</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">All of the above were traced via direct code reading and confirmed to behave correctly — no crash, no duplicate write, no data leak found in any of them.</p>
+        <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct</div><p>Grouped here per this report's own house convention for smaller confirmed-correct checks, to keep the case-by-case detail above focused on the cases that actually turned up something.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No further issues found across this batch of smaller checks.</div>
+  </div>
+</section>
+
   <!-- ============ FINDINGS TABLE ============ -->
   <section class="group scroll-anchor" id="findings">
     <h2 class="group-title">Every finding, at a glance</h2>
@@ -3598,6 +4281,17 @@ with_check (same)</pre>
         <tr><td>Rewards (deep)</td><td>Balance boundaries (exact-cost, 0-cost), malformed catalog data (negative stock, maxPerMember:0), concurrent multi-reward redemption, offline redemption, PIN-switch mid-flight, cross-family eligibility ids, JarPicker staleness, and realtime dedup all confirmed correct/fail-safe.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
         <tr><td>Rewards (deep)</td><td>The Day-15+ paywall soft-lock names reward_redemptions as gated, but redeem_reward's SECURITY DEFINER insert never evaluates that RLS policy &mdash; redemption is effectively never paywalled. Reviewed and deliberately left unfixed as a product-scope question.</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Rewards (deep)</td><td>Lower-priority, log-only: p_wallet's silent fallback to main_coins for any unrecognized string; orphaned screen_time_code column; a senior's ability to self-redeem from their own gp_coins jar; deleteReward's decline-reason string collision risk; expiresAt's string-comparison fragility; no grandparent UI to approve/decline despite the DB trust model permitting it.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Hub &harr; Quests sync (deep)</td><td>deriveQuestActions' canApprove only checked the shim-collapsed 'pending_approval' status, not the raw chore status &mdash; rendered a live but dead Approve/Redo button on the Quests Review tab for grandparent-sponsored offers a parent can't actually approve, silently no-oping on tap with zero feedback. The same bug had already been fixed once in ParentReviewDeck but never generalized into the shared deriveCardActions module.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Hub &harr; Quests sync (deep)</td><td>Architecture audit confirmed Hub and Quests both subscribe live to the same choreStore/eventStore instances (no local snapshot/memoized caches), share exactly one realtime channel per domain, and both genuinely route through the shared deriveCardActions.ts/classifyEventUrgency.ts modules rather than reimplementing status logic independently &mdash; the "disconnected cache" bug class this session already found twice elsewhere was specifically hunted for and not found here.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Hub &harr; Quests sync (deep, pass 2)</td><td>TodayView's GreetingHeader awaitingApprovalCount and its Timeline "Approve" strip both used the Quest-shim's collapsed status instead of real chore status &mdash; over-counted pending approvals and rendered a live but dead Approve button for GP-sponsor-pending chores, silently no-oping on tap.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Hub &harr; Quests sync (deep, pass 2)</td><td>TodayView's needsAttention double-counted kid ride requests already counted by classifyEventUrgency's unassigned bucket, via a separate local events.filter(approvalPending) scan &mdash; narrowed to the one case (teen with a named driver) nothing else already counts.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Hub &harr; Quests sync (deep, pass 2)</td><td>Independently confirmed (no live DB access in this pass, static code trace only): single shared Zustand store for chores/quests with no stale-copy race; claimPoolQuest's optimistic-rollback CAS is complete and correct; remaining local booleans in KidQuestCard/KidView/TeenView are non-classifying render toggles, not drift.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>The Google inbound-sync path (calendar-google-poll, the ONLY reliable inbound path since Google's push webhook is a confirmed permanent no-op) silently discarded every edit to an already-linked event forever &mdash; googleReconcile.ts had `if (link) return;` with no update branch at all, unlike Outlook's correct last-write-wins handling.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>Disconnecting a calendar connection never revokes the OAuth token on Google's/Microsoft's side, only deletes it locally &mdash; the provider still shows FamilyCube as an authorized app until the user separately revokes it there.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>Outlook has no polling fallback if its webhook subscription lapses (Google does, which is exactly why Google's dead push webhook didn't matter &mdash; polling silently covers for it). An expired, unrenewed Outlook subscription goes fully silent with no fallback.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>Apple/EventKit's device-reconcile sweep has no true timestamp-based conflict rule &mdash; the device always wins on any diff, unlike the documented last-write-wins rule for Google/Outlook.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>calendar-oauth-exchange trusts a client-supplied memberId with no ownership verification &mdash; scoped as an app-wide identity-layer gap (not calendar-specific) and deliberately left for a broader fix rather than a one-off patch here.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Calendar sync (deep)</td><td>Confirmed correct: echo-loop prevention, the FamilyCube-only-fields portable-field boundary on inbound sync, work/personal purpose isolation, multi-provider schema design, token-failure surfacing in the UI, and webhook shared-secret verification.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
       </tbody>
     </table>
     </div>

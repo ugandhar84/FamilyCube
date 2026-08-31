@@ -19,9 +19,11 @@ import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
+import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { eventAssignee } from '@/store/eventStore';
 import { FamilyPhotoFrameCard } from './parent/FamilyPhotoFrameCard';
 
 // ── Greeting header — sits on the page background, no card boundary ────────
@@ -36,8 +38,8 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
   // reads the exact same underlying chores array and would double-count.
   otherAttentionCount?: number;
 }) {
-  const { quests } = useQuestStore();
   const { events } = useEventStore();
+  const chores = useChoreStore(s => s.chores);
   const firstName = activeMember.name.split(' ')[0];
   const today = localDateStr(new Date());
 
@@ -49,11 +51,41 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
     events.filter(e => e.date === today && !isWorkEvent(e)).length,
     [events, today]
   );
+  // Was `quests.filter(q => q.status === 'pending_approval').length` off the
+  // choreAdapter Quest shim — but choreStatusToQuestStatus collapses THREE
+  // distinct real ChoreTask statuses ('pending_approval',
+  // 'pending_grandparent_approval', 'gp_offer_pending') onto that one Quest
+  // status, so this over-counted relative to ChoreReviewSection's own badge
+  // (features/hub/parent/ChoreReviewSection.tsx), which deliberately reads
+  // the raw chore status and excludes GP-sponsor-pending/GP-offer items —
+  // per ParentView.tsx's own comment, those belong to the sponsoring
+  // grandparent's review, not the parent's "needs my approval" count.
+  // Reading the real ChoreTask status directly here instead keeps this
+  // chip's classification identical to the badge parents actually see below
+  // it in Chore Reviews.
   const awaitingApprovalCount = useMemo(() =>
-    quests.filter(q => q.status === 'pending_approval').length,
-    [quests]
+    chores.filter(c => c.status === 'pending_approval').length,
+    [chores]
   );
-  const needsAttention = awaitingApprovalCount + events.filter(e => e.approvalPending && !isWorkEvent(e)).length + otherAttentionCount;
+  // Was: `events.filter(e => e.approvalPending && !isWorkEvent(e)).length`,
+  // unconditionally — but otherAttentionCount (lifted from ParentView's
+  // actionCount, itself built off classifyEventUrgency's `unassigned`
+  // bucket) already counts every approvalPending event with NO assignee
+  // yet (the ordinary kid-ride-request case: EventFormModal sets
+  // approvalPending:true with no driverName/helper chosen) via its own
+  // RideRequestCard/RideRequiredEventCard cards. Counting the same events
+  // again here double-counted the "needs attention" chip whenever a kid's
+  // ride request fell inside classifyEventUrgency's 48h unassigned window
+  // (e.g. "3 events today · 2 need attention" for what was really 1 item).
+  // A teen's approvalPending event WITH a driverName typed in (EventFormModal's
+  // other approvalPending branch) is routed to myPending/coParentPending by
+  // classifyEventUrgency instead, which ParentView's actionCount does NOT
+  // include — that case would go uncounted anywhere if dropped outright, so
+  // this keeps counting only the has-an-assignee subset here.
+  const unattributedApprovalPendingCount = events.filter(
+    e => e.approvalPending && !isWorkEvent(e) && !!eventAssignee(e).name,
+  ).length;
+  const needsAttention = awaitingApprovalCount + unattributedApprovalPendingCount + otherAttentionCount;
   const summaryText = todayEventsCount === 0 && needsAttention === 0
     ? 'All clear ✓'
     : needsAttention > 0
@@ -151,6 +183,7 @@ export function TodayView({
   onAddQuest, onAddEvent, onAddGrocery, conflictReasons, otherParentsWorkToday = [],
 }: TodayViewProps) {
   const { quests, approveQuest } = useQuestStore();
+  const chores = useChoreStore(s => s.chores);
   const { events, updateEvent } = useEventStore();
 
   const [showPast, setShowPast] = useState(false);
@@ -167,10 +200,25 @@ export function TodayView({
     [events, today]
   );
 
-  // Quest approvals awaiting
+  // Quest approvals awaiting — was `quests.filter(q => q.status ===
+  // 'pending_approval')` off the choreAdapter Quest shim, same
+  // over-collapsed status as awaitingApprovalCount above. Concretely worse
+  // here: this list feeds the actual "Approve" tap target below
+  // (approveQuest → choreStore.approveChore), which itself correctly
+  // guards on the REAL chore status and no-ops silently — no toast, no
+  // error — for anything that isn't truly 'pending_approval'. A
+  // grandparent-sponsor-pending or GP-offer-pending chore rendered into
+  // this strip (because the shim maps all three onto one Quest status)
+  // was a dead "Approve" button: tappable, visible, does nothing. Reading
+  // chores.id → real status directly here keeps this list to only chores
+  // approveChore will actually act on.
+  const pendingApprovalChoreIds = useMemo(() =>
+    new Set(chores.filter(c => c.status === 'pending_approval').map(c => c.id)),
+    [chores]
+  );
   const awaitingApproval = useMemo(() =>
-    quests.filter(q => q.status === 'pending_approval'),
-    [quests]
+    quests.filter(q => q.status === 'pending_approval' && pendingApprovalChoreIds.has(q.id)),
+    [quests, pendingApprovalChoreIds]
   );
 
   const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);

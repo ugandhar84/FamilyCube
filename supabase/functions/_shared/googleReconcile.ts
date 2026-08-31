@@ -138,8 +138,41 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
 
   // Already represented locally (either a genuinely one-off event we've
   // seen before, or ANY instance of a recurring series we've already
-  // linked via its master id) — nothing further to do for this item.
-  if (link) return;
+  // linked via its master id) — apply an update if the external side is
+  // actually newer, same last-write-wins-by-updated_at rule
+  // calendar-webhook-outlook's reconcileOneOutlookEvent already uses.
+  //
+  // Real gap found in a QA pass: this branch used to unconditionally
+  // `return` here — editing an event on Google after its first sync ever
+  // reached FamilyCube (title/time/location/notes) was silently dropped
+  // forever, since nothing ever re-checked an already-linked item's body
+  // against what's stored locally. Google's events.list delta only ever
+  // returns items that actually changed since the last sync_token, so
+  // every item reaching this function already represents a real change on
+  // Google's side — the only thing this was missing was actually applying
+  // it to an existing link.
+  if (link) {
+    // Only apply the update when the changed item IS the identity (a
+    // genuinely one-off event, or the recurring series' own master record)
+    // — same reasoning as the cancellation branch above: a single
+    // exception occurrence of an otherwise-unchanged series must not
+    // overwrite the whole series' local row with just that one instance's
+    // fields.
+    if (item.id !== identityId) return;
+    const { data: localRow } = await supabase.from('calendar_events').select('updated_at, deleted_at').eq('id', link.event_id).maybeSingle();
+    if (!localRow || localRow.deleted_at) return;
+    const externalModified = item.updated ? new Date(item.updated).getTime() : Date.now();
+    const localModified = localRow.updated_at ? new Date(localRow.updated_at).getTime() : 0;
+    if (externalModified <= localModified) return;
+    const patch = googleBodyToPortablePatch(item);
+    await supabase.from('calendar_events').update({
+      title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
+      all_day: patch.allDay, location: patch.location, notes: patch.notes,
+      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
+    }).eq('id', link.event_id);
+    await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item.etag ?? null }).eq('id', link.id);
+    return;
+  }
 
   const patch = googleBodyToPortablePatch(item);
   const newId = crypto.randomUUID();

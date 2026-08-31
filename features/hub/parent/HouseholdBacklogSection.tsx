@@ -12,6 +12,7 @@ import { OutgoingPendingCard } from './backlog/OutgoingPendingCard';
 import { LockedAssignmentCard } from './backlog/LockedAssignmentCard';
 import { PoolQuestCard } from './backlog/PoolQuestCard';
 import { HelperEventCard } from './backlog/HelperEventCard';
+import { Users } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
@@ -20,6 +21,7 @@ import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 export function HouseholdBacklogSection({
   active, members, colors, isDark,
   questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myOutgoingPending, myHelperEvents,
+  coParentHelperEvents,
   systemBIds, parentAssignments,
   updateQuest, updateEvent, updateEventScoped, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
   onAddTask, onDelegate, onRespond,
@@ -30,6 +32,11 @@ export function HouseholdBacklogSection({
   myDirectPending: ParentQuestAssignment[]; myLockedItems: ParentQuestAssignment[];
   myOutgoingPending: ParentQuestAssignment[];
   myHelperEvents: FamilyEvent[];
+  // A co-parent's own outstanding driver/helper assignment — read-only
+  // awareness with a Take Over escape hatch, rendered via the same
+  // HelperEventCard as myHelperEvents (see ParentView.tsx's coParentHelperEvents
+  // comment for why reusing that card here is safe).
+  coParentHelperEvents?: FamilyEvent[];
   systemBIds: Set<string>; parentAssignments: ParentQuestAssignment[];
   updateQuest: (id: string, patch: Partial<Quest>) => void;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -56,11 +63,13 @@ export function HouseholdBacklogSection({
   // resolve to nothing now that they're correctly out of the open pool.
   const allChores = useChoreStore(s => s.chores);
 
+  const coParentHelperEventsSafe = coParentHelperEvents ?? [];
+
   const myPendingCount = questPool.length + myAdultQuests.length + myHelperEvents.length
     + myDirectPending.length + myLockedItems.length + myOutgoingPending.length;
 
   const badgeCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
-    + myDirectPending.length + myLockedItems.length + myOutgoingPending.length;
+    + myDirectPending.length + myLockedItems.length + myOutgoingPending.length + coParentHelperEventsSafe.length;
   // getLiveAssignmentForChore — same shared lookup DelegateSheet/
   // MyAdultQuestCard use; this had its own independent status predicate.
   const getLiveAssignmentForChore = useChoreStore(s => s.getLiveAssignmentForChore);
@@ -74,7 +83,7 @@ export function HouseholdBacklogSection({
   // empty, even though the section visibly had content.
   const isEmpty = questPool.length === 0 && myDirectPending.length === 0
     && myHelperEvents.length === 0 && myLockedItems.length === 0 && myOutgoingPending.length === 0
-    && othersAdultQuests.length === 0 && myAdultQuests.length === 0;
+    && othersAdultQuests.length === 0 && myAdultQuests.length === 0 && coParentHelperEventsSafe.length === 0;
 
   // Soonest due date first within a group — undated items sort last so
   // something with a deadline never gets buried under whatever loaded first.
@@ -202,6 +211,18 @@ export function HouseholdBacklogSection({
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>You're the driver / helper</Text>
                 </View>
                 {myHelperEvents.map(ev => (
+                  <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} updateEventScoped={updateEventScoped} />
+                ))}
+              </View>
+            )}
+
+            {coParentHelperEventsSafe.length > 0 && (
+              <View style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                  <Users size={12} color={colors.textSecondary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Co-parent's pending rides</Text>
+                </View>
+                {coParentHelperEventsSafe.map(ev => (
                   <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} updateEventScoped={updateEventScoped} />
                 ))}
               </View>

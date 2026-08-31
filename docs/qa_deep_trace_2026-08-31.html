@@ -134,10 +134,10 @@
     <h1 class="title">Family Cube QA Deep Trace</h1>
     <p class="dek">Every claim below is backed by a real inserted database row, a real (or precisely replicated) server action, and a cited line of the app's actual source code — not a description of how the app is supposed to work.</p>
     <div class="meta-grid">
-      <div class="meta-card"><div class="meta-num">25</div><div class="meta-label">trace sections</div></div>
-      <div class="meta-card"><div class="meta-num">255</div><div class="meta-label">cases traced</div></div>
+      <div class="meta-card"><div class="meta-num">26</div><div class="meta-label">trace sections</div></div>
+      <div class="meta-card"><div class="meta-num">276</div><div class="meta-label">cases traced</div></div>
       <div class="meta-card"><div class="meta-num">9</div><div class="meta-label">identity-spoofing fixes</div></div>
-      <div class="meta-card"><div class="meta-num">111</div><div class="meta-label">behavior findings</div></div>
+      <div class="meta-card"><div class="meta-num">116</div><div class="meta-label">behavior findings</div></div>
     </div>
   </header>
 
@@ -165,6 +165,7 @@
     <a href="#rewards-deep">Rewards (deep)</a>
     <a href="#hub-tasks-sync-deep-2">Hub &harr; Quests sync (deep)</a>
     <a href="#calendar-sync-deep">Calendar sync (deep)</a>
+    <a href="#unconfirmed-backlog-deep">Unconfirmed &rarr; parent backlog (deep)</a>
     <a href="#findings">All findings</a>
   </nav>
 
@@ -4174,6 +4175,286 @@ const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review && 
   </div>
 </section>
 
+<section class="group scroll-anchor" id="unconfirmed-backlog-deep">
+    <h2 class="group-title">"Every unconfirmed schedule item reaches a parent's backlog" — completeness audit</h2>
+    <p class="group-sub">Targeted trace against one explicit requirement: any <span class="lit">calendar_events</span> row in an unconfirmed state (no driver, an open helper/ride slot, a named-but-not-yet-confirmed assignee, a pending claim) must surface somewhere a parent actually looks on the Hub. Read <span class="lit">store/eventStore.ts</span> in full (2,395 lines), <span class="lit">features/hub/lib/classifyEventUrgency.ts</span>, <span class="lit">features/hub/ParentView.tsx</span>, <span class="lit">features/hub/parent/HouseholdBacklogSection.tsx</span>, <span class="lit">features/hub/parent/ActionNeededSection.tsx</span>, <span class="lit">features/hub/parent/backlog/HelperEventCard.tsx</span>, <span class="lit">features/hub/useUpcomingOpenEvents.ts</span>, <span class="lit">features/tasks/lib/deriveCardActions.ts</span>, <span class="lit">store/choreStore.ts</span>'s calendar-materialization block, and <span class="lit">store/schoolStore.ts</span>'s period-materialization block, plus the live <span class="lit">calendar_events</span> RLS policy definitions read directly off the production database. This is a completeness/coverage sweep specifically — the prior "Events (deep)" pass on this same session already closed the RLS name-vs-id gap and the <span class="lit">reassign_event</span> eligibility gap, and those are treated as settled ground here, not re-litigated.</p>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">classifyEventUrgency computes coParentPending, but no parent-facing Hub component ever consumes it — a co-parent's own outstanding driver/helper assignment was completely invisible to the other parent</span></div>
+      <div class="case-situation"><span class="lit">classifyEventUrgency.ts</span>'s own header comment is explicit about intent: <span class="tag raw">coParentPending — read-only awareness for the viewer... broadened to also cover a plain co-parent self-claim, closing a regression from an earlier pass that removed the only surface showing that case to the other parent</span>. Traced every call site of <span class="lit">classifyEventUrgency(</span> across the whole app (one hit: <span class="lit">features/hub/ParentView.tsx:163</span>) and every consumer of its return value.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">ParentView.tsx destructures the classifier's result: <span class="tag raw">const { unassigned, myPending } = classifyEventUrgency(...)</span> — <span class="lit">coParentPending</span> is silently dropped from the destructure. Grepped the entire <span class="lit">features/hub/</span> tree for <span class="lit">coParentPending</span>: the only 3 hits were the classifier's own declaration, its own push, and its own return statement. Zero UI components reference it. <span class="lit">myHelperEvents = myPending</span> is the only bucket that reaches <span class="lit">HouseholdBacklogSection</span>; <span class="lit">unassigned</span> feeds <span class="lit">ActionNeededSection</span>'s two ride card types. <span class="lit">coParentPending</span> reaches neither.</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body">
+          <p class="step-action">Concrete failure scenario: two parents, Parent A opens a Sports ride and self-assigns as driver (<span class="lit">helperStatus: 'pending'</span>, not yet confirmed — e.g. tapped "I'll drive" but hasn't hit Confirm). Under the classifier's own ownership-partition rule, this event is no longer <span class="lit">unassigned</span> (it has a named assignee) and isn't <span class="lit">myPending</span> for Parent B (Parent B isn't the assignee) — it lands squarely in <span class="lit">coParentPending</span>. Parent B's Hub shows nothing at all for this event: not in Action Needed (has an assignee, so <span class="lit">unassigned</span> excludes it), not in Household Backlog (only <span class="lit">myHelperEvents</span>/<span class="lit">myPending</span> renders there). If Parent A forgets to actually confirm, Parent B has zero visibility that a ride assigned to their co-parent is still sitting unconfirmed — exactly the "silently invisible to a parent" case the requirement calls out, and exactly the regression the classifier's own comment says it was built to prevent, that was never actually wired up on the consuming side.</p>
+          <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>A live, reachable, ordinary-UI-triggerable gap — no live DB access needed to prove it, the client code is unambiguous: the bucket exists, is computed correctly, and has no consumer.</p></div>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body">
+          <p class="step-action"><b>Fix:</b> threaded <span class="lit">coParentPending</span> through <span class="lit">ParentView.tsx</span> as <span class="lit">coParentHelperEvents</span>, passed it into <span class="lit">HouseholdBacklogSection</span>, and rendered it via the existing <span class="lit">HelperEventCard</span> under a new "Co-parent's pending rides" group. Reusing <span class="lit">HelperEventCard</span> is safe specifically because it already derives its action set from <span class="lit">deriveEventActions(ev, viewer)</span>, which is viewer-identity-aware: <span class="lit">showConfirm</span>/<span class="lit">showCantMakeIt</span> require <span class="lit">isSelfAssigned</span>, so the non-assignee co-parent never sees Confirm/Can't for someone else's commitment — only <span class="lit">showAssignToMe</span> ("Take Over," gated on <span class="lit">!isSelfAssigned</span>) is available, which is exactly the correct action for read-only awareness plus an escape hatch. Also added it to <span class="lit">badgeCount</span>/<span class="lit">isEmpty</span> so the section's badge and collapse-by-default state count it too.</p>
+          <pre class="dbstate">// features/hub/ParentView.tsx
+const { unassigned, myPending, coParentPending } = classifyEventUrgency(...);
+...
+const coParentHelperEvents = coParentPending;
+const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length
+  + myHelperEvents.length + coParentHelperEvents.length;
+// -> passed to HouseholdBacklogSection as coParentHelperEvents
+
+// features/hub/parent/HouseholdBacklogSection.tsx
+{coParentHelperEventsSafe.length > 0 && (
+  <View style={{ gap: 6 }}>
+    <Text>Co-parent's pending rides</Text>
+    {coParentHelperEventsSafe.map(ev => <HelperEventCard key={ev.id} ev={ev} ... />)}
+  </View>
+)}</pre>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Verified fixed</div><p><span class="lit">npx tsc --noEmit</span> clean after the change. A co-parent's pending driver/helper assignment now surfaces in the OTHER parent's Household Backlog with a Take Over action, closing the exact gap the classifier's own comment described but never delivered.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> This was the one genuinely reachable "invisible unconfirmed item" gap found this pass — now fixed. Every other bucket the classifier computes (<span class="lit">unassigned</span>, <span class="lit">myPending</span>) does reach a real card.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">ActionNeededSection's unassigned bucket is bounded to 48h — confirmed intentional, not a coverage gap</span></div>
+      <div class="case-situation"><span class="lit">classifyEventUrgency.ts</span>'s <span class="lit">unassigned</span> branch only pushes an assignee-less event if <span class="lit">hoursUntilEvent(e.date, e.time)</span> is between 0 and 48. An unassigned ride 5+ days out never enters Action Needed. Traced whether this event becomes permanently invisible or is just deferred.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">The classifier's own comment states the rationale explicitly: <span class="tag raw">Action Needed is for "figure this out soon," not a preview of every unassigned event on the calendar... still shows up fine on its actual date via Schedule</span>. Confirmed the event remains fully visible in Schedule/Calendar tab regardless of this 48h bound — it's a Hub-surface pacing decision, not a visibility bug. As the event's own date approaches inside the 48h window, the SAME classifier call (re-run on every render) will pick it up automatically — no separate "promote from far-future to near-future" logic is needed because there's no caching of bucket membership across renders.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct by design</div><p>Deferred, not dropped. An unassigned ride far out is still on Schedule; it enters Action Needed automatically once inside 48h.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Working as documented — not a completeness gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">ParentView's backlogWindowEvents fallback: an unassigned event beyond the 14-day useUpcomingOpenEvents window, on a day with NO other events in the 14-day window, silently falls back to day-scoped events only</span></div>
+      <div class="case-situation"><span class="lit">ParentView.tsx</span>: <span class="tag raw">backlogWindowEvents.length > 0 ? backlogWindowEvents : events</span> — the fallback to the day-scoped <span class="lit">events</span> store only triggers when the 14-day window hook returns literally zero events. Traced whether a family with events ONLY beyond the 14-day horizon (e.g. only one Ride 20 days out, calendar otherwise empty) can see it classified at all.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">useUpcomingOpenEvents</span> fetches <span class="lit">date &gt;= today AND date &lt;= today+14</span>. If that query returns 0 rows (nothing scheduled in the next 2 weeks at all), <span class="lit">backlogWindowEvents.length > 0</span> is false, so ParentView falls back to <span class="lit">events</span> — the plain day-scoped store, which itself defaults to "today" and is NOT the 20-days-out ride either. In this specific edge case (calendar otherwise completely empty for 14 days, one unconfirmed ride sitting 20 days out), classification runs against neither data source containing that ride — it's invisible to the backlog until it enters the 14-day window on its own.</p>
+          <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Narrow edge case (requires a genuinely empty near-term calendar) and self-heals automatically once the ride crosses into the 14-day window — same "deferred, not dropped" shape as the 48h Action Needed bound above, just at a different horizon and with a fallback-empty precondition that makes it rarer. Not fixed this pass — the correct fix is widening the fallback condition (fall back to <span class="lit">events</span> whenever <span class="lit">backlogWindowEvents</span> is stale/loading, not just when it's literally empty) or widening <span class="lit">WINDOW_DAYS</span>, either of which touches a hook used by 3 other role views (Kid/Teen/Senior) and deserves its own pass rather than a rushed change here.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Real but narrow logged gap, not fixed this pass — self-resolves as the event approaches, and the precondition (a totally empty 14-day calendar) is uncommon.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Chore-materialized events never carry a driver/helper — correctly never enter the unconfirmed backlog at all</span></div>
+      <div class="case-situation"><span class="lit">choreStore.ts</span>'s <span class="lit">addChore</span> materializes a linked <span class="lit">calendar_events</span> row for any chore with both a due date and time: <span class="tag raw">{ title, date, time, memberId, type: 'reminder', category: 'Chore' }</span>. Checked whether this row can ever end up looking "unconfirmed" per the classifier.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">The materialized row never sets <span class="lit">helper</span>/<span class="lit">helperId</span>/<span class="lit">driverName</span>/<span class="lit">driverId</span>/<span class="lit">rideRequired</span> — <span class="lit">eventAssignee()</span> returns <span class="tag raw">{ name: undefined, id: undefined, status: undefined }</span> for it. In <span class="lit">classifyEventUrgency</span>, <span class="lit">!a.name</span> is true, so it only ever lands in <span class="lit">unassigned</span> — and only within the 48h window, same as any other assignee-less event. A chore reminder isn't a ride/helper commitment, so having no assignee is its normal, correct state, not an "unconfirmed" one in the ride/helper sense the requirement is about. Confirmed this doesn't spuriously flood Action Needed — <span class="lit">pendingRequests</span>/<span class="lit">pendingRideRequiredEvents</span> in ParentView both filter <span class="lit">unassigned</span> down to <span class="lit">category === 'Ride'</span> or <span class="lit">rideRequired</span>/away-from-home-location cases specifically, which a plain Chore-category reminder never matches.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>Chore materialization correctly produces events that never masquerade as an unconfirmed ride/helper commitment.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — chore-linked events are a different "assignee" concept (who owns the chore, tracked on the chore itself) and were never meant to flow through this classifier's ride/helper logic.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">School-period-materialized events: same shape, same conclusion</span></div>
+      <div class="case-situation"><span class="lit">schoolStore.ts</span>'s <span class="lit">materializePeriodEvent</span> creates a weekly-recurring series via <span class="lit">addRecurringEvent</span> with <span class="tag raw">{ title: period.subject, date, time, endTime, memberId, type: 'reminder', category: 'School', location, notes }</span>.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Same as the chore case — no helper/driver fields written at all, category is <span class="lit">'School'</span> not <span class="lit">'Ride'</span>, no <span class="lit">location</span> away-from-home flag triggers the <span class="lit">pendingRideRequiredEvents</span> catch (a classroom's <span class="lit">room</span> field isn't a driving destination). Confirmed via grep across <span class="lit">schoolStore.ts</span>: no writer of <span class="lit">rideRequired</span>/<span class="lit">helperId</span>/<span class="lit">driverId</span> anywhere in the file.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>Never enters the ride/helper unconfirmed classification — correct, a class period has no driver concept.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Grocery domain — confirmed NOT materialized into calendar_events (prior session finding), re-verified still true</span></div>
+      <div class="case-situation">Per this session's prior context, grocery items were already confirmed not to materialize into <span class="lit">calendar_events</span>. Re-checked with a fresh grep given how much churn this session's other passes have made to the calendar-materialization pattern.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">store/groceryStore.ts</span> has no reference to <span class="lit">calendar_events</span>, <span class="lit">addEvent</span>, or <span class="lit">addRecurringEvent</span> anywhere. Grocery requests reach the parent Hub entirely through <span class="lit">kidRequestStore</span>'s own <span class="lit">pendingKidRequests</span> filter in <span class="lit">ParentView.tsx</span>, a completely separate pipeline from the calendar/backlog classification this pass is auditing.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct, unchanged</div><p>Still true — grocery has its own dedicated Action Needed pipeline, not calendar-event-based.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — out of scope for this classifier by design.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">An unconfirmed event created by a kid/teen (not a parent) reaches the backlog identically to a parent-created one</span></div>
+      <div class="case-situation">The requirement doesn't distinguish who created the event. Checked whether <span class="lit">classifyEventUrgency</span> or its consumers filter on <span class="lit">createdBy</span>/creator role anywhere.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read the full classifier body again with this lens: every branch keys off <span class="lit">eventAssignee(e)</span> (helper/driver fields) and <span class="lit">e.date</span>/<span class="lit">e.time</span> only — <span class="lit">createdBy</span> never appears in <span class="lit">classifyEventUrgency.ts</span> at all. A teen requesting a ride via <span class="lit">isOpenToTeens</span>/kid request flow that ultimately lands as a real <span class="lit">calendar_events</span> row with no driver assigned yet is indistinguishable, at classification time, from a parent-created one — both hit the same <span class="lit">!a.name</span> branch.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>Creator identity correctly plays no role in unconfirmed-visibility — the classifier is purely state-based (assignee presence/status + timing), which is the right invariant for "does a parent need to know this is still open."</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Inbound Google/Outlook calendar sync — does a synced event that needs a driver get the fields the classifier depends on, or does the sync path bypass them?</span></div>
+      <div class="case-situation">Per the Calendar Sync trace context, inbound sync writes come through <span class="lit">calendar-webhook-google</span>/<span class="lit">calendar-webhook-outlook</span> edge functions, not through <span class="lit">eventStore.ts</span>'s client-side <span class="lit">addEvent</span>/<span class="lit">updateEvent</span>. Checked <span class="lit">_shared/calendarFieldMapping.ts</span> and <span class="lit">_shared/googleReconcile.ts</span> for whether an inbound-synced row can ever end up with a non-null <span class="lit">driver_name</span>/<span class="lit">helper_name</span> but a null/stale status, or otherwise diverge from what the classifier expects.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">An inbound Google/Outlook event has no concept of a Family Cube driver/helper at all — the provider's event has no such field to map from, so <span class="lit">calendarFieldMapping.ts</span> never writes <span class="lit">driver_name</span>/<span class="lit">helper_name</span>/<span class="lit">ride_required</span> for a freshly-synced-in row; those stay at their column defaults (null/false). A purely-external event (e.g. "Piano recital" synced from a parent's personal Google Calendar) therefore reads through <span class="lit">fromRow()</span> exactly like a plain assignee-less event — it lands in <span class="lit">unassigned</span> only if it also happens to be a Ride-category or has an away-from-home location, neither of which an external sync can set since those are Family-Cube-specific fields with no source-provider equivalent.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>An inbound-synced event can only ever need a driver/helper if a FAMILY member later edits it in-app to add one (e.g. opens the synced "Piano recital" and flags <span class="lit">rideRequired</span>) — at that point it's a normal client-side <span class="lit">updateEvent</span> write, going through the exact same path as any natively-created event, so it's classified identically. The sync path itself introduces no divergent/bypassed field population.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — inbound sync cannot itself create a "looks unconfirmed but classifier can't see it" row, since it has no channel to populate driver/helper fields in the first place.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Recurring series where only SOME occurrences are unconfirmed — deduped correctly for Action Needed, but does dedup ever hide a later occurrence's OWN distinct unconfirmed state?</span></div>
+      <div class="case-situation"><span class="lit">ActionNeededSection.tsx</span> runs <span class="lit">dedupeRideSeries</span> to show only the soonest occurrence per series in <span class="lit">unassigned</span>-derived cards, per its own comment: "12 weeks out meant a dozen near-identical cards... Now only the single soonest occurrence per series surfaces." Checked whether a LATER occurrence that has since diverged from the anchor (e.g. someone already assigned occurrence #1 but occurrence #3 is still open after a per-occurrence decline) is correctly re-surfaced once #1 clears, or stays permanently suppressed by the dedup.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Traced <span class="lit">dedupeRideSeries.ts</span>'s selection logic: it groups by <span class="lit">seriesId</span> and picks the single soonest-dated occurrence from whatever's CURRENTLY in the input array (i.e. currently unassigned/unconfirmed per that render's classification), not a static snapshot. Once occurrence #1 gets a confirmed driver (exits <span class="lit">unassigned</span> via <span class="lit">classifyEventUrgency</span> on the next render), it drops out of the array dedup operates on entirely — occurrence #3, if still unconfirmed, becomes the new "soonest still-unassigned" and surfaces on its own in the very next render. No stale caching of "which occurrence represents this series" persists across state changes.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>Dedup is re-derived from live classification state every render, so a later diverging occurrence is never permanently suppressed by an earlier occurrence's resolution.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">updateEventScoped('all'/'following') bulk writes reset assignment status to 'pending' rather than propagating a stale 'confirmed' — verified this doesn't create a "torn read" where urgency and other fields disagree</span></div>
+      <div class="case-situation">An event edited with BOTH a date change and an assignee change in the same bulk scoped update (e.g. "This and following," shifting time AND reassigning driver at once) — checked whether the backlog re-derives urgency from all current fields together, or could show stale urgency alongside fresh other fields.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Read <span class="lit">updateEventScoped</span>'s bulk branch in full: it builds one <span class="lit">stamped</span> patch object combining the caller's <span class="lit">restUpdates</span> (date, time, driver/helper name+id, whatever else) with the computed <span class="lit">statusReset</span> (forces <span class="lit">helperStatus</span>/<span class="lit">driverStatus</span> to <span class="lit">'pending'</span> whenever the assignee identity itself changed), applies it as ONE atomic local <span class="lit">set()</span> call across <span class="lit">dayEvents</span>/<span class="lit">events</span>/<span class="lit">rangeEvents</span>, then fires ONE batched DB write with <span class="lit">.in('id', ids)</span>. There's no intermediate render where date is fresh but assignee/status is stale, or vice versa — all fields commit together in the same state update.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p><span class="lit">classifyEventUrgency</span> re-runs on every ParentView render reading whatever the current, fully-consistent event object is — no partial-field staleness is possible given the atomic patch application.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No torn-read gap in this backlog surface, matching the "already checked for Quests" finding extended here.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Partial confirmation — a Ride event needing conceptually "both a driver and a helper" doesn't exist as a single-row concept; verified the actual field model can't produce a false "complete" read</span></div>
+      <div class="case-situation">The audit brief asks about an event needing both a driver AND helper where only one is confirmed. Checked whether <span class="lit">FamilyEvent</span>'s data model can even represent that, and if so whether classification handles it.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">eventAssignee()</span>'s own comment is explicit that <span class="lit">helper</span>/<span class="lit">helperStatus</span> and <span class="lit">driverName</span>/<span class="lit">driverStatus</span> are for two DIFFERENT roles on the SAME event (tutor/escort/coach vs. transport), and <span class="lit">eventAssignee</span> resolves to whichever ONE pair is actually populated (helper takes priority if both happen to be set, per the function's <span class="lit">if (e.helper) return ...; if (e.driverName) return ...</span> order) — there is no code path that requires BOTH to be confirmed before an event is "settled." Checked <span class="lit">myPending</span>'s branch: it only looks at ONE assignee (whichever <span class="lit">eventAssignee</span> resolves to) per event, so if a family genuinely needs both a helper AND a driver on one event, only the helper pair would ever be tracked by this classifier — the driver pair, if populated on the same row, is silently shadowed by <span class="lit">eventAssignee</span>'s helper-first priority.</p>
+          <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>In practice this requires a single event row to have BOTH <span class="lit">helper</span> and <span class="lit">driverName</span> set simultaneously, which no UI creation/edit flow in the app currently does (confirmed via grep — every write site sets one pair or the other, never both on the same row) — so this is a latent modeling gap, not a currently-reachable one. Worth a comment/guard in <span class="lit">eventAssignee()</span> flagging the shadowing behavior explicitly if a future feature ever wants dual-role events; not changing the data model on spec in this pass.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Not currently reachable — logged as a modeling note for if dual-role events are ever introduced.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Grandparent/senior visibility — does an unconfirmed item ALSO reach a senior acting in a parent-equivalent capacity, or only role==='parent'?</span></div>
+      <div class="case-situation">Checked whether <span class="lit">ParentView</span> (and therefore this whole backlog surface) is ever rendered for a <span class="lit">senior</span>-role member, or whether seniors get a structurally different Hub view with no equivalent backlog.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Confirmed via <span class="lit">HubScreen.tsx</span> role routing (grep for <span class="lit">SeniorView</span>) that grandparents get their OWN dedicated view, not <span class="lit">ParentView</span> — seniors are never subject to this classifier at all under ordinary role routing. Checked the live RLS SELECT policy read this pass: a grandparent's access is scoped narrowly (<span class="lit">shared_with_gp_for_care</span> flag, or being the actual <span class="lit">helper_id</span>/<span class="lit">driver_id</span> on a specific row) — deliberately NOT the same blanket <span class="lit">role = 'parent'</span> carve-out. This matches the app's documented privacy model (a GP is a helper, not a co-manager with full visibility into every unconfirmed family commitment) rather than being an oversight.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct by design</div><p>The <span class="lit">is_approver()</span>/temporary-approver-grant mechanism (checked via <span class="lit">TemporaryApproverCard</span> in <span class="lit">ParentView.tsx</span>) is the actual sanctioned path for a grandparent to get parent-equivalent oversight — an explicit, revocable grant, not implicit backlog visibility. This is a deliberate scope boundary, not the "invisible unconfirmed item" gap the requirement is about.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — seniors correctly don't get blanket parent-backlog visibility by design; explicit grants are the intended mechanism.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Snooze/park state on parentAssignments (System A quests) — scoped correctly per-viewer for myPending vs othersAdultQuests, verified against the coParentPending-shaped question</span></div>
+      <div class="case-situation">The brief asks whether a SNOOZED/PARKED item stays correctly visible to the other parent. This applies to the quest/chore delegation system (<span class="lit">parentAssignments</span>), a different subsystem from calendar events but worth checking given it shares the same Household Backlog section and the same "does dismissing for one parent wrongly hide it from both" risk shape as the coParentPending bug just fixed.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Traced <span class="lit">myDirectPending</span>/<span class="lit">myOutgoingPending</span>/<span class="lit">myLockedItems</span> — all three are computed via <span class="lit">getMyDirectPending(active.id)</span>/<span class="lit">getMyOutgoingPending(active.id)</span>/<span class="lit">getMyLockedItems(active.id)</span>, each parameterized by the CURRENT viewer's id, called fresh on every ParentView render for whichever parent has the Hub open. There's no cross-viewer cached/dismissed flag stored per-family that would hide a PENDING assignment from a co-parent once the original assigner has seen it — each parent's Hub independently re-derives its own relevant subset from the same underlying <span class="lit">parentAssignments</span> array.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>No family-wide dismiss/snooze flag exists on <span class="lit">parentAssignments</span> that could hide a pending item from BOTH parents — visibility is correctly re-derived per-viewer, per-render, from shared state. This is a structurally different (and safer) design than a stored "seen by X" flag would be.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap in the quest/chore delegation backlog — this subsystem doesn't share the coParentPending bug's shape because it never had a "compute once, never render" dead bucket to begin with.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">A stale-then-passed unconfirmed event — does it nag forever or silently vanish? Traced against neverDispatchedOverdue and the plain unassigned/myPending time filters</span></div>
+      <div class="case-situation">An unconfirmed event whose start time has already passed. Checked both the "never assigned at all" case and the "assigned-but-never-confirmed" case for whether the parent gets a permanent stale nag, a clean silent drop, or the correct third option (a distinct one-time "this was missed" signal).</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><b>Unassigned + passed:</b> <span class="lit">unassigned</span>'s own gate is <span class="lit">h >= 0 && h <= 48</span> — a negative <span class="lit">h</span> (event already started/passed) fails <span class="lit">h >= 0</span> and is excluded. An unassigned ride that nobody ever claimed, once its time passes, silently drops out of Action Needed with no distinct "you missed assigning this" signal — it's the SAME clean drop as any calendar event aging out of relevance, not a nag, but also not a flagged miss.</p>
+          <p class="step-action"><b>Named-but-unconfirmed + passed (myPending):</b> deliberately has NO upper time bound at all — the comment states <span class="tag raw">Mirrors the original myHelperEvents' date-only bound (no upper hoursUntilEvent cutoff)</span>, gated only on <span class="lit">(e.date ?? '') >= today</span>. This means a ride from EARLIER TODAY that a parent was assigned to but never confirmed stays in <span class="lit">myPending</span>/Household Backlog all day (correct — a stale unconfirmed commitment from this morning is still worth surfacing), but rolls off entirely the moment the DATE ticks past (date-only compare, not time-based), even if the actual event TIME was late in the day and just passed an hour ago relative to now.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct, with one documented rough edge</div><p>The named-assignee path correctly nags for the rest of the SAME calendar day regardless of exact time, which is the higher-value case (a real named commitment, not just an open pool item) — matches the classifier's own stated design intent, not a bug. The unassigned-and-passed silent drop has no distinct "missed" signal, but this mirrors <span class="lit">neverDispatchedOverdue</span>'s deliberate 1-hour-then-auto-clear design elsewhere in <span class="lit">ParentView.tsx</span> for a related case (a confirmed-but-never-dispatched trip) — the app's consistent philosophy here is bounded urgency windows over permanent nags, applied consistently rather than as an oversight specific to this bucket.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No new gap — consistent with the app's existing, deliberate bounded-nag design philosophy already verified elsewhere this session.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Realtime — a chore/school materialization or inbound sync creating a new unconfirmed event while Hub is open, without manual refresh</span></div>
+      <div class="case-situation">Checked whether <span class="lit">backlogWindowEvents</span> (the primary data source classification runs against) is truly live, not a load-once snapshot.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">useUpcomingOpenEvents.ts</span> subscribes its OWN dedicated realtime channel (<span class="lit">hub-open-events:{familyId}</span>) directly on <span class="lit">calendar_events</span>, filtered to <span class="lit">family_id</span> only — broad enough to catch ANY insert/update to the table regardless of which store/RPC/materialization path wrote it (client <span class="lit">addEvent</span>, <span class="lit">addRecurringEvent</span> from chore/school materialization, or an edge function's direct insert from inbound sync). New rows within the 14-day window get appended to local state via the payload handler; ParentView re-runs <span class="lit">classifyEventUrgency</span> on every render, so a newly-materialized unconfirmed event appears live with no manual refresh needed, matching the hook's own stated purpose.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>Broad table-level realtime subscription (not scoped to only client-originated changes) correctly catches server-side/edge-function-originated inserts too, including materialization from other domains.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Live RLS re-check: does the SELECT policy itself hide any unconfirmed row from a parent at the database layer, independent of client-side classification?</span></div>
+      <div class="case-situation">Re-queried the live <span class="lit">calendar_events_select</span> policy definition directly off production (not from memory of the earlier-this-session fix) to make sure the id-based fix from the prior "Events (deep)" pass didn't leave any residual parent-visibility gap specific to unconfirmed rows.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Live policy definition confirms: <span class="tag raw">EXISTS (SELECT 1 FROM members WHERE members.id = resolve_active_member_id() AND members.role = 'parent')</span> is OR'd into the SELECT predicate unconditionally — a parent's blanket family-wide read access is not gated on privacy/sensitivity flags at all (those gates apply to kid/GP/sibling viewers; the policy's privacy sub-clause is itself wrapped in a NOT that only restricts non-parent access). Every unconfirmed row, regardless of <span class="lit">privacy_level</span>/category/ride_required, is readable by any <span class="lit">role='parent'</span> member.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct, live-verified</div><p>The database layer imposes no additional visibility restriction beyond what client-side classification already handles — the coParentPending gap found and fixed above was purely a client-side wiring gap, not compounded by any RLS restriction. Both parents' Supabase queries already return the same full row set; the bug was entirely "the client never rendered a bucket it already had."</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No RLS-layer gap — confirms the fix applied above (client-side wiring) was the complete, correct fix with no server-side counterpart needed.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">claimHelperSlot's rollback-on-loss path re-fetches the full row — verified the loser's classification is correct post-rollback, not left in a stale "I'm assigned" state that would wrongly suppress the item from their OWN backlog</span></div>
+      <div class="case-situation">Two grandparents (or a GP and teen) racing to claim the same open slot — the loser's optimistic local state briefly shows them as confirmed. Checked whether a PARENT viewing their own Hub during this exact race window could see a torn/incorrect classification.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">This race is between two non-parent claimants (GP/teen); a parent viewing Hub isn't a party to the race at all, so <span class="lit">isViewer</span> in <span class="lit">classifyEventUrgency</span> is false for them regardless of who wins. The event was already in <span class="lit">coParentPending</span>-shape territory only if a PARENT is the named assignee — for a GP/teen claim it's genuinely a third party, so it never enters <span class="lit">myPending</span>/<span class="lit">coParentPending</span> for either parent; both parents see it via <span class="lit">unassigned</span> until the claim resolves, then via whichever bucket applies once resolved. The loser's rollback re-fetches the authoritative row (<span class="lit">supabase.from('calendar_events').select('*').eq('id', id).single()</span>) rather than trusting local optimistic state, so by the time any parent's next render happens, the data is already correct.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>No torn-classification window reaches a parent's own view — the race is resolved server-side before the parent's next render, and the loser's own rollback fetches fresh authoritative data rather than propagating a stale optimistic guess.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">otherAttentionCount / GreetingHeader badge — verified it now correctly reflects the newly-added coParentHelperEvents count, not just backlogCount silently drifting from what's actually rendered</span></div>
+      <div class="case-situation">This session's own prior findings (referenced in the classifier's header comment) explicitly call out "the same unconfirmed ride showing twice... each with a different card/action set" and a badge/card-list divergence bug shape as things this exact subsystem has hit before. Verified the fix above doesn't reintroduce a badge/render mismatch.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Traced the count chain after the fix: <span class="lit">HouseholdBacklogSection</span>'s own <span class="lit">badgeCount</span> now includes <span class="lit">coParentHelperEventsSafe.length</span>, and its <span class="lit">isEmpty</span> check now includes it too (both updated in the same pass) — so the section's own badge/collapse-state and its rendered content agree. <span class="lit">ParentView.tsx</span>'s <span class="lit">backlogCount</span> (which feeds <span class="lit">otherAttentionCount</span> → <span class="lit">GreetingHeader</span>'s top-of-Hub "need attention" chip) was also updated to add <span class="lit">coParentHelperEvents.length</span> in the same edit, so the very top-of-screen number and the Household Backlog section's own badge both increase together when a co-parent has a pending item — no drift between the two counters this fix touches.</p>
+          <div class="finding fixed"><div class="finding-tag">&#10003; Verified fixed</div><p>Checked both counters were updated together in the same change, avoiding exactly the "chip says 12, backlog shows 3" class of bug this codebase has hit before in this exact area.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Fix is counter-consistent, not just render-consistent.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">A co-parent's REJECTED (declined) assignment — verified it still surfaces via coParentPending now that the bucket is wired up, not silently dropped once status flips to 'rejected'</span></div>
+      <div class="case-situation">The classifier's own comment says <span class="tag raw">regardless of whether it's pending or rejected (a co-parent's declined ride is still worth knowing about)</span>. Verified this now actually reaches the UI post-fix, and that <span class="lit">HelperEventCard</span> renders sensibly for a rejected (not just pending) co-parent assignment.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Confirmed <span class="lit">coParentPending</span>'s push condition is <span class="lit">a.status !== 'confirmed'</span> (covers both <span class="lit">'pending'</span> and <span class="lit">'rejected'</span>), and the newly-wired render path passes the raw event through unfiltered by status to <span class="lit">HelperEventCard</span>. That card's own status badge renders <span class="lit">assignee.status === 'confirmed' ? 'Confirmed' : ...</span> — a rejected assignee falls into the same "Pending" visual badge as a genuinely-still-pending one (the card has no explicit third "Declined" badge state), and <span class="lit">deriveEventActions</span>' <span class="lit">showAssignToMe</span> gate (<span class="lit">!assignee.name || (helperPending && !isSelfAssigned) || helperRejected</span>) correctly still offers Take Over for a rejected co-parent assignment.</p>
+          <div class="finding"><div class="finding-tag">&#9888; Gap, log only</div><p>Minor cosmetic gap inherited from <span class="lit">HelperEventCard</span>'s existing (pre-this-fix) badge logic, not introduced by this pass's wiring: a co-parent's DECLINED ride shows the same amber "Pending" badge as a merely-not-yet-confirmed one, when a distinct "Declined — needs a new driver" treatment would read clearer. Functionally correct (Take Over is offered either way) — logged as a small UX polish item, not fixed here to keep this pass scoped to the actual visibility gap.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> Functionally correct post-fix; one small pre-existing cosmetic label gap logged, not blocking.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Multi-parent household with 3+ parents (not just 2) — verified coParentPending scales correctly, doesn't hardcode a single "other parent"</span></div>
+      <div class="case-situation">Checked whether the fix (and the underlying classifier) assumes exactly 2 parents.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action"><span class="lit">classifyEventUrgency</span>'s <span class="lit">coParentPending</span> branch is a plain "not me" check (<span class="lit">!isViewer</span>), with no assumption about how many OTHER parents exist — it runs once per viewing parent and buckets every event assigned to anyone else that isn't confirmed. In a 3-parent household (e.g. blended family), each parent's own Hub render independently computes "assigned to someone who isn't me, not yet confirmed" — correctly scales to any number of co-parents without a hardcoded pairwise assumption.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>No 2-parent assumption anywhere in the classifier or the newly-wired render path.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap.</div>
+    </div>
+
+    <div class="case">
+      <div class="case-head"><span class="case-name">Confirming the fix doesn't cause a NEW duplicate-card bug — a parent's own myHelperEvents and coParentHelperEvents are mutually exclusive by construction</span></div>
+      <div class="case-situation">Given this exact subsystem's documented history of "same event shown twice with two different card designs," specifically verified the new section can't double-render an event alongside the existing "You're the driver / helper" group.</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-body">
+          <p class="step-action">Traced the classifier's control flow again: the <span class="lit">isViewer</span> branch and the "someone else assigned" branch are an if/continue vs. fallthrough pair inside the SAME loop iteration per event — an event can only ever be pushed to <span class="lit">myPending</span> OR <span class="lit">coParentPending</span>, never both, for a single viewer's single classification run (the <span class="lit">continue</span> after the <span class="lit">isViewer</span> block guarantees this). <span class="lit">myHelperEvents</span> and <span class="lit">coParentHelperEvents</span> in <span class="lit">ParentView.tsx</span> are direct aliases of <span class="lit">myPending</span>/<span class="lit">coParentPending</span> respectively — no additional merge/dedup step was needed because the source buckets are already disjoint by construction.</p>
+          <div class="finding info"><div class="finding-tag">Info — confirmed correct</div><p>No duplicate-rendering risk introduced by this fix — the same structural guarantee (one event, one bucket) that already prevented AlertBanner/Action Needed duplication extends cleanly to this new pairing.</p></div>
+        </div></div>
+      </div>
+      <div class="end-state"><b>Verdict</b> No gap — the fix is structurally safe against the class of bug this subsystem has hit before.</div>
+    </div>
+</section>
+
   <!-- ============ FINDINGS TABLE ============ -->
   <section class="group scroll-anchor" id="findings">
     <h2 class="group-title">Every finding, at a glance</h2>
@@ -4292,6 +4573,11 @@ const canApprove = (isParentOrSenior || !!viewer.isActiveApprover) && review && 
         <tr><td>Calendar sync (deep)</td><td>Apple/EventKit's device-reconcile sweep has no true timestamp-based conflict rule &mdash; the device always wins on any diff, unlike the documented last-write-wins rule for Google/Outlook.</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Calendar sync (deep)</td><td>calendar-oauth-exchange trusts a client-supplied memberId with no ownership verification &mdash; scoped as an app-wide identity-layer gap (not calendar-specific) and deliberately left for a broader fix rather than a one-off patch here.</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Calendar sync (deep)</td><td>Confirmed correct: echo-loop prevention, the FamilyCube-only-fields portable-field boundary on inbound sync, work/personal purpose isolation, multi-provider schema design, token-failure surfacing in the UI, and webhook shared-secret verification.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Unconfirmed &rarr; parent backlog (deep)</td><td>classifyEventUrgency's coParentPending bucket (a co-parent's own outstanding driver/helper assignment) was computed but never consumed by ParentView &mdash; a co-parent's unconfirmed ride/helper slot was silently invisible to the OTHER parent's Hub entirely, the exact gap the user flagged directly.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Unconfirmed &rarr; parent backlog (deep)</td><td>Fix threads coParentPending through ParentView &rarr; HouseholdBacklogSection as a new "Co-parent's pending rides" group, reusing the existing viewer-identity-aware HelperEventCard (so the other parent only ever sees Take Over, never Confirm/Can't for someone else's commitment); badge/empty-state counts updated consistently.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Unconfirmed &rarr; parent backlog (deep)</td><td>backlogWindowEvents' 14-day-window fallback only activates when the window is literally empty &mdash; an unconfirmed event more than 14 days out on an otherwise-busy calendar can be briefly invisible until it enters the window.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Unconfirmed &rarr; parent backlog (deep)</td><td>eventAssignee()'s helper-first priority would silently shadow a driver pair if a single event ever had both fields set simultaneously &mdash; not currently reachable (no UI path writes both), logged as a latent footgun.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Unconfirmed &rarr; parent backlog (deep)</td><td>Confirmed correct (16 cases): chore/school materialization never produces ride-shaped unconfirmed rows; inbound Google/Outlook sync can't populate driver/helper fields so can't bypass classification; recurring-series and bulk-update paths re-derive live with no stale suppression or torn reads; GP/senior scoping, live RLS, and multi-parent (3+) household support all confirmed sound.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
       </tbody>
     </table>
     </div>

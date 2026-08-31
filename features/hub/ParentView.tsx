@@ -160,7 +160,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // hasn't resolved yet) — fall back to the day-scoped `events` rather
   // than showing an empty backlog for a moment; it settles to the real,
   // wider data within one render once useUpcomingOpenEvents' fetch lands.
-  const { unassigned, myPending } = classifyEventUrgency(
+  const { unassigned, myPending, coParentPending } = classifyEventUrgency(
     backlogWindowEvents.length > 0 ? backlogWindowEvents : events, { id: active.id, name: active.name }, today,
   );
   // ActionNeededSection still renders 2 distinct card types (RideRequestCard
@@ -514,8 +514,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // something to pull off a backlog. Sourced from classifyEventUrgency
   // above (myPending) — see that file for the exact rule.
   const myHelperEvents = myPending;
+  // A co-parent's own outstanding driver/helper assignment — read-only
+  // awareness for this viewer, with a "Take Over" escape hatch via the same
+  // HelperEventCard used for myHelperEvents (deriveEventActions already
+  // gates its actions on viewer identity, so reusing it here is safe: this
+  // viewer never sees "Confirm"/"Can't" for someone else's assignment, only
+  // Take Over). classifyEventUrgency computed this bucket already but
+  // nothing ever consumed it — a co-parent's pending ride/helper slot was
+  // silently invisible to the OTHER parent's Hub entirely, the exact
+  // "every unconfirmed schedule item must reach a parent's backlog" gap
+  // this pass was asked to close.
+  const coParentHelperEvents = coParentPending;
 
-  const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length;
+  const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
+    + coParentHelperEvents.length;
 
   // The next confirmed ride THIS parent is driving today, soonest first —
   // Pick-up Radar's "Up Next" card links to this instead of only ever
@@ -633,7 +645,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
         myDirectPending={myDirectPending} myLockedItems={myLockedItems}
         myOutgoingPending={myOutgoingPending}
-        myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
+        myHelperEvents={myHelperEvents} coParentHelperEvents={coParentHelperEvents}
+        systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
         cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}

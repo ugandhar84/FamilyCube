@@ -1331,6 +1331,12 @@ export const useEventStore = create<EventState>((set, get) => ({
   addEvent: (e) => {
     const event: FamilyEvent = {
       ...e, id: 'ev' + Date.now(),
+      // Untrimmed titles (stray leading/trailing/double spaces, e.g. from a
+      // photo-parsed or voice-dictated appointment) render verbatim
+      // everywhere the title is shown — cards, calendar, and push
+      // notifications ("Lab -Blood " with a trailing space, live-reported).
+      // Normalize once here rather than at every display site.
+      title: e.title?.trim() ?? e.title,
       createdBy: e.createdBy ?? getActiveMemberId() ?? undefined,
       createdAt: e.createdAt ?? new Date().toISOString(),
     };
@@ -1443,7 +1449,12 @@ export const useEventStore = create<EventState>((set, get) => ({
     return event.id;
   },
 
-  updateEvent: (id, updates) => {
+  updateEvent: (id, updatesIn) => {
+    // Same untrimmed-title normalization as addEvent — an edit can
+    // reintroduce stray whitespace just as easily as creation can.
+    const updates = 'title' in updatesIn && typeof updatesIn.title === 'string'
+      ? { ...updatesIn, title: updatesIn.title.trim() }
+      : updatesIn;
     const prevEvent = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     // Logged QA gap, fixed: two co-parents editing the same free-text
     // field on the same event within the same instant used to silently
@@ -2056,8 +2067,14 @@ export const useEventStore = create<EventState>((set, get) => ({
     // state / the DB in a single round-trip each, not one at a time.
     const now = new Date().toISOString();
     const createdBy = first.createdBy ?? getActiveMemberId() ?? undefined;
+    // Same untrimmed-title normalization as addEvent — this batch path
+    // spreads `first` directly rather than going through addEvent per
+    // occurrence (see comment above), so every occurrence after the
+    // anchor needs its own copy of the trim.
+    const trimmedTitle = first.title?.trim() ?? first.title;
     const occurrences: FamilyEvent[] = dates.map((date, i) => ({
       ...first,
+      title: trimmedTitle,
       id: `ev${Date.now()}_${i}`,
       date,
       seriesId: anchorId,
@@ -2232,6 +2249,13 @@ export const useEventStore = create<EventState>((set, get) => ({
     }
     const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (!target?.seriesId) { get().updateEvent(id, updates); return; }
+
+    // Same untrimmed-title normalization as updateEvent — this bulk path
+    // bypasses updateEvent entirely (see comment below), so it needs its
+    // own copy of the trim rather than inheriting it.
+    if ('title' in updates && typeof updates.title === 'string') {
+      updates = { ...updates, title: updates.title.trim() };
+    }
 
     supabase.from('calendar_events')
       .select('id, date')

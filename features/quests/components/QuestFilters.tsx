@@ -40,8 +40,8 @@ export function QuestFilters({
     flexDirection: 'row' as const, alignItems: 'center' as const,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 22, borderWidth: 1.5,
   };
-  const pillBg   = isDark ? '#1E293B' : '#F1F5F9';
-  const pillBdr  = isDark ? '#334155' : '#E2E8F0';
+  const pillBg   = colors.surface;
+  const pillBdr  = colors.border;
 
   // No dedicated "Paid ✓" tab — approved/paid chores stay inline in "All"
   // alongside active ones instead of being segregated into their own view.
@@ -105,10 +105,10 @@ export function QuestFilters({
         <TouchableOpacity
           style={[pillBase, kidFilter === 'pool'
             ? { backgroundColor: BRAND.amber, borderColor: BRAND.amber }
-            : { backgroundColor: isDark ? '#1E293B' : '#FFFBEB', borderColor: isDark ? '#78350F50' : '#FDE68A' }]}
+            : { backgroundColor: colors.amberLight, borderColor: colors.amberLight }]}
           onPress={() => { onSetKidFilter('pool'); onSetTabStatus('all'); }}
         >
-          <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'pool' ? '#fff' : BRAND.amber }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'pool' ? '#fff' : colors.amber }}>
             ⚡ Bounty
           </Text>
         </TouchableOpacity>
@@ -119,12 +119,12 @@ export function QuestFilters({
         {!isParentOrSenior && (
           <TouchableOpacity
             style={[pillBase, kidFilter === 'cheer'
-              ? { backgroundColor: '#4338CA', borderColor: '#6366F1' }
-              : { backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}
+              ? { backgroundColor: colors.accent, borderColor: colors.accent }
+              : { backgroundColor: colors.accentLight, borderColor: colors.accentLight }]}
             onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('all'); }}
           >
-            <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : '#6366F1'} />
-            <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : '#6366F1', marginLeft: 4 }}>
+            <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : colors.accent} />
+            <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : colors.accent, marginLeft: 4 }}>
               Sibling Cheer
             </Text>
           </TouchableOpacity>
@@ -135,7 +135,7 @@ export function QuestFilters({
       {kidFilter !== 'cheer' && (
         <View style={{
           flexDirection: 'row', marginHorizontal: 14, marginBottom: 12,
-          backgroundColor: isDark ? '#0F172A' : '#E2E8F0',
+          backgroundColor: colors.surface,
           borderRadius: 22, padding: 3,
         }}>
           {STATUS_TABS.map(tab => {
@@ -147,7 +147,7 @@ export function QuestFilters({
                 onPress={() => onSetTabStatus(tab.key)}
                 style={{
                   flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 20,
-                  backgroundColor: active ? (isDark ? '#1E293B' : '#FFFFFF') : 'transparent',
+                  backgroundColor: active ? colors.card : 'transparent',
                   shadowColor: active ? '#000' : 'transparent',
                   shadowOpacity: active ? 0.08 : 0,
                   shadowRadius: active ? 4 : 0,
@@ -157,9 +157,7 @@ export function QuestFilters({
               >
                 <Text style={{
                   fontSize: 12, fontWeight: active ? '800' : '600',
-                  color: active
-                    ? (isDark ? '#F1F5F9' : '#0F172A')
-                    : (isDark ? '#64748B' : '#64748B'),
+                  color: active ? colors.textPrimary : colors.textSecondary,
                 }}>
                   {tab.label}
                 </Text>

@@ -134,10 +134,10 @@
     <h1 class="title">Family Cube QA Deep Trace</h1>
     <p class="dek">Every claim below is backed by a real inserted database row, a real (or precisely replicated) server action, and a cited line of the app's actual source code — not a description of how the app is supposed to work.</p>
     <div class="meta-grid">
-      <div class="meta-card"><div class="meta-num">31</div><div class="meta-label">trace sections</div></div>
-      <div class="meta-card"><div class="meta-num">334</div><div class="meta-label">cases traced</div></div>
+      <div class="meta-card"><div class="meta-num">32</div><div class="meta-label">trace sections</div></div>
+      <div class="meta-card"><div class="meta-num">346</div><div class="meta-label">cases traced</div></div>
       <div class="meta-card"><div class="meta-num">9</div><div class="meta-label">identity-spoofing fixes</div></div>
-      <div class="meta-card"><div class="meta-num">137</div><div class="meta-label">behavior findings</div></div>
+      <div class="meta-card"><div class="meta-num">143</div><div class="meta-label">behavior findings</div></div>
     </div>
   </header>
 
@@ -171,6 +171,7 @@
     <a href="#optimistic-rpc-mismatch-deep">Optimistic write vs RPC mismatches (deep)</a>
     <a href="#theme-darkmode-deep">Theme &amp; dark-mode (deep)</a>
     <a href="#chat-deep">Chat (deep)</a>
+    <a href="#notifications-deep">Notifications (deep)</a>
     <a href="#findings">All findings</a>
   </nav>
 
@@ -5343,6 +5344,198 @@ guard_chat_messages_write trigger body: no reference to text/blind_index length 
   </div>
 </section>
 
+<section class="group scroll-anchor" id="notifications-deep">
+  <h2 class="group-title">Notifications &mdash; deep trace (delivery mechanics, exploratory &amp; adversarial)</h2>
+  <p class="group-sub">First deep pass over the DELIVERY MECHANICS themselves &mdash; token registration, multi-device fan-out, stale-token cleanup, quiet hours, deep-link routing, and the <span class="lit">family-notifier</span>/<span class="lit">notification-health-check</span> edge functions &mdash; not any one feature's message content, already covered by the standard pass (<span class="lit">#notifications</span>) and per-feature <span class="lit">-deep</span> passes. Read <span class="lit">shared/services/notifications.service.ts</span>, <span class="lit">store/notifStore.ts</span>, <span class="lit">lib/db/notifications.ts</span>, <span class="lit">store/familyStore.ts</span>'s <span class="lit">setActiveMember</span>, <span class="lit">app/_layout.tsx</span>'s notification listeners, <span class="lit">components/NotificationPanel.tsx</span>'s <span class="lit">routeForNotification</span>, and every push-sending edge function (<span class="lit">family-notifier</span>, <span class="lit">notification-health-check</span>, <span class="lit">chat-notify</span>, <span class="lit">mention-notify</span>, <span class="lit">chore-deadline-notifier</span>, <span class="lit">ride-deadline-notifier</span>, <span class="lit">quest-event-notifier</span>) in full, plus the live <span class="lit">notifications</span>/<span class="lit">member_device_tokens</span> schema and cron table. One real, previously-invisible delivery bug found and fixed at the server (a daily stale-token sweep that had been running against zero rows since deployment); the PIN-switch dedup and grant-token concerns flagged going into this pass were both confirmed already correctly closed; one real-but-narrow client-side quiet-hours gap logged, not fixed.</p>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">HIGH PRIORITY CHECK: the daily stale-token cleanup job has been running against zero rows since it was deployed</span></div>
+    <div class="case-situation"><span class="lit">notification-health-check</span> (cron, daily at 06:00) polls Expo's <span class="lit">getReceipts</span> endpoint for every <span class="lit">notifications</span> row that has an <span class="lit">expo_receipt_id</span> set and clears any token Expo reports as <span class="lit">DeviceNotRegistered</span> &mdash; this is case #2 from the brief (stale/invalid push tokens). Traced whether that id actually ever gets written.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">family-notifier/index.ts</span>'s <span class="lit">sendExpoPush</span> end to end &mdash; it posts to Expo's <span class="lit">/push/send</span> endpoint, reads back a ticket array, and used the ticket only to bump <span class="lit">sent</span>/<span class="lit">failed</span> counters. The <span class="lit">ticket.id</span> Expo actually returns for every successfully-queued push &mdash; the exact value <span class="lit">notification-health-check</span> later needs to poll <span class="lit">getReceipts</span> with &mdash; was read from the response and then discarded. <span class="tag raw">copied logic</span></p>
+        <pre class="dbstate">// before:
+for (const ticket of (result.data ?? [])) {
+  if (ticket.status === 'ok') sent++;
+  else { failed++; if (ticket.message) errors.push(ticket.message); }
+}
+return { sent, failed, errors };   // ticket.id never captured</pre>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Confirmed the persist step downstream never wrote <span class="lit">expo_receipt_id</span> onto the <span class="lit">notifications</span> row either &mdash; it wasn't in the insert payload at all. Checked <span class="lit">notification-health-check</span>'s own query: <span class="lit">.not('expo_receipt_id', 'is', null).eq('receipt_checked', false)</span>. With nothing anywhere ever writing that column, this query can only ever return an empty set.</p>
+        <p class="step-action">Verified directly against live data rather than trusting the code read alone.</p>
+        <pre class="dbstate">select count(*) as total, count(expo_receipt_id) as with_receipt
+from notifications where created_at > now() - interval '30 days';
+-&gt; total: 63, with_receipt: 0</pre>
+      </div></div>
+      <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>63 real notifications sent in the last 30 days, zero of them trackable by the health-check job &mdash; meaning the daily 06:00 cron has been executing successfully every single day, finding nothing to check, and returning <span class="lit">{"message": "No pending receipts to check"}</span>, silently, since the day it was deployed. Any member whose token had actually gone stale (uninstalled app, factory-reset device, revoked permission at the OS level) would keep receiving silent, permanently-failing push attempts forever &mdash; <span class="lit">members.expo_push_token</span> and their <span class="lit">member_device_tokens</span> row would never get cleared, with no signal to them or anyone else that delivery was dead. This is exactly case #2 from the brief, and it was a real, live, currently-active gap, not a hypothetical.</p></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">
+        <p class="step-action"><b>Fix:</b> <span class="lit">sendExpoPush</span> now returns a <span class="lit">ticketsByToken</span> map (Expo returns tickets in the same order as the request array, so ticket index i maps to token index i &mdash; documented Expo API behavior, the only way to associate an id back to a token since the response doesn't echo <span class="lit">to</span>). <span class="lit">resolveTokensForMembers</span> was split into a new <span class="lit">resolveTokensForMembersDetailed</span> that also returns a member&rarr;tokens map (the old flat-list function kept as a thin wrapper for compatibility). The persist step now picks, per recipient member, any one of their tokens that got a real ticket id back and writes it as <span class="lit">expo_receipt_id</span> on that member's <span class="lit">notifications</span> row.</p>
+        <div class="finding fixed"><div class="finding-tag">&#10003; Fixed &amp; deployed</div><p>Server-side change to <span class="lit">supabase/functions/family-notifier/index.ts</span> only (<span class="lit">sendExpoPush</span>, <span class="lit">resolveTokensForMembersDetailed</span>, and the persist-step insert). Deployed via <span class="lit">supabase functions deploy family-notifier</span> and confirmed live. All five other push-sending edge functions (<span class="lit">chat-notify</span>, <span class="lit">mention-notify</span>, <span class="lit">chore-deadline-notifier</span>, <span class="lit">ride-deadline-notifier</span>, <span class="lit">quest-event-notifier</span>) delegate to <span class="lit">family-notifier</span> rather than calling Expo directly, so the fix covers every notification type in the app by construction, not just one call site.</p></div>
+      </div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">
+        <p class="step-action">Honest trade-off, noted rather than hidden: the <span class="lit">notifications</span> table's grain is per-member, not per-device, so a member with two real devices (the legitimate multi-device case from case #1 below) only gets ONE of their tokens' ticket ids tracked per notification. A <span class="lit">DeviceNotRegistered</span> receipt on the tracked device's token still gets that stale token correctly cleared by the sweep; if it's the OTHER, untracked device that went stale, that specific staleness surfaces later, whenever a future notification happens to pick that token's ticket instead &mdash; not immediately, but not permanently missed either, since <span class="lit">members.expo_push_token</span> gets re-set on every app foreground/token-refresh.</p>
+        <div class="finding info"><div class="finding-tag">Info &mdash; known, acceptable limitation</div><p>A true per-device receipt trail would need <span class="lit">notifications</span> to carry a receipt id per (member, device) pair, not one per row &mdash; a real schema change, disproportionate to fix in this pass given the sweep now works correctly for the overwhelmingly common single-device-per-member case and self-corrects for the rest over time.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> A real, currently-active delivery-mechanics gap &mdash; not a rare edge case, a job that has done nothing since it shipped &mdash; found by reading the actual live data, not just the code, and fixed at the server today.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Multi-device same-member fan-out: does a phone + tablet both get notified, or does the shared-device dedup fix accidentally break this?</span></div>
+    <div class="case-situation">This session's earlier fix made <span class="lit">member_device_tokens.device_id</span> UNIQUE and made <span class="lit">saveTokenToMember</span> delete any OTHER member's row for a device before writing this member's own &mdash; needed to confirm that dedup is keyed on the DEVICE, not the MEMBER, so it can't collapse a legitimate second device down to one.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the live constraint set on <span class="lit">member_device_tokens</span> directly off the database rather than assuming from the migration name.</p>
+        <pre class="dbstate">member_device_tokens_device_id_key:            UNIQUE (device_id)
+member_device_tokens_member_id_device_id_key:   UNIQUE (member_id, device_id)
+member_device_tokens_member_id_fkey:            FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+member_device_tokens_family_id_fkey:            FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE</pre>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">family-notifier</span>'s <span class="lit">resolveTokensForMembers</span> (now <span class="lit">...Detailed</span>): for a given member id it collects EVERY row in <span class="lit">member_device_tokens</span> for that member into a <span class="lit">Set</span>, unions all of them into the final token list, and <span class="lit">sendExpoPush</span> fires a push to every token in that list &mdash; there is no per-member "just the newest token" narrowing anywhere in the send path.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not a gap</div><p><span class="lit">UNIQUE(device_id)</span> alone (a real physical device can only ever be claimed by one member at a time &mdash; the shared-device fix) is a completely different axis from <span class="lit">UNIQUE(member_id, device_id)</span> (one row per member PER device, not one row per member total). A member with a phone and a tablet, both legitimately theirs, ends up with two rows &mdash; one per device id &mdash; and both survive every profile switch on either device, since <span class="lit">saveTokenToMember</span>'s cleanup delete is scoped to <span class="lit">eq('device_id', deviceId).neq('member_id', memberId)</span>, i.e. it only ever touches rows for THIS device, never touches the member's OTHER device rows. Both tokens get unioned into the push and both devices genuinely buzz.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> The shared-device dedup fix and legitimate multi-device fan-out are orthogonal by construction (different unique keys) &mdash; no regression, confirmed by reading the live constraint definitions and the actual send-path code, not just inferring from the migration's stated intent.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Does the PIN-switch grant-token fix reach any notification-related write path, or is notification delivery entirely server-role and untouched by it?</span></div>
+    <div class="case-situation">Session flagged this as worth checking: does any notification RPC/edge function call <span class="lit">resolve_active_member_id()</span> and risk the same "member with their own login can't act" bug fixed elsewhere this session?</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read every notification-sending edge function's auth model: <span class="lit">family-notifier</span>, <span class="lit">chat-notify</span>, <span class="lit">mention-notify</span>, <span class="lit">chore-deadline-notifier</span>, <span class="lit">ride-deadline-notifier</span>, <span class="lit">quest-event-notifier</span>, and <span class="lit">notification-health-check</span> all construct their Supabase client with <span class="tag raw">SUPABASE_SERVICE_ROLE_KEY</span> &mdash; none of them run under the caller's own session or go through RLS/<span class="lit">resolve_active_member_id()</span> at all. They receive a <span class="lit">memberId</span>/<span class="lit">senderId</span> as a plain field in the request body (already resolved and trusted by the calling app code, which itself DOES go through the grant-aware identity resolution before it ever fires the fetch).</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Checked the one client-side notification write path that DOES run under RLS: <span class="lit">store/notifStore.ts</span> and <span class="lit">lib/db/notifications.ts</span>'s reads/mark-read/delete on the <span class="lit">notifications</span> table, scoped by <span class="lit">member_id = useFamilyStore.getState().activeMemberId</span>.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not applicable</div><p>Sending a push is a privileged, service-role operation by design (it has to write another member's row and call an external API) &mdash; it was never going to route through <span class="lit">resolve_active_member_id()</span> in the first place, so there's no version of this specific bug class to inherit here. The one place notification code DOES touch RLS (reading/marking your own notification inbox) reads <span class="lit">activeMemberId</span> straight from the Zustand store client-side, which is set by the already-fixed <span class="lit">setActiveMember</span>/grant-token flow &mdash; correct by inheriting that fix, not because this file does anything special itself.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap. Notification delivery is entirely service-role server-side; the only RLS-gated notification code path (reading your own inbox) already inherits the session-level fix correctly.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Client-side quiet hours reads a completely different, always-empty store from the one the Profile page's quiet-hours toggle actually writes to</span></div>
+    <div class="case-situation">The standard pass confirmed server-side quiet hours (case: "Quiet hours genuinely works") &mdash; suppresses the push but keeps the in-app row. Traced the CLIENT-side half of the same feature: what happens on-device when a push does arrive, or when a locally-scheduled reminder would fire, during a member's quiet hours.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">shared/services/notifications.service.ts</span>'s <span class="lit">canShowNotification()</span> &mdash; the function <span class="lit">setNotificationHandler</span> calls for every single incoming push to decide whether to actually play sound/show a banner/set the badge while the app is in the foreground, and the same gate <span class="lit">scheduleLocalReminder</span>/<span class="lit">scheduleImmediateNotification</span> check before firing a device-local notification.</p>
+        <pre class="dbstate">export function canShowNotification(notifType?: string): boolean {
+  const prefs = usePreferenceStore.getState();
+  if (prefs.quietHoursEnabled &amp;&amp; clientInQuietHours(prefs.quietHoursStart, prefs.quietHoursEnd)) return false;
+  ...
+}</pre>
+        <p class="step-action">Traced where <span class="lit">usePreferenceStore</span>'s <span class="lit">quietHoursEnabled</span> is actually written: <span class="lit">saveToDB({ quiet_hours_enabled: val })</span> targets the <span class="lit">profiles</span> table, keyed by <span class="lit">user_id</span> &mdash; this is the PawBond app's per-account preference store (also home to <span class="lit">notifLost</span>, <span class="lit">notifPlaydate</span>, <span class="lit">notifPostLike</span>, etc., none of which are Family Cube concepts).</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Traced where Family Cube's REAL quiet-hours setting lives: <span class="lit">features/profile/ProfileSettingsScreen.tsx</span>'s quiet-hours toggle calls <span class="lit">updateMember(activeMember.id, { quietHoursEnabled: next })</span> &mdash; a per-MEMBER field on the <span class="lit">members</span> table, the exact column <span class="lit">family-notifier</span> itself correctly reads server-side to decide whether to suppress the push (confirmed in the standard pass, re-confirmed by this pass's own read of <span class="lit">family-notifier</span>'s <span class="lit">quietRows</span> query above).</p>
+      </div></div>
+      <div class="finding high"><div class="finding-tag">&#9888; Real gap, logged</div><p>Two entirely separate, unconnected quiet-hours settings exist in this codebase: the real one (<span class="lit">members.quiet_hours_enabled</span>, server-enforced, working correctly) and a PawBond-inherited one (<span class="lit">profiles.quiet_hours_enabled</span>, client-enforced, never written to by any Family Cube screen). <span class="lit">canShowNotification</span> only ever consults the second, dead one &mdash; so it always evaluates <span class="lit">prefs.quietHoursEnabled === false</span> and never actually suppresses anything client-side. In practice this is a narrower gap than it first looks: the server already stops the PUSH itself from being sent during quiet hours, so the foreground in-app banner/sound this gate controls simply never gets an opportunity to matter for that suppressed case. Where it DOES matter: if the app happens to be in the foreground and a push slips through for any other reason (e.g. a member who enabled quiet hours mid-session, before <span class="lit">family-notifier</span>'s own per-request member lookup would have caught it, or any notification type that bypasses the quiet-hours filter server-side), the client has no independent backstop &mdash; it will always play sound/show a banner regardless of the member's actual quiet-hours setting. The dead local-reminder functions (<span class="lit">scheduleLocalReminder</span>/<span class="lit">scheduleImmediateNotification</span>) have zero call sites anywhere in the app today, so that half of the exposure is currently inert, not a live risk.</p></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">
+        <p class="step-action">Not fixed this pass &mdash; logged rather than patched. The correct fix is small in shape (read <span class="lit">useFamilyStore.getState().members.find(m =&gt; m.id === activeMemberId)?.quietHoursEnabled/quietHoursStart/quietHoursEnd</span> instead of <span class="lit">usePreferenceStore</span>) but touches a file shared with PawBond's own notification pipeline (<span class="lit">TYPE_TO_FLAG</span>, <span class="lit">recipientAllowsNotif</span>, and this same quiet-hours check are all reused there) &mdash; changing its behavior needs a decision about whether Family Cube should get its own dedicated copy of this gate rather than editing the shared one out from under PawBond, which is a real product/architecture question, not a same-pass bug fix.</p>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real gap, currently low-impact (the server-side suppression the standard pass already verified does the actual work in the common case), but a genuine hole in the client's own defense-in-depth for quiet hours &mdash; logged, not fixed, pending a decision on whether to fork or share this file with PawBond.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Notification permission denied/revoked: does the app know, or is it a black hole?</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">registerForPushNotifications()</span>: checks <span class="lit">getPermissionsAsync()</span>, requests if not yet granted, and if the final status still isn't <span class="lit">'granted'</span>, logs a warning and returns <span class="lit">null</span> &mdash; <span class="lit">savePushToken</span>/<span class="lit">saveTokenToMember</span> both early-return on a <span class="lit">null</span> token, silently, with nothing surfaced to the UI and no flag written anywhere recording "this member has notifications denied."</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#9432; Real gap, matches the brief's prediction, not fixed</div><p>A member who denies (or later revokes, in iOS Settings) notification permission ends up with no <span class="lit">member_device_tokens</span> row for that device at all &mdash; <span class="lit">family-notifier</span>'s <span class="lit">resolveTokensForMembers</span> simply finds nothing for them and they're silently excluded from every push, with the in-app <span class="lit">notifications</span> row still written (so they'd see it if they opened the bell) but no push ever attempted. There is no on-device UI anywhere (Profile settings, a banner, a badge) that tells this member "you won't get pushed, your permission is off" &mdash; confirmed by checking <span class="lit">ProfileSettingsScreen.tsx</span>'s notification section for any permission-status read; it only exposes the per-category/quiet-hours toggles, never the OS-level permission state itself. This matches the brief's case #3 prediction exactly: a genuine, real black hole, not a hypothetical.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed real gap, not fixed this pass (a UI addition &mdash; reading <span class="lit">Notifications.getPermissionsAsync()</span> on the Profile screen and showing a "notifications are off" banner/CTA to re-enable &mdash; is a reasonable, scoped follow-up, but is new UI surface rather than a delivery-mechanics bug fix, so logged rather than built here).</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Deep-link correctness across every notification type &mdash; not just chat, which the chat-deep pass already covered</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">routeForNotification</span> (<span class="lit">components/NotificationPanel.tsx</span>) end to end, the function BOTH the notification-tap handler (<span class="lit">app/_layout.tsx</span>) and the in-app toast tap use to decide where to navigate. It resolves in two tiers: first by an explicit <span class="lit">data.screen</span> hint the payload carries (<span class="lit">Quests&rarr;tasks</span>, <span class="lit">Store&rarr;store</span>, <span class="lit">Schedule&rarr;tasks</span>, <span class="lit">Roster&rarr;profile</span>, <span class="lit">Hearth&rarr;gps</span>, <span class="lit">Grocery&rarr;grocery</span>, <span class="lit">Vault&rarr;meals</span>, <span class="lit">Health&rarr;family-health</span>, <span class="lit">Memories&rarr;memories</span>), then falls back to matching on the bare <span class="lit">type</span> string itself for older/typeless payloads (quest/chore/ride/reward/chat/kid-request/geofence prefixes all individually matched).</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Checked <span class="lit">app/_layout.tsx</span>'s notification-tap handler specifically for the two dedicated special cases carved out ahead of the generic <span class="lit">routeForNotification</span> fallback: <span class="lit">chat_message</span>/<span class="lit">chat_mention</span> deep-link straight into the specific channel via <span class="lit">data.channelId</span> (not just the Chat tab root), and <span class="lit">shopping_trip_started</span>/<span class="lit">store_proximity</span> go straight to <span class="lit">/(tabs)/grocery</span> rather than falling through to the generic default (both explicitly commented as live-reported fixes for exactly this &mdash; a push landing on the wrong screen).</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed thorough &mdash; no new gap found</div><p>Every notification type this app's own <span class="lit">family-notifier</span> can produce (chore/quest lifecycle, ride reassignment, reward decisions, kid requests, coins, deadlines, roster/member events, geofence/battery, grocery, chat) resolves to a real, specific tab rather than a generic fallback &mdash; the only types that land on the bare Hub tab (<span class="lit">Requests</span>/<span class="lit">Help</span>/<span class="lit">kid_request*</span>) do so because there genuinely is no dedicated screen for them (they're reviewed inline on the Hub's own ActionNeededSection), not because routing was forgotten. Anything <span class="lit">routeForNotification</span> truly doesn't recognize opens the in-app <span class="lit">NotificationPanel</span> sheet (reading the live <span class="lit">notifications</span> table) rather than a dead "All caught up" placeholder page &mdash; itself a fix from earlier this session, re-verified here as still correct.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No new gap. Deep-link routing is comprehensive and was already deliberately hardened for the two cases (chat channel, grocery) that had live-reported misroutes; the remaining generic-Hub cases are a deliberate product choice (no dedicated screen exists), not an oversight.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Tapping a notification for an item that's since been deleted or reassigned</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Every deep-link route resolved above lands on a TAB, never a specific item-detail screen with an id baked into the route that could 404 (the one partial exception, <span class="lit">/(tabs)/tasks</span> with a <span class="lit">questId</span> param, was checked directly: <span class="lit">QuestsScreen.tsx</span> applies it as <span class="lit">list.filter(q =&gt; q.id === questId)</span> against the live, freshly-loaded quest list &mdash; a deleted/reassigned quest simply produces an empty filtered list, rendering the screen's normal empty state, not a crash or blank screen).</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed safe by design &mdash; not a gap</div><p>Because routing targets a tab (which re-fetches its own live data on mount) rather than a detail screen keyed purely on a stale id passed through navigation params, a deleted/reassigned item behind a stale notification can't produce a crash or a genuinely blank screen &mdash; worst case is landing on a tab that no longer shows the specific item the notification was about, with the tab's own normal current-state list visible instead. This is a direct, favorable consequence of the tab-level (not detail-level) deep-link design already in place, not something added defensively for this check.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap &mdash; the app's deep-link architecture (route to a tab, let the tab re-fetch) structurally avoids this failure mode across every notification type, not just the one (<span class="lit">questId</span>) that happens to pass a specific item id at all.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Do grandparent/senior recipients actually receive pushes, or is delivery logic biased toward parent/kid?</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">family-notifier</span>'s auto-routing block: for the <span class="lit">NOTIFY_PARENTS</span> class of types, <span class="lit">roles</span> is <span class="lit">includeGrandparents ? ['parent', 'grandparent'] : ['parent']</span> &mdash; grandparents ARE included by default for every parent-facing type except one deliberately carved-out subset.</p>
+        <pre class="dbstate">const GP_RELEVANT_REQUEST_TYPES = ['ride', 'cheer', 'emergency', 'checkin'];
+const includeGrandparents = type !== 'kid_request' ||
+  (!isRideLateEscalation &amp;&amp; GP_RELEVANT_REQUEST_TYPES.includes(payload.requestType as string));</pre>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed deliberate, not an oversight</div><p>The one place grandparents are EXCLUDED is narrowly scoped and explicitly commented as a live-reported fix in the opposite direction from what the brief worried about: grocery/supply requests, permission asks, appointments, and ride-running-late escalations are filtered OUT for grandparents specifically because a real grandparent's notification tray was reported as filling up with grocery lists and pickup alerts irrelevant to them &mdash; the opposite problem (over-inclusion, then deliberately narrowed) rather than a role bias against them. Every other parent-facing type (help requests, reward redemptions, quest claims/submissions, chore-ghosted, bonus-expiry penalties) still reaches grandparents by default. Token resolution itself (<span class="lit">resolveTokensForMembers</span>) has zero role awareness at all &mdash; once a member id is in the recipient list, delivery is identical regardless of role.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No role-bias gap. The one role-based filter that exists was added to REDUCE irrelevant grandparent noise, not to exclude them from anything they should see, and every other type reaches every eligible role identically.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Two notifications firing near-simultaneously for the same user &mdash; can one clobber the other in the OS tray?</span></div>
+    <div class="case-situation">A common iOS gotcha: pushes sharing the same thread/category identifier can silently replace each other in the notification center rather than stacking.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read every field <span class="lit">sendExpoPush</span> sets on each outgoing message: <span class="lit">to, title, body, sound, badge, data, priority: 'high', channelId: 'default'</span>. Checked specifically for anything that would collapse two different pushes into one slot &mdash; <span class="lit">collapseId</span> (Expo's own dedup key, distinct from Android's <span class="lit">channelId</span>) and iOS's <span class="lit">categoryId</span>/thread identifier are both simply absent from the message object.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not a gap</div><p>Expo only collapses notifications sharing an explicit <span class="lit">collapseId</span>, and iOS/Android only group-replace on an explicit thread/category id &mdash; neither app-level nor Expo-level default behavior clobbers unrelated pushes just for arriving close together. <span class="lit">channelId: 'default'</span> is Android's notification CHANNEL (controls sound/vibration/importance grouping in the settings UI, shipped separately as <span class="lit">'lost_alerts'</span>/<span class="lit">'reminders'</span>/<span class="lit">'family'</span>/<span class="lit">'social'</span> channels at registration time for PawBond types, though every actual FamilyCube push through <span class="lit">family-notifier</span> uses the single <span class="lit">'default'</span> channel) &mdash; a completely different mechanism from a collapse/thread key and does not cause replacement. A chore approval and a chat message arriving seconds apart both deliver and both stack normally.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap &mdash; the classic same-thread-id clobbering scenario doesn't apply here because nothing in the send path ever sets a collapse/thread identifier.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Batching/throttling: does a burst of rapid-fire approvals spam the phone, or does anything smooth it out?</span></div>
+    <div class="case-situation">A parent reviewing 10 pending chores in one sitting, approving each in turn.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the call sites that fire <span class="lit">family-notifier</span> for chore approval &mdash; each approval action independently invokes the edge function once, synchronously with the approval itself. No queueing, debouncing, or batching layer exists anywhere between an individual app action and an individual push send.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#9432; Confirmed gap exists, matches the brief's prediction, not fixed</div><p>10 rapid approvals really do produce 10 separate pushes (each with its own coins-awarded companion push per the standard pass's finding &mdash; so realistically closer to 20 for a busy review session), no batching or throttling anywhere in the pipeline. This is a real, structural product gap, not a bug in the sense of behaving incorrectly &mdash; each individual push is itself correct, on-time, and about a real event; the absence of a "3 chores were just approved" digest/summary mechanism is a design choice (or gap) rather than a defect in the delivery mechanics being traced here. Logged as confirmed-present, not fixed &mdash; building a debounce/digest layer is a real product feature, not a same-pass delivery-mechanics fix.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed: no batching exists anywhere in the pipeline. Each event fires its own push, always. Worth product awareness, not a delivery bug, not addressed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Cold-start deep-link: does a notification tap correctly route even after the app was fully killed, not just backgrounded?</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read how <span class="lit">addNotificationResponseListener</span> is wired in <span class="lit">app/_layout.tsx</span> &mdash; it's <span class="lit">Notifications.addNotificationResponseReceivedListener</span> from <span class="lit">expo-notifications</span>, registered inside the root layout's top-level <span class="lit">useEffect</span>, which itself runs once on every fresh app mount (cold start included) since the root layout always mounts before any navigation happens.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not a gap</div><p><span class="lit">expo-notifications</span>' <span class="lit">addNotificationResponseReceivedListener</span> is documented to also fire for the response that LAUNCHED the app (the library caches the launching response and replays it to a listener registered after the fact) &mdash; so a cold-start tap is handled by the exact same handler as a backgrounded-tap, with the same session/auth check (<span class="lit">if (!activeSession) router.replace('/(auth)/login')</span>) gating it either way. No separate cold-start code path exists, which is correct here rather than a gap &mdash; a second bespoke handler would be redundant, not more correct.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap &mdash; a single registration point correctly covers both the backgrounded-tap and cold-start-tap cases by relying on documented, correct <span class="lit">expo-notifications</span> behavior.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">The <span class="lit">notifications</span> table's own persist step: does it ever silently drop or mis-scope a recipient?</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Traced the persist block's recipient list construction: <span class="tag raw">(resolvedMemberIds.length ? resolvedMemberIds : [payload.memberId]).filter(Boolean).filter(id =&gt; id !== excludeMemberId)</span> &mdash; checked whether this could ever persist a notification to the wrong family (cross-family leak) or silently drop a legitimate solo recipient.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not a gap</div><p>Every recipient id in <span class="lit">resolvedMemberIds</span> is already scoped to <span class="lit">familyId</span> upstream (either the caller passed pre-scoped ids, or the auto-route parent/grandparent query itself filters <span class="lit">.eq('family_id', familyId)</span>) &mdash; there's no path where an id from a different family could enter this list. The <span class="lit">payload.memberId</span> fallback only engages when <span class="lit">resolvedMemberIds</span> is empty (a single, explicitly-targeted recipient with no auto-routing involved, e.g. a reward decision going back to one specific kid), and is itself still subject to the same <span class="lit">excludeMemberId</span> filter and quiet-hours/preference narrowing applied earlier in the handler for the push (though notably NOT re-applied to the persist step's own <span class="lit">resolvedMemberIds</span> vs. <span class="lit">pushEligibleIds</span> split &mdash; persist deliberately uses the UNFILTERED <span class="lit">resolvedMemberIds</span>, which is correct and intentional per the in-code comment: quiet hours should only suppress the buzz, not the in-app record, matching the standard pass's already-verified "quiet hours genuinely works" finding).</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap &mdash; recipient scoping is family-safe throughout, and the deliberate unfiltered-persist/filtered-push split correctly implements the quiet-hours behavior already verified in the standard pass.</div>
+  </div>
+</section>
+
   <!-- ============ FINDINGS TABLE ============ -->
   <section class="group scroll-anchor" id="findings">
     <h2 class="group-title">Every finding, at a glance</h2>
@@ -5487,6 +5680,12 @@ guard_chat_messages_write trigger body: no reference to text/blind_index length 
         <tr><td>Chat (deep)</td><td>Rapid reaction toggling converges correctly for same-device taps; one narrow remaining race if network responses resolve out of order (an earlier tap's UPDATE landing after a later one can silently revert the last toggle server-side until next reload) &mdash; same last-write-wins-with-no-CAS exposure already logged for message edits.</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Chat (deep)</td><td>No server-side guard blocks an empty/whitespace-only message text &mdash; client-only gate, same "no backstop" pattern flagged elsewhere this session; narrow blast radius (a blank bubble, not a privacy/authorization issue).</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Chat (deep)</td><td>Confirmed correct/re-verified: multi-device dedup (independently re-confirms the standard pass's D13-13), global-vs-per-channel unread-badge double-count guard, and backgrounded-app badge self-healing on reconnect are all genuinely solid, already-hardened infrastructure.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>The daily 6am stale-token cleanup cron has been running against ZERO trackable rows since deployment &mdash; confirmed live, 0 of the last 63 sent notifications had an expo_receipt_id set, because sendExpoPush discarded Expo's ticket id and the persist step never wrote it. Any member's genuinely dead token (uninstalled app, factory reset) would silently receive failed push attempts forever with no detection or cleanup.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>Fixed and deployed to family-notifier &mdash; now captures per-token Expo ticket ids and persists one onto each recipient's notification row. All 5 other push-sending edge functions delegate to family-notifier, so the fix covers every notification type by construction, not one call site.</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>Client-side quiet-hours gate (canShowNotification) reads a completely different, always-empty PawBond-inherited store (profiles.quiet_hours_enabled) than the real, working, server-enforced setting (members.quiet_hours_enabled) &mdash; narrow impact today since the server already suppresses the push itself, but a real hole in client-side defense-in-depth for any push that slips through server-side filtering.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>Notification-permission-denied/revoked is a genuine silent black hole &mdash; that member is silently excluded from every push with zero on-device UI (Profile settings, banner, badge) ever telling them their permission is off.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>No batching/throttling exists anywhere in the pipeline &mdash; a burst of 10 rapid chore approvals produces 10 separate pushes (closer to 20 counting each approval's own coins-awarded companion push). Confirmed present, a real product gap rather than a delivery-mechanics defect; not fixed in this pass.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Notifications (deep)</td><td>Confirmed correct (8 cases): multi-device same-member fan-out unaffected by the shared-device dedup fix; PIN-switch grant-token concerns don't apply (service-role sends bypass RLS entirely); deep-link routing is comprehensive and tab-level so a stale/deleted item can't crash; grandparent exclusion is a deliberate, already-fixed scoping decision not a bias; no OS-level notification clobbering; cold-start taps handled by the same listener as backgrounded taps; the persist step never mis-scopes a recipient across families.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
       </tbody>
     </table>
     </div>

@@ -36,11 +36,11 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 // multi-device behavior). Falls back to members.expo_push_token only for a
 // member with zero rows in the new table yet (pre-migration device that
 // hasn't re-registered under the new scheme).
-async function resolveTokensForMembers(
+async function resolveTokensForMembersDetailed(
   supabase: ReturnType<typeof createClient>,
   memberIds: string[],
-): Promise<string[]> {
-  if (!memberIds.length) return [];
+): Promise<{ tokens: string[]; tokensByMember: Map<string, Set<string>> }> {
+  if (!memberIds.length) return { tokens: [], tokensByMember: new Map() };
 
   const { data: deviceRows } = await supabase
     .from('member_device_tokens')
@@ -72,7 +72,14 @@ async function resolveTokensForMembers(
 
   const all = new Set<string>();
   for (const set of tokensByMember.values()) for (const t of set) all.add(t);
-  return [...all];
+  return { tokens: [...all], tokensByMember };
+}
+
+async function resolveTokensForMembers(
+  supabase: ReturnType<typeof createClient>,
+  memberIds: string[],
+): Promise<string[]> {
+  return (await resolveTokensForMembersDetailed(supabase, memberIds)).tokens;
 }
 
 // ─── Notification type definitions ────────────────────────────────────────────
@@ -1155,8 +1162,19 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
 
 // ─── Expo push delivery ───────────────────────────────────────────────────────
 
-async function sendExpoPush(tokens: string[], message: NotifShape): Promise<{ sent: number; failed: number; errors: string[] }> {
-  if (!tokens.length) return { sent: 0, failed: 0, errors: [] };
+async function sendExpoPush(tokens: string[], message: NotifShape): Promise<{ sent: number; failed: number; errors: string[]; ticketsByToken: Map<string, string> }> {
+  // ticketsByToken maps each Expo push token -> the Expo ticket/receipt id
+  // Expo returned for it (only populated for status:'ok' tickets — that id
+  // is what notification-health-check later polls via getReceipts to learn
+  // whether the OS actually accepted the push, e.g. DeviceNotRegistered).
+  // Previously this function only returned aggregate counts, so the caller
+  // had no receipt id to persist onto the notifications row — the health
+  // check's own `.not('expo_receipt_id', 'is', null)` query always came back
+  // empty (confirmed live: 0 of the last 63 notifications had one set), so
+  // the daily 6am stale-token sweep has been running against zero rows since
+  // it was deployed, silently doing nothing.
+  const ticketsByToken = new Map<string, string>();
+  if (!tokens.length) return { sent: 0, failed: 0, errors: [], ticketsByToken };
 
   // Chunk into batches of 100 (Expo limit)
   const chunks: string[][] = [];
@@ -1186,17 +1204,28 @@ async function sendExpoPush(tokens: string[], message: NotifShape): Promise<{ se
       if (!res.ok) { failed += chunk.length; errors.push(`Expo HTTP ${res.status}`); continue; }
 
       const result = await res.json();
-      for (const ticket of (result.data ?? [])) {
-        if (ticket.status === 'ok') sent++;
-        else { failed++; if (ticket.message) errors.push(ticket.message); }
-      }
+      const tickets = (result.data ?? []) as Array<{ status: string; id?: string; message?: string }>;
+      // Expo returns tickets in the exact same order as the request array,
+      // so index i of `tickets` corresponds to index i of `chunk` (the token
+      // it was sent to) — documented Expo push API behavior, not an
+      // assumption; this is the only way to associate a ticket id back to
+      // the token it belongs to since the response itself doesn't echo `to`.
+      tickets.forEach((ticket, i) => {
+        if (ticket.status === 'ok') {
+          sent++;
+          if (ticket.id) ticketsByToken.set(chunk[i], ticket.id);
+        } else {
+          failed++;
+          if (ticket.message) errors.push(ticket.message);
+        }
+      });
     } catch (e: any) {
       failed += chunk.length;
       errors.push(e.message);
     }
   }
 
-  return { sent, failed, errors };
+  return { sent, failed, errors, ticketsByToken };
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -1333,8 +1362,11 @@ serve(async (req) => {
       pushTokens = [];
     }
 
+    let pushTokensByMember = new Map<string, Set<string>>();
     if (!pushTokens.length && pushEligibleIds.length) {
-      pushTokens = await resolveTokensForMembers(supabase, pushEligibleIds);
+      const resolved = await resolveTokensForMembersDetailed(supabase, pushEligibleIds);
+      pushTokens = resolved.tokens;
+      pushTokensByMember = resolved.tokensByMember;
     } else if (excludeMemberId && tokens?.length) {
       // Caller passed raw tokens directly (rare path) — can't map a token
       // back to a member id here to exclude by id, so exclude by re-deriving
@@ -1354,26 +1386,48 @@ serve(async (req) => {
     // Send push
     const delivery = pushTokens.length > 0
       ? await sendExpoPush(pushTokens, message)
-      : { sent: 0, failed: 0, errors: ['No push tokens provided'] };
+      : { sent: 0, failed: 0, errors: ['No push tokens provided'], ticketsByToken: new Map<string, string>() };
 
     // Persist to notifications table (so in-app bell shows it even if push fails)
     if (persist !== false && familyId) {
       const persistIds = (resolvedMemberIds.length ? resolvedMemberIds : [payload.memberId as string])
         .filter(Boolean)
         .filter((id: string) => id !== excludeMemberId);
-      const rows = persistIds.map((memberId: string) => ({
-        family_id:     familyId,
-        member_id:     memberId,
-        target_member: memberId,
-        type,
-        title:         message.title,
-        message:       message.body,
-        body:          message.body,
-        data:          { ...message.data, ...payload },
-        meta:          { ...message.data, ...payload },
-        timestamp:     new Date().toISOString(),
-        read:          false,
-      }));
+      const rows = persistIds.map((memberId: string) => {
+        // Best-effort: pick any one of this member's tokens that actually
+        // got an Expo ticket id back, so notification-health-check's daily
+        // sweep has something to poll (previously nothing here ever wrote
+        // expo_receipt_id, so that sweep always found 0 rows — see the
+        // comment on sendExpoPush). A member with multiple real devices only
+        // gets one receipt tracked per notification row (the table's grain
+        // is per-member, not per-device), which is a reasonable trade: a
+        // DeviceNotRegistered receipt on the tracked device's token still
+        // gets that stale token cleared by the sweep; an untracked second
+        // device's own staleness would surface on a later notification that
+        // happens to pick its ticket instead.
+        const memberTokens = pushTokensByMember.get(memberId);
+        let receiptId: string | null = null;
+        if (memberTokens) {
+          for (const t of memberTokens) {
+            const id = delivery.ticketsByToken.get(t);
+            if (id) { receiptId = id; break; }
+          }
+        }
+        return {
+          family_id:     familyId,
+          member_id:     memberId,
+          target_member: memberId,
+          type,
+          title:         message.title,
+          message:       message.body,
+          body:          message.body,
+          data:          { ...message.data, ...payload },
+          meta:          { ...message.data, ...payload },
+          timestamp:     new Date().toISOString(),
+          read:          false,
+          expo_receipt_id: receiptId,
+        };
+      });
       if (rows.length) {
         const { error } = await supabase.from('notifications').insert(rows);
         if (error) console.warn('[family-notifier] DB insert failed:', error.message);

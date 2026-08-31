@@ -1038,7 +1038,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } catch {
         offline = [];
       }
-      offline.push({ channelId: dbChannelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id });
+      // _uiChannelId is the bare id `channels` state (and thus
+      // _removeMessage below) is actually keyed by — for the 5 fixed group
+      // channels that's NOT the same string as dbChannelId (which is
+      // family-scoped, e.g. `${familyId}::all`). Queuing only dbChannelId
+      // and later calling _removeMessage(item.channelId, ...) with it meant
+      // a successful background retry for any group-channel offline send
+      // could never find/clear the original "failed — retry?" bubble (its
+      // lookup key never matched any real entry in `channels`), leaving a
+      // stale failed bubble sitting next to the message that actually went
+      // through. DM channel ids are unaffected (bare === db id for those),
+      // which is why this only ever showed up for #all-family/#parents-vault/etc.
+      offline.push({ channelId: dbChannelId, senderId, ciphertext, blind_index, imageUri, mediaType, _optimisticId: optimistic.id, _uiChannelId: channelId });
       await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
       // A live RLS failure here can come from the x-active-member-id header
       // (lib/supabase.ts's debugFetch, read fresh from familyStore on every
@@ -1174,7 +1185,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Offline retry ─────────────────────────────────────────────────────────
 
   flushOfflineQueue: async () => {
-    let offline: { channelId: string; senderId: string; ciphertext: string; blind_index: string[]; imageUri?: string; mediaType?: 'image' | 'video'; _optimisticId?: string }[];
+    let offline: { channelId: string; senderId: string; ciphertext: string; blind_index: string[]; imageUri?: string; mediaType?: 'image' | 'video'; _optimisticId?: string; _uiChannelId?: string }[];
     try {
       offline = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
     } catch {
@@ -1216,7 +1227,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // here or a successful background retry leaves a stale "failed —
         // retry?" bubble sitting next to the message that actually went
         // through.
-        if (item._optimisticId) get()._removeMessage(item.channelId, item._optimisticId);
+        if (item._optimisticId) get()._removeMessage(item._uiChannelId ?? item.channelId, item._optimisticId);
       } catch (err) {
         console.warn('[chatStore] flushOfflineQueue: retry failed, re-queueing', err);
         stillFailed.push(item);

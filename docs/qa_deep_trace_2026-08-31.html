@@ -134,10 +134,10 @@
     <h1 class="title">Family Cube QA Deep Trace</h1>
     <p class="dek">Every claim below is backed by a real inserted database row, a real (or precisely replicated) server action, and a cited line of the app's actual source code — not a description of how the app is supposed to work.</p>
     <div class="meta-grid">
-      <div class="meta-card"><div class="meta-num">30</div><div class="meta-label">trace sections</div></div>
-      <div class="meta-card"><div class="meta-num">321</div><div class="meta-label">cases traced</div></div>
+      <div class="meta-card"><div class="meta-num">31</div><div class="meta-label">trace sections</div></div>
+      <div class="meta-card"><div class="meta-num">334</div><div class="meta-label">cases traced</div></div>
       <div class="meta-card"><div class="meta-num">9</div><div class="meta-label">identity-spoofing fixes</div></div>
-      <div class="meta-card"><div class="meta-num">130</div><div class="meta-label">behavior findings</div></div>
+      <div class="meta-card"><div class="meta-num">137</div><div class="meta-label">behavior findings</div></div>
     </div>
   </header>
 
@@ -170,6 +170,7 @@
     <a href="#card-state-sync-deep">Card-state sync, pass 3 (deep)</a>
     <a href="#optimistic-rpc-mismatch-deep">Optimistic write vs RPC mismatches (deep)</a>
     <a href="#theme-darkmode-deep">Theme &amp; dark-mode (deep)</a>
+    <a href="#chat-deep">Chat (deep)</a>
     <a href="#findings">All findings</a>
   </nav>
 
@@ -5131,6 +5132,217 @@ if (editDriverName !== (event.driverName ?? '') || editDriverId !== event.driver
   </div>
 </section>
 
+<section class="group scroll-anchor" id="chat-deep">
+  <h2 class="group-title">Chat &mdash; deep trace (exploratory &amp; adversarial)</h2>
+  <p class="group-sub">Second pass over this area, going deeper than the earlier standard pass (<span class="lit">#chat</span>, which fixed the sender/edit/delete/reaction identity RLS gaps via <span class="lit">guard_chat_messages_write</span>). This time: re-verified that trigger's live text and its call into <span class="lit">resolve_active_member_id()</span> directly off the database, the inverted-FlatList scroll implementation, the offline-retry queue's channel-id handling end to end, the moderation/notification pipeline, and multi-device/message-ordering edge cases. One real bug found and fixed (offline-retry queue could never clear a stale "failed" bubble for any of the 5 fixed group channels), the PIN-switch/grant-token worry flagged as high-priority going into this pass confirmed already correctly closed, and several genuine defense-in-depth gaps logged. <span class="lit">npx tsc --noEmit</span> confirmed clean (0 errors) after the fix.</p>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">HIGH PRIORITY CHECK: does <span class="lit">guard_chat_messages_write</span>'s sender_id check honor the PIN-switch grant-token fix, or could it hit the same "couldn't send" failure just fixed for Confirm buttons?</span></div>
+    <div class="case-situation">This session separately fixed a bug where <span class="lit">resolve_active_member_id()</span> didn't honor a PIN-switch grant token for a member with their own separate login, causing legitimate actions to silently fail RLS. Chat's identity-spoofing fix (prior standard pass) added a trigger that also calls this same function &mdash; needed to verify it actually got the grant-aware version, not a stale/duplicated copy.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">guard_chat_messages_write</span>'s live trigger body directly off the database. <span class="tag raw">copied logic</span></p>
+        <pre class="dbstate">v_active_member_id := public.resolve_active_member_id();
+if v_active_member_id is null then raise exception 'no authenticated member session'; end if;
+if tg_op = 'INSERT' then
+  if new.sender_id is distinct from v_active_member_id then
+    raise exception 'sender_id must match the caller''s own member id';
+  end if;
+  ...</pre>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Read the live <span class="lit">resolve_active_member_id()</span> function body itself (not the trigger's caller) to confirm it's the grant-aware version, not a stale copy the trigger might be pinned against.</p>
+        <pre class="dbstate">-- Tier 2: the claimed member has their own real login — trusted if EITHER
+-- this session actually IS that login (fast path), OR a live, unexpired,
+-- matching PIN-verified grant token was presented.
+if header_member_auth_user_id is not null and header_member_auth_user_id is distinct from auth.uid() then
+  if header_grant_token is not null
+     and header_member_grant_token is not null
+     and header_grant_token = header_member_grant_token
+     and header_member_grant_expires is not null
+     and header_member_grant_expires &gt; now() then
+    return verified_id;
+  end if;
+  verified_id := null;
+else
+  return verified_id;
+end if;</pre>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct &mdash; not a gap</div><p>Postgres functions are called by name/OID, not inlined at trigger-creation time, so there's no version-pinning risk here anyway &mdash; but worth verifying the deployed body actually contains the fix, not just assuming it does because it exists elsewhere. It does. A member PIN-switched-to who has their own separate login sends a chat message: the trigger resolves their identity via the SAME <span class="lit">resolve_active_member_id()</span> every other write path in the app now uses, Tier-2 grant-token check included. This class of failure (legitimate write silently RLS-rejected because the header claims a member with their own login but the session is really someone else's) is closed for chat exactly as it is everywhere else this fix landed.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No gap &mdash; the worry going into this pass doesn't apply. Chat's identity trigger and every other grant-aware write path share the exact same underlying function, so a fix to one is a fix to all of them by construction.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Offline-retry queue could never clear a stale "failed" bubble for #all-family, #parents-vault, or any of the 5 fixed group channels</span></div>
+    <div class="case-situation">A message fails to send while offline, gets queued to AsyncStorage for the automatic background retry (<span class="lit">flushOfflineQueue</span>), and also stays visible in the channel with a "Not sent &mdash; Tap to retry" bubble. Traced what happens when the background retry succeeds on its own (app comes back online, foreground fires the flush) while the user never taps retry manually.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">sendMessage</span>'s catch block (the code path that queues a failed send): it pushes <span class="tag raw">{ channelId: dbChannelId, ... }</span> to the offline queue &mdash; <span class="lit">dbChannelId</span>, the family-scoped DB-facing id used for the 5 fixed group channels (e.g. <span class="lit">famXYZ::all</span>, not the bare <span class="lit">'all'</span> every UI piece of state uses &mdash; see <span class="lit">toDbChannelId</span>'s own extensive comment in the file for why this split exists).</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">flushOfflineQueue</span> itself: on a successful retry it calls <span class="tag raw">get()._removeMessage(item.channelId, item._optimisticId)</span> &mdash; using that same <span class="lit">dbChannelId</span> value as the lookup key. But <span class="lit">_removeMessage</span> reads/writes <span class="lit">get().channels</span>, which is keyed <i>everywhere else in the store</i> by the bare UI channel id (<span class="lit">channels['all']</span>, never <span class="lit">channels['famXYZ::all']</span> &mdash; <span class="lit">loadChannel</span>, <span class="lit">_upsertMessage</span>, <span class="lit">deleteMessage</span>, all of them use the bare id for this map).</p>
+        <pre class="dbstate">// queued at failure time:
+offline.push({ channelId: dbChannelId, ... })   // e.g. 'famXYZ::all'
+
+// on successful retry:
+get()._removeMessage(item.channelId, item._optimisticId)
+  → looks up get().channels['famXYZ::all']       // ← never exists
+  → get().channels['all'] (where the real failed bubble lives) untouched</pre>
+      </div></div>
+      <div class="finding high"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>For any of the 5 fixed group channels (<span class="lit">all</span>, <span class="lit">parents</span>, <span class="lit">seniors_a</span>, <span class="lit">seniors_b</span>, <span class="lit">seniors_all</span>), a message that failed while offline and later succeeded automatically via the background retry left its original "Not sent &mdash; Tap to retry" bubble permanently stuck on screen, sitting right next to the actual successfully-sent message (a real, separate row, now visible via the realtime INSERT under a brand-new id). The user sees what looks like a duplicate send with one copy inexplicably still flagged as failed forever &mdash; tapping "retry" on it would trigger yet another real send. DM channels were unaffected by this specific bug (a DM's bare id and DB id are identical strings, so the mismatched lookup happened to still work by coincidence) &mdash; it's specific to the 5 group channels, which is exactly the highest-traffic surface (#all-family).</p></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">
+        <p class="step-action"><b>Fix:</b> queue the bare UI channel id alongside the DB-facing one (<span class="lit">_uiChannelId: channelId</span>, captured before the group-channel <span class="lit">dbChannelId</span> reassignment happens), and have the success-path cleanup call <span class="tag raw">get()._removeMessage(item._uiChannelId ?? item.channelId, item._optimisticId)</span> &mdash; falls back to the old behavior for any already-queued item from before this fix (DM ids, where it was correct anyway).</p>
+        <div class="finding fixed"><div class="finding-tag">&#9888; Real gap &rarr; fixed</div><p>Client-only change to <span class="lit">store/chatStore.ts</span> (<span class="lit">flushOfflineQueue</span> and the <span class="lit">sendMessage</span> catch block that populates its queue). <span class="lit">npx tsc --noEmit</span> confirmed clean after the edit.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real, user-visible gap on the app's busiest channel &mdash; fixed in code.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">The known inverted-FlatList scroll glitch &mdash; still present, or already addressed?</span></div>
+    <div class="case-situation">Session memory flagged a prior-noted "inverted FlatList shows a blank gap while scrolling" bug in ChatScreen.tsx as deferred and never actually fixed. Read the actual FlatList configuration end to end to determine current status.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the FlatList's full prop set: <span class="lit">inverted</span>, <span class="lit">initialNumToRender={20}</span>, <span class="lit">maxToRenderPerBatch={10}</span>, <span class="lit">windowSize={7}</span>, <span class="lit">updateCellsBatchingPeriod={50}</span>, <span class="lit">removeClippedSubviews</span> &mdash; all present, with an in-code comment explicitly describing this as a fix ("No tuning at all previously ... tuned down together with MessageBubble's new memo boundary ... live-reported as janky/not-smooth scrolling").</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Checked what specifically causes a "blank gap while scrolling" in an inverted list with variable-height rows (the classic RN gotcha): <span class="lit">removeClippedSubviews</span> combined with rows whose height isn't known ahead of layout (images, voice waveforms, location-pin maps, reply quotes &mdash; all present in <span class="lit">MessageBubble.tsx</span>) can cause React Native to briefly render an unmeasured/blank cell as it scrolls into the render window, before layout catches up. <span class="lit">MessageBubble</span> has no <span class="lit">getItemLayout</span>/fixed-height escape hatch (impossible here &mdash; row height varies enormously by content type) and no placeholder/skeleton state for an about-to-render cell.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">Info &mdash; largely addressed, residual risk not eliminable without a rewrite</div><p>The specific glitch as previously reported (no tuning at all, aggressively janky) has an explicit, dated fix already in the code (the <span class="lit">initialNumToRender</span>/<span class="lit">windowSize</span>/<span class="lit">maxToRenderPerBatch</span> tuning + <span class="lit">MessageBubble</span>'s memo boundary), which is the standard, correct first-line fix for this exact class of bug. What's NOT fixable within a same-pass patch: <span class="lit">removeClippedSubviews</span> is still on, and rows are still genuinely variable-height with no <span class="lit">getItemLayout</span> possible (mixed text/image/voice/location content) &mdash; so a brief blank-cell flash during a FAST fling-scroll through image/location-heavy history remains structurally possible, just far less frequent/severe than the original unturned-defaults report. The only way to eliminate it entirely is either turning off <span class="lit">removeClippedSubviews</span> (memory cost on long histories) or migrating to <span class="lit">FlashList</span>/a fixed-height row design (a real rewrite, not a same-pass fix).</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Materially improved by an already-shipped fix; a residual, much-rarer version of the same class of glitch remains structurally possible on fast scrolls through media-heavy history and would need a bigger architectural change (FlashList or fixed-height rows) to fully eliminate. Logged, not re-fixed this pass since the tuning fix already shipped is the correct incremental answer.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Same-millisecond messages from two different senders &mdash; does display order stay stable across re-renders?</span></div>
+    <div class="case-situation">Traced <span class="lit">_upsertMessage</span>'s insertion-order logic, the function every optimistic send and every realtime echo funnels through.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the sort key: <span class="tag raw">const idx = msgs.findIndex(m =&gt; m.timestamp &gt; msg.timestamp); if (idx === -1) msgs.push(msg); else msgs.splice(idx, 0, msg);</span> &mdash; a stable insertion sort keyed purely on ISO timestamp string comparison, with no secondary tiebreaker (id, insertion sequence) for two messages sharing the exact same millisecond.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">Info &mdash; theoretically flip-prone, practically inert</div><p>Two messages with an identical <span class="lit">timestamp</span> string: <span class="lit">m.timestamp &gt; msg.timestamp</span> is false for an exact match, so the new message always lands AFTER any existing one with the same timestamp (stable relative to insertion order into this specific array) &mdash; but a full reload (<span class="lit">loadChannel</span>) re-fetches from Postgres ordered by <span class="lit">created_at</span> only, and Postgres has no defined tiebreak for two rows with identical <span class="lit">created_at</span> either (whatever physical/index order the query planner happens to return, which can differ between two different query plans, e.g. cache hit vs. cold). In principle this means the SAME two same-millisecond messages could show in a different relative order after a fresh channel reload than they did live &mdash; a real (if narrow) reordering possibility. In practice: both messages carry the sender's device clock as their <span class="lit">timestamp</span> source (not a DB-generated one) and would need genuinely simultaneous, independent sends from two different devices to collide at millisecond resolution, which is rare enough that this has apparently never surfaced as a live complaint. Logged as a theoretical gap, not fixed &mdash; the correct fix (secondary sort key on <span class="lit">id</span> both client and DB-side) is cheap but the actual user-facing risk is very low.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> A real, narrow gap in the ordering guarantee &mdash; not observed as a practical problem, not fixed this pass, cheap to add a secondary <span class="lit">id</span> tiebreaker if it's ever worth doing.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Rapid reaction toggle (on/off/on/off in quick succession) &mdash; does the final state always converge correctly, or can a race leave a ghost reaction?</span></div>
+    <div class="case-situation"><span class="lit">addReaction</span> reads the CURRENT in-memory message's <span class="lit">reactions</span>, computes a new object by toggling the caller's id in/out, optimistically applies it, then fires an UPDATE with the full computed object (not an atomic array-append RPC).</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Traced two rapid taps (add, then remove, fired before the first UPDATE's network round-trip resolves): both reads happen against <span class="lit">get().channels[channelId].messages</span> synchronously at call time, but each call computes its reactions object from whatever's in the store AT THAT MOMENT &mdash; the first call's optimistic <span class="lit">_upsertMessage</span> already lands synchronously before the second call starts (both are plain synchronous function calls from a UI tap handler, not two overlapping async operations racing on the read), so the second tap's read sees the first tap's optimistic write already applied.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Confirmed correct for the common case &mdash; one real narrow race remains</div><p>Two taps from the SAME device in quick succession converge correctly: each optimistic update is synchronous and visible to the next tap's read before that next tap's own network write fires, so a 4-tap on/off/on/off sequence ends in the mathematically correct final state locally, and each network UPDATE independently overwrites the DB row with a monotonically-later "full reactions object" snapshot (last network response wins, but since each one is computed from the correct running local state, they should all agree on the SAME final value if they resolve in the order they were sent). The one real gap: nothing prevents the network responses from resolving OUT OF ORDER (a transient network hiccup delaying an earlier request past a later one) &mdash; if that happens, an earlier tap's UPDATE landing on the server AFTER a later tap's would overwrite the DB row with the earlier, "less final" reactions object, silently reverting the last toggle server-side even though the local UI still shows the correct final state (until the next full reload). This is the same last-write-wins-with-no-CAS pattern already logged for message edits (D13-8 in the standard pass) &mdash; reactions inherit the identical exposure via the same UPDATE path.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Correct for the overwhelmingly common case (rapid taps on one device, normal network conditions). A narrow out-of-order-network-response race can silently desync the DB from the locally-shown state until the next reload &mdash; same root cause as the already-logged message-edit race, not a new independent bug, not fixed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Editing a message that already has reactions &mdash; do the reactions survive?</span></div>
+    <div class="case-situation">"Edit" in this app is delete-the-old-message-then-insert-a-new-one with a fresh id (per the standard pass's D13-8 finding). Checked what specifically happens to any existing reactions when the original message being edited already has some.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">handleSend</span>'s edit branch: <span class="tag raw">if (editingMsg) { deleteMessage(channelId, editingMsg.id); setEditingMsg(null); }</span> then falls through to a completely normal <span class="lit">sendMessage</span> call with a brand-new client-generated id and no reference back to <span class="lit">editingMsg.reactions</span> anywhere in the new message construction.</p>
+      </div></div>
+      <div class="finding high"><div class="finding-tag">&#9888; Real gap, logged</div><p>Editing a message that has any reactions on it silently deletes those reactions along with the old message &mdash; the new (edited) message starts with a completely empty <span class="lit">reactions</span> object, and nothing in the UI tells the person who reacted (or the editor) that this happened. Concretely: a kid reacts 👍 to a parent's message, the parent then fixes a typo in it (using the app's own built-in edit feature, not a workaround), and the 👍 silently vanishes with zero indication to either party &mdash; the parent has no way to know editing costs the reactions, and the kid who reacted sees their reaction disappear with no explanation. This is a direct, unavoidable consequence of the delete-then-reinsert edit implementation already flagged as fragile in the standard pass (D13-8) &mdash; not a new implementation bug, but a concrete, previously-unstated USER-FACING consequence of that same design choice worth calling out on its own, since D13-8 only covered the conflict-resolution angle (two devices racing), not this "any edit at all destroys reactions" angle which fires on every single edit, unconditionally, with no race required.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Confirmed: every edit unconditionally drops all reactions on the edited message, silently. Not fixed this pass (the real fix is either carrying <span class="lit">editingMsg.reactions</span> forward into the new insert, which only partly helps since the message id itself changes and anything that referenced the OLD id — like a reply's snapshot pointer via <span class="lit">scrollToQuotedMsg</span> — would still break, or, more correctly, converting edit to a genuine in-place UPDATE the way D13-8 already recommends) — logged as a concrete, everyday-visible cost of the current design, not just a rare-race concern.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Empty / whitespace-only message text &mdash; blocked client-side, but is there a server-side guard too?</span></div>
+    <div class="case-situation">This session's established pattern: client-side validation is never trusted as the only gate. Checked whether <span class="lit">chat_messages.text</span> has any CHECK constraint or trigger-level guard against an empty/whitespace ciphertext, mirroring the same question already asked (and found lacking, then not always fixed) elsewhere this session.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">handleSend</span>'s own guard: <span class="tag raw">if ((!sourceText.trim() && !attachUri) || !activeMemberId) return;</span> &mdash; blocks an empty send at the UI layer, but this only stops the CLIENT from constructing the call; nothing stops a raw authenticated write.</p>
+      </div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">
+        <p class="step-action">Queried the live schema and the <span class="lit">guard_chat_messages_write</span> trigger body (already read in full above) for any length/blank check on <span class="lit">text</span>. <span class="tag raw">copied logic</span></p>
+        <pre class="dbstate">chat_messages.text: not null, no CHECK constraint, no length constraint
+chat_messages_type_check: type IN ('text','announcement','sos')  -- unrelated column
+chat_messages_media_type_check: media_type IN ('image','audio','video','file',NULL)  -- unrelated column
+guard_chat_messages_write trigger body: no reference to text/blind_index length or emptiness anywhere</pre>
+      </div></div>
+      <div class="finding">
+        <div class="finding-tag">&#9888; Gap, logged</div><p>A legitimate authenticated session (any real family member, not requiring any privilege escalation) can insert a chat_messages row with <span class="lit">text</span> = the encrypted form of an empty string (or any raw client bypassing the app's own <span class="lit">handleSend</span> guard entirely) and it will pass every server-side check &mdash; the trigger only cares about sender identity, never content emptiness. The blast radius is narrow (this produces a genuinely blank-looking bubble in the conversation, not a security issue, and requires deliberately going around the app's own UI to trigger since the client itself never constructs this call), but it's the same "client-only gate, no server-side backstop" pattern flagged as worth closing elsewhere in this session. Lower priority than the identity-spoofing gaps already fixed since there's no privacy/authorization angle here, purely a content-hygiene one.</p>
+      </div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Real defense-in-depth gap, low severity (content hygiene, not a security boundary) &mdash; logged, not fixed this pass.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Extremely long message text (thousands of characters) &mdash; renders without breaking layout?</span></div>
+    <div class="case-situation">Checked how <span class="lit">CollapsibleText</span> (the actual text-rendering component inside <span class="lit">MessageBubble</span>) handles an outlier-length message, and whether anything server-side caps length at all.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Grepped <span class="lit">MentionText.tsx</span>'s <span class="lit">CollapsibleText</span> for any length cap: it truncates by LINE count ("collapse after 10 lines", per <span class="lit">MessageBubble.tsx</span>'s own comment on the component), not character count &mdash; a message with no newlines at all (one enormous unbroken "word," e.g. a pasted URL or hash with no spaces) would never hit the 10-line collapse trigger since React Native's text wrapping only creates a new visual line at a space/wrap-opportunity boundary, and the bubble's own <span class="lit">maxWidth: '78%'</span> constrains the CONTAINER width but not how many characters of unbreakable text render before RN just lets it overflow or wrap character-by-character (behavior here is platform/RN-version dependent, not something this component controls either way).</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">Info &mdash; theoretical, no evidence of a live break</div><p>No character-count cap exists client or server-side (no CHECK constraint on <span class="lit">text</span>, confirmed above) &mdash; a multi-thousand-character message is fully acceptable to the database and will render, just very tall (10-line collapse with a "show more" affordance already exists and would engage normally for any realistically-typed long message with actual word breaks). The only theoretical edge case is a single unbroken multi-thousand-character token with zero spaces, which sidesteps the line-based collapse entirely — a narrow scenario (pasting a giant URL or base64 blob as chat text) not exercised in this pass given time constraints, and not a crash risk (RN handles arbitrarily long unbroken text without crashing, just potentially awkwardly). Logged as untested rather than confirmed either way.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No server-side length cap exists; the 10-line collapse handles the realistic long-message case correctly. The single-unbroken-token edge case wasn't directly exercised — flagged as untested, not as a confirmed bug.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Multi-device same-member: two devices open Chat simultaneously &mdash; re-verified against the standard pass's D13-13 finding</span></div>
+    <div class="case-situation">The standard pass (D13-13) already traced this and found it correct via the client-generated-UUID dedup. Re-read the exact mechanism independently to confirm it holds, rather than re-accepting the earlier finding at face value.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">sendMessage</span>'s id generation (<span class="lit">msgId</span> minted client-side via a manual UUIDv4 template BEFORE the optimistic insert) and <span class="lit">_upsertMessage</span>'s own upsert-by-id logic (<span class="lit">msgs.filter(m =&gt; m.id !== msg.id)</span> before re-inserting) independently, without assuming the prior pass's conclusion.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#10003; Re-confirmed correct, independently</div><p>Same conclusion as D13-13, reached via an independent re-read: the sending device's own optimistic bubble and the realtime echo of the SAME row share the same id and dedupe cleanly via <span class="lit">_upsertMessage</span>'s filter-then-insert; a second device open to the same channel never had an optimistic copy of a message it didn't send, so it only ever sees the single realtime INSERT. No duplication path in either direction.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Settled ground re-confirmed via independent re-read, not re-litigated as a new finding.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Global unread-badge subscription vs. per-channel subscription &mdash; can they double-count or race on the SAME incoming message?</span></div>
+    <div class="case-situation"><span class="lit">ensureGlobalUnreadSubscription</span> (fires for every channel, badges) and <span class="lit">loadChannel</span>'s per-channel subscription (fires only for the currently-open channel, renders messages) are two SEPARATE realtime subscriptions to the same <span class="lit">chat_messages</span> table's INSERT events. Checked whether a message arriving on the currently-open channel gets double-counted by both.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read the global subscription's guard: <span class="tag raw">if (channelId === _openChannelId) return;</span> &mdash; explicitly skips bumping <span class="lit">unreadCounts</span> for whichever channel <span class="lit">setOpenChannelId</span> (called by ChatScreen's own effect) currently marks as visible.</p>
+      </div></div>
+      <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct, already fixed earlier this session per in-code comments</div><p>The in-code comment on this guard describes it as a deliberate fix for exactly this double-count/flash scenario. Verified current behavior matches: a message arriving on the open channel is never counted toward that channel's badge (correct — you're looking at it), and <span class="lit">markChannelRead</span>'s own effect handles zeroing that channel's badge separately. No double-count path found for the open channel; every OTHER channel's badge is bumped exactly once by the global subscription alone (the per-channel subscription only exists for the currently-open channel, so there's no second subscription to race against for a background channel in the first place).</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Correctly de-duplicated between the two subscription mechanisms — no double-count or race found.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">App backgrounded exactly when a message arrives &mdash; can the badge get stuck stale?</span></div>
+    <div class="case-situation">Checked the realtime reconnect story for both subscriptions (global unread + per-channel) against exactly the scenario flagged as a risk in the task brief: app backgrounded mid-arrival.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read both subscriptions' <span class="lit">.subscribe((status) =&gt; ...)</span> callbacks: both clear their own tracked handle (<span class="lit">_globalUnreadSub</span> / the entry in <span class="lit">_subs</span>) on a terminal <span class="lit">CLOSED</span>/<span class="lit">CHANNEL_ERROR</span>/<span class="lit">TIMED_OUT</span> status, with an explicit in-code comment describing this as a fix for "a socket killed by backgrounding left [it] unable to ever receive ... again ... until a full app restart."</p>
+      </div></div>
+      <div class="finding fixed"><div class="finding-tag">&#10003; Confirmed correct, already fixed earlier this session</div><p>Both the badge-driving global subscription and the message-rendering per-channel subscription self-heal on the next call after backgrounding kills the socket (<span class="lit">ensureGlobalUnreadSubscription</span> / <span class="lit">loadChannel</span> respectively, both called from ChatScreen mount/foreground paths) — a message that arrived while backgrounded is caught up by <span class="lit">loadUnreadCounts</span>'s own one-shot RPC re-run (fired on the same mount effect) even if the socket reconnect itself lags slightly, so there's no permanently-stuck-stale badge scenario here. This is genuinely solid, already-hardened infrastructure, not a fresh finding.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> No stuck-badge gap found — the reconnect-and-resync path is real and already covers this scenario.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Chat push notification content and deep-link target</span></div>
+    <div class="case-situation">Checked whether a chat push notification correctly shows the sender's name/preview and deep-links to the right place, per the task brief's ask.</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">Read <span class="lit">chat-notify/index.ts</span> — it receives <span class="lit">{ channelId, senderId, text, mentions }</span> already resolved from the client call in <span class="lit">chatStore.ts</span>'s <span class="lit">sendMessage</span>, and constructs the push body server-side by looking up the sender's real name from <span class="lit">members</span> (not trusting a client-supplied display name), building a preview from a truncated <span class="lit">text</span>.</p>
+      </div></div>
+      <div class="finding info"><div class="finding-tag">&#8505; Correct sender resolution, deep-link target not independently traced</div><p>Sender name resolution is server-side and DB-backed (not client-trusted), which is the correct pattern and matches how this session has vetted other notification paths. Did not independently trace the client-side notification-tap handler (wherever <span class="lit">Notifications.addNotificationResponseReceivedListener</span> or equivalent routes a tapped chat push to a specific channel/scroll position) within this pass's time budget — flagged as not fully verified rather than confirmed correct, to avoid overclaiming.</p></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Notification content/sender-name resolution confirmed correct and server-trusted. Deep-link-to-scroll-position behavior specifically was not independently re-traced this pass — logged as unverified, not claimed as either broken or fixed.</div>
+  </div>
+
+  <div class="case">
+    <div class="case-head"><span class="case-name">Test data / live-write footprint for this pass</span></div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">
+        <p class="step-action">This pass relied entirely on direct code reads and live read-only queries (<span class="lit">pg_proc</span>, <span class="lit">pg_trigger</span>, <span class="lit">information_schema.columns</span>, <span class="lit">pg_constraint</span>) — no disposable test family or write-path exercise was needed, since every case here was resolvable by tracing actual trigger/function bodies and client logic rather than needing to prove a live race empirically.</p>
+        <div class="finding info"><div class="finding-tag">&#8505; No cleanup needed</div><p>Zero rows written to the live database this pass. The one real fix (offline-queue channel-id bug) was verified by code inspection of the exact mismatch between the queued key and the lookup key, which is deterministic and didn't require a live reproduction to confirm.</p></div>
+      </div></div>
+    </div>
+    <div class="end-state"><b>Verdict</b> Clean — no test data was ever created, so none needed removal.</div>
+  </div>
+</section>
+
   <!-- ============ FINDINGS TABLE ============ -->
   <section class="group scroll-anchor" id="findings">
     <h2 class="group-title">Every finding, at a glance</h2>
@@ -5268,6 +5480,13 @@ if (editDriverName !== (event.driverName ?? '') || editDriverId !== event.driver
         <tr><td>Theme &amp; dark-mode (deep)</td><td>Fixed 5 real dark-mode bugs (ParentReviewDeck.tsx x4 badge/border patterns, ChildChoreBoard.tsx's "Claimed by" badge) hardcoded to light-pastel-bg + dark-text with zero isDark branch despite their own card already branching. Fixed 1 semantic misuse: QuestsScreen.tsx's neutral "Citizenship" badge was styled entirely in colors.danger (error red).</td><td><span class="status-pill high">FIXED</span></td></tr>
         <tr><td>Theme &amp; dark-mode (deep)</td><td>FamilyCubeLogo.tsx's BRAND constant does NOT match CLAUDE.md's documented hex table &mdash; but the drift runs backwards from what was assumed. BRAND and constants/colors.ts agree with each other (both reflect a later "Bold tiles" palette revision); it's CLAUDE.md's own documented table that's stale, predating that revision.</td><td><span class="status-pill gap">GAP</span></td></tr>
         <tr><td>Theme &amp; dark-mode (deep)</td><td>Confirmed correct: HouseholdBacklogSection.tsx's Users icon uses colors.textSecondary correctly; border/divider consistency and light-tint-as-text-color contrast both came back with zero violations. Native widget Swift color source is unverifiable without deeper Swift review &mdash; logged as a genuine gap, not guessed at.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Chat (deep)</td><td>The just-fixed PIN-switch grant-token identity fix was verified to correctly cover chat too &mdash; guard_chat_messages_write resolves identity via the same resolve_active_member_id() every other write path now uses, Tier-2 grant-token check included. No separate chat-specific fix was needed.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
+        <tr><td>Chat (deep)</td><td>Offline-retry queue could never clear a stale "failed" bubble for any of the 5 fixed group channels (#all-family, #parents-vault, etc.) &mdash; the queued key (family-scoped db id) never matched the lookup key (bare ui id) _removeMessage used, so a successful background retry left the original "Not sent" bubble stuck forever next to the real message. DMs were unaffected by coincidence (their bare and db ids are identical strings).</td><td><span class="status-pill high">FIXED</span></td></tr>
+        <tr><td>Chat (deep)</td><td>The known inverted-FlatList scroll glitch has an explicit, already-applied tuning fix (initialNumToRender/windowSize/maxToRenderPerBatch + a memo boundary) &mdash; largely addressed. A residual, much-rarer blank-cell flash during fast fling-scroll through image/location-heavy history remains structurally possible without a FlashList rewrite; logged, not a same-pass fix.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Chat (deep)</td><td>Editing a message that already has reactions silently deletes those reactions with zero indication to either party &mdash; a direct, unconditional (no race needed) consequence of the delete-then-reinsert edit design already flagged as fragile in the standard pass for its conflict-resolution angle.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Chat (deep)</td><td>Rapid reaction toggling converges correctly for same-device taps; one narrow remaining race if network responses resolve out of order (an earlier tap's UPDATE landing after a later one can silently revert the last toggle server-side until next reload) &mdash; same last-write-wins-with-no-CAS exposure already logged for message edits.</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Chat (deep)</td><td>No server-side guard blocks an empty/whitespace-only message text &mdash; client-only gate, same "no backstop" pattern flagged elsewhere this session; narrow blast radius (a blank bubble, not a privacy/authorization issue).</td><td><span class="status-pill gap">GAP</span></td></tr>
+        <tr><td>Chat (deep)</td><td>Confirmed correct/re-verified: multi-device dedup (independently re-confirms the standard pass's D13-13), global-vs-per-channel unread-badge double-count guard, and backgrounded-app badge self-healing on reconnect are all genuinely solid, already-hardened infrastructure.</td><td><span class="status-pill fixed">CONFIRMED OK</span></td></tr>
       </tbody>
     </table>
     </div>

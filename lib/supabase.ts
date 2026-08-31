@@ -64,11 +64,29 @@ function getActiveMemberIdHeader(): string | undefined {
   }
 }
 
+// Only set for a member with their own real login that differs from this
+// device's actual Supabase Auth session — resolve_active_member_id's Tier
+// 2 check accepts this, PIN-verified server-side via
+// verify_member_pin_and_grant, in place of the auth.uid() match itself.
+// Sending an expired/stale token here is harmless — the server independently
+// re-checks active_grant_expires_at > now() on every call, it never trusts
+// the client's own idea of freshness.
+function getActiveMemberGrantHeader(): string | undefined {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    return useFamilyStore.getState().activeMemberGrantToken ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const debugFetch: typeof fetch = async (input, init) => {
   const activeMemberId = getActiveMemberIdHeader();
-  if (activeMemberId) {
+  const activeMemberGrant = getActiveMemberGrantHeader();
+  if (activeMemberId || activeMemberGrant) {
     const headers = new Headers(init?.headers ?? (input as Request)?.headers);
-    headers.set('x-active-member-id', activeMemberId);
+    if (activeMemberId) headers.set('x-active-member-id', activeMemberId);
+    if (activeMemberGrant) headers.set('x-active-member-grant', activeMemberGrant);
     init = { ...init, headers };
   }
   const url    = typeof input === 'string' ? input : (input as Request).url;

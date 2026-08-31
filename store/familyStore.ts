@@ -211,6 +211,24 @@ export interface FamilyMember {
 interface FamilyState {
   members: FamilyMember[];
   activeMemberId: string | null;
+  // Set only when PIN-switching INTO a member who has their own real
+  // Supabase login that differs from this device's actual auth session
+  // (verify_member_pin_and_grant mints this on a successful PIN check) —
+  // resolve_active_member_id() accepts this as proof-of-identity in place
+  // of the auth session itself. Cleared on sign-out and on switching to
+  // any member whose auth_user_id matches this device's real session (the
+  // grant isn't needed there, and clearing it means a stale/expired token
+  // is never accidentally sent for the common case). Not persisted to
+  // AsyncStorage — a fresh app launch always re-derives auth from the real
+  // Supabase session, so a stale grant surviving a relaunch would
+  // only ever cause confusion, never add real convenience.
+  activeMemberGrantToken: string | null;
+  activeMemberGrantExpiresAt: string | null;
+  // The member id this grant was minted for — lets setActiveMember tell
+  // "switching TO the member the grant belongs to" apart from "switching
+  // to anyone else," so the grant survives its own PinEntryModal→
+  // setActiveMember call but is dropped on any subsequent switch away.
+  activeMemberGrantMemberId: string | null;
   loaded: boolean;
   // 'idle' before any load attempt; 'loading' while loadFromStorage's cache
   // read / bounded retry loop is still running; 'confirmed' once either a
@@ -230,6 +248,11 @@ interface FamilyState {
 
   setMembers: (members: FamilyMember[]) => void;
   setActiveMember: (id: string) => void;
+  // Called by PinEntryModal after a successful verify_member_pin_and_grant
+  // for a member whose own auth_user_id doesn't match this device's real
+  // session — pass null/null to clear (sign-out, or switching to a member
+  // who doesn't need one).
+  setActiveMemberGrant: (memberId: string | null, token: string | null, expiresAt: string | null) => void;
   setFamilyName: (name: string) => void;
   // Persists to families.name (setFamilyName only ever touched local state —
   // there was previously no path back to the DB at all, so a rename made
@@ -415,6 +438,9 @@ function applyActive(members: FamilyMember[], cached: string | null, current: st
 export const useFamilyStore = create<FamilyState>((set, get) => ({
   members: [],
   activeMemberId: null,
+  activeMemberGrantToken: null,
+  activeMemberGrantExpiresAt: null,
+  activeMemberGrantMemberId: null,
   loaded: false,
   familyLoadStatus: 'idle',
   familyName: 'Our Family',
@@ -438,6 +464,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     return true;
   },
 
+  setActiveMemberGrant: (memberId, token, expiresAt) => set({
+    activeMemberGrantToken: token, activeMemberGrantExpiresAt: expiresAt, activeMemberGrantMemberId: memberId,
+  }),
+
   setMembers: (members) => {
     const deduped = dedupeMembers(members);
     set({ members: deduped });
@@ -446,7 +476,27 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
 
   setActiveMember: (id) => {
     const previousActiveId = get().activeMemberId;
-    set({ activeMemberId: id });
+    // A grant token is only ever valid for the exact member it was minted
+    // for (verify_member_pin_and_grant stamps it onto that member's own
+    // row) — clear it whenever switching to someone OTHER than the member
+    // it was just minted for, so a stale token never gets sent for the
+    // wrong member. PinEntryModal calls setActiveMemberGrant BEFORE this
+    // function runs (see its onSuccess ordering), stamping
+    // activeMemberGrantMemberId with the id the grant belongs to —
+    // switching TO that same id here must not clobber the grant that was
+    // just set for it. Every other switch simply has no grant to begin
+    // with, which is correct — resolve_active_member_id's fast path
+    // (auth.uid() match, or no auth_user_id at all) covers everyone else
+    // with zero extra steps.
+    set(state => {
+      const keepGrant = state.activeMemberGrantToken && id === state.activeMemberGrantMemberId;
+      return {
+        activeMemberId: id,
+        activeMemberGrantToken: keepGrant ? state.activeMemberGrantToken : null,
+        activeMemberGrantExpiresAt: keepGrant ? state.activeMemberGrantExpiresAt : null,
+        activeMemberGrantMemberId: keepGrant ? state.activeMemberGrantMemberId : null,
+      };
+    });
     AsyncStorage.setItem(ACTIVE_KEY, id);
     // Save push token to the newly active member row. saveTokenToMember
     // itself already deletes any OTHER member's member_device_tokens row

@@ -1577,7 +1577,19 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       }
       if (helperIsRoleFilled) {
         if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
-        if (editDriverName !== (event.driverName ?? '')) {
+        // QA deep-trace finding: this used to compare only the trimmed
+        // NAME string against event.driverName. Two different members who
+        // happen to share a display name (two grandparents both saved as
+        // "Grandma", divorced/remarried parents both "Mom") produced an
+        // identical string on both sides even though editDriverId picked
+        // a genuinely different person — the whole branch skipped, so
+        // driverId/driverStatus were never written at all: the
+        // reassignment silently didn't save, and a stale 'confirmed' from
+        // the PREVIOUS (same-named) driver stayed attached to the new one,
+        // who never actually confirmed anything. Compare the id too, same
+        // rationale as deriveEventActions' isSelfAssigned switching to an
+        // id-based compare.
+        if (editDriverName !== (event.driverName ?? '') || editDriverId !== event.driverId) {
           patch.driverName = editDriverName.trim() || undefined;
           // driverId was never included in this patch — needed for
           // classifyEventUrgency.ts's id-based "is this mine" check.

@@ -145,31 +145,43 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   // to future occurrences, same as RideRequestCard's own
                   // "I'll Drive". Distinct from "Take Over" above, which is a
                   // one-time favor for just this occurrence.
-                  supabase.rpc('confirm_event_assignment', {
+                  //
+                  // Was: confirm_event_assignment (single-event) then, on
+                  // success, updateEventScoped(id, patch, 'following') to
+                  // "propagate" — a real bug, not just a UX gap. updateEventScoped's
+                  // bulk 'following' path writes to EVERY row in the series
+                  // with no assignee filter at all (by design, for plain
+                  // field edits — see its own comments) — so this would
+                  // have force-confirmed occurrences reassigned to a
+                  // DIFFERENT person partway through the series, not just
+                  // your own. confirm_event_assignment_series_forward is a
+                  // dedicated RPC that confirms the tapped occurrence, then
+                  // sweeps forward through the SAME series confirming ONLY
+                  // occurrences where THIS member still holds THIS role and
+                  // is still pending — never touching a reassigned or
+                  // already-resolved occurrence.
+                  supabase.rpc('confirm_event_assignment_series_forward', {
                     p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole,
                   }).then(({ error }) => {
                     if (error) {
-                      console.warn('[HelperEventCard] confirm_event_assignment failed', error.message);
+                      console.warn('[HelperEventCard] confirm_event_assignment_series_forward failed', error.message);
                       showToast("Couldn't confirm — please try again", 'error');
                       return;
                     }
-                    // Was gated behind `ev.seriesId && updateEventScoped` —
-                    // a real bug: a plain one-off event (no seriesId) never
-                    // got its local Zustand copy updated after a successful
-                    // confirm, so the Hub kept showing "Pending" until some
-                    // OTHER screen's fetch happened to refresh the shared
-                    // store, even though the DB (and any screen that
-                    // refetched fresh, e.g. Tasks) correctly showed
-                    // Confirmed. Update local state unconditionally on
-                    // success; the seriesId branch additionally propagates
-                    // to future occurrences.
-                    const statusPatch = { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>;
+                    // DB write succeeds but nothing told the local Zustand
+                    // store which rows changed — same gap as every other
+                    // RPC call site in this file. Since the RPC may have
+                    // confirmed MANY future occurrences (not just this one),
+                    // patch every same-series, same-assignee, still-locally-
+                    // pending occurrence rather than only ev.id.
+                    const statusKey = assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus';
+                    const idKey = assigneeRole === 'driver' ? 'driverId' : 'helperId';
                     if (ev.seriesId && updateEventScoped) {
-                      updateEventScoped(ev.id, statusPatch, 'following');
+                      updateEventScoped(ev.id, { [statusKey]: 'confirmed' } as Partial<FamilyEvent>, 'this');
                     } else {
-                      updateEvent(ev.id, statusPatch);
+                      updateEvent(ev.id, { [statusKey]: 'confirmed' } as Partial<FamilyEvent>);
                     }
-                    showToast('Confirmed ✓');
+                    showToast(ev.seriesId ? 'Confirmed — future rides too ✓' : 'Confirmed ✓');
                   });
                 }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${CONFIRMED_GREEN}20`, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,

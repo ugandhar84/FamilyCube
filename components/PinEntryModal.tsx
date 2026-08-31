@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { FamilyMember } from '@/store/familyStore';
+import { FamilyMember, useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -150,16 +150,32 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
     if (entered.length < PIN_LENGTH || !member || verifying) return;
     setVerifying(true);
     const submittedPin = entered;
-    supabase.rpc('verify_member_pin', { p_member_id: member.id, p_entered_pin: submittedPin })
+    // Only a member with their OWN real login needs a grant — for anyone
+    // else, resolve_active_member_id's fast path (no auth_user_id at all,
+    // so nothing to mismatch) already works with zero extra steps, and
+    // calling the grant RPC pointlessly would still work but adds a
+    // needless extra column write on every plain-family-member switch.
+    // Live-reported bug this closes: a family member with their own
+    // separate Supabase login (e.g. both parents individually signed up
+    // before merging into one family) could be PIN-switched to on a
+    // device whose actual auth session belongs to someone ELSE's login —
+    // every identity-verified action for them then silently failed with a
+    // generic "couldn't confirm" error, since the server had no way to
+    // trust the switch without either the real login or this grant.
+    const rpcName = member.authUserId ? 'verify_member_pin_and_grant' : 'verify_member_pin';
+    supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: submittedPin })
       .then(({ data, error }) => {
         setVerifying(false);
         if (error) {
-          console.warn('[PinEntryModal] verify_member_pin failed', error.message);
+          console.warn(`[PinEntryModal] ${rpcName} failed`, error.message);
           shakeAndClear('Could not verify — check your connection and try again');
           return;
         }
         const result = Array.isArray(data) ? data[0] : data;
         if (result?.ok) {
+          if (result.grant_token && result.grant_expires_at) {
+            useFamilyStore.getState().setActiveMemberGrant(member.id, result.grant_token, result.grant_expires_at);
+          }
           onSuccess(member);
           setEntered('');
           setAttempts(0);

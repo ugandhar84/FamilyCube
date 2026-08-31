@@ -453,15 +453,45 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         // manual EventFormModal's own opt-in alertCall toggle exactly.
         alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
       };
+      const eventDate = dt.toISOString().slice(0, 10);
+      // Same live-reported duplicate-creation gap EventFormModal's own
+      // submit() just got this check added for — Ask Cube proposing "add
+      // this ride" is an equally real way to end up creating a second copy
+      // of something that already exists (the user asking the AI about an
+      // existing ride, not realizing it's not new). Best-effort, fails
+      // open — a check failure must never block a real create.
+      if (time && activeMember?.familyId) {
+        try {
+          const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
+            p_family_id: activeMember.familyId, p_title: base.title, p_start_time: time, p_date: eventDate,
+          });
+          const match = Array.isArray(dupe) ? dupe[0] : dupe;
+          if (match) {
+            const proceed = await new Promise<boolean>(resolve => {
+              Alert.alert(
+                'Possible duplicate',
+                `"${match.title}" already exists on ${match.date}${match.is_series ? ' (a recurring series)' : ''} at this same time. Create this one anyway?`,
+                [
+                  { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                  { text: 'Create anyway', style: 'destructive', onPress: () => resolve(true) },
+                ],
+              );
+            });
+            if (!proceed) return;
+          }
+        } catch (e: any) {
+          console.warn('[AskCubeChat] check_likely_duplicate_event failed (proceeding):', e?.message);
+        }
+      }
       if (d.recurrenceRule?.frequency) {
         // "every Thursday"-style requests previously had nowhere to go —
         // propose_event had no recurrence field, so they silently became a
         // single one-off event. addRecurringEvent materializes the real
         // series the same way the manual Add Event form's own repeat
         // toggle does.
-        addRecurringEvent({ ...base, date: dt.toISOString().slice(0, 10), time }, d.recurrenceRule);
+        addRecurringEvent({ ...base, date: eventDate, time }, d.recurrenceRule);
       } else {
-        addEvent({ ...base, date: dt.toISOString().slice(0, 10), time });
+        addEvent({ ...base, date: eventDate, time });
       }
     } else if (proposal.kind === 'quest') {
       addQuest({

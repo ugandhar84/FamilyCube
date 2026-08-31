@@ -562,6 +562,39 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       isOptionalRsvp: isParent && isOptionalRsvp,
     };
 
+    // Live-reported bug: a recurring ride got created twice (deleted, then
+    // recreated) — Calendar Sync correctly synced BOTH versions to/from
+    // Google since it has no way to know they represent the same
+    // real-world commitment, and the app itself never warned before
+    // creating what was obviously a duplicate. check_likely_duplicate_event
+    // is a read-only pre-flight check (same family/time, title containment
+    // either direction, next 14 days) — best-effort, only for a genuinely
+    // NEW event (not an edit), and fails open (a network hiccup here must
+    // never block a real create) rather than fails closed.
+    if (eventInput.time && familyId) {
+      try {
+        const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
+          p_family_id: familyId, p_title: eventInput.title, p_start_time: eventInput.time, p_date: eventInput.date,
+        });
+        const match = Array.isArray(dupe) ? dupe[0] : dupe;
+        if (match) {
+          const proceed = await new Promise<boolean>(resolve => {
+            Alert.alert(
+              'Possible duplicate',
+              `"${match.title}" already exists on ${match.date}${match.is_series ? ' (a recurring series)' : ''} at this same time. Create this one anyway?`,
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Create anyway', style: 'destructive', onPress: () => resolve(true) },
+              ],
+            );
+          });
+          if (!proceed) { setSaving(false); return; }
+        }
+      } catch (e: any) {
+        console.warn('[EventFormModal] check_likely_duplicate_event failed (proceeding):', e?.message);
+      }
+    }
+
     // Recurring — weekly with no explicit day picked defaults to the
     // create-date's own weekday (matches generateOccurrenceDates' own
     // fallback), so a parent who just picks "Weekly" without touching the

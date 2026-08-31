@@ -985,16 +985,16 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               {/* ── Kid grouped section headers (spec §4) ── */}
               {kidSections && kidSections.citizenship.length > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: -4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger + '20' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.accent + '20' }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: colors.dangerLight, borderRadius: 20,
-                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.danger + '30' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.danger }}>🏛 Citizenship</Text>
-                    <View style={{ backgroundColor: colors.danger, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
+                    backgroundColor: colors.accentLight, borderRadius: 20,
+                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.accent + '30' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.accent }}>🏛 Citizenship</Text>
+                    <View style={{ backgroundColor: colors.accent, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.citizenship.length}</Text>
                     </View>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger + '20' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.accent + '20' }} />
                 </View>
               )}
 

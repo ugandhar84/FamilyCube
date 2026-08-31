@@ -524,9 +524,15 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
         // by id, so leaving it stale after a reassign would make the
         // Hub's "is this mine" check keep evaluating against the OLD
         // assignee's id until a refetch overwrote it.
+        // Status mirrors the RPC's own rule (reassign_event: 'confirmed'
+        // only when p_new_member_id = p_actor_id) — was unconditionally
+        // 'confirmed' here, so reassigning to someone OTHER than yourself
+        // showed them as already confirmed locally even though the server
+        // correctly reset them to pending (same bug as EventDetailSheet's
+        // onAssign handler, fixed there too).
         updateEvent(ev.id, assigneeRole === 'driver'
-          ? { driverName: name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
-          : { helper: name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
+          ? { driverName: name, driverId: targetMember.id, driverStatus: targetMember.id === actorId ? 'confirmed' as const : 'pending' as const }
+          : { helper: name, helperId: targetMember.id, helperStatus: targetMember.id === actorId ? 'confirmed' as const : 'pending' as const });
         showToast(`Assigned to ${name.split(' ')[0]} ✓`);
       });
     } else {
@@ -1496,9 +1502,21 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                           // reassign would make the Hub's "is this mine"
                           // check keep evaluating against the OLD
                           // assignee's id until a refetch overwrote it.
+                          // Status must mirror the RPC's own rule exactly
+                          // (reassign_event: 'confirmed' only when
+                          // p_new_member_id = p_actor_id, i.e. assigning to
+                          // YOURSELF — any other target starts 'pending')
+                          // rather than always 'confirmed' — this was
+                          // unconditional before, so reassigning a
+                          // confirmed slot to a DIFFERENT person (the
+                          // "Can't Make It → pick someone else" case) showed
+                          // that person as already confirmed locally, even
+                          // though the server correctly reset them to
+                          // waiting-for-confirmation (live-reported).
+                          const newStatus = targetMember.id === actorId ? 'confirmed' as const : 'pending' as const;
                           updateEvent(ev.id, assigneeRole === 'driver'
-                            ? { driverName: name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
-                            : { helper: name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
+                            ? { driverName: name, driverId: targetMember.id, driverStatus: newStatus }
+                            : { helper: name, helperId: targetMember.id, helperStatus: newStatus });
                           showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                         });
                       } else {

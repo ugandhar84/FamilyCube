@@ -102,8 +102,8 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
           </View>
         )}
         {isGP && (
-          <View style={{ backgroundColor: '#DBEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#2563EB' }}>GP Quest</Text>
+          <View style={{ backgroundColor: isDark ? colors.infoLight : '#DBEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.info : '#2563EB' }}>GP Quest</Text>
           </View>
         )}
         {/* GPs are never paid coins (master-flow R_COINS) — this read
@@ -113,8 +113,8 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
             the GP anything. ChildChoreBoard.tsx already had this guard;
             this card didn't. */}
         {!isGP && task.basePoints > 0 && (
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>+{task.basePoints} pts</Text>
+          <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? colors.amber : '#D97706' }}>+{task.basePoints} pts</Text>
           </View>
         )}
         {task.requiresPhotoProof && <Text style={{ fontSize: 14 }}>📸</Text>}
@@ -126,17 +126,17 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
 
       {/* Photo proof submitted by kid */}
       {task.submissionPhotoUrl && (
-        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#BBF7D0' }}>
+        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: isDark ? colors.successLight : '#BBF7D0' }}>
           <Image source={{ uri: task.submissionPhotoUrl }} style={{ width: '100%', height: 180 }} resizeMode="cover" />
-          <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: '#059669' }}>📸 Proof photo attached</Text>
+          <View style={{ backgroundColor: isDark ? colors.successLight : '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? colors.success : '#059669' }}>📸 Proof photo attached</Text>
           </View>
         </View>
       )}
       {task.requiresPhotoProof && !task.submissionPhotoUrl && (
-        <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 6, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 6, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 13 }}>⚠️</Text>
-          <Text style={{ fontSize: TYPO.caption, color: '#92400E', fontWeight: '600' }}>No photo submitted — photo was required</Text>
+          <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.amber : '#92400E', fontWeight: '600' }}>No photo submitted — photo was required</Text>
         </View>
       )}
 
@@ -262,25 +262,25 @@ function BountyClaimReviewCard({ chore, claim, members, colors, isDark, onApprov
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{child.name.split(' ')[0]}</Text>
           </View>
         )}
-        <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#D97706' }}>Bounty · +{coins} pts</Text>
+        <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.amber : '#D97706' }}>Bounty · +{coins} pts</Text>
         </View>
       </View>
 
       <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>{chore.title}</Text>
 
       {claim.submissionPhotoUrl && (
-        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#BBF7D0' }}>
+        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: isDark ? colors.successLight : '#BBF7D0' }}>
           <Image source={{ uri: claim.submissionPhotoUrl }} style={{ width: '100%', height: 180 }} resizeMode="cover" />
-          <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: '#059669' }}>📸 Proof photo attached</Text>
+          <View style={{ backgroundColor: isDark ? colors.successLight : '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? colors.success : '#059669' }}>📸 Proof photo attached</Text>
           </View>
         </View>
       )}
       {chore.requiresPhotoProof && !claim.submissionPhotoUrl && (
-        <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 6, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 6, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 13 }}>⚠️</Text>
-          <Text style={{ fontSize: TYPO.caption, color: '#92400E', fontWeight: '600' }}>No photo submitted — photo was required</Text>
+          <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.amber : '#92400E', fontWeight: '600' }}>No photo submitted — photo was required</Text>
         </View>
       )}
       {claim.submissionNote && (
@@ -330,7 +330,7 @@ function CashOutCard({ req, member, colors, isDark }: {
   return (
     <View style={{
       backgroundColor: isDark ? colors.card : '#F0FDF4',
-      borderRadius: 16, borderWidth: 1, borderColor: '#BBF7D0',
+      borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.successLight : '#BBF7D0',
       marginBottom: 12, padding: 16,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -452,8 +452,8 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
         </Text>
 
         {(task.redoCount ?? 0) >= 1 && (
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 16 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#D97706' }}>
+          <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 16 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.amber : '#D97706' }}>
               ⚠️ This has already been sent back once. Next rejection will auto-approve.
             </Text>
           </View>

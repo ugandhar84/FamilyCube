@@ -182,8 +182,8 @@ function BountyCard({ task, childId, members, colors, isDark, onAction }: {
           </View>
         )}
         {claimedBy && (
-          <View style={{ backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#6B7280' }}>
+          <View style={{ backgroundColor: isDark ? colors.surface : '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
               Claimed by {claimedBy.name.split(' ')[0]}
             </Text>
           </View>

@@ -208,7 +208,17 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
             onPress={() => {
-              const patch = { approvalPending: false, helperStatus: 'confirmed' as const, helper: active.name, returnTime: undefined };
+              // Live-reported bug, confirmed via direct DB read: this wrote
+              // to helperStatus/helper — the HELPER fields — even though
+              // the button says "I'll Drive" and this whole section's own
+              // header comment describes it as "a driver hasn't been
+              // assigned yet" / "carry the chosen driver forward." Every
+              // occurrence in the series ended up with driver_id/driver_status
+              // still null and a stray helper_name with no matching id,
+              // stuck showing "Pending" forever since nothing ever wrote
+              // the ACTUAL driver fields the rest of the app (and the
+              // backlog's "You're the driver / helper" section) reads.
+              const patch = { approvalPending: false, driverStatus: 'confirmed' as const, driverName: active.name, driverId: active.id, rideRequired: true, returnTime: undefined } as Partial<FamilyEvent>;
               if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
               else updateEvent(ev.id, patch);
               showToast("You're driving ✓");

@@ -23,9 +23,13 @@ export function useDriverLocation(driverMemberId: string | null | undefined, ena
     let cancelled = false;
     const load = async () => {
       const { data } = await supabase.from('member_locations')
-        .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
+        .select('address, lat, lng, share_location_enabled').eq('member_id', driverMemberId).maybeSingle();
       if (cancelled) return;
-      if (!data || data.lat == null || data.lng == null) { setAddress(null); return; }
+      // share_location_enabled === false is an explicit opt-out — same gate
+      // GpsTab.tsx applies to its own pin/roster. Without it, a driver who
+      // turned location sharing off mid-trip kept leaking their last-known
+      // address into the En Route banner every viewer's Hub shows.
+      if (!data || data.lat == null || data.lng == null || data.share_location_enabled === false) { setAddress(null); return; }
       setAddress(data.address ? await decryptLocationText(driverMemberId, data.address) : null);
     };
     load();

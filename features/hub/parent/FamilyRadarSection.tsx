@@ -25,6 +25,7 @@ interface RadarRow {
   battery_level: number | null;
   is_charging: boolean | null;
   last_updated: string;
+  share_location_enabled?: boolean;
 }
 
 function fmtRelative(iso: string): string {
@@ -47,7 +48,7 @@ export function FamilyRadarSection({ members, colors, isDark }: {
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('member_locations')
-      .select('member_id, address, lat, lng, battery_level, is_charging, last_updated');
+      .select('member_id, address, lat, lng, battery_level, is_charging, last_updated, share_location_enabled');
     const decrypted = await Promise.all((data ?? []).map(async (r: any) => ({
       ...r, address: r.address ? await decryptLocationText(r.member_id, r.address) : r.address,
     })));
@@ -72,9 +73,18 @@ export function FamilyRadarSection({ members, colors, isDark }: {
     return () => { supabase.removeChannel(ch); };
   }, [load]);
 
-  const liveCount = rows.filter(r => r.lat != null && r.lng != null).length;
+  // share_location_enabled === false means an explicit opt-out — the row
+  // still exists (last-known data isn't deleted) but must stop reading as
+  // "live" here, same gate GpsTab.tsx already applies to its own pin/roster.
+  // This section skipped that gate entirely, so someone who turned sharing
+  // off kept showing up here with their last address/battery as if current.
+  const liveCount = rows.filter(r => r.lat != null && r.lng != null && r.share_location_enabled !== false).length;
   const roster = members
-    .map(m => ({ member: m, loc: rows.find(r => r.member_id === m.id) }))
+    .map(m => {
+      const raw = rows.find(r => r.member_id === m.id);
+      const loc = raw && raw.share_location_enabled !== false ? raw : undefined;
+      return { member: m, loc };
+    })
     .sort((a, b) => (b.loc?.lat != null ? 1 : 0) - (a.loc?.lat != null ? 1 : 0));
 
   if (loading || members.length === 0) return null;

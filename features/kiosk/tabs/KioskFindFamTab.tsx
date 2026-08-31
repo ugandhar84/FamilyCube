@@ -10,6 +10,7 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { MapPin, BatteryLow } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { decryptLocationText } from '@/lib/locationCrypto';
 import type { FamilyMember } from '@/store/familyStore';
 
 interface MemberLocation {
@@ -20,6 +21,7 @@ interface MemberLocation {
   status_text: string | null;
   battery_level: number | null;
   last_updated: string;
+  share_location_enabled?: boolean;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -37,7 +39,18 @@ export function KioskFindFamTab({ members, colors, isDark }: {
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('member_locations').select('*');
-    if (data) setLocations(data as MemberLocation[]);
+    if (data) {
+      // Decrypt address/neighborhood (per-device envelope, same as every
+      // other member_locations reader) — this was rendering raw ciphertext
+      // directly on the kiosk screen, the one surface here that skipped
+      // decryptLocationText entirely.
+      const decrypted = await Promise.all((data as any[]).map(async (r) => ({
+        ...r,
+        address: r.address ? await decryptLocationText(r.member_id, r.address) : r.address,
+        neighborhood: r.neighborhood ? await decryptLocationText(r.member_id, r.neighborhood) : r.neighborhood,
+      })));
+      setLocations(decrypted as MemberLocation[]);
+    }
   }, []);
 
   useEffect(() => {
@@ -56,7 +69,15 @@ export function KioskFindFamTab({ members, colors, isDark }: {
       <Text style={[s.title, { color: colors.textPrimary }]}>Find Family</Text>
       <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
         {members.map(m => {
-          const loc = locFor(m.id);
+          const rawLoc = locFor(m.id);
+          // A member who explicitly turned "Share my location" off still
+          // has a member_locations row (last-known data isn't deleted) —
+          // GpsTab.tsx already gates its own "isLive" state on this same
+          // flag so the pin/roster stop reading as current the instant
+          // sharing is off; this kiosk view read the row unconditionally,
+          // so it kept showing someone's last status/battery/neighborhood
+          // as if it were live even after they opted out.
+          const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
           return (
             <View key={m.id} style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[s.avatar, { backgroundColor: colors.primaryLight }]}>

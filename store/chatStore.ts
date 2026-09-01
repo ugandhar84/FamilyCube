@@ -1110,22 +1110,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
     reactions[emoji] = ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId];
     if (reactions[emoji].length === 0) delete reactions[emoji];
 
-    // Optimistic
-    get()._upsertMessage(channelId, { ...msg, reactions });
-
+    // DB-is-truth: await the write before reflecting the toggled reaction
+    // locally — was optimistic with no rollback on failure, which could
+    // silently drift from the DB.
     const { error } = await supabase
       .from('chat_messages')
       .update({ reactions })
       .eq('id', messageId);
-    if (error) console.warn('[chatStore] addReaction error', error);
+    if (error) {
+      console.warn('[chatStore] addReaction error', error);
+      return;
+    }
+    get()._upsertMessage(channelId, { ...msg, reactions });
   },
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
   deleteMessage: async (channelId, messageId) => {
-    get()._removeMessage(channelId, messageId);
+    // DB-is-truth: await the delete before removing it locally — was
+    // optimistic (removed immediately, no restore on failure).
     const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
-    if (error) console.warn('[chatStore] deleteMessage error', error);
+    if (error) {
+      console.warn('[chatStore] deleteMessage error', error);
+      return;
+    }
+    get()._removeMessage(channelId, messageId);
   },
 
   // ── Blind-index search ────────────────────────────────────────────────────

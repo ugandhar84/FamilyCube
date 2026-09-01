@@ -304,9 +304,9 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          title:         { type: 'string' },
+          title:         { type: 'string', description: 'The task itself, cleaned up — strip framing verbs ("create a chore for X to...", "remind Y to...") AND the assignee\'s name out of this field entirely; the name goes in memberName below, never left sitting in the title too. "Create a chore for Jas takeout trash from her room" -> title "Take out trash from her room", memberName "Jas" — not title "Jas takeout trash from her room" with memberName left unset.' },
           coins:         { type: 'number' },
-          memberName:    { type: 'string', description: 'Who this is assigned to, if named — omit for the open pool' },
+          memberName:    { type: 'string', description: 'Who this is assigned to, if named anywhere in the request — omit ONLY when truly nobody is named, which means the open pool. A name mentioned via "for X"/"assign to X"/"X should..." still counts as named even if the rest of the sentence reads awkwardly without it — always extract it here rather than leaving it folded into the title.' },
           dueDate:       { type: 'string', description: 'YYYY-MM-DD, if a deadline was implied — resolve "today"/"tonight"/"tomorrow" yourself using the current date' },
           dueTime:       { type: 'string', description: 'HH:MM 24-hour, if a specific deadline time was implied (e.g. "at 8 tonight" -> "20:00", "by 5pm" -> "17:00"). Omit if no specific time was mentioned, even if dueDate is set.' },
           photoRequired: { type: 'boolean' },

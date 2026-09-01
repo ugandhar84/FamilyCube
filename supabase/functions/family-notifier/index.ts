@@ -424,6 +424,21 @@ function decodeRequestDetail(detail: string | undefined): string {
   return detail;
 }
 
+// eventTime arrives as the raw DB column value ("HH:MM", 24-hour) — every
+// notification copy that interpolates it read "at 20:00" instead of the
+// app's own 12-hour convention used everywhere else (lib/units.ts's
+// formatTime, every date/time picker in the app). Live-reported.
+function to12Hour(time: string | undefined | null): string | undefined {
+  if (!time) return undefined;
+  const m = /^(\d{1,2}):(\d{2})/.exec(time);
+  if (!m) return time;
+  const h = parseInt(m[1], 10);
+  const min = m[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${min} ${ampm}`;
+}
+
 function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifShape {
   const p = payload;
   switch (type) {
@@ -744,13 +759,15 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
 
     // ── Ride/driver assignment (store/eventStore.ts's updateEvent) ────────────
-    case 'ride_assignment_offered':
+    case 'ride_assignment_offered': {
+      const t = to12Hour(p.eventTime as string);
       return {
         title: '🚗 Pickup/Drop-off Assigned',
-        body: `${p.byName ?? 'A parent'} assigned you for pickup/drop-off — "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        body: `${p.byName ?? 'A parent'} assigned you for pickup/drop-off — "${p.eventTitle}"${t ? ` at ${t}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    }
     case 'ride_assignment_accepted':
       return {
         title: '🚗 Pickup/Drop-off Confirmed',
@@ -777,20 +794,24 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
             sound: 'default',
             data: { screen: 'Schedule', eventId: p.eventId },
           };
-    case 'ride_confirmed_for_kid':
+    case 'ride_confirmed_for_kid': {
+      const t = to12Hour(p.eventTime as string);
       return {
         title: '🚗 Ride Confirmed',
-        body: `${p.driverName ?? 'Someone'} is handling your pickup/drop-off for "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        body: `${p.driverName ?? 'Someone'} is handling your pickup/drop-off for "${p.eventTitle}"${t ? ` at ${t}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
-    case 'ride_pool_opened':
+    }
+    case 'ride_pool_opened': {
+      const t = to12Hour(p.eventTime as string);
       return {
         title: '🚗 Pickup/Drop-off Needed',
-        body: `"${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''} needs a pickup/drop-off — tap to help.`,
+        body: `"${p.eventTitle}"${t ? ` at ${t}` : ''} needs a pickup/drop-off — tap to help.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    }
 
     case 'pool_unclaimed_urgent':
       // p.forParent distinguishes the pool broadcast copy (to eligible
@@ -1000,13 +1021,15 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `${p.byName ?? 'They'} cancelled the locked assignment for "${p.questTitle}" — it's reopened.`,
         data: { screen: 'Quests', questId: p.questId },
       };
-    case 'event_assigned':
+    case 'event_assigned': {
+      const t = to12Hour(p.eventTime as string);
       return {
         title: '📅 New Event Assigned',
-        body: `${p.byName ?? 'A parent'} assigned you to "${p.eventTitle}"${p.eventTime ? ` at ${p.eventTime}` : ''}.`,
+        body: `${p.byName ?? 'A parent'} assigned you to "${p.eventTitle}"${t ? ` at ${t}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    }
     case 'event_deleted':
       return {
         title: '🗑️ Event Removed',

@@ -525,6 +525,18 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         clearTokenFromMember(previousActiveId).catch(() => {});
       }
     });
+    // members.timezone was previously only ever written as a side effect
+    // of that specific member personally visiting Profile Settings' Quiet
+    // Hours picker — most members never had, leaving it null far more
+    // often than not (live-reported: calendar-sync-push's outbound
+    // Google/Outlook time conversion had nothing real to fall back on for
+    // most members). A shared family device's physical timezone is the
+    // correct zone for WHOEVER is currently active on it, regardless of
+    // whose login it is — stamping it here, on every switch, means the
+    // currently-active member's timezone is always populated without
+    // waiting for them to touch an unrelated settings screen first.
+    const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (deviceTz) supabase.from('members').update({ timezone: deviceTz }).eq('id', id).then(() => {});
     // ── Restore-on-return: a soft-deleted (Roster "delete profile" or
     // Profile "delete account") member whose PIN gets used again within 7
     // days is fully restored — mirrors app/_layout.tsx's symmetric restore

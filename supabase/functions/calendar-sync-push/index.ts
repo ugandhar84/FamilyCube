@@ -45,6 +45,25 @@ serve(async (req) => {
       .eq('purpose', 'personal');
     if (!connections?.length) return json({ ok: true, pushed: 0, reason: 'no active personal connections' });
 
+    // Every pushed event's dateTime/timeZone previously went out with
+    // timezone hardcoded to null — toZonedDate then treated the event's
+    // local wall-clock time as if it were already UTC, shifting every
+    // synced event by exactly this member's UTC offset (live-reported:
+    // a 9:00 AM CST event landed at 4-5 AM on Google Calendar).
+    // members.timezone is now stamped with the device's real IANA zone on
+    // every setActiveMember() profile switch (store/familyStore.ts) — the
+    // right source for a shared family device, since it's always the
+    // physical device's own zone for whoever is currently active on it,
+    // regardless of whose login it is. Falls back to profiles.timezone
+    // (written on sign-in/foreground) for a member switched to before this
+    // stamping existed, or whose own device never ran the updated app.
+    const { data: memberRow } = await supabase.from('members').select('timezone, auth_user_id').eq('id', memberId).maybeSingle();
+    let timezone: string | null = memberRow?.timezone ?? null;
+    if (!timezone && memberRow?.auth_user_id) {
+      const { data: profileRow } = await supabase.from('profiles').select('timezone').eq('id', memberRow.auth_user_id).maybeSingle();
+      timezone = profileRow?.timezone ?? null;
+    }
+
     let eventRow: LocalEventRow | null = null;
     if (action !== 'delete') {
       const { data } = await supabase.from('calendar_events')
@@ -58,7 +77,7 @@ serve(async (req) => {
     for (const connection of connections as CalendarConnectionRow[]) {
       try {
         const accessToken = await getValidAccessToken(supabase, connection);
-        await pushToProvider(supabase, connection, accessToken, eventId, eventRow, action);
+        await pushToProvider(supabase, connection, accessToken, eventId, eventRow, action, timezone);
         pushed++;
       } catch (e: any) {
         console.error(`[calendar-sync-push] ${connection.provider} push failed for connection ${connection.id}:`, e?.message ?? e);
@@ -83,6 +102,7 @@ async function pushToProvider(
   eventId: string,
   eventRow: LocalEventRow | null,
   action: 'create' | 'update' | 'delete',
+  timezone: string | null,
 ): Promise<void> {
   const { data: link } = await supabase.from('event_external_links')
     .select('*').eq('connection_id', connection.id).eq('event_id', eventId).maybeSingle();
@@ -98,20 +118,31 @@ async function pushToProvider(
   const portable = localRowToPortable(eventRow);
 
   if (link) {
-    await updateExternalEvent(connection, accessToken, link.external_event_id, portable);
+    await updateExternalEvent(connection, accessToken, link.external_event_id, portable, timezone);
     await supabase.from('event_external_links').update({ last_pushed_at: new Date().toISOString() }).eq('id', link.id);
   } else {
-    const externalId = await createExternalEvent(connection, accessToken, portable);
+    const externalId = await createExternalEvent(connection, accessToken, portable, timezone);
     await supabase.from('event_external_links').insert({
       event_id: eventId, connection_id: connection.id, external_event_id: externalId,
       last_pushed_at: new Date().toISOString(),
     });
   }
+  // Was only ever set by INBOUND sync (googleReconcile.ts) — an
+  // app-created event that got pushed OUT to a connected calendar never
+  // got its own "synced" badge (EventCard.tsx renders it off exactly
+  // these two columns), even though it's just as genuinely synced as one
+  // that came in the other direction. Live-reported: pushed event visible
+  // on Google Calendar, no sync indicator on the app's own card.
+  await supabase.from('calendar_events').update({
+    last_external_sync_at: new Date().toISOString(),
+    last_external_sync_provider: connection.provider,
+    last_external_sync_account: connection.connected_account_email ?? null,
+  }).eq('id', eventId);
 }
 
-async function createExternalEvent(connection: CalendarConnectionRow, accessToken: string, portable: ReturnType<typeof localRowToPortable>): Promise<string> {
+async function createExternalEvent(connection: CalendarConnectionRow, accessToken: string, portable: ReturnType<typeof localRowToPortable>, timezone: string | null): Promise<string> {
   if (connection.provider === 'google') {
-    const body = portableToGoogleBody(portable, null);
+    const body = portableToGoogleBody(portable, timezone);
     const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.external_calendar_id ?? 'primary')}/events`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -120,7 +151,7 @@ async function createExternalEvent(connection: CalendarConnectionRow, accessToke
     if (!res.ok) throw new Error(`Google create failed: ${res.status} ${await res.text()}`);
     return (await res.json()).id;
   } else {
-    const body = portableToOutlookBody(portable, null);
+    const body = portableToOutlookBody(portable, timezone);
     const res = await fetch('https://graph.microsoft.com/v1.0/me/events', {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -131,9 +162,9 @@ async function createExternalEvent(connection: CalendarConnectionRow, accessToke
   }
 }
 
-async function updateExternalEvent(connection: CalendarConnectionRow, accessToken: string, externalId: string, portable: ReturnType<typeof localRowToPortable>): Promise<void> {
+async function updateExternalEvent(connection: CalendarConnectionRow, accessToken: string, externalId: string, portable: ReturnType<typeof localRowToPortable>, timezone: string | null): Promise<void> {
   if (connection.provider === 'google') {
-    const body = portableToGoogleBody(portable, null);
+    const body = portableToGoogleBody(portable, timezone);
     const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.external_calendar_id ?? 'primary')}/events/${externalId}`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -141,7 +172,7 @@ async function updateExternalEvent(connection: CalendarConnectionRow, accessToke
     });
     if (!res.ok) throw new Error(`Google update failed: ${res.status} ${await res.text()}`);
   } else {
-    const body = portableToOutlookBody(portable, null);
+    const body = portableToOutlookBody(portable, timezone);
     const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${externalId}`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },

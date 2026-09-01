@@ -28,6 +28,7 @@ export interface CalendarConnectionRow {
   sync_token: string | null;
   delta_link: string | null;
   status: string;
+  connected_account_email: string | null;
 }
 
 const REFRESH_MARGIN_MS = 5 * 60_000; // refresh if within 5 minutes of expiry

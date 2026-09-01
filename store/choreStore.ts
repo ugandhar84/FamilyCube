@@ -934,7 +934,7 @@ interface ChoreState {
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
   addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
   updateChore:         (id: string, updates: Partial<ChoreTask>) => Promise<void>;
-  deleteChore:         (id: string) => void;
+  deleteChore:         (id: string) => Promise<void>;
 
   // ── Child actions ──────────────────────────────────────────────────────────
   // onLost — scenarios 3.1/3.4: the claim's optimistic local write can lose
@@ -2099,7 +2099,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  deleteChore: (id) => {
+  deleteChore: async (id) => {
+    const familyId = getFamilyId();
+    const actorId = getActiveMemberId();
+    const deletedChore = get().chores.find(c => c.id === id);
+
+    // DB-is-truth: await the delete before touching local state at all —
+    // was optimistic (removed locally, restored on failure).
+    const { error } = await supabase.from('chore_tasks').delete().eq('id', id);
+    if (error) {
+      console.warn('[choreStore] delete error', error.message);
+      showToast("Couldn't delete — check your connection and try again", 'error');
+      return;
+    }
+
     // Any parent_quest_assignments row referencing this chore would
     // otherwise be orphaned permanently — every render path that looks one
     // up already null-guards the missing chore (no crash/ghost card), but
@@ -2109,20 +2122,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const now = new Date().toISOString();
     const orphaned = get().parentAssignments.filter(a => a.choreId === id);
     if (orphaned.length > 0) {
-      set(s => ({
-        parentAssignments: s.parentAssignments.map(a =>
-          orphaned.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
-        ),
-      }));
-      for (const a of orphaned) {
-        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
-          set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
-        });
+      const results = await Promise.all(orphaned.map(a =>
+        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now })
+      ));
+      const confirmed = orphaned.filter((_, i) => results[i].ok);
+      if (confirmed.length > 0) {
+        set(s => ({
+          parentAssignments: s.parentAssignments.map(a =>
+            confirmed.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+          ),
+        }));
       }
     }
-    const familyId = getFamilyId();
-    const actorId = getActiveMemberId();
-    const deletedChore = get().chores.find(c => c.id === id);
     // A chore materialized as a linked calendar_events row (addChore,
     // above) would otherwise stay behind forever — including on any
     // connected external calendar, since deleteEvent is what actually
@@ -2132,27 +2143,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (deletedChore?.linkedEventId) {
       try {
         const { useEventStore } = require('./eventStore');
-        useEventStore.getState().deleteEvent(deletedChore.linkedEventId);
+        await useEventStore.getState().deleteEvent(deletedChore.linkedEventId);
       } catch (e) {
         console.warn('[choreStore] deleteChore linked-event cleanup failed', e);
       }
     }
     set(s => ({ chores: s.chores.filter(c => c.id !== id) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-    supabase.from('chore_tasks').delete().eq('id', id).then(({ error }) => {
-      if (error) {
-        console.warn('[choreStore] delete error', error.message);
-        // Was silently permanent — a failed DB delete still removed the
-        // chore from local state forever (until the next full reload
-        // happened to restore it from the DB), with no indication to the
-        // user that "deleted" hadn't actually landed. Restore it.
-        if (deletedChore) {
-          set(s => ({ chores: [...s.chores, deletedChore] }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-        }
-        showToast("Couldn't delete — check your connection and try again", 'error');
-      }
-    });
     logActivity({ entityType: 'chore', entityId: id, familyId, actorId, action: 'deleted' });
     // Audit finding (same shape as the addChore assignment gap): a chore
     // with a live assignee got permanently deleted with ZERO signal to

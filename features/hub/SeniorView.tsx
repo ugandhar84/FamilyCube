@@ -436,7 +436,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // here at all: a GP could not browse or claim a kid's ride request. Using
   // eventAssignee() covers both field pairs the same way myDrivingToday/
   // myPendingAssignments already do further down this file.
-  const openRides = upcomingEvents.filter(e =>
+  // Live-reported: a grandparent with no car listed on their profile could
+  // still see and claim a ride-required event, exactly the gap TeenView's
+  // own dispatch section already closes for teens (gated behind hasCar
+  // there — see its "Rides" tile). Someone who can't drive has no way to
+  // actually fulfill a driving commitment, so the claim surface shouldn't
+  // even be offered to them, same reasoning as HelperEventCard's
+  // showAssignToMe (parent side), which already checks viewer.hasCar.
+  const hasCar = active.hasCar ?? false;
+  const openRides = hasCar ? upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
     // Matches openRequests'/volunteerPool's own approvalPending guard
     // (Spec 2.4) — was missing here, the one selector of the three that
@@ -451,7 +459,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     !cheerleaderMode &&
     !isPastEvent(e) &&
     withinDriveWindow(e)
-  );
+  ) : [];
   // Rides this senior has already claimed (confirmed helper) — exact name
   // match. The previous fuzzy includes()-based match let two grandparents
   // sharing a first name/honorific ("Grandma Mary" / "Mary Johnson", or

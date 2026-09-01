@@ -442,7 +442,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     }
     const d = proposal.data;
     if (proposal.kind === 'event') {
-      const dt = d.startAt ? new Date(d.startAt) : new Date();
+      // ask-cube's own prompt tells the model to return startAt with no
+      // trailing "Z"/UTC offset (a plain local wall-clock string) so
+      // `new Date(...)` parses it in THIS device's own timezone via
+      // getHours()/getMinutes() below — but a model deviation that still
+      // includes one would get silently reinterpreted at the wrong hour
+      // (live-reported: an event set for 11:22 PM landed an hour early on
+      // the synced calendar). Stripping any trailing Z/offset here is a
+      // defensive backstop so a prompt slip can't reproduce that bug.
+      const startAtLocal = d.startAt ? d.startAt.replace(/(Z|[+-]\d{2}:?\d{2})$/, '') : undefined;
+      const dt = startAtLocal ? new Date(startAtLocal) : new Date();
       const time = d.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined;
       const base = {
         title: d.title, type: 'event' as const, category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',

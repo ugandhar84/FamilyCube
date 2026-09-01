@@ -276,7 +276,7 @@ const TOOLS = [
         properties: {
           title:      { type: 'string' },
           category:   { type: 'string', enum: ['Medical', 'Sports', 'Study', 'Ride', 'Work', 'Event', 'Birthday', 'Errand', 'Other'] },
-          startAt:    { type: 'string', description: 'ISO 8601 date+time' },
+          startAt:    { type: 'string', description: 'Local date+time in the family\'s own timezone, formatted YYYY-MM-DDTHH:MM:SS with NO trailing "Z" and NO UTC offset (e.g. "2026-09-02T23:22:00", never "2026-09-02T23:22:00Z" or "...-05:00"). The client parses this as a plain wall-clock time in the device\'s own zone — a "Z" suffix or explicit offset gets silently reinterpreted and lands at the wrong hour, which is exactly the class of bug this note exists to prevent (live-reported: an event set for 11:22 PM landed an hour early on the synced calendar).' },
           memberName: { type: 'string', description: 'Which family member this is for, if named' },
           notes:      { type: 'string' },
           alertCallLeadMinutes: {

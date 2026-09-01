@@ -523,7 +523,12 @@ export default function SmartTaskComposer({
         // same two-step pattern AddQuestModal.tsx's own multi-select uses
         // (choreAdapter.addQuest only ever reads assignedToIds[0] and
         // silently drops the rest otherwise).
-        isPool: forMemberIds.length === 0,
+        // Same fix as AddQuestModal.tsx/EditQuestModal.tsx's own isPool
+        // derivation — an Adult Only task with nobody explicitly assigned
+        // has no kid-claimable pool at all; falling back to isPool:true
+        // here would have made it wrongly claimable from the kid/teen
+        // chore pool.
+        isPool: !assignedToAdult && forMemberIds.length === 0,
         isDaily: recurFreq === 'daily',
         recurrence: recurFreq,
         ...(recurFreq === 'weekly' && recurDays.length ? { recurrenceDays: recurDays } : {}),

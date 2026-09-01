@@ -999,8 +999,8 @@ interface ChoreState {
   approveLaterDate:        (choreId: string, parentId: string) => Promise<void>;
   declineLaterDate:        (choreId: string, parentId: string) => Promise<void>;
   cancelChore:             (choreId: string, byMemberId: string) => Promise<boolean>;
-  acceptGPOffer:           (choreId: string, parentId: string) => void;
-  declineGPOffer:          (choreId: string, parentId: string, reason?: string) => void;
+  acceptGPOffer:           (choreId: string, parentId: string) => Promise<void>;
+  declineGPOffer:          (choreId: string, parentId: string, reason?: string) => Promise<void>;
   // A kid proposed this chore for themselves/a sibling (propose_kid_chore
   // RPC, status='pending_kid_proposal') — parent Accepts with a real coin
   // amount (the kid never sets one) or Declines outright (row is deleted
@@ -3140,7 +3140,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // status:'in_progress'), mirroring startGrandparentQuest's claim shape.
   // Same canApprove gate as approveChore — this is a real authorization
   // decision, not just a UI convenience.
-  acceptGPOffer: (choreId, parentId) => {
+  acceptGPOffer: async (choreId, parentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'gp_offer_pending' || !chore.gpOfferById) return;
     if (!get().canApprove(parentId)) {
@@ -3149,6 +3149,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     const offeringGpId = chore.gpOfferById;
 
+    // Now backed by the accept_gp_offer Postgres RPC (see migration
+    // 20260905180000_gp_offer_rpcs.sql) — same two-field CAS (status +
+    // the specific offering GP, guarding against a stale offer if GP A
+    // withdrew and GP B has since offered) enforced server-side with
+    // authorization checking and a real audit row.
+    const { error } = await supabase.rpc('accept_gp_offer', { p_chore_id: choreId, p_parent_id: parentId });
+    if (error) {
+      console.warn('[choreStore] acceptGPOffer RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
         ? { ...c, status: 'in_progress', assignedToId: offeringGpId, gpOfferById: undefined, isPool: false }
@@ -3156,39 +3167,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    // Now backed by the accept_gp_offer Postgres RPC (see migration
-    // 20260905180000_gp_offer_rpcs.sql) — same two-field CAS (status +
-    // the specific offering GP, guarding against a stale offer if GP A
-    // withdrew and GP B has since offered) now enforced server-side with
-    // authorization checking and a real audit row, instead of a client
-    // conditional UPDATE.
-    supabase.rpc('accept_gp_offer', { p_chore_id: choreId, p_parent_id: parentId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] acceptGPOffer RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.assignedToId === offeringGpId ? { ...c, status: 'gp_offer_pending', assignedToId: undefined, gpOfferById: offeringGpId, isPool: false } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        try {
-          const { useChatStore } = require('./chatStore');
-          useChatStore.getState().sendMessage(offeringGpId, parentId,
-            `✅ Your offer to handle "${chore.title}" was accepted — go ahead!`);
-        } catch (e) {
-          console.warn('[choreStore] acceptGPOffer notification failed', e);
-        }
-        showToast('Offer accepted ✓');
-      });
+    try {
+      const { useChatStore } = require('./chatStore');
+      useChatStore.getState().sendMessage(offeringGpId, parentId,
+        `✅ Your offer to handle "${chore.title}" was accepted — go ahead!`);
+    } catch (e) {
+      console.warn('[choreStore] acceptGPOffer notification failed', e);
+    }
+    showToast('Offer accepted ✓');
   },
 
   // A parent declining a pending GP offer — reverts to pre-offer 'todo',
   // still visible/claimable to any opted-in GP (inviteGrandparents/openToGP
   // is untouched, only the offer itself is undone).
-  declineGPOffer: (choreId, parentId, reason) => {
+  declineGPOffer: async (choreId, parentId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'gp_offer_pending' || !chore.gpOfferById) return;
     if (!get().canApprove(parentId)) {
@@ -3197,6 +3189,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     const offeringGpId = chore.gpOfferById;
 
+    // Now backed by the decline_gp_offer Postgres RPC — same two-field CAS
+    // and authorization check as accept_gp_offer, server-side.
+    const { error } = await supabase.rpc('decline_gp_offer', { p_chore_id: choreId, p_parent_id: parentId, p_reason: reason ?? null });
+    if (error) {
+      console.warn('[choreStore] declineGPOffer RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
         ? { ...c, status: 'todo', gpOfferById: undefined, rejectionReason: reason }
@@ -3204,29 +3204,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    // Now backed by the decline_gp_offer Postgres RPC — same two-field CAS
-    // and authorization check as accept_gp_offer, server-side.
-    supabase.rpc('decline_gp_offer', { p_chore_id: choreId, p_parent_id: parentId, p_reason: reason ?? null })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] declineGPOffer RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.status === 'todo' ? { ...c, status: 'gp_offer_pending', gpOfferById: offeringGpId } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        try {
-          const { useChatStore } = require('./chatStore');
-          useChatStore.getState().sendMessage(offeringGpId, parentId,
-            `💬 "${chore.title}" wasn't accepted this time${reason ? ` — "${reason}"` : ''}. Thanks for offering!`);
-        } catch (e) {
-          console.warn('[choreStore] declineGPOffer notification failed', e);
-        }
-        showToast('Declined — back in the pool ✓');
-      });
+    try {
+      const { useChatStore } = require('./chatStore');
+      useChatStore.getState().sendMessage(offeringGpId, parentId,
+        `💬 "${chore.title}" wasn't accepted this time${reason ? ` — "${reason}"` : ''}. Thanks for offering!`);
+    } catch (e) {
+      console.warn('[choreStore] declineGPOffer notification failed', e);
+    }
+    showToast('Declined — back in the pool ✓');
   },
 
   // Parent (or active temporary approver) accepts a kid's proposed chore —

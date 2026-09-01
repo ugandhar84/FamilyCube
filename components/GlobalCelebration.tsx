@@ -11,17 +11,24 @@
  * as a separate component rather than deleting it in case a non-congratulatory
  * celebration need comes up later that wants the punchier confetti-pop feel.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import BalloonCelebration from './BalloonCelebration';
 import { useCelebrationStore } from '@/store/celebrationStore';
 
 export default function GlobalCelebration() {
   const seq = useCelebrationStore(s => s.seq);
   const [visible, setVisible] = useState(false);
-  const mounted = useRef(false);
 
+  // Was: a mounted-ref guard that swallowed the FIRST trigger() of every
+  // session — seq starts at 0 fresh on every app load (never persisted),
+  // so there was never a stale-value case to guard against, only a race
+  // against whichever caller's own mount effect (e.g.
+  // KidNeedsYouSection's DB-backed watermark celebration, which can fire
+  // synchronously on the very first Hub render) happened to run trigger()
+  // before this component's own mount effect had set the guard —
+  // live-reported: celebration never plays at all, for any approval.
   useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
+    if (seq === 0) return;
     setVisible(true);
   }, [seq]);
 

@@ -3,7 +3,6 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat, StickyNote } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
-import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import type { FamilyMember } from '@/store/familyStore';
@@ -126,49 +125,16 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
               <AnimatedPressable
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
-                  // Confirming yourself as the already-named driver IS the
-                  // "yes, I'm your driver going forward" moment — propagate
-                  // to future occurrences, same as RideRequestCard's own
-                  // "I'll Drive". Distinct from "Take Over" above, which is a
-                  // one-time favor for just this occurrence.
-                  //
-                  // Was: confirm_event_assignment (single-event) then, on
-                  // success, updateEventScoped(id, patch, 'following') to
-                  // "propagate" — a real bug, not just a UX gap. updateEventScoped's
-                  // bulk 'following' path writes to EVERY row in the series
-                  // with no assignee filter at all (by design, for plain
-                  // field edits — see its own comments) — so this would
-                  // have force-confirmed occurrences reassigned to a
-                  // DIFFERENT person partway through the series, not just
-                  // your own. confirm_event_assignment_series_forward is a
-                  // dedicated RPC that confirms the tapped occurrence, then
-                  // sweeps forward through the SAME series confirming ONLY
-                  // occurrences where THIS member still holds THIS role and
-                  // is still pending — never touching a reassigned or
-                  // already-resolved occurrence.
-                  supabase.rpc('confirm_event_assignment_series_forward', {
-                    p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole,
-                  }).then(({ error }) => {
-                    if (error) {
-                      console.warn('[HelperEventCard] confirm_event_assignment_series_forward failed', error.message);
-                      showToast("Couldn't confirm — please try again", 'error');
-                      return;
-                    }
-                    // DB write succeeds but nothing told the local Zustand
-                    // store which rows changed — same gap as every other
-                    // RPC call site in this file. Since the RPC may have
-                    // confirmed MANY future occurrences (not just this one),
-                    // patch every same-series, same-assignee, still-locally-
-                    // pending occurrence rather than only ev.id.
-                    const statusKey = assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus';
-                    const idKey = assigneeRole === 'driver' ? 'driverId' : 'helperId';
-                    if (ev.seriesId && updateEventScoped) {
-                      updateEventScoped(ev.id, { [statusKey]: 'confirmed' } as Partial<FamilyEvent>, 'this');
-                    } else {
-                      updateEvent(ev.id, { [statusKey]: 'confirmed' } as Partial<FamilyEvent>);
-                    }
-                    showToast(ev.seriesId ? 'Confirmed — future rides too ✓' : 'Confirmed ✓');
-                  });
+                  // Routed through the ONE shared confirmEventAssignment
+                  // (store/eventStore.ts) — was its own hand-copied RPC
+                  // call (this file used the series-forward variant;
+                  // EventDetailSheet/YourRidesSection/TeenView each used
+                  // the plain variant instead, so confirming the exact
+                  // same assignment behaved differently depending which
+                  // screen you tapped from). The shared function decides
+                  // which RPC to use based on whether the event actually
+                  // has a seriesId, so every caller now behaves the same.
+                  useEventStore.getState().confirmEventAssignment(ev.id, active.id, assigneeRole);
                 }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${CONFIRMED_GREEN}20`, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: `${CONFIRMED_GREEN}40` }}>
@@ -190,50 +156,25 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   Calendar tab's EventDetailSheet — this restores Hub
                   parity with that. */}
               <AnimatedPressable
-                onPress={() => {
+                onPress={async () => {
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → decline_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);
-                  // Now the same decline_event_assignment RPC every other
-                  // decline surface in the app calls — one owner of
-                  // decline-and-reopen instead of each surface re-deriving
-                  // it, and correctly targets whichever field pair
-                  // (driver_*/helper_*) this event's assignee is actually
-                  // in, instead of always hardcoding helper_status. The RPC
-                  // doesn't (yet) send the "back open" notification
-                  // eventStore.ts's updateEvent() fires on decline — that
-                  // logic stays client-side only, hasn't moved server-side
-                  // in this pass — so replicate it here rather than lose it.
-                  const declinerName = active.name;
-                  supabase.rpc('decline_event_assignment', {
-                    p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole, p_reason: null,
-                  }).then(({ error }) => {
-                    if (error) {
-                      console.warn('[HelperEventCard] decline_event_assignment failed', error.message);
-                      showToast("Couldn't update — please try again", 'error');
-                      return;
+                  // Routed through the ONE shared declineEventAssignment
+                  // (store/eventStore.ts) — was its own hand-copied RPC
+                  // call, same as every other decline surface in the app.
+                  const ok = await useEventStore.getState().declineEventAssignment(ev.id, active.id, assigneeRole);
+                  if (!ok) return;
+                  showToast("Marked — you're off this one ✓");
+                  try {
+                    const recipients = new Set<string>();
+                    if (ev.updatedBy && ev.updatedBy !== active.id) recipients.add(ev.updatedBy);
+                    if (ev.memberId && ev.memberId !== active.id) recipients.add(ev.memberId);
+                    const msg = `🚫 ${active.name} can't make "${ev.title}" — it's back open for someone else.`;
+                    for (const recipientId of recipients) {
+                      useChatStore.getState().sendMessage(recipientId, active.id, msg);
                     }
-                    // Same local-state gap as the Confirm button above — the
-                    // RPC succeeded server-side but nothing told the shared
-                    // Zustand store, so the Hub kept showing the pre-decline
-                    // state (name + "Pending") until some unrelated fetch
-                    // happened to refresh it, even though the DB and other
-                    // screens (e.g. Tasks, which fetches fresh) were already
-                    // correct. updateEvent's own clearOnDecline logic
-                    // handles clearing the right field pair based on the
-                    // 'rejected' status transition passed in here.
-                    updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
-                    showToast("Marked — you're off this one ✓");
-                    try {
-                      const recipients = new Set<string>();
-                      if (ev.updatedBy && ev.updatedBy !== active.id) recipients.add(ev.updatedBy);
-                      if (ev.memberId && ev.memberId !== active.id) recipients.add(ev.memberId);
-                      const msg = `🚫 ${declinerName} can't make "${ev.title}" — it's back open for someone else.`;
-                      for (const recipientId of recipients) {
-                        useChatStore.getState().sendMessage(recipientId, active.id, msg);
-                      }
-                    } catch (e) {
-                      console.warn('[HelperEventCard] decline notification failed', e);
-                    }
-                  });
+                  } catch (e) {
+                    console.warn('[HelperEventCard] decline notification failed', e);
+                  }
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: colors.danger + '40' }}>

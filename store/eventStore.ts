@@ -434,6 +434,19 @@ interface EventState {
   // still show the old assignee after I reassigned from Schedule" class
   // of report). One function, one re-fetch, used everywhere.
   reassignEvent: (eventId: string, newMemberId: string, role: 'driver' | 'helper', actorId: string) => Promise<boolean>;
+
+  // Same consolidation as reassignEvent, for the OTHER two duplicated
+  // event-assignment actions — confirmEventAssignment was independently
+  // hand-copied in HelperEventCard.tsx (using the series-forward RPC
+  // variant), EventDetailSheet/YourRidesSection/TeenView (all three using
+  // the plain single-event variant instead) — meaning confirming the
+  // SAME kind of assignment behaved differently (propagated through a
+  // recurring series, or didn't) purely depending on which screen you
+  // happened to tap Confirm from. This function makes that choice ONCE,
+  // consistently, based on whether the event actually has a seriesId —
+  // every caller gets the same behavior automatically.
+  confirmEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
+  declineEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper', reason?: string) => Promise<boolean>;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1856,6 +1869,79 @@ export const useEventStore = create<EventState>((set, get) => ({
       set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
     }
     showToast(`Reassigned ✓`);
+    return true;
+  },
+
+  // ── confirmEventAssignment — the ONE place "yes, I'll do it" happens ──────
+  // Was independently hand-copied in HelperEventCard.tsx (using
+  // confirm_event_assignment_series_forward, which also sweeps forward
+  // through a recurring series) and in EventDetailSheet/YourRidesSection/
+  // TeenView (all three using the plain single-event confirm_event_
+  // assignment instead, with NO series propagation at all) — the exact
+  // same tap, "Confirm I'll do it," behaved differently purely depending
+  // on which screen it was tapped from. This function decides which RPC
+  // to use ONCE, based on whether the row actually has a seriesId, so
+  // every caller gets identical behavior.
+  confirmEventAssignment: async (eventId, memberId, role) => {
+    const target = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
+    const useSeriesForward = !!target?.seriesId;
+    const { error } = await supabase.rpc(
+      useSeriesForward ? 'confirm_event_assignment_series_forward' : 'confirm_event_assignment',
+      { p_event_id: eventId, p_member_id: memberId, p_role: role },
+    );
+    if (error) {
+      console.warn('[eventStore] confirmEventAssignment failed', eventId, error.message);
+      showToast("Couldn't confirm — please try again", 'error');
+      return false;
+    }
+    // DB-is-truth: re-fetch rather than guess. The series-forward RPC may
+    // have confirmed multiple future occurrences, not just this one — a
+    // single-row re-fetch would miss those — so re-fetch every row in the
+    // same series instead of just eventId when that path was used.
+    if (useSeriesForward && target?.seriesId) {
+      const { data: rows } = await supabase.from('calendar_events')
+        .select('*').eq('series_id', target.seriesId).is('deleted_at', null);
+      if (rows) {
+        const byId = new Map(rows.map(row => [row.id, fromRow(row)]));
+        const patchOne = (e: FamilyEvent) => byId.get(e.id) ?? e;
+        set({
+          dayEvents: sortByTime(get().dayEvents.map(patchOne)),
+          events: sortByTime(get().events.map(patchOne)),
+          rangeEvents: sortByTime(get().rangeEvents.map(patchOne)),
+        });
+      }
+    } else {
+      const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+      if (row) {
+        const fresh = fromRow(row);
+        set({ dayEvents: sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e)) });
+        set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh : e)) });
+        set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+      }
+    }
+    showToast(useSeriesForward ? 'Confirmed — future rides too ✓' : 'Confirmed ✓');
+    return true;
+  },
+
+  // ── declineEventAssignment — the ONE place "I can't do this" happens ─────
+  // Same consolidation — was independently hand-copied in the same 4
+  // files as confirmEventAssignment above.
+  declineEventAssignment: async (eventId, memberId, role, reason) => {
+    const { error } = await supabase.rpc('decline_event_assignment', {
+      p_event_id: eventId, p_member_id: memberId, p_role: role, p_reason: reason ?? null,
+    });
+    if (error) {
+      console.warn('[eventStore] declineEventAssignment failed', eventId, error.message);
+      showToast("Couldn't do that — please try again", 'error');
+      return false;
+    }
+    const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+    if (row) {
+      const fresh = fromRow(row);
+      set({ dayEvents: sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e)) });
+      set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh : e)) });
+      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+    }
     return true;
   },
 

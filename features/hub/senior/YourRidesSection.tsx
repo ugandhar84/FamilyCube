@@ -8,7 +8,7 @@ import { DeclineReasonPanel } from './DeclineReasonPanel';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
-import type { FamilyEvent } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 
 // Money-green — "accepted / driving today" accent, distinct from brand
 // teal used elsewhere in this section. Not colors.success (which IS brand
@@ -41,26 +41,15 @@ export function YourRidesSection({
 
   const beginDecline = (evId: string) => { setDeclineId(evId); setDeclineText(''); };
   const cancelDecline = () => setDeclineId(null);
-  const confirmDecline = (ev: FamilyEvent) => {
-    // Was closing the decline panel unconditionally, right after firing
-    // the RPC — a network failure looked identical to a successful
-    // decline, with the grandparent believing they'd declined a ride that
-    // server-side never actually changed. Only close/clear on success now;
-    // show an error toast otherwise so they know to retry.
-    supabase.rpc('decline_event_assignment', {
-      p_event_id: ev.id, p_member_id: active.id, p_role: 'helper', p_reason: declineText.trim() || null,
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[YourRidesSection] decline_event_assignment failed', error.message);
-        showToast("Couldn't save — try again", 'info');
-        return;
-      }
-      // DB write succeeds but nothing told the local Zustand store — same
-      // gap as every other decline call site; updateEvent's own
-      // clearOnDecline/autoOpenOnDecline logic handles the rest.
-      updateEvent(ev.id, { helperStatus: 'rejected' });
-      setDeclineId(null); setDeclineText('');
-    });
+  const confirmDecline = async (ev: FamilyEvent) => {
+    // Routed through the ONE shared declineEventAssignment (store/
+    // eventStore.ts) — was its own hand-copied RPC call, same as every
+    // other decline site in the app. Only close/clear the panel on
+    // success — a network failure previously looked identical to a
+    // successful decline.
+    const ok = await useEventStore.getState().declineEventAssignment(ev.id, active.id, 'helper', declineText.trim() || undefined);
+    if (!ok) return;
+    setDeclineId(null); setDeclineText('');
   };
 
   return (
@@ -104,19 +93,10 @@ export function YourRidesSection({
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Pressable onPress={() => {
-                    supabase.rpc('confirm_event_assignment', { p_event_id: ev.id, p_member_id: active.id, p_role: 'helper' })
-                      .then(({ error }) => {
-                        if (error) {
-                          console.warn('[YourRidesSection] confirm_event_assignment failed', error.message);
-                          showToast("Couldn't save — try again", 'info');
-                          return;
-                        }
-                        // DB write succeeds but nothing told the local
-                        // Zustand store — same gap as every other confirm
-                        // call site in the app.
-                        updateEvent(ev.id, { helperStatus: 'confirmed' });
-                        showToast('Ride accepted ✓');
-                      });
+                    // Routed through the ONE shared confirmEventAssignment
+                    // (store/eventStore.ts) — was its own hand-copied RPC
+                    // call, same as every other confirm site in the app.
+                    useEventStore.getState().confirmEventAssignment(ev.id, active.id, 'helper');
                   }}
                     style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />

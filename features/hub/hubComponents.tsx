@@ -1289,22 +1289,12 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                   {showConfirm && (
                     <Pressable
                       onPress={() => {
-                        supabase.rpc('confirm_event_assignment', {
-                          p_event_id: ev.id, p_member_id: viewerMember?.id, p_role: assigneeRole,
-                        }).then(({ error }) => {
-                          if (error) {
-                            console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message);
-                            showToast("Couldn't confirm — please try again", 'error');
-                            return;
-                          }
-                          // Same local-state gap as every other RPC call
-                          // site here — the DB write succeeds but nothing
-                          // told the shared Zustand store, so this sheet
-                          // kept showing "Pending" until an unrelated fetch
-                          // happened to refresh it.
-                          updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>);
-                          showToast('Confirmed ✓');
-                        });
+                        // Routed through the ONE shared confirmEventAssignment
+                        // (store/eventStore.ts) — was its own hand-copied RPC
+                        // call, same as every other confirm site in the app.
+                        if (viewerMember?.id) {
+                          useEventStore.getState().confirmEventAssignment(ev.id, viewerMember.id, assigneeRole);
+                        }
                       }}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                         backgroundColor: colors.success + '15', borderRadius: 14, paddingVertical: 12,
@@ -1338,32 +1328,18 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               {(showReassign || showOverride || (changeOpen && !!cancelledSelfName)) && (!hadPriorHelper ? true : changeOpen) && (
                 <View style={{ gap: 10 }}>
                   {changeOpen && (
-                    <Pressable onPress={() => {
+                    <Pressable onPress={async () => {
                       // Backing out of the chip row without picking anyone
                       // is the actual decline — write it now, not before.
+                      // Routed through the ONE shared declineEventAssignment
+                      // (store/eventStore.ts) — was its own hand-copied RPC
+                      // call, same as every other decline site in the app.
                       if (cancelledSelfName && viewerMember) {
-                        supabase.rpc('decline_event_assignment', {
-                          p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
-                        }).then(({ error }) => {
-                          if (error) {
-                            console.warn('[EventDetailSheet] decline_event_assignment failed', error.message);
-                            // Was unconditionally closing the sheet/clearing
-                            // state right after firing this, success or not
-                            // — a network failure here looked identical to
-                            // a successful decline, with no feedback that
-                            // it hadn't actually gone through.
-                            showToast("Couldn't save — try again", 'info');
-                            return;
-                          }
-                          // DB write succeeds but nothing told the shared
-                          // Zustand store — updateEvent's own clearOnDecline
-                          // logic clears the right field pair based on this
-                          // 'rejected' transition.
-                          updateEvent(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
-                          showToast("Marked — you're off this one ✓");
-                          setChangeOpen(false);
-                          setCancelledSelfName(undefined);
-                        });
+                        const ok = await useEventStore.getState().declineEventAssignment(ev.id, viewerMember.id, assigneeRole);
+                        if (!ok) return;
+                        showToast("Marked — you're off this one ✓");
+                        setChangeOpen(false);
+                        setCancelledSelfName(undefined);
                         return;
                       }
                       setChangeOpen(false);
@@ -1396,28 +1372,14 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                       // needed for that narrower case yet.
                       const doneToast = () => showToast(kind === 'gp' ? 'Opened to Grandparents ✓' : 'Opened to Teens ✓');
                       if (cancelledSelfName && viewerMember) {
-                        supabase.rpc('decline_event_assignment', {
-                          p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
-                        }).then(({ error }) => {
-                          if (error) {
-                            console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message);
-                            // Was unconditionally closing the whole sheet
-                            // right after firing this regardless of outcome
-                            // — a failed decline looked identical to a
-                            // successful one, sheet closed either way.
-                            showToast("Couldn't save — try again", 'info');
-                            return;
-                          }
-                          // DB write succeeds (and the RPC auto-opens both
-                          // GP/Teen pools server-side for a Ride/
-                          // rideRequired event) but nothing told the local
-                          // Zustand store — mirror both here so the sheet
-                          // doesn't keep showing the pre-decline assignee
-                          // after it closes.
-                          updateEvent(ev.id, {
-                            [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected',
-                            isOpenToGrandparents: true, isOpenToTeens: true,
-                          } as Partial<FamilyEvent>);
+                        // Routed through the ONE shared declineEventAssignment
+                        // (store/eventStore.ts) — was its own hand-copied RPC
+                        // call. The RPC auto-opens both GP/Teen pools
+                        // server-side for a Ride/rideRequired event; the
+                        // shared function's own re-fetch picks that up, so
+                        // there's nothing left to mirror manually here.
+                        useEventStore.getState().declineEventAssignment(ev.id, viewerMember.id, assigneeRole).then(ok => {
+                          if (!ok) return;
                           doneToast();
                           onClose();
                         });

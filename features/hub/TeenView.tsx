@@ -294,26 +294,15 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     // assignee, which can't be this teen anyway.
     const clawedBack = (a?.id ? a.id === active.id : a?.name === active.name) && paidCoins > 0;
     const role = rideRoleFor(ev, active.name);
-    supabase.rpc('decline_event_assignment', {
-      p_event_id: evId, p_member_id: active.id, p_role: role, p_reason: null,
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message);
-        // Was clawing back coins unconditionally BEFORE this RPC even
-        // fired — a failure here meant the teen's balance was already
-        // docked while the ride assignment never actually changed
-        // server-side, permanently underpaying them for a ride they were
-        // technically still on the hook for. Only claw back once the
-        // server confirms the drop actually went through.
-        showToast("Couldn't drop — try again", 'info');
-        return;
-      }
-      // DB write succeeds but nothing told the local Zustand store — same
-      // gap as every other decline call site; updateEvent's own
-      // clearOnDecline/autoOpenOnDecline logic handles clearing the right
-      // field pair and reopening the GP/Teen pool from this 'rejected'
-      // transition.
-      updateEvent(evId, { [role === 'driver' ? 'driverStatus' : 'helperStatus']: 'rejected' } as Partial<FamilyEvent>);
+    // Routed through the ONE shared declineEventAssignment (store/
+    // eventStore.ts) — was its own hand-copied RPC call, same as every
+    // other decline site in the app. Coin clawback only fires once the
+    // server confirms the drop actually went through — was clawing back
+    // unconditionally BEFORE the RPC even fired, which could dock a
+    // teen's balance for a ride assignment that never actually changed
+    // server-side.
+    useEventStore.getState().declineEventAssignment(evId, active.id, role).then(ok => {
+      if (!ok) return;
       if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
       showToast(clawedBack ? `Dropped — ${paidCoins} coins clawed back` : 'Dropped ✓');
     });
@@ -327,19 +316,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const confirmAssignment = (evId: string) => {
     const ev = upcomingEvents.find(e => e.id === evId);
     const role = rideRoleFor(ev, active.name);
-    supabase.rpc('confirm_event_assignment', {
-      p_event_id: evId, p_member_id: active.id, p_role: role,
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[TeenView] confirmAssignment failed', error.message);
-        showToast("Couldn't confirm — try again", 'info');
-        return;
-      }
-      // DB write succeeds but nothing told the local Zustand store — same
-      // gap as every other confirm call site in the app.
-      updateEvent(evId, { [role === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>);
-      showToast('Confirmed ✓');
-    });
+    // Routed through the ONE shared confirmEventAssignment (store/
+    // eventStore.ts) — was its own hand-copied RPC call, same as every
+    // other confirm site in the app.
+    useEventStore.getState().confirmEventAssignment(evId, active.id, role);
   };
 
   // Either side (rider or driver) can confirm a pickup actually happened —

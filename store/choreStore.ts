@@ -1210,7 +1210,13 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
 // call site whose NEXT step must only happen once the write is actually
 // confirmed (e.g. denyCashOut's coin refund, which must never fire ahead of
 // its own denial tag actually landing) can await/.then() it directly.
-function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onFailure?: () => void): Promise<{ ok: boolean }> {
+// DB-is-truth: returns the full confirmed row (not just {ok}) so a caller
+// can render its local state directly from what the server actually
+// persisted, instead of re-applying its own patch as a guess. `row` is
+// undefined on any failure — callers converted to the DB-is-truth pattern
+// should treat a missing row as "nothing to render," not fall back to a
+// local guess.
+function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onFailure?: () => void): Promise<{ ok: boolean; row?: any }> {
   _fetchedAt = 0;
   console.log(`[choreStore] → DB update ${table}/${id}`, patch);
   // QA TC-43 — .update().eq('id', id) with no matching row returns NO error
@@ -1219,9 +1225,11 @@ function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onF
   // deleted (a real race, not hypothetical — a parent cancels while another
   // parent is mid-edit) looked like a successful save with nothing actually
   // written server-side, silently reverting on the next real sync with zero
-  // explanation. .select('id') makes Postgrest report the actually-matched
-  // rows so a real 0-row case is now distinguishable from a genuine error.
-  return Promise.resolve(supabase.from(table).update(patch).eq('id', id).select('id')).then(({ data, error }) => {
+  // explanation. .select() (the full row, not just 'id') makes Postgrest
+  // report the actually-matched row so a real 0-row case is distinguishable
+  // from a genuine error, AND gives DB-is-truth callers the confirmed row
+  // to render from.
+  return Promise.resolve(supabase.from(table).update(patch).eq('id', id).select()).then(({ data, error }) => {
     if (error) {
       console.warn(`[choreStore] ✗ DB update ${table}/${id} FAILED`, error.message);
       onFailure?.();
@@ -1235,7 +1243,7 @@ function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onF
       return { ok: false };
     }
     console.log(`[choreStore] ✓ DB update ${table}/${id} ok`);
-    return { ok: true };
+    return { ok: true, row: data[0] };
   });
 }
 
@@ -1243,17 +1251,18 @@ function dbUpdate(table: string, id: string, patch: Record<string, unknown>, onF
 // see a rejection) — but returns a promise that resolves once the write
 // settles, so a caller that chains a dependent insert (e.g. an assignment
 // row that RLS-checks the chore it references) can wait for the actual DB
-// commit instead of just the local state update.
-function dbInsert(table: string, row: Record<string, unknown>): Promise<{ ok: boolean }> {
+// commit instead of just the local state update. DB-is-truth: also returns
+// the confirmed inserted row so a caller can render from it directly.
+function dbInsert(table: string, row: Record<string, unknown>): Promise<{ ok: boolean; row?: any }> {
   _fetchedAt = 0;
   console.log(`[choreStore] → DB insert ${table}`, row);
-  return Promise.resolve(supabase.from(table).insert(row)).then(({ error }) => {
+  return Promise.resolve(supabase.from(table).insert(row).select()).then(({ data, error }) => {
     if (error) {
       console.warn(`[choreStore] ✗ DB insert ${table} FAILED`, error.message, '| row:', row);
       return { ok: false };
     }
     console.log(`[choreStore] ✓ DB insert ${table} ok (id=${row.id})`);
-    return { ok: true };
+    return { ok: true, row: data?.[0] };
   });
 }
 

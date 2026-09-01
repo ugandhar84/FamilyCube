@@ -728,6 +728,192 @@ function dbUpdate(id: string, patch: Record<string, unknown>, onFailure?: () => 
   });
 }
 
+// Extracted from updateEvent so it can run AFTER the DB write is confirmed
+// (DB-is-truth: `updated` here is always the server's own returned row,
+// never a local guess) — every branch's transition-detection (justDeclined
+// etc.) is computed by the caller by comparing `updates` (what was asked
+// for) against `prevEvent` (what existed before), which doesn't change
+// under this principle; only WHEN this runs, and what `updated` actually
+// is, changed.
+function updateEventNotifications(
+  prevEvent: FamilyEvent | undefined,
+  updates: Partial<FamilyEvent>,
+  updated: FamilyEvent,
+  flags: {
+    justDeclined: boolean; justDeclinedDriver: boolean;
+    justAssignedHelper: boolean; justAssignedDriver: boolean;
+    justConfirmed: boolean; justConfirmedDriver: boolean;
+  },
+) {
+  const { justDeclined, justDeclinedDriver, justAssignedHelper, justAssignedDriver, justConfirmed, justConfirmedDriver } = flags;
+  const declinerName = justDeclinedDriver ? prevEvent?.driverName : prevEvent?.helper;
+  const actorId = getActiveMemberId();
+
+  // Was: a decline silently reopened the pool with zero signal to anyone
+  // — the assigning parent found out only if they happened to see a Hub
+  // banner, and the requesting kid was never told at all (QA sweep C1).
+  // Notify whoever last assigned this driver/helper (prevEvent.updatedBy
+  // — stamped by the assignment action itself) and the requesting kid,
+  // skipping whichever of those is the declining actor themselves.
+  if (justDeclined) {
+    try {
+      const { useChatStore } = require('@/store/chatStore');
+      const msg = `🚫 ${declinerName ?? 'The driver'} can't make "${updated.title}" — it's back open for someone else.`;
+      const recipients = new Set<string>();
+      if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
+      if (updated.memberId && updated.memberId !== actorId) recipients.add(updated.memberId);
+      for (const recipientId of recipients) {
+        useChatStore.getState().sendMessage(recipientId, actorId ?? recipientId, msg);
+      }
+    } catch (e) {
+      console.warn('[eventStore] decline notification failed', e);
+    }
+  }
+
+  // ── Real family-notifier notifications ────────────────────────────────────
+  // The chat message above is kept as-is (it's an existing, presumably
+  // still-wanted in-thread record of the decline) — this ADDS a real
+  // bell/push notification alongside it via family-notifier, same
+  // recipients, since a chat message alone is easy to miss and doesn't
+  // populate the notification bell.
+
+  // 1. Offered/reassigned — a new driver/helper name was just set.
+  // Notify the newly-assigned person (only if they're a parent — a
+  // kid/teen/GP self-claim goes through claimHelperSlot, a separate
+  // path this task deliberately doesn't touch). Also ping whichever
+  // OTHER parent was the one who made this assignment (prevEvent's
+  // last editor), if that's a different parent than the new assignee —
+  // the "other parent" stakeholder side of the ping-pong.
+  if ((justAssignedHelper || justAssignedDriver) && !justDeclined) {
+    const newAssigneeName = justAssignedDriver ? updates.driverName : updates.helper;
+    // updates.driverId/helperId is set directly by every caller that
+    // assigns a new driver/helper name (alongside the display name) —
+    // prefer it over a name lookup, which is fragile (rename, two
+    // parents sharing a first name) and only needed as a fallback for
+    // a caller that hasn't been updated to also send the id.
+    const newAssigneeId = justAssignedDriver ? updates.driverId : updates.helperId;
+    const newAssignee = (() => {
+      try {
+        const { useFamilyStore } = require('@/store/familyStore');
+        const members = useFamilyStore.getState().members as any[];
+        if (newAssigneeId) return members.find(m => m.role === 'parent' && m.id === newAssigneeId) ?? null;
+        return members.find(m => m.role === 'parent' && m.name === newAssigneeName) ?? null;
+      } catch { return null; }
+    })();
+    const recipientIds = new Set<string>();
+    if (newAssignee?.id) recipientIds.add(newAssignee.id);
+    // The other parent(s) — whoever isn't the actor and isn't the new
+    // assignee — get a heads-up too, mirroring hubComponents.tsx's own
+    // conflict-banner resolution of "other parents".
+    for (const pid of otherParentIds([actorId, newAssignee?.id])) recipientIds.add(pid);
+    if (recipientIds.size) {
+      notifyRideAssignment('ride_assignment_offered', [...recipientIds], actorId, {
+        eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+        byName: memberById(actorId)?.name,
+      });
+    }
+  }
+
+  // 2. Accepted/confirmed — status just transitioned to 'confirmed'.
+  // Notify the other parent(s) (not the confirmer, not the requesting
+  // kid — the kid gets its own single, distinct notification below).
+  if (justConfirmed) {
+    const confirmerName = justConfirmedDriver ? updated.driverName : updated.helper;
+    const recipients = otherParentIds([actorId]);
+    if (recipients.length) {
+      notifyRideAssignment('ride_assignment_accepted', recipients, actorId, {
+        eventTitle: updated.title, eventId: updated.id, byName: confirmerName ?? memberById(actorId)?.name,
+      });
+    }
+  }
+
+  // 3. Declined — real notification alongside the chat message above,
+  // same recipients (prevEvent.updatedBy), excluding the actor.
+  if (justDeclined) {
+    const recipients = new Set<string>();
+    if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
+    if (recipients.size) {
+      // Live QA finding: every push fires at the same delivery priority
+      // regardless of urgency (Expo's own transport has no higher tier
+      // than 'high', which every notification already uses) — a driver
+      // bailing 10 minutes before pickup looked identical, at the
+      // recipient's phone, to a routine confirmation. Since the
+      // transport priority can't go any higher, the fix is making a
+      // near-term decline READ as urgent — a distinct title/copy the
+      // family-notifier case below branches on.
+      let minutesUntil: number | undefined;
+      if (updated.date && updated.time) {
+        const [h, m] = updated.time.split(':').map(Number);
+        const at = new Date(`${updated.date}T00:00:00`);
+        at.setHours(h, m, 0, 0);
+        minutesUntil = (at.getTime() - Date.now()) / 60000;
+      }
+      notifyRideAssignment('ride_assignment_declined', [...recipients], actorId, {
+        eventTitle: updated.title, eventId: updated.id, byName: declinerName,
+        imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
+      });
+    }
+  }
+
+  // 4. Final confirmation to the kid — exactly once, only on the actual
+  // transition INTO 'confirmed', never on intermediate offer/decline
+  // steps or on a later unrelated updateEvent call while it's already
+  // confirmed (justConfirmed is already gated on prevEvent's status
+  // being something other than 'confirmed', so this can't refire for
+  // the same confirmation).
+  if (justConfirmed) {
+    const driverOrHelperName = justConfirmedDriver ? updated.driverName : updated.helper;
+    const kidId = updated.memberId;
+    const kid = memberById(kidId);
+    // Treat 'kid' and 'teen' as one notifiable "child" recipient
+    // category, consistent with the rest of the app (e.g.
+    // EventFormModal's role checks) — a senior/grandparent-owned event
+    // (rare, but memberId isn't restricted to kids) doesn't get this
+    // "ride confirmed" framing.
+    if (kidId && kidId !== actorId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
+      notifyRideAssignment('ride_confirmed_for_kid', [kidId], actorId, {
+        eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+        driverName: driverOrHelperName,
+      });
+    }
+  }
+
+  // 5. Pool opened to grandparents/teens — a parent flipping
+  // isOpenToGrandparents/isOpenToTeens false→true previously only wrote
+  // a silent activity_log row (logUpdateActivity's gp_welcome_changed/
+  // teen_welcome_changed below) with no signal to anyone actually
+  // eligible to claim the new slot. Only the transition matters (not
+  // "was already true" — that would refire on every unrelated
+  // updateEvent call while the flag stays on), same shape as
+  // justDeclined/justConfirmed above. Gated the same way each pool's
+  // own view is: SeniorView shows any isOpenToGrandparents event to
+  // every 'senior' member, TeenView's pool is hasCar-gated, so a
+  // teen who opted out of having a car couldn't claim it anyway and
+  // shouldn't be pinged as if they could.
+  const justOpenedToGrandparents = updates.isOpenToGrandparents === true && prevEvent?.isOpenToGrandparents !== true;
+  const justOpenedToTeens = updates.isOpenToTeens === true && prevEvent?.isOpenToTeens !== true;
+  if (justOpenedToGrandparents || justOpenedToTeens) {
+    try {
+      const { useFamilyStore } = require('@/store/familyStore');
+      const members = useFamilyStore.getState().members as any[];
+      const recipientIds = new Set<string>();
+      if (justOpenedToGrandparents) {
+        for (const m of members) if (m.role === 'senior' && m.id !== actorId) recipientIds.add(m.id);
+      }
+      if (justOpenedToTeens) {
+        for (const m of members) if (m.role === 'teen' && m.hasCar && m.id !== actorId) recipientIds.add(m.id);
+      }
+      if (recipientIds.size) {
+        notifyRideAssignment('ride_pool_opened', [...recipientIds], actorId, {
+          eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
+        });
+      }
+    } catch (e) {
+      console.warn('[eventStore] pool-opened notification failed', e);
+    }
+  }
+}
+
 // Maps FamilyEvent keys to their calendar_events column names — the same
 // mapping toRow() uses, but exposed so a partial patch can be built from
 // only the keys a caller actually intended to change, without pulling in
@@ -1559,212 +1745,46 @@ export const useEventStore = create<EventState>((set, get) => ({
       updatedBy: updates.updatedBy ?? getActiveMemberId() ?? undefined,
       updatedAt: updates.updatedAt ?? new Date().toISOString(),
     };
-    const prev = get().dayEvents;
-    const next = sortByTime(prev.map(e => e.id === id ? { ...e, ...stamped } : e));
-    set({ dayEvents: next, events: next });
-    set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)) });
-    const updated = next.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-    if (updated) {
-      dbUpdate(id, toRowPartial(updated, Object.keys(stamped) as (keyof FamilyEvent)[]), () => {
-        // Failed write — revert the optimistic merge above in both lists
-        // back to the exact pre-update event so local state doesn't keep
-        // showing a change (reassignment, decline-and-reopen, RSVP, etc.)
-        // that never actually landed in the DB.
-        if (prevEvent) {
-          set(s => ({
-            dayEvents: s.dayEvents.map(e => e.id === id ? prevEvent : e),
-            events: s.events.map(e => e.id === id ? prevEvent : e),
-            rangeEvents: s.rangeEvents.map(e => e.id === id ? prevEvent : e),
-          }));
-        }
-      }, () => {
-        // Personal-calendar 2-way sync — only push once the write is
-        // CONFIRMED, not optimistically, since a failed update would
-        // otherwise push a change to Google/Outlook that just got reverted
-        // locally.
-        const familyId = getFamilyId();
-        if (familyId && updated.createdBy) {
-          supabase.functions.invoke('calendar-sync-push', {
-            body: { eventId: id, familyId, memberId: updated.createdBy, action: 'update' },
-          }).catch(e => console.warn('[eventStore] updateEvent calendar-sync-push failed:', e?.message));
-        }
-        if (updated.createdBy && isAppleCalendarSyncEnabled(updated.createdBy)) {
-          import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
-            pushEventToAppleCalendar(updated.createdBy!, updated, id, 'update')
-          ).catch(e => console.warn('[eventStore] updateEvent Apple sync failed:', e?.message));
-        }
-      });
+    // DB-is-truth: await the write and derive `updated` (and every
+    // notification branch below) from the row the server actually
+    // persisted, never from a local guess applied ahead of it. This
+    // replaces the old optimistic-merge-then-write-then-rollback-on-
+    // failure shape — there's nothing left to roll back, since nothing
+    // renders until the write is confirmed.
+    (async () => {
+      const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
+      const { data: row, error } = await supabase.from('calendar_events').update(patch).eq('id', id).select().maybeSingle();
+      if (error || !row) {
+        console.warn('[eventStore] update failed', id, error?.message);
+        showToast("Couldn't save — check your connection and try again", 'error');
+        return;
+      }
+      const updated = fromRow(row);
+      const next = sortByTime(get().dayEvents.map(e => e.id === id ? updated : e));
+      set({ dayEvents: next, events: next });
+      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? updated : e)) });
+
+      // Personal-calendar 2-way sync — only push once the write is
+      // CONFIRMED, matching the original ordering (this always ran only
+      // on success before too).
+      const familyId = getFamilyId();
+      if (familyId && updated.createdBy) {
+        supabase.functions.invoke('calendar-sync-push', {
+          body: { eventId: id, familyId, memberId: updated.createdBy, action: 'update' },
+        }).catch(e => console.warn('[eventStore] updateEvent calendar-sync-push failed:', e?.message));
+      }
+      if (updated.createdBy && isAppleCalendarSyncEnabled(updated.createdBy)) {
+        import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+          pushEventToAppleCalendar(updated.createdBy!, updated, id, 'update')
+        ).catch(e => console.warn('[eventStore] updateEvent Apple sync failed:', e?.message));
+      }
       if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
-    }
-    // Was: a decline silently reopened the pool with zero signal to anyone
-    // — the assigning parent found out only if they happened to see a Hub
-    // banner, and the requesting kid was never told at all (QA sweep C1).
-    // Notify whoever last assigned this driver/helper (prevEvent.updatedBy
-    // — stamped by the assignment action itself) and the requesting kid,
-    // skipping whichever of those is the declining actor themselves.
-    if (justDeclined && updated) {
-      try {
-        const { useChatStore } = require('@/store/chatStore');
-        const declinerName = justDeclinedDriver ? prevEvent?.driverName : prevEvent?.helper;
-        const actorId = getActiveMemberId();
-        const msg = `🚫 ${declinerName ?? 'The driver'} can't make "${updated.title}" — it's back open for someone else.`;
-        const recipients = new Set<string>();
-        if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
-        if (updated.memberId && updated.memberId !== actorId) recipients.add(updated.memberId);
-        for (const recipientId of recipients) {
-          useChatStore.getState().sendMessage(recipientId, actorId ?? recipientId, msg);
-        }
-      } catch (e) {
-        console.warn('[eventStore] decline notification failed', e);
-      }
-    }
 
-    // ── Real family-notifier notifications ────────────────────────────────────
-    // The chat message above is kept as-is (it's an existing, presumably
-    // still-wanted in-thread record of the decline) — this ADDS a real
-    // bell/push notification alongside it via family-notifier, same
-    // recipients, since a chat message alone is easy to miss and doesn't
-    // populate the notification bell.
-    if (updated) {
-      const actorId = getActiveMemberId();
-      const declinerName = justDeclinedDriver ? prevEvent?.driverName : prevEvent?.helper;
-
-      // 1. Offered/reassigned — a new driver/helper name was just set.
-      // Notify the newly-assigned person (only if they're a parent — a
-      // kid/teen/GP self-claim goes through claimHelperSlot, a separate
-      // path this task deliberately doesn't touch). Also ping whichever
-      // OTHER parent was the one who made this assignment (prevEvent's
-      // last editor), if that's a different parent than the new assignee —
-      // the "other parent" stakeholder side of the ping-pong.
-      if ((justAssignedHelper || justAssignedDriver) && !justDeclined) {
-        const newAssigneeName = justAssignedDriver ? updates.driverName : updates.helper;
-        // updates.driverId/helperId is set directly by every caller that
-        // assigns a new driver/helper name (alongside the display name) —
-        // prefer it over a name lookup, which is fragile (rename, two
-        // parents sharing a first name) and only needed as a fallback for
-        // a caller that hasn't been updated to also send the id.
-        const newAssigneeId = justAssignedDriver ? updates.driverId : updates.helperId;
-        const newAssignee = (() => {
-          try {
-            const { useFamilyStore } = require('@/store/familyStore');
-            const members = useFamilyStore.getState().members as any[];
-            if (newAssigneeId) return members.find(m => m.role === 'parent' && m.id === newAssigneeId) ?? null;
-            return members.find(m => m.role === 'parent' && m.name === newAssigneeName) ?? null;
-          } catch { return null; }
-        })();
-        const recipientIds = new Set<string>();
-        if (newAssignee?.id) recipientIds.add(newAssignee.id);
-        // The other parent(s) — whoever isn't the actor and isn't the new
-        // assignee — get a heads-up too, mirroring hubComponents.tsx's own
-        // conflict-banner resolution of "other parents".
-        for (const pid of otherParentIds([actorId, newAssignee?.id])) recipientIds.add(pid);
-        if (recipientIds.size) {
-          notifyRideAssignment('ride_assignment_offered', [...recipientIds], actorId, {
-            eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
-            byName: memberById(actorId)?.name,
-          });
-        }
-      }
-
-      // 2. Accepted/confirmed — status just transitioned to 'confirmed'.
-      // Notify the other parent(s) (not the confirmer, not the requesting
-      // kid — the kid gets its own single, distinct notification below).
-      if (justConfirmed) {
-        const confirmerName = justConfirmedDriver ? updated.driverName : updated.helper;
-        const recipients = otherParentIds([actorId]);
-        if (recipients.length) {
-          notifyRideAssignment('ride_assignment_accepted', recipients, actorId, {
-            eventTitle: updated.title, eventId: updated.id, byName: confirmerName ?? memberById(actorId)?.name,
-          });
-        }
-      }
-
-      // 3. Declined — real notification alongside the chat message above,
-      // same recipients (prevEvent.updatedBy), excluding the actor.
-      if (justDeclined) {
-        const recipients = new Set<string>();
-        if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
-        if (recipients.size) {
-          // Live QA finding: every push fires at the same delivery priority
-          // regardless of urgency (Expo's own transport has no higher tier
-          // than 'high', which every notification already uses) — a driver
-          // bailing 10 minutes before pickup looked identical, at the
-          // recipient's phone, to a routine confirmation. Since the
-          // transport priority can't go any higher, the fix is making a
-          // near-term decline READ as urgent — a distinct title/copy the
-          // family-notifier case below branches on.
-          let minutesUntil: number | undefined;
-          if (updated.date && updated.time) {
-            const [h, m] = updated.time.split(':').map(Number);
-            const at = new Date(`${updated.date}T00:00:00`);
-            at.setHours(h, m, 0, 0);
-            minutesUntil = (at.getTime() - Date.now()) / 60000;
-          }
-          notifyRideAssignment('ride_assignment_declined', [...recipients], actorId, {
-            eventTitle: updated.title, eventId: updated.id, byName: declinerName,
-            imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
-          });
-        }
-      }
-
-      // 4. Final confirmation to the kid — exactly once, only on the actual
-      // transition INTO 'confirmed', never on intermediate offer/decline
-      // steps or on a later unrelated updateEvent call while it's already
-      // confirmed (justConfirmed is already gated on prevEvent's status
-      // being something other than 'confirmed', so this can't refire for
-      // the same confirmation).
-      if (justConfirmed) {
-        const driverOrHelperName = justConfirmedDriver ? updated.driverName : updated.helper;
-        const kidId = updated.memberId;
-        const kid = memberById(kidId);
-        // Treat 'kid' and 'teen' as one notifiable "child" recipient
-        // category, consistent with the rest of the app (e.g.
-        // EventFormModal's role checks) — a senior/grandparent-owned event
-        // (rare, but memberId isn't restricted to kids) doesn't get this
-        // "ride confirmed" framing.
-        if (kidId && kidId !== actorId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
-          notifyRideAssignment('ride_confirmed_for_kid', [kidId], actorId, {
-            eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
-            driverName: driverOrHelperName,
-          });
-        }
-      }
-
-      // 5. Pool opened to grandparents/teens — a parent flipping
-      // isOpenToGrandparents/isOpenToTeens false→true previously only wrote
-      // a silent activity_log row (logUpdateActivity's gp_welcome_changed/
-      // teen_welcome_changed below) with no signal to anyone actually
-      // eligible to claim the new slot. Only the transition matters (not
-      // "was already true" — that would refire on every unrelated
-      // updateEvent call while the flag stays on), same shape as
-      // justDeclined/justConfirmed above. Gated the same way each pool's
-      // own view is: SeniorView shows any isOpenToGrandparents event to
-      // every 'senior' member, TeenView's pool is hasCar-gated, so a
-      // teen who opted out of having a car couldn't claim it anyway and
-      // shouldn't be pinged as if they could.
-      const justOpenedToGrandparents = updates.isOpenToGrandparents === true && prevEvent?.isOpenToGrandparents !== true;
-      const justOpenedToTeens = updates.isOpenToTeens === true && prevEvent?.isOpenToTeens !== true;
-      if (justOpenedToGrandparents || justOpenedToTeens) {
-        try {
-          const { useFamilyStore } = require('@/store/familyStore');
-          const members = useFamilyStore.getState().members as any[];
-          const recipientIds = new Set<string>();
-          if (justOpenedToGrandparents) {
-            for (const m of members) if (m.role === 'senior' && m.id !== actorId) recipientIds.add(m.id);
-          }
-          if (justOpenedToTeens) {
-            for (const m of members) if (m.role === 'teen' && m.hasCar && m.id !== actorId) recipientIds.add(m.id);
-          }
-          if (recipientIds.size) {
-            notifyRideAssignment('ride_pool_opened', [...recipientIds], actorId, {
-              eventTitle: updated.title, eventId: updated.id, eventTime: updated.time,
-            });
-          }
-        } catch (e) {
-          console.warn('[eventStore] pool-opened notification failed', e);
-        }
-      }
-    }
+      updateEventNotifications(prevEvent, updates, updated, {
+        justDeclined, justDeclinedDriver, justAssignedHelper, justAssignedDriver,
+        justConfirmed, justConfirmedDriver,
+      });
+    })();
   },
 
   // Scenario 2.11 — RSVP is its own per-member map, not a status field on
@@ -2257,60 +2277,81 @@ export const useEventStore = create<EventState>((set, get) => ({
       updates = { ...updates, title: updates.title.trim() };
     }
 
-    supabase.from('calendar_events')
-      .select('id, date')
-      .eq('series_id', target.seriesId)
-      .is('deleted_at', null)
-      .then(({ data, error }) => {
-        if (error || !data) { console.warn('[eventStore] updateEventScoped: series lookup failed', error?.message); return; }
-        const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
-        if (ids.length === 0) return;
-        // Was: for (const rowId of ids) get().updateEvent(rowId, updates) —
-        // a daily series materializes up to 84 rows (RECURRENCE_WINDOW_DAYS),
-        // so "This and following"/"All events" fired up to 84 separate
-        // updateEvent calls, each doing 2 synchronous set()s PLUS its own
-        // DB write, PLUS the resulting ~84 realtime echo-backs each calling
-        // setState again — enough rapid-fire React re-renders in one tick
-        // to trip "Maximum update depth exceeded" and crash (live-reported).
-        // updateEvent's per-row side effects (decline auto-reopen, activity
-        // log, chat notification) only make sense for a single occurrence's
-        // status change anyway, not a bulk date/time shift — so this skips
-        // them here and does one batched local update + one batched DB
-        // write instead of looping the single-row path.
-        const idSet = new Set(ids);
-        // Assignment status (confirmed/pending/rejected) is a per-
-        // OCCURRENCE decision, not a bulk property of the series — live-
-        // reported bug: editing ONE recurring Ride while self-assigned as
-        // helper/driver correctly auto-confirms (per the self-assignment
-        // rule elsewhere in this file), but that confirm then got bulk-
-        // applied to all ~84 occurrences via a single 'following'/'all'
-        // edit, retroactively confirming rides months out that were never
-        // individually reviewed. Drop the incoming status here — a
-        // genuine per-occurrence confirm/decline still goes through
-        // updateEvent (scope 'this') or the RPCs (confirm/decline/
-        // reassign_event), never this batched path. If the bulk patch DOES
-        // change who the helper/driver actually is, every occurrence's
-        // status resets to 'pending' instead (never silently keeping
-        // whatever the PREVIOUS assignee's status happened to be, which
-        // would otherwise misattribute a stale 'confirmed' to someone new
-        // who never confirmed anything) — otherwise status is left alone.
-        const { helperStatus: _hs, driverStatus: _ds, ...restUpdates } = updates;
-        const statusReset = {
-          ...(('helperId' in updates || 'helper' in updates) ? { helperStatus: 'pending' as const } : {}),
-          ...(('driverId' in updates || 'driverName' in updates) ? { driverStatus: 'pending' as const } : {}),
-        };
-        const stamped = { ...restUpdates, ...statusReset, updatedBy: getActiveMemberId() ?? undefined, updatedAt: new Date().toISOString() };
-        const patchOne = (e: FamilyEvent) => idSet.has(e.id) ? { ...e, ...stamped } : e;
-        set({
-          dayEvents:   sortByTime(get().dayEvents.map(patchOne)),
-          events:      sortByTime(get().events.map(patchOne)),
-          rangeEvents: sortByTime(get().rangeEvents.map(patchOne)),
-        });
-        const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
-        supabase.from('calendar_events').update(patch).in('id', ids).then(({ error: updateError }) => {
-          if (updateError) console.warn('[eventStore] updateEventScoped: bulk update failed', updateError.message);
-        });
+    (async () => {
+      const { data, error: lookupError } = await supabase.from('calendar_events')
+        .select('id, date')
+        .eq('series_id', target.seriesId)
+        .is('deleted_at', null);
+      if (lookupError || !data) { console.warn('[eventStore] updateEventScoped: series lookup failed', lookupError?.message); return; }
+      const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
+      if (ids.length === 0) return;
+      // Was: for (const rowId of ids) get().updateEvent(rowId, updates) —
+      // a daily series materializes up to 84 rows (RECURRENCE_WINDOW_DAYS),
+      // so "This and following"/"All events" fired up to 84 separate
+      // updateEvent calls, each doing 2 synchronous set()s PLUS its own
+      // DB write, PLUS the resulting ~84 realtime echo-backs each calling
+      // setState again — enough rapid-fire React re-renders in one tick
+      // to trip "Maximum update depth exceeded" and crash (live-reported).
+      // updateEvent's per-row side effects (decline auto-reopen, activity
+      // log, chat notification) only make sense for a single occurrence's
+      // status change anyway, not a bulk date/time shift — so this skips
+      // them here and does one batched DB write instead of looping the
+      // single-row path.
+      const idSet = new Set(ids);
+      // Assignment status (confirmed/pending/rejected) is a per-
+      // OCCURRENCE decision, not a bulk property of the series — live-
+      // reported bug: editing ONE recurring Ride while self-assigned as
+      // helper/driver correctly auto-confirms (per the self-assignment
+      // rule elsewhere in this file), but that confirm then got bulk-
+      // applied to all ~84 occurrences via a single 'following'/'all'
+      // edit, retroactively confirming rides months out that were never
+      // individually reviewed. Drop the incoming status here — a
+      // genuine per-occurrence confirm/decline still goes through
+      // updateEvent (scope 'this') or the RPCs (confirm/decline/
+      // reassign_event), never this batched path. If the bulk patch DOES
+      // change who the helper/driver actually is, every occurrence's
+      // status resets to 'pending' instead (never silently keeping
+      // whatever the PREVIOUS assignee's status happened to be, which
+      // would otherwise misattribute a stale 'confirmed' to someone new
+      // who never confirmed anything) — otherwise status is left alone.
+      // The ONE exception, carrying forward this session's live-reported
+      // self-assignment fix: the caller assigning THEMSELVES with an
+      // explicit 'confirmed' status is trusted, same as every other
+      // self-assignment path in the app — everyone else's assignment still
+      // resets to 'pending' unconditionally.
+      const { helperStatus: _hs, driverStatus: _ds, ...restUpdates } = updates;
+      const callerId = getActiveMemberId();
+      const isSelfDriverAssign = ('driverId' in updates || 'driverName' in updates)
+        && updates.driverId != null && updates.driverId === callerId && updates.driverStatus === 'confirmed';
+      const isSelfHelperAssign = ('helperId' in updates || 'helper' in updates)
+        && updates.helperId != null && updates.helperId === callerId && updates.helperStatus === 'confirmed';
+      const statusReset = {
+        ...(('helperId' in updates || 'helper' in updates)
+          ? { helperStatus: isSelfHelperAssign ? 'confirmed' as const : 'pending' as const } : {}),
+        ...(('driverId' in updates || 'driverName' in updates)
+          ? { driverStatus: isSelfDriverAssign ? 'confirmed' as const : 'pending' as const } : {}),
+      };
+      const stamped = { ...restUpdates, ...statusReset, updatedBy: callerId ?? undefined, updatedAt: new Date().toISOString() };
+      const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
+      // DB-is-truth: the write is awaited and its own confirmed rows drive
+      // local state — nothing here is a guess about what the server will
+      // decide. This closes the exact bug this function used to have (no
+      // rollback at all on write failure — local state stayed "success"
+      // even when the DB write silently failed).
+      const { data: updatedRows, error: updateError } = await supabase.from('calendar_events')
+        .update(patch).in('id', ids).select();
+      if (updateError || !updatedRows) {
+        console.warn('[eventStore] updateEventScoped: bulk update failed', updateError?.message);
+        return;
+      }
+      const byId = new Map(updatedRows.map(row => [row.id, fromRow(row)]));
+      const patchOne = (e: FamilyEvent) => idSet.has(e.id) ? (byId.get(e.id) ?? e) : e;
+      set({
+        dayEvents:   sortByTime(get().dayEvents.map(patchOne)),
+        events:      sortByTime(get().events.map(patchOne)),
+        rangeEvents: sortByTime(get().rangeEvents.map(patchOne)),
       });
+    })();
   },
 
   deleteEventScoped: (id, scope) => {

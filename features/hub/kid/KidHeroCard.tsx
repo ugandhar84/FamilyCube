@@ -2,6 +2,7 @@ import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { Zap, Target, CheckCircle2, Calendar, Flame } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { KID } from './kidTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -48,11 +49,25 @@ export function KidHeroCard({
     <View style={{ paddingHorizontal: 16, marginBottom: 20, gap: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         <View style={{
-          width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: colors.kidLight, borderWidth: 3, borderColor: colors.kid,
           shadowColor: colors.kid, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
         }}>
-          <Text style={{ fontSize: 30 }}>{active.emoji ?? '👤'}</Text>
+          {/* Was a hardcoded active.emoji-or-fallback Text glyph, never
+              reading avatarUrl at all — every other avatar in the app
+              (AppHeader, PersonaSwitcherDropdown) uses FamilyAvatar's
+              emoji→photo→initials tiering, so a kid with a real photo but
+              no emoji set (the common case) showed a generic silhouette
+              here specifically. Live-reported: "are we not using family's
+              avatar in hero card." */}
+          <FamilyAvatar
+            name={active.name}
+            emoji={active.emoji}
+            avatarUrl={active.avatarUrl}
+            siblings={(members ?? []).filter(m => m.id !== active.id).map(m => m.name)}
+            size={64}
+            ringColor={colors.kid}
+            ringWidth={3}
+            bgColor={colors.kidLight}
+          />
           <View style={{
             position: 'absolute', bottom: -4, alignSelf: 'center',
             backgroundColor: colors.kid, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,

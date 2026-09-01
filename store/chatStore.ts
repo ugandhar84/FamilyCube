@@ -429,6 +429,16 @@ interface ChatState {
     voiceUri?: string,
     documentUri?: string, documentName?: string,
     systemEvent?: { type: string; payload: Record<string, any> },
+    // Skips ONLY this message's own chat-notify push — the message itself
+    // still gets written and shown normally in Family Chat, unlike
+    // systemEvent (which also changes how the message renders). For a
+    // caller that already fires its own dedicated notification for the
+    // same event (e.g. kidRequestStore's sendRequest) and uses sendMessage
+    // purely to leave a visible chat record — without this, both pushes
+    // fired for one tap (live-reported: "I'm Home!" produced a "Jas in
+    // Family Chat" push AND a separate "Kid Request" push for the same
+    // check-in).
+    suppressPush?: boolean,
   ) => Promise<string | undefined>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
@@ -826,7 +836,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName, systemEvent) => {
+  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName, systemEvent, suppressPush) => {
     // Critical fix: every existing call site across the app (choreStore,
     // eventStore, kidRequestStore, etc. — ~51 of them) calls this as
     // sendMessage(recipientMemberId, senderId, ...), which is still the
@@ -997,7 +1007,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // etc.) has its own dedicated notification already fired by whatever
       // store created it — don't double-push here. mentions is passed
       // through so chat-notify can skip anyone mention-notify already pinged.
-      if (text?.trim() && !systemEvent) {
+      if (text?.trim() && !systemEvent && !suppressPush) {
         supabase.functions
           .invoke('chat-notify', { body: { channelId, senderId, text, mentions } })
           .catch(e => console.warn('[chatStore] chat-notify failed:', e?.message));

@@ -308,7 +308,12 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     };
     const m = messages[type];
     sendRequest({ type: 'checkin', fromMemberId: active.id, detail: m.detail, urgency: type === 'late' ? 'soon' : 'normal' });
-    sendMessage('all', active.id, m.chatMsg);
+    // sendRequest above already fires its own "Kid Request" push — the
+    // chat message here is just a visible record in Family Chat, so its
+    // own separate chat-notify push is suppressed to avoid a duplicate
+    // notification for the same one tap (live-reported: "I'm home!"
+    // produced both a Family Chat push and a Kid Request push).
+    sendMessage('all', active.id, m.chatMsg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
     Alert.alert(m.emoji, 'Family has been notified!');
   };
 
@@ -356,7 +361,10 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     // etc.) shows as "Name (Relation)". Falls back to "My ride" (not
     // "driver") only when nobody's actually assigned.
     const driverLabel = driverLabelByName(eventAssignee(ev).name, members);
-    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: ${driverLabel ?? 'My ride'} hasn't arrived yet for "${ev.title}"! Can someone check?`);
+    // Same duplicate-push fix as sendCheckin above — the emergency
+    // sendRequest already pushed a notification; this chat message is
+    // just the visible Family Chat record.
+    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: ${driverLabel ?? 'My ride'} hasn't arrived yet for "${ev.title}"! Can someone check?`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
     setLateNudgeSent(p => ({ ...p, [ev.id]: true }));
     Alert.alert('⚠️ Alert sent!', `Your parent has been notified that ${driverLabel ?? 'your ride'} is late.`);
   };

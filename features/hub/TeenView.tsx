@@ -336,21 +336,24 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   );
   const sendTutorOffer = (kid: FamilyMember, subject: string, note: string) => {
     const detail = `${active.name.split(' ')[0]} can help ${kid.name.split(' ')[0]} with ${subject}${note ? ` — ${note}` : ''}`;
+    // sendRequest already pushes its own notification — the chat message
+    // is just a visible Family Chat record, same dedup fix as KidView's
+    // sendCheckin/sendDriverLate (live-reported duplicate pushes for one tap).
     sendRequest({ type: 'tutor', fromMemberId: active.id, detail, urgency: 'normal' });
-    sendMessage('all', active.id, `🎒 ${detail}`);
+    sendMessage('all', active.id, `🎒 ${detail}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
   };
 
   const reportVehicleIssue = (issue: string) => {
     const detail = `🚗 Vehicle issue reported by ${active.name.split(' ')[0]}: ${issue}`;
     sendRequest({ type: 'emergency', fromMemberId: active.id, detail, urgency: 'soon' });
-    sendMessage('all', active.id, detail);
+    sendMessage('all', active.id, detail, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
   };
 
   const requestCashOut = (amount: string, method: string) => {
     const coins = active.mainCoins ?? active.coins ?? 0;
     const detail = `💵 Cash-out request: $${amount} via ${method} (balance: ${coins} coins)`;
     sendRequest({ type: 'delegation', fromMemberId: active.id, detail, urgency: 'normal' });
-    sendMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`);
+    sendMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
     // Was Alert.alert — every other success path in this file (claim,
     // confirm, drop, tutor request) uses showToast; a full blocking modal
     // just for this one confirmation was inconsistent with itself.

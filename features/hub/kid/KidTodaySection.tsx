@@ -17,7 +17,7 @@ export function KidTodaySection({
   onCheckin, onAskParent,
 }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   colors: any; isDark: boolean;
   onCheckin: (type: 'home' | 'ready' | 'late') => void;
   onAskParent: () => void;

@@ -24,7 +24,7 @@ const PENDING_AMBER = '#D97706';
 // confirmed yet — take it over from a co-parent, or confirm your own slot.
 export function HelperEventCard({ ev, members, active, colors, isDark, updateEvent, updateEventScoped }: {
   ev: FamilyEvent; members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   // Optional so any call site that hasn't been updated still compiles —
   // when omitted, both actions below just fall back to a single-row update.
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;

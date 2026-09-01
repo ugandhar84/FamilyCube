@@ -198,7 +198,7 @@ export function subjectColor(subject: string): string {
 // real class, nothing meaningful to put on an external calendar. Returns
 // the new series anchor id, or undefined if this period shouldn't
 // materialize (lunch/break, or no real days set).
-function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod, 'id'> & { id: string }): string | undefined {
+async function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod, 'id'> & { id: string }): Promise<string | undefined> {
   if (period.isLunch || period.isBreak) return undefined;
   const days = (period.days ?? []).map(d => DAY_NAME_TO_INDEX[d.toLowerCase()]).filter(d => d !== undefined);
   if (!days.length) return undefined;
@@ -268,8 +268,8 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
 
   // ─── Period CRUD ────────────────────────────────────────────────────────────
 
-  addPeriod: (memberId, period) => {
-    const linkedEventId = materializePeriodEvent(memberId, { ...period, id: '' });
+  addPeriod: async (memberId, period) => {
+    const linkedEventId = await materializePeriodEvent(memberId, { ...period, id: '' });
     const withLink = linkedEventId ? { ...period, linkedEventId } : period;
     const next = get().schedules.map(s =>
       s.memberId !== memberId ? s : {
@@ -281,21 +281,33 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     set({ schedules: next }); save(next, get().homeworks);
   },
 
-  updatePeriod: (memberId, periodId, updates) => {
+  updatePeriod: async (memberId, periodId, updates) => {
+    // Re-materialization is an async side effect (deletes the old linked
+    // event, awaits the new one's server-confirmed id) — resolved BEFORE
+    // the synchronous schedule map below, since a plain .map() callback
+    // can't itself be awaited mid-array.
+    const existingPeriod = get().schedules.find(s => s.memberId === memberId)?.periods.find(p => p.id === periodId);
+    let materializedLinkedEventId: string | undefined;
+    if (existingPeriod) {
+      const merged = { ...existingPeriod, ...updates };
+      // Only re-materialize when a field the calendar event actually
+      // cares about changed — avoids a needless delete+recreate churn
+      // on every unrelated edit (e.g. just the room number).
+      const relevantChanged = ['subject', 'startTime', 'endTime', 'days', 'isLunch', 'isBreak'].some(k => k in updates);
+      if (relevantChanged) {
+        if (existingPeriod.linkedEventId) useEventStore.getState().deleteEvent(existingPeriod.linkedEventId);
+        materializedLinkedEventId = await materializePeriodEvent(memberId, merged);
+      }
+    }
     const next = get().schedules.map(s => {
       if (s.memberId !== memberId) return s;
       return {
         ...s, periods: s.periods.map(p => {
           if (p.id !== periodId) return p;
           const merged = { ...p, ...updates };
-          // Only re-materialize when a field the calendar event actually
-          // cares about changed — avoids a needless delete+recreate churn
-          // on every unrelated edit (e.g. just the room number).
           const relevantChanged = ['subject', 'startTime', 'endTime', 'days', 'isLunch', 'isBreak'].some(k => k in updates);
           if (relevantChanged) {
-            if (p.linkedEventId) useEventStore.getState().deleteEvent(p.linkedEventId);
-            const linkedEventId = materializePeriodEvent(memberId, merged);
-            return { ...merged, linkedEventId };
+            return { ...merged, linkedEventId: materializedLinkedEventId };
           }
           return merged;
         }),

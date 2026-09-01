@@ -29,7 +29,7 @@ export function YourRidesSection({
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   declineId: string | null; declineText: string;
   setDeclineId: (id: string | null) => void; setDeclineText: (v: string) => void;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   onEnRoute: () => void;
   // Same assignee-double-booked signal ParentView/KidView/TeenView already
   // show — SeniorView had zero conflict-detection wiring at all (a

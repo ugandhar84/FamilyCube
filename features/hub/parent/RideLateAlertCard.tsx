@@ -21,7 +21,7 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
   req: any; rideLate: RideLatePayload; kidName: string; ev: FamilyEvent | undefined;
   active: FamilyMember; colors: any; isDark: boolean;
   approveRequest: (id: string, by: string, note?: string) => void;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
 }) {
   const waitedMin = Math.max(0, Math.round((Date.now() - new Date(rideLate.sentAt).getTime()) / 60000));
   const lateBy = (() => {

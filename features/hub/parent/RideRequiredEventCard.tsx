@@ -31,9 +31,9 @@ const PICKUP_INDIGO = '#6366F1';
 
 export function RideRequiredEventCard({ ev, active, members, colors, isDark, updateEvent, updateEventScoped, addEvent }: {
   ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => Promise<string>;
 }) {
   const CatIcon = ev.category === 'Sports' ? Medal : ev.category === 'Medical' ? HeartPulse : ev.category === 'Study' ? BookOpen : Calendar;
   const rideMeta = parseRideMeta(ev.returnTime, ev.date);
@@ -154,9 +154,9 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
     setReassignOpen(false);
   };
 
-  const forkRide = (selfDrive: boolean) => {
+  const forkRide = async (selfDrive: boolean) => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${selfDrive ? "I'll Drive" : 'Approve & Split'}" on "${ev.title}" (id=${ev.id}) selfDrive=${selfDrive} → forkRideLegs [features/hub/parent/RideRequiredEventCard.tsx:65]`);
-    forkRideLegs({
+    await forkRideLegs({
       ev, selfDrive,
       assigneePatch: (confirmed) => ({
         driverName: confirmed ? active.name : undefined,

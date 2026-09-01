@@ -79,13 +79,13 @@ export function plus90Minutes(time: string | undefined): string {
 // inherits the ORIGINAL event's category (previously hardcoded to 'Ride',
 // which orphaned a kid's Sports/Study request into an unrelated-looking
 // second calendar entry).
-export function forkRideLegs({
+export async function forkRideLegs({
   ev, selfDrive, splitCoins, assigneePatch, updateEvent, addEvent, tryAutoDispatch, pickupTimeOverride,
 }: {
   ev: FamilyEvent; selfDrive: boolean; splitCoins?: number;
   assigneePatch: (confirmed: boolean) => Partial<FamilyEvent>;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => Promise<string>;
   tryAutoDispatch: (eventId: string) => void;
   // A kid's ride request carries no pickup TIME (see KidRequestModal) — the
   // parent supplies it via PickupTimeStepper right before forking. Falls
@@ -107,7 +107,7 @@ export function forkRideLegs({
   // updated in the same pass; the pickup leg then gets a 2nd small patch
   // pointing back, since addEvent can't self-reference an id that doesn't
   // exist yet at call time.
-  const pickupId = addEvent({
+  const pickupId = await addEvent({
     title: `${ev.title} — Pickup`,
     date: rideMeta.pickupDate ?? ev.date,
     time: pickupTime,
@@ -125,7 +125,7 @@ export function forkRideLegs({
   });
   if (!selfDrive) tryAutoDispatch(pickupId);
 
-  updateEvent(ev.id, {
+  await updateEvent(ev.id, {
     approvalPending: false,
     ...assigneePatch(selfDrive),
     returnTime: undefined,

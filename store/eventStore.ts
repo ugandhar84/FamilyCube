@@ -378,8 +378,8 @@ interface EventState {
   syncFromDB:      () => Promise<void>;
 
   // Mutations (optimistic)
-  addEvent:    (e: Omit<FamilyEvent, 'id'>) => string;
-  updateEvent: (id: string, updates: Partial<FamilyEvent>) => void;
+  addEvent:    (e: Omit<FamilyEvent, 'id'>) => Promise<string>;
+  updateEvent: (id: string, updates: Partial<FamilyEvent>) => Promise<void>;
   deleteEvent: (id: string) => void;
 
   // Creates a recurring event: the first occurrence (on `first.date`) plus
@@ -387,7 +387,7 @@ interface EventState {
   // to a rolling window (see generateOccurrenceDates's own comment for why
   // a window instead of generating to endDate/occurrences all at once).
   // Returns the id of the first (anchor) occurrence.
-  addRecurringEvent: (first: Omit<FamilyEvent, 'id'>, rule: EventRecurrenceRule) => string;
+  addRecurringEvent: (first: Omit<FamilyEvent, 'id'>, rule: EventRecurrenceRule) => Promise<string>;
 
   // Extends an existing series' materialized rows further into the future —
   // call periodically (e.g. on Calendar tab focus) so an ongoing "every
@@ -1514,8 +1514,8 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  addEvent: (e) => {
-    const event: FamilyEvent = {
+  addEvent: async (e) => {
+    const draft: FamilyEvent = {
       ...e, id: 'ev' + Date.now(),
       // Untrimmed titles (stray leading/trailing/double spaces, e.g. from a
       // photo-parsed or voice-dictated appointment) render verbatim
@@ -1527,7 +1527,19 @@ export const useEventStore = create<EventState>((set, get) => ({
       createdAt: e.createdAt ?? new Date().toISOString(),
     };
 
-    // Optimistic: add to current day if same date
+    // DB-is-truth: await the insert and only render the row the server
+    // actually persisted (its own id, timestamps, and any server-side
+    // defaults) — never the client-generated draft. The local id above
+    // exists only to build the outgoing row; the server's returned row is
+    // what every list/cache below is populated from.
+    const { data: row, error } = await supabase.from('calendar_events').insert([toRow(draft)]).select().maybeSingle();
+    if (error || !row) {
+      console.warn('[eventStore] insert failed', error?.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return '';
+    }
+    const event = fromRow(row);
+
     if (event.date === get().currentDate) {
       const next = sortByTime([...get().dayEvents, event]);
       set({ dayEvents: next, events: next });
@@ -1551,10 +1563,10 @@ export const useEventStore = create<EventState>((set, get) => ({
       }
     }
 
-    // Optimistic: add to rangeEvents (Week/Agenda) if it falls in the
-    // currently loaded window — safe to always append+resort since a date
-    // outside the loaded range just wouldn't be shown by those views' own
-    // filtering anyway.
+    // Add to rangeEvents (Week/Agenda) if it falls in the currently loaded
+    // window — safe to always append+resort since a date outside the
+    // loaded range just wouldn't be shown by those views' own filtering
+    // anyway.
     const rangeNext = sortByTime([...get().rangeEvents, event]);
     set({ rangeEvents: rangeNext });
     // Same staleness gap as _dayCache above, for Week/Agenda's own SWR
@@ -1573,7 +1585,7 @@ export const useEventStore = create<EventState>((set, get) => ({
     }
     if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
 
-    // Optimistic: update strip map
+    // Update strip map
     const cat = event.category;
     if (cat) {
       const sm = { ...get().stripMap };
@@ -1587,55 +1599,45 @@ export const useEventStore = create<EventState>((set, get) => ({
       set({ stripMap: sm, stripRows });
     }
 
-    supabase.from('calendar_events').insert([toRow(event)]).then(({ error }) => {
-      if (error) {
-        console.warn('[eventStore] insert failed', error.message);
-        // Rollback
-        const rolledBack = get().dayEvents.filter(e => e.id !== event.id);
-        set({ dayEvents: rolledBack, events: rolledBack });
-        set({ rangeEvents: get().rangeEvents.filter(e => e.id !== event.id) });
-      } else {
-        logActivity({ entityType: 'event', entityId: event.id, familyId: getFamilyId(), actorId: event.createdBy, action: 'created' });
-        // Audit finding — same gap as choreStore.ts's addChore direct-
-        // assignment bug this whole audit started from: a parent creating
-        // an event FOR someone else (memberId set to a kid/co-parent, not
-        // the creator) sent that person zero signal. Only fires for a real
-        // "this is about someone other than the creator" event — a plain
-        // event the creator made for themselves needs no ping.
-        const familyId = getFamilyId();
-        if (event.memberId && event.memberId !== event.createdBy && familyId) {
-          supabase.functions.invoke('family-notifier', {
-            body: {
-              type: 'event_assigned', familyId, memberIds: [event.memberId], persist: true,
-              excludeMemberId: event.createdBy ?? undefined,
-              payload: { eventId: event.id, eventTitle: event.title, eventTime: event.time, byName: memberById(event.createdBy)?.name },
-            },
-          }).catch(e => console.warn('[eventStore] addEvent notify failed:', e?.message));
-        }
-        // Personal-calendar 2-way sync — pushes this event to every active
-        // PERSONAL-purpose Google/Outlook connection the CREATOR has
-        // (fire-and-forget, same shape as the family-notifier call above).
-        // Work-purpose connections are never pushed to — see
-        // calendar-sync-push's own header comment.
-        if (familyId && event.createdBy) {
-          supabase.functions.invoke('calendar-sync-push', {
-            body: { eventId: event.id, familyId, memberId: event.createdBy, action: 'create' },
-          }).catch(e => console.warn('[eventStore] addEvent calendar-sync-push failed:', e?.message));
-        }
-        // Apple/EventKit 2-way sync — device-local, gated behind the
-        // creator's own opt-in preference (off by default).
-        if (event.createdBy && isAppleCalendarSyncEnabled(event.createdBy)) {
-          import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
-            pushEventToAppleCalendar(event.createdBy!, event, event.id, 'create')
-          ).catch(e => console.warn('[eventStore] addEvent Apple sync failed:', e?.message));
-        }
-      }
-    });
+    logActivity({ entityType: 'event', entityId: event.id, familyId: getFamilyId(), actorId: event.createdBy, action: 'created' });
+    // Audit finding — same gap as choreStore.ts's addChore direct-
+    // assignment bug this whole audit started from: a parent creating
+    // an event FOR someone else (memberId set to a kid/co-parent, not
+    // the creator) sent that person zero signal. Only fires for a real
+    // "this is about someone other than the creator" event — a plain
+    // event the creator made for themselves needs no ping.
+    const familyId = getFamilyId();
+    if (event.memberId && event.memberId !== event.createdBy && familyId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'event_assigned', familyId, memberIds: [event.memberId], persist: true,
+          excludeMemberId: event.createdBy ?? undefined,
+          payload: { eventId: event.id, eventTitle: event.title, eventTime: event.time, byName: memberById(event.createdBy)?.name },
+        },
+      }).catch(err => console.warn('[eventStore] addEvent notify failed:', err?.message));
+    }
+    // Personal-calendar 2-way sync — pushes this event to every active
+    // PERSONAL-purpose Google/Outlook connection the CREATOR has
+    // (fire-and-forget, same shape as the family-notifier call above).
+    // Work-purpose connections are never pushed to — see
+    // calendar-sync-push's own header comment.
+    if (familyId && event.createdBy) {
+      supabase.functions.invoke('calendar-sync-push', {
+        body: { eventId: event.id, familyId, memberId: event.createdBy, action: 'create' },
+      }).catch(err => console.warn('[eventStore] addEvent calendar-sync-push failed:', err?.message));
+    }
+    // Apple/EventKit 2-way sync — device-local, gated behind the
+    // creator's own opt-in preference (off by default).
+    if (event.createdBy && isAppleCalendarSyncEnabled(event.createdBy)) {
+      import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+        pushEventToAppleCalendar(event.createdBy!, event, event.id, 'create')
+      ).catch(err => console.warn('[eventStore] addEvent Apple sync failed:', err?.message));
+    }
 
     return event.id;
   },
 
-  updateEvent: (id, updatesIn) => {
+  updateEvent: async (id, updatesIn) => {
     // Same untrimmed-title normalization as addEvent — an edit can
     // reintroduce stray whitespace just as easily as creation can.
     const updates = 'title' in updatesIn && typeof updatesIn.title === 'string'
@@ -1655,7 +1657,7 @@ export const useEventStore = create<EventState>((set, get) => ({
     const TEXT_CHECKED_FIELDS = ['title', 'notes', 'location', 'date', 'time', 'endTime'] as const;
     const updateKeys = Object.keys(updates);
     if (prevEvent && updateKeys.length > 0 && updateKeys.every(k => (TEXT_CHECKED_FIELDS as readonly string[]).includes(k))) {
-      supabase.rpc('update_calendar_event_text_checked', {
+      const { error } = await supabase.rpc('update_calendar_event_text_checked', {
         p_event_id: id,
         p_title: 'title' in updates ? (updates as any).title ?? null : null,
         p_has_title: 'title' in updates,
@@ -1670,21 +1672,20 @@ export const useEventStore = create<EventState>((set, get) => ({
         p_end_time: 'endTime' in updates ? (updates as any).endTime ?? null : null,
         p_has_end_time: 'endTime' in updates,
         p_expected_updated_at: prevEvent.updatedAt ?? null,
-      }).then(({ error }) => {
-        if (error) {
-          console.warn('[eventStore] update_calendar_event_text_checked FAILED', error.message);
-          const isStale = error.message?.includes('stale_write');
-          showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
-          get().syncFromDB();
-          return;
-        }
-        const stamped = { ...updates, updatedAt: new Date().toISOString() };
-        set(s => ({
-          dayEvents: sortByTime(s.dayEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
-          events: sortByTime(s.events.map(e => e.id === id ? { ...e, ...stamped } : e)),
-          rangeEvents: sortByTime(s.rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
-        }));
       });
+      if (error) {
+        console.warn('[eventStore] update_calendar_event_text_checked FAILED', error.message);
+        const isStale = error.message?.includes('stale_write');
+        showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
+        get().syncFromDB();
+        return;
+      }
+      const stamped = { ...updates, updatedAt: new Date().toISOString() };
+      set(s => ({
+        dayEvents: sortByTime(s.dayEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
+        events: sortByTime(s.events.map(e => e.id === id ? { ...e, ...stamped } : e)),
+        rangeEvents: sortByTime(s.rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
+      }));
       return;
     }
     // A parent-assigned ride that gets declined shouldn't just sit there —
@@ -1751,50 +1752,48 @@ export const useEventStore = create<EventState>((set, get) => ({
     // replaces the old optimistic-merge-then-write-then-rollback-on-
     // failure shape — there's nothing left to roll back, since nothing
     // renders until the write is confirmed.
-    (async () => {
-      const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
-      const { data: row, error } = await supabase.from('calendar_events').update(patch).eq('id', id).select().maybeSingle();
-      if (error || !row) {
-        console.warn('[eventStore] update failed', id, error?.message);
-        showToast("Couldn't save — check your connection and try again", 'error');
-        return;
-      }
-      const updated = fromRow(row);
-      const next = sortByTime(get().dayEvents.map(e => e.id === id ? updated : e));
-      set({ dayEvents: next, events: next });
-      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? updated : e)) });
+    const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
+    const { data: row, error } = await supabase.from('calendar_events').update(patch).eq('id', id).select().maybeSingle();
+    if (error || !row) {
+      console.warn('[eventStore] update failed', id, error?.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
+    const updated = fromRow(row);
+    const next = sortByTime(get().dayEvents.map(e => e.id === id ? updated : e));
+    set({ dayEvents: next, events: next });
+    set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? updated : e)) });
 
-      // Personal-calendar 2-way sync — only push once the write is
-      // CONFIRMED, matching the original ordering (this always ran only
-      // on success before too).
-      const familyId = getFamilyId();
-      if (familyId && updated.createdBy) {
-        supabase.functions.invoke('calendar-sync-push', {
-          body: { eventId: id, familyId, memberId: updated.createdBy, action: 'update' },
-        }).catch(e => console.warn('[eventStore] updateEvent calendar-sync-push failed:', e?.message));
-      }
-      if (updated.createdBy && isAppleCalendarSyncEnabled(updated.createdBy)) {
-        import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
-          pushEventToAppleCalendar(updated.createdBy!, updated, id, 'update')
-        ).catch(e => console.warn('[eventStore] updateEvent Apple sync failed:', e?.message));
-      }
-      if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
+    // Personal-calendar 2-way sync — only push once the write is
+    // CONFIRMED, matching the original ordering (this always ran only
+    // on success before too).
+    const familyId = getFamilyId();
+    if (familyId && updated.createdBy) {
+      supabase.functions.invoke('calendar-sync-push', {
+        body: { eventId: id, familyId, memberId: updated.createdBy, action: 'update' },
+      }).catch(e => console.warn('[eventStore] updateEvent calendar-sync-push failed:', e?.message));
+    }
+    if (updated.createdBy && isAppleCalendarSyncEnabled(updated.createdBy)) {
+      import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+        pushEventToAppleCalendar(updated.createdBy!, updated, id, 'update')
+      ).catch(e => console.warn('[eventStore] updateEvent Apple sync failed:', e?.message));
+    }
+    if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
 
-      updateEventNotifications(prevEvent, updates, updated, {
-        justDeclined, justDeclinedDriver, justAssignedHelper, justAssignedDriver,
-        justConfirmed, justConfirmedDriver,
-      });
-    })();
+    updateEventNotifications(prevEvent, updates, updated, {
+      justDeclined, justDeclinedDriver, justAssignedHelper, justAssignedDriver,
+      justConfirmed, justConfirmedDriver,
+    });
   },
 
   // Scenario 2.11 — RSVP is its own per-member map, not a status field on
   // the whole event, so this goes through updateEvent's normal optimistic
   // + DB-write path with just the one key changed rather than duplicating
   // that plumbing here.
-  respondToRsvp: (id, memberId, response) => {
+  respondToRsvp: async (id, memberId, response) => {
     const existing = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (!existing) return;
-    get().updateEvent(id, { rsvps: { ...(existing.rsvps ?? {}), [memberId]: response } });
+    await get().updateEvent(id, { rsvps: { ...(existing.rsvps ?? {}), [memberId]: response } });
     // Audit finding — an RSVP change only ever touches the `rsvps` map, so
     // none of updateEvent's own notification branches above (which all key
     // off helper/driverName/status/GP-welcome fields) ever fire for it —
@@ -1840,182 +1839,168 @@ export const useEventStore = create<EventState>((set, get) => ({
   // column. Same public signature/behavior (optimistic update, rollback on
   // loss/rejection, onWon/onError callbacks, series propagation, creator
   // notification) so no caller needs to change.
-  claimHelperSlot: (id, role, claimantName, extra, onWon, onError) => {
+  claimHelperSlot: async (id, role, claimantName, extra, onWon, onError) => {
     const statusField = role === 'driver' ? 'driverStatus' : 'helperStatus';
     const nameField    = role === 'driver' ? 'driverName'   : 'helper';
-
-    const patch: Partial<FamilyEvent> = {
-      ...extra,
-      [nameField]:   claimantName,
-      [statusField]: 'confirmed',
-      updatedBy: getActiveMemberId() ?? undefined,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const prevDay = get().dayEvents;
-    const nextDay = sortByTime(prevDay.map(e => e.id === id ? { ...e, ...patch } : e));
-    set({ dayEvents: nextDay, events: nextDay });
-    set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...patch } : e)) });
-
     const claimantId = getActiveMemberId();
-    supabase.rpc('claim_event_slot', {
+
+    // DB-is-truth: the RPC's own CAS insert (unique constraint on
+    // event_participants) is what actually decides "first tap wins," same
+    // as before — the local claim is no longer applied before knowing the
+    // outcome, so there's nothing to roll back on a loss/error, and the
+    // winner's screen renders the server's own confirmed row directly.
+    const { data, error } = await supabase.rpc('claim_event_slot', {
       p_event_id: id, p_member_id: claimantId, p_role: role, p_actor_id: claimantId,
-    })
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[eventStore] claimHelperSlot RPC failed', id, error.message);
-          // Was a silent no-op — the optimistic local claim (already
-          // applied above) stayed in place even when the DB rejected the
-          // write, so the claimant's own UI kept showing them as
-          // confirmed for a claim that never actually landed (e.g. the
-          // server-side weekly ride cap trigger rejecting it). Roll back
-          // the same way a lost race already does, so the UI matches what's
-          // actually in the DB.
-          const rollbackDay = get().dayEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e);
-          set({ dayEvents: sortByTime(rollbackDay), events: sortByTime(rollbackDay) });
-          set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e)) });
-          onError?.(
-            error.message.includes('gp_weekly_ride_cap_exceeded')
-              ? "You've reached your weekly ride limit."
-              // Server-side backstop for a ride that isn't actually open to
-              // this claimant's role — should never fire from the normal UI
-              // (the pool/picker already only offers open rides), but can
-              // if the underlying row changed between load and claim.
-              : error.message.includes('not_open_to_grandparents') || error.message.includes('not_open_to_teens')
-              ? "This ride isn't open to you anymore — it may have changed since you last checked."
-              : "Couldn't confirm this — please try again."
-          );
-          return;
-        }
-        const won = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
-        if (!won) {
-          console.warn('[eventStore] claimHelperSlot lost the race on', id, '— rolling back local claim');
-          // Re-fetch the row so the loser's UI reflects who actually won,
-          // instead of just reverting to an unassigned/open state that no
-          // longer matches the DB either.
-          supabase.from('calendar_events').select('*').eq('id', id).single().then(({ data: row }) => {
-            if (!row) return;
-            const fresh = fromRow(row);
-            const rollbackDay = get().dayEvents.map(e => e.id === id ? fresh : e);
-            set({ dayEvents: sortByTime(rollbackDay), events: sortByTime(rollbackDay) });
-            set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? fresh : e)) });
-            return;
-          });
-          return;
-        }
-        // Claim actually landed in the DB — safe for the caller to do
-        // anything gated on genuinely winning (e.g. awarding ride coins),
-        // instead of doing it optimistically before the outcome is known.
-        onWon?.();
+    });
+    if (error) {
+      console.warn('[eventStore] claimHelperSlot RPC failed', id, error.message);
+      onError?.(
+        error.message.includes('gp_weekly_ride_cap_exceeded')
+          ? "You've reached your weekly ride limit."
+          // Server-side backstop for a ride that isn't actually open to
+          // this claimant's role — should never fire from the normal UI
+          // (the pool/picker already only offers open rides), but can
+          // if the underlying row changed between load and claim.
+          : error.message.includes('not_open_to_grandparents') || error.message.includes('not_open_to_teens')
+          ? "This ride isn't open to you anymore — it may have changed since you last checked."
+          : "Couldn't confirm this — please try again."
+      );
+      return;
+    }
+    const won = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
+    // Either way (won or lost), re-fetch the real row and render exactly
+    // what the server has — for a loser this shows who actually won; for
+    // the winner this is the server's own confirmed row, not a guess.
+    const { data: row } = await supabase.from('calendar_events').select('*').eq('id', id).single();
+    if (row) {
+      const fresh = fromRow(row);
+      const nextDay = sortByTime(get().dayEvents.map(e => e.id === id ? fresh : e));
+      set({ dayEvents: nextDay, events: nextDay });
+      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? fresh : e)) });
+    }
+    if (!won) {
+      console.warn('[eventStore] claimHelperSlot lost the race on', id);
+      return;
+    }
+    // Claim actually landed in the DB — safe for the caller to do
+    // anything gated on genuinely winning (e.g. awarding ride coins),
+    // instead of doing it optimistically before the outcome is known.
+    onWon?.();
 
-        // extra carries fields the RPC itself doesn't know about (e.g.
-        // pickup notes) — same scoped-write pattern as before: only write
-        // the keys extra actually names, never a full-row snapshot.
-        if (extra) {
-          const merged = nextDay.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-          if (merged) {
-            const dbPatch = toRowPartial(merged, Object.keys(extra) as (keyof FamilyEvent)[]);
-            supabase.from('calendar_events').update(dbPatch).eq('id', id).then(({ error: extraErr }) => {
-              if (extraErr) console.warn('[eventStore] claimHelperSlot extra-fields write failed', id, extraErr.message);
-            });
-          }
+    // extra carries fields the RPC itself doesn't know about (e.g.
+    // pickup notes) — same scoped-write pattern as before: only write
+    // the keys extra actually names, never a full-row snapshot.
+    if (extra) {
+      const merged = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+      if (merged) {
+        const dbPatch = toRowPartial(merged, Object.keys(extra) as (keyof FamilyEvent)[]);
+        const { data: extraRow, error: extraErr } = await supabase.from('calendar_events').update(dbPatch).eq('id', id).select().maybeSingle();
+        if (extraErr) {
+          console.warn('[eventStore] claimHelperSlot extra-fields write failed', id, extraErr.message);
+        } else if (extraRow) {
+          const fresh = fromRow(extraRow);
+          const nextDay = sortByTime(get().dayEvents.map(e => e.id === id ? fresh : e));
+          set({ dayEvents: nextDay, events: nextDay });
+          set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? fresh : e)) });
         }
+      }
+    }
 
-        // Recurring QA sweep found the "initial accept propagates to the
-        // series" rule (Round 7) only ever applied to the parent-assignment
-        // path (RideRequestCard/RideRequiredEventCard/HelperEventCard all
-        // call updateEventScoped(..., 'following')) — a GP/teen self-claim
-        // via this function never propagated at all, silently leaving every
-        // later occurrence unassigned/open even though the same driver just
-        // confirmed for the first one. Mirror the parent-assignment
-        // behavior here so both paths agree.
-        const wonRow = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-        if (wonRow?.seriesId) {
-          get().updateEventScoped(id, { [nameField]: claimantName, [statusField]: 'confirmed' } as Partial<FamilyEvent>, 'following');
-        }
+    // Recurring QA sweep found the "initial accept propagates to the
+    // series" rule (Round 7) only ever applied to the parent-assignment
+    // path (RideRequestCard/RideRequiredEventCard/HelperEventCard all
+    // call updateEventScoped(..., 'following')) — a GP/teen self-claim
+    // via this function never propagated at all, silently leaving every
+    // later occurrence unassigned/open even though the same driver just
+    // confirmed for the first one. Mirror the parent-assignment
+    // behavior here so both paths agree.
+    const wonRow = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    if (wonRow?.seriesId) {
+      await get().updateEventScoped(id, { [nameField]: claimantName, [statusField]: 'confirmed' } as Partial<FamilyEvent>, 'following');
+    }
 
-        // Notify the event creator their open slot was just filled — this
-        // only runs on the confirmed winner's branch (0-row losers return
-        // above and never reach here), so exactly one notification fires
-        // per slot, not one per optimistic local claim. Same
-        // require()-based cross-store call as choreStore.ts's
-        // declineGrandparentQuest/recallParentQuest (no static import, to
-        // avoid a store-to-store import cycle).
-        //
-        // Was: chat-only — the creator's own bell/push never fired, only a
-        // thread message easy to miss (same "chat instead of a real
-        // notification" gap updateEvent's decline/confirm paths above had).
-        // The chat message is kept as an in-thread record; a real
-        // family-notifier call is added alongside it. Also — was: the
-        // requesting kid was never told at all that a GP/teen self-claim
-        // (as opposed to a parent-driven reassignment via updateEvent)
-        // just confirmed their ride. A parent reassignment and a GP/teen
-        // self-claim are two different code paths that both end in "a
-        // driver is now confirmed," so this reuses updateEvent's own
-        // 'ride_confirmed_for_kid' type rather than inventing a
-        // near-duplicate — same title/body the kid would get either way.
-        try {
-          const merged = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-          const creatorId = merged?.createdBy;
-          const claimantId = getActiveMemberId();
-          if (creatorId && creatorId !== claimantId) {
-            const { useChatStore } = require('@/store/chatStore');
-            const roleLabel = role === 'driver' ? 'driver' : 'helper';
-            useChatStore.getState().sendMessage(creatorId, claimantId ?? creatorId,
-              `✅ ${claimantName} confirmed as ${roleLabel} for "${merged?.title ?? 'your event'}"`);
-            notifyRideAssignment('ride_assignment_accepted', [creatorId], claimantId, {
-              eventTitle: merged?.title, eventId: id, byName: claimantName,
-            });
-          }
-          const kidId = merged?.memberId;
-          const kid = memberById(kidId);
-          if (kidId && kidId !== claimantId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
-            notifyRideAssignment('ride_confirmed_for_kid', [kidId], claimantId, {
-              eventTitle: merged?.title, eventId: id, eventTime: merged?.time,
-              driverName: claimantName,
-            });
-          }
-        } catch (e) {
-          console.warn('[eventStore] claimHelperSlot creator notification failed', e);
-        }
-      });
+    // Notify the event creator their open slot was just filled — this
+    // only runs on the confirmed winner's branch (a lost race returns
+    // above and never reaches here), so exactly one notification fires
+    // per slot. Same require()-based cross-store call as choreStore.ts's
+    // declineGrandparentQuest/recallParentQuest (no static import, to
+    // avoid a store-to-store import cycle).
+    //
+    // Was: chat-only — the creator's own bell/push never fired, only a
+    // thread message easy to miss (same "chat instead of a real
+    // notification" gap updateEvent's decline/confirm paths above had).
+    // The chat message is kept as an in-thread record; a real
+    // family-notifier call is added alongside it. Also — was: the
+    // requesting kid was never told at all that a GP/teen self-claim
+    // (as opposed to a parent-driven reassignment via updateEvent)
+    // just confirmed their ride. A parent reassignment and a GP/teen
+    // self-claim are two different code paths that both end in "a
+    // driver is now confirmed," so this reuses updateEvent's own
+    // 'ride_confirmed_for_kid' type rather than inventing a
+    // near-duplicate — same title/body the kid would get either way.
+    try {
+      const merged = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+      const creatorId = merged?.createdBy;
+      if (creatorId && creatorId !== claimantId) {
+        const { useChatStore } = require('@/store/chatStore');
+        const roleLabel = role === 'driver' ? 'driver' : 'helper';
+        useChatStore.getState().sendMessage(creatorId, claimantId ?? creatorId,
+          `✅ ${claimantName} confirmed as ${roleLabel} for "${merged?.title ?? 'your event'}"`);
+        notifyRideAssignment('ride_assignment_accepted', [creatorId], claimantId, {
+          eventTitle: merged?.title, eventId: id, byName: claimantName,
+        });
+      }
+      const kidId = merged?.memberId;
+      const kid = memberById(kidId);
+      if (kidId && kidId !== claimantId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
+        notifyRideAssignment('ride_confirmed_for_kid', [kidId], claimantId, {
+          eventTitle: merged?.title, eventId: id, eventTime: merged?.time,
+          driverName: claimantName,
+        });
+      }
+    } catch (e) {
+      console.warn('[eventStore] claimHelperSlot creator notification failed', e);
+    }
   },
 
-  deleteEvent: (id) => {
+  deleteEvent: async (id) => {
     const prev = get().dayEvents;
     const prevRange = get().rangeEvents;
     const deletedEvent = prev.find(e => e.id === id) ?? prevRange.find(e => e.id === id);
+    const actorId = getActiveMemberId();
+    // DB-is-truth: await the soft-delete and only remove the event from
+    // local state (and fire the activity log / notifications below) once
+    // the server has actually confirmed it — previously those all fired
+    // unconditionally, before the write's own outcome was known, so a
+    // rejected delete could still notify people the event was gone and log
+    // a "deleted" activity row for something that, server-side, never
+    // actually got deleted.
+    const { error } = await supabase.from('calendar_events')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: actorId })
+      .eq('id', id);
+    if (error) {
+      console.warn('[eventStore] deleteEvent failed', id, error.message);
+      showToast("Couldn't delete — check your connection and try again", 'error');
+      return;
+    }
     const next = prev.filter(e => e.id !== id);
     set({ dayEvents: next, events: next });
     set({ rangeEvents: prevRange.filter(e => e.id !== id) });
-    const actorId = getActiveMemberId();
-    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: actorId }, () => {
-      // Failed soft-delete — the event was already stripped from every
-      // local list above; without this it stayed permanently "deleted" on
-      // this device (until the next full reload happened to restore it)
-      // even though the DB never actually recorded the deletion.
-      if (deletedEvent) {
-        set(s => ({
-          dayEvents: [...s.dayEvents, deletedEvent],
-          events: [...s.events, deletedEvent],
-          rangeEvents: [...s.rangeEvents, deletedEvent],
-        }));
-      }
-    }, () => {
-      // Personal-calendar 2-way sync — only push the delete once
-      // confirmed, same reasoning as updateEvent's onSuccess above.
-      const familyId = getFamilyId();
-      if (familyId && deletedEvent?.createdBy) {
-        supabase.functions.invoke('calendar-sync-push', {
-          body: { eventId: id, familyId, memberId: deletedEvent.createdBy, action: 'delete' },
-        }).catch(e => console.warn('[eventStore] deleteEvent calendar-sync-push failed:', e?.message));
-      }
-      if (deletedEvent?.createdBy && isAppleCalendarSyncEnabled(deletedEvent.createdBy)) {
-        import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
-          pushEventToAppleCalendar(deletedEvent.createdBy!, null, id, 'delete')
-        ).catch(e => console.warn('[eventStore] deleteEvent Apple sync failed:', e?.message));
-      }
-    });
+
+    // Personal-calendar 2-way sync — only push the delete once confirmed,
+    // same reasoning as updateEvent's own sync push.
+    const familyId = getFamilyId();
+    if (familyId && deletedEvent?.createdBy) {
+      supabase.functions.invoke('calendar-sync-push', {
+        body: { eventId: id, familyId, memberId: deletedEvent.createdBy, action: 'delete' },
+      }).catch(e => console.warn('[eventStore] deleteEvent calendar-sync-push failed:', e?.message));
+    }
+    if (deletedEvent?.createdBy && isAppleCalendarSyncEnabled(deletedEvent.createdBy)) {
+      import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+        pushEventToAppleCalendar(deletedEvent.createdBy!, null, id, 'delete')
+      ).catch(e => console.warn('[eventStore] deleteEvent Apple sync failed:', e?.message));
+    }
+
     logActivity({ entityType: 'event', entityId: id, familyId: getFamilyId(), actorId, action: 'deleted' });
     // Audit finding — deleting an event told nobody it was gone: not the
     // person it was for (memberId), not a confirmed driver/helper. Same
@@ -2024,7 +2009,6 @@ export const useEventStore = create<EventState>((set, get) => ({
     // (driver_id/helper_id columns) — was resolving by name via a members
     // lookup, fragile (rename, shared first name) and no longer necessary.
     if (deletedEvent) {
-      const familyId = getFamilyId();
       if (familyId) {
         const recipientIds = new Set<string>();
         if (deletedEvent.memberId && deletedEvent.memberId !== actorId) recipientIds.add(deletedEvent.memberId);
@@ -2070,8 +2054,12 @@ export const useEventStore = create<EventState>((set, get) => ({
     }
   },
 
-  addRecurringEvent: (first, rule) => {
-    const anchorId = get().addEvent({ ...first, recurrenceRule: rule, isSeriesAnchor: true });
+  addRecurringEvent: async (first, rule) => {
+    // DB-is-truth: addEvent is awaited and returns the id the SERVER
+    // assigned to the confirmed anchor row (addEvent itself is now
+    // server-first — see its own comment).
+    const anchorId = await get().addEvent({ ...first, recurrenceRule: rule, isSeriesAnchor: true });
+    if (!anchorId) return '';
 
     const dates = generateOccurrenceDates(first.date, rule, 1);
     // A daily rule with no end date generates up to RECURRENCE_WINDOW_DAYS
@@ -2084,7 +2072,9 @@ export const useEventStore = create<EventState>((set, get) => ({
     // a note to Wednesday's class only, must never touch the others — same
     // independence guarantee the chore team-clone pattern established
     // elsewhere), but they're now built as one batch and applied to local
-    // state / the DB in a single round-trip each, not one at a time.
+    // state / the DB in a single round-trip, not one at a time — and (per
+    // the DB-is-truth conversion) only AFTER that round-trip confirms, from
+    // the server's own returned rows, never from the client-built draft.
     const now = new Date().toISOString();
     const createdBy = first.createdBy ?? getActiveMemberId() ?? undefined;
     // Same untrimmed-title normalization as addEvent — this batch path
@@ -2092,7 +2082,7 @@ export const useEventStore = create<EventState>((set, get) => ({
     // occurrence (see comment above), so every occurrence after the
     // anchor needs its own copy of the trim.
     const trimmedTitle = first.title?.trim() ?? first.title;
-    const occurrences: FamilyEvent[] = dates.map((date, i) => ({
+    const draftOccurrences: FamilyEvent[] = dates.map((date, i) => ({
       ...first,
       title: trimmedTitle,
       id: `ev${Date.now()}_${i}`,
@@ -2104,7 +2094,15 @@ export const useEventStore = create<EventState>((set, get) => ({
       createdAt: now,
     }));
 
-    if (occurrences.length > 0) {
+    if (draftOccurrences.length > 0) {
+      const { data: rows, error } = await supabase.from('calendar_events').insert(draftOccurrences.map(toRow)).select();
+      if (error || !rows) {
+        console.warn('[eventStore] batched recurring insert failed', error?.message);
+        showToast("Couldn't save the recurring series — check your connection and try again", 'error');
+        return anchorId;
+      }
+      const occurrences = rows.map(fromRow);
+
       const currentDate = get().currentDate;
       const sameDayOccurrences = occurrences.filter(ev => ev.date === currentDate);
       if (sameDayOccurrences.length > 0) {
@@ -2139,111 +2137,97 @@ export const useEventStore = create<EventState>((set, get) => ({
         }
         set({ stripMap: sm, stripRows });
       }
-
-      supabase.from('calendar_events').insert(occurrences.map(toRow)).then(({ error }) => {
-        if (error) {
-          console.warn('[eventStore] batched recurring insert failed', error.message);
-          const ids = new Set(occurrences.map(ev => ev.id));
-          const rolledBackDay = get().dayEvents.filter(e => !ids.has(e.id));
-          set({ dayEvents: rolledBackDay, events: rolledBackDay });
-          set({ rangeEvents: get().rangeEvents.filter(e => !ids.has(e.id)) });
-        }
-      });
     }
 
     // seriesId is stamped as a follow-up updateEvent rather than folded into
     // the initial addEvent() call because the anchor's own id (what
     // seriesId needs to be) doesn't exist until addEvent creates it.
-    get().updateEvent(anchorId, { seriesId: anchorId });
+    // updateEvent is itself now server-first (awaited here too) so this
+    // function's own return only happens once every write it depends on
+    // has actually been confirmed by the database.
+    await get().updateEvent(anchorId, { seriesId: anchorId });
     return anchorId;
   },
 
-  extendRecurringSeries: (seriesId) => {
+  extendRecurringSeries: async (seriesId) => {
     const anchor = get().dayEvents.find(e => e.id === seriesId && e.isSeriesAnchor)
       ?? get().rangeEvents.find(e => e.id === seriesId && e.isSeriesAnchor);
     if (!anchor?.recurrenceRule) {
       console.warn('[eventStore] extendRecurringSeries: anchor not loaded or not a series anchor', seriesId);
       return;
     }
-    supabase.from('calendar_events')
+    const { data: latestRows } = await supabase.from('calendar_events')
       .select('date')
       .eq('series_id', seriesId)
       .is('deleted_at', null)
       .order('date', { ascending: false })
-      .limit(1)
-      .then(({ data }) => {
-        const latestDate = data?.[0]?.date ?? anchor.date;
-        supabase.from('calendar_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('series_id', seriesId)
-          .is('deleted_at', null)
-          .then(({ count }) => {
-            const dates = generateOccurrenceDates(latestDate, anchor.recurrenceRule!, count ?? 1);
-            if (dates.length === 0) return;
-            const { id: _anchorId, ...anchorRest } = anchor;
-            // Was: get().addEvent(...) looped once per generated date — same
-            // unbatched shape addRecurringEvent's own header comment
-            // documents already live-crashing "Maximum update depth
-            // exceeded" for (one INSERT + several synchronous set() calls
-            // PER occurrence, plus a realtime echo per row). Mirrors
-            // addRecurringEvent's already-fixed batching: build every
-            // occurrence in memory, apply local state once, write to the DB
-            // once.
-            const now = new Date().toISOString();
-            const createdBy = anchor.createdBy ?? getActiveMemberId() ?? undefined;
-            const occurrences: FamilyEvent[] = dates.map((date, i) => ({
-              ...anchorRest,
-              id: `ev${Date.now()}_${i}`,
-              date, seriesId, isSeriesAnchor: false, recurrenceRule: undefined,
-              createdBy, createdAt: now,
-            }));
+      .limit(1);
+    const latestDate = latestRows?.[0]?.date ?? anchor.date;
+    const { count } = await supabase.from('calendar_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('series_id', seriesId)
+      .is('deleted_at', null);
+    const dates = generateOccurrenceDates(latestDate, anchor.recurrenceRule!, count ?? 1);
+    if (dates.length === 0) return;
+    const { id: _anchorId, ...anchorRest } = anchor;
+    // Was: get().addEvent(...) looped once per generated date — same
+    // unbatched shape addRecurringEvent's own header comment documents
+    // already live-crashing "Maximum update depth exceeded" for (one
+    // INSERT + several synchronous set() calls PER occurrence, plus a
+    // realtime echo per row). Mirrors addRecurringEvent's already-fixed
+    // batching: build every occurrence in memory, write to the DB once,
+    // and (per the DB-is-truth conversion) apply local state only AFTER
+    // that write confirms, from the server's own returned rows.
+    const now = new Date().toISOString();
+    const createdBy = anchor.createdBy ?? getActiveMemberId() ?? undefined;
+    const draftOccurrences: FamilyEvent[] = dates.map((date, i) => ({
+      ...anchorRest,
+      id: `ev${Date.now()}_${i}`,
+      date, seriesId, isSeriesAnchor: false, recurrenceRule: undefined,
+      createdBy, createdAt: now,
+    }));
 
-            const currentDate = get().currentDate;
-            const sameDayOccurrences = occurrences.filter(ev => ev.date === currentDate);
-            if (sameDayOccurrences.length > 0) {
-              const next = sortByTime([...get().dayEvents, ...sameDayOccurrences]);
-              set({ dayEvents: next, events: next });
-              const entry = get()._dayCache[currentDate];
-              if (entry) set({ _dayCache: { ...get()._dayCache, [currentDate]: { ...entry, events: next } } });
-            }
+    const { data: rows, error } = await supabase.from('calendar_events').insert(draftOccurrences.map(toRow)).select();
+    if (error || !rows) {
+      console.warn('[eventStore] extendRecurringSeries: batched insert failed', error?.message);
+      return;
+    }
+    const occurrences = rows.map(fromRow);
 
-            const rangeNext = sortByTime([...get().rangeEvents, ...occurrences]);
-            set({ rangeEvents: rangeNext });
-            const rc = get()._rangeCache;
-            let rangeCacheChanged = false;
-            const nextRangeCache = { ...rc };
-            for (const key of Object.keys(rc)) {
-              const [from, to] = key.split(':');
-              const inRange = occurrences.filter(ev => ev.date >= from && ev.date <= to);
-              if (inRange.length > 0) {
-                nextRangeCache[key] = { ...rc[key], events: sortByTime([...rc[key].events, ...inRange]) };
-                rangeCacheChanged = true;
-              }
-            }
-            if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
+    const currentDate = get().currentDate;
+    const sameDayOccurrences = occurrences.filter(ev => ev.date === currentDate);
+    if (sameDayOccurrences.length > 0) {
+      const next = sortByTime([...get().dayEvents, ...sameDayOccurrences]);
+      set({ dayEvents: next, events: next });
+      const entry = get()._dayCache[currentDate];
+      if (entry) set({ _dayCache: { ...get()._dayCache, [currentDate]: { ...entry, events: next } } });
+    }
 
-            const cat = anchor.category;
-            if (cat) {
-              const sm = { ...get().stripMap };
-              const stripRows = [...get().stripRows];
-              for (const ev of occurrences) {
-                if (!sm[ev.date]?.includes(cat)) sm[ev.date] = [...(sm[ev.date] ?? []), cat];
-                stripRows.push({ date: ev.date, category: cat, memberId: ev.memberId, helper: ev.helper, driverName: ev.driverName });
-              }
-              set({ stripMap: sm, stripRows });
-            }
+    const rangeNext = sortByTime([...get().rangeEvents, ...occurrences]);
+    set({ rangeEvents: rangeNext });
+    const rc = get()._rangeCache;
+    let rangeCacheChanged = false;
+    const nextRangeCache = { ...rc };
+    for (const key of Object.keys(rc)) {
+      const [from, to] = key.split(':');
+      const inRange = occurrences.filter(ev => ev.date >= from && ev.date <= to);
+      if (inRange.length > 0) {
+        nextRangeCache[key] = { ...rc[key], events: sortByTime([...rc[key].events, ...inRange]) };
+        rangeCacheChanged = true;
+      }
+    }
+    if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
 
-            supabase.from('calendar_events').insert(occurrences.map(toRow)).then(({ error }) => {
-              if (error) {
-                console.warn('[eventStore] extendRecurringSeries: batched insert failed', error.message);
-                const idSet = new Set(occurrences.map(ev => ev.id));
-                const rolledBackDay = get().dayEvents.filter(e => !idSet.has(e.id));
-                set({ dayEvents: rolledBackDay, events: rolledBackDay });
-                set({ rangeEvents: get().rangeEvents.filter(e => !idSet.has(e.id)) });
-              }
-            });
-          });
-      });
+    const cat = anchor.category;
+    if (cat) {
+      const sm = { ...get().stripMap };
+      const stripRows = [...get().stripRows];
+      for (const ev of occurrences) {
+        if (!sm[ev.date]?.includes(cat)) sm[ev.date] = [...(sm[ev.date] ?? []), cat];
+        stripRows.push({ date: ev.date, category: cat, memberId: ev.memberId, helper: ev.helper, driverName: ev.driverName });
+      }
+      set({ stripMap: sm, stripRows });
+    }
   },
 
   updateEventScoped: (id, updates, scope) => {
@@ -2354,7 +2338,7 @@ export const useEventStore = create<EventState>((set, get) => ({
     })();
   },
 
-  deleteEventScoped: (id, scope) => {
+  deleteEventScoped: async (id, scope) => {
     if (scope === 'this') {
       // Deleting just the ANCHOR occurrence used to silently end the whole
       // series — recurrenceRule lives ONLY on the anchor row, and both
@@ -2367,35 +2351,35 @@ export const useEventStore = create<EventState>((set, get) => ({
       // signal, just quietly ending months later (QA Round 7, finding B3).
       const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
       if (target?.isSeriesAnchor && target.seriesId && target.recurrenceRule) {
-        supabase.from('calendar_events')
+        const { data } = await supabase.from('calendar_events')
           .select('id, date')
           .eq('series_id', target.seriesId)
           .neq('id', id)
           .is('deleted_at', null)
           .order('date', { ascending: true })
-          .limit(1)
-          .then(({ data }) => {
-            const heir = data?.[0];
-            if (heir) get().updateEvent(heir.id, { isSeriesAnchor: true, recurrenceRule: target.recurrenceRule });
-            get().deleteEvent(id);
-          });
+          .limit(1);
+        const heir = data?.[0];
+        // Promote the heir BEFORE deleting the old anchor — deleteEvent
+        // and updateEvent are both server-first now, so awaiting this
+        // order guarantees a real anchor exists at every point in time,
+        // never a window with none.
+        if (heir) await get().updateEvent(heir.id, { isSeriesAnchor: true, recurrenceRule: target.recurrenceRule });
+        await get().deleteEvent(id);
         return;
       }
-      get().deleteEvent(id);
+      await get().deleteEvent(id);
       return;
     }
     const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-    if (!target?.seriesId) { get().deleteEvent(id); return; }
+    if (!target?.seriesId) { await get().deleteEvent(id); return; }
 
-    supabase.from('calendar_events')
+    const { data, error } = await supabase.from('calendar_events')
       .select('id, date')
       .eq('series_id', target.seriesId)
-      .is('deleted_at', null)
-      .then(({ data, error }) => {
-        if (error || !data) { console.warn('[eventStore] deleteEventScoped: series lookup failed', error?.message); return; }
-        const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
-        for (const rowId of ids) get().deleteEvent(rowId);
-      });
+      .is('deleted_at', null);
+    if (error || !data) { console.warn('[eventStore] deleteEventScoped: series lookup failed', error?.message); return; }
+    const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
+    await Promise.all(ids.map(rowId => get().deleteEvent(rowId)));
   },
 }));
 

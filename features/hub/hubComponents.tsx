@@ -360,7 +360,7 @@ export function AlertBanner({
   neverDispatchedEvents?: FamilyEvent[];
   conflictReasons?: Map<string, string>;
   members: FamilyMember[]; colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   // Viewer's own name — lets each urgent card offer a direct "Assign to Me"
   // instead of routing the common "I'll just take it" case through the full
   // reassign picker.
@@ -484,7 +484,7 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
   reason: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
   activeMemberId?: string;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
 }) {
   const [reassigning, setReassigning] = useState<string | null>(null); // event id currently showing its chip row
   const [dismissing, setDismissing] = useState(false);
@@ -860,7 +860,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
   ev: FamilyEvent; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
   activeMemberId?: string;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   onClose: () => void;
   // Reason string from ParentView's own conflict detection (double-booked
   // kid/helper, or overlap with a work event) — shown as a warning banner
@@ -1557,7 +1557,7 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
   activeName?: string;
   activeMemberId?: string;
   isFirst?: boolean; isLast?: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   // Reason string from ParentView's conflict detection, if this event has one.
   conflictReason?: string;
 }) {

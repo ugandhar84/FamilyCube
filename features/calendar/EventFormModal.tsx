@@ -600,8 +600,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     // fallback), so a parent who just picks "Weekly" without touching the
     // day row still gets the obviously-intended "same day every week."
     const newEventId = repeatFreq === 'none'
-      ? addEvent(eventInput)
-      : useEventStore.getState().addRecurringEvent(eventInput, {
+      ? await addEvent(eventInput)
+      : await useEventStore.getState().addRecurringEvent(eventInput, {
           frequency: repeatFreq,
           days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [primaryKidRideDate.getDay()]) : undefined,
           endDate: repeatEndDate ? localDateStr(repeatEndDate) : undefined,

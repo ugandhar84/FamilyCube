@@ -193,8 +193,8 @@ export async function reconcileAppleCalendar(
   familyId: string,
   currentEvents: FamilyEvent[],
   callbacks: {
-    addEvent: (e: Omit<FamilyEvent, 'id'>) => string;
-    updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+    addEvent: (e: Omit<FamilyEvent, 'id'>) => Promise<string>;
+    updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
     deleteEvent: (id: string) => void;
   },
   options?: { force?: boolean },
@@ -243,10 +243,10 @@ export async function reconcileAppleCalendar(
         // actually differs, avoiding a spurious update loop on every sweep.
         const changed = localEvent.title !== patch.title || localEvent.date !== patch.date
           || localEvent.time !== patch.time || localEvent.location !== patch.location || localEvent.notes !== patch.notes;
-        if (changed && deviceModified > 0) callbacks.updateEvent(familyEventId, patch);
+        if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, patch);
       } else {
         // Genuinely new — added directly in the device Calendar app.
-        const newId = callbacks.addEvent({ ...patch, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
+        const newId = await callbacks.addEvent({ ...patch, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
         map[newId] = deviceEvent.id;
       }
     }

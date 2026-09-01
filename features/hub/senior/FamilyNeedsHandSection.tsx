@@ -33,7 +33,7 @@ export function FamilyNeedsHandSection({
   gpWelcomeChores: ChoreTask[];
   volunteerPool: FamilyEvent[];
   active: FamilyMember; members: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   updateChore: (id: string, patch: Partial<ChoreTask>) => void;
   assignRequest: (id: string, memberId: string) => void;
   // Per explicit product decision, GP-Welcome claims direct — no

@@ -21,7 +21,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 // via ParentView/TodayView, which doesn't use this component.
 export function HubTimelineSection({ active, members, events, updateEvent, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   colors: any; isDark: boolean;
 }) {
   const [showPast, setShowPast] = useState(false);

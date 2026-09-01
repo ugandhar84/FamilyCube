@@ -99,8 +99,8 @@ export function ActionNeededSection({
   events: FamilyEvent[];
   active: FamilyMember; members: FamilyMember[]; allNames: string[];
   colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => Promise<string>;
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   approveQuest: (id: string, by: string) => void;
   declineQuest: (id: string, by: string, reason: string) => void;

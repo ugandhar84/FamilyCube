@@ -39,7 +39,7 @@ export function HouseholdBacklogSection({
   coParentHelperEvents?: FamilyEvent[];
   systemBIds: Set<string>; parentAssignments: ParentQuestAssignment[];
   updateQuest: (id: string, patch: Partial<Quest>) => void;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   respondToParentQuest: (id: string, response: { action: 'ACCEPT' }) => void;

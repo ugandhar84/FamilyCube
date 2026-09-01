@@ -21,8 +21,8 @@ const PICKUP_INDIGO = '#6366F1';
 
 export function RideRequestCard({ ev, active, members, colors, isDark, updateEvent, addEvent, updateEventScoped }: {
   ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => Promise<string>;
   // A recurring ride series previously required assigning a driver
   // separately on EVERY materialized occurrence — the anchor got a helper,
   // every future occurrence stayed stuck on "No driver assigned" forever.
@@ -102,8 +102,8 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   // hardcoded to 'Ride', which is correct here since this card only ever
   // handles category:'Ride' events anyway — kept via the shared helper so
   // RideRequiredEventCard's own fork behaves the same way for its events).
-  const forkRide = (selfDrive: boolean) => {
-    forkRideLegs({
+  const forkRide = async (selfDrive: boolean) => {
+    await forkRideLegs({
       ev, selfDrive, splitCoins,
       assigneePatch: (confirmed) => ({
         helper: confirmed ? active.name : undefined,

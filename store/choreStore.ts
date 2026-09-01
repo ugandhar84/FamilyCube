@@ -1742,21 +1742,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // path). linkedEventId already existed as a column but was previously
     // always null — this is the first real writer of it.
     if (chore.dueDate && chore.dueTime && !chore.linkedEventId) {
-      try {
-        const { useEventStore } = require('./eventStore');
-        const linkedEventId = useEventStore.getState().addEvent({
-          title: chore.title,
-          date: chore.dueDate,
-          time: chore.dueTime,
-          memberId: chore.assignedToId,
-          type: 'reminder',
-          category: 'Chore',
-          createdBy: chore.createdById ?? getActiveMemberId() ?? undefined,
-        });
-        get().updateChore(chore.id, { linkedEventId } as any);
-      } catch (e) {
-        console.warn('[choreStore] addChore calendar materialization failed', e);
-      }
+      // addEvent is async (eventStore.ts's DB-is-truth conversion) — was a
+      // real bug here: this fire-and-forget block never awaited it, so
+      // linkedEventId was a Promise object, not a real event id, silently
+      // writing a stringified promise into the DB instead of a usable
+      // reference. Await it properly.
+      (async () => {
+        try {
+          const { useEventStore } = require('./eventStore');
+          const linkedEventId = await useEventStore.getState().addEvent({
+            title: chore.title,
+            date: chore.dueDate,
+            time: chore.dueTime,
+            memberId: chore.assignedToId,
+            type: 'reminder',
+            category: 'Chore',
+            createdBy: chore.createdById ?? getActiveMemberId() ?? undefined,
+          });
+          if (linkedEventId) get().updateChore(chore.id, { linkedEventId } as any);
+        } catch (e) {
+          console.warn('[choreStore] addChore calendar materialization failed', e);
+        }
+      })();
     }
 
     return chore;

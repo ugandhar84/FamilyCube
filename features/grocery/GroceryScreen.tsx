@@ -302,13 +302,13 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const [returnMode, setReturnMode] = useState(false);
   const [returnIds, setReturnIds] = useState<Set<string>>(new Set());
 
-  const handleCreateReturn = (assigneeId: string) => {
+  const handleCreateReturn = async (assigneeId: string) => {
     const selectedItems = boughtItems.filter(i => returnIds.has(i.id));
     if (selectedItems.length === 0) return;
     const itemLabel = selectedItems.length === 1
       ? `"${selectedItems[0].name}"`
       : `${selectedItems.length} items`;
-    const quest = useQuestStore.getState().addQuest({
+    const quest = await useQuestStore.getState().addQuest({
       title: `↩️ Return ${itemLabel} to the store`,
       description: selectedItems.map(i => `• ${i.name}${i.quantity ? ' (' + i.quantity + ')' : ''}`).join('\n'),
       assignedToId: assigneeId,

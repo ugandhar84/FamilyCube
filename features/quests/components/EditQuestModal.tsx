@@ -197,7 +197,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
     }
     onSave(quest.id, patch);
     if (reassigningAdultTask) {
-      useChoreStore.getState().addParentQuest(quest.id, activeMemberId, assignIds[0], 'DIRECT');
+      await useChoreStore.getState().addParentQuest(quest.id, activeMemberId, assignIds[0], 'DIRECT');
     }
     setSaving(false);
   };

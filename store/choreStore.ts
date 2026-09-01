@@ -475,15 +475,6 @@ let _fetchedAt = 0;
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtFamilyId = '';
 
-// addChore's DB insert is fire-and-forget for its own caller (returns the
-// chore synchronously so existing call sites don't need to change), but a
-// dependent insert that RLS-checks the chore's existence server-side (e.g.
-// addParentQuest's parent_quest_assignments row) needs to wait for the
-// actual commit, not just the local state update — otherwise it can race
-// ahead and get rejected because the chore doesn't exist from the DB's
-// point of view yet. Keyed by chore id, cleared once read.
-const _choreInsertPromises = new Map<string, Promise<{ ok: boolean }>>();
-
 // ─── Helper: resolve family ID ────────────────────────────────────────────────
 
 const getFamilyId = (): string | null => {
@@ -941,7 +932,7 @@ interface ChoreState {
   syncFromDB:          (force?: boolean) => Promise<void>;
 
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
-  addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => ChoreTask;
+  addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
   updateChore:         (id: string, updates: Partial<ChoreTask>) => void;
   deleteChore:         (id: string) => void;
 
@@ -1108,8 +1099,8 @@ interface ChoreState {
   getBadgeProgress:    (userId: string) => UserBadge[];
 
   // ── Parent-only quests ────────────────────────────────────────────────────
-  addParentQuest:      (choreId: string, assignedBy: string, assignedTo?: string, mode?: 'PULL' | 'DIRECT', note?: string) => ParentQuestAssignment | null;
-  createAndAddParentQuest: (task: { title: string; description?: string; dueDate?: string; assignedTo?: string; mode: 'PULL' | 'DIRECT'; createdById: string }) => ChoreTask;
+  addParentQuest:      (choreId: string, assignedBy: string, assignedTo?: string, mode?: 'PULL' | 'DIRECT', note?: string) => Promise<ParentQuestAssignment | null>;
+  createAndAddParentQuest: (task: { title: string; description?: string; dueDate?: string; assignedTo?: string; mode: 'PULL' | 'DIRECT'; createdById: string }) => Promise<ChoreTask>;
   respondToParentQuest:(assignmentId: string, response: {
     action: 'ACCEPT' | 'DECLINE' | 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS';
     details?: string;
@@ -1574,7 +1565,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // CHORE CRUD
   // ─────────────────────────────────────────────────────────────────────────
 
-  addChore: (partial) => {
+  addChore: async (partial) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
 
@@ -1636,11 +1627,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       createdAt:            now,
     };
 
-    set(s => ({ chores: [chore, ...s.chores] }));
-    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify([chore, ...get().chores]));
-
-    // DB insert — map back to snake_case schema fields
-    const insertPromise = dbInsert('chore_tasks', {
+    // DB-is-truth: await the insert and only add the chore to local state
+    // once the server has actually confirmed it — was optimistic (added to
+    // `chores` immediately, insert fired after, tracked via
+    // _choreInsertPromises purely so a dependent write, e.g.
+    // createAndAddParentQuest's assignment row which RLS-checks that
+    // chore_id already exists, could wait for the real insert). Now the
+    // await itself IS that guarantee, and the returned row (via
+    // choreFromRow) is what actually gets rendered — not the client-built
+    // draft.
+    const { ok, row } = await dbInsert('chore_tasks', {
       id:                       chore.id,
       title:                    chore.title,
       description:              chore.description,
@@ -1685,8 +1681,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       shopping_budget:          (partial as any).shoppingBudget ?? null,
       linked_event_id:          chore.linkedEventId ?? null,
     });
-    _choreInsertPromises.set(chore.id, insertPromise);
-    logActivity({ entityType: 'chore', entityId: chore.id, familyId, actorId: chore.createdById ?? getActiveMemberId(), action: 'created' });
+    if (!ok || !row) {
+      console.warn('[choreStore] addChore insert failed');
+      showToast("Couldn't save — check your connection and try again", 'error');
+      throw new Error('addChore insert failed');
+    }
+    const confirmed = choreFromRow(row);
+    set(s => ({ chores: [confirmed, ...s.chores] }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    logActivity({ entityType: 'chore', entityId: confirmed.id, familyId, actorId: confirmed.createdById ?? getActiveMemberId(), action: 'created' });
 
     // 7.1 — a newly-posted claimable POOL quest gets zero signal to eligible
     // kids/teens (and seniors, if GP-eligible) otherwise — they'd only see
@@ -1695,14 +1698,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // this only fires for the unassigned/pool case. Same fire-and-forget
     // invoke shape as the other quest-event-notifier call sites in this
     // file (cheerChore/appreciationPing above).
-    if (chore.isPool && !chore.assignedToId && familyId) {
+    if (confirmed.isPool && !confirmed.assignedToId && familyId) {
       supabase.functions.invoke('quest-event-notifier', {
         body: {
           event: 'quest_posted',
-          questId: chore.id,
-          questTitle: chore.title,
+          questId: confirmed.id,
+          questTitle: confirmed.title,
           familyId,
-          inviteGrandparents: chore.inviteGrandparents ?? false,
+          inviteGrandparents: confirmed.inviteGrandparents ?? false,
         },
       }).catch(e => console.warn('[choreStore] addChore quest_posted notify', e?.message));
     }
@@ -1719,15 +1722,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // this is the direct-assignment case, so the two are mutually
     // exclusive (a pool chore has no assignedToId yet; an assigned chore
     // isn't posted to the open pool for others to claim).
-    if (!chore.isPool && chore.assignedToId && familyId) {
+    if (!confirmed.isPool && confirmed.assignedToId && familyId) {
       supabase.functions.invoke('quest-event-notifier', {
         body: {
           event: 'quest_assigned',
-          questId: chore.id,
-          questTitle: chore.title,
+          questId: confirmed.id,
+          questTitle: confirmed.title,
           familyId,
-          assigneeId: chore.assignedToId,
-          coins: chore.coinsReward ?? 0,
+          assigneeId: confirmed.assignedToId,
+          coins: confirmed.coinsReward ?? 0,
         },
       }).catch(e => console.warn('[choreStore] addChore quest_assigned notify', e?.message));
     }
@@ -1741,7 +1744,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // through calendar_events rather than giving chores their own push
     // path). linkedEventId already existed as a column but was previously
     // always null — this is the first real writer of it.
-    if (chore.dueDate && chore.dueTime && !chore.linkedEventId) {
+    if (confirmed.dueDate && confirmed.dueTime && !confirmed.linkedEventId) {
       // addEvent is async (eventStore.ts's DB-is-truth conversion) — was a
       // real bug here: this fire-and-forget block never awaited it, so
       // linkedEventId was a Promise object, not a real event id, silently
@@ -1751,22 +1754,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         try {
           const { useEventStore } = require('./eventStore');
           const linkedEventId = await useEventStore.getState().addEvent({
-            title: chore.title,
-            date: chore.dueDate,
-            time: chore.dueTime,
-            memberId: chore.assignedToId,
+            title: confirmed.title,
+            date: confirmed.dueDate,
+            time: confirmed.dueTime,
+            memberId: confirmed.assignedToId,
             type: 'reminder',
             category: 'Chore',
-            createdBy: chore.createdById ?? getActiveMemberId() ?? undefined,
+            createdBy: confirmed.createdById ?? getActiveMemberId() ?? undefined,
           });
-          if (linkedEventId) get().updateChore(chore.id, { linkedEventId } as any);
+          if (linkedEventId) get().updateChore(confirmed.id, { linkedEventId } as any);
         } catch (e) {
           console.warn('[choreStore] addChore calendar materialization failed', e);
         }
       })();
     }
 
-    return chore;
+    return confirmed;
   },
 
   updateChore: (id, rawUpdates) => {
@@ -4985,7 +4988,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // PARENT-ONLY QUESTS
   // ─────────────────────────────────────────────────────────────────────────
 
-  addParentQuest: (choreId, assignedBy, assignedTo, mode = 'PULL', note) => {
+  addParentQuest: async (choreId, assignedBy, assignedTo, mode = 'PULL', note) => {
     console.log(`[choreStore] addParentQuest called — choreId=${choreId} assignedBy=${assignedBy} assignedTo=${assignedTo ?? '(self)'} mode=${mode}`);
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) {
@@ -5090,28 +5093,30 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       updatedAt:         now,
     };
 
-    set(s => ({ parentAssignments: [assignment, ...s.parentAssignments] }));
-    // RLS on parent_quest_assignments checks that chore_id already exists in
-    // chore_tasks — if this chore was just created in the same action (e.g.
-    // AddQuestModal creating a chore and immediately delegating it), the
-    // chore's own insert may not have committed yet. Wait for it first so
-    // this insert doesn't race ahead and get silently rejected.
-    const pendingChoreInsert = _choreInsertPromises.get(choreId);
-    (pendingChoreInsert ?? Promise.resolve()).then(() => {
-      _choreInsertPromises.delete(choreId);
-      dbInsert('parent_quest_assignments', {
-        id:          assignment.id,
-        chore_id:    choreId,
-        assigned_by: assignedBy,
-        assigned_to: finalAssignedTo,
-        status:      assignment.status,
-        bounce_count: 0,
-        is_locked:   false,
-        note:        note ?? null,
-        created_at:  now,
-        updated_at:  now,
-      });
+    // DB-is-truth: await the insert before reflecting the assignment
+    // locally. RLS on parent_quest_assignments checks that chore_id already
+    // exists in chore_tasks — every caller (createAndAddParentQuest,
+    // AddQuestModal, EditQuestModal) now awaits its own chore insert before
+    // calling addParentQuest, so the chore row is guaranteed to exist by the
+    // time this runs; no shared _choreInsertPromises wait needed anymore.
+    const { ok: assignOk } = await dbInsert('parent_quest_assignments', {
+      id:          assignment.id,
+      chore_id:    choreId,
+      assigned_by: assignedBy,
+      assigned_to: finalAssignedTo,
+      status:      assignment.status,
+      bounce_count: 0,
+      is_locked:   false,
+      note:        note ?? null,
+      created_at:  now,
+      updated_at:  now,
     });
+    if (!assignOk) {
+      console.warn(`[choreStore] addParentQuest — assignment insert failed for chore ${choreId}`);
+      showToast("Couldn't assign — please try again", 'error');
+      return undefined as any;
+    }
+    set(s => ({ parentAssignments: [assignment, ...s.parentAssignments] }));
 
     // The Household Backlog pool/mine/theirs split is computed from the chore's
     // OWN assignedToId (Household Backlog reads `quests`, not parentAssignments),
@@ -5652,10 +5657,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  createAndAddParentQuest: (task) => {
+  createAndAddParentQuest: async (task) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
-    const chore: ChoreTask = {
+    const draft: ChoreTask = {
       id:               genId(),
       title:            task.title,
       description:      task.description,
@@ -5675,17 +5680,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       redoCount:        0,
       createdAt:        now,
     };
-    set(s => ({ chores: [chore, ...s.chores] }));
-    dbInsert('chore_tasks', {
-      id: chore.id, title: chore.title, description: chore.description,
+    // DB-is-truth: await the insert and render only the confirmed row.
+    // Also closes a real regression: addParentQuest (called below for
+    // DIRECT mode) used to wait on a shared _choreInsertPromises map
+    // entry that ONLY addChore ever populated — this function does its
+    // OWN separate direct insert, so that lookup always silently missed
+    // (Promise.resolve(), no wait at all) for exactly the race the
+    // original comment described. Awaiting the insert HERE, before
+    // calling addParentQuest, closes that gap directly instead of
+    // relying on a shared map keyed by an id addParentQuest has no other
+    // way to know is or isn't already present.
+    const { ok, row } = await dbInsert('chore_tasks', {
+      id: draft.id, title: draft.title, description: draft.description,
       category_type: 'parent_only_quest', base_points: 0,
-      status: 'todo', assigned_to_id: chore.assignedToId,
+      status: 'todo', assigned_to_id: draft.assignedToId,
       created_by_id: task.createdById, family_id: familyId,
       due_date: task.dueDate, created_at: now,
     });
-    // If DIRECT mode, create assignment immediately
+    if (!ok || !row) {
+      console.warn('[choreStore] createAndAddParentQuest insert failed');
+      showToast("Couldn't save — check your connection and try again", 'error');
+      throw new Error('createAndAddParentQuest insert failed');
+    }
+    const chore = choreFromRow(row);
+    set(s => ({ chores: [chore, ...s.chores] }));
+    // If DIRECT mode, create assignment immediately — safe now, the chore
+    // row is confirmed to exist before this fires.
     if (task.mode === 'DIRECT' && task.assignedTo) {
-      get().addParentQuest(chore.id, task.createdById, task.assignedTo, 'DIRECT');
+      await get().addParentQuest(chore.id, task.createdById, task.assignedTo, 'DIRECT');
     }
     return chore;
   },

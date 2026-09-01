@@ -615,7 +615,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     } as any);
     if (newQ?.id) {
       if (isDirectCoParentAssign) {
-        useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, assignIds[0], 'DIRECT');
+        await useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, assignIds[0], 'DIRECT');
       }
       if (bonus > 0) useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
       // Create participant rows: multi-assign → one per kid; pool → none (kids create on claim)
@@ -640,7 +640,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
           ? applyAssignment({ taskId: newQ.id, taskType: 'chore', familyId, category: assignCategory })
           : supabase.functions.invoke('process-kid-chore-assignment', { body: { choreId: newQ.id, familyId, dryRun: false } })
               .then(({ data, error }) => (error || data?.error) ? null : (data as AssignmentSuggestion));
-        applyPromise.then(res => {
+        applyPromise.then(async res => {
           if (res?.decisionType !== 'auto' || !res.selectedMemberId) return;
           // An auto-assigned adult task needs the same Accept/Snooze/
           // Pushback opportunity a manually-picked assignee gets — writing
@@ -654,7 +654,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             // added in the full notification-coverage audit) for every
             // DIRECT-mode call site, this one included — no longer needs a
             // duplicate here.
-            useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
+            await useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
           } else {
             supabase.rpc('reassign_chore', {
               p_chore_id: newQ.id, p_new_member_id: res.selectedMemberId, p_by_member_id: activeMemberId,

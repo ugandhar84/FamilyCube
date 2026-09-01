@@ -413,7 +413,7 @@ export default function SmartTaskComposer({
       });
   }, [linkGroceries, familyId]);
 
-  const create = () => {
+  const create = async () => {
     if (!detected) return;
     const finalTitle = (title || detected.title).trim();
     if (!finalTitle) return;
@@ -511,7 +511,7 @@ export default function SmartTaskComposer({
       const coins = parseInt(coinsStr, 10);
       const isMulti = forMemberIds.length > 1;
       const finalQuestCategory = category ?? detected.category.questCategory ?? 'Other';
-      const newQuest = addQuest({
+      const newQuest = await addQuest({
         title: finalTitle,
         description: notes.trim() || undefined,
         category: finalQuestCategory as any,

@@ -1122,10 +1122,10 @@ interface ChoreState {
   appreciationPing:    (assignmentId: string, fromId: string, message: string) => void;
 
   // ── Grandparent actions ───────────────────────────────────────────────────
-  addGrandparentMatch: (match: Omit<GrandparentMatch, 'id' | 'createdAt' | 'monthlyContributedYtd'>) => void;
+  addGrandparentMatch: (match: Omit<GrandparentMatch, 'id' | 'createdAt' | 'monthlyContributedYtd'>) => Promise<void>;
   applyGrandparentMatches: (childId: string, jarAmounts: { spend: number; save: number; give: number }) => void;
   createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => Promise<ChoreTask>;
-  approveGrandparentQuest: (choreId: string, parentId: string) => void;
+  approveGrandparentQuest: (choreId: string, parentId: string) => Promise<void>;
   declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => Promise<void>;
   // Kid/teen declining a chore assigned directly to them — extracted from
   // features/hub/kid/DeclineQuestSheet.tsx's inline button handler so the
@@ -1133,7 +1133,7 @@ interface ChoreState {
   // from other surfaces (e.g. features/tasks' unified "can't make it" sheet)
   // instead of being re-derived and risking drift between two copies.
   declineChoreAssignment: (choreId: string, byMemberId: string, reason: string) => Promise<void>;
-  grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
+  grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => Promise<void>;
 
   // ── Settings ──────────────────────────────────────────────────────────────
   updateHouseholdSettings: (updates: Partial<HouseholdSettings>) => void;
@@ -5521,7 +5521,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     return chore;
   },
 
-  addGrandparentMatch: (match) => {
+  addGrandparentMatch: async (match) => {
     const now = new Date().toISOString();
     // DB has a unique constraint on (grandparent_id, child_id, match_type) —
     // re-saving a match rule for the same grandkid+type (e.g. adjusting the
@@ -5543,16 +5543,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         maxMonthlyContribution: match.maxMonthlyContribution,
         isActive: true,
       };
-      set(s => ({ grandparentMatches: s.grandparentMatches.map(m => m.id === existing.id ? updated : m) }));
-      dbUpdate('grandparent_matches', existing.id, {
+      const { ok } = await dbUpdate('grandparent_matches', existing.id, {
         match_value:              updated.matchValue,
         match_jar:                updated.matchJar,
         goal_target:              updated.goalTarget,
         max_monthly_contribution: updated.maxMonthlyContribution,
         is_active:                true,
-      }, () => {
-        set(s => ({ grandparentMatches: s.grandparentMatches.map(m => m.id === existing.id ? existing : m) }));
       });
+      if (!ok) {
+        showToast("Couldn't save — please try again", 'error');
+        return;
+      }
+      set(s => ({ grandparentMatches: s.grandparentMatches.map(m => m.id === existing.id ? updated : m) }));
       return;
     }
     const newMatch: GrandparentMatch = {
@@ -5561,8 +5563,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       monthlyContributedYtd: 0,
       createdAt:             now,
     };
-    set(s => ({ grandparentMatches: [newMatch, ...s.grandparentMatches] }));
-    dbInsert('grandparent_matches', {
+    const { ok } = await dbInsert('grandparent_matches', {
       id:                      newMatch.id,
       family_id:               newMatch.familyId,
       grandparent_id:          newMatch.grandparentId,
@@ -5575,25 +5576,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       is_active:               true,
       created_at:              now,
     });
+    if (!ok) {
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
+    set(s => ({ grandparentMatches: [newMatch, ...s.grandparentMatches] }));
   },
 
-  approveGrandparentQuest: (choreId, parentId) => {
-    // Moves from pending to claimable. Was two separate writes to the same
-    // row — updateChore's own status-only patch, then a second dbUpdate
-    // adding reviewedAt that updateChore's call didn't carry (not a true
-    // duplicate like the other sites in this file, since the field sets
-    // differed, but still two round-trips for one logical change with no
-    // rollback on the second). Folded into the one call.
-    get().updateChore(choreId, { status: 'todo', reviewedAt: new Date().toISOString() });
+  approveGrandparentQuest: async (choreId, parentId) => {
+    // Moves from pending to claimable.
+    await get().updateChore(choreId, { status: 'todo', reviewedAt: new Date().toISOString() });
   },
 
-  grandparentApproveAndCheer: (choreId, grandparentId, sticker) => {
+  grandparentApproveAndCheer: async (choreId, grandparentId, sticker) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_grandparent_approval') return;
     if (!chore.assignedToId) return;
 
     const now = new Date().toISOString();
-    get().updateChore(choreId, { status: 'completed', approvedAt: now });
+    await get().updateChore(choreId, { status: 'completed', approvedAt: now });
 
     // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
     // display only): each kid is verified and paid independently — falls
@@ -5605,7 +5606,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // now included, matching approveChore's identical payout.
     if (chore.basePoints > 0) {
       const pts = chore.basePoints + (chore.bonusCoins ?? 0);
-      get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, 'gpCoins');
+      await get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, 'gpCoins');
     }
 
     // Increment Grand Champion badge progress

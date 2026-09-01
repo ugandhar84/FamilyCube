@@ -177,8 +177,25 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // to already have the specific event open). RideRequiredEventCard already
   // writes rideRequired:true on any action taken from it regardless of
   // whether the flag was set going in, so it's safe to render for this case.
+  //
+  // Live-reported bug: a plain category:'Event' item with no location
+  // (e.g. "Pick up kid from school" typed as a generic event, not a Ride)
+  // that HAD a real helper assigned — then declined via "Can't" — fell
+  // through both this filter and the Ride one above: category !== 'Ride',
+  // rideRequired never got set (only ever written when a driver NAME is
+  // typed at creation, not a helper), and location was never set either.
+  // decline_event_assignment correctly cleared helper_name/helper_status
+  // server-side, correctly landing the event in `unassigned`, but it then
+  // rendered NOWHERE on either parent's Hub — an event that once had a
+  // real assignee and lost it silently vanished instead of surfacing as
+  // needing a new one. helperId/driverId are never cleared by the decline
+  // RPC (only the *_name/*_status columns are), so a lingering id with no
+  // name is a reliable signal "this slot was filled and is now open again"
+  // — catch it here regardless of category/location.
   const pendingRideRequiredEvents = unassigned.filter(e =>
-    e.rideRequired || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
+    e.rideRequired
+    || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
+    || !!e.helperId || !!e.driverId
   );
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a

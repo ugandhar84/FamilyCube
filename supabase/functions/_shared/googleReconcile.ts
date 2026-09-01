@@ -175,6 +175,49 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
   }
 
   const patch = googleBodyToPortablePatch(item);
+
+  // Live-reported bug: a FamilyCube-native Ride (e.g. "Pick up kid from
+  // school," created directly in-app with its own driver/helper
+  // assignment) and this same real-world pickup ALSO existing on the
+  // connected Google Calendar (e.g. the other parent added it there, or a
+  // school's shared calendar pushed it) previously always landed as two
+  // completely independent calendar_events rows — this function had no
+  // path back to check_likely_duplicate_event at all, unlike manual
+  // creation (EventFormModal.tsx/AskCubeChat.tsx), which already warns on
+  // this exact collision. The two rows then showed as a genuine "double
+  // booked" conflict for whoever ended up assigned on both, with no way
+  // to tell from the UI that they were the same real pickup.
+  //
+  // Only checked for a genuinely NEW external item (this branch — an
+  // already-linked item goes through the update path above instead), and
+  // only when a same-title/time/family FamilyCube event already exists
+  // within the RPC's own 14-day window. Link this Google item to that
+  // EXISTING row instead of inserting a second one — the native row's
+  // richer fields (driver/helper assignment, category, coins, etc.) are
+  // preserved untouched; only the external link is created, so future
+  // Google-side edits reconcile onto the real row via the update branch
+  // above instead of drifting a separate copy.
+  if (patch.title && patch.startTime && patch.date) {
+    const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
+      p_family_id: connection.family_id,
+      p_title: patch.title,
+      p_start_time: patch.startTime,
+      p_date: patch.date,
+    });
+    const dupe = Array.isArray(dupes) ? dupes[0] : dupes;
+    if (dupe?.id) {
+      const { data: alreadyLinked } = await supabase.from('event_external_links')
+        .select('id').eq('connection_id', connection.id).eq('event_id', dupe.id).maybeSingle();
+      if (!alreadyLinked) {
+        await supabase.from('event_external_links').insert({
+          event_id: dupe.id, connection_id: connection.id, external_event_id: identityId,
+          external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+  }
+
   const newId = crypto.randomUUID();
   await supabase.from('calendar_events').insert({
     id: newId, family_id: connection.family_id, member_id: connection.member_id,

@@ -19,6 +19,16 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
 
   do {
     const params = new URLSearchParams();
+    // Google's Events.list defaults showDeleted to false — a cancelled
+    // event is silently OMITTED from the response entirely, even on a
+    // valid incremental syncToken call, unless this is explicitly set.
+    // Without it, reconcileOneGoogleEvent's `item.status === 'cancelled'`
+    // branch could never even be reached, no matter how correct its own
+    // logic is — live-reported: an event deleted directly on Google
+    // Calendar never disappeared from the app, even after reopening Hub
+    // (which forces an immediate poll). Must be set on every page/branch
+    // of this call, same as singleEvents.
+    params.set('showDeleted', 'true');
     if (pageToken) {
       // pageToken is treated as a fully opaque cursor carrying the
       // original query forward — sent alone, no other params alongside it.

@@ -1124,15 +1124,15 @@ interface ChoreState {
   // ── Grandparent actions ───────────────────────────────────────────────────
   addGrandparentMatch: (match: Omit<GrandparentMatch, 'id' | 'createdAt' | 'monthlyContributedYtd'>) => void;
   applyGrandparentMatches: (childId: string, jarAmounts: { spend: number; save: number; give: number }) => void;
-  createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => ChoreTask;
+  createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => Promise<ChoreTask>;
   approveGrandparentQuest: (choreId: string, parentId: string) => void;
-  declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => void;
+  declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => Promise<void>;
   // Kid/teen declining a chore assigned directly to them — extracted from
   // features/hub/kid/DeclineQuestSheet.tsx's inline button handler so the
   // same 3-way dispatch (GP quest / team-clone / plain chore) is reusable
   // from other surfaces (e.g. features/tasks' unified "can't make it" sheet)
   // instead of being re-derived and risking drift between two copies.
-  declineChoreAssignment: (choreId: string, byMemberId: string, reason: string) => void;
+  declineChoreAssignment: (choreId: string, byMemberId: string, reason: string) => Promise<void>;
   grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -5298,7 +5298,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // GRANDPARENT ACTIONS
   // ─────────────────────────────────────────────────────────────────────────
 
-  createGrandparentQuest: (task) => {
+  createGrandparentQuest: async (task) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
     // GP-created quests enter the parent safety-review queue. Target children
@@ -5306,7 +5306,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // (split points evenly) or drop to the bounty pool when no kids selected.
     const targets = task.childIds?.length ? [...new Set(task.childIds)] : [];
     const perKid  = targets.length > 0 ? Math.floor(task.basePoints / targets.length) : undefined;
-    const chore: ChoreTask = {
+    const draft: ChoreTask = {
       id:               genId(),
       title:            task.title,
       description:      task.description,
@@ -5328,15 +5328,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       redoCount:        0,
       createdAt:        now,
     };
-    set(s => ({ chores: [chore, ...s.chores] }));
-    dbInsert('chore_tasks', {
-      id: chore.id, title: chore.title, description: chore.description,
+    // DB-is-truth: await the insert and only add the chore to local state
+    // once the server has confirmed it.
+    const { ok, row } = await dbInsert('chore_tasks', {
+      id: draft.id, title: draft.title, description: draft.description,
       category_type: 'grandparent_quest', base_points: task.basePoints,
       status: 'pending_parent_approval', sponsor_user_id: task.sponsorId,
       target_child_ids: targets, coins_split_per_kid: perKid,
       quest_mode: task.mode ?? null, requires_photo: task.requiresPhoto ?? true,
       family_id: familyId, due_date: task.dueDate, created_at: now,
     });
+    if (!ok || !row) {
+      console.warn('[choreStore] createGrandparentQuest insert failed');
+      showToast("Couldn't save — check your connection and try again", 'error');
+      throw new Error('createGrandparentQuest insert failed');
+    }
+    const chore = choreFromRow(row);
+    set(s => ({ chores: [chore, ...s.chores] }));
     // Audit finding — a GP-created quest enters the parent safety-review
     // queue (status 'pending_parent_approval') but no parent was ever told
     // one was waiting — they'd only see it by opening the review deck.
@@ -5362,7 +5370,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     return chore;
   },
 
-  declineGrandparentQuest: (choreId, parentId, reason) => {
+  declineGrandparentQuest: async (choreId, parentId, reason) => {
     // Kid declines a GP quest assigned to them → release back to the pool so
     // siblings can still claim it. Single-target quests go back to the bounty
     // pool rather than being killed entirely.
@@ -5393,21 +5401,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     if (!chore.isPool && !chore.targetChildIds?.length) {
       // Directly assigned → release to pool for the whole family.
-      // updateChore already writes this same patch to chore_tasks itself
-      // (with rollback on failure) — was a second, redundant dbUpdate call
-      // to the same row right after.
-      get().updateChore(choreId, {
+      await get().updateChore(choreId, {
         status: 'todo', isPool: true, assignedToId: undefined,
         rejectionReason: reason, reviewedAt: new Date().toISOString(),
       });
       return;
     }
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status: 'declined', rejectionReason: reason, reviewedAt: new Date().toISOString(),
     });
   },
 
-  declineChoreAssignment: (choreId, byMemberId, reason) => {
+  declineChoreAssignment: async (choreId, byMemberId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
 
@@ -5423,7 +5428,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // declineGrandparentQuest sends the sponsor DM itself — only need the
       // family-wide fallback here for the no-sponsor case, which it doesn't
       // cover.
-      get().declineGrandparentQuest(choreId, byMemberId, reason);
+      await get().declineGrandparentQuest(choreId, byMemberId, reason);
       if (!chore.sponsorUserId) {
         try {
           const { useChatStore } = require('./chatStore');
@@ -5440,13 +5445,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // family-wide pool would expose it to kids who were never targeted,
       // losing the shortlist framing; the other targets' clones are
       // separate rows, untouched either way.
-      get().updateChore(choreId, { status: 'declined', assignedToId: undefined });
+      await get().updateChore(choreId, { status: 'declined', assignedToId: undefined });
     } else {
       // Plain (non-team, non-GP) household chore — send back to the pool.
       // rejectionReason/declinedAt record who declined and why so the
       // creator sees "declined by X" instead of a task that looks brand
       // new (PoolQuestCard reads these).
-      get().updateChore(choreId, {
+      await get().updateChore(choreId, {
         assignedToId: undefined, isPool: true, status: 'todo', claimedAt: undefined,
         rejectionReason: `Declined by ${byName}: "${reason}"`,
         declinedAt: new Date().toISOString(),

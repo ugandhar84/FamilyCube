@@ -1438,7 +1438,20 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // and saved for an unrelated reason. helperTouched (below) additionally
   // replaces the value-diff itself with an explicit dirty flag, since even
   // a correctly-seeded value-diff is fragile against this class of bug.
-  const [helperName, setHelperName] = useState(event.helper ?? '');
+  // For Ride, this whole "Driven by" section reads/writes helper/helperId
+  // (see ROLE_HELPER_CATEGORIES's comment below — Ride keeps `helper` as
+  // the driver directly), but a Ride can just as easily get its actual
+  // driver assigned through the driver_id/driver_name column pair instead
+  // (reassignEvent, confirm/decline flows, HelperEventCard's "Take Over",
+  // etc. all write there — see eventStore.ts). Seeding only from
+  // event.helper/event.helperId left the picker showing NO ONE selected
+  // for a Ride that was, in fact, already assigned — live-reported: "this
+  // ride already assigned to Praveena but in the edit it is not showing
+  // the preselected picker in the helper." Fall back to the driver
+  // columns whenever the helper ones are empty, for a Ride specifically.
+  const rideDriverFallbackName = event.category === 'Ride' ? event.driverName : undefined;
+  const rideDriverFallbackId = event.category === 'Ride' ? event.driverId : undefined;
+  const [helperName, setHelperName] = useState(event.helper ?? rideDriverFallbackName ?? '');
   const [helperTouched, setHelperTouched] = useState(false);
   // event.helperId is the real column now (calendar_events.helper_id) —
   // prefer it directly instead of re-deriving via a name lookup, which is
@@ -1446,6 +1459,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // fallback for an older row saved before that column existed.
   const [helperId,   setHelperId]   = useState<string | undefined>(
     event.helperId ?? members.find((m: any) => m.name === event.helper)?.id
+    ?? rideDriverFallbackId ?? members.find((m: any) => m.name === rideDriverFallbackName)?.id
   );
   const [editMemberIds, setEditMemberIds] = useState<string[]>(
     event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : []

@@ -230,19 +230,24 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     const id = `trip_${Date.now()}`;
     const startedAt = new Date().toISOString();
-    const optimistic: Trip = {
-      id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
-      overdueAlertSent: false, eventId,
-    };
-    const nextTrips = [...get().activeTrips, optimistic];
-    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
-    persist(nextTrips);
-
-    await supabase.from('trips').insert({
+    // DB-is-truth: await the insert before reflecting the trip locally —
+    // was optimistic (set immediately, no rollback on failure).
+    const { error } = await supabase.from('trips').insert({
       id, family_id: familyId, driver_member_id: driverMemberId,
       pickup_member_id: pickupMemberId ?? null, eta_minutes: etaMinutes,
       started_at: startedAt, event_id: eventId ?? null,
     });
+    if (error) {
+      console.warn('[tripStore] dispatch insert failed', error.message);
+      return;
+    }
+    const trip: Trip = {
+      id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
+      overdueAlertSent: false, eventId,
+    };
+    const nextTrips = [...get().activeTrips, trip];
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
 
     notifyTrip('trip_started', familyId, driverMemberId, {
       tripId: id,
@@ -254,22 +259,29 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   updateEta: async (tripId, etaMinutes) => {
     const trips = get().activeTrips;
-    const idx = trips.findIndex(t => t.id === tripId);
-    if (idx === -1) return;
-    const nextTrips = trips.map(t => t.id === tripId ? { ...t, etaMinutes } : t);
+    if (!trips.some(t => t.id === tripId)) return;
+    const { error } = await supabase.from('trips').update({ eta_minutes: etaMinutes }).eq('id', tripId);
+    if (error) {
+      console.warn('[tripStore] updateEta failed', error.message);
+      return;
+    }
+    const nextTrips = get().activeTrips.map(t => t.id === tripId ? { ...t, etaMinutes } : t);
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
-    await supabase.from('trips').update({ eta_minutes: etaMinutes }).eq('id', tripId);
   },
 
   markOverdueAlertSent: async (tripId) => {
     const trips = get().activeTrips;
     const trip = trips.find(t => t.id === tripId);
     if (!trip || trip.overdueAlertSent) return;
-    const nextTrips = trips.map(t => t.id === tripId ? { ...t, overdueAlertSent: true } : t);
+    const { error } = await supabase.from('trips').update({ overdue_alert_sent: true }).eq('id', tripId);
+    if (error) {
+      console.warn('[tripStore] markOverdueAlertSent failed', error.message);
+      return;
+    }
+    const nextTrips = get().activeTrips.map(t => t.id === tripId ? { ...t, overdueAlertSent: true } : t);
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
-    await supabase.from('trips').update({ overdue_alert_sent: true }).eq('id', tripId);
 
     notifyTrip('trip_overdue', trip.familyId, trip.driverMemberId, {
       tripId: trip.id,
@@ -282,9 +294,13 @@ export const useTripStore = create<TripState>((set, get) => ({
   complete: async (tripId) => {
     const trips = get().activeTrips;
     if (!trips.some(t => t.id === tripId)) return;
-    const nextTrips = trips.filter(t => t.id !== tripId);
+    const { error } = await supabase.from('trips').update({ completed_at: new Date().toISOString() }).eq('id', tripId);
+    if (error) {
+      console.warn('[tripStore] complete failed', error.message);
+      return;
+    }
+    const nextTrips = get().activeTrips.filter(t => t.id !== tripId);
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
-    await supabase.from('trips').update({ completed_at: new Date().toISOString() }).eq('id', tripId);
   },
 }));

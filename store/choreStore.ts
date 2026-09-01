@@ -971,11 +971,11 @@ interface ChoreState {
   // currently: a recurring chore whose due_date is still in the future.
   // One-time chores and on/after-due-date recurring chores always succeed.
   submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => boolean;
-  resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
+  resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
   // Internal — shared by submitChore/resubmitChore, calls the submit_chore
   // RPC (server-side redo-cap/self-assigned-parent branch + coin payout).
   // Not part of the public store API surface, not called by UI directly.
-  _submitChoreViaRpc:       (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => void;
+  _submitChoreViaRpc:       (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
   // QA punch list #5 — pre-payout dispute (kid disagrees with a redo
   // request, asks a second parent instead of just resubmitting). See
   // migration 20260908150000_redo_dispute_rpcs.sql.
@@ -2577,79 +2577,70 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // submitChore and resubmitChore since the server-side branch is
   // identical either way (the RPC only cares about the row's own status/
   // redo_count/created_by_id, not which client action name got there).
-  _submitChoreViaRpc: (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => {
+  _submitChoreViaRpc: async (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => {
     const now = new Date().toISOString();
-    // Optimistic guess — pending_approval unless the RPC's own re-derived
-    // branches (self-assigned-parent / redo-cap) say otherwise, corrected
-    // by the RPC's real response below. LOCAL-ONLY set() here, deliberately
-    // NOT updateChore() — updateChore fires its OWN independent async DB
-    // write (a plain supabase.from(...).update(...), racing the RPC call
-    // right below it). Live-tested bug: the RPC correctly wrote
-    // status='auto_approved' on a redo-cap submission, then updateChore's
-    // own optimistic write landed ~8ms later and silently clobbered it
-    // back to 'pending_approval' IN THE DATABASE — not just local state,
-    // the real row. A kid's redo-cap auto-approval kept reverting to
-    // needing manual review because two independent writers were racing
-    // the same row for the same submit action.
-    set(s => ({
-      chores: s.chores.map(c => c.id === choreId
-        ? { ...c, status: 'pending_approval', submissionNote: opts?.note ?? c.submissionNote, submissionPhotoUrl: opts?.photoUrl ?? c.submissionPhotoUrl, submittedAt: now }
-        : c),
-    }));
-    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-    supabase.rpc('submit_chore', {
+    // DB-is-truth: await the RPC and only reflect the transition locally
+    // once its real re-derived branch (self-assigned-parent / redo-cap /
+    // normal pending_approval) comes back — was optimistic (guessed
+    // pending_approval immediately, corrected after). Also closes a
+    // previously live-tested double-writer race: updateChore() must NEVER
+    // be used here even now, since a second independent writer on the
+    // same row could still land between this await and its own — this
+    // function alone is the only writer of chore_tasks.status for a submit.
+    const { data, error } = await supabase.rpc('submit_chore', {
       p_chore_id: choreId, p_member_id: chore.assignedToId,
       p_note: opts?.note ?? null, p_photo_url: opts?.photoUrl ?? null,
-    }).then(({ data, error }) => {
-      if (error) {
-        console.warn('[choreStore] submit_chore RPC failed on', choreId, '— rolling back local state:', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? chore : c) }));
-        AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-        return;
-      }
-      const result = Array.isArray(data) ? data[0] : data;
-      if (!result) return;
-      const newStatus: ChoreStatus = result.chore.status;
-      set(s => ({
-        chores: s.chores.map(c => c.id === choreId ? {
-          ...c, status: newStatus,
-          approvedAt: result.chore.approved_at ?? c.approvedAt,
-          reviewedAt: result.chore.reviewed_at ?? c.reviewedAt,
-          approvalWindowExpiresAt: result.chore.approval_window_expires_at ?? c.approvalWindowExpiresAt,
-        } : c),
-      }));
-      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-      _fetchedAt = 0;
-      // award_coins already ran server-side inside the RPC — mirror the
-      // local member-balance patch + jar-split reporting row awardPoints()
-      // normally does, without re-calling award_coins a second time (that
-      // would double-pay). See awardPoints()'s own comment: the RPC call
-      // is the source of truth, everything else here is display/reporting.
-      if (result.coins_paid > 0 && chore.assignedToId) {
-        const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-        try {
-          const { useFamilyStore } = require('./familyStore');
-          useFamilyStore.setState((s: any) => ({
-            members: s.members.map((m: any) => m.id === chore.assignedToId
-              ? wallet === 'gpCoins'
-                ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
-                : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
-              : m),
-          }));
-        } catch { /* familyStore not mounted yet — server balance still landed */ }
-        const settings = get().householdSettings;
-        const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
-        dbInsert('point_transactions', {
-          id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
-          transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
-          notes: result.auto_approved ? 'Chore auto-approved (redo cap reached)' : 'Chore approved', created_at: now, wallet,
-        });
-      }
-      if (newStatus === 'pending_approval') notifyQuestSubmitted(chore);
     });
+    if (error) {
+      console.warn('[choreStore] submit_chore RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't submit — please try again", 'error');
+      return;
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result) return;
+    const newStatus: ChoreStatus = result.chore.status;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, status: newStatus,
+        submissionNote: opts?.note ?? c.submissionNote,
+        submissionPhotoUrl: opts?.photoUrl ?? c.submissionPhotoUrl,
+        submittedAt: now,
+        approvedAt: result.chore.approved_at ?? c.approvedAt,
+        reviewedAt: result.chore.reviewed_at ?? c.reviewedAt,
+        approvalWindowExpiresAt: result.chore.approval_window_expires_at ?? c.approvalWindowExpiresAt,
+      } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    // award_coins already ran server-side inside the RPC — mirror the
+    // local member-balance patch + jar-split reporting row awardPoints()
+    // normally does, without re-calling award_coins a second time (that
+    // would double-pay). See awardPoints()'s own comment: the RPC call
+    // is the source of truth, everything else here is display/reporting.
+    if (result.coins_paid > 0 && chore.assignedToId) {
+      const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        useFamilyStore.setState((s: any) => ({
+          members: s.members.map((m: any) => m.id === chore.assignedToId
+            ? wallet === 'gpCoins'
+              ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+              : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+            : m),
+        }));
+      } catch { /* familyStore not mounted yet — server balance still landed */ }
+      const settings = get().householdSettings;
+      const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
+      dbInsert('point_transactions', {
+        id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
+        transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
+        notes: result.auto_approved ? 'Chore auto-approved (redo cap reached)' : 'Chore approved', created_at: now, wallet,
+      });
+    }
+    if (newStatus === 'pending_approval') notifyQuestSubmitted(chore);
   },
 
-  resubmitChore: (choreId, opts) => {
+  resubmitChore: async (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'redo_requested') return;
     if (chore.requiresPhotoProof && !opts?.photoUrl && !chore.submissionPhotoUrl) return;
@@ -2659,7 +2650,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // status check already accepts 'redo_requested' as a valid starting
     // state, so no separate resubmit-specific RPC is needed; the
     // self-assigned-parent/redo-cap branches are identical either way.
-    get()._submitChoreViaRpc(choreId, chore, {
+    await get()._submitChoreViaRpc(choreId, chore, {
       note: opts?.note ?? chore.submissionNote,
       photoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
     });

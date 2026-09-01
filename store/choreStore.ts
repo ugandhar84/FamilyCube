@@ -944,7 +944,7 @@ interface ChoreState {
   // from under the claim entirely (spec 3.4's "this quest was just removed
   // by a parent"). Distinguished with one extra existence check on the lost
   // race, so the caller can show the right message instead of a generic one.
-  claimBounty:              (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
+  claimBounty:              (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => Promise<void>;
   // Multi-slot bounty claiming (chore_tasks.max_claimants > 1) — each kid's
   // claim tracked independently in bounty_claims rather than assignedToId.
   // claimBounty automatically delegates here when maxClaimants > 1.
@@ -966,7 +966,7 @@ interface ChoreState {
   // slot for anyone else.
   withdrawBountyClaim:      (choreId: string, childId: string) => Promise<void>;
   loadBountyClaims:         (choreId: string) => Promise<void>;
-  claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
+  claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => Promise<void>;
   // Returns false (and does nothing) if the chore isn't submittable yet —
   // currently: a recurring chore whose due_date is still in the future.
   // One-time chores and on/after-due-date recurring chores always succeed.
@@ -2405,28 +2405,45 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // CHILD ACTIONS
   // ─────────────────────────────────────────────────────────────────────────
 
-  claimBounty: (choreId, childId, onLost) => {
+  claimBounty: async (choreId, childId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'bounty' || chore.status !== 'todo') return;
     // maxClaimants > 1 is a genuinely different mechanism — claimBountySlot,
     // below — tracked per-participant via the separate bounty_claims table
     // instead of the single assignedToId field this function's CAS guards.
     if (chore.maxClaimants && chore.maxClaimants > 1) {
-      get().claimBountySlot(choreId, childId, onLost);
+      await get().claimBountySlot(choreId, childId, onLost);
       return;
     }
     if (chore.assignedToId) return; // Already claimed
 
-    // Two kids tapping "Claim" on the same pool bounty within the same
-    // round-trip window would both pass the local guard above and both
-    // locally set() themselves as the assignee — going through the generic
-    // updateChore path fires a plain UPDATE with no WHERE guard, so
-    // Postgres would just last-writer-win with no error surfaced to the
-    // loser. Apply the optimistic local update the same way updateChore
-    // would, but send the actual DB write ourselves with a conditional
-    // WHERE assigned_to_id IS NULL: only the first request to actually
-    // land can succeed, and the loser's optimistic local claim is rolled
-    // back once the 0-row result comes back.
+    // DB-is-truth: await the CAS write and only reflect a claim locally
+    // once we know it actually won — was optimistic (set immediately,
+    // rolled back on loss), which briefly showed the loser as the
+    // claimant during the race window. Conditional WHERE assigned_to_id
+    // IS NULL still ensures only the first request to actually land wins.
+    _fetchedAt = 0;
+    const { data, error } = await supabase.from('chore_tasks')
+      .update({ assigned_to_id: childId, status: 'in_progress', is_pool: false })
+      .eq('id', choreId)
+      .is('assigned_to_id', null)
+      .select('id');
+    if (error) {
+      console.warn('[choreStore] claimBounty DB update failed', error.message);
+      showToast("Couldn't claim — please try again", 'error');
+      return;
+    }
+    if (!data || data.length === 0) {
+      console.warn('[choreStore] claimBounty lost the race on', choreId);
+      // Spec 3.4 — distinguish "someone else claimed it" from "it was
+      // deleted": a follow-up existence check is the only way to tell
+      // the two apart, since both produce the same 0-row CAS result.
+      if (onLost) {
+        const { data: stillExists } = await supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle();
+        onLost(stillExists ? 'claimed' : 'deleted');
+      }
+      return;
+    }
     // Deep QA trace found this diverged from every sibling claim path
     // (claimPoolQuest, claimBountySlot) in two ways: it left status at
     // 'todo' instead of 'in_progress' (meaning propose_terms_change's
@@ -2441,56 +2458,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'in_progress', isPool: false } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-    _fetchedAt = 0;
-    supabase.from('chore_tasks')
-      .update({ assigned_to_id: childId, status: 'in_progress', is_pool: false })
-      .eq('id', choreId)
-      .is('assigned_to_id', null)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[choreStore] claimBounty DB update failed', error.message);
-          return;
-        }
-        if (!data || data.length === 0) {
-          console.warn('[choreStore] claimBounty lost the race on', choreId, '— rolling back local claim');
-          // Was only reverting assignedToId — left status/isPool stuck on
-          // the optimistic claimed values even after the claim itself was
-          // rolled back, the same status/isPool desync just fixed above
-          // for the success path.
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.assignedToId === childId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          // Spec 3.4 — distinguish "someone else claimed it" from "it was
-          // deleted": a follow-up existence check is the only way to tell
-          // the two apart, since both produce the same 0-row CAS result.
-          if (onLost) {
-            supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle()
-              .then(
-                ({ data: stillExists }) => onLost(stillExists ? 'claimed' : 'deleted'),
-                () => onLost('claimed'),
-              );
-          }
-          return;
-        }
-        // Audit finding — the comment on claimBountySlot above (and this
-        // file's own quest-event-notifier routing-matrix doc comment) both
-        // claimed claimBounty already fired 'quest_claimed' alongside it;
-        // verified false — this single-claimant path called nothing at all.
-        // Tells parents/seniors a kid just claimed a bounty, same event
-        // claimBountySlot fires for the multi-slot case.
-        if (chore.familyId) {
-          supabase.functions.invoke('quest-event-notifier', {
-            body: {
-              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
-              familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
-            },
-          }).catch(e => console.warn('[choreStore] claimBounty notify failed', e?.message));
-        }
-      });
+    // Audit finding — the comment on claimBountySlot above (and this
+    // file's own quest-event-notifier routing-matrix doc comment) both
+    // claimed claimBounty already fired 'quest_claimed' alongside it;
+    // verified false — this single-claimant path called nothing at all.
+    // Tells parents/seniors a kid just claimed a bounty, same event
+    // claimBountySlot fires for the multi-slot case.
+    if (chore.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+          familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
+        },
+      }).catch(e => console.warn('[choreStore] claimBounty notify failed', e?.message));
+    }
   },
 
   // General-purpose pool-quest claim with the same first-write-wins
@@ -2505,7 +2486,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // claimBounty's exact CAS + rollback shape, generalized to any pool
   // chore, and sets status to 'in_progress' (what claimQuest's callers
   // expect) instead of 'todo'.
-  claimPoolQuest: (choreId, memberId, onLost) => {
+  claimPoolQuest: async (choreId, memberId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     // claimPoolQuest — not claimBounty — is the actual reachable "Claim"
@@ -2513,62 +2494,54 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // comment), so the multi-slot branch has to live here too, not just on
     // claimBounty's own dormant single-claimant path.
     if (chore.maxClaimants && chore.maxClaimants > 1) {
-      get().claimBountySlot(choreId, memberId, onLost);
+      await get().claimBountySlot(choreId, memberId, onLost);
       return;
     }
     if (chore.assignedToId) return; // Already claimed or gone
 
+    // DB-is-truth: await the CAS write before reflecting a claim locally
+    // (see claimBounty's matching comment for why — was optimistic, briefly
+    // showed the loser as the claimant during the race window).
     // claimedAt — used by the chore-noshow-sweep edge function to tell
     // "claimed a while ago, gone silent" apart from "just claimed" (spec's
-    // "Gone quiet — still on?" exit branch). Cleared below if the claim
-    // loses the race.
+    // "Gone quiet — still on?" exit branch).
     const claimedAt = new Date().toISOString();
+    _fetchedAt = 0;
+    const { data, error } = await supabase.from('chore_tasks')
+      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false, claimed_at: claimedAt })
+      .eq('id', choreId)
+      .is('assigned_to_id', null)
+      .select('id');
+    if (error) {
+      console.warn('[choreStore] claimPoolQuest DB update failed', error.message);
+      showToast("Couldn't claim — please try again", 'error');
+      return;
+    }
+    if (!data || data.length === 0) {
+      console.warn('[choreStore] claimPoolQuest lost the race on', choreId, '(see spec 3.1)');
+      // Spec 3.4 — same claimed-vs-deleted disambiguation as claimBounty.
+      if (onLost) {
+        const { data: stillExists } = await supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle();
+        onLost(stillExists ? 'claimed' : 'deleted');
+      }
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false, claimedAt } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-    _fetchedAt = 0;
-    supabase.from('chore_tasks')
-      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false, claimed_at: claimedAt })
-      .eq('id', choreId)
-      .is('assigned_to_id', null)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[choreStore] claimPoolQuest DB update failed', error.message);
-          return;
-        }
-        if (!data || data.length === 0) {
-          console.warn('[choreStore] claimPoolQuest lost the race on', choreId, '— rolling back local claim (see spec 3.1)');
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.assignedToId === memberId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true, claimedAt: undefined } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          // Spec 3.4 — same claimed-vs-deleted disambiguation as claimBounty.
-          if (onLost) {
-            supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle()
-              .then(
-                ({ data: stillExists }) => onLost(stillExists ? 'claimed' : 'deleted'),
-                () => onLost('claimed'),
-              );
-          }
-          return;
-        }
-        showToast('Claimed ✓');
-        // Audit finding — same gap as claimBounty above: this is the actual
-        // reachable "Claim" action from every live screen (KidView, TeenView,
-        // QuestsScreen), and it fired zero notification to parents/seniors.
-        if (chore.familyId) {
-          supabase.functions.invoke('quest-event-notifier', {
-            body: {
-              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
-              familyId: chore.familyId, triggeredById: memberId, assigneeId: memberId,
-            },
-          }).catch(e => console.warn('[choreStore] claimPoolQuest notify failed', e?.message));
-        }
-      });
+    showToast('Claimed ✓');
+    // Audit finding — same gap as claimBounty above: this is the actual
+    // reachable "Claim" action from every live screen (KidView, TeenView,
+    // QuestsScreen), and it fired zero notification to parents/seniors.
+    if (chore.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+          familyId: chore.familyId, triggeredById: memberId, assigneeId: memberId,
+        },
+      }).catch(e => console.warn('[choreStore] claimPoolQuest notify failed', e?.message));
+    }
   },
 
   submitChore: (choreId, opts) => {

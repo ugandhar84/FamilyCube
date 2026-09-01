@@ -1136,7 +1136,7 @@ interface ChoreState {
   grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => Promise<void>;
 
   // ── Settings ──────────────────────────────────────────────────────────────
-  updateHouseholdSettings: (updates: Partial<HouseholdSettings>) => void;
+  updateHouseholdSettings: (updates: Partial<HouseholdSettings>) => Promise<void>;
 
   // ── Selectors ─────────────────────────────────────────────────────────────
   getChildDashboard:   (childId: string) => {
@@ -5652,29 +5652,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // SETTINGS
   // ─────────────────────────────────────────────────────────────────────────
 
-  updateHouseholdSettings: (updates) => {
-    set(s => ({ householdSettings: { ...s.householdSettings, ...updates } }));
-    const settings = get().householdSettings;
-    AsyncStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify(settings));
-
+  updateHouseholdSettings: async (updates) => {
     const familyId = getFamilyId();
+    const prevSettings = get().householdSettings;
+    const nextSettings = { ...prevSettings, ...updates };
+    // DB-is-truth: await the write before reflecting the new settings
+    // locally — was optimistic (set immediately, no rollback on failure).
     if (familyId) {
-      supabase.from('families').update({
-        points_to_fiat_ratio:             settings.pointsToFiatRatio,
-        currency_code:                    settings.currencyCode,
-        currency_symbol:                  settings.currencySymbol,
-        spend_allocation_pct:             settings.spendAllocationPct,
-        save_allocation_pct:              settings.saveAllocationPct,
-        give_allocation_pct:              settings.giveAllocationPct,
-        allow_child_allocation_override:  settings.allowChildAllocationOverride,
-        auto_approve_timeout_hours:       settings.autoApproveTimeoutHours,
-        min_cashout_points:               settings.minCashoutPoints,
-        teen_reward_cosign_threshold:     settings.teenRewardCoSignThreshold,
-        allow_unilateral_reversal:        settings.allowUnilateralReversal,
-      }).eq('id', familyId).then(({ error }) => {
-        if (error) console.warn('[choreStore] updateHouseholdSettings', error.message);
-      });
+      const { error } = await supabase.from('families').update({
+        points_to_fiat_ratio:             nextSettings.pointsToFiatRatio,
+        currency_code:                    nextSettings.currencyCode,
+        currency_symbol:                  nextSettings.currencySymbol,
+        spend_allocation_pct:             nextSettings.spendAllocationPct,
+        save_allocation_pct:              nextSettings.saveAllocationPct,
+        give_allocation_pct:              nextSettings.giveAllocationPct,
+        allow_child_allocation_override:  nextSettings.allowChildAllocationOverride,
+        auto_approve_timeout_hours:       nextSettings.autoApproveTimeoutHours,
+        min_cashout_points:               nextSettings.minCashoutPoints,
+        teen_reward_cosign_threshold:     nextSettings.teenRewardCoSignThreshold,
+        allow_unilateral_reversal:        nextSettings.allowUnilateralReversal,
+      }).eq('id', familyId);
+      if (error) {
+        console.warn('[choreStore] updateHouseholdSettings', error.message);
+        showToast("Couldn't save — please try again", 'error');
+        return;
+      }
     }
+    set({ householdSettings: nextSettings });
+    AsyncStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify(nextSettings));
   },
 
   // ─────────────────────────────────────────────────────────────────────────

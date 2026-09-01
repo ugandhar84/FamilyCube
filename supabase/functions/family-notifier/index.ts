@@ -706,14 +706,42 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
     }
-    case 'kid_request_decision':
+    case 'kid_request_decision': {
+      // Was a flat "Your request was approved!" regardless of what the
+      // request actually was — a check-in ("I'm home!"/"I'm ready for
+      // pickup!") got acknowledged with the exact same generic copy as a
+      // permission ask or a tutoring request, giving the kid no real
+      // signal about what specifically landed. Live-reported. checkin
+      // requests are auto/parent-acknowledged rather than a real ask-and-
+      // decide, so their approved copy reads as a plain acknowledgment
+      // ("Got it — you're home!") rather than "approved," which would
+      // read oddly for something that was never really in question.
+      const requestType = p.requestType as string | undefined;
+      const detail = decodeRequestDetail(p.detail as string);
+      const approved = p.decision === 'approved';
+      if (requestType === 'checkin') {
+        return {
+          title: approved ? '👍 Seen!' : '❌ Check-in Declined',
+          body: approved
+            ? `${detail || 'Check-in received'}${p.note ? ` — ${p.note}` : ''}`
+            : `Your check-in wasn't acknowledged${p.note ? `: ${p.note}` : ''}`,
+          data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
+        };
+      }
+      const typeLabel: Record<string, string> = {
+        ride: 'ride request', tutor: 'tutoring offer', cheer: 'cheer request',
+        emergency: 'alert', question: 'question', permission: 'permission request',
+        appointment: 'appointment request', delegation: 'request', medication: 'medication request',
+      };
+      const label = (requestType && typeLabel[requestType]) || 'request';
       return {
-        title: p.decision === 'approved' ? '✅ Request Approved!' : '❌ Request Declined',
-        body: p.decision === 'approved'
-          ? `Your request was approved!${p.note ? ` "${p.note}"` : ''}`
-          : `Your request was declined${p.note ? `: ${p.note}` : ''}`,
+        title: approved ? '✅ Request Approved!' : '❌ Request Declined',
+        body: approved
+          ? `Your ${label}${detail ? ` ("${detail}")` : ''} was approved!${p.note ? ` "${p.note}"` : ''}`
+          : `Your ${label}${detail ? ` ("${detail}")` : ''} was declined${p.note ? `: ${p.note}` : ''}`,
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
+    }
     // store/kidRequestStore.ts's assignRequest — the ADULT who got
     // volunteered by someone else (not a self-assign), separate from the
     // kid_request_decision the requesting kid gets on the same action.
@@ -726,12 +754,14 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     // store/kidRequestStore.ts's completeRequest — the helper marked an
     // already-approved/assigned request as actually done.
-    case 'kid_request_completed':
+    case 'kid_request_completed': {
+      const detail = decodeRequestDetail(p.detail as string);
       return {
         title: '✅ Request Completed',
-        body: `${p.byName ?? 'Someone'} marked your request as done — all set! 🎉`,
+        body: `${p.byName ?? 'Someone'} marked${detail ? ` "${detail}"` : ' your request'} as done — all set! 🎉`,
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
+    }
     // store/kidRequestStore.ts's approveItems/rejectItems — per-item
     // grocery/supplies decisions, distinct from kid_request_decision since
     // only some items in a multi-item request may have been acted on.

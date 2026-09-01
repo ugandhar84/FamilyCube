@@ -1104,8 +1104,8 @@ interface ChoreState {
   respondToParentQuest:(assignmentId: string, response: {
     action: 'ACCEPT' | 'DECLINE' | 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS';
     details?: string;
-  }) => void;
-  completeParentQuest: (assignmentId: string, completedBy: string) => void;
+  }) => Promise<void>;
+  completeParentQuest: (assignmentId: string, completedBy: string) => Promise<void>;
   // Only exit from a locked (two-bounce) assignment — previously there was
   // none at all, so a bounced task just sat there permanently with a
   // "discuss offline" label and no button to actually move past it once
@@ -5038,7 +5038,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // with zero visible error). Same optimistic-patch-then-reconcile shape as
   // this file's other RPC-backed actions, but now a genuine failure surfaces
   // a real, visible error instead of a silent no-op.
-  respondToParentQuest: (assignmentId, response) => {
+  respondToParentQuest: async (assignmentId, response) => {
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] respondToParentQuest ABORTED — no assignment found with id=${assignmentId}`);
@@ -5087,8 +5087,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         break;
     }
 
-    const prevAssignment = assignment;
-    const prevChore = get().chores.find(c => c.id === assignment.choreId);
+    // DB-is-truth: await the RPC before reflecting the response locally —
+    // was optimistic (set immediately, rolled back on failure).
+    const { error } = await supabase.rpc('respond_to_parent_quest', { p_assignment_id: assignmentId, p_actor_id: actorId, p_action: response.action, p_details: response.details ?? null });
+    if (error) {
+      console.warn(`[choreStore] respondToParentQuest RPC failed for ${assignmentId}`, error.message);
+      showToast("That didn't go through — someone else may have already responded. Pull to refresh and try again.", 'error');
+      return;
+    }
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId
@@ -5106,48 +5112,43 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           ? s.chores.map(c => c.id === assignment.choreId ? { ...c, assignedToId: undefined, status: 'todo' } : c)
           : s.chores,
     }));
-
-    supabase.rpc('respond_to_parent_quest', { p_assignment_id: assignmentId, p_actor_id: actorId, p_action: response.action, p_details: response.details ?? null })
-      .then(({ error }) => {
-        if (error) {
-          console.warn(`[choreStore] respondToParentQuest RPC failed for ${assignmentId}`, error.message);
-          set(s => ({
-            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? prevAssignment : a),
-            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
-          }));
-          showToast("That didn't go through — someone else may have already responded. Pull to refresh and try again.", 'error');
-          return;
-        }
-        // Notify the delegator only once the write is CONFIRMED — they
-        // fired off a delegation and otherwise have no signal it was
-        // actually accepted/declined until they happen to reopen the
-        // backlog. Only ACCEPT/DECLINE are terminal-enough to be worth a
-        // ping here; SNOOZE/BLOCKER/TRADE/DISCUSS already surface via
-        // PushbackSheet's existing flow.
-        if (newStatus === 'ACCEPTED' || newStatus === 'DECLINED') {
-          try {
-            const { useFamilyStore } = require('./familyStore');
-            const { useChatStore } = require('./chatStore');
-            const delegate = useFamilyStore.getState().members.find((m: any) => m.id === assignment.assignedTo);
-            const chore = get().chores.find(c => c.id === assignment.choreId);
-            const firstName = delegate?.name?.split(' ')[0] ?? 'They';
-            const msg = newStatus === 'ACCEPTED'
-              ? `✅ ${firstName} accepted "${chore?.title ?? 'that task'}".`
-              : `🚫 ${firstName} declined "${chore?.title ?? 'that task'}".`;
-            useChatStore.getState().sendMessage(assignment.assignedBy, assignment.assignedTo, msg);
-          } catch (e) {
-            console.warn('[choreStore] respondToParentQuest notify failed', e);
-          }
-        }
-      });
+    // Notify the delegator only once the write is CONFIRMED — they
+    // fired off a delegation and otherwise have no signal it was
+    // actually accepted/declined until they happen to reopen the
+    // backlog. Only ACCEPT/DECLINE are terminal-enough to be worth a
+    // ping here; SNOOZE/BLOCKER/TRADE/DISCUSS already surface via
+    // PushbackSheet's existing flow.
+    if (newStatus === 'ACCEPTED' || newStatus === 'DECLINED') {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const { useChatStore } = require('./chatStore');
+        const delegate = useFamilyStore.getState().members.find((m: any) => m.id === assignment.assignedTo);
+        const chore = get().chores.find(c => c.id === assignment.choreId);
+        const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+        const msg = newStatus === 'ACCEPTED'
+          ? `✅ ${firstName} accepted "${chore?.title ?? 'that task'}".`
+          : `🚫 ${firstName} declined "${chore?.title ?? 'that task'}".`;
+        useChatStore.getState().sendMessage(assignment.assignedBy, assignment.assignedTo, msg);
+      } catch (e) {
+        console.warn('[choreStore] respondToParentQuest notify failed', e);
+      }
+    }
   },
 
-  completeParentQuest: (assignmentId, completedBy) => {
+  completeParentQuest: async (assignmentId, completedBy) => {
     console.log(`[choreStore] completeParentQuest called — assignmentId=${assignmentId} completedBy=${completedBy}`);
     const now = new Date().toISOString();
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] completeParentQuest ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
+    // DB-is-truth: await the RPC before reflecting completion locally —
+    // was optimistic (set immediately, rolled back on failure).
+    const { error } = await supabase.rpc('complete_parent_quest', { p_assignment_id: assignmentId, p_completed_by: completedBy });
+    if (error) {
+      console.warn(`[choreStore] completeParentQuest RPC failed for ${assignmentId}`, error.message);
+      showToast("That didn't go through — check your connection and try again", 'error');
       return;
     }
     set(s => ({
@@ -5157,30 +5158,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : a
       ),
     }));
-    const prevChore = get().chores.find(c => c.id === assignment.choreId);
-    supabase.rpc('complete_parent_quest', { p_assignment_id: assignmentId, p_completed_by: completedBy })
-      .then(({ error }) => {
-        if (error) {
-          console.warn(`[choreStore] completeParentQuest RPC failed for ${assignmentId}`, error.message);
-          set(s => ({
-            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a),
-            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
-          }));
-          showToast("That didn't go through — check your connection and try again", 'error');
-          return;
-        }
-        try {
-          const { useFamilyStore } = require('./familyStore');
-          const { useChatStore } = require('./chatStore');
-          const delegate = useFamilyStore.getState().members.find((m: any) => m.id === completedBy);
-          const chore = get().chores.find(c => c.id === assignment.choreId);
-          const firstName = delegate?.name?.split(' ')[0] ?? 'They';
-          useChatStore.getState().sendMessage(assignment.assignedBy, completedBy,
-            `🎉 ${firstName} completed "${chore?.title ?? 'that task'}"!`);
-        } catch (e) {
-          console.warn('[choreStore] completeParentQuest notify failed', e);
-        }
-      });
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const delegate = useFamilyStore.getState().members.find((m: any) => m.id === completedBy);
+      const chore = get().chores.find(c => c.id === assignment.choreId);
+      const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+      useChatStore.getState().sendMessage(assignment.assignedBy, completedBy,
+        `🎉 ${firstName} completed "${chore?.title ?? 'that task'}"!`);
+    } catch (e) {
+      console.warn('[choreStore] completeParentQuest notify failed', e);
+    }
   },
 
   cancelLockedAssignment: (assignmentId, byMemberId) => {

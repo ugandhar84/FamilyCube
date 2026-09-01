@@ -995,9 +995,9 @@ interface ChoreState {
   offerChoreHandoff:       (choreId: string, toMemberId: string, byMemberId: string, reason?: string) => Promise<void>;
   acceptChoreHandoff:      (choreId: string, memberId: string) => Promise<void>;
   declineChoreHandoff:     (choreId: string, memberId: string) => Promise<void>;
-  proposeLaterDate:        (choreId: string, byMemberId: string, newDate: string, reason?: string) => void;
-  approveLaterDate:        (choreId: string, parentId: string) => void;
-  declineLaterDate:        (choreId: string, parentId: string) => void;
+  proposeLaterDate:        (choreId: string, byMemberId: string, newDate: string, reason?: string) => Promise<void>;
+  approveLaterDate:        (choreId: string, parentId: string) => Promise<void>;
+  declineLaterDate:        (choreId: string, parentId: string) => Promise<void>;
   cancelChore:             (choreId: string, byMemberId: string) => Promise<boolean>;
   acceptGPOffer:           (choreId: string, parentId: string) => void;
   declineGPOffer:          (choreId: string, parentId: string, reason?: string) => void;
@@ -2983,9 +2983,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // self-service reschedule. Releases the chore (it's genuinely not
   // happening at the original time on this assignee's plate) but leaves
   // dueDate untouched until a parent actually approves the new date.
-  proposeLaterDate: (choreId, byMemberId, newDate, reason) => {
+  proposeLaterDate: async (choreId, byMemberId, newDate, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
+    const { error } = await supabase.rpc('propose_later_date', { p_chore_id: choreId, p_by_member_id: byMemberId, p_new_date: newDate, p_reason: reason ?? null });
+    if (error) {
+      console.warn('[choreStore] proposeLaterDate RPC failed', error.message);
+      showToast("Couldn't send — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c,
@@ -3002,46 +3008,43 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingLaterRequestedBy: byMemberId, pendingLaterRequestedAt: new Date().toISOString(),
       } : c),
     }));
-    supabase.rpc('propose_later_date', { p_chore_id: choreId, p_by_member_id: byMemberId, p_new_date: newDate, p_reason: reason ?? null })
-      .then(({ error }) => {
-        if (!error) {
-          // Audit finding — proposing a later date releases the chore back
-          // to the pool AND parks it awaiting a parent's Approve/Decline via
-          // approveLaterDate/declineLaterDate, but no parent was ever told
-          // there was a decision waiting on them.
-          if (chore.familyId) {
-            try {
-              const { useFamilyStore } = require('./familyStore');
-              const approverIds = (useFamilyStore.getState().members as any[])
-                .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== byMemberId)
-                .map(m => m.id);
-              if (approverIds.length) {
-                supabase.functions.invoke('family-notifier', {
-                  body: {
-                    type: 'chore_later_date_proposed', familyId: chore.familyId, memberIds: approverIds, persist: true,
-                    excludeMemberId: byMemberId,
-                    payload: { questId: choreId, questTitle: chore.title, byName: memberName(byMemberId), newDate, reason },
-                  },
-                }).catch(e => console.warn('[choreStore] proposeLaterDate notify', e?.message));
-              }
-            } catch (e) {
-              console.warn('[choreStore] proposeLaterDate recipient resolution failed', e);
-            }
-          }
-          return;
+    // Audit finding — proposing a later date releases the chore back
+    // to the pool AND parks it awaiting a parent's Approve/Decline via
+    // approveLaterDate/declineLaterDate, but no parent was ever told
+    // there was a decision waiting on them.
+    if (chore.familyId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const approverIds = (useFamilyStore.getState().members as any[])
+          .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== byMemberId)
+          .map(m => m.id);
+        if (approverIds.length) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'chore_later_date_proposed', familyId: chore.familyId, memberIds: approverIds, persist: true,
+              excludeMemberId: byMemberId,
+              payload: { questId: choreId, questTitle: chore.title, byName: memberName(byMemberId), newDate, reason },
+            },
+          }).catch(e => console.warn('[choreStore] proposeLaterDate notify', e?.message));
         }
-        console.warn('[choreStore] proposeLaterDate RPC failed', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-        showToast("Couldn't send — check your connection and try again", 'error');
-      });
+      } catch (e) {
+        console.warn('[choreStore] proposeLaterDate recipient resolution failed', e);
+      }
+    }
   },
 
   // Parent approves a pending later-date proposal — only now does dueDate
   // actually change.
-  approveLaterDate: (choreId, parentId) => {
+  approveLaterDate: async (choreId, parentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.pendingLaterDate) return;
     const newDate = chore.pendingLaterDate;
+    const { error } = await supabase.rpc('approve_later_date', { p_chore_id: choreId, p_parent_id: parentId });
+    if (error) {
+      console.warn('[choreStore] approveLaterDate RPC failed', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, dueDate: newDate,
@@ -3049,36 +3052,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingLaterRequestedBy: undefined, pendingLaterRequestedAt: undefined,
       } : c),
     }));
-    supabase.rpc('approve_later_date', { p_chore_id: choreId, p_parent_id: parentId })
-      .then(({ error }) => {
-        if (!error) {
-          showToast('Reschedule approved ✓');
-          // Audit finding — the proposer never learned their reschedule
-          // request went through; snapshot the requester id before this
-          // function's own optimistic update above cleared it off the chore.
-          if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
-            supabase.functions.invoke('family-notifier', {
-              body: {
-                type: 'chore_later_date_approved', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
-                excludeMemberId: parentId,
-                payload: { questId: choreId, questTitle: chore.title, newDate },
-              },
-            }).catch(e => console.warn('[choreStore] approveLaterDate notify', e?.message));
-          }
-          return;
-        }
-        console.warn('[choreStore] approveLaterDate RPC failed', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-        showToast("Couldn't save — check your connection and try again", 'error');
-      });
+    showToast('Reschedule approved ✓');
+    // Audit finding — the proposer never learned their reschedule
+    // request went through.
+    if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'chore_later_date_approved', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
+          excludeMemberId: parentId,
+          payload: { questId: choreId, questTitle: chore.title, newDate },
+        },
+      }).catch(e => console.warn('[choreStore] approveLaterDate notify', e?.message));
+    }
   },
 
   // Parent declines a pending later-date proposal — clears it, original
   // dueDate stands. The chore was never unassigned in the first place
   // (fixed 20260930350000) — this is now a genuine no-op on assignment.
-  declineLaterDate: (choreId, parentId) => {
+  declineLaterDate: async (choreId, parentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.pendingLaterDate) return;
+    const { error } = await supabase.rpc('decline_later_date', { p_chore_id: choreId, p_parent_id: parentId });
+    if (error) {
+      console.warn('[choreStore] declineLaterDate RPC failed', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c,
@@ -3086,26 +3085,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingLaterRequestedBy: undefined, pendingLaterRequestedAt: undefined,
       } : c),
     }));
-    supabase.rpc('decline_later_date', { p_chore_id: choreId, p_parent_id: parentId })
-      .then(({ error }) => {
-        if (!error) {
-          // Audit finding — same gap as approveLaterDate's success path,
-          // decline side: the proposer never learned it was turned down.
-          if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
-            supabase.functions.invoke('family-notifier', {
-              body: {
-                type: 'chore_later_date_declined', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
-                excludeMemberId: parentId,
-                payload: { questId: choreId, questTitle: chore.title },
-              },
-            }).catch(e => console.warn('[choreStore] declineLaterDate notify', e?.message));
-          }
-          return;
-        }
-        console.warn('[choreStore] declineLaterDate RPC failed', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-        showToast("Couldn't save — check your connection and try again", 'error');
-      });
+    // Audit finding — same gap as approveLaterDate's success path,
+    // decline side: the proposer never learned it was turned down.
+    if (chore.familyId && chore.pendingLaterRequestedBy && chore.pendingLaterRequestedBy !== parentId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'chore_later_date_declined', familyId: chore.familyId, memberIds: [chore.pendingLaterRequestedBy], persist: true,
+          excludeMemberId: parentId,
+          payload: { questId: choreId, questTitle: chore.title },
+        },
+      }).catch(e => console.warn('[choreStore] declineLaterDate notify', e?.message));
+    }
   },
 
   // "It's not needed anymore" — only the chore's creator or a parent may

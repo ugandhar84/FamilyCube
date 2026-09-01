@@ -1112,13 +1112,13 @@ interface ChoreState {
   // that offline conversation happened. Clears the lock, marks the
   // assignment DECLINED (finally giving that status a real use), and
   // reopens the chore in the pool for anyone to take or re-delegate.
-  cancelLockedAssignment: (assignmentId: string, byMemberId: string) => void;
+  cancelLockedAssignment: (assignmentId: string, byMemberId: string) => Promise<void>;
   // The delegator taking back a still-PENDING (not yet accepted) System-A
   // delegation — distinct from cancelLockedAssignment, which is for a
   // locked (two-bounce) assignment. A delegator should always be able to
   // recall their own delegation without the delegate's permission; the
   // delegate is notified rather than having it silently vanish.
-  recallParentQuest:   (assignmentId: string, recallerId: string) => void;
+  recallParentQuest:   (assignmentId: string, recallerId: string) => Promise<void>;
   appreciationPing:    (assignmentId: string, fromId: string, message: string) => void;
 
   // ── Grandparent actions ───────────────────────────────────────────────────
@@ -5171,11 +5171,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  cancelLockedAssignment: (assignmentId, byMemberId) => {
+  cancelLockedAssignment: async (assignmentId, byMemberId) => {
     const now = new Date().toISOString();
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] cancelLockedAssignment ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
+    // DB-is-truth: await the RPC before reflecting the cancellation locally.
+    const { error } = await supabase.rpc('cancel_locked_assignment', { p_assignment_id: assignmentId, p_by_member_id: byMemberId });
+    if (error) {
+      console.warn(`[choreStore] cancelLockedAssignment RPC failed for ${assignmentId}`, error.message);
+      showToast("That didn't go through — check your connection and try again", 'error');
       return;
     }
     set(s => ({
@@ -5185,36 +5192,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : a
       ),
     }));
-    supabase.rpc('cancel_locked_assignment', { p_assignment_id: assignmentId, p_by_member_id: byMemberId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn(`[choreStore] cancelLockedAssignment RPC failed for ${assignmentId}`, error.message);
-          set(s => ({ parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a) }));
-          showToast("That didn't go through — check your connection and try again", 'error');
-          return;
-        }
-        // Audit finding — the OTHER party to this locked negotiation (a
-        // two-bounce assignment stuck on "discuss offline") never learned
-        // it was cancelled and reopened — whichever of assignedBy/assignedTo
-        // isn't the one cancelling.
-        const otherPartyId = assignment.assignedBy === byMemberId ? assignment.assignedTo : assignment.assignedBy;
-        const familyId = get().chores.find(c => c.id === assignment.choreId)?.familyId ?? getFamilyId();
-        if (otherPartyId && otherPartyId !== byMemberId && familyId) {
-          const choreTitle = get().chores.find(c => c.id === assignment.choreId)?.title;
-          supabase.functions.invoke('family-notifier', {
-            body: {
-              type: 'parent_quest_lock_cancelled', familyId, memberIds: [otherPartyId], persist: true,
-              excludeMemberId: byMemberId,
-              payload: { questId: assignment.choreId, questTitle: choreTitle ?? 'that task', byName: memberName(byMemberId) },
-            },
-          }).catch(e => console.warn('[choreStore] cancelLockedAssignment notify', e?.message));
-        }
-      });
     // Chore was already unassigned/todo while locked (respondToParentQuest's
     // PARKED branch clears assignedToId) — no chore-row change needed here,
     // it naturally re-enters the open pool now that no live assignment
     // references it (getActiveAssignmentChoreIds no longer includes it
     // since DECLINED is a terminal status).
+    // Audit finding — the OTHER party to this locked negotiation (a
+    // two-bounce assignment stuck on "discuss offline") never learned
+    // it was cancelled and reopened — whichever of assignedBy/assignedTo
+    // isn't the one cancelling.
+    const otherPartyId = assignment.assignedBy === byMemberId ? assignment.assignedTo : assignment.assignedBy;
+    const familyId = get().chores.find(c => c.id === assignment.choreId)?.familyId ?? getFamilyId();
+    if (otherPartyId && otherPartyId !== byMemberId && familyId) {
+      const choreTitle = get().chores.find(c => c.id === assignment.choreId)?.title;
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'parent_quest_lock_cancelled', familyId, memberIds: [otherPartyId], persist: true,
+          excludeMemberId: byMemberId,
+          payload: { questId: assignment.choreId, questTitle: choreTitle ?? 'that task', byName: memberName(byMemberId) },
+        },
+      }).catch(e => console.warn('[choreStore] cancelLockedAssignment notify', e?.message));
+    }
   },
 
   // Recall — the delegator takes back a still-PENDING (not yet accepted)
@@ -5227,54 +5225,48 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // client could show the Recall button to someone unauthorized and the
   // raw dbUpdate would have gone through unchecked. The RPC re-validates
   // against the live row.
-  recallParentQuest: (assignmentId, recallerId) => {
+  recallParentQuest: async (assignmentId, recallerId) => {
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
     if (!assignment) {
       console.warn(`[choreStore] recallParentQuest ABORTED — no assignment found with id=${assignmentId}`);
       return;
     }
     const now = new Date().toISOString();
-    const prevChore = get().chores.find(c => c.id === assignment.choreId);
+    // DB-is-truth: await the RPC before reflecting the recall locally.
+    const { error } = await supabase.rpc('recall_parent_quest', { p_assignment_id: assignmentId, p_recaller_id: recallerId });
+    if (error) {
+      console.warn(`[choreStore] recallParentQuest RPC failed for ${assignmentId}`, error.message);
+      showToast("That didn't go through — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId ? { ...a, status: 'DECLINED', updatedAt: now } : a
       ),
       chores: s.chores.map(c => c.id === assignment.choreId ? { ...c, assignedToId: recallerId, status: 'todo' } : c),
     }));
-    supabase.rpc('recall_parent_quest', { p_assignment_id: assignmentId, p_recaller_id: recallerId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn(`[choreStore] recallParentQuest RPC failed for ${assignmentId}`, error.message);
-          set(s => ({
-            parentAssignments: s.parentAssignments.map(a => a.id === assignmentId ? assignment : a),
-            chores: prevChore ? s.chores.map(c => c.id === prevChore.id ? prevChore : c) : s.chores,
-          }));
-          showToast("That didn't go through — check your connection and try again", 'error');
-          return;
-        }
-        try {
-          const { useFamilyStore } = require('./familyStore');
-          const { useChatStore } = require('./chatStore');
-          const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
-          const chore = get().chores.find(c => c.id === assignment.choreId);
-          const recallerName = recaller?.name?.split(' ')[0] ?? 'They';
-          useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
-            `↩️ ${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
-          // Live-reported: "reclaim ... not even working" — this is the
-          // OutgoingPendingCard "Recall" action (a parent taking a
-          // delegated task back from a co-parent). Was chat-DM-only, easy
-          // to miss and never populates the notification bell/push — this
-          // ADDS a real one alongside the existing chat message.
-          notifyChorePing(
-            chore?.familyId, assignment.assignedTo, recallerId,
-            '↩️ Task Taken Back',
-            `${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`,
-            { screen: 'Quests', questId: assignment.choreId },
-          );
-        } catch (e) {
-          console.warn('[choreStore] recallParentQuest notify failed', e);
-        }
-      });
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
+      const chore = get().chores.find(c => c.id === assignment.choreId);
+      const recallerName = recaller?.name?.split(' ')[0] ?? 'They';
+      useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
+        `↩️ ${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
+      // Live-reported: "reclaim ... not even working" — this is the
+      // OutgoingPendingCard "Recall" action (a parent taking a
+      // delegated task back from a co-parent). Was chat-DM-only, easy
+      // to miss and never populates the notification bell/push — this
+      // ADDS a real one alongside the existing chat message.
+      notifyChorePing(
+        chore?.familyId, assignment.assignedTo, recallerId,
+        '↩️ Task Taken Back',
+        `${recallerName} took back "${chore?.title ?? 'that task'}" — no action needed from you.`,
+        { screen: 'Quests', questId: assignment.choreId },
+      );
+    } catch (e) {
+      console.warn('[choreStore] recallParentQuest notify failed', e);
+    }
   },
 
   appreciationPing: (assignmentId, fromId, message) => {

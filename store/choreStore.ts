@@ -992,9 +992,9 @@ interface ChoreState {
   // acceptGPOffer/declineGPOffer/withdrawGPOffer below.
   claimGPErrand:           (choreId: string, gpMemberId: string) => Promise<void>;
   setGpWithdrawn:          (choreId: string, gpMemberId: string, withdrawn: boolean) => Promise<void>;
-  offerChoreHandoff:       (choreId: string, toMemberId: string, byMemberId: string, reason?: string) => void;
-  acceptChoreHandoff:      (choreId: string, memberId: string) => void;
-  declineChoreHandoff:     (choreId: string, memberId: string) => void;
+  offerChoreHandoff:       (choreId: string, toMemberId: string, byMemberId: string, reason?: string) => Promise<void>;
+  acceptChoreHandoff:      (choreId: string, memberId: string) => Promise<void>;
+  declineChoreHandoff:     (choreId: string, memberId: string) => Promise<void>;
   proposeLaterDate:        (choreId: string, byMemberId: string, newDate: string, reason?: string) => void;
   approveLaterDate:        (choreId: string, parentId: string) => void;
   declineLaterDate:        (choreId: string, parentId: string) => void;
@@ -2902,9 +2902,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // reassigning yet (see offer_chore_handoff's own comment). Local patch is
   // optimistic on the offering device; the receiver's device picks it up
   // via realtime/sync same as any other chore field.
-  offerChoreHandoff: (choreId, toMemberId, byMemberId, reason) => {
+  offerChoreHandoff: async (choreId, toMemberId, byMemberId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
+    const { error } = await supabase.rpc('offer_chore_handoff', {
+      p_chore_id: choreId, p_to_member_id: toMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null,
+    });
+    if (error) {
+      console.warn('[choreStore] offerChoreHandoff RPC failed', error.message);
+      showToast("Couldn't send — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c,
@@ -2916,22 +2924,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     notifyChoreHandoff('chore_handoff_offered', chore.familyId, [toMemberId], byMemberId, {
       questTitle: chore.title, questId: chore.id, byName: memberName(byMemberId), reason: reason ?? undefined,
     });
-    supabase.rpc('offer_chore_handoff', {
-      p_chore_id: choreId, p_to_member_id: toMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null,
-    }).then(({ error }) => {
-      if (!error) return;
-      console.warn('[choreStore] offerChoreHandoff RPC failed', error.message);
-      set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-      showToast("Couldn't send — check your connection and try again", 'error');
-    });
   },
 
   // Receiver: "I've got it" — only now does the chore actually become
   // theirs. Requires a live pending_handoff_to match (server-enforced too).
-  acceptChoreHandoff: (choreId, memberId) => {
+  acceptChoreHandoff: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.pendingHandoffTo !== memberId) return;
     const offeredBy = chore.pendingHandoffOfferedBy;
+    const { error } = await supabase.rpc('accept_chore_handoff', { p_chore_id: choreId, p_member_id: memberId });
+    if (error) {
+      console.warn('[choreStore] acceptChoreHandoff RPC failed', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, assignedToId: memberId, isPool: false, status: 'todo', claimedAt: new Date().toISOString(),
@@ -2939,26 +2945,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
       } : c),
     }));
+    showToast("You're on it ✓");
     if (offeredBy) {
       notifyChoreHandoff('chore_handoff_accepted', chore.familyId, [offeredBy], memberId, {
         questTitle: chore.title, questId: chore.id, byName: memberName(memberId),
       });
     }
-    supabase.rpc('accept_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
-      .then(({ error }) => {
-        if (!error) { showToast("You're on it ✓"); return; }
-        console.warn('[choreStore] acceptChoreHandoff RPC failed', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-        showToast("Couldn't save — check your connection and try again", 'error');
-      });
   },
 
   // Receiver: "can't either — put it back" — reopens straight to the pool,
   // no reason required (master-flow's own framing for this exact case).
-  declineChoreHandoff: (choreId, memberId) => {
+  declineChoreHandoff: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.pendingHandoffTo !== memberId) return;
     const offeredBy = chore.pendingHandoffOfferedBy;
+    const { error } = await supabase.rpc('decline_chore_handoff', { p_chore_id: choreId, p_member_id: memberId });
+    if (error) {
+      console.warn('[choreStore] declineChoreHandoff RPC failed', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, assignedToId: undefined, isPool: true, status: 'todo',
@@ -2971,13 +2977,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         questTitle: chore.title, questId: chore.id, byName: memberName(memberId),
       });
     }
-    supabase.rpc('decline_chore_handoff', { p_chore_id: choreId, p_member_id: memberId })
-      .then(({ error }) => {
-        if (!error) return;
-        console.warn('[choreStore] declineChoreHandoff RPC failed', error.message);
-        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, ...chore } : c) }));
-        showToast("Couldn't save — check your connection and try again", 'error');
-      });
   },
 
   // Master-flow "ask for a later time" — a counter-offer, not a silent

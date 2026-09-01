@@ -17,6 +17,7 @@ import { BRAND } from './FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from './FamilyAvatar';
 import { showAlert } from './AppAlert';
+import { supabase } from '@/lib/supabase';
 
 // ─── Role theming ─────────────────────────────────────────────────────────────
 
@@ -249,6 +250,8 @@ function PinPad({ member, isDark, onSuccess, onCancel, allNames }: {
 }) {
   const [digits, setDigits]   = useState('');
   const [error,  setError]    = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const shake = useRef(new RNAnimated.Value(0)).current;
   const ac    = accent(member.role);
 
@@ -262,24 +265,62 @@ function PinPad({ member, isDark, onSuccess, onCancel, allNames }: {
     ]).start();
   };
 
+  const shakeAndClear = (msg: string) => {
+    triggerShake();
+    setError(true);
+    setErrorMsg(msg);
+    setDigits('');
+  };
+
+  // Was: a purely client-side `next === member.pin` comparison against the
+  // plaintext PIN already sitting in local FamilyMember state — no server
+  // round-trip at all, no rate-limiting (verify_member_pin's real
+  // server-side lockout was bypassed entirely), and critically, for a
+  // member with their own separate Supabase login (auth_user_id set), no
+  // active_grant_token was ever minted. Every grant-gated RPC
+  // (confirm_event_assignment_series_forward, etc.) calls
+  // resolve_active_member_id(), which requires either this device's real
+  // auth.uid() to already match the switched-to member, or a live grant —
+  // switching via THIS sheet never produced one, so every such action
+  // failed with "caller is not member X" no matter how many times the
+  // correct PIN was entered. Mirrors PinEntryModal.tsx's already-correct
+  // server-verified flow.
   const press = useCallback((d: string) => {
-    if (digits.length >= PIN_LENGTH) return;
+    if (digits.length >= PIN_LENGTH || verifying) return;
     const next = digits + d;
     setDigits(next);
     setError(false);
 
     if (next.length === PIN_LENGTH) {
-      setTimeout(() => {
-        if (next === member.pin) {
-          onSuccess();
-        } else {
-          triggerShake();
-          setError(true);
-          setDigits('');
-        }
-      }, 100);
+      setVerifying(true);
+      const rpcName = member.authUserId ? 'verify_member_pin_and_grant' : 'verify_member_pin';
+      supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: next })
+        .then(({ data, error: rpcError }) => {
+          setVerifying(false);
+          if (rpcError) {
+            console.warn(`[PersonaSwitcherSheet] ${rpcName} failed`, rpcError.message);
+            shakeAndClear('Could not verify — check your connection and try again');
+            return;
+          }
+          const result = Array.isArray(data) ? data[0] : data;
+          if (result?.ok) {
+            if (result.grant_token && result.grant_expires_at) {
+              useFamilyStore.getState().setActiveMemberGrant(member.id, result.grant_token, result.grant_expires_at);
+            }
+            setDigits('');
+            setErrorMsg('');
+            onSuccess();
+            return;
+          }
+          if (result?.locked_until) {
+            shakeAndClear('Too many attempts — try again in a moment');
+            return;
+          }
+          const remaining = result?.attempts_remaining;
+          shakeAndClear(remaining != null ? `Wrong PIN · ${remaining} attempt${remaining === 1 ? '' : 's'} left` : 'Wrong PIN');
+        });
     }
-  }, [digits, member.pin]);
+  }, [digits, verifying, member.id, member.authUserId]);
 
   const del = () => { setDigits(d => d.slice(0, -1)); setError(false); };
 
@@ -329,7 +370,7 @@ function PinPad({ member, isDark, onSuccess, onCancel, allNames }: {
 
       {error && (
         <Text style={{ textAlign: 'center', color: '#EF4444', fontSize: 12, fontWeight: '600', marginBottom: 12, marginTop: -18 }}>
-          Wrong PIN — try again
+          {errorMsg || 'Wrong PIN — try again'}
         </Text>
       )}
 

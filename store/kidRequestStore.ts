@@ -214,24 +214,24 @@ interface KidRequestState {
 
   loadFromStorage: () => Promise<void>;
 
-  sendRequest:     (req: Omit<KidRequest, 'id' | 'requestedAt' | 'status' | 'urgency'> & { urgency?: RequestUrgency }) => KidRequest;
-  approveRequest:  (id: string, respondedBy: string, note?: string) => void;
-  declineRequest:  (id: string, respondedBy: string, note?: string) => void;
-  assignRequest:   (id: string, helperId: string, note?: string, assignedBy?: string) => void;
-  completeRequest: (id: string, respondedBy: string) => void;
-  cancelRequest:   (id: string) => void;
-  toggleGPWelcome: (id: string, value: boolean) => void;
-  markRead:        (id: string) => void;
-  deleteRequest:   (id: string) => void;
+  sendRequest:     (req: Omit<KidRequest, 'id' | 'requestedAt' | 'status' | 'urgency'> & { urgency?: RequestUrgency }) => Promise<KidRequest>;
+  approveRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
+  declineRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
+  assignRequest:   (id: string, helperId: string, note?: string, assignedBy?: string) => Promise<void>;
+  completeRequest: (id: string, respondedBy: string) => Promise<void>;
+  cancelRequest:   (id: string) => Promise<void>;
+  toggleGPWelcome: (id: string, value: boolean) => Promise<void>;
+  markRead:        (id: string) => Promise<void>;
+  deleteRequest:   (id: string) => Promise<void>;
   clearResolved:   () => void;
   expireStale:     () => void;
 
   // Per-item approval for grocery/supplies requests
-  approveItems:    (requestId: string, itemIds: string[], approvedBy: string, note?: string) => void;
-  rejectItems:     (requestId: string, itemIds: string[], rejectedBy: string, note?: string) => void;
-  approveAllItems: (requestId: string, approvedBy: string, note?: string) => void;
-  rejectAllItems:  (requestId: string, rejectedBy: string, note?: string) => void;
-  appendItems:     (requestId: string, newItems: KidRequestItem[]) => void;
+  approveItems:    (requestId: string, itemIds: string[], approvedBy: string, note?: string) => Promise<void>;
+  rejectItems:     (requestId: string, itemIds: string[], rejectedBy: string, note?: string) => Promise<void>;
+  approveAllItems: (requestId: string, approvedBy: string, note?: string) => Promise<void>;
+  rejectAllItems:  (requestId: string, rejectedBy: string, note?: string) => Promise<void>;
+  appendItems:     (requestId: string, newItems: KidRequestItem[]) => Promise<void>;
 
   // Selectors
   getPending:           () => KidRequest[];
@@ -266,11 +266,11 @@ const KEY  = '@familycube_kid_requests_v2';
 const save = (reqs: KidRequest[]) => AsyncStorage.setItem(KEY, JSON.stringify(reqs));
 
 // Upsert a single request row to Supabase (fire-and-forget)
-async function upsertToDb(req: KidRequest) {
+async function upsertToDb(req: KidRequest): Promise<boolean> {
   try {
     const familyId = getFamilyId();
-    if (!familyId) return;
-    await supabase.from('kid_requests').upsert({
+    if (!familyId) return false;
+    const { error } = await supabase.from('kid_requests').upsert({
       id:             req.id,
       family_id:      familyId,
       from_member_id: req.fromMemberId,
@@ -293,15 +293,18 @@ async function upsertToDb(req: KidRequest) {
       scheduled_time: req.scheduledTime ?? null,
       open_to_gp:     req.openToGP ?? false,
     }, { onConflict: 'id' });
+    if (error) { console.warn('[kidRequestStore] upsertToDb failed:', error.message); return false; }
+    return true;
   } catch (e: any) {
     console.warn('[kidRequestStore] upsertToDb failed:', e?.message);
+    return false;
   }
 }
 
-// Delete a request row from Supabase (fire-and-forget)
-async function deleteFromDb(id: string) {
-  supabase.from('kid_requests').delete().eq('id', id)
-    .then(({ error }) => { if (error) console.warn('[kidRequestStore] deleteFromDb failed:', error.message); });
+async function deleteFromDb(id: string): Promise<boolean> {
+  const { error } = await supabase.from('kid_requests').delete().eq('id', id);
+  if (error) { console.warn('[kidRequestStore] deleteFromDb failed:', error.message); return false; }
+  return true;
 }
 
 async function notifyKidRequest(
@@ -416,7 +419,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     set({ requests: [...localById.values()], loaded: true });
   },
 
-  sendRequest: (req) => {
+  sendRequest: async (req) => {
     const request: KidRequest = {
       ...req,
       id:          generateId(),
@@ -424,9 +427,12 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       requestedAt: new Date().toISOString(),
       status:      'pending',
     };
+    // DB-is-truth: await the write before adding it to local state — was
+    // optimistic (added immediately, no rollback if the write failed).
+    const ok = await upsertToDb(request);
+    if (!ok) return request;
     const all = [request, ...get().requests];
     set({ requests: all }); save(all);
-    upsertToDb(request);
     // Notify parents/seniors of new request
     notifyKidRequest(request.fromMemberId, 'kid_request', {
       requestId: request.id, requestType: request.type, detail: request.detail,
@@ -437,7 +443,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     return request;
   },
 
-  approveRequest: (id, respondedBy, note) => {
+  approveRequest: async (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
     // Was: unconditionally rewrote status on every call, so a double-tap
     // (e.g. ServiceRequestCard's awardCoins/QuestProposalCard's addChore —
@@ -449,71 +455,71 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     // race: only the FIRST approve/decline on a still-pending request
     // takes effect.
     if (!req || req.status !== 'pending') return;
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, status: 'approved' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
-    );
+    const updated: KidRequest = { ...req, status: 'approved', respondedAt: new Date().toISOString(), respondedBy, parentNote: note };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
     notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'approved', note, fromMemberId: req.fromMemberId,
     });
   },
 
-  declineRequest: (id, respondedBy, note) => {
+  declineRequest: async (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
     if (!req || req.status !== 'pending') return;
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, status: 'declined' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
-    );
+    const updated: KidRequest = { ...req, status: 'declined', respondedAt: new Date().toISOString(), respondedBy, parentNote: note };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
     notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'declined', note, fromMemberId: req.fromMemberId,
     });
   },
 
-  assignRequest: (id, helperId, note, assignedBy) => {
+  assignRequest: async (id, helperId, note, assignedBy) => {
     const req = get().requests.find(r => r.id === id);
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, status: 'approved' as RequestStatus, assignedHelper: helperId, respondedAt: new Date().toISOString(), respondedBy: helperId, parentNote: note } : r
-    );
+    if (!req) return;
+    const updated: KidRequest = { ...req, status: 'approved', assignedHelper: helperId, respondedAt: new Date().toISOString(), respondedBy: helperId, parentNote: note };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
-    if (req) {
-      // Kid learns their request is being handled — same "approved" copy
-      // approveRequest already uses, since assignRequest IS the approval
-      // path for requests that need a specific helper lined up.
-      notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+    // Kid learns their request is being handled — same "approved" copy
+    // approveRequest already uses, since assignRequest IS the approval
+    // path for requests that need a specific helper lined up.
+    notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+      requestId: id, requestType: req.type, detail: req.detail,
+      decision: 'approved', note, fromMemberId: req.fromMemberId,
+    });
+    // The helper themselves only needs a separate ping when someone ELSE
+    // volunteered them (doAssignHelper in HelpDispatchQueue.tsx) — a
+    // self-assign (doSelfAssign / FamilyNeedsHandSection's "You're on it")
+    // has assignedBy === helperId or omitted, and telling someone about
+    // their own tap is noise.
+    if (assignedBy && assignedBy !== helperId) {
+      notifyMember(helperId, 'kid_request_helper_assigned', {
         requestId: id, requestType: req.type, detail: req.detail,
-        decision: 'approved', note, fromMemberId: req.fromMemberId,
+        byName: memberName(assignedBy), byMemberId: assignedBy, memberId: helperId, note,
       });
-      // The helper themselves only needs a separate ping when someone ELSE
-      // volunteered them (doAssignHelper in HelpDispatchQueue.tsx) — a
-      // self-assign (doSelfAssign / FamilyNeedsHandSection's "You're on it")
-      // has assignedBy === helperId or omitted, and telling someone about
-      // their own tap is noise.
-      if (assignedBy && assignedBy !== helperId) {
-        notifyMember(helperId, 'kid_request_helper_assigned', {
-          requestId: id, requestType: req.type, detail: req.detail,
-          byName: memberName(assignedBy), byMemberId: assignedBy, memberId: helperId, note,
-        });
-      }
     }
   },
 
-  completeRequest: (id, respondedBy) => {
+  completeRequest: async (id, respondedBy) => {
     const req = get().requests.find(r => r.id === id);
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, status: 'completed' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy } : r
-    );
+    if (!req) return;
+    const updated: KidRequest = { ...req, status: 'completed', respondedAt: new Date().toISOString(), respondedBy };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
     // Kid learns their request was fulfilled — distinct from
     // kid_request_decision (approved/declined) since "completed" means the
     // helper actually finished the task, not just agreed to take it on.
-    if (req && req.fromMemberId !== respondedBy) {
+    if (req.fromMemberId !== respondedBy) {
       notifyKidRequest(req.fromMemberId, 'kid_request_completed', {
         requestId: id, requestType: req.type, detail: req.detail,
         fromMemberId: req.fromMemberId, byMemberId: respondedBy, byName: memberName(respondedBy),
@@ -521,59 +527,66 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     }
   },
 
-  cancelRequest: (id) => {
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, status: 'cancelled' as RequestStatus } : r
-    );
+  cancelRequest: async (id) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req) return;
+    const updated: KidRequest = { ...req, status: 'cancelled' };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
-  toggleGPWelcome: (id, value) => {
-    const all = get().requests.map(r => r.id === id ? { ...r, openToGP: value } : r);
+  toggleGPWelcome: async (id, value) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req) return;
+    const updated: KidRequest = { ...req, openToGP: value };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
-  markRead: (id) => {
-    const already = get().requests.find(r => r.id === id);
-    if (already?.readAt) return;
-    const all = get().requests.map(r =>
-      r.id === id ? { ...r, readAt: new Date().toISOString() } : r
-    );
+  markRead: async (id) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req || req.readAt) return;
+    const updated: KidRequest = { ...req, readAt: new Date().toISOString() };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
-  deleteRequest: (id) => {
+  deleteRequest: async (id) => {
+    const ok = await deleteFromDb(id);
+    if (!ok) return;
     const all = get().requests.filter(r => r.id !== id);
     set({ requests: all }); save(all);
-    deleteFromDb(id);
   },
 
-  approveItems: (requestId, itemIds, approvedBy, note) => {
+  approveItems: async (requestId, itemIds, approvedBy, note) => {
     const now = new Date().toISOString();
     const idSet = new Set(itemIds);
     const before = get().requests.find(r => r.id === requestId);
-    const all = get().requests.map(r => {
-      if (r.id !== requestId || !r.items) return r;
-      const items = r.items.map(it =>
-        idSet.has(it.id) ? { ...it, status: 'approved' as ItemStatus, approvedBy, parentNote: note, approvedAt: now } : it
-      );
-      const allDone = items.every(it => it.status !== 'pending');
-      const allApproved = items.every(it => it.status === 'approved');
-      const allRejected = items.every(it => it.status === 'rejected');
-      const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
-      return { ...r, items, status, respondedAt: now, respondedBy: approvedBy };
-    });
+    if (!before?.items) return;
+    const items = before.items.map(it =>
+      idSet.has(it.id) ? { ...it, status: 'approved' as ItemStatus, approvedBy, parentNote: note, approvedAt: now } : it
+    );
+    const allDone = items.every(it => it.status !== 'pending');
+    const allApproved = items.every(it => it.status === 'approved');
+    const allRejected = items.every(it => it.status === 'rejected');
+    const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
+    const updated: KidRequest = { ...before, items, status, respondedAt: now, respondedBy: approvedBy };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === requestId ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
     // Kid learns which items got the green light — grocery/supplies items
     // approved individually rather than the whole request at once, so the
     // generic kid_request_decision copy ("Your request was approved!")
     // wouldn't tell them which items actually made it in.
-    if (before && before.fromMemberId !== approvedBy) {
-      const names = before.items?.filter(it => idSet.has(it.id)).map(it => it.name) ?? [];
+    if (before.fromMemberId !== approvedBy) {
+      const names = before.items.filter(it => idSet.has(it.id)).map(it => it.name);
       notifyKidRequest(before.fromMemberId, 'kid_request_items_decision', {
         requestId, requestType: before.type, detail: before.detail,
         decision: 'approved', itemNames: names, note, fromMemberId: before.fromMemberId,
@@ -581,25 +594,25 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     }
   },
 
-  rejectItems: (requestId, itemIds, rejectedBy, note) => {
+  rejectItems: async (requestId, itemIds, rejectedBy, note) => {
     const now = new Date().toISOString();
     const idSet = new Set(itemIds);
     const before = get().requests.find(r => r.id === requestId);
-    const all = get().requests.map(r => {
-      if (r.id !== requestId || !r.items) return r;
-      const items = r.items.map(it =>
-        idSet.has(it.id) ? { ...it, status: 'rejected' as ItemStatus, rejectedBy, parentNote: note, rejectedAt: now } : it
-      );
-      const allDone = items.every(it => it.status !== 'pending');
-      const allApproved = items.every(it => it.status === 'approved');
-      const allRejected = items.every(it => it.status === 'rejected');
-      const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
-      return { ...r, items, status, respondedAt: now, respondedBy: rejectedBy };
-    });
+    if (!before?.items) return;
+    const items = before.items.map(it =>
+      idSet.has(it.id) ? { ...it, status: 'rejected' as ItemStatus, rejectedBy, parentNote: note, rejectedAt: now } : it
+    );
+    const allDone = items.every(it => it.status !== 'pending');
+    const allApproved = items.every(it => it.status === 'approved');
+    const allRejected = items.every(it => it.status === 'rejected');
+    const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
+    const updated: KidRequest = { ...before, items, status, respondedAt: now, respondedBy: rejectedBy };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === requestId ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
-    if (before && before.fromMemberId !== rejectedBy) {
-      const names = before.items?.filter(it => idSet.has(it.id)).map(it => it.name) ?? [];
+    if (before.fromMemberId !== rejectedBy) {
+      const names = before.items.filter(it => idSet.has(it.id)).map(it => it.name);
       notifyKidRequest(before.fromMemberId, 'kid_request_items_decision', {
         requestId, requestType: before.type, detail: before.detail,
         decision: 'rejected', itemNames: names, note, fromMemberId: before.fromMemberId,
@@ -607,26 +620,28 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     }
   },
 
-  approveAllItems: (requestId, approvedBy, note) => {
+  approveAllItems: async (requestId, approvedBy, note) => {
     const req = get().requests.find(r => r.id === requestId);
     if (!req?.items) return;
     const pendingIds = req.items.filter(it => it.status === 'pending').map(it => it.id);
-    get().approveItems(requestId, pendingIds, approvedBy, note);
+    await get().approveItems(requestId, pendingIds, approvedBy, note);
   },
 
-  rejectAllItems: (requestId, rejectedBy, note) => {
+  rejectAllItems: async (requestId, rejectedBy, note) => {
     const req = get().requests.find(r => r.id === requestId);
     if (!req?.items) return;
     const pendingIds = req.items.filter(it => it.status === 'pending').map(it => it.id);
-    get().rejectItems(requestId, pendingIds, rejectedBy, note);
+    await get().rejectItems(requestId, pendingIds, rejectedBy, note);
   },
 
-  appendItems: (requestId, newItems) => {
-    const all = get().requests.map(r =>
-      r.id !== requestId ? r : { ...r, items: [...(r.items ?? []), ...newItems] }
-    );
+  appendItems: async (requestId, newItems) => {
+    const req = get().requests.find(r => r.id === requestId);
+    if (!req) return;
+    const updated: KidRequest = { ...req, items: [...(req.items ?? []), ...newItems] };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === requestId ? updated : r);
     set({ requests: all }); save(all);
-    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
   },
 
   clearResolved: () => {

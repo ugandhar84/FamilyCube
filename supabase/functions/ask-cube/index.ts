@@ -1430,6 +1430,13 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   express it exactly: say so plainly in your one-sentence reply (e.g. "I can only do daily/weekly/monthly repeats
   right now, so I set this up as daily — let me know if you'd like it different") rather than silently proposing
   daily/weekly as if it were what they actually asked for.
+  This applies EQUALLY when the user's own word is "reminder" rather than "event" — "reminder" is not a separate
+  concept from an event/quest here, it's just a plain event/quest, optionally with alertCallLeadMinutes set. A
+  request like "create a reminder for pickup kid from school every day 5PM" is a RECURRING event: propose_event with
+  category "Ride", startAt at 5:00 PM, AND recurrenceFrequency: "daily" — all three in the one call. Never let the
+  word "reminder" pull your attention onto alertCallLeadMinutes while silently dropping the "every day" part; a
+  reminder request can need BOTH fields set at once, and setting only one of them is exactly the silent-drop mistake
+  this whole rule exists to prevent.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
 - If the user explicitly asks for a reminder/alert/"call me" while also describing something brand new that isn't on
   the calendar yet, set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they ask for a

@@ -3707,7 +3707,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         const { useFamilyStore } = require('./familyStore');
         const member = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
         const nextStreak = onTime ? ((member as any)?.streak ?? 0) + 1 : 0;
-        useFamilyStore.getState().updateMember(chore.assignedToId, { streak: nextStreak });
+        useFamilyStore.getState().updateMember(chore.assignedToId, { streak: nextStreak })
+          .catch((e: any) => console.warn('[choreStore] approveChore streak update failed', e));
       } catch (e) {
         console.warn('[choreStore] approveChore streak update failed', e);
       }
@@ -4371,7 +4372,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           seen.add(memberId);
           const member = useFamilyStore.getState().members.find((m: any) => m.id === memberId);
           if ((member as any)?.streak > 0) {
-            useFamilyStore.getState().updateMember(memberId, { streak: 0 });
+            useFamilyStore.getState().updateMember(memberId, { streak: 0 })
+              .catch((e: any) => console.warn('[choreStore] resetDueRecurringChores streak reset failed', e));
           }
         }
       } catch (e) {

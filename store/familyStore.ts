@@ -609,20 +609,19 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
 
   updateMember: async (id, updates) => {
     const before = get().members.find(m => m.id === id);
-    const next = get().members.map(m => m.id === id ? { ...m, ...updates } : m);
+    if (!before) return;
+    const updated = { ...before, ...updates };
+    // DB-is-truth: await the write before reflecting it locally — was
+    // optimistic (set immediately, "surfaced" the error via a console
+    // warning but never actually rolled local state back on failure).
+    const { error } = await supabase.from('members').update(toRow(updated)).eq('id', id);
+    if (error) {
+      console.warn('[familyStore] updateMember failed', error.message);
+      throw error;
+    }
+    const next = get().members.map(m => m.id === id ? updated : m);
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    const updated = next.find(m => m.id === id);
-    let writeFailed = false;
-    if (updated) {
-      // This was a silent await with no error check — every caller of
-      // updateMember (GP dispatch prefs, linked_parent_id, role edits,
-      // etc.) could fail the DB write with zero indication anywhere, which
-      // is exactly the shape of bug found repeatedly this session
-      // (RosterTab's saveMember, choreStore's award payouts). Surface it.
-      const { error } = await supabase.from('members').update(toRow(updated)).eq('id', id);
-      if (error) { console.warn('[familyStore] updateMember failed', error.message); writeFailed = true; }
-    }
 
     // Role change (kid→teen, promoted to parent, etc) is permission/
     // security-relevant, unlike the cosmetic fields (name/avatar/DOB/quiet
@@ -630,14 +629,13 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // caller of updateMember only ever changes those, so gating narrowly on
     // "did `role` actually change" keeps this from firing on the vast
     // majority of unrelated saves (own-profile edits, notification-pref
-    // toggles, etc). Skipped if the write above failed — nothing actually
-    // changed on the server, so notifying would be a false alarm. Excludes
-    // the acting member — activeMemberId is who is physically driving this
-    // device right now, which for the shared-device "parent edits a
-    // different member's role" flow (RosterTab/ProfileSettingsScreen's
-    // EditMemberModal) is genuinely the actor, not the member being edited.
-    // Non-blocking: never delays/blocks the write above.
-    if (!writeFailed && before && updates.role && updates.role !== before.role) {
+    // toggles, etc). Excludes the acting member — activeMemberId is who is
+    // physically driving this device right now, which for the shared-device
+    // "parent edits a different member's role" flow (RosterTab/
+    // ProfileSettingsScreen's EditMemberModal) is genuinely the actor, not
+    // the member being edited. Non-blocking: never delays/blocks the write
+    // above.
+    if (updates.role && updates.role !== before.role) {
       const actor = get().activeMemberId ?? id;
       const familyId = updated?.familyId ?? before.familyId ?? get().members[0]?.familyId;
       const recipients = otherParentIds(next, actor);

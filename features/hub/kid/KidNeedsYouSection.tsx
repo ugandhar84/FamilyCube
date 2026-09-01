@@ -279,7 +279,8 @@ export function KidNeedsYouSection({
     }
     if (played) {
       const nowIso = new Date().toISOString();
-      useFamilyStore.getState().updateMember(active.id, { lastCelebrationSeenAt: nowIso });
+      useFamilyStore.getState().updateMember(active.id, { lastCelebrationSeenAt: nowIso })
+        .catch(e => console.warn('[KidNeedsYouSection] update lastCelebrationSeenAt failed', e));
     }
   }, [
     filteredCheersForMe.map(({ quest, cheer }) => `${quest.id}-${cheer.memberId}`).join(','),

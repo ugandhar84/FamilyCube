@@ -935,7 +935,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                   onToggleGoal={isKid ? (target) => {
                     if (!activeMember) return;
                     const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
-                    useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId });
+                    useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId })
+                      .catch(e => console.warn('[StoreScreen] toggle goal failed', e));
                   } : undefined}
                 />
               ))}

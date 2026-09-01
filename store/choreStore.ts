@@ -952,10 +952,10 @@ interface ChoreState {
   // functions' callers (claimBounty delegates to this one when
   // maxClaimants > 1) can share one onLost handler — 'claimed' covers both
   // "someone else took the last slot" and "you already have a claim."
-  claimBountySlot:          (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
-  submitBountyClaim:        (choreId: string, childId: string, opts?: { photoUrl?: string; note?: string }) => void;
-  approveBountyClaim:       (choreId: string, childId: string, reviewerId: string) => void;
-  declineBountyClaim:       (choreId: string, childId: string, reviewerId: string, reason?: string) => void;
+  claimBountySlot:          (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => Promise<void>;
+  submitBountyClaim:        (choreId: string, childId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
+  approveBountyClaim:       (choreId: string, childId: string, reviewerId: string) => Promise<void>;
+  declineBountyClaim:       (choreId: string, childId: string, reviewerId: string, reason?: string) => Promise<void>;
   // A kid backing out of their OWN claimed bounty slot before submitting —
   // distinct from declineBountyClaim (parent-initiated, reviewer-gated,
   // only for a pending_approval claim). Live-DB QA found QuestCard's
@@ -964,7 +964,7 @@ interface ChoreState {
   // isPool), never touching this kid's own bounty_claims row — the claim
   // stayed status='in_progress' forever, with no way to actually free the
   // slot for anyone else.
-  withdrawBountyClaim:      (choreId: string, childId: string) => void;
+  withdrawBountyClaim:      (choreId: string, childId: string) => Promise<void>;
   loadBountyClaims:         (choreId: string) => Promise<void>;
   claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
   // Returns false (and does nothing) if the chore isn't submittable yet —
@@ -2175,42 +2175,40 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // rather than the single-claimant assignedToId field.
   // ─────────────────────────────────────────────────────────────────────────
 
-  claimBountySlot: (choreId, childId, onLost) => {
-    supabase.rpc('claim_bounty_slot', { p_chore_id: choreId, p_member_id: childId })
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[choreStore] claimBountySlot RPC failed', error.message);
-          return;
-        }
-        const result = Array.isArray(data) ? data[0] : data;
-        if (!result?.claimed) {
-          console.warn('[choreStore] claimBountySlot lost — bounty full or already claimed by this member', choreId);
-          if (onLost) onLost('claimed');
-          return;
-        }
-        const now = new Date().toISOString();
-        const claim: BountyClaim = {
-          id: result.claim_id, choreId, memberId: childId, status: 'in_progress',
-          claimedAt: now, createdAt: now,
-        };
-        set(s => ({
-          chores: s.chores.map(c => c.id === choreId ? { ...c, claims: [...(c.claims ?? []), claim] } : c),
-        }));
-        showToast('Claimed ✓');
-        // Live-reported: "claim ... not even working" — quest-event-notifier
-        // has a fully-built 'quest_claimed' case (tells parents/seniors a
-        // kid just claimed a slot) that nothing in this file was ever
-        // calling. Fires here alongside claimBounty/claimPoolQuest below.
-        const chore = get().chores.find(c => c.id === choreId);
-        if (chore?.familyId) {
-          supabase.functions.invoke('quest-event-notifier', {
-            body: {
-              event: 'quest_claimed', questId: choreId, questTitle: chore.title,
-              familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
-            },
-          }).catch(e => console.warn('[choreStore] claimBountySlot notify failed', e?.message));
-        }
-      });
+  claimBountySlot: async (choreId, childId, onLost) => {
+    const { data, error } = await supabase.rpc('claim_bounty_slot', { p_chore_id: choreId, p_member_id: childId });
+    if (error) {
+      console.warn('[choreStore] claimBountySlot RPC failed', error.message);
+      return;
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result?.claimed) {
+      console.warn('[choreStore] claimBountySlot lost — bounty full or already claimed by this member', choreId);
+      if (onLost) onLost('claimed');
+      return;
+    }
+    const now = new Date().toISOString();
+    const claim: BountyClaim = {
+      id: result.claim_id, choreId, memberId: childId, status: 'in_progress',
+      claimedAt: now, createdAt: now,
+    };
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, claims: [...(c.claims ?? []), claim] } : c),
+    }));
+    showToast('Claimed ✓');
+    // Live-reported: "claim ... not even working" — quest-event-notifier
+    // has a fully-built 'quest_claimed' case (tells parents/seniors a
+    // kid just claimed a slot) that nothing in this file was ever
+    // calling. Fires here alongside claimBounty/claimPoolQuest below.
+    const chore = get().chores.find(c => c.id === choreId);
+    if (chore?.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_claimed', questId: choreId, questTitle: chore.title,
+          familyId: chore.familyId, triggeredById: childId, assigneeId: childId,
+        },
+      }).catch(e => console.warn('[choreStore] claimBountySlot notify failed', e?.message));
+    }
   },
 
   loadBountyClaims: async (choreId) => {
@@ -2227,11 +2225,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, claims } : c) }));
   },
 
-  submitBountyClaim: (choreId, childId, opts) => {
+  submitBountyClaim: async (choreId, childId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     const claim = chore?.claims?.find(cl => cl.memberId === childId);
     if (!claim || claim.status !== 'in_progress') return;
     const now = new Date().toISOString();
+    const { error } = await supabase.from('bounty_claims')
+      .update({ status: 'pending_approval', submitted_at: now, submission_photo_url: opts?.photoUrl ?? null, submission_note: opts?.note ?? null })
+      .eq('id', claim.id);
+    if (error) {
+      console.warn('[choreStore] submitBountyClaim DB update failed', error.message);
+      showToast("Couldn't submit — please try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
@@ -2239,10 +2245,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : cl),
       } : c),
     }));
-    supabase.from('bounty_claims')
-      .update({ status: 'pending_approval', submitted_at: now, submission_photo_url: opts?.photoUrl ?? null, submission_note: opts?.note ?? null })
-      .eq('id', claim.id)
-      .then(({ error }) => { if (error) console.warn('[choreStore] submitBountyClaim DB update failed', error.message); });
     if (chore?.familyId) {
       supabase.functions.invoke('quest-event-notifier', {
         body: { event: 'quest_submitted', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId },
@@ -2250,7 +2252,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  approveBountyClaim: (choreId, childId, reviewerId) => {
+  approveBountyClaim: async (choreId, childId, reviewerId) => {
     const chore = get().chores.find(c => c.id === choreId);
     const claim = chore?.claims?.find(cl => cl.memberId === childId);
     if (!chore || !claim || claim.status !== 'pending_approval') return;
@@ -2260,6 +2262,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     const now = new Date().toISOString();
     const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+    const { error } = await supabase.from('bounty_claims')
+      .update({ status: 'approved', approved_at: now, reviewed_by_id: reviewerId, coins_awarded: pts })
+      .eq('id', claim.id);
+    if (error) {
+      console.warn('[choreStore] approveBountyClaim DB update failed', error.message);
+      showToast("Couldn't approve — please try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
@@ -2267,10 +2277,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : cl),
       } : c),
     }));
-    supabase.from('bounty_claims')
-      .update({ status: 'approved', approved_at: now, reviewed_by_id: reviewerId, coins_awarded: pts })
-      .eq('id', claim.id)
-      .then(({ error }) => { if (error) console.warn('[choreStore] approveBountyClaim DB update failed', error.message); });
     // Each claim pays out fully and independently — same "no split" model
     // team-clone quests already use (1.7, deliberate/unchanged this session).
     if (pts > 0) get().awardPoints(childId, choreId, pts, chore.xpReward);
@@ -2325,7 +2331,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  declineBountyClaim: (choreId, childId, reviewerId, reason) => {
+  declineBountyClaim: async (choreId, childId, reviewerId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     const claim = chore?.claims?.find(cl => cl.memberId === childId);
     if (!claim || claim.status !== 'pending_approval') return;
@@ -2334,6 +2340,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return;
     }
     const now = new Date().toISOString();
+    const { error } = await supabase.from('bounty_claims')
+      .update({ status: 'declined', declined_at: now, rejection_reason: reason ?? null, reviewed_by_id: reviewerId })
+      .eq('id', claim.id);
+    if (error) {
+      console.warn('[choreStore] declineBountyClaim DB update failed', error.message);
+      showToast("Couldn't decline — please try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
         ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
@@ -2344,10 +2358,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           : cl),
       } : c),
     }));
-    supabase.from('bounty_claims')
-      .update({ status: 'declined', declined_at: now, rejection_reason: reason ?? null, reviewed_by_id: reviewerId })
-      .eq('id', claim.id)
-      .then(({ error }) => { if (error) console.warn('[choreStore] declineBountyClaim DB update failed', error.message); });
     // Audit finding — same gap as approveBountyClaim above, decline side:
     // the kid whose claim was just turned down got zero notice. Same fix —
     // call family-notifier directly with the bounty-specific
@@ -2374,17 +2384,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // there's nothing to keep an audit trail of, and deleting genuinely
   // frees the slot for claimBountySlot's own count to pick back up
   // immediately, matching how a fresh claim would look.
-  withdrawBountyClaim: (choreId, childId) => {
+  withdrawBountyClaim: async (choreId, childId) => {
     const chore = get().chores.find(c => c.id === choreId);
     const claim = chore?.claims?.find(cl => cl.memberId === childId);
     if (!claim || claim.status !== 'in_progress') return;
+    const { error } = await supabase.from('bounty_claims').delete().eq('id', claim.id);
+    if (error) {
+      console.warn('[choreStore] withdrawBountyClaim DB delete failed', error.message);
+      showToast("Couldn't withdraw — please try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
         ? { ...c, claims: (c.claims ?? []).filter(cl => cl.memberId !== childId) }
         : c),
     }));
-    supabase.from('bounty_claims').delete().eq('id', claim.id)
-      .then(({ error }) => { if (error) console.warn('[choreStore] withdrawBountyClaim DB delete failed', error.message); });
   },
 
   // ─────────────────────────────────────────────────────────────────────────

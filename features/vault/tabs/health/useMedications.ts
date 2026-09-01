@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { claimChannel } from '@/lib/realtimeChannel';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
@@ -33,8 +34,20 @@ export function useMedications(familyId: string | undefined, memberId: string | 
 
   useEffect(() => {
     if (!familyId || !memberId) return;
-    const channel = supabase
-      .channel(`meds-${familyId}-${memberId}`)
+    // A fixed topic name collided when two hook instances for the same
+    // member existed at once even briefly — ParentView/SeniorView
+    // switching (role change, Fast Refresh, a fast unmount/remount) could
+    // call supabase.channel() with the same topic before the previous
+    // instance's removeChannel() cleanup had actually finished, and the JS
+    // client returns the SAME underlying channel object for a duplicate
+    // topic — so the second .on() landed on a channel already past
+    // subscribe() ("cannot add postgres_changes callbacks... after
+    // subscribe()", live-reported crash). claimChannel is the same
+    // already-active-channel guard used elsewhere in this app for exactly
+    // this bug class — only the first mounted instance claims the channel.
+    const channel = claimChannel(`meds-${familyId}-${memberId}`);
+    if (!channel) return;
+    channel
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'family_medications',
         filter: `member_id=eq.${memberId}`,

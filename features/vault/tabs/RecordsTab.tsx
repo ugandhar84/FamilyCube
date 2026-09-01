@@ -9,6 +9,7 @@ import {
   Download, CheckSquare,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { claimChannel } from '@/lib/realtimeChannel';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { EmptyState } from './shared';
@@ -102,8 +103,9 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // ── Realtime ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!familyId || familyId === 'family-1') return;
-    const ch = supabase.channel(`medrec-${familyId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'medical_records',
+    const ch = claimChannel(`medrec-${familyId}`);
+    if (!ch) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'medical_records',
         filter: `family_id=eq.${familyId}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

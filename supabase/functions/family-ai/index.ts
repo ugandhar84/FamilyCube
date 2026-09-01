@@ -544,6 +544,18 @@ Return JSON: {
       unless the input explicitly names them too); "Leo and Maya" -> ["Leo","Maya"];
       a single named person -> that one name only, still as a one-item array. Empty
       array if nobody specific was named or implied.)
+    recurrenceFrequency: "once" | "daily" | "weekly" | "monthly" — "once" unless the
+      input names a repeating pattern ("every Wednesday", "every day", "daily", "weekly",
+      "every week", "monthly"). "Pick up Maya from soccer every Wednesday" -> "weekly".
+    recurrenceDays: number[] — weekly recurrence only, which weekdays it repeats on,
+      0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4]).
+      Empty array unless recurrenceFrequency is "weekly".
+    urgent: boolean — true if the input signals time pressure ("urgent", "asap",
+      "right away", "immediately", "emergency", "now"). false otherwise.
+    alertCall: boolean — true only if the input explicitly asks for a call-based
+      reminder/notification/alert (e.g. "enable call reminder", "call notification").
+      false for a plain mention of a phone call that is the task itself ("call the
+      dentist", "phone call with tutor").
   },
   errand: null | {
     category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),

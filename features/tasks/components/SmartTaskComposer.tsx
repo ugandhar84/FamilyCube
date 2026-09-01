@@ -326,13 +326,18 @@ export default function SmartTaskComposer({
       locations: { pickup: null, dropoff: null },
       memberNames: names,
       amount: null,
-      recurrence: 'once',
-      recurrenceDays: [],
-      urgent: false,
+      // Older cached responses (before recurrence/urgency were added to the
+      // AI schema) won't carry these fields — fall back to 'once'/false
+      // rather than crash, but never force a correct in-progress local
+      // detection (e.g. "every Wednesday") back to 'once' just because the
+      // AI call omitted the field.
+      recurrence: task.recurrenceFrequency ?? 'once',
+      recurrenceDays: task.recurrenceFrequency === 'weekly' ? (task.recurrenceDays ?? []) : [],
+      urgent: task.urgent ?? false,
       kindOverride: task.kind,
       driverName: null,
       driverId: null,
-      alertCall: false,
+      alertCall: task.alertCall ?? false,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond
     // the structured fields" — surface it into Notes and open the toggle

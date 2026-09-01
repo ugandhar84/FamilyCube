@@ -12,6 +12,10 @@ export interface ExtractedTask {
   // forMemberName mirrors this array's first entry for older callers that
   // only read the singular field; always prefer this array when present.
   forMemberNames: string[];
+  recurrenceFrequency: 'once' | 'daily' | 'weekly' | 'monthly';
+  recurrenceDays: number[]; // 0=Sun..6=Sat, only meaningful when weekly
+  urgent: boolean;
+  alertCall: boolean;
 }
 
 export interface ExtractedErrand {

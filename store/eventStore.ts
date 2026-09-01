@@ -447,6 +447,14 @@ interface EventState {
   // every caller gets the same behavior automatically.
   confirmEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
   declineEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper', reason?: string) => Promise<boolean>;
+
+  // Live-caught: the "Remind" button (both HelperEventCard.tsx and
+  // EventDetailSheet) only ever showed a "Reminder sent ✓" toast — no
+  // push, no chat message, nothing actually sent to anyone. Pure UI
+  // theater, copied from one file into the other without either ever
+  // having been wired to a real notification. This sends an actual
+  // family-notifier push+persisted nudge to the pending assignee.
+  remindEventAssignee: (eventId: string, assigneeId: string, assigneeName: string, fromMemberId: string) => Promise<boolean>;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1942,6 +1950,43 @@ export const useEventStore = create<EventState>((set, get) => ({
       set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh : e)) });
       set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
     }
+    return true;
+  },
+
+  // ── remindEventAssignee — an actual push, not a fake toast ────────────────
+  // Live-caught bug: "Remind" (HelperEventCard.tsx and EventDetailSheet)
+  // only ever showed "Reminder sent ✓" — nothing was actually sent to
+  // anyone, no push, no chat message, no DB row. One file's stub got
+  // copied into the other with the fakeness intact. This sends a real
+  // family-notifier push + persisted in-app notification to the pending
+  // assignee, same delivery path every other real notification in this
+  // app already uses (choreStore's notifyChorePing, family-notifier's own
+  // 'custom' type).
+  remindEventAssignee: async (eventId, assigneeId, assigneeName, fromMemberId) => {
+    const familyId = getFamilyId();
+    if (!familyId || !assigneeId || assigneeId === fromMemberId) {
+      showToast("Couldn't send — please try again", 'error');
+      return false;
+    }
+    const target = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
+    const fromName = memberById(fromMemberId)?.name ?? 'A parent';
+    const { error } = await supabase.functions.invoke('family-notifier', {
+      body: {
+        type: 'custom', familyId, memberIds: [assigneeId], persist: true,
+        excludeMemberId: fromMemberId,
+        payload: {
+          title: '🔔 Reminder',
+          body: `${fromName} is checking in on "${target?.title ?? 'a ride'}" — still good to go?`,
+          data: { screen: 'Schedule', eventId },
+        },
+      },
+    });
+    if (error) {
+      console.warn('[eventStore] remindEventAssignee failed', eventId, error.message);
+      showToast("Couldn't send — please try again", 'error');
+      return false;
+    }
+    showToast(`Reminder sent to ${assigneeName.split(' ')[0]} ✓`);
     return true;
   },
 

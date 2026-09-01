@@ -100,7 +100,16 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
               stare at a bare "Pending" badge. */}
           {showRemind && (
             <AnimatedPressable
-              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Remind" on "${ev.title}" (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx]`); showToast(`Reminder sent to ${(assignee.name?.split(' ')[0] ?? 'Driver')} ✓`); }}
+              onPress={() => {
+                console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Remind" on "${ev.title}" (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx]`);
+                // Was a fake "Reminder sent ✓" toast with nothing actually
+                // sent to anyone — no push, no chat message. Now a real
+                // push + persisted in-app notification via
+                // remindEventAssignee (store/eventStore.ts).
+                if (assignee.id) {
+                  useEventStore.getState().remindEventAssignee(ev.id, assignee.id, assignee.name ?? 'Driver', active.id);
+                }
+              }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.warning + '18', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 }}>
               <Bell size={12} color={colors.warningDark ?? colors.warning} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warningDark ?? colors.warning }}>Remind</Text>

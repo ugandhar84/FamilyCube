@@ -1203,7 +1203,18 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderCol }}>
                   {showRemind && (
                     <Pressable
-                      onPress={() => { showToast(`Reminder sent to ${(assignee.name?.split(' ')[0] ?? 'Driver')} ✓`); onClose(); }}
+                      onPress={() => {
+                        // Was a fake "Reminder sent ✓" toast with nothing
+                        // actually sent to anyone — no push, no chat
+                        // message. Now a real push + persisted in-app
+                        // notification via remindEventAssignee (store/
+                        // eventStore.ts), same function HelperEventCard
+                        // uses so this behaves identically everywhere.
+                        if (assignee.id && viewerMember?.id) {
+                          useEventStore.getState().remindEventAssignee(ev.id, assignee.id, assignee.name ?? 'Driver', viewerMember.id);
+                        }
+                        onClose();
+                      }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.warning + '18' }}>
                       <Bell size={13} color={colors.warningDark} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Remind</Text>

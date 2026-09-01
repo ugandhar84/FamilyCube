@@ -2294,21 +2294,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       && filledClaims.length >= chore.maxClaimants
       && filledClaims.every(cl => cl.status === 'approved');
     if (allSlotsResolved) {
-      set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'approved' } : c) }));
-      supabase.from('chore_tasks').update({ status: 'approved' }).eq('id', choreId)
-        .then(({ error }) => {
-          if (error) {
-            console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message);
-            // Bug-hunt finding: the optimistic set() above already flipped
-            // the parent chore to status:'approved' — the per-slot payout
-            // above is unaffected either way (already fired, independent of
-            // this rollup write), but on failure the LOCAL rollup status
-            // itself never actually landed, so this device would show the
-            // bounty as fully resolved while every other device (and a
-            // fresh resync) would still show it as claimable/in-progress.
-            set(s => ({ chores: s.chores.map(c => c.id === choreId && c.status === 'approved' ? { ...c, status: chore.status } : c) }));
-          }
-        });
+      // DB-is-truth: await the rollup write before reflecting it locally —
+      // was optimistic (set immediately, rolled back on failure). The
+      // per-slot payout above is unaffected either way (already fired,
+      // independent of this rollup write).
+      const { error } = await supabase.from('chore_tasks').update({ status: 'approved' }).eq('id', choreId);
+      if (error) {
+        console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message);
+      } else {
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'approved' } : c) }));
+      }
     }
     // Audit finding — the kid whose multi-slot claim was just approved (and
     // paid, above) got zero notice; they'd only see it if they reopened the

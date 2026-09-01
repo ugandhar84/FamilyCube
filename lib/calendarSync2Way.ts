@@ -35,6 +35,30 @@ const MAP_KEY_PREFIX = 'apple_calendar_sync_map_'; // + memberId
 const LAST_SWEEP_KEY_PREFIX = 'apple_calendar_sync_last_sweep_'; // + memberId
 const SWEEP_THROTTLE_MS = 15 * 60_000; // matches the plan's "not more than once per 15 minutes"
 const SYNC_CALENDAR_NAME = 'FamilyCube';
+// TestFlight/production builds have no Metro console — every failure in
+// this file previously went to console.warn only, meaning "still not
+// synced, no idea why" (live-reported) was structurally undiagnosable
+// outside a dev build. Persists the most recent real failure so
+// CalendarSyncScreen can surface it directly in the UI.
+const LAST_ERROR_KEY_PREFIX = 'apple_calendar_sync_last_error_'; // + memberId
+
+async function recordSyncError(memberId: string, context: string, e: unknown): Promise<void> {
+  try {
+    const message = e instanceof Error ? e.message : String(e);
+    await AsyncStorage.setItem(LAST_ERROR_KEY_PREFIX + memberId, JSON.stringify({ context, message, at: new Date().toISOString() }));
+  } catch { /* best-effort only */ }
+}
+
+export async function getLastAppleSyncError(memberId: string): Promise<{ context: string; message: string; at: string } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_ERROR_KEY_PREFIX + memberId);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export async function clearLastAppleSyncError(memberId: string): Promise<void> {
+  try { await AsyncStorage.removeItem(LAST_ERROR_KEY_PREFIX + memberId); } catch { /* best-effort */ }
+}
 
 type IdMap = Record<string, string>; // familyEventId -> deviceCalendarEventId
 
@@ -143,7 +167,10 @@ function toPortable(event: FamilyEvent): { title: string; start: Date; end: Date
 /** FamilyCube -> device calendar. Called after a confirmed create/update/delete, same as the server-side push. */
 export async function pushEventToAppleCalendar(memberId: string, event: FamilyEvent | null, eventId: string, action: 'create' | 'update' | 'delete'): Promise<void> {
   try {
-    if (!(await ensurePermission())) return;
+    if (!(await ensurePermission())) {
+      await recordSyncError(memberId, 'push', new Error('Calendar permission not granted'));
+      return;
+    }
     const map = await loadMap(memberId);
 
     if (action === 'delete') {
@@ -152,18 +179,23 @@ export async function pushEventToAppleCalendar(memberId: string, event: FamilyEv
       try { await Calendar.deleteEventAsync(deviceId); } catch { /* already gone on-device — fine */ }
       delete map[eventId];
       await saveMap(memberId, map);
+      await clearLastAppleSyncError(memberId);
       return;
     }
 
     if (!event) return;
     const calendarId = await ensureSyncCalendarId();
-    if (!calendarId) return;
+    if (!calendarId) {
+      await recordSyncError(memberId, 'push', new Error('Could not create/find the FamilyCube device calendar'));
+      return;
+    }
     const portable = toPortable(event);
     const existingDeviceId = map[eventId];
 
     if (existingDeviceId) {
       try {
         await Calendar.updateEventAsync(existingDeviceId, portable);
+        await clearLastAppleSyncError(memberId);
         return;
       } catch {
         // The device event may have been deleted independently — fall
@@ -174,8 +206,10 @@ export async function pushEventToAppleCalendar(memberId: string, event: FamilyEv
     const newDeviceId = await Calendar.createEventAsync(calendarId, portable);
     map[eventId] = newDeviceId;
     await saveMap(memberId, map);
+    await clearLastAppleSyncError(memberId);
   } catch (e) {
     console.warn('[calendarSync2Way] pushEventToAppleCalendar failed', e);
+    await recordSyncError(memberId, 'push', e);
   }
 }
 
@@ -206,9 +240,15 @@ export async function reconcileAppleCalendar(
     }
     await AsyncStorage.setItem(LAST_SWEEP_KEY_PREFIX + memberId, String(Date.now()));
 
-    if (!(await ensurePermission())) return;
+    if (!(await ensurePermission())) {
+      await recordSyncError(memberId, 'reconcile', new Error('Calendar permission not granted'));
+      return;
+    }
     const calendarId = await ensureSyncCalendarId();
-    if (!calendarId) return;
+    if (!calendarId) {
+      await recordSyncError(memberId, 'reconcile', new Error('Could not create/find the FamilyCube device calendar'));
+      return;
+    }
 
     const map = await loadMap(memberId);
     const reverseMap = new Map(Object.entries(map).map(([fcId, devId]) => [devId, fcId]));
@@ -261,7 +301,9 @@ export async function reconcileAppleCalendar(
     }
 
     await saveMap(memberId, map);
+    await clearLastAppleSyncError(memberId);
   } catch (e) {
     console.warn('[calendarSync2Way] reconcileAppleCalendar failed', e);
+    await recordSyncError(memberId, 'reconcile', e);
   }
 }

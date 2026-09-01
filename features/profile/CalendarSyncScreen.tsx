@@ -53,6 +53,11 @@ export default function CalendarSyncScreen() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<`${CalendarProvider}:${CalendarPurpose}` | null>(null);
   const [appleToggling, setAppleToggling] = useState(false);
+  // TestFlight/production has no Metro console — every Apple sync failure
+  // previously went to console.warn only, making "still not synced, no
+  // idea why" (live-reported) undiagnosable outside a dev build. Surfaces
+  // calendarSync2Way's own persisted last-error here instead.
+  const [appleLastError, setAppleLastError] = useState<{ context: string; message: string; at: string } | null>(null);
 
   const handleToggleApple = async (next: boolean) => {
     if (!activeMemberId) return;
@@ -90,12 +95,13 @@ export default function CalendarSyncScreen() {
         // Kick an immediate reconciliation so events already on the device
         // calendar show up right away, same "don't make them wait" treatment
         // the work-calendar connect flow gets.
-        const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
+        const { reconcileAppleCalendar, getLastAppleSyncError } = await import('@/lib/calendarSync2Way');
         const familyId = (activeMember as any)?.familyId;
         if (familyId) {
           const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
           reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent }, { force: true })
-            .catch(e => console.warn('[CalendarSyncScreen] initial Apple reconcile failed', e?.message));
+            .catch(e => console.warn('[CalendarSyncScreen] initial Apple reconcile failed', e?.message))
+            .finally(() => { getLastAppleSyncError(activeMemberId).then(setAppleLastError); });
         }
       }
     } catch (e: any) {
@@ -117,6 +123,13 @@ export default function CalendarSyncScreen() {
   }, [activeMemberId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  useFocusEffect(useCallback(() => {
+    if (!activeMemberId) return;
+    import('@/lib/calendarSync2Way').then(({ getLastAppleSyncError }) =>
+      getLastAppleSyncError(activeMemberId).then(setAppleLastError)
+    ).catch(() => {});
+  }, [activeMemberId]));
 
   const connectionFor = (provider: CalendarProvider, purpose: CalendarPurpose) =>
     connections.find(c => c.provider === provider && c.purpose === purpose);
@@ -300,6 +313,16 @@ export default function CalendarSyncScreen() {
                 />
               )}
             </View>
+            {appleLastError && (
+              <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>
+                  Last sync attempt failed ({appleLastError.context === 'push' ? 'sending to device' : 'checking device'})
+                </Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                  {appleLastError.message}
+                </Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       )}

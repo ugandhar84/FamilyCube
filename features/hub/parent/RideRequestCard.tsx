@@ -33,6 +33,11 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
 }) {
   const familyId = (active as any).familyId as string | undefined;
+  // Live-reported: "Open to Helpers" showed even in a family with zero
+  // teen or grandparent members — nobody could ever act on it, so
+  // offering it was pure dead-end UI. Mirrors the same fix on
+  // RideRequiredEventCard.tsx.
+  const hasEligibleHelpers = members.some(m => m.role === 'teen' || m.role === 'senior');
 
   // Zero-touch dispatch: once a ride is opened to helpers, ask the real
   // engine for real (non-dry-run) whether one candidate is a confident
@@ -227,12 +232,14 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
             <Car size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
           </Pressable>
+          {hasEligibleHelpers && (
           <Pressable
             onPress={() => openToHelpers(coinsVal)}
             style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
             <HandHelping size={14} color={colors.warning} />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
           </Pressable>
+          )}
         </View>
       )}
     </CollapsibleCard>

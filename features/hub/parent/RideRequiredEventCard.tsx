@@ -42,6 +42,14 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
   const [reassignOpen, setReassignOpen] = useState(false);
   const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id);
+  // Live-reported: "Helpers" (open to GP/teen pool) showed even in a
+  // family with zero teen or grandparent members — nobody could ever act
+  // on it, so offering it was pure dead-end UI. Only show it when there's
+  // at least one real candidate who could actually claim it; hasCar isn't
+  // checked here (unlike SeniorView's/TeenView's own claim-list gating)
+  // since a family might add a car later, and this button just opens the
+  // pool rather than claiming anything itself.
+  const hasEligibleHelpers = members.some(m => m.role === 'teen' || m.role === 'senior');
   // Shared gating logic (deriveCardActions.ts) instead of the naive
   // otherParents.length > 0 check this card had before — without it, a
   // driver who'd already CONFIRMED could still be silently reassigned via
@@ -263,11 +271,13 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
                 <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: reassignOpen ? colors.parent : colors.warning }} numberOfLines={1}>Reassign</Text>
               </Pressable>
             )}
-            <Pressable onPress={openToHelpers}
-              style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
-              <HandHelping size={12} color={colors.warning} />
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warning }} numberOfLines={1}>Helpers</Text>
-            </Pressable>
+            {hasEligibleHelpers && (
+              <Pressable onPress={openToHelpers}
+                style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
+                <HandHelping size={12} color={colors.warning} />
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warning }} numberOfLines={1}>Helpers</Text>
+              </Pressable>
+            )}
           </View>
           {ev.approvalPending && (
             <Pressable

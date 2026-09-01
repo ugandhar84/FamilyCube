@@ -2379,7 +2379,49 @@ export const useEventStore = create<EventState>((set, get) => ({
       .is('deleted_at', null);
     if (error || !data) { console.warn('[eventStore] deleteEventScoped: series lookup failed', error?.message); return; }
     const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
-    await Promise.all(ids.map(rowId => get().deleteEvent(rowId)));
+    if (ids.length === 0) return;
+    // Live-crashed: "Maximum update depth exceeded" from
+    // Promise.all(ids.map(deleteEvent)) — a large series (up to 84 rows)
+    // fired 84 CONCURRENT calls into deleteEvent, each snapshotting
+    // dayEvents/rangeEvents at its own entry time and then calling set()
+    // from that now-stale snapshot once its own DB write resolved. Besides
+    // the render storm (84 rapid-fire store updates in one burst, tripping
+    // React's render-depth guard), this was a genuine correctness race —
+    // two concurrent deletes computing `next` from the same stale `prev`
+    // could each "resurrect" a row the other had just removed. Same root
+    // cause, same fix shape as addRecurringEvent's own comment above:
+    // await every DB write first, then apply exactly ONE local-state
+    // commit from the current (not stale) state, instead of N racing ones.
+    const idSet = new Set(ids);
+    const now = new Date().toISOString();
+    const actorId = getActiveMemberId();
+    const deletedEvents = ids
+      .map(rowId => get().dayEvents.find(e => e.id === rowId) ?? get().rangeEvents.find(e => e.id === rowId))
+      .filter((e): e is FamilyEvent => !!e);
+    const results = await Promise.all(ids.map(rowId =>
+      supabase.from('calendar_events').update({ deleted_at: now, deleted_by: actorId }).eq('id', rowId)
+    ));
+    const failedIds = new Set(ids.filter((_, i) => results[i].error));
+    if (failedIds.size > 0) {
+      console.warn('[eventStore] deleteEventScoped: some deletes failed', [...failedIds]);
+      showToast("Couldn't delete some occurrences — please try again", 'error');
+    }
+    const confirmedIds = new Set([...idSet].filter(rowId => !failedIds.has(rowId)));
+    if (confirmedIds.size === 0) return;
+    const nextDay = get().dayEvents.filter(e => !confirmedIds.has(e.id));
+    const nextRange = get().rangeEvents.filter(e => !confirmedIds.has(e.id));
+    set({ dayEvents: nextDay, events: nextDay, rangeEvents: nextRange });
+
+    const familyId = getFamilyId();
+    for (const deletedEvent of deletedEvents) {
+      if (!confirmedIds.has(deletedEvent.id)) continue;
+      logActivity({ entityType: 'event', entityId: deletedEvent.id, familyId, actorId, action: 'deleted' });
+      if (familyId && deletedEvent.createdBy) {
+        supabase.functions.invoke('calendar-sync-push', {
+          body: { eventId: deletedEvent.id, familyId, memberId: deletedEvent.createdBy, action: 'delete' },
+        }).catch(e => console.warn('[eventStore] deleteEventScoped calendar-sync-push failed:', e?.message));
+      }
+    }
   },
 }));
 

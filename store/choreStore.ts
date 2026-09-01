@@ -1054,25 +1054,25 @@ interface ChoreState {
   // fires immediately on approval; otherwise the flag simply clears and the
   // normal submit/approve payout path (now unblocked) pays out whenever the
   // work itself is later approved.
-  approveTeenReward:  (choreId: string, approverId: string) => void;
-  adjustTeenReward:   (choreId: string, approverId: string, newAmount: number) => void;
-  declineTeenReward:  (choreId: string, approverId: string, reason?: string) => void;
+  approveTeenReward:  (choreId: string, approverId: string) => Promise<void>;
+  adjustTeenReward:   (choreId: string, approverId: string, newAmount: number) => Promise<void>;
+  declineTeenReward:  (choreId: string, approverId: string, reason?: string) => Promise<void>;
 
   // ── Scenario 4.7 — disputed approval (two parents disagree) ─────────────
   // flagApprovalForDiscussion: soft flag, no financial effect — notifies the
   // approving parent that a co-parent wants to discuss it. Never visible to
   // the kid (spec: "no visibility into the parents' disagreement").
-  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => void;
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<void>;
   // standByApproval: the approving parent dismisses a flag/reversal request
   // without reversing — clears disputeStatus, no financial effect.
-  standByApproval:           (choreId: string, byParentId: string) => void;
+  standByApproval:           (choreId: string, byParentId: string) => Promise<void>;
   // acknowledgeRecentApproval: a parent clears one chore from their own
   // "Recently Approved" Hub list. Per-viewer (adds byParentId to
   // reviewAckIds) so it doesn't cut short the 7-day dispute window for a
   // co-parent who hasn't seen it yet — see recentlyApproved's filter in
   // ChoreReviewSection.tsx, which excludes any chore the viewer already
   // acknowledged.
-  acknowledgeRecentApproval: (choreId: string, byParentId: string) => void;
+  acknowledgeRecentApproval: (choreId: string, byParentId: string) => Promise<void>;
   // requestApprovalReversal: if householdSettings.allowUnilateralReversal is
   // true, executes the clawback immediately (still leaves a full audit
   // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
@@ -3981,11 +3981,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // SCENARIO 1.13 — TEEN REWARD CO-SIGN THRESHOLD
   // ─────────────────────────────────────────────────────────────────────────
 
-  approveTeenReward: (choreId, approverId) => {
+  approveTeenReward: async (choreId, approverId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.rewardPendingReview) return;
 
-    get().updateChore(choreId, { rewardPendingReview: false });
+    await get().updateChore(choreId, { rewardPendingReview: false });
 
     // The teen may have already finished the work and had it approved
     // before a parent got to the reward queue — approveChore/submitChore/
@@ -4012,12 +4012,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  adjustTeenReward: (choreId, approverId, newAmount) => {
+  adjustTeenReward: async (choreId, approverId, newAmount) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.rewardPendingReview) return;
     const safeAmount = Math.max(0, Math.round(newAmount));
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       coinsReward:         safeAmount,
       basePoints:          chore.basePoints > 0 ? safeAmount : chore.basePoints,
       rewardPendingReview: false,
@@ -4042,14 +4042,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  declineTeenReward: (choreId, approverId, reason) => {
+  declineTeenReward: async (choreId, approverId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.rewardPendingReview) return;
 
     // Zero the reward and clear the flag — the task itself (already worked
     // on or in progress) is left exactly as-is; only the payout amount is
     // reset to 0 so nothing pays out for it going forward.
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       coinsReward:         0,
       basePoints:          0,
       bonusCoins:          0,
@@ -4071,12 +4071,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // SCENARIO 4.7 — DISPUTED APPROVAL (TWO PARENTS DISAGREE)
   // ─────────────────────────────────────────────────────────────────────────
 
-  flagApprovalForDiscussion: (choreId, byParentId, note) => {
+  flagApprovalForDiscussion: async (choreId, byParentId, note) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
     if (byParentId === chore.reviewedById) return; // can't dispute your own approval
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       disputeStatus: 'flagged',
       disputeReason: note,
       disputedById:  byParentId,
@@ -4096,11 +4096,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  standByApproval: (choreId, byParentId) => {
+  standByApproval: async (choreId, byParentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.disputeStatus) return;
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       disputeStatus: undefined,
       disputeReason: undefined,
       disputedById:  undefined,
@@ -4118,12 +4118,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  acknowledgeRecentApproval: (choreId, byParentId) => {
+  acknowledgeRecentApproval: async (choreId, byParentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     if ((chore.reviewAckIds ?? []).includes(byParentId)) return;
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       reviewAckIds: [...(chore.reviewAckIds ?? []), byParentId],
     } as any);
   },

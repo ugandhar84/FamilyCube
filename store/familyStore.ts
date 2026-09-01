@@ -428,7 +428,18 @@ function otherParentIds(members: FamilyMember[], excludeId: string | null | unde
   return members.filter(m => m.role === 'parent' && m.id !== excludeId).map(m => m.id);
 }
 
-function applyActive(members: FamilyMember[], cached: string | null, current: string | null) {
+// realAuthMemberId is this device's own logged-in member (auth_user_id ===
+// the actual Supabase session), when that member has their own real login
+// at all. It always wins over a cached PIN-switch on a fresh app load —
+// PIN-switching into another real-login member (e.g. ugandhar switching to
+// praveena) is a same-session convenience, not a re-login, and must not
+// survive a relaunch as if it were one (live-reported: switched to
+// praveena, reloaded, still praveena instead of snapping back to
+// ugandhar's own real account). A member with NO auth_user_id at all (a
+// kid with no login of their own) has no "real session" to snap back to,
+// so the cached PIN-switch is exactly what should persist for them.
+function applyActive(members: FamilyMember[], cached: string | null, current: string | null, realAuthMemberId?: string | null) {
+  if (realAuthMemberId && members.some(m => m.id === realAuthMemberId)) return realAuthMemberId;
   if (current && members.some(m => m.id === current)) return current;
   if (cached  && members.some(m => m.id === cached))  return cached;
   // Prefer first parent over first member (DB order may vary)
@@ -924,15 +935,17 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   loadFromStorage: async () => {
     set({ familyLoadStatus: 'loading' });
     try {
-      const [raw, activeId] = await Promise.all([
+      const [raw, activeId, { data: { user } }] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY),
         AsyncStorage.getItem(ACTIVE_KEY),
+        supabase.auth.getUser(),
       ]);
       const cached = raw ? (JSON.parse(raw) as FamilyMember[]) : null;
+      const realAuthMemberId = user ? cached?.find(m => m.authUserId === user.id)?.id ?? null : null;
       if (cached && cached.length > 0) {
         set({
           members: cached,
-          activeMemberId: applyActive(cached, activeId, null),
+          activeMemberId: applyActive(cached, activeId, null, realAuthMemberId),
           loaded: true,
           familyLoadStatus: 'confirmed',
         });

@@ -429,8 +429,21 @@ export default function TabLayout() {
   // own member profile once members have actually loaded (reported live:
   // locked while on a PIN-less kid's profile, relaunched via Face ID,
   // landed directly in that kid's account instead of the real auth-owner's).
+  // ownerResetChecked guards this so it only ever runs ONCE per app
+  // session — this effect's deps include `members`, which gets a new array
+  // reference on every familyStore update (a PIN switch's own
+  // saveTokenToMember/clearTokenFromMember calls included). Without the
+  // guard, a flag set earlier in the session but not yet consumed at that
+  // exact tick (e.g. familyLoadStatus/members weren't ready yet) stayed
+  // pending in AsyncStorage and fired on the NEXT unrelated members
+  // change — live-reported: parentA PIN-switches to parentB, and an
+  // unconsumed owner-reset flag from an earlier Face ID unlock this
+  // session snaps activeMemberId straight back to parentA a moment later.
+  const ownerResetChecked = useRef(false);
   useEffect(() => {
+    if (ownerResetChecked.current) return;
     if (familyLoadStatus !== 'confirmed' || !authUserId || members.length === 0) return;
+    ownerResetChecked.current = true;
     import('@/lib/biometrics').then(async ({ consumePendingOwnerReset }) => {
       if (!(await consumePendingOwnerReset())) return;
       const owner = members.find(m => m.authUserId === authUserId);

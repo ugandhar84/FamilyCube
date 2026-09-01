@@ -1024,8 +1024,8 @@ interface ChoreState {
   // "adults don't earn coins for their own chores" precedent
   // QuestApprovalCard.tsx already documents for parents.
   completeGpWelcomeChore:  (choreId: string, gpMemberId: string) => Promise<void>;
-  backoutGpWelcomeChore:   (choreId: string, gpMemberId: string) => void;
-  giveBackChore:           (choreId: string, memberId: string) => void;
+  backoutGpWelcomeChore:   (choreId: string, gpMemberId: string) => Promise<void>;
+  giveBackChore:           (choreId: string, memberId: string) => Promise<void>;
 
   // ── Scenarios 9.2/9.3 — temporary-approver / caregiver-mode ──────────────
   // Single source of truth for "is this member currently allowed to
@@ -1038,7 +1038,7 @@ interface ChoreState {
 
   // ── Parent review ──────────────────────────────────────────────────────────
   approveChore:                    (choreId: string, reviewerId: string) => Promise<void>;
-  requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => void;
+  requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => Promise<void>;
   requestGrandparentRedo:          (choreId: string, grandparentId: string, reason: string) => void;
 
   // ── Cheer Squad — GP/sibling reactions on a completed chore ─────────────────
@@ -3469,12 +3469,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // including this one, can claim it again). Mirrors declineGrandparentQuest's
   // "release, don't punish" shape rather than treating a change of mind as
   // a failure.
-  backoutGpWelcomeChore: (choreId, gpMemberId) => {
+  backoutGpWelcomeChore: async (choreId, gpMemberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.assignedToId !== gpMemberId) return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status: 'todo', assignedToId: undefined, isPool: true, claimedAt: undefined,
     });
     showToast('Given back to the pool ✓');
@@ -3486,12 +3486,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // heavier "Can't make it?" flow (which asks for a reason and offers a
   // named handoff, not a quick undo). Mirrors backoutGpWelcomeChore's exact
   // shape for any pool chore, any non-GP claimant.
-  giveBackChore: (choreId, memberId) => {
+  giveBackChore: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.assignedToId !== memberId) return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status: 'todo', assignedToId: undefined,
       isPool: chore.categoryType !== 'parent_only_quest',
       claimedAt: undefined,
@@ -3534,12 +3534,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
 
     const now = new Date().toISOString();
-    get().updateChore(choreId, {
-      status:       'approved',
-      approvedAt:   now,
-      reviewedAt:   now,
-      reviewedById: reviewerId,
-    });
 
     // Two parents acting on the same submission within the same round-trip
     // window (spec 3.3 — Parent-1 approves while Parent-2 declines) would
@@ -3618,28 +3612,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     if (!casData || casData.length === 0) {
       console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; no payout applied here (see 4.7 dispute handling)`);
-      // Bug-hunt finding: the optimistic updateChore(...) call above already
-      // flipped this device's local state to status:'approved' before the
-      // CAS ran — on a lost race that write never actually happened, but
-      // nothing rolled the optimistic patch back, so THIS device kept
-      // showing "approved" (as if reviewerId personally approved it) even
-      // though someone else's decision is what actually landed in the DB.
-      // Same guarded-rollback shape claimGPErrand/offerChoreHandoff/etc.
-      // already use elsewhere in this file: only revert if nothing newer
-      // has changed reviewedById out from under this rollback in the
-      // meantime (e.g. a realtime echo of the winning write already patched
-      // it in). A real resync (syncFromDB) will still correct this
-      // regardless, same as every other lost-race branch in this file.
-      set(s => ({
-        chores: s.chores.map(c =>
-          c.id === choreId && c.reviewedById === reviewerId && c.status === 'approved'
-            ? { ...c, status: previousStatus, approvedAt: chore.approvedAt, reviewedAt: chore.reviewedAt, reviewedById: chore.reviewedById }
-            : c
-        ),
-      }));
-      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+      // DB-is-truth: nothing was written locally before the CAS ran now, so
+      // there's nothing to roll back — just resync to pick up whichever
+      // decision actually won.
+      await get().syncFromDB(true);
       return;
     }
+
+    // CAS won — reflect the confirmed approval locally now.
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, status: 'approved', approvedAt: now, reviewedAt: now, reviewedById: reviewerId,
+      } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
 
     if (pointsToAward > 0 && chore.assignedToId && !chore.rewardPendingReview) {
       // A grandparent-sponsored quest can also reach this generic approval
@@ -3754,7 +3740,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // called on every load.
   },
 
-  requestRedo: (choreId, reviewerId, reason, _presetKey) => {
+  requestRedo: async (choreId, reviewerId, reason, _presetKey) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_approval') return;
     // Scenarios 9.2/9.3 — same authorization gate as approveChore.
@@ -3765,46 +3751,29 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     const newRedoCount = (chore.redoCount ?? 0) + 1;
     const now = new Date().toISOString();
-    // Optimistic local update, same shape as before.
-    get().updateChore(choreId, {
-      status:          'redo_requested',
-      rejectionReason: reason,
-      reviewedAt:      now,
-      reviewedById:    reviewerId,
-      redoCount:       newRedoCount,
-    });
 
-    // Now backed by the request_redo Postgres RPC (see migrations
-    // 20260905150000/20260905160000) — row-locked, authorization-checked
-    // server-side (not just trusting the client's canApprove read above),
-    // and CAS-guarded against the same "other parent already approved"
-    // race the old separate raw update handled, now in the SAME
-    // transaction as the status write instead of a second round-trip.
-    supabase.rpc('request_redo', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason })
-      .then(({ error }) => {
-        if (error) {
-          console.warn(`[choreStore] requestRedo RPC rejected ${choreId} — likely a concurrent approval landed first or authorization failed:`, error.message);
-          // Bug-hunt finding: the optimistic updateChore(...) above already
-          // flipped local state to status:'redo_requested' before this RPC
-          // ran — on rejection (lost CAS race, or the server-side
-          // authorization check catching something the client's canApprove
-          // read missed) that transition never actually happened in the DB,
-          // but nothing rolled it back, so this device kept showing
-          // "redo requested" for a chore whose real state is whatever the
-          // winning write actually set (e.g. already approved). Same
-          // guarded-rollback shape approveChore's own CAS lost-race branch
-          // uses: only revert if nothing newer has changed reviewedById out
-          // from under this rollback in the meantime.
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.reviewedById === reviewerId && c.status === 'redo_requested'
-                ? { ...c, status: chore.status, rejectionReason: chore.rejectionReason, reviewedAt: chore.reviewedAt, reviewedById: chore.reviewedById, redoCount: chore.redoCount }
-                : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-        }
-      });
+    // DB-is-truth: await the RPC (request_redo — row-locked,
+    // authorization-checked and CAS-guarded server-side against "another
+    // parent already approved") before reflecting the redo request
+    // locally, instead of setting optimistically and rolling back on a
+    // lost race or authorization failure.
+    const { error } = await supabase.rpc('request_redo', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason });
+    if (error) {
+      console.warn(`[choreStore] requestRedo RPC rejected ${choreId}:`, error.message);
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c,
+        status:          'redo_requested' as const,
+        rejectionReason: reason,
+        reviewedAt:      now,
+        reviewedById:    reviewerId,
+        redoCount:       newRedoCount,
+      } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
 
     // Master-flow audit finding: every other chore-lifecycle transition
     // (approve, decline, GP-offer accept/decline) fires a notification —

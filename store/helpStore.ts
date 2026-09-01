@@ -203,31 +203,33 @@ interface HelpState {
   unsubscribeRealtime: () => void;
 
   addRequest:      (r: Omit<HelpRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<string>;
-  selfAssign:      (id: string, memberId: string, memberName: string) => void;
-  offerToMembers:  (id: string, toIds: string[], toNames: string[], byName: string, note?: string, byId?: string) => void;
-  acceptOffer:     (id: string, byId: string, byName: string) => void;
-  declineOffer:    (id: string, byId: string, byName: string, comment: string) => void;
-  rejectRequest:   (id: string, byName: string, reason: string) => void;
-  completeRequest: (id: string) => void;
-  withdrawRequest: (id: string, requesterId: string) => void;
+  selfAssign:      (id: string, memberId: string, memberName: string) => Promise<void>;
+  offerToMembers:  (id: string, toIds: string[], toNames: string[], byName: string, note?: string, byId?: string) => Promise<void>;
+  acceptOffer:     (id: string, byId: string, byName: string) => Promise<void>;
+  declineOffer:    (id: string, byId: string, byName: string, comment: string) => Promise<void>;
+  rejectRequest:   (id: string, byName: string, reason: string) => Promise<void>;
+  completeRequest: (id: string) => Promise<void>;
+  withdrawRequest: (id: string, requesterId: string) => Promise<void>;
 }
 
 function saveCache(requests: HelpRequest[]) {
   AsyncStorage.setItem(CACHE_KEY, JSON.stringify(requests)).catch(() => {});
 }
 
-async function upsertRow(req: HelpRequest) {
+async function upsertRow(req: HelpRequest): Promise<boolean> {
   try {
     await withRetry(async () => {
       const { error } = await supabase.from('help_requests').upsert(toRow(req));
       if (error) throw error;
     });
+    return true;
   } catch (e: any) {
     console.error('[helpStore] upsert failed after retries:', e?.message);
+    return false;
   }
 }
 
-async function patchRow(id: string, patch: Partial<ReturnType<typeof toRow>>) {
+async function patchRow(id: string, patch: Partial<ReturnType<typeof toRow>>): Promise<boolean> {
   try {
     await withRetry(async () => {
       const { error } = await supabase.from('help_requests')
@@ -235,8 +237,10 @@ async function patchRow(id: string, patch: Partial<ReturnType<typeof toRow>>) {
         .eq('id', id);
       if (error) throw error;
     });
+    return true;
   } catch (e: any) {
     console.error('[helpStore] patch failed after retries:', e?.message);
+    return false;
   }
 }
 
@@ -355,10 +359,14 @@ export const useHelpStore = create<HelpState>((set, get) => ({
       rewardCoins: r.category === 'Homework' ? (r.rewardCoins ?? 20) : r.rewardCoins,
       createdAt: now(), updatedAt: now(),
     };
+    // DB-is-truth: await the write before reflecting the request locally —
+    // was optimistic (set immediately, no rollback if upsertRow's retries
+    // all failed).
+    const ok = await upsertRow(req);
+    if (!ok) return id;
     const next = [req, ...get().requests];
     set({ requests: next });
     saveCache(next);
-    await upsertRow(req);
     // Notify parents/seniors that a help request was submitted
     notifyHelp(req.requesterId, 'help_requested', {
       requestId: id, title: req.title, category: req.category,
@@ -369,7 +377,12 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   },
 
   // ── Self-assign ───────────────────────────────────────────────────────────
-  selfAssign: (id, memberId, memberName) => {
+  selfAssign: async (id, memberId, memberName) => {
+    const ok = await patchRow(id, {
+      status: 'assigned', assigned_helper: memberName, assigned_helper_id: memberId,
+      offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
+    });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id ? {
         ...r, status: 'assigned' as HelpStatus,
@@ -380,18 +393,20 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, {
-      status: 'assigned', assigned_helper: memberName, assigned_helper_id: memberId,
-      offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
-    });
-    const req = get().requests.find(r => r.id === id);
+    const req = next.find(r => r.id === id);
     if (req) notifyHelp(req.requesterId, 'help_offered', {
       requestId: id, title: req.title, helperName: memberName,
     }, req.requesterId, memberId);
   },
 
   // ── Offer to members ──────────────────────────────────────────────────────
-  offerToMembers: (id, toIds, _toNames, byName, note, byId) => {
+  offerToMembers: async (id, toIds, _toNames, byName, note, byId) => {
+    const ok = await patchRow(id, {
+      status: 'awaiting_acceptance',
+      offered_to_ids: toIds, offered_by_name: byName, offered_by_id: byId ?? null,
+      offer_note: note ?? null,
+    });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id ? {
         ...r, status: 'awaiting_acceptance' as HelpStatus,
@@ -401,15 +416,10 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, {
-      status: 'awaiting_acceptance',
-      offered_to_ids: toIds, offered_by_name: byName, offered_by_id: byId ?? null,
-      offer_note: note ?? null,
-    });
     // Unlike the other help_* notifications, the recipients here are the
     // people the request was offered TO, not the requester — a direct
     // family-notifier call rather than notifyHelp's single-target helper.
-    const req = get().requests.find(r => r.id === id);
+    const req = next.find(r => r.id === id);
     if (req && toIds.length) {
       supabase.from('members').select('family_id').eq('id', req.requesterId).single()
         .then(({ data }) => {
@@ -427,7 +437,12 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   },
 
   // ── Accept offer ──────────────────────────────────────────────────────────
-  acceptOffer: (id, byId, byName) => {
+  acceptOffer: async (id, byId, byName) => {
+    const ok = await patchRow(id, {
+      status: 'assigned', assigned_helper: byName, assigned_helper_id: byId,
+      offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
+    });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id ? {
         ...r, status: 'assigned' as HelpStatus,
@@ -438,25 +453,34 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, {
-      status: 'assigned', assigned_helper: byName, assigned_helper_id: byId,
-      offered_to_ids: null, offered_by_name: null, offered_by_id: null, offer_note: null,
-    });
-    const req = get().requests.find(r => r.id === id);
+    const req = next.find(r => r.id === id);
     if (req) notifyHelp(req.requesterId, 'help_accepted', {
       requestId: id, title: req.title, helperName: byName,
     }, req.requesterId, byId);
   },
 
   // ── Decline offer ─────────────────────────────────────────────────────────
-  declineOffer: (id, byId, byName, comment) => {
+  declineOffer: async (id, byId, byName, comment) => {
+    const original = get().requests.find(r => r.id === id);
+    if (!original) return;
+    const remainIds = (original.offeredToIds ?? []).filter(i => i !== byId);
+    const backToPending = remainIds.length === 0;
+    const updatedStatus: HelpStatus = backToPending ? 'pending' : 'awaiting_acceptance';
+    const ok = await patchRow(id, {
+      status: updatedStatus,
+      offered_to_ids: backToPending ? null : remainIds,
+      offered_by_name: backToPending ? null : original.offeredByName ?? null,
+      offered_by_id: backToPending ? null : original.offeredById ?? null,
+      offer_note: backToPending ? null : original.offerNote ?? null,
+      last_declined_by_name: byName,
+      last_decline_comment: comment,
+    });
+    if (!ok) return;
     const next = get().requests.map(r => {
       if (r.id !== id) return r;
-      const remainIds = (r.offeredToIds ?? []).filter(i => i !== byId);
-      const backToPending = remainIds.length === 0;
       return {
         ...r,
-        status: (backToPending ? 'pending' : 'awaiting_acceptance') as HelpStatus,
+        status: updatedStatus,
         offeredToIds:  backToPending ? undefined : remainIds,
         offeredByName: backToPending ? undefined : r.offeredByName,
         offeredById:   backToPending ? undefined : r.offeredById,
@@ -468,24 +492,12 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     });
     set({ requests: next });
     saveCache(next);
-    const original = get().requests.find(r => r.id === id);
     const updated = next.find(r => r.id === id);
-    if (updated) {
-      patchRow(id, {
-        status: updated.status,
-        offered_to_ids: updated.offeredToIds ?? null,
-        offered_by_name: updated.offeredByName ?? null,
-        offered_by_id: updated.offeredById ?? null,
-        offer_note: updated.offerNote ?? null,
-        last_declined_by_name: byName,
-        last_decline_comment: comment,
-      });
-    }
     // Tell whoever ROUTED the offer (offeredById), not the original
     // requester — they're the one who needs to know it was turned down and
     // may need to re-route to someone else. offeredById is read from the
     // PRE-decline state since declining clears it once the pool is empty.
-    if (updated && original?.offeredById) {
+    if (updated && original.offeredById) {
       notifyHelp(original.requesterId, 'help_declined', {
         requestId: id, title: updated.title, byName,
         backToPending: updated.status === 'pending',
@@ -499,14 +511,15 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   },
 
   // ── Reject ────────────────────────────────────────────────────────────────
-  rejectRequest: (id, byName, reason) => {
+  rejectRequest: async (id, byName, reason) => {
+    const ok = await patchRow(id, { status: 'rejected', rejected_by_name: byName, rejection_reason: reason });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id ? { ...r, status: 'rejected' as HelpStatus, rejectedByName: byName, rejectionReason: reason, updatedAt: now() } : r
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, { status: 'rejected', rejected_by_name: byName, rejection_reason: reason });
-    const rejected = get().requests.find(r => r.id === id);
+    const rejected = next.find(r => r.id === id);
     if (rejected) notifyHelp(rejected.requesterId, 'help_resolved', {
       requestId: id, title: rejected.title, outcome: 'rejected',
       byName, reason, requesterId: rejected.requesterId,
@@ -514,14 +527,15 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   },
 
   // ── Complete ──────────────────────────────────────────────────────────────
-  completeRequest: (id) => {
+  completeRequest: async (id) => {
+    const ok = await patchRow(id, { status: 'completed' });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id ? { ...r, status: 'completed' as HelpStatus, updatedAt: now() } : r
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, { status: 'completed' });
-    const completed = get().requests.find(r => r.id === id);
+    const completed = next.find(r => r.id === id);
     if (completed) notifyHelp(completed.requesterId, 'help_resolved', {
       requestId: id, title: completed.title, outcome: 'completed',
       byName: completed.assignedHelper ?? 'Someone', requesterId: completed.requesterId,
@@ -529,7 +543,11 @@ export const useHelpStore = create<HelpState>((set, get) => ({
   },
 
   // ── Withdraw ──────────────────────────────────────────────────────────────
-  withdrawRequest: (id, requesterId) => {
+  withdrawRequest: async (id, requesterId) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req || req.requesterId !== requesterId) return;
+    const ok = await patchRow(id, { status: 'withdrawn' });
+    if (!ok) return;
     const next = get().requests.map(r =>
       r.id === id && r.requesterId === requesterId
         ? { ...r, status: 'withdrawn' as HelpStatus, updatedAt: now() }
@@ -537,6 +555,5 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     );
     set({ requests: next });
     saveCache(next);
-    patchRow(id, { status: 'withdrawn' });
   },
 }));

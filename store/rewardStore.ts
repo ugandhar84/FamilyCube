@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
+import { showToast } from '@/components/AppToast';
 
 // ─── Realtime subscription ─────────────────────────────────────────────────
 // Mirrors familyStore.ts's ensureRealtime pattern. reward_redemptions has no
@@ -440,120 +441,145 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     return true;
   },
 
-  approveRedemption: (id, approverId, note) => {
-    const now = new Date().toISOString();
+  approveRedemption: async (id, approverId, note) => {
     const rd = get().redemptions.find(r => r.id === id);
     // Was missing a status guard (unlike cancelRedemption, which already
     // checks status === 'pending') — a co-parent approving/declining a
     // redemption their partner already acted on moments earlier, from a
     // stale pre-realtime-update card, could double-refund or contradict an
     // already-fulfilled decision (QA sweep, parent-role audit, Medium M2).
+    // This client-side check is a cheap early bail, not the real guard —
+    // resolve_reward_redemption's own row lock + server-side status
+    // re-check (below) is what actually decides the outcome.
     if (!rd || rd.status !== 'pending') return;
-    const nextRd = get().redemptions.map(r =>
-      r.id === id ? { ...r, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : r
-    );
-    set({ redemptions: nextRd }); save(get().rewards, nextRd);
-    // Fixed: was a bare client .update() gated only by this device's local
-    // cache, not server-verified — two co-parents racing to act on the same
-    // redemption could last-write-wins each other's decision. Now routed
-    // through resolve_reward_redemption, which row-locks the redemption and
-    // re-checks status='pending' server-side before acting; the loser of
-    // the race gets a clean rejection instead of silently overwriting.
-    supabase.rpc('resolve_reward_redemption', {
+    // DB-is-truth: await the RPC and render only its confirmed result — it
+    // row-locks the redemption and re-checks status='pending' server-side
+    // before acting; the loser of a two-parent race now gets nothing
+    // rendered at all (a clean, awaited rejection) instead of a local
+    // optimistic claim that later silently reverts.
+    const { data, error } = await supabase.rpc('resolve_reward_redemption', {
       p_redemption_id: id, p_approve: true, p_actor_id: approverId, p_note: note ?? null,
-    }).then(({ error }) => { if (error) console.warn('[rewardStore] approveRedemption rpc', error.message); });
-    if (rd) {
-      const reward = get().rewards.find(r => r.id === rd.rewardId);
-      notifyReward(rd.memberId, 'reward_decision', {
-        redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
-        decision: 'approved', note, memberId: rd.memberId,
-      });
+    });
+    if (error) {
+      console.warn('[rewardStore] approveRedemption rpc', error.message);
+      showToast("Couldn't approve — please try again", 'error');
+      return;
     }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return;
+    const confirmed = redemptionFromRow(row);
+    const nextRd = get().redemptions.map(r => r.id === id ? confirmed : r);
+    set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    const reward = get().rewards.find(r => r.id === rd.rewardId);
+    notifyReward(rd.memberId, 'reward_decision', {
+      redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
+      decision: 'approved', note, memberId: rd.memberId,
+    });
   },
 
-  rejectRedemption: (id, rejectorId, note) => {
+  rejectRedemption: async (id, rejectorId, note) => {
     // Spec (8.3): a declined redemption must not permanently cost the kid
     // their coins. deductCoins fires at *request* time (StoreScreen.redeemFrom),
     // not at approval time, so a decline here must explicitly refund the same
     // wallet the redemption was originally debited from.
-    const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
-    // Same status guard as approveRedemption above — without it a
-    // co-parent could refund coins for a redemption already approved (or
-    // already rejected) on another device.
+    // Same status guard as approveRedemption above — a cheap early bail,
+    // not the real guard.
     if (!rd || rd.status !== 'pending') return;
-    const nextRd = get().redemptions.map(r =>
-      r.id === id ? { ...r, status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId, note, respondedAt: now } : r
-    );
-    const reward = get().rewards.find(r => r.id === rd.rewardId);
-    const nextR = reward?.stock !== undefined
-      ? get().rewards.map(r => r.id === rd.rewardId ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
-      : get().rewards;
-    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
-    // Fixed: the status flip, coin refund, and stock restore are now one
-    // atomic server-side transaction (resolve_reward_redemption), row-locked
-    // against approveRedemption/another rejectRedemption racing on the same
-    // row — closes the double-refund / silently-reversed-decision risk a
-    // bare client .update() + separate unconditioned awardCoins call had.
-    // The local optimistic refund/stock bump above stays for responsiveness;
-    // if this device lost the race the RPC throws and the next realtime
-    // sync corrects local state back to the server's actual outcome.
-    supabase.rpc('resolve_reward_redemption', {
+    // DB-is-truth: the status flip, coin refund, and stock restore are one
+    // atomic server-side transaction (resolve_reward_redemption), row-
+    // locked against approveRedemption/another rejectRedemption racing on
+    // the same row. Await it and render the confirmed result — no local
+    // guess about whether this device even won the race.
+    const { data, error } = await supabase.rpc('resolve_reward_redemption', {
       p_redemption_id: id, p_approve: false, p_actor_id: rejectorId, p_note: note ?? null,
-    }).then(({ error }) => { if (error) console.warn('[rewardStore] rejectRedemption rpc', error.message); });
+    });
+    if (error) {
+      console.warn('[rewardStore] rejectRedemption rpc', error.message);
+      showToast("Couldn't decline — please try again", 'error');
+      return;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return;
+    const confirmed = { ...redemptionFromRow(row), status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId };
+    const nextRd = get().redemptions.map(r => r.id === id ? confirmed : r);
+    const reward = get().rewards.find(r => r.id === rd.rewardId);
+    // Stock was restored server-side inside the same RPC transaction —
+    // re-read the reward's own current stock rather than guessing +1
+    // locally, since the RPC is the only place that actually knows the
+    // real post-restore value.
+    let nextR = get().rewards;
+    if (reward?.stock !== undefined) {
+      const { data: rewardRow } = await supabase.from('rewards').select('stock').eq('id', rd.rewardId).maybeSingle();
+      if (rewardRow) nextR = get().rewards.map(r => r.id === rd.rewardId ? { ...r, stock: rewardRow.stock ?? r.stock } : r);
+    }
+    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
     notifyReward(rd.memberId, 'reward_decision', {
       redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
       decision: 'rejected', note, memberId: rd.memberId,
     });
   },
 
-  cancelRedemption: (id) => {
+  cancelRedemption: async (id) => {
     // Same refund logic as rejectRedemption — cancelling a still-pending
     // request must give back the reserved coins, not just flip the status.
     // No dedicated "cancelled" value exists in reward_redemptions.status —
     // stored as 'declined' server-side (same as reject) with the reason
     // noting it was self-cancelled, since local Redemption.status keeps its
     // own richer 'cancelled' distinction for the UI.
-    const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
     const wasPending = rd?.status === 'pending';
     const reward = rd ? get().rewards.find(r => r.id === rd.rewardId) : undefined;
-    const nextRd = get().redemptions.map(r =>
-      r.id === id ? { ...r, status: 'cancelled' as RedemptionStatus, respondedAt: now } : r
-    );
+    if (!rd || !wasPending) return;
+    // DB-is-truth: await the status-flip write and render only the
+    // confirmed row — no local guess about whether this succeeded, and no
+    // window where local state claims "cancelled" before the DB agrees.
+    const now = new Date().toISOString();
+    const { data: row, error } = await supabase.from('reward_redemptions')
+      .update({ status: 'declined', declined_at: now, declined_reason: 'Cancelled by requester' })
+      .eq('id', id).select().maybeSingle();
+    if (error || !row) {
+      console.warn('[rewardStore] cancelRedemption update', error?.message);
+      showToast("Couldn't cancel — please try again", 'error');
+      return;
+    }
+    const confirmed = { ...redemptionFromRow(row), status: 'cancelled' as RedemptionStatus };
+    let nextRd = get().redemptions.map(r => r.id === id ? confirmed : r);
     // Logged QA gap, fixed: unlike its sibling rejectRedemption,
     // cancelRedemption never restored the reward's stock at all — a kid
     // self-cancelling their own pending redemption permanently burned one
     // unit of stock with nothing to show for it. Repeated redeem→cancel
     // cycles could exhaust an entire stock-limited reward's inventory with
-    // zero actual fulfillments. Mirrors rejectRedemption's local + DB
-    // restore exactly, including the DB write that function was ALSO
-    // missing until this same fix.
-    const nextR = wasPending && reward?.stock !== undefined
-      ? get().rewards.map(r => r.id === reward.id ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
-      : get().rewards;
-    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
-    supabase.from('reward_redemptions').update({ status: 'declined', declined_at: now, declined_reason: 'Cancelled by requester' }).eq('id', id)
-      .then(({ error }) => { if (error) console.warn('[rewardStore] cancelRedemption update', error.message); });
-    if (wasPending && reward?.stock !== undefined && reward.id) {
-      supabase.from('rewards').select('stock').eq('id', reward.id).maybeSingle()
-        .then(({ data }) => {
-          if (data && data.stock !== null) {
-            supabase.from('rewards').update({ stock: data.stock + 1 }).eq('id', reward.id)
-              .then(({ error }) => { if (error) console.warn('[rewardStore] cancelRedemption stock restore', error.message); });
-          }
-        });
+    // zero actual fulfillments. Mirrors rejectRedemption's DB-confirmed
+    // restore — read the reward's real current stock, don't guess +1.
+    let nextR = get().rewards;
+    if (reward?.stock !== undefined && reward.id) {
+      const { data: rewardRow } = await supabase.from('rewards').select('stock').eq('id', reward.id).maybeSingle();
+      if (rewardRow?.stock !== null && rewardRow?.stock !== undefined) {
+        const { data: updatedReward, error: stockErr } = await supabase.from('rewards')
+          .update({ stock: rewardRow.stock + 1 }).eq('id', reward.id).select('stock').maybeSingle();
+        if (stockErr) {
+          console.warn('[rewardStore] cancelRedemption stock restore', stockErr.message);
+        } else if (updatedReward) {
+          nextR = get().rewards.map(r => r.id === reward.id ? { ...r, stock: updatedReward.stock ?? r.stock } : r);
+        }
+      }
     }
-    if (rd && wasPending && rd.deductedCoins > 0) {
+    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
+    if (rd.deductedCoins > 0) {
       useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
     }
   },
 
-  deleteRedemption: (id) => {
+  deleteRedemption: async (id) => {
+    const { error } = await supabase.from('reward_redemptions').delete().eq('id', id);
+    if (error) {
+      console.warn('[rewardStore] deleteRedemption', error.message);
+      showToast("Couldn't delete — please try again", 'error');
+      return;
+    }
     const nextRd = get().redemptions.filter(rd => rd.id !== id);
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
-    supabase.from('reward_redemptions').delete().eq('id', id)
-      .then(({ error }) => { if (error) console.warn('[rewardStore] deleteRedemption', error.message); });
   },
 
   // ─── Selectors ───────────────────────────────────────────────────────────────

@@ -1045,7 +1045,7 @@ interface ChoreState {
   cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => Promise<void>;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => Promise<void>;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => Promise<void>;
-  resetDueRecurringChores:         () => void;
+  resetDueRecurringChores:         () => Promise<void>;
 
   // ── Scenario 1.13 — Teen reward co-sign threshold ─────────────────────────
   // A parent clears a Teen-created quest's rewardPendingReview flag. If the
@@ -4273,7 +4273,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // Removed per explicit product direction: every state transition must be
   // a real DB/RPC write the server decides, not a client-side scan that
   // happens to reach the same conclusion.
-  resetDueRecurringChores: () => {
+  resetDueRecurringChores: async () => {
     const today = localDateStr(new Date());
     const toReset = get().chores.filter(c =>
       // 'completed' is the terminal status grandparentApproveAndCheer sets
@@ -4306,15 +4306,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
       );
       if (staleOpen.length > 0) {
-        set(s => ({
-          parentAssignments: s.parentAssignments.map(a =>
-            staleOpen.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
-          ),
-        }));
-        for (const a of staleOpen) {
-          dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
-            set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
-          });
+        const results = await Promise.all(staleOpen.map(a =>
+          dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now })
+        ));
+        const confirmed = staleOpen.filter((_, i) => results[i].ok);
+        if (confirmed.length > 0) {
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a =>
+              confirmed.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+            ),
+          }));
         }
       }
       // Live QA audit found this unconditionally cleared assignedToId on
@@ -4338,7 +4339,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // to the new cycle's own due date, same nextDueDate() calc used to
       // decide this chore was even due for reset in the first place.
       const newDueDate = nextDueDate(now, chore.recurrenceRule!.frequency, chore.recurrenceRule!.days, chore.recurrenceRule!.dayOfMonth) ?? undefined;
-      get().updateChore(chore.id, {
+      await get().updateChore(chore.id, {
         status:             'todo',
         assignedToId:       preserveAssignee ? chore.assignedToId : undefined,
         submittedAt:        undefined,

@@ -165,7 +165,16 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         difficulty: difficulty || undefined,
         assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
-        isPool: isPool || assignIds.length === 0,
+        // Live-reported bug: this used to fall back to isPool:true
+        // whenever nobody was explicitly picked — correct for an ordinary
+        // kid chore (no assignee = open to the kid pool), but wrong for an
+        // Adult Only task, which has no kid-claimable pool at all. Toggling
+        // Adult Only on (which also clears assignIds via setIsAdultTask's
+        // own handler) immediately re-triggered this same fallback and
+        // silently forced isPool back to true, so the chore kept rendering
+        // as "Waiting for a kid to claim" even though category_type had
+        // correctly changed to parent_only_quest server-side.
+        isPool: isAdultTask ? isPool : (isPool || assignIds.length === 0),
         photoRequired: photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,
@@ -184,7 +193,16 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         difficulty: difficulty || undefined,
         assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
-        isPool: isPool || assignIds.length === 0,
+        // Live-reported bug: this used to fall back to isPool:true
+        // whenever nobody was explicitly picked — correct for an ordinary
+        // kid chore (no assignee = open to the kid pool), but wrong for an
+        // Adult Only task, which has no kid-claimable pool at all. Toggling
+        // Adult Only on (which also clears assignIds via setIsAdultTask's
+        // own handler) immediately re-triggered this same fallback and
+        // silently forced isPool back to true, so the chore kept rendering
+        // as "Waiting for a kid to claim" even though category_type had
+        // correctly changed to parent_only_quest server-side.
+        isPool: isAdultTask ? isPool : (isPool || assignIds.length === 0),
         photoRequired: photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,

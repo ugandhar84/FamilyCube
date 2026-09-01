@@ -1095,7 +1095,7 @@ interface ChoreState {
 
   // ── Badges ────────────────────────────────────────────────────────────────
   updateBadgeProgress: (userId: string, badgeKey: BadgeKey, progress: number) => void;
-  unlockBadge:         (userId: string, badgeKey: BadgeKey, tier?: BadgeTier) => void;
+  unlockBadge:         (userId: string, badgeKey: BadgeKey, tier?: BadgeTier) => Promise<void>;
   getBadgeProgress:    (userId: string) => UserBadge[];
 
   // ── Parent-only quests ────────────────────────────────────────────────────
@@ -1123,7 +1123,7 @@ interface ChoreState {
 
   // ── Grandparent actions ───────────────────────────────────────────────────
   addGrandparentMatch: (match: Omit<GrandparentMatch, 'id' | 'createdAt' | 'monthlyContributedYtd'>) => Promise<void>;
-  applyGrandparentMatches: (childId: string, jarAmounts: { spend: number; save: number; give: number }) => void;
+  applyGrandparentMatches: (childId: string, jarAmounts: { spend: number; save: number; give: number }) => Promise<void>;
   createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => Promise<ChoreTask>;
   approveGrandparentQuest: (choreId: string, parentId: string) => Promise<void>;
   declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => Promise<void>;
@@ -4491,7 +4491,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // monthlyContributedYtd. Silently no-ops for any rule that's inactive,
   // has no matching jar contribution this event, or has already hit its
   // monthly cap.
-  applyGrandparentMatches: (childId, jarAmounts) => {
+  applyGrandparentMatches: async (childId, jarAmounts) => {
     const rules = get().grandparentMatches.filter(m => m.isActive && m.childId === childId);
     if (rules.length === 0) return;
 
@@ -4514,25 +4514,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         matched = Math.min(matched, remaining);
       }
 
-      get().awardPoints(childId, '', matched, 0, 'gpCoins');
+      // DB-is-truth: the payout itself (awardPoints) is already
+      // await-then-confirm. The monthly-cap counter write below is
+      // sequenced after it and awaited too, so a failed cap-counter write
+      // can never leave local state claiming a higher cap-usage than what
+      // actually persisted (which could otherwise let a later match exceed
+      // the grandparent's intended monthly cap).
+      await get().awardPoints(childId, '', matched, 0, 'gpCoins');
 
       const newYtd = rule.monthlyContributedYtd + matched;
-      set(s => ({
-        grandparentMatches: s.grandparentMatches.map(m =>
-          m.id === rule.id ? { ...m, monthlyContributedYtd: newYtd } : m
-        ),
-      }));
-      // The match itself already paid out via awardPoints above (real
-      // coins, not reversible here) — but if THIS write fails, the
-      // monthly-cap counter silently desyncs from what was actually paid,
-      // which could let a future match exceed the grandparent's intended
-      // monthly cap. Roll the local counter back to what's actually
-      // persisted so the next run's cap check is still accurate.
-      dbUpdate('grandparent_matches', rule.id, { monthly_contributed_ytd: newYtd }, () => {
+      const { ok } = await dbUpdate('grandparent_matches', rule.id, { monthly_contributed_ytd: newYtd });
+      if (ok) {
         set(s => ({
-          grandparentMatches: s.grandparentMatches.map(m => m.id === rule.id ? rule : m),
+          grandparentMatches: s.grandparentMatches.map(m =>
+            m.id === rule.id ? { ...m, monthlyContributedYtd: newYtd } : m
+          ),
         }));
-      });
+      }
 
       // Let the grandparent know their match actually fired — a match with
       // no visible confirmation is indistinguishable from one that's
@@ -4776,7 +4774,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     AsyncStorage.setItem(CACHE_KEY_BADGES, JSON.stringify(get().badges));
   },
 
-  unlockBadge: (userId, badgeKey, tier = 'STANDARD') => {
+  unlockBadge: async (userId, badgeKey, tier = 'STANDARD') => {
     const now = new Date().toISOString();
     const prevBadge = get().badges.find(
       b => b.userId === userId && b.badgeKey === badgeKey && b.tier === tier,
@@ -4784,14 +4782,6 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (prevBadge?.unlockedAt) return; // Already unlocked
     if (!prevBadge) return; // No local row to unlock — addBadge must run first
 
-    set(s => ({
-      badges: s.badges.map(b =>
-        (b.userId === userId && b.badgeKey === badgeKey && b.tier === tier)
-          ? { ...b, unlockedAt: now, bonusPerkActive: true }
-          : b
-      ),
-    }));
-    AsyncStorage.setItem(CACHE_KEY_BADGES, JSON.stringify(get().badges));
     // Was `dbUpdate('user_badges', badgeKey, ...)` — badgeKey (e.g.
     // "streak_7") was passed as the row's PRIMARY KEY, but user_badges.id is
     // a separate generated uuid; `badge_key` is just a category column, never
@@ -4800,9 +4790,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // created — badge unlocks only ever existed in the local AsyncStorage
     // cache, never actually persisted, and would vanish on a fresh
     // syncFromDB() or reinstall. Use the real row id instead.
-    dbUpdate('user_badges', prevBadge.id, { unlocked_at: now, bonus_perk_active: true }, () => {
-      set(s => ({ badges: s.badges.map(b => b.id === prevBadge.id ? prevBadge : b) }));
-    });
+    const { ok } = await dbUpdate('user_badges', prevBadge.id, { unlocked_at: now, bonus_perk_active: true });
+    if (!ok) return;
+    set(s => ({
+      badges: s.badges.map(b =>
+        (b.userId === userId && b.badgeKey === badgeKey && b.tier === tier)
+          ? { ...b, unlockedAt: now, bonusPerkActive: true }
+          : b
+      ),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_BADGES, JSON.stringify(get().badges));
   },
 
   getBadgeProgress: (userId) => {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
-import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat, StickyNote } from 'lucide-react-native';
+import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat, StickyNote, Bell } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { showToast } from '@/components/AppToast';
@@ -43,7 +43,13 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
   // event (Ride category, or rideRequired) got a second, independently-
   // tracked helper_* pair written alongside its real driver_* pair — the
   // exact conflicting-data bug this whole redesign exists to fix.
-  const { showAssignToMe, showConfirm, showCantMakeIt, assignee, assigneeRole } = deriveEventActions(
+  // Live-reported bug: this card never destructured showRemind at all —
+  // the same event's Schedule/EventDetailSheet view (which DOES use it)
+  // showed Remind + Take Over on a co-parent's pending ride, while this
+  // Hub card showed only a bare "Pending" badge with zero actions at all.
+  // Same underlying deriveEventActions call, same event, same viewer —
+  // this card just never rendered one of the two buttons it computed.
+  const { showAssignToMe, showConfirm, showCantMakeIt, showRemind, assignee, assigneeRole } = deriveEventActions(
     ev,
     { id: active.id, name: active.name, role: active.role, hasCar: active.hasCar },
   );
@@ -86,6 +92,20 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
       ) : null}
       {(assignee.status !== 'confirmed' || showCantMakeIt) && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
+          {/* Same Remind action EventDetailSheet already offers on the
+              identical co-parent-pending state — was entirely missing on
+              this card (deriveEventActions computed showRemind:true, this
+              card just never rendered it), so the only thing a viewer who
+              isn't eligible to Take Over (e.g. no car) could do here was
+              stare at a bare "Pending" badge. */}
+          {showRemind && (
+            <AnimatedPressable
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Remind" on "${ev.title}" (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx]`); showToast(`Reminder sent to ${(assignee.name?.split(' ')[0] ?? 'Driver')} ✓`); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.warning + '18', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 }}>
+              <Bell size={12} color={colors.warningDark ?? colors.warning} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warningDark ?? colors.warning }}>Remind</Text>
+            </AnimatedPressable>
+          )}
           {showAssignToMe && assignee.status !== 'confirmed' && (
             <AnimatedPressable
               onPress={() => {

@@ -1088,10 +1088,10 @@ interface ChoreState {
 
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => Promise<void>;
-  requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }, wallet?: 'mainCoins' | 'gpCoins') => void;
-  settleCashOut:       (transactionId: string, method: 'PHYSICAL_CASH' | 'DEBIT_CARD' | 'LEDGER') => void;
-  approveCashOut:      (transactionId: string) => void;
-  denyCashOut:         (transactionId: string) => void;
+  requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }, wallet?: 'mainCoins' | 'gpCoins') => Promise<void>;
+  settleCashOut:       (transactionId: string, method: 'PHYSICAL_CASH' | 'DEBIT_CARD' | 'LEDGER') => Promise<void>;
+  approveCashOut:      (transactionId: string) => Promise<void>;
+  denyCashOut:         (transactionId: string) => Promise<void>;
 
   // ── Badges ────────────────────────────────────────────────────────────────
   updateBadgeProgress: (userId: string, badgeKey: BadgeKey, progress: number) => void;
@@ -4548,7 +4548,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  requestCashOut: (userId, points, override, wallet = 'mainCoins') => {
+  requestCashOut: async (userId, points, override, wallet = 'mainCoins') => {
     const settings = get().householdSettings;
     if (points < settings.minCashoutPoints) {
       console.warn('[choreStore] Cash-out below minimum', points);
@@ -4578,12 +4578,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         createdAt:       new Date().toISOString(),
         wallet:          'gpCoins',
       };
-      set(s => ({ transactions: [gpTx, ...s.transactions] }));
-      dbInsert('point_transactions', {
+      const { ok } = await dbInsert('point_transactions', {
         id: gpTx.id, user_id: userId, amount: points, transaction_type: 'CASH_OUT',
         spend_allocation: points, save_allocation: 0, give_allocation: 0,
         notes: gpTx.notes, created_at: gpTx.createdAt, wallet: 'gpCoins',
       });
+      if (!ok) {
+        showToast("Couldn't submit cash-out request — please try again", 'error');
+        return;
+      }
+      set(s => ({ transactions: [gpTx, ...s.transactions] }));
       // gpCoins has no derived-balance reducer the way getMemberBalance
       // computes mainCoins from transactions (which treats a pending
       // CASH_OUT as an immediate deduction without touching the literal
@@ -4591,7 +4595,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // same "money is earmarked the moment a request is filed" behavior
       // requires an actual deduction here — refunded explicitly by
       // denyCashOut if the parent declines it.
-      get().awardPoints(userId, '', -points, 0, 'gpCoins');
+      await get().awardPoints(userId, '', -points, 0, 'gpCoins');
       notifyCashOutRequested(userId, points);
       return;
     }
@@ -4625,8 +4629,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       wallet:          'mainCoins',
     };
 
-    set(s => ({ transactions: [tx, ...s.transactions] }));
-    dbInsert('point_transactions', {
+    const { ok } = await dbInsert('point_transactions', {
       id:               tx.id,
       user_id:          userId,
       amount:           points,
@@ -4638,6 +4641,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       created_at:       tx.createdAt,
       wallet:           'mainCoins',
     });
+    if (!ok) {
+      showToast("Couldn't submit cash-out request — please try again", 'error');
+      return;
+    }
+    set(s => ({ transactions: [tx, ...s.transactions] }));
     // Logged QA gap, fixed: getMemberBalance's derived ledger correctly
     // treats a pending CASH_OUT as an instant deduction (the transaction
     // row inserted above), but members.main_coins — the literal column
@@ -4656,48 +4664,41 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     notifyCashOutRequested(userId, points);
   },
 
-  settleCashOut: (transactionId, method) => {
+  settleCashOut: async (transactionId, method) => {
     const prevTx = get().transactions.find(tx => tx.id === transactionId);
     const newNotes = `${prevTx?.notes ?? ''} [Settled: ${method}]`;
+    // DB-is-truth: await the write before reflecting "settled" locally —
+    // was optimistic (set immediately, rolled back on failure).
+    const { ok } = await dbUpdate('point_transactions', transactionId, { notes: newNotes });
+    if (!ok) {
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
     set(s => ({
       transactions: s.transactions.map(tx =>
         tx.id === transactionId ? { ...tx, notes: newNotes } : tx
       ),
     }));
-    // Was writing the bare literal "Settled: X" to the DB — discarding
-    // whatever the transaction's original notes text was there, diverging
-    // from the full `${prior} [Settled: X]` string applied to local state
-    // above. Also had no rollback: a failed write left local state showing
-    // "settled" forever with the DB never actually reflecting it.
-    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
-      set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
-    }).then(({ ok }) => {
-      // Audit finding — the kid never learned their cash-out was settled;
-      // gated on the write actually landing, same pattern denyCashOut's
-      // gpCoins refund already uses.
-      if (ok) notifyCashOutDecision('cashout_settled', prevTx, { method });
-    });
+    notifyCashOutDecision('cashout_settled', prevTx, { method });
   },
 
-  approveCashOut: (transactionId) => {
+  approveCashOut: async (transactionId) => {
     const prevTx = get().transactions.find(tx => tx.id === transactionId);
     const newNotes = `${prevTx?.notes ?? ''} [Approved]`;
+    const { ok } = await dbUpdate('point_transactions', transactionId, { notes: newNotes });
+    if (!ok) {
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
     set(s => ({
       transactions: s.transactions.map(tx =>
         tx.id === transactionId ? { ...tx, notes: newNotes } : tx
       ),
     }));
-    // Same bare-literal-overwrite bug as settleCashOut above, plus no
-    // rollback on failure.
-    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
-      set(s => ({ transactions: s.transactions.map(tx => tx.id === transactionId && prevTx ? prevTx : tx) }));
-    }).then(({ ok }) => {
-      // Audit finding — the kid never learned their cash-out was approved.
-      if (ok) notifyCashOutDecision('cashout_approved', prevTx);
-    });
+    notifyCashOutDecision('cashout_approved', prevTx);
   },
 
-  denyCashOut: (transactionId) => {
+  denyCashOut: async (transactionId) => {
     // For a mainCoins cash-out, tagging the row "[Denied]" IS the actual
     // reversal — see getMemberBalance above, which excludes any CASH_OUT
     // transaction whose notes contain "[Denied]" from the running balance
@@ -4710,40 +4711,35 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // denied GP cash-out must be credited back explicitly here, below.
     const tx = get().transactions.find(t => t.id === transactionId);
     const newNotes = `${tx?.notes ?? ''} [Denied]`;
+    // DB-is-truth: await the tag write before reflecting it locally OR
+    // firing the refund — was optimistic-tag + unconditional refund, which
+    // could double-refund if the tag write actually failed but the refund
+    // had already fired regardless.
+    const { ok } = await dbUpdate('point_transactions', transactionId, { notes: newNotes });
+    if (!ok) {
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
     set(s => ({
       transactions: s.transactions.map(t =>
         t.id === transactionId ? { ...t, notes: newNotes } : t
       ),
     }));
-    // Was writing the bare literal "[Denied]" (discarding the transaction's
-    // original notes text) and refunding gpCoins UNCONDITIONALLY regardless
-    // of whether this write actually succeeded — a failed write here left
-    // local state showing "denied" (balance looks right on this device)
-    // while the DB's row was never actually tagged, AND the gpCoins refund
-    // had already fired. A later sync reading the still-untagged DB row
-    // back could then look "un-denied" while the coins were already
-    // refunded once — a real double-payout vector. Gate the refund on the
-    // write actually landing, using dbUpdate's returned promise instead of
-    // firing it unconditionally right after the fire-and-forget call.
-    dbUpdate('point_transactions', transactionId, { notes: newNotes }, () => {
-      set(s => ({ transactions: s.transactions.map(t => t.id === transactionId && tx ? tx : t) }));
-    }).then(({ ok }) => {
-      if (ok && tx?.userId && (tx.wallet === 'gpCoins' || tx.wallet === 'mainCoins')) {
-        // Explicit refund of the LITERAL column for both wallets now.
-        // gpCoins never had a derived-balance reducer (members.gpCoins IS
-        // the literal balance). mainCoins used to rely entirely on
-        // getMemberBalance's [Denied]-exclusion reducer for the Quests
-        // tab — but requestCashOut's mainCoins branch now also earmarks
-        // the literal main_coins column at request time (logged QA gap,
-        // fixed, to close a real double-spend against the Store tab,
-        // which reads that column directly) — so a denied mainCoins
-        // request must now be credited back here too, not just excluded
-        // from the ledger.
-        get().awardPoints(tx.userId, '', tx.amount, 0, tx.wallet);
-      }
-      // Audit finding — the kid never learned their cash-out was denied.
-      if (ok) notifyCashOutDecision('cashout_denied', tx, { refunded: tx?.wallet === 'gpCoins' || tx?.wallet === 'mainCoins' });
-    });
+    if (tx?.userId && (tx.wallet === 'gpCoins' || tx.wallet === 'mainCoins')) {
+      // Explicit refund of the LITERAL column for both wallets now.
+      // gpCoins never had a derived-balance reducer (members.gpCoins IS
+      // the literal balance). mainCoins used to rely entirely on
+      // getMemberBalance's [Denied]-exclusion reducer for the Quests
+      // tab — but requestCashOut's mainCoins branch now also earmarks
+      // the literal main_coins column at request time (logged QA gap,
+      // fixed, to close a real double-spend against the Store tab,
+      // which reads that column directly) — so a denied mainCoins
+      // request must now be credited back here too, not just excluded
+      // from the ledger.
+      await get().awardPoints(tx.userId, '', tx.amount, 0, tx.wallet);
+    }
+    // Audit finding — the kid never learned their cash-out was denied.
+    notifyCashOutDecision('cashout_denied', tx, { refunded: tx?.wallet === 'gpCoins' || tx?.wallet === 'mainCoins' });
   },
 
   // ─────────────────────────────────────────────────────────────────────────

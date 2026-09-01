@@ -1875,6 +1875,21 @@ export const useEventStore = create<EventState>((set, get) => ({
       const nextDay = sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e));
       set({ dayEvents: nextDay, events: nextDay });
       set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+      // Live-reported gap: Praveena reassigned this ride to Ugandhar, it
+      // showed up correctly on Ugandhar's Hub, but he got no push/bell at
+      // all — updateEvent's own updateEventNotifications only fires for
+      // assignments made through updateEvent itself; every reassignEvent
+      // caller (RideRequiredEventCard, HelperEventCard, hubComponents.tsx,
+      // CalendarScreen's swap, FamilyNeedsHandSection) goes through the
+      // reassign_event RPC directly and never touched family-notifier at
+      // all. Only notify when the new assignee is someone OTHER than the
+      // actor — a self-claim needs no "you were assigned" ping.
+      if (newMemberId !== actorId) {
+        notifyRideAssignment('ride_assignment_offered', [newMemberId], actorId, {
+          eventTitle: fresh.title, eventId: fresh.id, eventTime: fresh.time,
+          byName: memberById(actorId)?.name,
+        });
+      }
     }
     showToast(`Reassigned ✓`);
     return true;
@@ -1927,6 +1942,28 @@ export const useEventStore = create<EventState>((set, get) => ({
         set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
       }
     }
+    // Same notification gap as reassignEvent above — this RPC path never
+    // went through updateEvent's own updateEventNotifications, so nobody
+    // but the confirmer ever heard about it. Mirrors updateEvent's own
+    // justConfirmed branch: other parents get a heads-up, and the
+    // requesting kid/teen gets the "you're covered" ping.
+    const confirmed = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
+    if (confirmed) {
+      const recipients = otherParentIds([memberId]);
+      if (recipients.length) {
+        notifyRideAssignment('ride_assignment_accepted', recipients, memberId, {
+          eventTitle: confirmed.title, eventId: confirmed.id, byName: memberById(memberId)?.name,
+        });
+      }
+      const kidId = confirmed.memberId;
+      const kid = memberById(kidId);
+      if (kidId && kidId !== memberId && kid && (kid.role === 'kid' || kid.role === 'teen')) {
+        notifyRideAssignment('ride_confirmed_for_kid', [kidId], memberId, {
+          eventTitle: confirmed.title, eventId: confirmed.id, eventTime: confirmed.time,
+          driverName: memberById(memberId)?.name,
+        });
+      }
+    }
     showToast(useSeriesForward ? 'Confirmed — future rides too ✓' : 'Confirmed ✓');
     return true;
   },
@@ -1935,6 +1972,7 @@ export const useEventStore = create<EventState>((set, get) => ({
   // Same consolidation — was independently hand-copied in the same 4
   // files as confirmEventAssignment above.
   declineEventAssignment: async (eventId, memberId, role, reason) => {
+    const prevEvent = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
     const { error } = await supabase.rpc('decline_event_assignment', {
       p_event_id: eventId, p_member_id: memberId, p_role: role, p_reason: reason ?? null,
     });
@@ -1944,11 +1982,37 @@ export const useEventStore = create<EventState>((set, get) => ({
       return false;
     }
     const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+    let fresh: FamilyEvent | undefined;
     if (row) {
-      const fresh = fromRow(row);
-      set({ dayEvents: sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e)) });
-      set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh : e)) });
-      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+      fresh = fromRow(row);
+      set({ dayEvents: sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh! : e)) });
+      set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh! : e)) });
+      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh! : e)) });
+    }
+    // Same notification gap as reassignEvent/confirmEventAssignment above —
+    // this RPC path never went through updateEvent's own
+    // updateEventNotifications, so whoever assigned this ride never heard
+    // it was just declined. Mirrors updateEvent's own justDeclined branch:
+    // notify whoever last assigned it (prevEvent.updatedBy) and the
+    // requesting kid, excluding the decliner.
+    if (fresh) {
+      const declinerName = memberById(memberId)?.name;
+      const recipients = new Set<string>();
+      if (prevEvent?.updatedBy && prevEvent.updatedBy !== memberId) recipients.add(prevEvent.updatedBy);
+      if (fresh.memberId && fresh.memberId !== memberId) recipients.add(fresh.memberId);
+      if (recipients.size) {
+        let minutesUntil: number | undefined;
+        if (fresh.date && fresh.time) {
+          const [h, m] = fresh.time.split(':').map(Number);
+          const at = new Date(`${fresh.date}T00:00:00`);
+          at.setHours(h, m, 0, 0);
+          minutesUntil = (at.getTime() - Date.now()) / 60000;
+        }
+        notifyRideAssignment('ride_assignment_declined', [...recipients], memberId, {
+          eventTitle: fresh.title, eventId: fresh.id, byName: declinerName,
+          imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
+        });
+      }
     }
     return true;
   },

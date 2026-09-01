@@ -1043,8 +1043,8 @@ interface ChoreState {
 
   // ── Cheer Squad — GP/sibling reactions on a completed chore ─────────────────
   cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => Promise<void>;
-  approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
-  declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
+  approveGrandparentQuestAsParent: (choreId: string, parentId: string) => Promise<void>;
+  declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => Promise<void>;
   resetDueRecurringChores:         () => void;
 
   // ── Scenario 1.13 — Teen reward co-sign threshold ─────────────────────────
@@ -3879,7 +3879,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  approveGrandparentQuestAsParent: (choreId, parentId) => {
+  approveGrandparentQuestAsParent: async (choreId, parentId) => {
     // Parent approves a GP-created quest → routes to targeted kids (split points)
     // or drops to the Bounty Pool when no child was selected.
     const now = new Date().toISOString();
@@ -3907,18 +3907,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     if (targets.length === 0) {
       // No kids selected → Bounty Pool. Any grandchild can claim first-come.
-      // updateChore already writes this exact patch to chore_tasks itself
-      // (and now rolls back on failure) — was a second, redundant dbUpdate
-      // call to the same row with the same fields right after, with no
-      // rollback of its own.
-      get().updateChore(choreId, { status: 'todo', isPool: true, assignedToId: undefined, reviewedAt: now });
+      await get().updateChore(choreId, { status: 'todo', isPool: true, assignedToId: undefined, reviewedAt: now });
       notifySponsor();
       return;
     }
     if (targets.length === 1) {
-      // Single targeted kid → assign directly, full points. Same
-      // already-covered-by-updateChore redundancy as above.
-      get().updateChore(choreId, { status: 'todo', isPool: false, assignedToId: targets[0], reviewedAt: now });
+      // Single targeted kid → assign directly, full points.
+      await get().updateChore(choreId, { status: 'todo', isPool: false, assignedToId: targets[0], reviewedAt: now });
       notifySponsor();
       return;
     }
@@ -3929,22 +3924,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // clones for a single consolidated review card; it no longer gates payout.
     const teamGroup = `team_${choreId}`;
     console.log(`[choreStore] approveGrandparentQuestAsParent → bounty ${teamGroup}: ${targets.length} kids × ${chore.basePoints} pts each`);
-    // updateChore already writes this same patch to chore_tasks itself
-    // (with rollback on failure) — was a second, redundant dbUpdate call to
-    // the same row right after.
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status: 'todo', isPool: false, assignedToId: targets[0],
       teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
     });
-    for (const targetKid of targets.slice(1)) {
+    // DB-is-truth: await each kid's clone insert before adding it locally —
+    // was optimistic-insert-then-check, briefly showing a phantom "assigned"
+    // card for a kid who, server-side, was never actually given anything.
+    await Promise.all(targets.slice(1).map(async targetKid => {
       const cloneId = genId();
-      set(s => ({
-        chores: [{
-          ...chore, id: cloneId, assignedToId: targetKid, status: 'todo', isPool: false,
-          teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
-        }, ...s.chores],
-      }));
-      dbInsert('chore_tasks', {
+      const { ok } = await dbInsert('chore_tasks', {
         id: cloneId, title: chore.title, description: chore.description,
         category_type: 'grandparent_quest', base_points: chore.basePoints, coins_reward: chore.coinsReward,
         xp_reward: chore.xpReward, status: 'todo', assigned_to_id: targetKid, is_pool: false,
@@ -3952,25 +3941,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         team_group_id: teamGroup, quest_mode: chore.questMode ?? null,
         requires_photo: chore.requiresPhotoProof, family_id: chore.familyId ?? getFamilyId(),
         due_date: chore.dueDate ?? null, created_at: now,
-      }).then(({ ok }) => {
-        // Was never checked — a failed clone insert (e.g. RLS rejection)
-        // still left a phantom "assigned" chore card in local state for a
-        // kid who, server-side, was never actually given anything to do.
-        if (!ok) {
-          set(s => ({ chores: s.chores.filter(c => c.id !== cloneId) }));
-          showToast("Couldn't create this kid's copy — check your connection and try again", 'error');
-        }
       });
-    }
+      if (!ok) {
+        showToast("Couldn't create this kid's copy — check your connection and try again", 'error');
+        return;
+      }
+      set(s => ({
+        chores: [{
+          ...chore, id: cloneId, assignedToId: targetKid, status: 'todo', isPool: false,
+          teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
+        }, ...s.chores],
+      }));
+    }));
     notifySponsor();
   },
 
-  declineGrandparentQuestAsParent: (choreId, parentId, reason) => {
-    // updateChore already writes this same patch to chore_tasks itself
-    // (with rollback on failure) — was a second, redundant dbUpdate call to
-    // the same row right after.
+  declineGrandparentQuestAsParent: async (choreId, parentId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:          'declined',
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),

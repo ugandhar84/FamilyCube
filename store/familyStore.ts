@@ -270,13 +270,13 @@ interface FamilyState {
   addPendingMember: (name: string, role: MemberRole, relationship?: string, dateOfBirth?: string, email?: string) => Promise<FamilyMember | null>;
   updateMember: (id: string, updates: Partial<FamilyMember>) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
-  awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
-  deductCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
+  awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => Promise<void>;
+  deductCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => Promise<void>;
   // Reverses an earlier award (e.g. a teen dropping a ride after being
   // paid for claiming it) — unlike deductCoins, always takes effect, up to
   // whatever balance is actually there, and never rolls back. See
   // clawbackCoins's own comment for why deductCoins is wrong for this.
-  clawbackCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
+  clawbackCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => Promise<void>;
   // actingMemberId: who is making this change — omitted/undefined means
   // "assume self" (matches every pre-existing call site, which never passed
   // one). When it differs from `id` (a parent resetting a DIFFERENT
@@ -774,22 +774,24 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     }
   },
 
-  awardCoins: (memberId, amount, wallet) => {
-    const next = get().members.map(m =>
-      m.id === memberId ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) + amount) } : m
-    );
+  awardCoins: async (memberId, amount, wallet) => {
+    const before = get().members.find(m => m.id === memberId);
+    const nextValue = Math.max(0, (before?.[wallet] ?? 0) + amount);
+    // DB-is-truth: await the column write before reflecting the new
+    // balance locally — was optimistic (set immediately, no rollback on
+    // failure). Column-only patch, not a full-row toRow() push — a full
+    // row would overwrite coins/xp with whatever stale value this device
+    // last cached, clobbering the RPC-driven awards other devices made in
+    // the meantime.
+    const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
+    const { error } = await supabase.from('members').update({ [column]: nextValue }).eq('id', memberId);
+    if (error) {
+      console.warn('[familyStore] awardCoins', error.message);
+      return;
+    }
+    const next = get().members.map(m => m.id === memberId ? { ...m, [wallet]: nextValue } : m);
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    const updated = next.find(m => m.id === memberId);
-    // Column-only patch, not a full-row toRow() push — a full row would
-    // overwrite coins/xp with whatever stale value this device last cached,
-    // clobbering the RPC-driven awards other devices made in the meantime.
-    if (updated) {
-      supabase.from('members')
-        .update({ [wallet === 'mainCoins' ? 'main_coins' : 'gp_coins']: updated[wallet] })
-        .eq('id', memberId)
-        .then(({ error }) => { if (error) console.warn('[familyStore] awardCoins', error.message); });
-    }
     // Spec 4.8/8.1: every coin movement — including a manual parent
     // spot-bonus or a GP cheer — belongs in the one shared, unified ledger
     // so the other parent isn't surprised by an unexplained balance change.
@@ -807,50 +809,40 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         transaction_type: 'ADMIN_ADJUSTMENT',
         notes: wallet === 'gpCoins' ? 'Grandparent bonus' : 'Bonus coins',
         created_at: new Date().toISOString(),
-      }).then(({ error }) => { if (error) console.warn('[familyStore] awardCoins ledger insert', error.message); });
+      }).then(({ error: e2 }) => { if (e2) console.warn('[familyStore] awardCoins ledger insert', e2.message); });
     }
   },
 
-  deductCoins: (memberId, amount, wallet) => {
+  deductCoins: async (memberId, amount, wallet) => {
     // Store-screen redemption race: two devices (or two rapid taps) reading
     // the same stale local balance could both pass their own client-side
     // "can afford it" check and both call deductCoins before either write
-    // round-trips — the previous plain `.update()` had no WHERE guard tying
-    // it to the balance it was actually computed against, so the second
-    // write would just silently re-subtract from whatever the first write
-    // already left, letting a kid redeem more than their real balance ever
-    // covered. Same class of gap as claimBounty's pool-claim race: a
-    // conditional write, guarded on the exact prior value this deduction
-    // was computed from, so only the deduction that still finds a
-    // sufficient balance in Postgres actually lands; the loser's optimistic
-    // local deduction is rolled back instead of silently overwriting.
+    // round-trips — a conditional write, guarded on the exact prior value
+    // this deduction was computed from, ensures only the deduction that
+    // still finds a sufficient balance in Postgres actually lands.
+    // DB-is-truth: await the CAS write and only reflect the deduction
+    // locally once it's confirmed — was optimistic (set immediately, rolled
+    // back on a lost race).
     const before = get().members.find(m => m.id === memberId);
     const priorValue = before?.[wallet] ?? 0;
-    const next = get().members.map(m =>
-      m.id === memberId ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) - amount) } : m
-    );
-    set({ members: next });
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    const updated = next.find(m => m.id === memberId);
-    if (!updated) return;
+    const nextValue = Math.max(0, priorValue - amount);
     const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
-    supabase.from('members')
-      .update({ [column]: updated[wallet] })
+    const { data, error } = await supabase.from('members')
+      .update({ [column]: nextValue })
       .eq('id', memberId)
       .gte(column, amount) // only succeeds if the DB's current balance can still cover this deduction
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) { console.warn('[familyStore] deductCoins', error.message); return; }
-        if (!data || data.length === 0) {
-          console.warn('[familyStore] deductCoins lost the race on', memberId, wallet, '— rolling back local deduction');
-          set(s => ({
-            members: s.members.map(m =>
-              m.id === memberId ? { ...m, [wallet]: priorValue } : m
-            ),
-          }));
-          AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
-        }
-      });
+      .select('id');
+    if (error) {
+      console.warn('[familyStore] deductCoins', error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      console.warn('[familyStore] deductCoins lost the race on', memberId, wallet);
+      return;
+    }
+    const next = get().members.map(m => m.id === memberId ? { ...m, [wallet]: nextValue } : m);
+    set({ members: next });
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   },
 
   // deductCoins' .gte(column, amount) guard exists to stop a genuine RACE
@@ -862,18 +854,20 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   // ZERO deduction and letting the teen keep the full payout for a ride
   // they backed out of (QA sweep, teen-role audit, Critical). This clamps
   // to 0 instead of refusing — takes whatever's left, never rolls back.
-  clawbackCoins: (memberId, amount, wallet) => {
+  clawbackCoins: async (memberId, amount, wallet) => {
     const before = get().members.find(m => m.id === memberId);
     const priorValue = before?.[wallet] ?? 0;
     const nextValue = Math.max(0, priorValue - amount);
-    const next = get().members.map(m =>
-      m.id === memberId ? { ...m, [wallet]: nextValue } : m
-    );
+    // DB-is-truth: await the write before reflecting the clawback locally.
+    const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
+    const { error } = await supabase.from('members').update({ [column]: nextValue }).eq('id', memberId);
+    if (error) {
+      console.warn('[familyStore] clawbackCoins', error.message);
+      return;
+    }
+    const next = get().members.map(m => m.id === memberId ? { ...m, [wallet]: nextValue } : m);
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
-    supabase.from('members').update({ [column]: nextValue }).eq('id', memberId)
-      .then(({ error }) => { if (error) console.warn('[familyStore] clawbackCoins', error.message); });
   },
 
   setMemberPin: async (id, pin, actingMemberId) => {

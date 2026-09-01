@@ -115,8 +115,8 @@ interface TemporaryApproverState {
   // Grants approve/decline/review capability to grantedToMemberId until
   // expiresAt. Any prior still-active grant to the SAME member is
   // superseded (revoked) rather than stacking multiple overlapping grants.
-  grantTemporaryApprover: (grantedToMemberId: string, grantedByMemberId: string, expiresAt: string) => void;
-  revokeTemporaryApprover: (grantId: string) => void;
+  grantTemporaryApprover: (grantedToMemberId: string, grantedByMemberId: string, expiresAt: string) => Promise<void>;
+  revokeTemporaryApprover: (grantId: string) => Promise<void>;
 
   // Point-in-time check — true iff memberId holds a currently-active
   // (not expired, not revoked) grant. This is the ONLY function outside
@@ -160,7 +160,7 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
     set({ grants: local, loaded: true });
   },
 
-  grantTemporaryApprover: (grantedToMemberId, grantedByMemberId, expiresAt) => {
+  grantTemporaryApprover: async (grantedToMemberId, grantedByMemberId, expiresAt) => {
     const familyId = getFamilyId();
     if (!familyId) return;
     const now = new Date().toISOString();
@@ -175,19 +175,26 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
       id: genId(), familyId, grantedToMemberId, grantedByMemberId, expiresAt, createdAt: now,
     };
 
-    const all = [grant, ...get().grants.map(g => supersededIds.includes(g.id) ? { ...g, revokedAt: now } : g)];
-    set({ grants: all }); save(all);
-
-    supabase.from('temporary_approvers').insert({
+    // DB-is-truth: await the insert (and the supersede writes) before
+    // reflecting the grant locally — was optimistic (set immediately, no
+    // rollback on failure). A privilege grant should never appear active
+    // on-screen before the write actually landed.
+    const { error: insertError } = await supabase.from('temporary_approvers').insert({
       id: grant.id, family_id: familyId,
       granted_to_member_id: grantedToMemberId, granted_by_member_id: grantedByMemberId,
       expires_at: expiresAt, created_at: now,
-    }).then(({ error }) => { if (error) console.warn('[temporaryApproverStore] insert failed', error.message); });
-
-    for (const id of supersededIds) {
-      supabase.from('temporary_approvers').update({ revoked_at: now }).eq('id', id)
-        .then(({ error }) => { if (error) console.warn('[temporaryApproverStore] supersede failed', error.message); });
+    });
+    if (insertError) {
+      console.warn('[temporaryApproverStore] insert failed', insertError.message);
+      return;
     }
+    const supersedeResults = await Promise.all(supersededIds.map(id =>
+      supabase.from('temporary_approvers').update({ revoked_at: now }).eq('id', id)
+    ));
+    supersedeResults.forEach((r, i) => { if (r.error) console.warn('[temporaryApproverStore] supersede failed', r.error.message, supersededIds[i]); });
+
+    const all = [grant, ...get().grants.map(g => supersededIds.includes(g.id) ? { ...g, revokedAt: now } : g)];
+    set({ grants: all }); save(all);
 
     const untilLabel = new Date(expiresAt).toLocaleString(undefined, { hour12: true });
     try {
@@ -240,13 +247,17 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
     } catch (e) { console.warn('[temporaryApproverStore] grant parent-notify error', e); }
   },
 
-  revokeTemporaryApprover: (grantId) => {
+  revokeTemporaryApprover: async (grantId) => {
     const now = new Date().toISOString();
     const grant = get().grants.find(g => g.id === grantId);
+    // DB-is-truth: await the write before reflecting the revoke locally.
+    const { error } = await supabase.from('temporary_approvers').update({ revoked_at: now }).eq('id', grantId);
+    if (error) {
+      console.warn('[temporaryApproverStore] revoke failed', error.message);
+      return;
+    }
     const all = get().grants.map(g => g.id === grantId ? { ...g, revokedAt: now } : g);
     set({ grants: all }); save(all);
-    supabase.from('temporary_approvers').update({ revoked_at: now }).eq('id', grantId)
-      .then(({ error }) => { if (error) console.warn('[temporaryApproverStore] revoke failed', error.message); });
 
     try {
       const { useChatStore } = require('./chatStore');

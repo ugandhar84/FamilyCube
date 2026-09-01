@@ -1039,10 +1039,10 @@ interface ChoreState {
   // ── Parent review ──────────────────────────────────────────────────────────
   approveChore:                    (choreId: string, reviewerId: string) => Promise<void>;
   requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => Promise<void>;
-  requestGrandparentRedo:          (choreId: string, grandparentId: string, reason: string) => void;
+  requestGrandparentRedo:          (choreId: string, grandparentId: string, reason: string) => Promise<void>;
 
   // ── Cheer Squad — GP/sibling reactions on a completed chore ─────────────────
-  cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
+  cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => Promise<void>;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
   resetDueRecurringChores:         () => void;
@@ -3809,12 +3809,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // GP to call. resubmitChore (the kid-side "try again" flow) only checks
   // for status === 'redo_requested' regardless of who set it, so this
   // reuses the same status and the kid's existing resubmit flow just works.
-  requestGrandparentRedo: (choreId, grandparentId, reason) => {
+  requestGrandparentRedo: async (choreId, grandparentId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_grandparent_approval') return;
 
     const newRedoCount = (chore.redoCount ?? 0) + 1;
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:          'redo_requested',
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),
@@ -3839,7 +3839,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  cheerChore: (choreId, fromMemberId, opts) => {
+  cheerChore: async (choreId, fromMemberId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     if ((chore.cheers ?? []).some(c => c.memberId === fromMemberId)) return; // one cheer per person
@@ -3848,7 +3848,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       ...(opts?.coins ? { coins: opts.coins } : {}),
       ...(opts?.note?.trim() ? { note: opts.note.trim() } : {}),
     };
-    get().updateChore(choreId, { cheers: [...(chore.cheers ?? []), entry] });
+    await get().updateChore(choreId, { cheers: [...(chore.cheers ?? []), entry] });
     // opts.coins was previously only ever recorded on the cheer entry for
     // display — never actually credited to the kid. cheerChore is exclusively
     // a Senior/GP feature (CheerSquadSection, features/hub/senior/), so a

@@ -979,8 +979,8 @@ interface ChoreState {
   // QA punch list #5 — pre-payout dispute (kid disagrees with a redo
   // request, asks a second parent instead of just resubmitting). See
   // migration 20260908150000_redo_dispute_rpcs.sql.
-  disputeRedo:              (choreId: string, memberId: string) => void;
-  resolveRedoDispute:       (choreId: string, reviewerId: string, pay: boolean) => void;
+  disputeRedo:              (choreId: string, memberId: string) => Promise<void>;
+  resolveRedoDispute:       (choreId: string, reviewerId: string, pay: boolean) => Promise<void>;
   instantCompleteChore:     (choreId: string, childId: string) => void;
   startGrandparentQuest:    (choreId: string, childId: string) => void;
   submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
@@ -2658,131 +2658,125 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   // QA punch list #5 — the kid's own "I did do it — ask [a parent]" path,
   // pre-payout. See migration 20260908150000_redo_dispute_rpcs.sql.
-  disputeRedo: (choreId, memberId) => {
+  disputeRedo: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'redo_requested' || chore.assignedToId !== memberId) return;
 
+    const { error } = await supabase.rpc('dispute_redo', { p_chore_id: choreId, p_member_id: memberId });
+    if (error) {
+      console.warn('[choreStore] disputeRedo RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't submit — please try again", 'error');
+      return;
+    }
     set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'kid_disputed_redo' } : c) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('dispute_redo', { p_chore_id: choreId, p_member_id: memberId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] disputeRedo RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'redo_requested' } : c) }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
+    showToast('Asked for a second opinion ✓');
+    // Audit finding — a kid disputing a redo previously told nobody who
+    // could actually act on it; parents only saw it if they happened to
+    // reopen the review deck. This is a fresh "needs a decision" state,
+    // same recipient set (parents + seniors) as a fresh submission.
+    if (chore.familyId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        // Live QA finding: this excluded only the disputing kid — the
+        // one parent who genuinely CANNOT act on this dispute
+        // (resolve_redo_dispute's own RPC blocks reviewedById from
+        // resolving their own call) still got the "second opinion
+        // needed" push alongside everyone else, which isn't a clean
+        // escalation to someone new and could read as the app asking
+        // that same parent to reconsider their own decision.
+        const approverIds = (useFamilyStore.getState().members as any[])
+          .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId && m.id !== chore.reviewedById)
+          .map(m => m.id);
+        if (approverIds.length) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'chore_redo_disputed', familyId: chore.familyId, memberIds: approverIds, persist: true,
+              excludeMemberId: memberId,
+              payload: { questId: choreId, questTitle: chore.title, kidName: memberName(memberId) },
+            },
+          }).catch(e => console.warn('[choreStore] disputeRedo notify', e?.message));
         }
-        showToast('Asked for a second opinion ✓');
-        // Audit finding — a kid disputing a redo previously told nobody who
-        // could actually act on it; parents only saw it if they happened to
-        // reopen the review deck. This is a fresh "needs a decision" state,
-        // same recipient set (parents + seniors) as a fresh submission.
-        if (chore.familyId) {
-          try {
-            const { useFamilyStore } = require('./familyStore');
-            // Live QA finding: this excluded only the disputing kid — the
-            // one parent who genuinely CANNOT act on this dispute
-            // (resolve_redo_dispute's own RPC blocks reviewedById from
-            // resolving their own call) still got the "second opinion
-            // needed" push alongside everyone else, which isn't a clean
-            // escalation to someone new and could read as the app asking
-            // that same parent to reconsider their own decision.
-            const approverIds = (useFamilyStore.getState().members as any[])
-              .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId && m.id !== chore.reviewedById)
-              .map(m => m.id);
-            if (approverIds.length) {
-              supabase.functions.invoke('family-notifier', {
-                body: {
-                  type: 'chore_redo_disputed', familyId: chore.familyId, memberIds: approverIds, persist: true,
-                  excludeMemberId: memberId,
-                  payload: { questId: choreId, questTitle: chore.title, kidName: memberName(memberId) },
-                },
-              }).catch(e => console.warn('[choreStore] disputeRedo notify', e?.message));
-            }
-          } catch (e) {
-            console.warn('[choreStore] disputeRedo recipient resolution failed', e);
-          }
-        }
-      });
+      } catch (e) {
+        console.warn('[choreStore] disputeRedo recipient resolution failed', e);
+      }
+    }
   },
 
   // A different parent than the one who requested the redo reviews the
   // original submission. p_pay=true approves it outright (→ 'approved',
   // real payout); p_pay=false sides with the redo (→ back to
   // 'redo_requested', the kid still has to resubmit).
-  resolveRedoDispute: (choreId, reviewerId, pay) => {
+  resolveRedoDispute: async (choreId, reviewerId, pay) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'kid_disputed_redo') return;
 
+    const { data, error } = await supabase.rpc('resolve_redo_dispute', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_pay: pay });
+    if (error) {
+      console.warn('[choreStore] resolveRedoDispute RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, status: pay ? 'approved' as const : 'redo_requested' as const } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('resolve_redo_dispute', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_pay: pay })
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[choreStore] resolveRedoDispute RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'kid_disputed_redo' } : c) }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        const result = Array.isArray(data) ? data[0] : data;
-        if (pay && result?.coins_paid > 0 && chore.assignedToId) {
-          const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-          try {
-            const { useFamilyStore } = require('./familyStore');
-            useFamilyStore.setState((s: any) => ({
-              members: s.members.map((m: any) => m.id === chore.assignedToId
-                ? wallet === 'gpCoins'
-                  ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
-                  : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
-                : m),
-            }));
-          } catch { /* familyStore not mounted yet — server balance still landed */ }
-          // Mirrors the same reporting-row insert _submitChoreViaRpc's
-          // auto-approve/approve branch already does — award_coins updates
-          // the real balance server-side, but nothing writes the
-          // point_transactions ledger row for it, so a dispute payout was
-          // silently missing from the kid's own earnings history even
-          // though the coins had genuinely landed (confirmed live: balance
-          // matched exactly, only the ledger row was absent).
-          const settings = get().householdSettings;
-          const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
-          dbInsert('point_transactions', {
-            id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
-            transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
-            notes: 'Redo dispute resolved in kid\'s favor', created_at: new Date().toISOString(), wallet,
-          });
-        }
-        showToast(pay ? 'Approved ✓' : 'Sided with the redo request');
-        // Audit finding — the kid never learned the outcome of a dispute
-        // they raised; previously silent either way. pay=true reuses the
-        // normal approval notification (same one approveChore sends); pay=
-        // false gets a dedicated "the redo stands" message rather than the
-        // ordinary quest_reopened copy, since this is specifically the
-        // outcome of an escalation the kid asked for, not a fresh redo
-        // request from the same parent.
-        if (chore.assignedToId) {
-          if (pay) {
-            supabase.functions.invoke('quest-event-notifier', {
-              body: {
-                event: 'quest_approved', questId: choreId, questTitle: chore.title,
-                familyId: chore.familyId, assigneeId: chore.assignedToId, coins: result?.coins_paid ?? 0,
-              },
-            }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
-          } else if (chore.familyId) {
-            supabase.functions.invoke('family-notifier', {
-              body: {
-                type: 'chore_redo_dispute_resolved', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
-                excludeMemberId: reviewerId,
-                payload: { questId: choreId, questTitle: chore.title, pay: false },
-              },
-            }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
-          }
-        }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (pay && result?.coins_paid > 0 && chore.assignedToId) {
+      const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        useFamilyStore.setState((s: any) => ({
+          members: s.members.map((m: any) => m.id === chore.assignedToId
+            ? wallet === 'gpCoins'
+              ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+              : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+            : m),
+        }));
+      } catch { /* familyStore not mounted yet — server balance still landed */ }
+      // Mirrors the same reporting-row insert _submitChoreViaRpc's
+      // auto-approve/approve branch already does — award_coins updates
+      // the real balance server-side, but nothing writes the
+      // point_transactions ledger row for it, so a dispute payout was
+      // silently missing from the kid's own earnings history even
+      // though the coins had genuinely landed (confirmed live: balance
+      // matched exactly, only the ledger row was absent).
+      const settings = get().householdSettings;
+      const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
+      dbInsert('point_transactions', {
+        id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
+        transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
+        notes: 'Redo dispute resolved in kid\'s favor', created_at: new Date().toISOString(), wallet,
       });
+    }
+    showToast(pay ? 'Approved ✓' : 'Sided with the redo request');
+    // Audit finding — the kid never learned the outcome of a dispute
+    // they raised; previously silent either way. pay=true reuses the
+    // normal approval notification (same one approveChore sends); pay=
+    // false gets a dedicated "the redo stands" message rather than the
+    // ordinary quest_reopened copy, since this is specifically the
+    // outcome of an escalation the kid asked for, not a fresh redo
+    // request from the same parent.
+    if (chore.assignedToId) {
+      if (pay) {
+        supabase.functions.invoke('quest-event-notifier', {
+          body: {
+            event: 'quest_approved', questId: choreId, questTitle: chore.title,
+            familyId: chore.familyId, assigneeId: chore.assignedToId, coins: result?.coins_paid ?? 0,
+          },
+        }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
+      } else if (chore.familyId) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'chore_redo_dispute_resolved', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
+            excludeMemberId: reviewerId,
+            payload: { questId: choreId, questTitle: chore.title, pay: false },
+          },
+        }).catch(e => console.warn('[choreStore] resolveRedoDispute notify', e?.message));
+      }
+    }
   },
 
   // Citizenship 0-pt tasks: tap = immediate complete, no review needed

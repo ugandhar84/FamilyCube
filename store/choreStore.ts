@@ -4898,13 +4898,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
 
     // PULL mode: person self-claims from backlog (assignedTo = themselves)
-    // DIRECT mode: explicitly assigned to partner, status starts PENDING
+    // DIRECT mode: explicitly assigned to partner, status starts PENDING —
+    // EXCEPT when the delegator picks themselves as the delegate (DelegateSheet
+    // has no self-assign exception, so this could reach here with
+    // finalAssignedTo === assignedBy), which is not actually a delegation at
+    // all — nobody needs to "accept" their own decision. Same self-assign
+    // rule every other assignment path in this app already uses.
+    const isSelfDelegate = finalAssignedTo === assignedBy;
     const assignment: ParentQuestAssignment = {
       id:                genId(),
       choreId,
       assignedBy,
       assignedTo:        finalAssignedTo,
-      status:            mode === 'DIRECT' ? 'PENDING' : 'ACCEPTED', // pull = self-accept
+      status:            mode === 'DIRECT' && !isSelfDelegate ? 'PENDING' : 'ACCEPTED', // pull or self-delegate = self-accept
       bounceCount:       0,
       isLocked:          false,
       note,
@@ -4972,6 +4978,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: finalAssignedTo, status: 'in_progress', isPool: false } : c) }));
         AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
       }
+    } else if (isSelfDelegate) {
+      // Live-reported bug: DelegateSheet has no self-assign exception, so
+      // picking YOURSELF as the delegate reached this same DIRECT path and
+      // got the full PENDING/Accept negotiation forced on you for a
+      // decision you already made — the assignment status fix above stops
+      // it showing as pending, but the chore itself also needs its
+      // assignedToId set right away (same as the PULL self-claim branch
+      // above), or it sits unassigned/invisible in the backlog forever
+      // since nobody else is ever going to "accept" it.
+      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED, self-delegate); claiming chore ${choreId} directly for ${finalAssignedTo}`);
+      get().updateChore(choreId, { assignedToId: finalAssignedTo, isPool: false, status: 'in_progress' });
     } else if (chore.assignedToId) {
       // A RE-delegation (DelegateSheet reassigning a chore that was already
       // assigned to someone via a PRIOR cycle) left the chore's own

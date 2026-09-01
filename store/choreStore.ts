@@ -933,7 +933,7 @@ interface ChoreState {
 
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
   addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
-  updateChore:         (id: string, updates: Partial<ChoreTask>) => void;
+  updateChore:         (id: string, updates: Partial<ChoreTask>) => Promise<void>;
   deleteChore:         (id: string) => void;
 
   // ── Child actions ──────────────────────────────────────────────────────────
@@ -1772,7 +1772,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     return confirmed;
   },
 
-  updateChore: (id, rawUpdates) => {
+  updateChore: async (id, rawUpdates) => {
     const prevChore = get().chores.find(c => c.id === id);
     // QA TC-38 — SeniorView.tsx's openEditSponsoredQuest/handleCreateQuest
     // already let a grandparent edit their own sponsored quest via this same
@@ -1822,17 +1822,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         const newBase   = 'basePoints'  in rawUpdates ? (rawUpdates as any).basePoints  : undefined;
         const newDue     = 'dueDate'     in rawUpdates ? (rawUpdates as any).dueDate     : undefined;
         const newDueTime = 'dueTime'     in rawUpdates ? (rawUpdates as any).dueTime     : undefined;
-        supabase.rpc('propose_terms_change', {
+        const { error } = await supabase.rpc('propose_terms_change', {
           p_chore_id: id, p_by_member_id: reviewerId,
           p_new_coins_reward: newCoins ?? null, p_new_base_points: newBase ?? null,
           p_new_due_date: newDue ?? null, p_new_due_time: newDueTime ?? null,
-        }).then(({ error }) => {
-          if (error) {
-            console.warn('[choreStore] propose_terms_change RPC failed', error.message);
-            return;
-          }
-          get().syncFromDB(true);
         });
+        if (error) {
+          console.warn('[choreStore] propose_terms_change RPC failed', error.message);
+          showToast("Couldn't save — please try again", 'error');
+          return;
+        }
+        await get().syncFromDB(true);
         return;
       }
     }
@@ -1914,15 +1914,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         if (staleOpen.length > 0) {
           const now = new Date().toISOString();
           console.log(`[choreStore] updateChore reassign → superseding ${staleOpen.length} stale System-A assignment(s) on chore ${id}`);
-          set(s => ({
-            parentAssignments: s.parentAssignments.map(a =>
-              staleOpen.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
-            ),
-          }));
-          for (const a of staleOpen) {
-            dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now }, () => {
-              set(s => ({ parentAssignments: s.parentAssignments.map(x => x.id === a.id ? a : x) }));
-            });
+          const results = await Promise.all(staleOpen.map(a =>
+            dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now })
+          ));
+          const confirmed = staleOpen.filter((_, i) => results[i].ok);
+          if (confirmed.length > 0) {
+            set(s => ({
+              parentAssignments: s.parentAssignments.map(a =>
+                confirmed.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+              ),
+            }));
           }
         }
       }
@@ -1933,11 +1934,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // (DelegateSheet reading a stale snapshot) showed wasn't a reliable fix
     // — openToGP has since been dropped from chore_tasks entirely;
     // inviteGrandparents is the one column every read path uses.
+    // DB-is-truth: await the write and only reflect it locally once the
+    // server confirms it — was optimistic (set() before the write, rolled
+    // back on failure); local state now only ever shows a confirmed row.
     const updates = rawUpdates;
-    set(s => ({
-      chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c),
-    }));
-    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
 
     // Live QA trace of the P2P (parent-to-parent) lane found this was a
     // real, reproducible race: two parents editing the same chore's
@@ -1951,7 +1951,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const CHECKED_FIELDS = ['title', 'description', 'parentNote', 'dueDate', 'dueTime', 'coinsReward', 'basePoints'] as const;
     const updateKeys = Object.keys(updates);
     if (prevChore && updateKeys.length > 0 && updateKeys.every(k => (CHECKED_FIELDS as readonly string[]).includes(k))) {
-      supabase.rpc('update_chore_task_checked', {
+      const { error } = await supabase.rpc('update_chore_task_checked', {
         p_chore_id: id,
         p_title: 'title' in updates ? (updates as any).title ?? null : null,
         p_has_title: 'title' in updates,
@@ -1968,17 +1968,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         p_base_points: 'basePoints' in updates ? (updates as any).basePoints ?? null : null,
         p_has_base_points: 'basePoints' in updates,
         p_expected_updated_at: prevChore.updatedAt ?? null,
-      }).then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] update_chore_task_checked FAILED', error.message);
-          set(s => ({ chores: s.chores.map(c => c.id === id ? prevChore : c) }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          const isStale = error.message?.includes('stale_write');
-          showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
-          return;
-        }
-        get().syncFromDB(true);
       });
+      if (error) {
+        console.warn('[choreStore] update_chore_task_checked FAILED', error.message);
+        const isStale = error.message?.includes('stale_write');
+        showToast(isStale ? "Someone else already changed this — refresh to see their update" : "Couldn't save — check your connection and try again", 'error');
+        return;
+      }
+      set(s => ({
+        chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c),
+      }));
+      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+      await get().syncFromDB(true);
       return;
     }
 
@@ -2051,15 +2052,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('reversedAt'         in (updates as any)) patch.reversed_at     = (updates as any).reversedAt ?? null;
     if ('reversedById'       in (updates as any)) patch.reversed_by_id  = (updates as any).reversedById ?? null;
     if (Object.keys(patch).length > 0) {
-      dbUpdate('chore_tasks', id, patch, () => {
-        // Failed write — revert the optimistic merge above back to the
-        // exact pre-update chore so local state doesn't keep showing a
-        // change that never actually landed in the DB.
-        if (prevChore) {
-          set(s => ({ chores: s.chores.map(c => c.id === id ? prevChore : c) }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-        }
-      });
+      const { ok } = await dbUpdate('chore_tasks', id, patch);
+      if (!ok) {
+        console.warn(`[choreStore] updateChore patch write failed for ${id}`);
+        showToast("Couldn't save — check your connection and try again", 'error');
+        return;
+      }
+      set(s => ({ chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c) }));
+      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     }
     // Keep a chore's linked calendar_events row (addChore's materialization,
     // above) in sync when its due date/time actually changes — otherwise

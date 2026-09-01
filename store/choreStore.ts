@@ -1014,16 +1014,16 @@ interface ChoreState {
   // terms; reject hands it back to the pool, no reason required.
   acceptTermsChange:       (choreId: string, memberId: string) => Promise<void>;
   rejectTermsChange:       (choreId: string, memberId: string) => Promise<void>;
-  withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
-  submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
-  acknowledgeGPReimbursement: (choreId: string) => void;
+  withdrawGPOffer:         (choreId: string, gpMemberId: string) => Promise<void>;
+  submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => Promise<void>;
+  acknowledgeGPReimbursement: (choreId: string) => Promise<void>;
   // GP-Welcome pool (canGpClaimPool in QuestCard.tsx — a plain
   // inviteGrandparents chore a GP claimed directly via "I'd Love To Help",
   // NOT the sponsored claimGPErrand offer-pending flow above). No approval
   // gate and no coin payout — a GP is a trusted adult helping out, same
   // "adults don't earn coins for their own chores" precedent
   // QuestApprovalCard.tsx already documents for parents.
-  completeGpWelcomeChore:  (choreId: string, gpMemberId: string) => void;
+  completeGpWelcomeChore:  (choreId: string, gpMemberId: string) => Promise<void>;
   backoutGpWelcomeChore:   (choreId: string, gpMemberId: string) => void;
   giveBackChore:           (choreId: string, memberId: string) => void;
 
@@ -3337,27 +3337,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // The offering GP retracting their own offer before a parent acts on it —
   // reverts to 'todo', same end state as declineGPOffer minus the parent's
   // decision and notification.
-  withdrawGPOffer: (choreId, gpMemberId) => {
+  withdrawGPOffer: async (choreId, gpMemberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'gp_offer_pending' || chore.gpOfferById !== gpMemberId) return;
 
+    // Now backed by the withdraw_gp_offer Postgres RPC — returns null
+    // (not an error) when the offer was already resolved by someone else.
+    const { data, error } = await supabase.rpc('withdraw_gp_offer', { p_chore_id: choreId, p_gp_member_id: gpMemberId });
+    if (error) { console.warn('[choreStore] withdrawGPOffer RPC failed', error.message); return; }
+    if (!data) {
+      console.warn('[choreStore] withdrawGPOffer lost the race on', choreId, '— offer already resolved (accepted/declined) underneath, re-syncing from DB');
+      await get().syncFromDB(true);
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'todo', gpOfferById: undefined } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    // Now backed by the withdraw_gp_offer Postgres RPC — returns null
-    // (not an error) when the offer was already resolved by someone else,
-    // matching the "no safe local rollback, force a resync" handling this
-    // call already needed.
-    supabase.rpc('withdraw_gp_offer', { p_chore_id: choreId, p_gp_member_id: gpMemberId })
-      .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] withdrawGPOffer RPC failed', error.message); return; }
-        if (!data) {
-          console.warn('[choreStore] withdrawGPOffer lost the race on', choreId, '— offer already resolved (accepted/declined) underneath, re-syncing from DB');
-          get().syncFromDB(true);
-        }
-      });
   },
 
   // Scenario 4.2/4.6 — a GP completing a plain errand with no receipt/
@@ -3370,7 +3367,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // coin field at all" for GP/parent tasks). A submission that DOES carry
   // receipt/reimbursement data still routes to 'pending_approval' for real
   // parent review, unchanged from before.
-  submitGPErrandReceipt: (choreId, opts) => {
+  submitGPErrandReceipt: async (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.inviteGrandparents) return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
@@ -3379,7 +3376,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const now = new Date().toISOString();
 
     if (!hasReceiptData) {
-      get().updateChore(choreId, {
+      await get().updateChore(choreId, {
         status:      'auto_approved',
         approvedAt:  now,
         reviewedAt:  now,
@@ -3415,7 +3412,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return;
     }
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:              'pending_approval',  // goes to parent review deck
       receiptPhotoUrl:     opts.receiptPhotoUrl,
       receiptAmount:       opts.receiptAmount,
@@ -3426,8 +3423,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     notifyQuestSubmitted(chore);
   },
 
-  acknowledgeGPReimbursement: (choreId) => {
-    get().updateChore(choreId, { receiptReimbursedAt: new Date().toISOString() });
+  acknowledgeGPReimbursement: async (choreId) => {
+    await get().updateChore(choreId, { receiptReimbursedAt: new Date().toISOString() });
   },
 
   // GP-Welcome pool completion (QuestCard.tsx's canGpClaimPool card, Chores
@@ -3439,13 +3436,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // chores" precedent QuestApprovalCard.tsx documents for parents. No
   // approval gate — the GP is a trusted adult, this is a self-completion,
   // not a submission awaiting review.
-  completeGpWelcomeChore: (choreId, gpMemberId) => {
+  completeGpWelcomeChore: async (choreId, gpMemberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.assignedToId !== gpMemberId) return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
 
     const now = new Date().toISOString();
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:      'auto_approved',
       approvedAt:  now,
       reviewedAt:  now,

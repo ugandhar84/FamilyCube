@@ -6,12 +6,11 @@ import { CollapsibleCard, notifyTakeover } from '../hubComponents';
 import { fmtTime, fmtHumanDateShort } from '../hubUtils';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
-import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { useChatStore } from '@/store/chatStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import type { FamilyMember } from '@/store/familyStore';
-import type { FamilyEvent } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 
 // A non-Ride event (Sports/Study/Medical/etc) that separately flagged
 // "needs a ride" (rideRequired) — distinct from RideRequestCard, which only
@@ -65,29 +64,18 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // later one-off swap for just one occurrence happens through
   // HelperEventCard's Take-Over action instead, which stays scoped to
   // 'this' only.
-  const iDrive = () => {
+  const iDrive = async () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx:47]`);
-    supabase.rpc('reassign_event', {
-      p_event_id: ev.id, p_new_member_id: active.id, p_role: 'driver', p_actor_id: active.id,
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[RideRequiredEventCard] iDrive reassign_event failed', error.message);
-        showToast("Couldn't reassign — please try again", 'error');
-        return;
-      }
-      // Was gated behind `ev.seriesId && updateEventScoped` — a plain
-      // one-off event (no seriesId) never got its local Zustand copy
-      // updated after a successful reassign, so this card kept showing
-      // the old/no driver until some unrelated fetch happened to refresh
-      // the shared store. Update unconditionally on success; the
-      // seriesId branch additionally propagates to future occurrences.
-      if (ev.seriesId && updateEventScoped) {
-        updateEventScoped(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }, 'following');
-      } else {
-        updateEvent(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' });
-      }
-      showToast("You're driving ✓");
-    });
+    // Routed through the ONE shared reassignEvent (store/eventStore.ts) —
+    // every surface that can reassign a driver/helper now calls the same
+    // function and renders the server's own confirmed row, instead of
+    // each hand-guessing its own local patch.
+    const ok = await useEventStore.getState().reassignEvent(ev.id, active.id, 'driver', active.id);
+    if (ok && ev.seriesId && updateEventScoped) {
+      // Naming yourself as the driver IS the "yes, I'm driving this series
+      // going forward" moment — propagate to future occurrences.
+      updateEventScoped(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }, 'following');
+    }
   };
 
   // A parent who can't drive this themselves previously had no path at
@@ -141,24 +129,14 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // someone other than yourself starts 'pending' (the RPC's own status
   // logic), requiring the new parent's own confirm, not auto-confirmed
   // the way "I'll Drive" is.
-  const reassignTo = (m: FamilyMember) => {
+  const reassignTo = async (m: FamilyMember) => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Reassign to ${m.name}" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx]`);
     notifyTakeover(ev, m.name, members, active.name, active.id);
-    supabase.rpc('reassign_event', {
-      p_event_id: ev.id, p_new_member_id: m.id, p_role: 'driver', p_actor_id: active.id,
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[RideRequiredEventCard] reassignTo reassign_event failed', error.message);
-        showToast("Couldn't reassign — please try again", 'error');
-        return;
-      }
-      // DB write succeeds but nothing told the local Zustand store — same
-      // gap as iDrive above; a parent-to-parent handoff starts 'pending'
-      // (the new parent still needs to confirm), not 'confirmed' the way
-      // iDrive's self-assign is.
-      updateEvent(ev.id, { driverName: m.name, driverId: m.id, driverStatus: 'pending' });
-      showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
-    });
+    // Routed through the ONE shared reassignEvent — see iDrive's comment
+    // above. A parent-to-parent handoff starts 'pending' (the new parent
+    // still needs to confirm) — that rule lives server-side in
+    // reassign_event itself, not duplicated here.
+    await useEventStore.getState().reassignEvent(ev.id, m.id, 'driver', active.id);
     setReassignOpen(false);
   };
 

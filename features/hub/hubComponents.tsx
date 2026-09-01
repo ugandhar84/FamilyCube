@@ -15,7 +15,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
-import { eventAssignee } from '@/store/eventStore';
+import { eventAssignee, useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
 import { EventCardRow } from '@/features/calendar/components/EventCard';
@@ -508,33 +508,13 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
       console.warn('[ConflictClusterCard] reassign_event: no viewerMember resolved — activeMemberId not passed to ConflictClusterCard');
       showToast("Couldn't reassign — please try again", 'error');
     } else if (targetMember && actorId) {
-      supabase.rpc('reassign_event', {
-        p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: actorId,
-      }).then(({ error }: { error: any }) => {
-        if (error) {
-          console.warn('[ConflictClusterCard] reassign_event failed', error.message);
-          showToast("Couldn't reassign — please try again", 'error');
-          return;
-        }
-        // DB write succeeds but nothing updated the local Zustand copy —
-        // same gap as EventDetailSheet's own reassign handler, so this
-        // card could keep showing the OLD assignee until an unrelated
-        // fetch happened to refresh it. Includes driverId/helperId (not
-        // just the display name) — classifyEventUrgency.ts now compares
-        // by id, so leaving it stale after a reassign would make the
-        // Hub's "is this mine" check keep evaluating against the OLD
-        // assignee's id until a refetch overwrote it.
-        // Status mirrors the RPC's own rule (reassign_event: 'confirmed'
-        // only when p_new_member_id = p_actor_id) — was unconditionally
-        // 'confirmed' here, so reassigning to someone OTHER than yourself
-        // showed them as already confirmed locally even though the server
-        // correctly reset them to pending (same bug as EventDetailSheet's
-        // onAssign handler, fixed there too).
-        updateEvent(ev.id, assigneeRole === 'driver'
-          ? { driverName: name, driverId: targetMember.id, driverStatus: targetMember.id === actorId ? 'confirmed' as const : 'pending' as const }
-          : { helper: name, helperId: targetMember.id, helperStatus: targetMember.id === actorId ? 'confirmed' as const : 'pending' as const });
-        showToast(`Assigned to ${name.split(' ')[0]} ✓`);
-      });
+      // Routed through the ONE shared reassignEvent (store/eventStore.ts)
+      // — was its own hand-copied 4th version of the same RPC call +
+      // guessed local patch already found in HelperEventCard,
+      // RideRequiredEventCard, and EventDetailSheet above. Every surface
+      // now calls the same function and renders the server's own
+      // confirmed row.
+      useEventStore.getState().reassignEvent(ev.id, targetMember.id, assigneeRole, actorId);
     } else {
       // No matching member — an external, non-member name typed into the
       // free-text fallback; there is no id to set, driverId/helperId
@@ -1476,49 +1456,16 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                         console.warn('[EventDetailSheet] reassign_event: no viewerMember resolved — activeMemberId not passed to EventDetailSheet');
                         showToast("Couldn't reassign — please try again", 'error');
                       } else if (targetMember && actorId) {
-                        supabase.rpc('reassign_event', {
-                          p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: actorId,
-                        }).then(({ error }) => {
-                          if (error) {
-                            console.warn('[EventDetailSheet] reassign_event failed', error.message);
-                            showToast("Couldn't reassign — please try again", 'error');
-                            return;
-                          }
-                          // Was missing entirely on this branch (the
-                          // no-matching-member fallback below DID call
-                          // updateEvent, but the real RPC path — the common
-                          // case — never did) — the DB write succeeded but
-                          // the local Zustand cache kept its pre-reassign
-                          // value, so the detail sheet (and Hub) could keep
-                          // showing the OLD assignee until some unrelated
-                          // fetch happened to refresh it. Confirmed live:
-                          // reassigning to Praveena required "multiple
-                          // attempts" before her own view finally showed
-                          // it, even though the DB was already correct
-                          // after the very first successful call.
-                          // Also sets driverId/helperId (not just the
-                          // display name) — classifyEventUrgency.ts now
-                          // compares by id, so leaving it stale after a
-                          // reassign would make the Hub's "is this mine"
-                          // check keep evaluating against the OLD
-                          // assignee's id until a refetch overwrote it.
-                          // Status must mirror the RPC's own rule exactly
-                          // (reassign_event: 'confirmed' only when
-                          // p_new_member_id = p_actor_id, i.e. assigning to
-                          // YOURSELF — any other target starts 'pending')
-                          // rather than always 'confirmed' — this was
-                          // unconditional before, so reassigning a
-                          // confirmed slot to a DIFFERENT person (the
-                          // "Can't Make It → pick someone else" case) showed
-                          // that person as already confirmed locally, even
-                          // though the server correctly reset them to
-                          // waiting-for-confirmation (live-reported).
-                          const newStatus = targetMember.id === actorId ? 'confirmed' as const : 'pending' as const;
-                          updateEvent(ev.id, assigneeRole === 'driver'
-                            ? { driverName: name, driverId: targetMember.id, driverStatus: newStatus }
-                            : { helper: name, helperId: targetMember.id, helperStatus: newStatus });
-                          showToast(`Assigned to ${name.split(' ')[0]} ✓`);
-                        });
+                        // Routed through the ONE shared reassignEvent
+                        // (store/eventStore.ts) — was its own hand-copied
+                        // RPC call + guessed local patch, independently
+                        // drifting from HelperEventCard's and
+                        // RideRequiredEventCard's own copies of the exact
+                        // same logic (the actual root cause of "reassigning
+                        // from Schedule doesn't show up right on the Hub").
+                        // Every surface now calls the same function and
+                        // renders the server's own confirmed row.
+                        useEventStore.getState().reassignEvent(ev.id, targetMember.id, assigneeRole, actorId);
                       } else {
                         // No matching member — an external, non-member
                         // name with no id to set.

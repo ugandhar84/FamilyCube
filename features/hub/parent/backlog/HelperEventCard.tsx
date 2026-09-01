@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import type { FamilyMember } from '@/store/familyStore';
-import type { FamilyEvent } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtDate, fmtTime } from '@/lib/dates';
 
@@ -100,28 +100,14 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                       console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Take Over" on "${ev.title}" from ${assignee.name} (id=${ev.id}) → reassign_event(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:77]`);
                       // A one-off take-over ("I'll cover THIS one") is a
                       // direct reassign, authority-based (the parent tapping
-                      // this already has the right to override) — the RPC
-                      // writes the correct field pair (driver_* or helper_*)
-                      // based on assigneeRole instead of always hardcoding
-                      // helper_*, which is the exact bug that let a
-                      // driver-paired event end up with a second,
-                      // independently-tracked stale helper_* pair.
-                      supabase.rpc('reassign_event', {
-                        p_event_id: ev.id, p_new_member_id: active.id, p_role: assigneeRole, p_actor_id: active.id,
-                      }).then(({ error }) => {
-                        if (error) {
-                          console.warn('[HelperEventCard] Take Over reassign_event failed', error.message);
-                          showToast("Couldn't take over — please try again", 'error');
-                          return;
-                        }
-                        // Same local-state gap as every other RPC call
-                        // site in this file — DB write succeeds but the
-                        // local Zustand copy never reflected it.
-                        updateEvent(ev.id, assigneeRole === 'driver'
-                          ? { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }
-                          : { helper: active.name, helperId: active.id, helperStatus: 'confirmed' });
-                        showToast('Taken over ✓');
-                      });
+                      // this already has the right to override). Routed
+                      // through the ONE shared reassignEvent (store/
+                      // eventStore.ts) — every surface that can reassign a
+                      // driver/helper (this card, RideRequiredEventCard,
+                      // EventDetailSheet) now calls the exact same function
+                      // instead of each hand-duplicating the RPC call and
+                      // guessing its own local patch afterward.
+                      useEventStore.getState().reassignEvent(ev.id, active.id, assigneeRole, active.id);
                       const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
                       useChatStore.getState().sendMessage('all', active.id, msg);
                     }},

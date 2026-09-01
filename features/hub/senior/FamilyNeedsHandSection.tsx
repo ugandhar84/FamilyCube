@@ -255,29 +255,15 @@ export function FamilyNeedsHandSection({
                     {
                       text: "Yes, I'll Drive",
                       onPress: () => {
-                        // Live QA finding: this was a plain updateEvent()
-                        // with no server-side race guard — unlike every
-                        // other claim/reassign path in the app. Two
-                        // grandparents both tapping "Step In" on the same
-                        // stalled ride within the same moment could both
-                        // believe, on their own screens, that they'd taken
-                        // it, with whichever write landed last silently
-                        // winning and the other seeing no error at all.
-                        // reassign_event is the same RPC every other
-                        // reassign action uses — row-locked, and since
+                        // Routed through the ONE shared reassignEvent
+                        // (store/eventStore.ts) — every surface that can
+                        // reassign a driver/helper calls the same function
+                        // now, instead of each hand-copying the
+                        // reassign_event RPC call and guessing its own
+                        // local patch. Row-locked server-side; since
                         // active.id === active.id (self-assign) it
-                        // auto-confirms, matching the prior behavior.
-                        supabase.rpc('reassign_event', {
-                          p_event_id: ev.id, p_new_member_id: active.id, p_role: 'helper', p_actor_id: active.id,
-                        }).then(({ error }) => {
-                          if (error) {
-                            console.warn('[FamilyNeedsHandSection] Step In reassign_event failed', error.message);
-                            showToast("Couldn't step in — please try again", 'error');
-                            return;
-                          }
-                          updateEvent(ev.id, { helper: active.name, helperId: active.id, helperStatus: 'confirmed' });
-                          showToast("You're driving ✓");
-                        });
+                        // auto-confirms.
+                        useEventStore.getState().reassignEvent(ev.id, active.id, 'helper', active.id);
                       },
                     },
                   ]

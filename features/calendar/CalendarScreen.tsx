@@ -41,7 +41,6 @@ import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
 import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
-import { showToast } from '@/components/AppToast';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
 import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } from './components/EventCard';
@@ -765,22 +764,15 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       if (targetMember) {
         const targetEvent = events.find(e => e.id === id);
         const role = targetEvent ? eventAssigneeRole(targetEvent) : 'helper';
-        supabase.rpc('reassign_event', {
-          p_event_id: id, p_new_member_id: targetMember.id, p_role: role, p_actor_id: activeMemberId,
-        }).then(({ error }) => {
-          if (error) {
-            console.warn('[CalendarScreen] handleApplySwap reassign_event failed', error.message);
-            showToast("Couldn't reassign — please try again", 'error');
-            return;
-          }
-          // The RPC writes the DB correctly, but nothing here told the
-          // local Zustand store — without this, the swap could keep
-          // showing the OLD driver/helper until some unrelated fetch
-          // happened to refresh it, even though the DB was already right.
-          updateEvent(id, role === 'driver'
-            ? { driverName: targetMember.name, driverId: targetMember.id, driverStatus: 'confirmed' as const }
-            : { helper: targetMember.name, helperId: targetMember.id, helperStatus: 'confirmed' as const });
-        });
+        // Routed through the ONE shared reassignEvent (store/eventStore.ts)
+        // — was its own hand-copied RPC call + guessed local patch (and
+        // unconditionally 'confirmed' regardless of who the swap actually
+        // assigned to, the exact bug already found and fixed in every
+        // other copy of this same logic). Every surface now calls the
+        // same function and renders the server's own confirmed row/status.
+        if (activeMemberId) {
+          useEventStore.getState().reassignEvent(id, targetMember.id, role, activeMemberId);
+        }
       } else {
         // No matching member row for the suggested name — fall back to the
         // old direct write rather than silently drop the swap.

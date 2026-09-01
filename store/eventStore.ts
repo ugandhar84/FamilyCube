@@ -423,6 +423,17 @@ interface EventState {
   // responding concurrently can't collide, and one member re-responding is
   // just overwriting their own prior answer, not racing anyone else).
   respondToRsvp: (id: string, memberId: string, response: 'going' | 'not_going' | 'maybe') => void;
+
+  // Single shared "reassign this event's driver/helper to someone else"
+  // action — was independently hand-duplicated in HelperEventCard.tsx,
+  // RideRequiredEventCard.tsx, and EventDetailSheet (hubComponents.tsx),
+  // each calling the reassign_event RPC and then GUESSING the resulting
+  // local patch instead of re-reading the real row, and each with its own
+  // slightly different copy of the same comments/bugs. Any one of the
+  // three could drift from the others (exactly the "why does the Hub
+  // still show the old assignee after I reassigned from Schedule" class
+  // of report). One function, one re-fetch, used everywhere.
+  reassignEvent: (eventId: string, newMemberId: string, role: 'driver' | 'helper', actorId: string) => Promise<boolean>;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1812,6 +1823,40 @@ export const useEventStore = create<EventState>((set, get) => ({
         }).catch(e => console.warn('[eventStore] respondToRsvp notify failed:', e?.message));
       }
     }
+  },
+
+  // ── reassignEvent — the ONE place a driver/helper reassignment happens ────
+  // Previously hand-duplicated in HelperEventCard.tsx ("Take Over"),
+  // RideRequiredEventCard.tsx (its own Reassign picker), and
+  // EventDetailSheet (hubComponents.tsx) — each called the reassign_event
+  // RPC and then wrote its own GUESSED local patch afterward, instead of
+  // trusting the server's actual result. Three independent copies of the
+  // same "assign X as driver/helper" logic will drift from each other by
+  // construction; this collapses them into one function every surface
+  // calls, so a reassignment made from Schedule and one made from the Hub
+  // behave — and render — identically, always.
+  reassignEvent: async (eventId, newMemberId, role, actorId) => {
+    const { error } = await supabase.rpc('reassign_event', {
+      p_event_id: eventId, p_new_member_id: newMemberId, p_role: role, p_actor_id: actorId,
+    });
+    if (error) {
+      console.warn('[eventStore] reassignEvent failed', eventId, error.message);
+      showToast("Couldn't reassign — please try again", 'error');
+      return false;
+    }
+    // DB-is-truth: re-fetch the real row instead of guessing what the RPC
+    // just wrote (its exact status rule — 'confirmed' only when assigning
+    // to yourself, 'pending' otherwise — lives server-side; duplicating
+    // that rule client-side is exactly how the three old copies drifted).
+    const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+    if (row) {
+      const fresh = fromRow(row);
+      const nextDay = sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e));
+      set({ dayEvents: nextDay, events: nextDay });
+      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+    }
+    showToast(`Reassigned ✓`);
+    return true;
   },
 
   // ── claimHelperSlot — compare-and-swap claim of an open GP/Teen slot ───────

@@ -732,11 +732,11 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   },
 
   pinStoreLocation: async ({ familyId, store, latitude, longitude, pinnedBy }) => {
-    set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude } } }));
     const { error } = await supabase.from('store_locations').upsert({
       family_id: familyId, store, latitude, longitude, pinned_by: pinnedBy,
     }, { onConflict: 'family_id,store' });
-    if (error) console.warn('[groceryStore] pinStoreLocation error', error);
+    if (error) { console.warn('[groceryStore] pinStoreLocation error', error); return; }
+    set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude } } }));
   },
 
   loadSavedStores: async (familyId) => {

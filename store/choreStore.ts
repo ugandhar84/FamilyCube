@@ -1078,16 +1078,16 @@ interface ChoreState {
   // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
   // the ORIGINAL approving parent's coSignReversal — never a silent,
   // unilateral clawback by default.
-  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string) => void;
+  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string) => Promise<void>;
   // coSignReversal: the original approving parent (chore.reviewedById)
   // agrees with a pending reversal request — executes the clawback.
-  coSignReversal:            (choreId: string, coSigningParentId: string) => void;
+  coSignReversal:            (choreId: string, coSigningParentId: string) => Promise<void>;
   // Internal — the actual clawback logic shared by the unilateral-allowed
   // and co-signed paths. Not intended to be called directly from UI.
-  _executeReversal:          (choreId: string, byParentId: string, reason: string) => void;
+  _executeReversal:          (choreId: string, byParentId: string, reason: string) => Promise<void>;
 
   // ── Points economy ────────────────────────────────────────────────────────
-  awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => void;
+  awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => Promise<void>;
   requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }, wallet?: 'mainCoins' | 'gpCoins') => void;
   settleCashOut:       (transactionId: string, method: 'PHYSICAL_CASH' | 'DEBIT_CARD' | 'LEDGER') => void;
   approveCashOut:      (transactionId: string) => void;
@@ -4134,7 +4134,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // called from requestApprovalReversal (unilateral-allowed path) or
   // coSignReversal (co-signed path) — never exposed directly to UI, so
   // every reversal always has disputeReason/disputedById/reversedById set.
-  _executeReversal: (choreId, byParentId, reason) => {
+  _executeReversal: async (choreId, byParentId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.assignedToId) return;
     if (!['approved', 'auto_approved'].includes(chore.status)) return;
@@ -4143,7 +4143,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
     const now = new Date().toISOString();
 
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:         'declined',
       declinedAt:     now,
       disputeStatus:  undefined,
@@ -4158,7 +4158,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // balance edit; awardPoints already writes both the point_transactions
     // audit row and the live members balance patch for a negative amount.
     if (pointsPaid > 0) {
-      get().awardPoints(chore.assignedToId, choreId, -pointsPaid, 0, wallet);
+      await get().awardPoints(chore.assignedToId, choreId, -pointsPaid, 0, wallet);
     }
 
     try {
@@ -4199,20 +4199,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  requestApprovalReversal: (choreId, byParentId, reason) => {
+  requestApprovalReversal: async (choreId, byParentId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
     if (byParentId === chore.reviewedById) return; // can't dispute your own approval
 
     if (get().householdSettings.allowUnilateralReversal) {
-      get()._executeReversal(choreId, byParentId, reason);
+      await get()._executeReversal(choreId, byParentId, reason);
       return;
     }
 
     // Default, safe path — needs the original approver's co-sign. No
     // financial effect happens here; the chore stays approved/paid until
     // coSignReversal actually executes it.
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       disputeStatus: 'reversal_requested',
       disputeReason: reason,
       disputedById:  byParentId,
@@ -4230,7 +4230,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  coSignReversal: (choreId, coSigningParentId) => {
+  coSignReversal: async (choreId, coSigningParentId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.disputeStatus !== 'reversal_requested') return;
     // Only the ORIGINAL approving parent can co-sign — the requester
@@ -4241,7 +4241,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // Snapshot before _executeReversal's own updateChore call clears
     // disputedById/disputeStatus as part of executing the reversal.
     const requesterId = chore.disputedById;
-    get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
+    await get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
     // Audit finding — the parent who originally REQUESTED the reversal
     // never learned it was actually co-signed and executed; they'd only
     // find out by reopening the chore and noticing it flipped to declined.
@@ -4388,7 +4388,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // POINTS ECONOMY
   // ─────────────────────────────────────────────────────────────────────────
 
-  awardPoints: (userId, choreId, points, xp = 0, wallet = 'mainCoins') => {
+  awardPoints: async (userId, choreId, points, xp = 0, wallet = 'mainCoins') => {
     const settings = get().householdSettings;
     // Grandparent-sponsored money is a deliberately simple, unsplit pool
     // (product decision) — the Spend/Save/Give financial-literacy split
@@ -4399,6 +4399,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const { spend, save, give } = wallet === 'gpCoins'
       ? { spend: points, save: 0, give: 0 }
       : calculateJarSplit(points, settings);
+
+    // DB-is-truth: await award_coins (the real payout RPC — members has no
+    // spend/save/give sub-balance columns, this is the one write that
+    // actually moves money) and only patch the local balance once it's
+    // confirmed, instead of incrementing optimistically and reversing on
+    // failure. This is the highest-stakes function in this store — a failed
+    // reversal-on-error here would leave a member's on-screen balance
+    // wrong about real money.
+    const { error } = await supabase.rpc('award_coins', {
+      member_id:   userId,
+      coins_delta: points,
+      xp_delta:    xp,
+      wallet:      wallet === 'gpCoins' ? 'gp' : 'main',
+    });
+    if (error) {
+      console.warn('[choreStore] award_coins', error.message);
+      showToast("Couldn't update the balance — please try again", 'error');
+      return;
+    }
 
     const tx: PointTransaction = {
       id:               genId(),
@@ -4413,58 +4432,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       createdAt:        new Date().toISOString(),
       wallet,
     };
-
     set(s => ({ transactions: [tx, ...s.transactions] }));
-
-    // Update the member's real coin balance. There is no
-    // increment_jar_balances RPC in this database (confirmed via
-    // information_schema — it was called here for a long time, always
-    // failing silently to a console warning) and members has no
-    // spend/save/give sub-balance columns to write jar splits into anyway
-    // — award_coins (members.coins/main_coins/xp, or members.gp_coins/xp
-    // when wallet='gp') is the one RPC that actually exists and is the
-    // real payout every caller of awardPoints needs. The jar split
-    // (spend/save/give) is still computed and recorded on the
-    // point_transactions row above for reporting; only the (not currently
-    // persisted) per-jar running balance was ever missing.
-    supabase.rpc('award_coins', {
-      member_id:   userId,
-      coins_delta: points,
-      xp_delta:    xp,
-      wallet:      wallet === 'gpCoins' ? 'gp' : 'main',
-    }).then(({ error }) => {
-      if (error) {
-        console.warn('[choreStore] award_coins', error.message);
-        // Bug-hunt finding: the familyStore balance patch below runs
-        // unconditionally right after this RPC is DISPATCHED, not gated on
-        // it actually succeeding — so a genuine award_coins failure (RPC
-        // error, not a race) still left the local balance showing the
-        // increment as if it had been paid. Reverse the same delta this
-        // call applied, by decrement (not overwrite), so it can't clobber a
-        // concurrent, unrelated award that landed on this member in the
-        // meantime.
-        try {
-          const { useFamilyStore } = require('@/store/familyStore');
-          useFamilyStore.setState((s: any) => ({
-            members: s.members.map((m: any) => m.id === userId
-              ? wallet === 'gpCoins'
-                ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) - points), xp: Math.max(0, (m.xp ?? 0) - xp) }
-                : { ...m, coins: Math.max(0, (m.coins ?? 0) - points),
-                    mainCoins: Math.max(0, (m.mainCoins ?? 0) - points),
-                    xp: Math.max(0, (m.xp ?? 0) - xp) }
-              : m),
-          }));
-        } catch { /* familyStore not mounted — nothing to roll back on-screen */ }
-      }
-    });
 
     // The RPC above is the source of truth in Postgres, but familyStore's
     // in-memory members array (what every balance display actually reads)
-    // is only ever refetched once at app boot — nothing here used to patch
-    // it, so an approved quest's payout was invisible on-screen until a
-    // full reload. Apply the same delta locally, by increment (not by
-    // overwriting with a snapshot), so it can't clobber a concurrent award
-    // from another device.
+    // is only ever refetched once at app boot — patch it now that the RPC
+    // is confirmed, by increment (not by overwriting with a snapshot), so
+    // it can't clobber a concurrent award from another device.
     try {
       const { useFamilyStore } = require('@/store/familyStore');
       useFamilyStore.setState((s: any) => ({

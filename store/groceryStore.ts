@@ -387,21 +387,20 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       created_at:       now,
     };
 
-    const optimistic: GroceryItem = {
+    // DB-is-truth: await the insert before adding the item to local state.
+    const { error } = await supabase.from('grocery_items').insert(row);
+    if (error) {
+      console.warn('[groceryStore] addItem error', error);
+      return null;
+    }
+    const created: GroceryItem = {
       id, familyId: params.familyId, name: params.name,
       quantity: params.quantity, category: params.category,
       storePreference: params.storePreference, addedBy: params.addedBy,
       isBought: false, notes: params.notes, aiGenerated: params.aiGenerated ?? false,
       createdAt: now,
     };
-    set(s => ({ items: [optimistic, ...s.items] }));
-
-    const { error } = await supabase.from('grocery_items').insert(row);
-    if (error) {
-      console.warn('[groceryStore] addItem error', error);
-      set(s => ({ items: s.items.filter(i => i.id !== id) }));
-      return null;
-    }
+    set(s => ({ items: [created, ...s.items] }));
 
     // A new item tagged to a store that already has an open (draft or
     // active) trip should show up in that trip immediately — a partner
@@ -418,7 +417,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       if (openRun) {
         const { error: joinError } = await supabase.from('grocery_run_items')
           .upsert({ run_id: openRun.id, item_id: id, checked_in_run: false }, { onConflict: 'run_id,item_id' });
-        if (joinError) console.warn('[groceryStore] addItem auto-join error', joinError);
+          if (joinError) console.warn('[groceryStore] addItem auto-join error', joinError);
 
         // A push, not just the realtime subscription the comment above
         // relies on — that only helps if the shopper has RunDetailSheet
@@ -442,29 +441,33 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       }
     }
 
-    return optimistic;
+    return created;
   },
 
   updateItem: async (itemId, patch) => {
-    set(s => ({ items: s.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }));
     const row: Record<string, unknown> = {};
     if ('quantity' in patch) row.quantity = patch.quantity ?? null;
     if ('category' in patch) row.category = patch.category ?? null;
     if ('storePreference' in patch) row.store_preference = patch.storePreference ?? null;
     if ('notes' in patch) row.notes = patch.notes ?? null;
+    // DB-is-truth: await the write before reflecting it locally — was
+    // optimistic (set immediately, no rollback on failure).
     const { error } = await supabase.from('grocery_items').update(row).eq('id', itemId);
-    if (error) console.warn('[groceryStore] updateItem error', error);
+    if (error) { console.warn('[groceryStore] updateItem error', error); return; }
+    set(s => ({ items: s.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }));
   },
 
   removeItem: async (itemId) => {
+    const { error } = await supabase.from('grocery_items').delete().eq('id', itemId);
+    if (error) { console.warn('[groceryStore] removeItem error', error); return; }
     set(s => ({ items: s.items.filter(i => i.id !== itemId) }));
-    await supabase.from('grocery_items').delete().eq('id', itemId);
   },
 
   buyItem: async (itemId, memberId) => {
     const now = new Date().toISOString();
+    const { error } = await supabase.from('grocery_items').update({ is_bought: true, bought_by: memberId, bought_at: now }).eq('id', itemId);
+    if (error) { console.warn('[groceryStore] buyItem error', error); return; }
     set(s => ({ items: s.items.filter(i => i.id !== itemId) }));
-    await supabase.from('grocery_items').update({ is_bought: true, bought_by: memberId, bought_at: now }).eq('id', itemId);
   },
 
   restoreItem: async (itemId) => {
@@ -493,12 +496,13 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     // canonical source for any other/future consumer) never reflected the
     // is_returning flag itself. Patch it here so the store stays correct
     // regardless of what any particular screen happens to re-fetch.
+    const { error } = await supabase.from('grocery_items')
+      .update({ is_returning: true, return_quest_id: questId })
+      .in('id', itemIds);
+    if (error) { console.warn('[groceryStore] markReturning error', error); return; }
     set(s => ({
       items: s.items.map(i => itemIds.includes(i.id) ? { ...i, isReturning: true, returnQuestId: questId } : i),
     }));
-    await supabase.from('grocery_items')
-      .update({ is_returning: true, return_quest_id: questId })
-      .in('id', itemIds);
   },
 
   // ── Runs ──────────────────────────────────────────────────────────────────
@@ -520,20 +524,20 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       created_at:       now,
     };
 
-    const optimistic: GroceryRun = {
+    // DB-is-truth: await the insert before adding the run to local state —
+    // was optimistic-insert-then-rollback-on-failure.
+    const { error } = await supabase.from('grocery_runs').insert(row);
+    if (error) {
+      console.warn('[groceryStore] createRun error', error);
+      return null;
+    }
+    const created: GroceryRun = {
       id, familyId: params.familyId, name: params.name, store: params.store,
       status: 'draft', shopperId: params.shopperId, linkedEventId: params.linkedEventId,
       linkedQuestId: params.linkedQuestId, plannedAt: params.plannedAt,
       createdBy: params.createdBy, createdAt: now,
     };
-    set(s => ({ runs: [optimistic, ...s.runs] }));
-
-    const { error } = await supabase.from('grocery_runs').insert(row);
-    if (error) {
-      console.warn('[groceryStore] createRun error', error);
-      set(s => ({ runs: s.runs.filter(r => r.id !== id) }));
-      return null;
-    }
+    set(s => ({ runs: [created, ...s.runs] }));
 
     // Was: every trip started empty — even items already explicitly tagged
     // with this exact store's name had to be manually re-added one at a
@@ -556,12 +560,13 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       if (joinError) console.warn('[groceryStore] createRun auto-join error', joinError);
     }
 
-    return optimistic;
+    return created;
   },
 
   startRun: async (runId, shopperId) => {
+    const { error } = await supabase.from('grocery_runs').update({ status: 'active', shopper_id: shopperId }).eq('id', runId);
+    if (error) { console.warn('[groceryStore] startRun error', error); return; }
     set(s => ({ runs: s.runs.map(r => r.id === runId ? { ...r, status: 'active', shopperId } : r) }));
-    await supabase.from('grocery_runs').update({ status: 'active', shopper_id: shopperId }).eq('id', runId);
     // Best-effort — a partner not knowing shopping started shouldn't block
     // the trip itself. Was: no signal at all that shopping had begun; a
     // partner would only find out by opening the app and checking
@@ -603,8 +608,9 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
 
   completeRun: async (runId) => {
     const now = new Date().toISOString();
+    const { error: completeError } = await supabase.from('grocery_runs').update({ status: 'done', completed_at: now }).eq('id', runId);
+    if (completeError) { console.warn('[groceryStore] completeRun error', completeError); return; }
     set(s => ({ runs: s.runs.map(r => r.id === runId ? { ...r, status: 'done', completedAt: now } : r) }));
-    await supabase.from('grocery_runs').update({ status: 'done', completed_at: now }).eq('id', runId);
     // Mark checked items as bought. Was selecting is_returning from
     // grocery_run_items to skip "returning" items — that column only ever
     // existed on grocery_items (set later, by markReturning, once an item
@@ -646,10 +652,11 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   },
 
   deleteRun: async (runId) => {
-    set(s => ({ runs: s.runs.filter(r => r.id !== runId) }));
     // grocery_items are never deleted here — returning items naturally stay on the list
     await supabase.from('grocery_run_items').delete().eq('run_id', runId);
-    await supabase.from('grocery_runs').delete().eq('id', runId);
+    const { error } = await supabase.from('grocery_runs').delete().eq('id', runId);
+    if (error) { console.warn('[groceryStore] deleteRun error', error); return; }
+    set(s => ({ runs: s.runs.filter(r => r.id !== runId) }));
   },
 
   // ── Run items ─────────────────────────────────────────────────────────────

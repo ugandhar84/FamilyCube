@@ -4955,22 +4955,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // still true) BEFORE touching local state, instead of writing
       // optimistically first and only finding out about the race after.
       console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED); claiming chore ${choreId} via claim_pool_quest`);
-      supabase.rpc('claim_pool_quest', { p_chore_id: choreId, p_member_id: finalAssignedTo }).then(({ data, error }) => {
-        const claimed = !error && (Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed);
-        if (!claimed) {
-          console.warn(`[choreStore] addParentQuest PULL — chore ${choreId} claim failed (already taken or error: ${error?.message ?? 'n/a'}); reverting assignment ${assignment.id}`);
-          set(s => ({ parentAssignments: s.parentAssignments.filter(a => a.id !== assignment.id) }));
-          dbUpdate('parent_quest_assignments', assignment.id, { status: 'COMPLETED' });
-          showToast('Someone else already took that', 'info');
-          get().syncFromDB(true);
-          return;
-        }
+      const { data, error } = await supabase.rpc('claim_pool_quest', { p_chore_id: choreId, p_member_id: finalAssignedTo });
+      const claimed = !error && (Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed);
+      if (!claimed) {
+        console.warn(`[choreStore] addParentQuest PULL — chore ${choreId} claim failed (already taken or error: ${error?.message ?? 'n/a'}); reverting assignment ${assignment.id}`);
+        set(s => ({ parentAssignments: s.parentAssignments.filter(a => a.id !== assignment.id) }));
+        await dbUpdate('parent_quest_assignments', assignment.id, { status: 'COMPLETED' });
+        showToast('Someone else already took that', 'info');
+        await get().syncFromDB(true);
+      } else {
         // Claim landed — now safe to reflect it in local state; syncFromDB
         // will also pick up the RPC's own writes (assigned_to_id/is_pool/
         // status) on its next pass, this just avoids a UI flicker/delay.
         set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: finalAssignedTo, status: 'in_progress', isPool: false } : c) }));
         AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-      });
+      }
     } else if (chore.assignedToId) {
       // A RE-delegation (DelegateSheet reassigning a chore that was already
       // assigned to someone via a PRIOR cycle) left the chore's own

@@ -981,17 +981,17 @@ interface ChoreState {
   // migration 20260908150000_redo_dispute_rpcs.sql.
   disputeRedo:              (choreId: string, memberId: string) => Promise<void>;
   resolveRedoDispute:       (choreId: string, reviewerId: string, pay: boolean) => Promise<void>;
-  instantCompleteChore:     (choreId: string, childId: string) => void;
-  startGrandparentQuest:    (choreId: string, childId: string) => void;
-  submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
+  instantCompleteChore:     (choreId: string, childId: string) => Promise<void>;
+  startGrandparentQuest:    (choreId: string, childId: string) => Promise<void>;
+  submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
 
   // ── GP errand receipt ─────────────────────────────────────────────────────
   // Scenario 1.6 — claimGPErrand no longer claims outright; it records an
   // OFFER (status 'gp_offer_pending', gpOfferById set) that a parent must
   // Accept or Decline before assignedToId/status:'in_progress' are set. See
   // acceptGPOffer/declineGPOffer/withdrawGPOffer below.
-  claimGPErrand:           (choreId: string, gpMemberId: string) => void;
-  setGpWithdrawn:          (choreId: string, gpMemberId: string, withdrawn: boolean) => void;
+  claimGPErrand:           (choreId: string, gpMemberId: string) => Promise<void>;
+  setGpWithdrawn:          (choreId: string, gpMemberId: string, withdrawn: boolean) => Promise<void>;
   offerChoreHandoff:       (choreId: string, toMemberId: string, byMemberId: string, reason?: string) => void;
   acceptChoreHandoff:      (choreId: string, memberId: string) => void;
   declineChoreHandoff:     (choreId: string, memberId: string) => void;
@@ -2780,33 +2780,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   // Citizenship 0-pt tasks: tap = immediate complete, no review needed
-  instantCompleteChore: (choreId, childId) => {
+  instantCompleteChore: async (choreId, childId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'citizenship') return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
     const now = new Date().toISOString();
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:      'completed',
       approvedAt:  now,
       submittedAt: now,
     });
   },
 
-  startGrandparentQuest: (choreId, childId) => {
+  startGrandparentQuest: async (choreId, childId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'grandparent_quest' || chore.status !== 'todo') return;
     if (chore.assignedToId && chore.assignedToId !== childId) return; // already claimed by sibling
     // Claim clears pool flag so first-come wins permanently.
-    get().updateChore(choreId, { status: 'in_progress', assignedToId: childId, isPool: false });
+    await get().updateChore(choreId, { status: 'in_progress', assignedToId: childId, isPool: false });
     showToast("You're on it ✓");
   },
 
-  submitGrandparentQuest: (choreId, opts) => {
+  submitGrandparentQuest: async (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'grandparent_quest') return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
     const now = new Date().toISOString();
-    get().updateChore(choreId, {
+    await get().updateChore(choreId, {
       status:             'pending_grandparent_approval',
       submissionNote:     opts?.note,
       submissionPhotoUrl: opts?.photoUrl,
@@ -2825,54 +2825,37 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // chore stays unassigned (assignedToId untouched) but moves to
   // 'gp_offer_pending' with gpOfferById recording who offered, and parents
   // get notified to Accept/Decline. See acceptGPOffer/declineGPOffer below.
-  claimGPErrand: (choreId, gpMemberId) => {
+  claimGPErrand: async (choreId, gpMemberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.inviteGrandparents || chore.status !== 'todo') return;
 
-    // Now backed by the claim_gp_errand Postgres RPC (see migration
-    // 20260905150000_fix_request_redo_status_and_wire_remaining_rpcs.sql) —
-    // a real row-locked, unique-outcome CAS check-and-write instead of a
-    // client-side conditional UPDATE, plus a real activity_log audit row
-    // this write previously had none of (one of the 12 raw-write actions
-    // the original audit flagged as bypassing updateChore's logging
-    // entirely). Same optimistic-update + rollback-on-loss shape as before.
+    // DB-is-truth: await the race-safe RPC (claim_gp_errand — row-locked,
+    // unique-outcome CAS) and only reflect the offer locally once it
+    // actually won — was optimistic-update + rollback-on-loss, briefly
+    // showing a losing GP as having sent the offer.
+    _fetchedAt = 0;
+    const { data, error } = await supabase.rpc('claim_gp_errand', { p_chore_id: choreId, p_gp_member_id: gpMemberId });
+    if (error) {
+      console.warn('[choreStore] claimGPErrand RPC failed', error.message);
+      showToast("Couldn't send offer — please try again", 'error');
+      return;
+    }
+    const claimed = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
+    if (!claimed) {
+      // Live QA finding: this rollback previously had zero visible
+      // feedback — a losing grandparent's card just silently reverted
+      // (a console.warn only), which read as the tap having done
+      // nothing at all. The spec's own claim-race gap (#10) calls for
+      // "the second sees 'already taken'" — this toast is that signal.
+      console.warn('[choreStore] claimGPErrand lost the race on', choreId, '— another GP already offered');
+      showToast('Already taken by another grandparent', 'info');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'gp_offer_pending', gpOfferById: gpMemberId } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-    _fetchedAt = 0;
-    supabase.rpc('claim_gp_errand', { p_chore_id: choreId, p_gp_member_id: gpMemberId })
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[choreStore] claimGPErrand RPC failed', error.message);
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.gpOfferById === gpMemberId ? { ...c, status: 'todo', gpOfferById: undefined } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          showToast("Couldn't send offer — please try again", 'error');
-          return;
-        }
-        const claimed = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
-        if (!claimed) {
-          // Live QA finding: this rollback previously had zero visible
-          // feedback — a losing grandparent's card just silently reverted
-          // (a console.warn only), which read as the tap having done
-          // nothing at all. The spec's own claim-race gap (#10) calls for
-          // "the second sees 'already taken'" — this toast is that signal.
-          console.warn('[choreStore] claimGPErrand lost the race on', choreId, '— another GP already offered, rolling back local state');
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId && c.gpOfferById === gpMemberId ? { ...c, status: 'todo', gpOfferById: undefined } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          showToast('Already taken by another grandparent', 'info');
-          return;
-        }
-        showToast('Offer sent ✓');
-      });
+    showToast('Offer sent ✓');
 
     if (chore.familyId) {
       supabase.functions.invoke('quest-event-notifier', {
@@ -2896,27 +2879,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // realtime round-trip happened to land, making Pass look like a dead
   // button in the meantime. Fixed with the same optimistic-patch +
   // rollback-on-error shape claimGPErrand already uses for its own RPC.
-  setGpWithdrawn: (choreId, gpMemberId, withdrawn) => {
+  setGpWithdrawn: async (choreId, gpMemberId, withdrawn) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     const prevIds = chore.gpWithdrawnIds ?? [];
     const nextIds = withdrawn
       ? (prevIds.includes(gpMemberId) ? prevIds : [...prevIds, gpMemberId])
       : prevIds.filter(id => id !== gpMemberId);
+    const { error } = await supabase.rpc('set_gp_withdrawn', { p_chore_id: choreId, p_gp_member_id: gpMemberId, p_withdrawn: withdrawn });
+    if (error) {
+      console.warn('[choreStore] setGpWithdrawn RPC failed', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, gpWithdrawnIds: nextIds } : c),
     }));
-    supabase.rpc('set_gp_withdrawn', { p_chore_id: choreId, p_gp_member_id: gpMemberId, p_withdrawn: withdrawn })
-      .then(({ error }) => {
-        if (!error) { if (withdrawn) showToast('Passed ✓'); return; }
-        console.warn('[choreStore] setGpWithdrawn RPC failed', error.message);
-        // Roll back to the pre-tap ids so the button doesn't lie about what
-        // actually got saved.
-        set(s => ({
-          chores: s.chores.map(c => c.id === choreId ? { ...c, gpWithdrawnIds: prevIds } : c),
-        }));
-        showToast("Couldn't save — check your connection and try again", 'error');
-      });
+    if (withdrawn) showToast('Passed ✓');
   },
 
   // Master-flow "hand it to a specific person" — records an offer without

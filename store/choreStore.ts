@@ -1006,14 +1006,14 @@ interface ChoreState {
   // amount (the kid never sets one) or Declines outright (row is deleted
   // server-side, not soft-declined — a declined proposal was never a real
   // chore). See 20260907120000_kid_proposed_chore_rpcs.sql.
-  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number, dueDate?: string) => void;
-  declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
+  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number, dueDate?: string) => Promise<void>;
+  declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => Promise<void>;
   // QA punch list #2 — a claimant's response to a parent changing coins/
   // due-date underneath them (status='terms_changed', see propose_terms_
   // change RPC in updateChore above). Accept keeps the chore on the new
   // terms; reject hands it back to the pool, no reason required.
-  acceptTermsChange:       (choreId: string, memberId: string) => void;
-  rejectTermsChange:       (choreId: string, memberId: string) => void;
+  acceptTermsChange:       (choreId: string, memberId: string) => Promise<void>;
+  rejectTermsChange:       (choreId: string, memberId: string) => Promise<void>;
   withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
@@ -3217,7 +3217,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // Parent (or active temporary approver) accepts a kid's proposed chore —
   // becomes a real, live 'todo' chore assigned to whoever the kid picked,
   // with the coin reward the PARENT sets now via approve_kid_chore.
-  approveKidProposedChore: (choreId, reviewerId, coins, dueDate) => {
+  approveKidProposedChore: async (choreId, reviewerId, coins, dueDate) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_kid_proposal') return;
     if (!get().canApprove(reviewerId)) {
@@ -3226,6 +3226,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     const coinsReward = Math.max(0, Math.floor(coins) || 0);
 
+    const { error } = await supabase.rpc('approve_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_coins_reward: coinsReward, p_xp_reward: 0, p_due_date: dueDate ?? null });
+    if (error) {
+      console.warn('[choreStore] approveKidProposedChore RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
         ? { ...c, status: 'todo', coinsReward, basePoints: coinsReward, dueDate, reviewedById: reviewerId }
@@ -3233,34 +3239,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('approve_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_coins_reward: coinsReward, p_xp_reward: 0, p_due_date: dueDate ?? null })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] approveKidProposedChore RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({
-            chores: s.chores.map(c =>
-              c.id === choreId ? { ...c, status: 'pending_kid_proposal', coinsReward: chore.coinsReward, basePoints: chore.basePoints, dueDate: chore.dueDate, reviewedById: chore.reviewedById } : c
-            ),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        try {
-          const { useChatStore } = require('./chatStore');
-          if (chore.assignedToId) {
-            useChatStore.getState().sendMessage(chore.assignedToId, reviewerId,
-              `✅ "${chore.title}" was approved — ${coinsReward} coins when it's done!`);
-          }
-        } catch (e) {
-          console.warn('[choreStore] approveKidProposedChore notification failed', e);
-        }
-        showToast('Chore approved ✓');
-      });
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.assignedToId) {
+        useChatStore.getState().sendMessage(chore.assignedToId, reviewerId,
+          `✅ "${chore.title}" was approved — ${coinsReward} coins when it's done!`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] approveKidProposedChore notification failed', e);
+    }
+    showToast('Chore approved ✓');
   },
 
   // A declined proposal was never a real, live chore — decline_kid_chore
-  // deletes the row server-side. Optimistically removed locally too.
-  declineKidProposedChore: (choreId, reviewerId, reason) => {
+  // deletes the row server-side.
+  declineKidProposedChore: async (choreId, reviewerId, reason) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_kid_proposal') return;
     if (!get().canApprove(reviewerId)) {
@@ -3268,57 +3261,55 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return;
     }
 
+    const { error } = await supabase.rpc('decline_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason ?? null });
+    if (error) {
+      console.warn('[choreStore] declineKidProposedChore RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({ chores: s.chores.filter(c => c.id !== choreId) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('decline_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason ?? null })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] declineKidProposedChore RPC failed on', choreId, '— restoring local state:', error.message);
-          set(s => ({ chores: [...s.chores, chore] }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        try {
-          const { useChatStore } = require('./chatStore');
-          if (chore.createdById) {
-            useChatStore.getState().sendMessage(chore.createdById, reviewerId,
-              `"${chore.title}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
-          }
-        } catch (e) {
-          console.warn('[choreStore] declineKidProposedChore notification failed', e);
-        }
-        showToast('Declined');
-      });
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.createdById) {
+        useChatStore.getState().sendMessage(chore.createdById, reviewerId,
+          `"${chore.title}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] declineKidProposedChore notification failed', e);
+    }
+    showToast('Declined');
   },
 
-  acceptTermsChange: (choreId, memberId) => {
+  acceptTermsChange: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'terms_changed' || chore.assignedToId !== memberId) return;
 
+    const { error } = await supabase.rpc('accept_terms_change', { p_chore_id: choreId, p_member_id: memberId });
+    if (error) {
+      console.warn('[choreStore] acceptTermsChange RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'in_progress', pendingTerms: undefined } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('accept_terms_change', { p_chore_id: choreId, p_member_id: memberId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] acceptTermsChange RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({
-            chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'terms_changed', pendingTerms: chore.pendingTerms } : c),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        showToast('Still fine by you ✓');
-      });
+    showToast('Still fine by you ✓');
   },
 
-  rejectTermsChange: (choreId, memberId) => {
+  rejectTermsChange: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'terms_changed' || chore.assignedToId !== memberId) return;
 
+    const { error } = await supabase.rpc('reject_terms_change', { p_chore_id: choreId, p_member_id: memberId });
+    if (error) {
+      console.warn('[choreStore] rejectTermsChange RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — check your connection and try again", 'error');
+      return;
+    }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
         ? { ...c, status: 'todo', isPool: true, assignedToId: undefined, claimedAt: undefined, pendingTerms: undefined }
@@ -3326,34 +3317,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('reject_terms_change', { p_chore_id: choreId, p_member_id: memberId })
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[choreStore] rejectTermsChange RPC failed on', choreId, '— rolling back local state:', error.message);
-          set(s => ({
-            chores: s.chores.map(c => c.id === choreId
-              ? { ...c, status: 'terms_changed', isPool: false, assignedToId: memberId, pendingTerms: chore.pendingTerms }
-              : c),
-          }));
-          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
-          return;
-        }
-        showToast('Handed back ✓');
-        // Audit finding — the parent who proposed the terms change (coins/
-        // due-date edit on an already-claimed chore) never learned the
-        // claimant handed it back instead of accepting — they'd only see it
-        // if they happened to reopen the pool and notice it was open again.
-        const proposerId = chore.pendingTerms?.changedBy;
-        if (chore.familyId && proposerId && proposerId !== memberId) {
-          supabase.functions.invoke('family-notifier', {
-            body: {
-              type: 'chore_terms_change_rejected', familyId: chore.familyId, memberIds: [proposerId], persist: true,
-              excludeMemberId: memberId,
-              payload: { questId: choreId, questTitle: chore.title, byName: memberName(memberId) },
-            },
-          }).catch(e => console.warn('[choreStore] rejectTermsChange notify', e?.message));
-        }
-      });
+    showToast('Handed back ✓');
+    // Audit finding — the parent who proposed the terms change (coins/
+    // due-date edit on an already-claimed chore) never learned the
+    // claimant handed it back instead of accepting — they'd only see it
+    // if they happened to reopen the pool and notice it was open again.
+    const proposerId = chore.pendingTerms?.changedBy;
+    if (chore.familyId && proposerId && proposerId !== memberId) {
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          type: 'chore_terms_change_rejected', familyId: chore.familyId, memberIds: [proposerId], persist: true,
+          excludeMemberId: memberId,
+          payload: { questId: choreId, questTitle: chore.title, byName: memberName(memberId) },
+        },
+      }).catch(e => console.warn('[choreStore] rejectTermsChange notify', e?.message));
+    }
   },
 
   // The offering GP retracting their own offer before a parent acts on it —

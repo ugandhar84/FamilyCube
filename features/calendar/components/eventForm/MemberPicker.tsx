@@ -6,7 +6,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { f } from './styles';
 
 // ─── Multi-select member picker ────────────────────────────────────────────────
-export default function MemberPicker({ label, hint, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds }: {
+export default function MemberPicker({ label, hint, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds, showFamilyOption, onClear }: {
   label: string;
   // Shown under the label — used by EventFormModal's 'Other'/generic-fallback
   // categories to make it explicit that leaving this picker empty doesn't
@@ -19,9 +19,24 @@ export default function MemberPicker({ label, hint, selectedIds, members, onTogg
   members: any[]; onToggle: (id: string) => void; onSelectAll?: () => void;
   colors: any; isDark: boolean; siblings: string[];
   lockedIds?: string[];  // IDs that cannot be deselected
+  // Live-requested: an explicit "Family" chip for assignee pickers
+  // specifically — a chore/event with no individual assignee already
+  // behaves as family-wide (isPool for chores, visible-to-everyone for
+  // events — see AddQuestModal.tsx/HubTimelineSection.tsx's own existing
+  // logic), but leaving the picker blank read as an unfinished form
+  // rather than a deliberate "for the whole family" choice. Opt-in and
+  // off by default — a driver/helper/accompanying-adult picker must
+  // never offer this, since a ride can't be "driven by everyone."
+  showFamilyOption?: boolean;
+  // Clears every current selection — required when showFamilyOption is
+  // true (the Family chip itself calls this on tap); optional otherwise
+  // since no other caller needs a single "clear all" action distinct
+  // from individually toggling each member off.
+  onClear?: () => void;
 }) {
   const locked = lockedIds ?? [];
   const allSelected = members.length > 0 && members.every(m => selectedIds.includes(m.id));
+  const familySelected = showFamilyOption && selectedIds.length === 0;
   return (
     <View style={{ marginBottom: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: hint ? 2 : 8 }}>
@@ -39,6 +54,28 @@ export default function MemberPicker({ label, hint, selectedIds, members, onTogg
         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 8 }}>{hint}</Text>
       )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
+        {showFamilyOption && (
+          <TouchableOpacity
+            style={{ alignItems: 'center', gap: 4 }}
+            onPress={() => { console.log(`[UserAction] FORM screen=Schedule selected "Family" for "${label}" on MemberPicker [features/calendar/components/eventForm/MemberPicker.tsx]`); onClear?.(); }}
+          >
+            <View style={{
+              width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+              borderWidth: familySelected ? 2.5 : 0, borderColor: BRAND.purple,
+              backgroundColor: familySelected ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9'),
+            }}>
+              <Text style={{ fontSize: 20 }}>👨‍👩‍👧‍👦</Text>
+              {familySelected && (
+                <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '900' }}>✓</Text>
+                </View>
+              )}
+            </View>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: familySelected ? BRAND.purple : colors.textTertiary }} numberOfLines={1}>
+              Family
+            </Text>
+          </TouchableOpacity>
+        )}
         {members.map(m => {
           const sel = selectedIds.includes(m.id);
           const isLocked = locked.includes(m.id);

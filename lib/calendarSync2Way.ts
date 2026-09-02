@@ -150,18 +150,26 @@ async function ensureSyncCalendarId(): Promise<string | null> {
   }
 }
 
-function toPortable(event: FamilyEvent): { title: string; start: Date; end: Date; allDay: boolean; location?: string; notes?: string } {
+// expo-calendar's createEventAsync/updateEventAsync take startDate/endDate
+// — this previously built start/end instead, a field-name mismatch that
+// meant the native EventKit bridge never received a start date at all,
+// failing with its own "No start date has been set" error on every single
+// push since this feature was built (live-reported, surfaced only once
+// the temporary error-recording added elsewhere this session made the
+// failure visible at all — the outer catch had been swallowing it
+// silently before that).
+function toPortable(event: FamilyEvent): { title: string; startDate: Date; endDate: Date; allDay: boolean; location?: string; notes?: string } {
   const [y, m, d] = event.date.split('-').map(Number);
   if (event.allDay || !event.time) {
-    const start = new Date(y, m - 1, d);
-    const end = new Date(y, m - 1, d + 1);
-    return { title: event.title, start, end, allDay: true, location: event.location, notes: event.notes };
+    const startDate = new Date(y, m - 1, d);
+    const endDate = new Date(y, m - 1, d + 1);
+    return { title: event.title, startDate, endDate, allDay: true, location: event.location, notes: event.notes };
   }
   const [sh, sm] = event.time.split(':').map(Number);
-  const start = new Date(y, m - 1, d, sh, sm);
+  const startDate = new Date(y, m - 1, d, sh, sm);
   const [eh, em] = (event.endTime ?? event.time).split(':').map(Number);
-  const end = event.endTime ? new Date(y, m - 1, d, eh, em) : new Date(start.getTime() + 60 * 60_000);
-  return { title: event.title, start, end, allDay: false, location: event.location, notes: event.notes };
+  const endDate = event.endTime ? new Date(y, m - 1, d, eh, em) : new Date(startDate.getTime() + 60 * 60_000);
+  return { title: event.title, startDate, endDate, allDay: false, location: event.location, notes: event.notes };
 }
 
 /** FamilyCube -> device calendar. Called after a confirmed create/update/delete, same as the server-side push. */

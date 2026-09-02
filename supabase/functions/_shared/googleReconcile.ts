@@ -101,6 +101,20 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
     if (json.nextSyncToken) syncToken = json.nextSyncToken;
   } while (pageToken);
 
+  // TEMPORARY diagnostic — live-reported: deleting an event directly on
+  // Google Calendar still never reflects in the app even after the
+  // showDeleted fix + a forced sync_token reset + a throttle-bypassing
+  // manual refresh. No exception is being thrown (nothing shows up as a
+  // real connection error), so the failure is silent/logical rather than
+  // a crash — this records exactly what Google's API actually returned on
+  // the LAST poll (item count + per-item id/status) into last_error,
+  // clearly prefixed so it reads as debug output, not a real failure.
+  // Visible in Profile > Calendar Sync without needing Metro. Revert once
+  // the actual cause is found.
+  const debugSummary = `DEBUG poll@${new Date().toISOString()}: ${changedItems.length} item(s)` +
+    (changedItems.length ? ' — ' + changedItems.map((it: any) => `${it.id}:${it.status}${it.recurringEventId ? '(instance)' : ''}`).join(', ') : '');
+  await supabase.from('calendar_connections').update({ last_error: debugSummary }).eq('id', connection.id);
+
   for (const item of changedItems) {
     await reconcileOneGoogleEvent(supabase, connection, item);
   }

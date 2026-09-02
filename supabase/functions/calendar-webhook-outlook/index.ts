@@ -88,7 +88,12 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
 
   if (item['@removed']) {
     if (link) {
-      await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:outlook' }).eq('id', link.event_id);
+      // deleted_by is a real foreign key to members.id — the literal
+      // string 'external:outlook' would violate that FK on every delete,
+      // same bug just found and fixed for the Google side
+      // (googleReconcile.ts) via this session's own diagnostic logging.
+      // connection.member_id is a real, valid member id.
+      await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: connection.member_id }).eq('id', link.event_id);
       await supabase.from('event_external_links').delete().eq('id', link.id);
     }
     return;

@@ -156,7 +156,19 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     // own id IS the identity (a genuinely single event, or the master
     // itself being cancelled) should.
     if (link && item.id === identityId) {
-      const { error: updateErr } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:google' }).eq('id', link.event_id);
+      // deleted_by is a real foreign key to members.id (see the
+      // calendar_events_audit_trail migration) — the literal string
+      // 'external:google' violated that FK on every single delete,
+      // silently failing (surfaced only via this session's own debug
+      // logging: "insert or update on table calendar_events violates
+      // foreign key constraint calendar_events_deleted_by_fkey"), which
+      // is the actual reason a Google-side delete never reflected in the
+      // app despite showDeleted/sync_token/throttle all being fixed and
+      // correctly reaching this exact line. connection.member_id — the
+      // member who owns this calendar connection — is a real, valid
+      // member id and an accurate actor: it genuinely was their calendar
+      // action, just taken on Google's side instead of in-app.
+      const { error: updateErr } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: connection.member_id }).eq('id', link.event_id);
       await supabase.from('event_external_links').delete().eq('id', link.id);
       return updateErr ? `delete-failed(${updateErr.message})` : `deleted(event_id=${link.event_id})`;
     }

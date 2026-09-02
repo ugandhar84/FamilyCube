@@ -275,6 +275,18 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
           external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
         });
       }
+      // Was missing entirely — a dedup-linked event (a FamilyCube-native
+      // row matched to an incoming Google item instead of creating a
+      // second row) never got the sync badge fields stamped at all,
+      // live-reported as "there is even don't gave source of events" —
+      // the event genuinely IS synced (it has a real
+      // event_external_links row now) but showed no provider indicator
+      // on its card. Every other write path in this file stamps these
+      // four columns; this was the one exception.
+      await supabase.from('calendar_events').update({
+        last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google',
+        last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
+      }).eq('id', dupe.id);
       return `linked-to-dupe(event_id=${dupe.id})`;
     }
   }

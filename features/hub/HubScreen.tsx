@@ -137,8 +137,15 @@ export default function HubScreen() {
         // edit/delete server-side while the client's already-loaded
         // events array stayed stale until some LATER, unrelated refresh
         // happened to run (the exact race just fixed in onRefresh above,
-        // reproduced here for the passive/automatic path too).
-        await loadEvents();
+        // reproduced here for the passive/automatic path too). force:true
+        // is required here — plain loadEvents() hits selectDate's own SWR
+        // cache guard (today's date already loaded => instant no-op),
+        // which is exactly what silently swallowed this refresh before
+        // (live-reported: Google-side delete correctly removed the row
+        // server-side, confirmed via Schedule's own agenda view, yet the
+        // Hub's "Today's Timeline" card kept showing it indefinitely,
+        // because nothing ever forced a real re-fetch afterward).
+        await loadEvents(true);
         // Google Tasks is a completely separate API from Calendar (its
         // own tasks.readonly scope) — a Task created via the Calendar
         // app's "+ -> Task" flow never appears in calendar.events at all
@@ -169,7 +176,7 @@ export default function HubScreen() {
         const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
         const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
         await reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent });
-        await loadEvents();
+        await loadEvents(true);
       } catch (e) {
         console.warn('[HubScreen] Apple calendar reconcile failed', e);
       }
@@ -220,7 +227,7 @@ export default function HubScreen() {
     // DB data right back to the stale cached copy. syncFromDB already
     // rewrites AsyncStorage itself once it has fresh data, so there's
     // nothing for loadQuests to add here — drop it.
-    await Promise.all([useChoreStore.getState().syncFromDB(true), loadEvents()]);
+    await Promise.all([useChoreStore.getState().syncFromDB(true), loadEvents(true)]);
     setRefreshing(false);
   }, [familyId, activeMemberId, members]);
 

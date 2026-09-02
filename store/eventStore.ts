@@ -367,14 +367,14 @@ interface EventState {
   loaded: boolean;
 
   // API
-  selectDate:    (date: string) => Promise<void>;
+  selectDate:    (date: string, force?: boolean) => Promise<void>;
   loadMoreDay:   () => Promise<void>;
   loadStrip:     (dates: string[]) => Promise<void>;
   loadRange:     (from: string, to: string) => Promise<void>;
   prefetchDate:  (date: string) => void;
 
   // Compat shims
-  loadFromStorage: () => Promise<void>;
+  loadFromStorage: (force?: boolean) => Promise<void>;
   syncFromDB:      () => Promise<void>;
 
   // Mutations (optimistic)
@@ -1302,8 +1302,22 @@ export const useEventStore = create<EventState>((set, get) => ({
   loaded:      false, // legacy alias
 
   // ── selectDate ─────────────────────────────────────────────────────────────
-  selectDate: async (date: string) => {
-    if (date === get().currentDate && !get().dayLoading && get().dayEvents.length > 0) return;
+  selectDate: async (date: string, force?: boolean) => {
+    // Was: this SWR cache guard skipped the entire fetch — including the
+    // DB hit — whenever today's date was already loaded, no matter how
+    // stale. HubScreen's post-poll loadEvents() call (added earlier this
+    // session to fix a stale-read race) hit this exact guard and did
+    // nothing, since dayEvents was already non-empty from before the
+    // poll ran — live-reported: a Google-side delete correctly removed
+    // the row server-side (confirmed via CalendarScreen's own agenda
+    // view, which goes through a different fetch path), yet the Hub's
+    // "Today's Timeline" card kept showing the deleted event
+    // indefinitely, because nothing ever re-hit the DB for it again.
+    // force bypasses the cache/TTL check entirely for exactly this case
+    // — a caller that just ran an external sync and needs the freshest
+    // possible local state, not the merely-recent-enough one this guard
+    // was designed to satisfy for a plain screen mount.
+    if (!force && date === get().currentDate && !get().dayLoading && get().dayEvents.length > 0) return;
 
     // Cancel any in-flight request for the previous date
     _dayAbort?.abort();
@@ -1315,7 +1329,7 @@ export const useEventStore = create<EventState>((set, get) => ({
 
     // ── Serve from SWR cache ──────────────────────────────────────────────
     const cached = get()._dayCache[date];
-    const isFresh = cached && (Date.now() - cached.fetchedAt) < DAY_TTL_MS;
+    const isFresh = !force && cached && (Date.now() - cached.fetchedAt) < DAY_TTL_MS;
     if (cached) {
       set({ dayEvents: cached.events, events: cached.events, hasMore: cached.hasMore, dayLoading: isFresh ? false : true, loaded: true });
       if (isFresh) return;
@@ -1535,7 +1549,7 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   // ── Compat shims ──────────────────────────────────────────────────────────
-  loadFromStorage: async () => get().selectDate(today()),
+  loadFromStorage: async (force?: boolean) => get().selectDate(today(), force),
   syncFromDB:      async () => {
     const cur = get().currentDate || today();
     // Invalidate cache for current date so selectDate re-fetches

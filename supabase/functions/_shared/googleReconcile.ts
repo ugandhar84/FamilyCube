@@ -169,8 +169,20 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
       // member id and an accurate actor: it genuinely was their calendar
       // action, just taken on Google's side instead of in-app.
       const { error: updateErr } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: connection.member_id }).eq('id', link.event_id);
+      // Was unconditional — when the calendar_events update failed (the
+      // deleted_by FK violation just fixed), this still ran and destroyed
+      // the ONLY record connecting this Google event to its local row.
+      // The next poll then correctly reported the same cancelled item as
+      // no-link-found forever after, with the local row permanently
+      // orphaned (never marked deleted, unreachable via any future
+      // Google sync since nothing links to it any more) — live-confirmed:
+      // a 261-item full-sync dump where every single already-seen
+      // cancelled event showed no-link-found, including the two events
+      // from this session's own delete tests. Only remove the link once
+      // the local row has actually been marked deleted.
+      if (updateErr) return `delete-failed(${updateErr.message})`;
       await supabase.from('event_external_links').delete().eq('id', link.id);
-      return updateErr ? `delete-failed(${updateErr.message})` : `deleted(event_id=${link.event_id})`;
+      return `deleted(event_id=${link.event_id})`;
     }
     return link ? `skip-not-identity(item.id=${item.id},identityId=${identityId})` : `no-link-found(external_event_id=${identityId}${linkError ? ',err=' + linkError.message : ''})`;
   }

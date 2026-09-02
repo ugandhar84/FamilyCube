@@ -261,10 +261,23 @@ export async function reconcileAppleCalendar(
     const map = await loadMap(memberId);
     const reverseMap = new Map(Object.entries(map).map(([fcId, devId]) => [devId, fcId]));
 
+    // Was 30 days ahead — live-reported: an event added to the device
+    // calendar for November (2+ months out from a September sweep) never
+    // showed up in the app at all, correctly per the old window but not
+    // what's actually wanted. Widened to 365 days to match Outlook's own
+    // inbound delta window (calendar-webhook-outlook's initial
+    // calendarView/delta call), so all three providers cover roughly the
+    // same forward range. Unlike Google (which only bounds its FIRST
+    // full sync to 90 days — every poll after that uses an unbounded
+    // sync_token with no date limit at all), this sweep has no
+    // equivalent "unlimited via token" mechanism; it's a fresh windowed
+    // query every time, so this window is the real, permanent limit —
+    // there's no cheaper way to ask EventKit "what changed" the way a
+    // server-side delta/sync-token API can.
     const windowStart = new Date();
     windowStart.setDate(windowStart.getDate() - 1);
     const windowEnd = new Date();
-    windowEnd.setDate(windowEnd.getDate() + 30);
+    windowEnd.setDate(windowEnd.getDate() + 365);
     const deviceEvents = await Calendar.getEventsAsync([calendarId], windowStart, windowEnd);
 
     for (const deviceEvent of deviceEvents) {

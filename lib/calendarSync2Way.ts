@@ -266,7 +266,6 @@ export async function reconcileAppleCalendar(
     const windowEnd = new Date();
     windowEnd.setDate(windowEnd.getDate() + 30);
     const deviceEvents = await Calendar.getEventsAsync([calendarId], windowStart, windowEnd);
-    const deviceEventIds = new Set(deviceEvents.map(e => e.id));
 
     for (const deviceEvent of deviceEvents) {
       const familyEventId = reverseMap.get(deviceEvent.id);
@@ -311,10 +310,33 @@ export async function reconcileAppleCalendar(
       }
     }
 
-    // Anything in the map whose device event no longer exists was deleted
-    // directly on-device — remove the local FamilyCube event to match.
+    // Was: anything in the map whose device event wasn't found in THIS
+    // sweep's date window (-1 to +30 days) was treated as "deleted
+    // directly on-device" and the local FamilyCube row was deleted to
+    // match. Live-reported data-loss bug: editing just the TIME on an
+    // Apple Calendar event made the whole event disappear from the app —
+    // getEventsAsync only returns events whose occurrence falls inside
+    // the queried window, so an edit that shifts an event near the
+    // window's edges (or any EventKit id change some edits can trigger)
+    // read identically to "gone" here, with no way to tell the two apart
+    // from a single windowed sweep.
+    //
+    // Fixed by checking each MISSING-from-this-sweep mapped event
+    // directly via getEventAsync(deviceId) — a per-id lookup, not a
+    // windowed query, so it can only ever be wrong if the id itself
+    // still resolves to a genuinely different (renamed-into) event,
+    // which EventKit does not do. Only delete the local row when this
+    // direct check ALSO confirms the device event is gone; skip (leave
+    // both sides alone) if the lookup still succeeds — the windowed
+    // sweep's own absence was a false positive from something outside
+    // this run's -1/+30 day range, not a real deletion.
     for (const [familyEventId, deviceId] of Object.entries(map)) {
-      if (!deviceEventIds.has(deviceId) && currentEvents.some(e => e.id === familyEventId)) {
+      if (deviceEvents.some(e => e.id === deviceId) || !currentEvents.some(e => e.id === familyEventId)) continue;
+      try {
+        await Calendar.getEventAsync(deviceId);
+        // Still resolves — genuinely not deleted, just outside this
+        // sweep's window (e.g. moved further out). Leave it alone.
+      } catch {
         callbacks.deleteEvent(familyEventId);
         delete map[familyEventId];
       }

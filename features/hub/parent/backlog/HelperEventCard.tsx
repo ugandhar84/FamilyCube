@@ -136,16 +136,21 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                       // instead of each hand-duplicating the RPC call and
                       // guessing its own local patch afterward.
                       useEventStore.getState().reassignEvent(ev.id, active.id, assigneeRole, active.id);
-                      // Was second-person ("you're off the hook") but sent
-                      // to the WHOLE family channel, not the relieved
-                      // person specifically — live-reported confusion
-                      // ("who is off the hook? Why it is on family
-                      // group"), since "you" reads as addressed to
-                      // whoever's currently reading it. Reworded for a
-                      // broadcast audience: names both people by name,
-                      // third person throughout.
-                      const msg = `✅ ${active.name.split(' ')[0]} took over "${ev.title}"${assignee.name ? ` from ${assignee.name.split(' ')[0]}` : ''}.`;
-                      useChatStore.getState().sendMessage('all', active.id, msg);
+                      // Was broadcast to the WHOLE family channel with
+                      // second-person wording ("you're off the hook") —
+                      // live-reported confusion in #all-family, since
+                      // "you" only makes sense addressed to the one
+                      // person actually being relieved, not whoever else
+                      // happens to be reading the group chat. Sent as a
+                      // direct DM to that specific person instead — a
+                      // raw member id (not 'all') routes sendMessage to a
+                      // 1:1 channel (see sendMessage's own normalization
+                      // comment in chatStore.ts), so the second-person
+                      // wording is now actually correct for its audience.
+                      if (assignee.id) {
+                        const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
+                        useChatStore.getState().sendMessage(assignee.id, active.id, msg);
+                      }
                     }},
                   ]
                 );

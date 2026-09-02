@@ -951,6 +951,60 @@ function RootNavigator() {
     return () => stopBatteryPolling();
   }, [activeMemberId]);
 
+  // External calendar sync (Google/Apple) — previously only checked on
+  // Hub/Schedule tab focus (throttled to once per 10 minutes) or an
+  // explicit pull-to-refresh, so a change made directly on Google
+  // Calendar or the device's Calendar app only ever appeared after the
+  // user manually pulled down or force-quit and relaunched (live-
+  // reported: "I want more dynamic without pull or relaunch"). Same
+  // "runs as long as the app is alive" placement as battery polling just
+  // above — a plain foreground interval, not tied to any one screen
+  // being mounted, so it keeps the local data current regardless of
+  // which tab is open. Neither Google's push webhook (confirmed
+  // non-functional on this project — see calendar-google-poll's own
+  // header comment) nor Apple's local EventKit calendar has any genuine
+  // push mechanism, so polling is the only lever available; 2 minutes
+  // is a deliberate middle ground between feeling near-instant and not
+  // hammering Google's API or draining battery on every tick. Outlook
+  // keeps using its own real webhook push and isn't polled here.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const POLL_INTERVAL_MS = 2 * 60_000;
+    let cancelled = false;
+
+    const runPoll = async () => {
+      const familyId = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
+      if (!familyId || cancelled) return;
+      try {
+        await supabase.functions.invoke('calendar-google-poll', { body: { familyId } });
+      } catch (e: any) {
+        console.warn('[_layout] calendar-google-poll (interval) failed', e?.message);
+      }
+      if (cancelled) return;
+      const member = useFamilyStore.getState().members.find(m => m.id === activeMemberId);
+      if (member?.appleCalendarSyncEnabled) {
+        try {
+          const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
+          const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+          await reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent }, { force: true });
+        } catch (e: any) {
+          console.warn('[_layout] Apple calendar reconcile (interval) failed', e?.message);
+        }
+      }
+      if (cancelled) return;
+      // force:true — a plain background poll must actually refresh
+      // whatever screen is currently visible, not silently no-op behind
+      // selectDate/loadRange's own SWR cache guards (the exact stale-read
+      // bug already fixed for Hub/Schedule's own focus-triggered polls
+      // earlier this session).
+      useEventStore.getState().loadFromStorage(true).catch(() => {});
+    };
+
+    runPoll();
+    const id = setInterval(runPoll, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeMemberId]);
+
   // Store-proximity geofences (lib/storeGeofencing.ts) — was ONLY ever
   // registered from GroceryScreen.tsx (on mount, and after pinning a new
   // store), unlike background GPS tracking's own cold-start re-check a few

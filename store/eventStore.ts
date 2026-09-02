@@ -1718,6 +1718,27 @@ export const useEventStore = create<EventState>((set, get) => ({
         events: sortByTime(s.events.map(e => e.id === id ? { ...e, ...stamped } : e)),
         rangeEvents: sortByTime(s.rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
       }));
+      // Was a bare `return` — this fast path handles the single most
+      // common real edit shape (title/date/time/location/notes only,
+      // exactly what EventFormModal's edit save sends for a plain text/
+      // time change) and skipped calendar-sync-push/Apple push entirely,
+      // since those calls only exist later in this function, after the
+      // TEXT_CHECKED_FIELDS branch's own early return. Live-reported:
+      // edited an event's time in the app, checked Google Calendar
+      // directly, the edit was never there — outbound sync silently
+      // never even attempted for the majority of real-world edits.
+      const merged = { ...prevEvent, ...stamped };
+      const familyIdFast = getFamilyId();
+      if (familyIdFast && merged.createdBy) {
+        supabase.functions.invoke('calendar-sync-push', {
+          body: { eventId: id, familyId: familyIdFast, memberId: merged.createdBy, action: 'update' },
+        }).catch(e => console.warn('[eventStore] updateEvent(text-checked) calendar-sync-push failed:', e?.message));
+      }
+      if (merged.createdBy && isAppleCalendarSyncEnabled(merged.createdBy)) {
+        import('@/lib/calendarSync2Way').then(({ pushEventToAppleCalendar }) =>
+          pushEventToAppleCalendar(merged.createdBy!, merged, id, 'update')
+        ).catch(e => console.warn('[eventStore] updateEvent(text-checked) Apple sync failed:', e?.message));
+      }
       return;
     }
     // A parent-assigned ride that gets declined shouldn't just sit there —

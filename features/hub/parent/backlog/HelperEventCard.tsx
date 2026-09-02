@@ -136,7 +136,15 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                       // instead of each hand-duplicating the RPC call and
                       // guessing its own local patch afterward.
                       useEventStore.getState().reassignEvent(ev.id, active.id, assigneeRole, active.id);
-                      const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
+                      // Was second-person ("you're off the hook") but sent
+                      // to the WHOLE family channel, not the relieved
+                      // person specifically — live-reported confusion
+                      // ("who is off the hook? Why it is on family
+                      // group"), since "you" reads as addressed to
+                      // whoever's currently reading it. Reworded for a
+                      // broadcast audience: names both people by name,
+                      // third person throughout.
+                      const msg = `✅ ${active.name.split(' ')[0]} took over "${ev.title}"${assignee.name ? ` from ${assignee.name.split(' ')[0]}` : ''}.`;
                       useChatStore.getState().sendMessage('all', active.id, msg);
                     }},
                   ]

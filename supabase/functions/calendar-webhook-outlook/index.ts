@@ -118,7 +118,7 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
     await supabase.from('calendar_events').update({
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
       all_day: patch.allDay, location: patch.location, notes: patch.notes,
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook', last_external_sync_account: connection.connected_account_email ?? null,
+      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
     }).eq('id', link.event_id);
     await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item['@odata.etag'] ?? null }).eq('id', link.id);
   } else {
@@ -128,7 +128,7 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
       all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
       type: 'event', category: 'Event',
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook', last_external_sync_account: connection.connected_account_email ?? null,
+      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
     });
     await supabase.from('event_external_links').insert({
       event_id: newId, connection_id: connection.id, external_event_id: item.id,

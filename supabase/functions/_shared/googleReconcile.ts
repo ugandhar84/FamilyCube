@@ -229,7 +229,7 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     await supabase.from('calendar_events').update({
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
       all_day: patch.allDay, location: patch.location, notes: patch.notes,
-      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
+      last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
     }).eq('id', link.event_id);
     await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item.etag ?? null }).eq('id', link.id);
     return `updated(event_id=${link.event_id})`;
@@ -285,7 +285,7 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
     all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
     type: 'event', category: 'Event',
-    last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
+    last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
   });
   await supabase.from('event_external_links').insert({
     event_id: newId, connection_id: connection.id, external_event_id: identityId,

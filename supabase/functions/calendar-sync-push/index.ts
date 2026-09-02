@@ -137,6 +137,7 @@ async function pushToProvider(
     last_external_sync_at: new Date().toISOString(),
     last_external_sync_provider: connection.provider,
     last_external_sync_account: connection.connected_account_email ?? null,
+    last_external_sync_member_id: connection.member_id,
   }).eq('id', eventId);
 }
 

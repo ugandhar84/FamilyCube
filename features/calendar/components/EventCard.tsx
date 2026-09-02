@@ -23,6 +23,7 @@ import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Animated, 
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -239,18 +240,36 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                 <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
               )}
               {/* Live-requested: "Show on the email indicator that it is
-                  coming from where" — a personal-calendar inbound sync
-                  (calendar-webhook-google/outlook) marks which connected
-                  account last changed this event, so it doesn't look like
-                  an unexplained edit inside FamilyCube itself. */}
-              {!!ev.lastExternalSyncProvider && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 9 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : ev.lastExternalSyncProvider === 'apple' ? '⬜️' : '🟩'}</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
-                    {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : ev.lastExternalSyncProvider === 'apple' ? 'Apple Calendar' : 'Outlook')}
-                  </Text>
-                </View>
-              )}
+                  coming from where" — a personal-calendar sync (inbound
+                  Google/Outlook/Apple, or an app-created event pushed
+                  out) marks which connected account last touched this
+                  event, so it doesn't look like an unexplained edit
+                  inside FamilyCube itself. Was an emoji square + raw
+                  email/generic provider name — redone with the real
+                  provider glyph (Ionicons logo-google/logo-apple/mail,
+                  matching CalendarSyncScreen's own icon choices) plus
+                  the syncing MEMBER's initials (e.g. "UN" for Ugandhar)
+                  instead of an email string, resolved from
+                  lastExternalSyncMemberId. Kids/teens don't care whose
+                  personal calendar connection something came from —
+                  parent-only, same isViewerParent gate the declined-
+                  driver treatment above already uses. */}
+              {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+                const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
+                const initials = syncMember
+                  ? syncMember.name.trim().split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase()
+                  : null;
+                const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
+                  : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
+                    <Ionicons name={iconName as any} size={10} color={colors.textSecondary} />
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                      {initials ?? (ev.lastExternalSyncProvider === 'google' ? 'Google' : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook')}
+                    </Text>
+                  </View>
+                );
+              })()}
             </View>
           </View>
           {/* "For" + accompanied-by/driver avatars, overlapped into one

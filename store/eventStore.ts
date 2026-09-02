@@ -211,6 +211,12 @@ export interface FamilyEvent {
   // provider twice (a work Gmail and a separate personal Gmail). Live-
   // requested: "we can show alias name of that account."
   lastExternalSyncAccount?: string;
+  // Live-requested: the "synced from X" badge should show a real provider
+  // icon + the FAMILY MEMBER's initials (e.g. "UN" for Ugandhar), not a
+  // raw email — resolved client-side from this id via FamilyAvatar's own
+  // initials logic. Also the only "whose" signal Apple sync has at all,
+  // since a device-local EventKit calendar has no email/account concept.
+  lastExternalSyncMemberId?: string;
 }
 
 // Scenario 5.5 generalizes 2.6's rule to "any medical/health-tagged item,"
@@ -664,6 +670,7 @@ export function fromRow(row: any): FamilyEvent {
     lastExternalSyncAt:       row.last_external_sync_at ?? undefined,
     lastExternalSyncProvider: row.last_external_sync_provider ?? undefined,
     lastExternalSyncAccount: row.last_external_sync_account ?? undefined,
+    lastExternalSyncMemberId: row.last_external_sync_member_id ?? undefined,
     linkedLegId:            row.linked_leg_id ?? undefined,
   };
 }

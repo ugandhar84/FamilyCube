@@ -304,7 +304,13 @@ export async function reconcileAppleCalendar(
       // correct provider). Stamping 'apple' here, always, means a genuine
       // Apple-originated create/update can no longer inherit a stale
       // label from a different provider.
-      const syncFields = { lastExternalSyncProvider: 'apple' as const, lastExternalSyncAccount: undefined };
+      // lastExternalSyncMemberId (paired with lastExternalSyncProvider)
+      // lets the badge show the actual FAMILY MEMBER's initials instead
+      // of a raw email — Apple has no email/account concept at all
+      // (device-local EventKit calendar), so memberId (whoever's device
+      // this sweep is running for) is the only meaningful "whose" signal
+      // available for this provider.
+      const syncFields = { lastExternalSyncProvider: 'apple' as const, lastExternalSyncAccount: undefined, lastExternalSyncMemberId: memberId };
 
       if (familyEventId) {
         const localEvent = currentEvents.find(e => e.id === familyEventId);

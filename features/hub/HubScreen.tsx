@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
@@ -75,7 +76,19 @@ export default function HubScreen() {
   // FamilyCube-side edit) only becomes visible on the next of these
   // checks, which is an acceptable trade for not hammering the FreeBusy
   // API on every Hub focus.
-  useEffect(() => {
+  //
+  // Was a plain useEffect keyed on [familyId] — Expo Router's tab
+  // navigator keeps HubScreen MOUNTED across tab switches by default, so
+  // this only ever ran once per app session (or once per familyId
+  // change), never on returning to the Hub tab, despite its own comment
+  // claiming "reactively whenever the Hub is opened." useFocusEffect
+  // actually re-runs on every tab focus; the existing throttle already
+  // caps how often the real network call fires, so this only changes
+  // "once ever" into "at most every 10 minutes, genuinely on return to
+  // Hub" (live-reported: an edit made directly on Google Calendar was
+  // confirmed applied server-side but never appeared in the app without
+  // an explicit pull-to-refresh).
+  useFocusEffect(useCallback(() => {
     if (!familyId) return;
     const THROTTLE_MS = 10 * 60_000;
     const key = `calendar_freebusy_last_sync_${familyId}`;
@@ -92,19 +105,21 @@ export default function HubScreen() {
         console.warn('[HubScreen] freebusy throttle check failed', e);
       }
     })();
-  }, [familyId]);
+  }, [familyId]));
 
   // Personal Google connections' inbound sync — Google's channels.watch
   // push requires the webhook domain to be verified in Search Console
   // under the same Cloud project as the OAuth client, which isn't
   // achievable on a supabase.co domain we don't control DNS for (confirmed
   // live: watch registration succeeds but Google never actually delivers
-  // a push here). Polling on the same reactive-on-Hub-open + 10-minute
+  // a push here). Polling on the same reactive-on-Hub-focus + 10-minute
   // throttle pattern as the FreeBusy sync above is the real inbound-sync
   // path — sync_token keeps each poll cheap. Outlook keeps its own real
   // push subscription (no equivalent domain requirement), so this is
-  // Google-only.
-  useEffect(() => {
+  // Google-only. Same useFocusEffect fix as the FreeBusy check above —
+  // this previously only ran once per app session, not on every return
+  // to the Hub tab.
+  useFocusEffect(useCallback(() => {
     if (!familyId) return;
     const THROTTLE_MS = 10 * 60_000;
     const key = `calendar_google_poll_last_sync_${familyId}`;
@@ -115,8 +130,15 @@ export default function HubScreen() {
         if (last && Date.now() - Number(last) < THROTTLE_MS) return;
         await AsyncStorage.setItem(key, String(Date.now()));
         const { supabase } = await import('@/lib/supabase');
-        supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
+        await supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
           .catch(e => console.warn('[HubScreen] calendar-google-poll failed', e?.message));
+        // loadEvents() re-reads calendar_events AFTER the poll's own write
+        // completes — without this, the poll could correctly apply an
+        // edit/delete server-side while the client's already-loaded
+        // events array stayed stale until some LATER, unrelated refresh
+        // happened to run (the exact race just fixed in onRefresh above,
+        // reproduced here for the passive/automatic path too).
+        await loadEvents();
         // Google Tasks is a completely separate API from Calendar (its
         // own tasks.readonly scope) — a Task created via the Calendar
         // app's "+ -> Task" flow never appears in calendar.events at all
@@ -130,14 +152,15 @@ export default function HubScreen() {
         console.warn('[HubScreen] google poll throttle check failed', e);
       }
     })();
-  }, [familyId]);
+  }, [familyId, loadEvents]));
 
   // Apple/EventKit 2-way sync's inbound half — no push/webhook mechanism
   // exists for a local device calendar, so this reconciles on foreground
   // instead (lib/calendarSync2Way.ts's own throttle keeps this to once
-  // per 15 minutes per member even though the effect itself re-runs on
-  // every Hub mount/activeMemberId change).
-  useEffect(() => {
+  // per 15 minutes per member). Was a plain useEffect — same
+  // mount-only-not-focus-reactive bug as the Google/FreeBusy checks
+  // above, fixed the same way with useFocusEffect.
+  useFocusEffect(useCallback(() => {
     if (!activeMemberId || !familyId) return;
     const active = members.find(m => m.id === activeMemberId);
     if (!active?.appleCalendarSyncEnabled) return;
@@ -146,11 +169,12 @@ export default function HubScreen() {
         const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
         const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
         await reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent });
+        await loadEvents();
       } catch (e) {
         console.warn('[HubScreen] Apple calendar reconcile failed', e);
       }
     })();
-  }, [activeMemberId, familyId]);
+  }, [activeMemberId, familyId, members, loadEvents]));
 
   useEffect(() => {
     const id = setInterval(() => setClock(fmtClock()), 30_000);
@@ -159,6 +183,36 @@ export default function HubScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Was: calendar-google-poll/reconcileAppleCalendar ran in Promise.all
+    // ALONGSIDE loadEvents(), racing them — loadEvents() is a plain DB
+    // read that resolves almost immediately, while the poll does a real
+    // Google API round-trip first and only writes to calendar_events
+    // afterward. loadEvents() consistently won the race and refreshed the
+    // client with the PRE-update row, and nothing ever re-fetched after
+    // the poll's own write actually landed — live-confirmed: the debug
+    // log showed the poll correctly detected and applied the edit
+    // ("updated(event_id=...)"), yet the app kept showing the stale time,
+    // because it had already loaded events before that write happened.
+    // Must await the external syncs FIRST, then load local data from
+    // whatever they left behind.
+    if (familyId) {
+      try {
+        const { supabase } = await import('@/lib/supabase');
+        await supabase.functions.invoke('calendar-google-poll', { body: { familyId } });
+      } catch (e: any) {
+        console.warn('[HubScreen] manual refresh calendar-google-poll failed', e?.message);
+      }
+    }
+    const activeForRefresh = members.find(m => m.id === activeMemberId);
+    if (activeMemberId && activeForRefresh?.appleCalendarSyncEnabled && familyId) {
+      try {
+        const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
+        const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+        await reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent }, { force: true });
+      } catch (e: any) {
+        console.warn('[HubScreen] manual refresh Apple reconcile failed', e?.message);
+      }
+    }
     // loadQuests (choreAdapter's loadFromStorage) only re-reads AsyncStorage
     // cache — it never hits the DB. Calling it alongside syncFromDB used to
     // race the two: loadQuests' local disk read is faster than syncFromDB's
@@ -166,32 +220,7 @@ export default function HubScreen() {
     // DB data right back to the stale cached copy. syncFromDB already
     // rewrites AsyncStorage itself once it has fresh data, so there's
     // nothing for loadQuests to add here — drop it.
-    const tasks: Promise<any>[] = [useChoreStore.getState().syncFromDB(true), loadEvents()];
-    // Google Calendar's inbound poll (see the useEffect below) is
-    // throttled to once per 10 minutes per family and silently no-ops
-    // otherwise, with no visible signal at all — indistinguishable from
-    // "still broken" when testing a fix (live-reported: deleted an event
-    // on Google Calendar, reopened the app repeatedly within that window,
-    // saw no change every time). A manual pull-to-refresh is exactly the
-    // "I want this current RIGHT NOW" gesture that should always bypass
-    // that throttle rather than silently deferring to it.
-    if (familyId) {
-      tasks.push(
-        import('@/lib/supabase').then(({ supabase }) =>
-          supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
-        ).catch(e => console.warn('[HubScreen] manual refresh calendar-google-poll failed', e?.message))
-      );
-    }
-    const activeForRefresh = members.find(m => m.id === activeMemberId);
-    if (activeMemberId && activeForRefresh?.appleCalendarSyncEnabled && familyId) {
-      tasks.push(
-        import('@/lib/calendarSync2Way').then(({ reconcileAppleCalendar }) => {
-          const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
-          return reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent }, { force: true });
-        }).catch(e => console.warn('[HubScreen] manual refresh Apple reconcile failed', e?.message))
-      );
-    }
-    await Promise.all(tasks);
+    await Promise.all([useChoreStore.getState().syncFromDB(true), loadEvents()]);
     setRefreshing(false);
   }, [familyId, activeMemberId, members]);
 

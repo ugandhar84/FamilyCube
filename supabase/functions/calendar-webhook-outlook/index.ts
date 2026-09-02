@@ -93,8 +93,16 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
       // same bug just found and fixed for the Google side
       // (googleReconcile.ts) via this session's own diagnostic logging.
       // connection.member_id is a real, valid member id.
-      await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: connection.member_id }).eq('id', link.event_id);
-      await supabase.from('event_external_links').delete().eq('id', link.id);
+      const { error: updateErr } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: connection.member_id }).eq('id', link.event_id);
+      // Only remove the link once the local row update actually
+      // succeeded — same unconditional-delete bug just found and fixed
+      // for the Google side (googleReconcile.ts), which permanently
+      // orphaned a local row (never marked deleted, unreachable via any
+      // future sync) whenever the paired update failed for any reason. A
+      // failed update here leaves the link intact so the next webhook
+      // delivery can retry the exact same event instead of losing track
+      // of it forever.
+      if (!updateErr) await supabase.from('event_external_links').delete().eq('id', link.id);
     }
     return;
   }

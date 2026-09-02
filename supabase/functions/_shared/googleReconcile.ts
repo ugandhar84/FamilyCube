@@ -13,9 +13,11 @@ import { googleBodyToPortablePatch } from './calendarFieldMapping.ts';
 export async function reconcileGoogleChanges(supabase: any, connection: CalendarConnectionRow): Promise<void> {
   const accessToken = await getValidAccessToken(supabase, connection);
   const calendarId = encodeURIComponent(connection.external_calendar_id ?? 'primary');
+  const startingSyncToken = connection.sync_token;
   let syncToken = connection.sync_token;
   let pageToken: string | undefined;
   const changedItems: any[] = [];
+  let got410 = false;
 
   do {
     const params = new URLSearchParams();
@@ -91,6 +93,7 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (res.status === 410) {
+      got410 = true;
       await supabase.from('calendar_connections').update({ sync_token: null }).eq('id', connection.id);
       return reconcileGoogleChanges(supabase, { ...connection, sync_token: null });
     }
@@ -117,7 +120,14 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
     const outcome = await reconcileOneGoogleEvent(supabase, connection, item);
     outcomes.push(`${item.id}:${item.status}${item.recurringEventId ? '(instance)' : ''} -> ${outcome}`);
   }
-  const debugSummary = `DEBUG poll@${new Date().toISOString()}: ${changedItems.length} item(s)` +
+  // Also captures the sync_token actually used for THIS request (vs. the
+  // fresh one Google returned) and calendar_id — live-reported: a
+  // genuinely new event created on the connected account's own primary
+  // calendar, well within the sync window, waited over a minute, still
+  // reported as "0 items." Need to see whether this poll used a stale
+  // token, a wrong calendar id, or genuinely got an empty delta back
+  // from Google itself.
+  const debugSummary = `DEBUG poll@${new Date().toISOString()} calId=${calendarId} tokenIn=${startingSyncToken?.slice(0, 12) ?? 'null'} tokenOut=${syncToken?.slice(0, 12) ?? 'null'} got410=${got410}: ${changedItems.length} item(s)` +
     (outcomes.length ? ' — ' + outcomes.join(' | ') : '');
   await supabase.from('calendar_connections').update({ last_error: debugSummary }).eq('id', connection.id);
 

@@ -205,7 +205,7 @@ export interface FamilyEvent {
   // small "updated from Google/Outlook" indicator on the event card.
   // Undefined for an event that's never had an inbound sync apply to it.
   lastExternalSyncAt?: string;
-  lastExternalSyncProvider?: 'google' | 'outlook';
+  lastExternalSyncProvider?: 'google' | 'outlook' | 'apple';
   // The connected account's own email (e.g. "priya@gmail.com") — more
   // specific than the provider alone once someone can connect the same
   // provider twice (a work Gmail and a separate personal Gmail). Live-

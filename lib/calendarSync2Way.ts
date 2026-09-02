@@ -282,6 +282,18 @@ export async function reconcileAppleCalendar(
         notes: deviceEvent.notes || undefined,
       };
 
+      // EventCard.tsx's "synced from X" badge reads lastExternalSyncProvider/
+      // lastExternalSyncAccount — Google/Outlook's own inbound reconcile
+      // (googleReconcile.ts/calendar-webhook-outlook) always stamps these,
+      // but this Apple path never did at all, live-reported as an
+      // Apple-Calendar-added event showing a "Google Calendar" badge (a
+      // stale value left over from some earlier, unrelated sync on the
+      // same row — this reconcile simply never overwrote it with the
+      // correct provider). Stamping 'apple' here, always, means a genuine
+      // Apple-originated create/update can no longer inherit a stale
+      // label from a different provider.
+      const syncFields = { lastExternalSyncProvider: 'apple' as const, lastExternalSyncAccount: undefined };
+
       if (familyEventId) {
         const localEvent = currentEvents.find(e => e.id === familyEventId);
         if (!localEvent) continue; // locally deleted already — outbound delete will clean up the device side
@@ -291,10 +303,10 @@ export async function reconcileAppleCalendar(
         // actually differs, avoiding a spurious update loop on every sweep.
         const changed = localEvent.title !== patch.title || localEvent.date !== patch.date
           || localEvent.time !== patch.time || localEvent.location !== patch.location || localEvent.notes !== patch.notes;
-        if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, patch);
+        if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, { ...patch, ...syncFields });
       } else {
         // Genuinely new — added directly in the device Calendar app.
-        const newId = await callbacks.addEvent({ ...patch, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
+        const newId = await callbacks.addEvent({ ...patch, ...syncFields, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
         map[newId] = deviceEvent.id;
       }
     }

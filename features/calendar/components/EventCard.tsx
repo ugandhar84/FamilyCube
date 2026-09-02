@@ -245,9 +245,9 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   an unexplained edit inside FamilyCube itself. */}
               {!!ev.lastExternalSyncProvider && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 9 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : '🟩'}</Text>
+                  <Text style={{ fontSize: 9 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : ev.lastExternalSyncProvider === 'apple' ? '⬜️' : '🟩'}</Text>
                   <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
-                    {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : 'Outlook')}
+                    {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : ev.lastExternalSyncProvider === 'apple' ? 'Apple Calendar' : 'Outlook')}
                   </Text>
                 </View>
               )}

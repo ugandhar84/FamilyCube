@@ -104,25 +104,27 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
   // TEMPORARY diagnostic — live-reported: deleting an event directly on
   // Google Calendar still never reflects in the app even after the
   // showDeleted fix + a forced sync_token reset + a throttle-bypassing
-  // manual refresh. No exception is being thrown (nothing shows up as a
-  // real connection error), so the failure is silent/logical rather than
-  // a crash — this records exactly what Google's API actually returned on
-  // the LAST poll (item count + per-item id/status) into last_error,
-  // clearly prefixed so it reads as debug output, not a real failure.
-  // Visible in Profile > Calendar Sync without needing Metro. Revert once
-  // the actual cause is found.
-  const debugSummary = `DEBUG poll@${new Date().toISOString()}: ${changedItems.length} item(s)` +
-    (changedItems.length ? ' — ' + changedItems.map((it: any) => `${it.id}:${it.status}${it.recurringEventId ? '(instance)' : ''}`).join(', ') : '');
-  await supabase.from('calendar_connections').update({ last_error: debugSummary }).eq('id', connection.id);
-
+  // manual refresh. Confirmed via an earlier round of this same debug
+  // line that Google DOES correctly report the item as cancelled
+  // (showDeleted is working) — so the remaining gap is inside
+  // reconcileOneGoogleEvent's own handling of that item, not the fetch.
+  // Now captures each item's own outcome string alongside its status to
+  // pin down exactly which internal branch it's landing in (e.g.
+  // "no-link-found" would mean the event_external_links row it needs
+  // never existed or doesn't match).
+  const outcomes: string[] = [];
   for (const item of changedItems) {
-    await reconcileOneGoogleEvent(supabase, connection, item);
+    const outcome = await reconcileOneGoogleEvent(supabase, connection, item);
+    outcomes.push(`${item.id}:${item.status}${item.recurringEventId ? '(instance)' : ''} -> ${outcome}`);
   }
+  const debugSummary = `DEBUG poll@${new Date().toISOString()}: ${changedItems.length} item(s)` +
+    (outcomes.length ? ' — ' + outcomes.join(' | ') : '');
+  await supabase.from('calendar_connections').update({ last_error: debugSummary }).eq('id', connection.id);
 
   if (syncToken) await supabase.from('calendar_connections').update({ sync_token: syncToken }).eq('id', connection.id);
 }
 
-async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<void> {
+async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<string> {
   // A recurring Google event, expanded via singleEvents=true, returns one
   // item PER OCCURRENCE — each with its own instance id (item.id, e.g.
   // "abc123_20270513T210000Z") but also item.recurringEventId pointing
@@ -145,7 +147,7 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
   // queued in a page of results) matches that link and is skipped.
   const identityId = item.recurringEventId || item.id;
 
-  const { data: link } = await supabase.from('event_external_links')
+  const { data: link, error: linkError } = await supabase.from('event_external_links')
     .select('*').eq('connection_id', connection.id).eq('external_event_id', identityId).maybeSingle();
 
   if (item.status === 'cancelled') {
@@ -154,10 +156,11 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     // own id IS the identity (a genuinely single event, or the master
     // itself being cancelled) should.
     if (link && item.id === identityId) {
-      await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:google' }).eq('id', link.event_id);
+      const { error: updateErr } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString(), deleted_by: 'external:google' }).eq('id', link.event_id);
       await supabase.from('event_external_links').delete().eq('id', link.id);
+      return updateErr ? `delete-failed(${updateErr.message})` : `deleted(event_id=${link.event_id})`;
     }
-    return;
+    return link ? `skip-not-identity(item.id=${item.id},identityId=${identityId})` : `no-link-found(external_event_id=${identityId}${linkError ? ',err=' + linkError.message : ''})`;
   }
 
   // Already represented locally (either a genuinely one-off event we've
@@ -182,12 +185,12 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     // exception occurrence of an otherwise-unchanged series must not
     // overwrite the whole series' local row with just that one instance's
     // fields.
-    if (item.id !== identityId) return;
+    if (item.id !== identityId) return `skip-instance(item.id=${item.id})`;
     const { data: localRow } = await supabase.from('calendar_events').select('updated_at, deleted_at').eq('id', link.event_id).maybeSingle();
-    if (!localRow || localRow.deleted_at) return;
+    if (!localRow || localRow.deleted_at) return `local-row-gone(event_id=${link.event_id})`;
     const externalModified = item.updated ? new Date(item.updated).getTime() : Date.now();
     const localModified = localRow.updated_at ? new Date(localRow.updated_at).getTime() : 0;
-    if (externalModified <= localModified) return;
+    if (externalModified <= localModified) return `not-newer(ext=${externalModified},local=${localModified})`;
     const patch = googleBodyToPortablePatch(item);
     await supabase.from('calendar_events').update({
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
@@ -195,7 +198,7 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
       last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null,
     }).eq('id', link.event_id);
     await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item.etag ?? null }).eq('id', link.id);
-    return;
+    return `updated(event_id=${link.event_id})`;
   }
 
   const patch = googleBodyToPortablePatch(item);
@@ -238,7 +241,7 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
           external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
         });
       }
-      return;
+      return `linked-to-dupe(event_id=${dupe.id})`;
     }
   }
 
@@ -254,4 +257,5 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     event_id: newId, connection_id: connection.id, external_event_id: identityId,
     external_etag: item.etag ?? null, last_pulled_at: new Date().toISOString(),
   });
+  return `created(event_id=${newId},external_event_id=${identityId})`;
 }

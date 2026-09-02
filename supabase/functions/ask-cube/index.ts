@@ -1360,6 +1360,27 @@ serve(async (req) => {
     const thisWeekendSaturday = new Date(todayDate);
     thisWeekendSaturday.setDate(thisWeekendSaturday.getDate() + daysToSaturday);
     const weekendSaturdayStr = thisWeekendSaturday.toISOString().slice(0, 10);
+    // Same "resolve it yourself with no anchor was a real, reported gap"
+    // fix as thisWeekendSaturday above, generalized to every bare weekday
+    // name — live-reported: "reschedule your appointment on Monday" got a
+    // reply that correctly SAID "Aug 31" (the real upcoming Monday) but
+    // the actual propose_update tool call's date argument was "2026-10-02"
+    // — a completely different date the model computed independently and
+    // inconsistently with its own reply text. Precomputing every
+    // "upcoming <weekday>" as a literal date here, the same way today/
+    // weekendSaturdayStr already are, removes the model's own date-math
+    // as a place this class of bug can happen at all: "upcoming Monday"
+    // always means the very next Monday from today (today itself if
+    // today IS a Monday), never a week further out.
+    const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const upcomingWeekdayDates: Record<string, string> = {};
+    for (let target = 0; target < 7; target++) {
+      const daysAhead = (target - dow + 7) % 7;
+      const d = new Date(todayDate);
+      d.setDate(d.getDate() + daysAhead);
+      upcomingWeekdayDates[DOW_NAMES[target]] = d.toISOString().slice(0, 10);
+    }
+    const upcomingWeekdaysStr = DOW_NAMES.map(n => `${n}=${upcomingWeekdayDates[n]}`).join(', ');
 
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}.
 "This weekend" always means Saturday ${weekendSaturdayStr} — use this exact date for any propose_event/propose_quest/
@@ -1369,6 +1390,13 @@ a week further out). If the user says "this weekend" but the request is clearly 
 weekend" as a general statement, not a single task/event), you may reason about Sat–Sun as a range for your reply
 text, but any single date you actually WRITE to a due date/start date field must still be ${weekendSaturdayStr}
 unless the user explicitly names Sunday instead.
+A bare weekday name with no other qualifier ("Monday", "on Thursday", "by Friday") always means the UPCOMING
+occurrence of that day, precomputed here so you never have to do this date math yourself: ${upcomingWeekdaysStr}.
+Use the exact date shown for that weekday name in every date/dueDate/nearDate field you write — never recompute it
+independently, and never let your own reply TEXT name a different date than the one you actually write to the tool
+call (this exact mismatch was live-reported: a reply correctly said "Aug 31" while the tool call's date argument was
+a completely different, wrong date the model computed on its own). "Next Monday" (with "next" explicitly stated)
+means one week AFTER the upcoming Monday shown above — add 7 days to that date only when the user says "next."
 Dates and times coming back from tools are in raw machine format (YYYY-MM-DD dates, 24-hour HH:MM times) — NEVER put
 that raw format in your reply text to the user. Always convert every date/time you mention to how a person actually
 reads it: dates as "Aug 23" (add the year only if it isn't the current year), times as 12-hour with AM/PM ("9:00 PM",

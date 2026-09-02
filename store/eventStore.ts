@@ -370,7 +370,7 @@ interface EventState {
   selectDate:    (date: string, force?: boolean) => Promise<void>;
   loadMoreDay:   () => Promise<void>;
   loadStrip:     (dates: string[]) => Promise<void>;
-  loadRange:     (from: string, to: string) => Promise<void>;
+  loadRange:     (from: string, to: string, force?: boolean) => Promise<void>;
   prefetchDate:  (date: string) => void;
 
   // Compat shims
@@ -1492,11 +1492,18 @@ export const useEventStore = create<EventState>((set, get) => ({
   // is a small enough result set to fetch in one shot. SWR-cached per exact
   // [from,to] key so switching between Week's 7-day window and Agenda's
   // wider window doesn't evict each other.
-  loadRange: async (from: string, to: string) => {
+  loadRange: async (from: string, to: string, force?: boolean) => {
     const key = `${from}:${to}`;
     const cached = get()._rangeCache[key];
-    const isFresh = cached && Date.now() - cached.fetchedAt < DAY_TTL_MS;
-    if (cached) set({ rangeEvents: cached.events });
+    // force bypasses the freshness check entirely — same fix, same
+    // reasoning as selectDate's own force param: a caller that just ran
+    // an external calendar sync (Google poll, Apple reconcile) needs the
+    // freshest possible data, not merely "recent enough for a plain
+    // screen mount." Without this, a user who stayed on Schedule without
+    // navigating away could hit the same up-to-5-minute staleness window
+    // Hub's Today's Timeline card was just fixed for.
+    const isFresh = !force && cached && Date.now() - cached.fetchedAt < DAY_TTL_MS;
+    if (cached && !force) set({ rangeEvents: cached.events });
     if (isFresh) return;
 
     const fetchKey = `range:${key}`;

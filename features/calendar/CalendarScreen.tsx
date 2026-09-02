@@ -17,7 +17,8 @@
  *  - AI runs simulated conflict detection; 1-click driver swap stored back into event
  *  - Category dots on day strip: Medical=red, Work=purple, Sports=amber, School=blue
  */
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Pressable,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -712,6 +713,52 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     loadRange(from, to);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  // Same reactive-on-tab-focus external calendar sync HubScreen.tsx uses
+  // (throttled to once per 10 minutes per family) — this screen had none
+  // at all, relying purely on loadRange's own useEffects re-running when
+  // viewMode/date-window state happened to change. Live-reported: an
+  // event added directly on Google Calendar showed up correctly in
+  // Schedule but never in the Hub (now separately fixed); to actually
+  // guarantee both screens never disagree going forward, Schedule needs
+  // its own poll trigger too rather than relying on incidental re-renders
+  // to eventually catch up within the 5-minute range cache TTL.
+  useFocusEffect(useCallback(() => {
+    const familyId = activeMember?.familyId;
+    if (!familyId) return;
+    const THROTTLE_MS = 10 * 60_000;
+    const key = `calendar_google_poll_last_sync_${familyId}`;
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const last = await AsyncStorage.getItem(key);
+        if (last && Date.now() - Number(last) < THROTTLE_MS) return;
+        await AsyncStorage.setItem(key, String(Date.now()));
+        await supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
+          .catch(e => console.warn('[CalendarScreen] calendar-google-poll failed', e?.message));
+        if (activeMemberId && (activeMember as any)?.appleCalendarSyncEnabled) {
+          try {
+            const { reconcileAppleCalendar } = await import('@/lib/calendarSync2Way');
+            const { events: currentEvents, addEvent: addEv, updateEvent: updateEv, deleteEvent: deleteEv } = useEventStore.getState();
+            await reconcileAppleCalendar(activeMemberId, familyId, currentEvents, { addEvent: addEv, updateEvent: updateEv, deleteEvent: deleteEv }, { force: true });
+          } catch (e) {
+            console.warn('[CalendarScreen] Apple calendar reconcile failed', e);
+          }
+        }
+        // force:true — same reasoning as HubScreen's own fix: a plain
+        // re-call would hit loadRange's own freshness-TTL guard and
+        // silently do nothing until the cache aged out on its own.
+        if (viewMode === 'week') {
+          loadRange(toDateStr(weekCursor), toDateStr(addDays(weekCursor, 6)), true);
+        } else if (viewMode === 'agenda') {
+          loadRange(toDateStr(new Date()), toDateStr(addDays(new Date(), 60)), true);
+        }
+      } catch (e) {
+        console.warn('[CalendarScreen] google poll throttle check failed', e);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMember?.familyId, activeMemberId, viewMode, weekCursor]));
 
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
   // Net-new title/notes search — layers on top of the existing date/member/

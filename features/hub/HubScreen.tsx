@@ -166,9 +166,34 @@ export default function HubScreen() {
     // DB data right back to the stale cached copy. syncFromDB already
     // rewrites AsyncStorage itself once it has fresh data, so there's
     // nothing for loadQuests to add here — drop it.
-    await Promise.all([useChoreStore.getState().syncFromDB(true), loadEvents()]);
+    const tasks: Promise<any>[] = [useChoreStore.getState().syncFromDB(true), loadEvents()];
+    // Google Calendar's inbound poll (see the useEffect below) is
+    // throttled to once per 10 minutes per family and silently no-ops
+    // otherwise, with no visible signal at all — indistinguishable from
+    // "still broken" when testing a fix (live-reported: deleted an event
+    // on Google Calendar, reopened the app repeatedly within that window,
+    // saw no change every time). A manual pull-to-refresh is exactly the
+    // "I want this current RIGHT NOW" gesture that should always bypass
+    // that throttle rather than silently deferring to it.
+    if (familyId) {
+      tasks.push(
+        import('@/lib/supabase').then(({ supabase }) =>
+          supabase.functions.invoke('calendar-google-poll', { body: { familyId } })
+        ).catch(e => console.warn('[HubScreen] manual refresh calendar-google-poll failed', e?.message))
+      );
+    }
+    const activeForRefresh = members.find(m => m.id === activeMemberId);
+    if (activeMemberId && activeForRefresh?.appleCalendarSyncEnabled && familyId) {
+      tasks.push(
+        import('@/lib/calendarSync2Way').then(({ reconcileAppleCalendar }) => {
+          const { events, addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+          return reconcileAppleCalendar(activeMemberId, familyId, events, { addEvent, updateEvent, deleteEvent }, { force: true });
+        }).catch(e => console.warn('[HubScreen] manual refresh Apple reconcile failed', e?.message))
+      );
+    }
+    await Promise.all(tasks);
     setRefreshing(false);
-  }, []);
+  }, [familyId, activeMemberId, members]);
 
   const active   = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = active?.role === 'parent';

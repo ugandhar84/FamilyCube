@@ -419,7 +419,16 @@ export default function AskCubeProposalCard({
     borderRadius: 14, borderWidth: 1.5, borderColor: (discarded ? colors.border : accent + '40'), padding: 14, gap: 8,
     opacity: discarded ? 0.55 : 1,
   };
-  const cardPointerEvents = discarded ? ('none' as const) : undefined;
+  // Was discarded-only — an ADDED card's date/time picker and lead-time
+  // chips stayed fully interactive after confirmation, letting the user
+  // edit a proposal that had already been acted on (live-reported: the
+  // "✓ Added" checkmark showed, but the New date/On time/10m/15m/30m
+  // controls above it were still tappable). Both terminal states
+  // (created and discarded) are decisions already recorded — neither
+  // should still accept edits, matching this file's own established
+  // "added gets the same treatment as discarded" pattern everywhere else
+  // in this card.
+  const cardPointerEvents = (discarded || added) ? ('none' as const) : undefined;
 
   if (proposal.kind === 'meal') {
     const chef = memberName(members, d.chefId);

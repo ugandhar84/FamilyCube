@@ -97,6 +97,14 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
   const [recording, setRecording] = useState(false);
   const [paused, setPaused] = useState(false);
+  // Live-requested: stopping shouldn't immediately upload+analyze — the
+  // user wants a chance to review first and choose Submit, Continue
+  // Recording, or Delete. This is a PAUSE (recorder.pause(), same
+  // mechanism togglePause already uses), not a real recorder.stop() — the
+  // actual stop() only happens once Submit or Delete is chosen, since
+  // expo-audio's record()/pause() only resume-in-place on the SAME file
+  // when the recorder was paused, not once genuinely stopped.
+  const [reviewingStop, setReviewingStop] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
@@ -111,13 +119,14 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   const elapsed = recorderState.durationMillis / 1000;
   // Belt-and-suspenders wall-clock fallback — live-reported: recorderState.
   // durationMillis alone still produced "too short" on every single
-  // attempt on at least one real device, even after switching stopAndProcess
-  // to read it BEFORE calling stop() (the first, confirmed-real bug this
-  // exact symptom had). Rather than trust a single SDK-reported timing
-  // signal a second time, this now ALSO tracks how long recording has
-  // actually been running via Date.now(), refs (not state, so
-  // stopAndProcess always reads the current value with no closure/render-
-  // timing risk at all), and takes whichever of the two says MORE elapsed
+  // attempt on at least one real device, even after switching
+  // submitForAnalysis to read it BEFORE calling stop() (the first,
+  // confirmed-real bug this exact symptom had). Rather than trust a
+  // single SDK-reported timing signal a second time, this now ALSO tracks
+  // how long recording has actually been running via Date.now(), refs
+  // (not state, so submitForAnalysis always reads the current value with
+  // no closure/render-timing risk at all), and takes whichever of the two
+  // says MORE elapsed
   // time — the true duration can only be undercounted by one signal being
   // wrong, never overcounted by both being wrong in the same direction, so
   // the max of the two is always the safer answer than either alone.
@@ -232,7 +241,39 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     runAnalysis(pendingRecord, pendingRecord.file_path, true);
   };
 
-  const stopAndProcess = async () => {
+  // Tapping Stop no longer immediately uploads+analyzes — live-requested:
+  // give the user a chance to review first and choose Submit, Continue
+  // Recording, or Delete, instead of committing to the upload the instant
+  // Stop is tapped. This is a PAUSE (recorder.pause(), same mechanism
+  // togglePause already uses), not a real recorder.stop() — expo-audio's
+  // record()/pause() only resume in place on the SAME file when the
+  // recorder was paused, not once genuinely stopped, so staying paused
+  // here is what makes "Continue Recording" actually possible afterward.
+  const pauseForReview = () => {
+    recorder.pause();
+    if (pauseStartRef.current == null) pauseStartRef.current = Date.now();
+    setPaused(true);
+    setReviewingStop(true);
+  };
+
+  const resumeFromReview = () => {
+    recorder.record();
+    if (pauseStartRef.current != null) { pausedAccumRef.current += Date.now() - pauseStartRef.current; pauseStartRef.current = null; }
+    setPaused(false);
+    setReviewingStop(false);
+  };
+
+  const deleteRecording = async () => {
+    await recorder.stop();
+    setRecording(false);
+    setPaused(false);
+    setReviewingStop(false);
+    recordStartRef.current = null;
+    pauseStartRef.current = null;
+    onClose();
+  };
+
+  const submitForAnalysis = async () => {
     // Both captured BEFORE stop(), not after — recorder.currentTime read
     // AFTER await recorder.stop() resolves is unreliable (reads back
     // near-zero once the recorder has already torn down). Live-reported:
@@ -252,6 +293,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     const uri = recorder.uri;
     setRecording(false);
     setPaused(false);
+    setReviewingStop(false);
     recordStartRef.current = null;
     pauseStartRef.current = null;
     // Temporary diagnostic — kept until this is confirmed fixed on the
@@ -259,7 +301,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     // to look at instead of guessing a third time: which half of the check
     // failed (no uri at all vs. a real duration reading near-zero), and
     // what each of the two duration signals independently reported.
-    console.log('[RecordVisitSheet] stopAndProcess', { uri, dur, elapsed, wallClock: wallClockElapsedSecs(), recorderCurrentTime: recorder.currentTime });
+    console.log('[RecordVisitSheet] submitForAnalysis', { uri, dur, elapsed, wallClock: wallClockElapsedSecs(), recorderCurrentTime: recorder.currentTime });
     if (!uri || dur < 1) {
       showToast(!uri ? "Couldn't save the recording — try again" : "Recording was too short — try again", 'error');
       return;
@@ -267,6 +309,16 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
     setUploading(true);
     try {
+      // family_id here MUST match what auth resolves server-side
+      // (current_user_family_id(), which reads members.family_id for the
+      // row whose auth_user_id = auth.uid()) or medical_records_insert's
+      // RLS policy rejects the row outright ("new row violates row-level
+      // security policy") — live-reported. familyId is threaded down from
+      // hubComponents.tsx's viewerMember?.familyId, which silently became
+      // '' whenever viewerMember failed to resolve; failing loudly here
+      // with a real error instead of attempting an insert doomed to a
+      // opaque Postgres RLS rejection.
+      if (!familyId) throw new Error("Couldn't identify your family — please close and reopen this sheet.");
       const fileName = `${familyId}/${memberId}/${Date.now()}.m4a`;
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
       const binary = atob(base64);
@@ -289,7 +341,13 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         file_path: up.path, file_name: fileName.split('/').pop(), file_size: bytes.byteLength,
         ai_analyzed: false, ai_tags: [],
       }).select().single();
-      if (insErr || !rec) throw new Error(insErr?.message ?? 'Could not save the record');
+      if (insErr || !rec) {
+        // Best-effort cleanup — an insert rejected by RLS (or any other
+        // reason) shouldn't leave an orphaned blob in medical-audio with
+        // no record ever pointing to it.
+        supabase.storage.from('medical-audio').remove([up.path]).catch(() => {});
+        throw new Error(insErr?.message ?? 'Could not save the record');
+      }
 
       setUploading(false);
       setPendingRecord(rec as MedRecord);
@@ -352,6 +410,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
           try { await recorder.stop(); } catch {}
           setRecording(false);
           setPaused(false);
+          setReviewingStop(false);
           reset();
           onClose();
         } },
@@ -412,6 +471,45 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 {analyzing ? 'This can take up to a minute for longer recordings.' : ''}
               </Text>
             </View>
+          ) : recording && reviewingStop ? (
+            // Live-requested review gate — Stop no longer immediately
+            // uploads. Three real choices: submit what's recorded, keep
+            // going (resumes the SAME file via recorder.record(), same as
+            // the mid-recording Pause/Resume above), or discard entirely.
+            <View style={{ gap: 18, alignItems: 'center', paddingVertical: 12 }}>
+              <View style={{ alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
+                  {eventTitle}
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                Recording paused — review before submitting.
+              </Text>
+              <Text style={{ fontSize: 32, fontWeight: '900', color: colors.textPrimary, fontVariant: ['tabular-nums'], marginTop: -8 }}>
+                {formatElapsed(elapsed)}
+              </Text>
+              <View style={{ gap: 10, width: '100%', marginTop: 6 }}>
+                <TouchableOpacity onPress={submitForAnalysis}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.primary, paddingVertical: 14 }}>
+                  <Text style={{ color: colors.textInverse, fontWeight: '800', fontSize: 14 }}>Submit for Analysis</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={resumeFromReview}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 14 }}>
+                  <Mic size={16} color={colors.textPrimary} />
+                  <Text style={{ color: colors.textPrimary, fontWeight: '800', fontSize: 14 }}>Continue Recording</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {
+                  Alert.alert('Delete this recording?', 'This cannot be undone.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: deleteRecording },
+                  ]);
+                }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, borderWidth: 1.5, borderColor: colors.danger + '50', paddingVertical: 14 }}>
+                  <Text style={{ color: colors.danger, fontWeight: '800', fontSize: 14 }}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           ) : recording ? (
             // Live-suggested UX reference: visit context up top ("Visit
             // with Dr. X, date"), a status line, a REAL reactive waveform
@@ -462,7 +560,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                     : <Pause size={16} color={colors.textPrimary} />}
                   <Text style={{ color: colors.textPrimary, fontWeight: '800', fontSize: 14 }}>{paused ? 'Resume' : 'Pause'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={stopAndProcess}
+                <TouchableOpacity onPress={pauseForReview}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.textPrimary, paddingVertical: 14 }}>
                   <Square size={14} color={colors.background} fill={colors.background} />
                   <Text style={{ color: colors.background, fontWeight: '800', fontSize: 14 }}>Stop</Text>

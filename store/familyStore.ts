@@ -955,9 +955,24 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       const cached = raw ? (JSON.parse(raw) as FamilyMember[]) : null;
       const realAuthMemberId = user ? cached?.find(m => m.authUserId === user.id)?.id ?? null : null;
       if (cached && cached.length > 0) {
+        const resolvedActiveId = applyActive(cached, activeId, null, realAuthMemberId);
+        // Security: this resolves activeMemberId directly (not through
+        // setActiveMember), which would otherwise skip its keepGrant guard
+        // entirely — a PIN-verified grant token lives in memory only and is
+        // never re-checked here, so if this resolves to someone OTHER than
+        // whoever the current in-memory grant was minted for, a stale
+        // grant (valid up to 30 days from a much earlier PIN entry) would
+        // silently keep riding along on every request as that person,
+        // with no fresh PIN check. Live-reported: a co-parent's request
+        // got attributed to the OTHER parent this way with no PIN
+        // re-entry. Clearing here mirrors setActiveMember's own guard.
+        const keepGrant = get().activeMemberGrantToken && resolvedActiveId === get().activeMemberGrantMemberId;
         set({
           members: cached,
-          activeMemberId: applyActive(cached, activeId, null, realAuthMemberId),
+          activeMemberId: resolvedActiveId,
+          activeMemberGrantToken: keepGrant ? get().activeMemberGrantToken : null,
+          activeMemberGrantExpiresAt: keepGrant ? get().activeMemberGrantExpiresAt : null,
+          activeMemberGrantMemberId: keepGrant ? get().activeMemberGrantMemberId : null,
           loaded: true,
           familyLoadStatus: 'confirmed',
         });
@@ -1063,10 +1078,22 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           }).catch(() => {});
         }
       }
-      set({
-        members,
-        activeMemberId: applyActive(members, activeId, get().activeMemberId),
-      });
+      {
+        const resolvedActiveId = applyActive(members, activeId, get().activeMemberId);
+        // Same grant-clearing guard as loadFromStorage's own call above —
+        // syncFromDB runs on every members-realtime update and app
+        // foreground, not just boot, so this direct set() needed the same
+        // fix to stop a stale in-memory PIN grant from silently riding
+        // along for a member other than the one it was minted for.
+        const keepGrant = get().activeMemberGrantToken && resolvedActiveId === get().activeMemberGrantMemberId;
+        set({
+          members,
+          activeMemberId: resolvedActiveId,
+          activeMemberGrantToken: keepGrant ? get().activeMemberGrantToken : null,
+          activeMemberGrantExpiresAt: keepGrant ? get().activeMemberGrantExpiresAt : null,
+          activeMemberGrantMemberId: keepGrant ? get().activeMemberGrantMemberId : null,
+        });
+      }
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(members));
 
       // Warm up custom category + suggestion caches in background

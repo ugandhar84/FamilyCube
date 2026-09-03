@@ -1346,6 +1346,19 @@ serve(async (req) => {
     // eventStore.ts's addEvent already populates on every write.
     const familyTimeZone = member.timezone || 'UTC';
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: familyTimeZone }).format(new Date()); // en-CA gives YYYY-MM-DD
+    // Same "the model has no anchor, so it guesses" gap as `today` above,
+    // but for time-of-day — live-reported: "doctor appointment in next hr"
+    // sent at 2:08 PM landed on a propose_event startAt of 10:30 AM, hours
+    // in the past, because nothing in this prompt ever told the model what
+    // time it currently is. Only the calendar DATE was ever precomputed;
+    // any request phrased relative to the current clock time ("in an
+    // hour", "in 30 min", "right now") had no real anchor to compute from.
+    const nowTimeStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: familyTimeZone, hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date());
+    const nowHHMM = new Intl.DateTimeFormat('en-GB', {
+      timeZone: familyTimeZone, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date());
     // "This weekend" always means the Saturday of the CURRENT weekend, even
     // when today already IS Saturday or Sunday — never a week further out.
     // getDay(): 0=Sun..6=Sat. Sat->+0 (today), Sun->-1 (yesterday), any
@@ -1382,7 +1395,12 @@ serve(async (req) => {
     }
     const upcomingWeekdaysStr = DOW_NAMES.map(n => `${n}=${upcomingWeekdayDates[n]}`).join(', ');
 
-    const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}.
+    const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}. The current time
+right now is ${nowTimeStr} (${nowHHMM} 24-hour). Use this as the anchor for ANY request phrased relative to the
+current clock time — "in an hour"/"in the next hr" means ${nowHHMM} plus 60 minutes, "in 30 min" means plus 30
+minutes, "right now"/"now" means ${nowHHMM} itself. Compute the actual resulting HH:MM yourself from this anchor and
+write that to the tool call's time/startAt field — never guess or default to an unrelated time like "10:30" that
+doesn't derive from ${nowHHMM}.
 "This weekend" always means Saturday ${weekendSaturdayStr} — use this exact date for any propose_event/propose_quest/
 propose_update whose due date or start date is described as "this weekend," regardless of what day today happens to
 be (even if today is itself a Saturday or Sunday, "this weekend" still refers to this same weekend's Saturday, never

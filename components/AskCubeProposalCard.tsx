@@ -708,15 +708,29 @@ export default function AskCubeProposalCard({
 
   // event
   const assignee = memberName(members, d.memberId);
+  // startAt is a plain local-wall-clock ISO string with no "Z"/offset (see
+  // propose_event's own tool description) — `new Date(...)` here parses it
+  // via the device's local getters, same as createProposal's own comment
+  // on this exact field. DateTimeEditRow wants separate date/time strings
+  // (matching quest/update_event's own dueDate+dueTime / date+time pairs),
+  // so split startAt into those two shapes purely for the picker; onChange
+  // recombines them back into one startAt string (updateProposalDateTime's
+  // existing 'event' branch already does this).
+  let startAtDate: string | undefined;
+  let startAtTime: string | undefined;
+  if (d.startAt) {
+    const dt = new Date(d.startAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    startAtDate = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    startAtTime = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
   return (
     <View style={cardBase} pointerEvents={cardPointerEvents}>
       {Header}
       <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        {!!d.startAt && (
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-            {new Date(d.startAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </Text>
+        {!!startAtDate && (
+          <DateTimeEditRow dateStr={startAtDate} timeStr={startAtTime} accent={accent} colors={colors} isDark={isDark} onChange={onChangeDateTime} />
         )}
         {!!assignee && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

@@ -128,6 +128,9 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
       all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
       type: 'event', category: 'Event',
+      // Write-once "where did this come from" — see FamilyEvent.sourceProvider
+      // in store/eventStore.ts. Never touched again after this insert.
+      source_provider: 'outlook',
       last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
     });
     await supabase.from('event_external_links').insert({

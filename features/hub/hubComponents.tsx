@@ -1092,10 +1092,15 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               spelled-out name ran long and this sheet already shows a
               "For:"/assignee avatar row elsewhere, so a face reads faster
               here than another name string). */}
-          {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+          {(() => {
+            // sourceProvider (write-once) preferred over the mutable
+            // lastExternalSyncProvider — see comment on
+            // FamilyEvent.sourceProvider in store/eventStore.ts.
+            const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
+            if (!badgeProvider || badgeProvider === 'app' || !isViewerParent) return null;
             const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-            const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
-              : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+            const iconName = badgeProvider === 'google' ? 'logo-google'
+              : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
             return (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Ionicons name={iconName as any} size={13} color={colors.textSecondary} />

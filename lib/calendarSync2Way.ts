@@ -311,6 +311,12 @@ export async function reconcileAppleCalendar(
       // this sweep is running for) is the only meaningful "whose" signal
       // available for this provider.
       const syncFields = { lastExternalSyncProvider: 'apple' as const, lastExternalSyncAccount: undefined, lastExternalSyncMemberId: memberId };
+      // Write-once "where did this come from" — only meaningful on the
+      // genuinely-new insert branch below (updateEvent's EVENT_COLUMN map
+      // deliberately excludes sourceProvider, so passing it on the update
+      // branch would be a silent no-op anyway; kept out of `syncFields`
+      // itself for that reason).
+      const sourceProviderField = { sourceProvider: 'apple' as const };
 
       if (familyEventId) {
         const localEvent = currentEvents.find(e => e.id === familyEventId);
@@ -324,7 +330,7 @@ export async function reconcileAppleCalendar(
         if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, { ...patch, ...syncFields });
       } else {
         // Genuinely new — added directly in the device Calendar app.
-        const newId = await callbacks.addEvent({ ...patch, ...syncFields, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
+        const newId = await callbacks.addEvent({ ...patch, ...syncFields, ...sourceProviderField, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
         map[newId] = deviceEvent.id;
       }
     }

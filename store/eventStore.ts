@@ -217,6 +217,18 @@ export interface FamilyEvent {
   // initials logic. Also the only "whose" signal Apple sync has at all,
   // since a device-local EventKit calendar has no email/account concept.
   lastExternalSyncMemberId?: string;
+  // WRITE-ONCE, unlike the lastExternalSync* fields above (which are
+  // deliberately mutable — every push/pull/dedup-merge re-stamps them,
+  // correct for THEIR purpose of "which connected account last touched
+  // this event"). sourceProvider answers a different question — "where
+  // did this event ORIGINALLY come from" — and is set exactly once, at
+  // creation, then never touched again by any later sync pass. Live
+  // bug this fixes: an event added into the Apple/EventKit-synced
+  // calendar showed the Google badge minutes later, once Google's own
+  // poll happened to dedup-match it by title/time and re-stamp
+  // lastExternalSyncProvider — conflating "last touched" with "source of
+  // truth". The sync badge now reads this field instead.
+  sourceProvider?: 'app' | 'google' | 'outlook' | 'apple';
 }
 
 // Scenario 5.5 generalizes 2.6's rule to "any medical/health-tagged item,"
@@ -671,6 +683,7 @@ export function fromRow(row: any): FamilyEvent {
     lastExternalSyncProvider: row.last_external_sync_provider ?? undefined,
     lastExternalSyncAccount: row.last_external_sync_account ?? undefined,
     lastExternalSyncMemberId: row.last_external_sync_member_id ?? undefined,
+    sourceProvider:           row.source_provider ?? undefined,
     linkedLegId:            row.linked_leg_id ?? undefined,
   };
 }
@@ -742,6 +755,21 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     is_optional_rsvp:           ev.isOptionalRsvp ?? false,
     rsvps:                      ev.rsvps ?? {},
     linked_leg_id:              ev.linkedLegId ?? null,
+    last_external_sync_at:          ev.lastExternalSyncAt ?? null,
+    last_external_sync_provider:    ev.lastExternalSyncProvider ?? null,
+    last_external_sync_account:     ev.lastExternalSyncAccount ?? null,
+    last_external_sync_member_id:   ev.lastExternalSyncMemberId ?? null,
+    // Write-once "where did this come from" — see the FamilyEvent.sourceProvider
+    // comment. toRow() is only ever used for a genuinely NEW row (addEvent's
+    // insert, and the recurring-occurrence batch inserts), so stamping it
+    // here unconditionally is safe: this function is never called to build
+    // an UPDATE patch (those go through toRowPartial, which deliberately
+    // excludes sourceProvider from EVENT_COLUMN so it can never be
+    // overwritten after creation). A caller's own explicit sourceProvider
+    // (calendarSync2Way.ts's Apple "genuinely new" branch passes 'apple')
+    // wins; anything created directly in-app has none set, defaulting to
+    // 'app'.
+    source_provider:                ev.sourceProvider ?? 'app',
   };
 }
 
@@ -977,6 +1005,16 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   acknowledgedBy: 'acknowledged_by', privacyLevel: 'privacy_level',
   sharedWithGPForCare: 'shared_with_gp_for_care', sharedWithSiblings: 'shared_with_siblings',
   isOptionalRsvp: 'is_optional_rsvp', rsvps: 'rsvps', linkedLegId: 'linked_leg_id',
+  // Was missing entirely — a caller building a partial patch that includes
+  // these keys (e.g. calendarSync2Way.ts's Apple update branch, which
+  // merges `syncFields` containing lastExternalSyncProvider into its
+  // updateEvent() call) had them silently dropped by toRowPartial, since
+  // it only ever includes keys present in this map. The write appeared to
+  // succeed (no error — the DB simply never saw these columns), so an
+  // Apple-originated event's sync stamp update never actually reached the
+  // database via this path.
+  lastExternalSyncAt: 'last_external_sync_at', lastExternalSyncProvider: 'last_external_sync_provider',
+  lastExternalSyncAccount: 'last_external_sync_account', lastExternalSyncMemberId: 'last_external_sync_member_id',
 };
 
 // A DB write scoped to only the fields a caller actually intended to

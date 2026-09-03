@@ -134,10 +134,15 @@ export function DayEventsSummaryCard({
                       next to this card's other pills, and fell back to a
                       bare provider name whenever the member lookup
                       missed). */}
-                  {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+                  {(() => {
+                    // sourceProvider (write-once) preferred over the
+                    // mutable lastExternalSyncProvider — see comment on
+                    // FamilyEvent.sourceProvider in store/eventStore.ts.
+                    const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
+                    if (!badgeProvider || badgeProvider === 'app' || !isViewerParent) return null;
                     const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                    const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
-                      : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+                    const iconName = badgeProvider === 'google' ? 'logo-google'
+                      : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                     return (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
                         <Ionicons name={iconName as any} size={10} color={colors.textTertiary} />

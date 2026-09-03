@@ -256,10 +256,19 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   Kids/teens don't care whose personal calendar connection
                   something came from — parent-only, same isViewerParent
                   gate the declined-driver treatment above already uses. */}
-              {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+              {(() => {
+                // sourceProvider (write-once, "where this came from") is
+                // preferred over lastExternalSyncProvider (mutable,
+                // re-stamped by every push/pull) — see the field's own
+                // comment in store/eventStore.ts. Falls back to the old
+                // field for a row created before this migration, where
+                // sourceProvider is null but the mutable field still holds
+                // a best-effort value.
+                const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
+                if (!badgeProvider || badgeProvider === 'app' || !isViewerParent) return null;
                 const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
-                  : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+                const iconName = badgeProvider === 'google' ? 'logo-google'
+                  : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                 return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: colors.border }}>
                     <Ionicons name={iconName as any} size={10} color={colors.textSecondary} />
@@ -446,16 +455,28 @@ export function EventCardTimeline({
             </View>
           </View>
 
-          {/* Which connected account last synced this event in — same
-              indicator as the compact row card, see its own comment. */}
-          {!!ev.lastExternalSyncProvider && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -4, marginBottom: 2 }}>
-              <Text style={{ fontSize: 10 }}>{ev.lastExternalSyncProvider === 'google' ? '🟦' : '🟩'}</Text>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary }} numberOfLines={1}>
-                Synced from {ev.lastExternalSyncAccount ?? (ev.lastExternalSyncProvider === 'google' ? 'Google Calendar' : 'Outlook')}
-              </Text>
-            </View>
-          )}
+          {/* Where this event ORIGINALLY came from — sourceProvider
+              (write-once), not lastExternalSyncProvider (mutable, gets
+              re-stamped by every push/pull from ANY connected provider).
+              Was showing an emoji square + raw "Google Calendar"/"Outlook"
+              driven by the mutable field — same real icon treatment as
+              the compact row card now, see its own comment. */}
+          {(() => {
+            const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
+            if (!badgeProvider || badgeProvider === 'app') return null;
+            const iconName = badgeProvider === 'google' ? 'logo-google'
+              : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+            const providerLabel = badgeProvider === 'google' ? 'Google Calendar'
+              : badgeProvider === 'apple' ? 'Apple Calendar' : 'Outlook';
+            return (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -4, marginBottom: 2 }}>
+                <Ionicons name={iconName as any} size={11} color={colors.textTertiary} />
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary }} numberOfLines={1}>
+                  Synced from {ev.lastExternalSyncAccount ?? providerLabel}
+                </Text>
+              </View>
+            );
+          })()}
 
           {isConf && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, marginTop: 2 }}>

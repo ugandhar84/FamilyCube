@@ -111,6 +111,7 @@ async function syncOneConnection(supabase: any, connection: CalendarConnectionRo
         type: 'work',
         category: 'Work',
         synced_from_connection_id: connection.id,
+        source_provider: connection.provider,
       };
     });
     const { error: insertError } = await supabase.from('calendar_events').insert(rows);

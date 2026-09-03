@@ -315,6 +315,10 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
     title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
     all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
     type: 'event', category: 'Event',
+    // Write-once — this is a genuinely new row (the dedup-merge branch
+    // above, which links to an EXISTING row instead, correctly never
+    // touches source_provider so it can't get overwritten post-creation).
+    source_provider: 'google',
     last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google', last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
   });
   await supabase.from('event_external_links').insert({

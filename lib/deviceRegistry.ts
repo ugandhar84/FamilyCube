@@ -100,6 +100,29 @@ export async function setUpFamilyRecoveryKey(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const { publicKeyB64, encryptedPrivateKey, saltHex } = await createFamilyRecoveryKey(passcode);
+    // families write FIRST, device_keys SECOND — these two rows describe
+    // the SAME key pair and must never end up describing two different
+    // ones. Doing families first means a failure there is a clean no-op
+    // (nothing changed yet). If families succeeds but the device_keys
+    // upsert below fails, the new passcode already decrypts to the
+    // correct, matching private key — the recovery device just isn't
+    // registered as a wrap recipient yet, so it simply won't receive new
+    // wraps until this is retried, which is a safe, self-healing gap. The
+    // reverse order (device_keys first) risked the opposite: a NEW public
+    // key registered and actively used to wrap future session keys, while
+    // families still held the OLD private key underneath the OLD
+    // passcode — the new passcode would then "successfully" decrypt to a
+    // private key that no longer matches what's actually registered,
+    // silently breaking recovery in a way that would only surface much
+    // later when someone actually tried to use it. Real risk introduced
+    // by the "Forgot the current passcode?" reset flow, which calls this
+    // same function a second time over an existing key.
+    const { error: famErr } = await supabase.from('families').update({
+      encrypted_recovery_privkey: encryptedPrivateKey,
+      recovery_key_salt: saltHex,
+    }).eq('id', familyId);
+    if (famErr) return { ok: false, error: famErr.message };
+
     const { error: devErr } = await supabase.from('device_keys').upsert({
       family_id: familyId,
       member_id: setupMemberId,
@@ -108,12 +131,6 @@ export async function setUpFamilyRecoveryKey(
       is_recovery_key: true,
     }, { onConflict: 'family_id,device_id,member_id' });
     if (devErr) return { ok: false, error: devErr.message };
-
-    const { error: famErr } = await supabase.from('families').update({
-      encrypted_recovery_privkey: encryptedPrivateKey,
-      recovery_key_salt: saltHex,
-    }).eq('id', familyId);
-    if (famErr) return { ok: false, error: famErr.message };
 
     return { ok: true };
   } catch (e: any) {

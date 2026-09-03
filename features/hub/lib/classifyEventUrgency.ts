@@ -89,7 +89,18 @@ export function classifyEventUrgency(
     // regardless of whether it's pending or rejected (a co-parent's
     // declined ride is still worth knowing about) or how it got assigned
     // (self-claimed, opened to GP/teen, or directly reassigned).
-    if (a.status !== 'confirmed' && hoursUntilEvent(e.date, e.time) >= 0) {
+    //
+    // Was: `hoursUntilEvent(e.date, e.time) >= 0`, which goes negative the
+    // moment a today-dated event's START TIME passes — a same-day pending
+    // assignment (e.g. a 1:30pm appointment, still unconfirmed at 10pm)
+    // silently vanished from the co-parent's awareness surface exactly
+    // when it most needed attention, while remaining visible in myPending
+    // for the assignee (that bucket, line 82, only ever checked
+    // `e.date >= today`, no time-of-day cutoff at all). Matched to
+    // myPending's own date-only bound so both buckets treat "still
+    // relevant" the same way — an unresolved assignment stays visible
+    // until its DAY has passed, not the instant its clock time does.
+    if (a.status !== 'confirmed' && (e.date ?? '') >= today) {
       coParentPending.push(e);
     }
   }

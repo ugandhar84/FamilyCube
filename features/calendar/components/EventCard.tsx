@@ -244,31 +244,29 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   Google/Outlook/Apple, or an app-created event pushed
                   out) marks which connected account last touched this
                   event, so it doesn't look like an unexplained edit
-                  inside FamilyCube itself. Was an emoji square + raw
-                  email/generic provider name — redone with the real
-                  provider glyph (Ionicons logo-google/logo-apple/mail,
-                  matching CalendarSyncScreen's own icon choices) plus
-                  the syncing member's first name (e.g. "Ugandhar's
-                  calendar") instead of an email string or bare initials
-                  — initials alone left it ambiguous which family member
-                  a badge referred to at a glance. Resolved from
-                  lastExternalSyncMemberId. Kids/teens don't care whose
-                  personal calendar connection something came from —
-                  parent-only, same isViewerParent gate the declined-
-                  driver treatment above already uses. */}
+                  inside FamilyCube itself. Redone again: a spelled-out
+                  "Name's calendar" text label ran too long for this
+                  compact row (crowded "Event"/other pills) and fell back
+                  to a bare provider name whenever the member lookup
+                  missed — replaced with just the provider glyph (Ionicons
+                  logo-google/logo-apple/mail) plus a tiny avatar for
+                  "whose", matching the initials-only badge's original
+                  compactness but with a real face instead of raw
+                  initials. Resolved from lastExternalSyncMemberId.
+                  Kids/teens don't care whose personal calendar connection
+                  something came from — parent-only, same isViewerParent
+                  gate the declined-driver treatment above already uses. */}
               {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
                 const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
-                  : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
-                const label = syncMember ? `${syncMember.name.trim().split(/\s+/)[0]}'s calendar` : providerLabel;
                 const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
                   : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                 return (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: colors.border }}>
                     <Ionicons name={iconName as any} size={10} color={colors.textSecondary} />
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
-                      {label}
-                    </Text>
+                    {syncMember && (
+                      <FamilyAvatar name={syncMember.name} emoji={syncMember.emoji} avatarUrl={(syncMember as any).avatarUrl}
+                        siblings={members.map(m => m.name)} size={12} ringWidth={0} />
+                    )}
                   </View>
                 );
               })()}

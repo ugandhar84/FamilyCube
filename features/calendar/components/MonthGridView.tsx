@@ -13,6 +13,7 @@ import { fmtTimeParts } from '@/lib/dates';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { roleStyle } from './EventCard';
 import { toDateStr, parseDate, DAY_SHORT, CAT_DOT, MONTH_LABELS, buildMonthGrid } from './calendarDateHelpers';
 import { eventAssignee } from '@/store/eventStore';
@@ -126,25 +127,24 @@ export function DayEventsSummaryCard({
                       </>
                     )}
                   </View>
-                  {/* Synced-from badge — this row is Month view's own
-                      hand-rolled card (separate from EventCard.tsx's
-                      EventCardRow used by Agenda), so it never had the
-                      "synced from X's calendar" badge those other views
-                      already got. Same fields/gate as EventCard.tsx:257-276
-                      and hubComponents.tsx's EventDetailSheet row. */}
+                  {/* Synced-from badge — icon + tiny avatar for "whose",
+                      matching the compact treatment EventCard.tsx's Agenda
+                      row and hubComponents.tsx's EventDetailSheet row use
+                      (a spelled-out "Name's calendar" text ran too long
+                      next to this card's other pills, and fell back to a
+                      bare provider name whenever the member lookup
+                      missed). */}
                   {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
                     const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                    const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
-                      : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
-                    const label = syncMember ? `${syncMember.name.trim().split(/\s+/)[0]}'s calendar` : providerLabel;
                     const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
                       : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                     return (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
                         <Ionicons name={iconName as any} size={10} color={colors.textTertiary} />
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary }} numberOfLines={1}>
-                          {label}
-                        </Text>
+                        {syncMember && (
+                          <FamilyAvatar name={syncMember.name} emoji={syncMember.emoji} avatarUrl={(syncMember as any).avatarUrl}
+                            siblings={members.map(m => m.name)} size={12} ringWidth={0} />
+                        )}
                       </View>
                     );
                   })()}

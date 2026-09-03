@@ -1086,22 +1086,24 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
             </View>
           )}
 
-          {/* Synced-from row — same info as EventCard's compact badge
-              (features/calendar/components/EventCard.tsx:257-274), spelled
-              out full-width here since the sheet has room for a real label
-              instead of a squeezed pill. Same provider glyph + member's
-              first name, same parent-only gate. */}
+          {/* Synced-from row — icon + tiny avatar for "whose", matching
+              the compact treatment EventCard.tsx's Agenda row and
+              MonthGridView.tsx's day-summary card use ("Synced from" +
+              spelled-out name ran long and this sheet already shows a
+              "For:"/assignee avatar row elsewhere, so a face reads faster
+              here than another name string). */}
           {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
             const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-            const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
-              : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
-            const label = syncMember ? `Synced from ${syncMember.name.trim().split(/\s+/)[0]}'s ${providerLabel} calendar` : `Synced from ${providerLabel}`;
             const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
               : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
             return (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Ionicons name={iconName as any} size={13} color={colors.textSecondary} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textSecondary }}>{label}</Text>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textSecondary }}>Synced from</Text>
+                {syncMember && (
+                  <FamilyAvatar name={syncMember.name} emoji={syncMember.emoji} avatarUrl={(syncMember as any).avatarUrl}
+                    siblings={members.map(m => m.name)} size={16} ringWidth={0} />
+                )}
               </View>
             );
           })()}

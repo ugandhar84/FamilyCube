@@ -1559,6 +1559,9 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
         actorId={viewerMember?.id ?? activeMemberId ?? ''}
         eventTitle={ev.title}
         eventDate={ev.date}
+        eventTime={ev.time}
+        doctorName={ev.doctorName}
+        location={ev.location}
       />
     )}
     </>

@@ -25,6 +25,7 @@ import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets 
 import * as FileSystem from 'expo-file-system/legacy';
 import { Mic, Square, X, Pause, Info } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { fmtDate, fmtTime } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { BRAND } from '../tabs/shared';
@@ -77,11 +78,18 @@ interface Props {
   actorId: string;       // whoever is recording, for uploaded_by/medical_records write
   eventTitle: string;
   eventDate: string;
+  eventTime?: string;
+  doctorName?: string;
+  location?: string;     // clinic/hospital name or address, if the event has one
 }
 
-export default function RecordVisitSheet({ visible, onClose, familyId, memberId, memberName, actorId, eventTitle, eventDate }: Props) {
+export default function RecordVisitSheet({ visible, onClose, familyId, memberId, memberName, actorId, eventTitle, eventDate, eventTime, doctorName, location }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  // Was the raw "2026-09-03" date string shown as-is, with no doctor/
+  // hospital context even when the event actually had it — live-requested:
+  // a readable date/time, plus doctor/hospital details when available.
+  const eventDateLabel = fmtDate(eventDate) + (eventTime ? ` · ${fmtTime(eventTime)}` : '');
   const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
   // Polled every 100ms for a smooth live waveform — see useAudioRecorderState's
   // own doc; metering is only ever populated while actually recording.
@@ -195,9 +203,20 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   };
 
   const stopAndProcess = async () => {
+    // Captured BEFORE stop(), not after — live-reported: every recording,
+    // regardless of actual length, failed with "too short." recorder.
+    // currentTime read AFTER await recorder.stop() resolves is unreliable
+    // (reads back near-zero once the recorder has already torn down),
+    // unlike `elapsed` above (recorderState.durationMillis), which is the
+    // same live value already driving the on-screen timer during
+    // recording and is guaranteed accurate up to the moment stop() is
+    // called. ChatScreen.tsx's own proven-working voice-note recording
+    // has the same shape — it captures its duration from a manual
+    // Date.now() diff taken before stop(), never reads the SDK's own
+    // currentTime post-stop either.
+    const dur = elapsed;
     await recorder.stop();
     const uri = recorder.uri;
-    const dur = recorder.currentTime;
     setRecording(false);
     setPaused(false);
     if (!uri || dur < 1) { showToast("Recording was too short — try again", 'error'); return; }
@@ -359,7 +378,12 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
                   {eventTitle}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDate}</Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
+                {!!(doctorName || location) && (
+                  <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+                    {[doctorName, location].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
               </View>
 
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
@@ -405,7 +429,12 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             <View style={{ gap: 20, alignItems: 'center', paddingVertical: 20 }}>
               <View style={{ alignItems: 'center', gap: 4, marginBottom: 4 }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>{eventTitle}</Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDate}</Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
+                {!!(doctorName || location) && (
+                  <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+                    {[doctorName, location].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
               </View>
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 }}>
                 Record this appointment to get an AI summary with discussion topics and next steps, saved

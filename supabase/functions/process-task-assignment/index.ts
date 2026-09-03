@@ -591,8 +591,16 @@ serve(async (req) => {
           [assigneeColumn]: assigneeValue,
           assignment_decision_id: decisionId,
         };
-        if (targetField === 'helper') updatePatch.helper_status = 'confirmed';
-        if (targetField === 'driver') { updatePatch.driver_status = 'confirmed'; updatePatch.ride_required = true; }
+        // Same rule reassign_event's RPC already enforces (confirmed only
+        // for a true self-assign, pending otherwise): this is the AI engine
+        // deciding who to assign, not the assignee acting on their own
+        // behalf, so an AUTO pick can never count as that person's own
+        // confirmation. Every other write path in the app (EventFormModal,
+        // CalendarScreen) follows the same assignedId===activeMemberId
+        // check; writing 'confirmed' unconditionally here silently skipped
+        // the picked helper/driver's real confirmation step.
+        if (targetField === 'helper') updatePatch.helper_status = 'pending';
+        if (targetField === 'driver') { updatePatch.driver_status = 'pending'; updatePatch.ride_required = true; }
         const { error: updateErr } = await supabase.from(table).update(updatePatch).eq('id', taskId);
         // The write's own error was previously discarded, so a failed
         // assignment (wrong column, RLS denial, etc) still fell through to

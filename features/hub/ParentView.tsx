@@ -20,6 +20,7 @@ import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
+import { usePendingUnconfirmedEvents } from './usePendingUnconfirmedEvents';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { decodeRideLate } from './KidModals';
@@ -76,6 +77,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // proven pattern here instead of introducing a fourth different
   // data-fetching mechanism.
   const { events: backlogWindowEvents } = useUpcomingOpenEvents((active as any).familyId);
+  // useUpcomingOpenEvents' 14-day cap is right for the near-term dispatch
+  // cards it also feeds (LendAHandCard/RideRequestCard), but myPending/
+  // coParentPending have no natural date ceiling — a self/co-parent
+  // assignment still awaiting confirmation shouldn't vanish from the Hub
+  // just because the event is months out (live-reported: a Google-synced
+  // appointment 67 days out, self-assigned and still pending, was
+  // invisible everywhere on the Hub). Merged into the classifier's input
+  // below rather than widening useUpcomingOpenEvents itself.
+  const { events: pendingUnconfirmedEvents } = usePendingUnconfirmedEvents((active as any).familyId);
   // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
   // trial ended, not subscribed yet — a dismissible nag, not a lock.
   // trialDaysLeft === -1 means "family data hasn't loaded yet" (computeTrial's
@@ -160,8 +170,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // hasn't resolved yet) — fall back to the day-scoped `events` rather
   // than showing an empty backlog for a moment; it settles to the real,
   // wider data within one render once useUpcomingOpenEvents' fetch lands.
+  // pendingUnconfirmedEvents merged in (deduped by id) so a far-future
+  // pending assignment outside the 14-day window still reaches
+  // classifyEventUrgency — see usePendingUnconfirmedEvents.ts.
+  const classifierSource = (() => {
+    const base = backlogWindowEvents.length > 0 ? backlogWindowEvents : events;
+    const seen = new Set(base.map(e => e.id));
+    const extra = pendingUnconfirmedEvents.filter(e => !seen.has(e.id));
+    return extra.length > 0 ? [...base, ...extra] : base;
+  })();
   const { unassigned, myPending, coParentPending } = classifyEventUrgency(
-    backlogWindowEvents.length > 0 ? backlogWindowEvents : events, { id: active.id, name: active.name }, today,
+    classifierSource, { id: active.id, name: active.name }, today,
   );
   // ActionNeededSection still renders 2 distinct card types (RideRequestCard
   // vs RideRequiredEventCard) — this split is purely about which card to

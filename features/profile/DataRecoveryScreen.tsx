@@ -13,7 +13,7 @@
  * here from Profile > Security > Data Recovery.
  */
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Share, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +27,28 @@ import {
 } from '@/lib/deviceRegistry';
 
 type Mode = 'loading' | 'setup' | 'change' | 'recover';
+
+// Offered exactly once, right after a passcode is successfully set or
+// changed — same "shown once at the moment it's created, never re-shown"
+// principle the OS itself uses for a newly generated password. The
+// passcode is NEVER stored anywhere in plaintext (see chatCrypto.ts's
+// recovery-key design) precisely so a lost/stolen device or a database
+// breach can't recover the family's chat/location/medical history without
+// actually knowing the passcode — this share prompt is the one deliberate,
+// user-initiated moment that plaintext ever leaves the device, and only
+// because the user themselves chose to share it just now.
+function offerToSharePasscode(newPasscode: string) {
+  Alert.alert(
+    'Share with your family?',
+    'Anyone who has this passcode can recover your family’s chat, location, and medical record history on a new device. Share it now with the other parent so it isn’t forgotten — it won’t be shown again after this.',
+    [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Share', onPress: () => {
+        Share.share({ message: `Our Family Cube security passcode is: ${newPasscode}\n\nKeep this somewhere safe — anyone with it can recover our family's chat, location, and medical records on a new device.` }).catch(() => {});
+      }},
+    ],
+  );
+}
 
 export default function DataRecoveryScreen() {
   const { colors, isDark } = useTheme();
@@ -48,6 +70,14 @@ export default function DataRecoveryScreen() {
   const [passcode, setPasscode] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
+  // "Forgot the current passcode entirely" escape hatch — resets are a
+  // separate flow from Change (which requires the current passcode to
+  // prove you actually know it). Own passcode/confirm fields so switching
+  // into reset mode doesn't inherit whatever was half-typed into Change's
+  // fields, and vice versa.
+  const [resetMode, setResetMode] = useState(false);
+  const [resetPasscode, setResetPasscode] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
 
   useEffect(() => {
     if (!familyId) { setMode('setup'); return; }
@@ -67,10 +97,11 @@ export default function DataRecoveryScreen() {
     const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, passcode);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't set this up", result.error); return; }
+    const justSet = passcode;
     setPasscode(''); setConfirm('');
     setHasKey(true);
     setMode('change');
-    showAlert('Saved', 'Share this passcode with the other adults in your family — anyone who has it can recover access on a new device.');
+    offerToSharePasscode(justSet);
   };
 
   const handleChange = async () => {
@@ -82,8 +113,41 @@ export default function DataRecoveryScreen() {
     const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't change the passcode", result.error); return; }
+    const justSet = passcode;
     setCurrentForChange(''); setPasscode(''); setConfirm('');
-    showAlert('Updated', 'The family passcode has been changed. Share the new one with anyone who might need to recover a device.');
+    offerToSharePasscode(justSet);
+  };
+
+  // For when nobody remembers the current passcode at all — setUpFamilyRecoveryKey
+  // generates a brand-new recovery key pair + passcode from scratch and
+  // overwrites the family's existing one (it doesn't require or check the
+  // old passcode), so calling it again IS the reset. Confirmed via a
+  // native Alert (not the lighter showAlert) specifically because of what
+  // it costs: any device that's lost/wiped/never-registered-again from
+  // this point forward can only be recovered with the NEW passcode — the
+  // old one stops working immediately. Devices currently active and in use
+  // are unaffected (their own local keys still work fine); this only
+  // resets the RECOVERY path for a future lost device.
+  const handleReset = () => {
+    if (resetPasscode.length < 6) { showAlert('Make it longer', 'Use at least 6 characters so it’s hard to guess.'); return; }
+    if (resetPasscode !== resetConfirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
+    if (!familyId || !activeMemberId) return;
+    Alert.alert(
+      'Reset the family passcode?',
+      'The old passcode will stop working right away. Any device that\'s currently lost, wiped, or hasn\'t opened the app since this reset will only be recoverable with the NEW passcode — devices in active use today are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset', style: 'destructive', onPress: async () => {
+          setSaving(true);
+          const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, resetPasscode);
+          setSaving(false);
+          if (!result.ok) { showAlert("Couldn't reset", result.error); return; }
+          const justSet = resetPasscode;
+          setResetPasscode(''); setResetConfirm(''); setResetMode(false);
+          offerToSharePasscode(justSet);
+        }},
+      ],
+    );
   };
 
   const handleRecover = async () => {
@@ -181,7 +245,7 @@ export default function DataRecoveryScreen() {
           </View>
         )}
 
-        {hasKey && isParent && (
+        {hasKey && isParent && !resetMode && (
           <View style={s.card}>
             <Text style={s.cardTitle}>Change passcode</Text>
             <Text style={s.cardSub}>Requires the current passcode. Existing chat, location, and record history is unaffected.</Text>
@@ -217,6 +281,50 @@ export default function DataRecoveryScreen() {
             />
             <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleChange} disabled={saving}>
               {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Change Passcode</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setCurrentForChange(''); setPasscode(''); setConfirm(''); setResetMode(true); }} style={{ alignSelf: 'center', marginTop: 2 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, textDecorationLine: 'underline' }}>
+                Forgot the current passcode?
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {hasKey && isParent && resetMode && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Reset passcode</Text>
+            <Text style={s.cardSub}>
+              For when nobody remembers the current passcode. The old one stops working right away — any device
+              that's lost, wiped, or hasn't opened the app since this reset can only be recovered with the new
+              one. Devices in active use today aren't affected.
+            </Text>
+            <TextInput
+              style={s.input}
+              value={resetPasscode}
+              onChangeText={setResetPasscode}
+              placeholder="New passcode"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={s.input}
+              value={resetConfirm}
+              onChangeText={setResetConfirm}
+              placeholder="Confirm new passcode"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity style={[s.btn, { backgroundColor: colors.danger, opacity: saving ? 0.7 : 1 }]} onPress={handleReset} disabled={saving}>
+              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Reset Passcode</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setResetPasscode(''); setResetConfirm(''); setResetMode(false); }} style={{ alignSelf: 'center', marginTop: 2 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, textDecorationLine: 'underline' }}>
+                Actually, I remember it
+              </Text>
             </TouchableOpacity>
           </View>
         )}

@@ -283,10 +283,28 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
       // event_external_links row now) but showed no provider indicator
       // on its card. Every other write path in this file stamps these
       // four columns; this was the one exception.
-      await supabase.from('calendar_events').update({
-        last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google',
-        last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
-      }).eq('id', dupe.id);
+      //
+      // Real follow-up bug found live: this used to stamp 'google'
+      // UNCONDITIONALLY — a row that already had a correct 'apple' stamp
+      // (added via the device's own EventKit two-way sync,
+      // lib/calendarSync2Way.ts) got silently overwritten to 'google' the
+      // moment a same-title/time Google item happened to dedup-match it,
+      // even though the Apple sync touched it more recently and is
+      // exactly as "real" a sync source. Only overwrite when this Google
+      // pull is at least as fresh as whatever's already stamped — a row
+      // with no prior stamp, or one this pull is legitimately newer than,
+      // still gets it; a more-recently-synced other-provider stamp is
+      // left alone.
+      const { data: existing } = await supabase.from('calendar_events')
+        .select('last_external_sync_at').eq('id', dupe.id).maybeSingle();
+      const existingStampTime = existing?.last_external_sync_at ? new Date(existing.last_external_sync_at).getTime() : 0;
+      const thisPullTime = item.updated ? new Date(item.updated).getTime() : Date.now();
+      if (thisPullTime >= existingStampTime) {
+        await supabase.from('calendar_events').update({
+          last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'google',
+          last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
+        }).eq('id', dupe.id);
+      }
       return `linked-to-dupe(event_id=${dupe.id})`;
     }
   }

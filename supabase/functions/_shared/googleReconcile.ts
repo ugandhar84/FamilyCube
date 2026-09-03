@@ -104,37 +104,35 @@ export async function reconcileGoogleChanges(supabase: any, connection: Calendar
     if (json.nextSyncToken) syncToken = json.nextSyncToken;
   } while (pageToken);
 
-  // TEMPORARY diagnostic — live-reported: deleting an event directly on
-  // Google Calendar still never reflects in the app even after the
-  // showDeleted fix + a forced sync_token reset + a throttle-bypassing
-  // manual refresh. Confirmed via an earlier round of this same debug
-  // line that Google DOES correctly report the item as cancelled
-  // (showDeleted is working) — so the remaining gap is inside
-  // reconcileOneGoogleEvent's own handling of that item, not the fetch.
-  // Now captures each item's own outcome string alongside its status to
-  // pin down exactly which internal branch it's landing in (e.g.
-  // "no-link-found" would mean the event_external_links row it needs
-  // never existed or doesn't match).
-  const outcomes: string[] = [];
+  // The Google Calendar delete-not-syncing investigation this diagnostic
+  // block existed for is resolved (showDeleted + the deleted_by FK fix +
+  // the orphaned-link backfill) — removed rather than left permanently
+  // wired in, since it was unconditionally overwriting last_error with a
+  // routine per-poll debug string on every successful sync, clobbering
+  // any GENUINE error message a prior failed poll had written there (a
+  // real bug this session's code review caught: last_error is also
+  // written by real error paths elsewhere, e.g. calendar-sync-push's own
+  // catch block, and a debug dump on the very next successful poll would
+  // silently erase that diagnostic signal). CalendarSyncScreen.tsx's
+  // matching "DEBUG poll@..." render block was removed alongside this.
+  // Fetched once per poll (not per item) — used to default a NEW inbound
+  // event's assignee to the syncing member when it has a real location
+  // (see reconcileOneGoogleEvent's own comment on why: live-requested,
+  // "if the location is set then we can show who is handling from the
+  // source of the calendar, that person is default and they can also
+  // later assign a different one from picker").
+  let syncMemberName: string | null = null;
+  const { data: memberRow } = await supabase.from('members').select('name').eq('id', connection.member_id).maybeSingle();
+  syncMemberName = memberRow?.name ?? null;
+
   for (const item of changedItems) {
-    const outcome = await reconcileOneGoogleEvent(supabase, connection, item);
-    outcomes.push(`${item.id}:${item.status}${item.recurringEventId ? '(instance)' : ''} -> ${outcome}`);
+    await reconcileOneGoogleEvent(supabase, connection, item, syncMemberName);
   }
-  // Also captures the sync_token actually used for THIS request (vs. the
-  // fresh one Google returned) and calendar_id — live-reported: a
-  // genuinely new event created on the connected account's own primary
-  // calendar, well within the sync window, waited over a minute, still
-  // reported as "0 items." Need to see whether this poll used a stale
-  // token, a wrong calendar id, or genuinely got an empty delta back
-  // from Google itself.
-  const debugSummary = `DEBUG poll@${new Date().toISOString()} calId=${calendarId} tokenIn=${startingSyncToken?.slice(0, 12) ?? 'null'} tokenOut=${syncToken?.slice(0, 12) ?? 'null'} got410=${got410}: ${changedItems.length} item(s)` +
-    (outcomes.length ? ' — ' + outcomes.join(' | ') : '');
-  await supabase.from('calendar_connections').update({ last_error: debugSummary }).eq('id', connection.id);
 
   if (syncToken) await supabase.from('calendar_connections').update({ sync_token: syncToken }).eq('id', connection.id);
 }
 
-async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<string> {
+async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnectionRow, item: any, syncMemberName: string | null): Promise<string> {
   // A recurring Google event, expanded via singleEvents=true, returns one
   // item PER OCCURRENCE — each with its own instance id (item.id, e.g.
   // "abc123_20270513T210000Z") but also item.recurringEventId pointing
@@ -310,11 +308,27 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
   }
 
   const newId = crypto.randomUUID();
+  // Live-requested: an inbound event with a real location implies someone
+  // needs to physically go there, so default the "who's handling this"
+  // assignee to the syncing member (this connection's own owner) rather
+  // than leaving it unassigned — they can reassign to someone else via
+  // the picker afterward. 'pending' (not 'confirmed') since defaulting
+  // isn't the same as that person actually confirming they'll do it —
+  // same rule reassign_event's RPC already enforces for a real reassign.
+  // No location → no assignee at all, matching deriveCardActions.ts's
+  // showReassign gate (features/tasks/lib/deriveCardActions.ts), which
+  // now requires a location before showing any assignment UI in the
+  // first place — an event with nowhere to go has no "who's handling
+  // this" concept, so it gets no default and no picker.
+  const defaultAssignee = patch.location && syncMemberName
+    ? { helper_name: syncMemberName, helper_id: connection.member_id, helper_status: 'pending' as const }
+    : {};
   await supabase.from('calendar_events').insert({
     id: newId, family_id: connection.family_id, member_id: connection.member_id,
     title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
     all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
     type: 'event', category: 'Event',
+    ...defaultAssignee,
     // Write-once — this is a genuinely new row (the dedup-merge branch
     // above, which links to an EXISTING row instead, correctly never
     // touches source_provider so it can't get overwritten post-creation).

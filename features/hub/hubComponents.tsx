@@ -893,6 +893,22 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
     cat === 'Ride'    ? 'Driven by'      :
     'Organised by';
 
+  // Question-form of helperLabel for the picker's own header — was
+  // hardcoded to "Who's driving?" unconditionally whenever no assignee
+  // existed yet, regardless of category. Live-reported: a plain synced
+  // "Rent" event (category 'Event', no location) showed "WHO'S DRIVING?"
+  // above a driver picker, which makes no sense for a non-Ride event —
+  // the underlying helperMissing/hadPriorHelper gates that decide WHETHER
+  // to show this picker at all were correct (see helperMissing's own
+  // location-based gate above), only the label text inside it was wrong.
+  const helperQuestion =
+    cat === 'Medical' ? "Who's accompanying?" :
+    cat === 'Study'   ? "Who's tutoring?"     :
+    cat === 'School'  ? "Who's dropping off?" :
+    cat === 'Sports'  ? "Who's dropping off?" :
+    cat === 'Ride'    ? "Who's driving?"      :
+    'Who\'s organising?';
+
   const isWork         = isWorkEvent(ev);
   // TimelineCard/EventDetailSheet render for every role (kid/teen Hubs use
   // it via HubTimelineSection too, not just ParentView) — but reassigning a
@@ -1331,8 +1347,14 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               chip row instead of a stack of buttons that each led to their
               own sub-screen. Empty/rejected slots show the row immediately;
               an already-assigned slot only shows it after tapping Take
-              Over/Swap on the helper card above. */}
-          {!isPast && (
+              Over/Swap on the helper card above.
+              Explicitly checked against the same conditions each inner
+              block below already uses — was unconditional on !isPast alone,
+              so a location-less event (now correctly showing none of these
+              actions, per showReassign's new location gate in
+              deriveCardActions.ts) still rendered this wrapper's own
+              top border + padding as an empty, content-less divider line. */}
+          {!isPast && (showConfirm || showCantMakeIt || showReassign || showOverride || (changeOpen && !!cancelledSelfName)) && (
             <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 }}>
               {/* "Can't Make It" opens the chip row WITHOUT writing anything
                   yet — no DB write means no other device can briefly see
@@ -1411,7 +1433,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
                     </Pressable>
                   )}
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                    {helperMissing || !hadPriorHelper || cancelledSelfName ? 'Who\'s driving?' : 'Reassign to'}
+                    {helperMissing || !hadPriorHelper || cancelledSelfName ? helperQuestion : 'Reassign to'}
                   </Text>
                   <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
                     activeName={activeName} activeMemberId={activeMemberId}

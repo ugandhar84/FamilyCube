@@ -75,14 +75,18 @@ async function reconcileOutlookChanges(supabase: any, connection: CalendarConnec
     if (json['@odata.deltaLink']) nextDeltaLink = json['@odata.deltaLink'];
   }
 
+  let syncMemberName: string | null = null;
+  const { data: memberRow } = await supabase.from('members').select('name').eq('id', connection.member_id).maybeSingle();
+  syncMemberName = memberRow?.name ?? null;
+
   for (const item of changedItems) {
-    await reconcileOneOutlookEvent(supabase, connection, item);
+    await reconcileOneOutlookEvent(supabase, connection, item, syncMemberName);
   }
 
   if (nextDeltaLink) await supabase.from('calendar_connections').update({ delta_link: nextDeltaLink }).eq('id', connection.id);
 }
 
-async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConnectionRow, item: any): Promise<void> {
+async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConnectionRow, item: any, syncMemberName: string | null): Promise<void> {
   const { data: link } = await supabase.from('event_external_links')
     .select('*').eq('connection_id', connection.id).eq('external_event_id', item.id).maybeSingle();
 
@@ -123,11 +127,15 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
     await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item['@odata.etag'] ?? null }).eq('id', link.id);
   } else {
     const newId = crypto.randomUUID();
+    const defaultAssignee = patch.location && syncMemberName
+      ? { helper_name: syncMemberName, helper_id: connection.member_id, helper_status: 'pending' as const }
+      : {};
     await supabase.from('calendar_events').insert({
       id: newId, family_id: connection.family_id, member_id: connection.member_id,
       title: patch.title, date: patch.date, start_time: patch.startTime, end_time: patch.endTime,
       all_day: patch.allDay ?? false, location: patch.location, notes: patch.notes,
       type: 'event', category: 'Event',
+      ...defaultAssignee,
       // Write-once "where did this come from" — see FamilyEvent.sourceProvider
       // in store/eventStore.ts. Never touched again after this insert.
       source_provider: 'outlook',

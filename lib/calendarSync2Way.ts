@@ -30,6 +30,7 @@ import * as Calendar from 'expo-calendar';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FamilyEvent } from '@/store/eventStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 const MAP_KEY_PREFIX = 'apple_calendar_sync_map_'; // + memberId
 const LAST_SWEEP_KEY_PREFIX = 'apple_calendar_sync_last_sweep_'; // + memberId
@@ -330,7 +331,16 @@ export async function reconcileAppleCalendar(
         if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, { ...patch, ...syncFields });
       } else {
         // Genuinely new — added directly in the device Calendar app.
-        const newId = await callbacks.addEvent({ ...patch, ...syncFields, ...sourceProviderField, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
+        // Same "default the assignee to whoever's calendar this synced
+        // from, but only when there's a real location" rule as the
+        // Google/Outlook inbound paths (googleReconcile.ts,
+        // calendar-webhook-outlook) — a bare no-address event (e.g. a
+        // synced "Rent" reminder) has no one to "drive" or "handle" it.
+        const syncMemberName = useFamilyStore.getState().members.find(m => m.id === memberId)?.name ?? null;
+        const defaultAssignee = patch.location && syncMemberName
+          ? { helper: syncMemberName, helperId: memberId, helperStatus: 'pending' as const }
+          : {};
+        const newId = await callbacks.addEvent({ ...patch, ...syncFields, ...sourceProviderField, ...defaultAssignee, title: patch.title!, date: patch.date!, type: 'event', category: 'Event', memberId } as Omit<FamilyEvent, 'id'>);
         map[newId] = deviceEvent.id;
       }
     }

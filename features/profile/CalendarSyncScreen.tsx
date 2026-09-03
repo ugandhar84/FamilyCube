@@ -236,16 +236,6 @@ export default function CalendarSyncScreen() {
             Last checked {new Date(connection.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </Text>
         )}
-        {/* TEMPORARY diagnostic for the Google Calendar delete-not-syncing
-            investigation — googleReconcile.ts writes a "DEBUG poll@..."
-            summary into last_error on every poll (success or not), since
-            no real exception was being thrown to explain why deletions
-            weren't reflecting. Remove this block once the cause is found. */}
-        {connection?.last_error?.startsWith('DEBUG poll@') && (
-          <Text style={[s.lastSynced, { color: colors.textSecondary }]} selectable>
-            {connection.last_error}
-          </Text>
-        )}
         <TouchableOpacity
           onPress={() => connection ? handleDisconnect(connection) : handleConnect(provider, purpose)}
           disabled={isConnecting}

@@ -240,8 +240,19 @@ export function deriveEventActions(
   const isSelfAssigned = assignee.id ? assignee.id === viewer.id : (!!viewer.name && assignee.name === viewer.name);
   const helperConfirmed = assignee.status === 'confirmed';
 
-  const showRemind = !isPast && !isWork && isViewerParent && !!assignee.name && helperPending && !isSelfAssigned;
-  const showReassign = !isPast && !isWork && isViewerParent && (!assignee.name || (helperPending && !isSelfAssigned) || helperRejected);
+  // Live-reported: a plain synced event with no location at all (a "Rent"
+  // reminder synced from Apple/Google, category 'Event') showed a full
+  // "Who's driving?" assignment picker — this whole family of actions was
+  // designed around events someone actually needs to physically go to
+  // (Ride/Medical/Sports/etc — anywhere a helper/driver concept makes
+  // sense), and was previously gated purely on category/status with no
+  // check for whether the event has anywhere to go at all. Requiring a
+  // real location matches helperMissing's own narrower gate elsewhere in
+  // this app (hubComponents.tsx) and the user's own call: "if the
+  // location is set then we can show who is handling."
+  const hasLocation = !!ev.location;
+  const showRemind = !isPast && !isWork && isViewerParent && hasLocation && !!assignee.name && helperPending && !isSelfAssigned;
+  const showReassign = !isPast && !isWork && isViewerParent && hasLocation && (!assignee.name || (helperPending && !isSelfAssigned) || helperRejected);
   const showAssignToMe = showReassign && !isSelfAssigned && viewer.hasCar !== false;
   const showOverride = !isPast && !isWork && isViewerParent && helperConfirmed && !isSelfAssigned;
   const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);

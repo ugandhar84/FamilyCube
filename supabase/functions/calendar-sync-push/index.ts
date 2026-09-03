@@ -118,6 +118,24 @@ async function pushToProvider(
   const portable = localRowToPortable(eventRow);
 
   if (link) {
+    // Conflict guard: googleReconcile.ts/calendar-webhook-outlook's INBOUND
+    // path already refuses to overwrite a local row that changed more
+    // recently than the external item (last-write-wins by updated_at) —
+    // this push path had no reciprocal check at all, so it PATCHed the
+    // external event with local content unconditionally. A user editing
+    // the external calendar directly, right before this device's queued
+    // push fires, had their edit silently clobbered — and since the push
+    // then re-stamps last_external_sync_at, the NEXT inbound poll also
+    // treats the (now-stale) local copy as authoritative, never
+    // surfacing the lost external edit at all. Skip the push if the
+    // external item changed after our last successful pull; the next
+    // inbound reconcile pass will pick up that newer external state
+    // properly instead of this push stomping it.
+    const skipReason = await externalChangedSincePull(connection, accessToken, link.external_event_id, link.last_pulled_at);
+    if (skipReason) {
+      console.warn(`[calendar-sync-push] skipping push for link ${link.id}: ${skipReason}`);
+      return;
+    }
     await updateExternalEvent(connection, accessToken, link.external_event_id, portable, timezone);
     await supabase.from('event_external_links').update({ last_pushed_at: new Date().toISOString() }).eq('id', link.id);
   } else {
@@ -160,6 +178,45 @@ async function createExternalEvent(connection: CalendarConnectionRow, accessToke
     });
     if (!res.ok) throw new Error(`Outlook create failed: ${res.status} ${await res.text()}`);
     return (await res.json()).id;
+  }
+}
+
+// Returns a skip-reason string if the external event was modified after
+// our last successful inbound pull for this link (meaning someone edited
+// it on the external calendar and we haven't reconciled that yet), or
+// null if it's safe to push. A GET failure/missing modified timestamp is
+// treated as "safe to push" — this is a best-effort guard against a real
+// but narrow race window, not a hard precondition (no If-Match/etag
+// support on either provider's simple PATCH here), so it fails open
+// rather than blocking legitimate pushes on a transient read error.
+async function externalChangedSincePull(
+  connection: CalendarConnectionRow, accessToken: string, externalId: string, lastPulledAt: string | null,
+): Promise<string | null> {
+  if (!lastPulledAt) return null; // never pulled this link — nothing to compare against
+  try {
+    let externalModifiedIso: string | null = null;
+    if (connection.provider === 'google') {
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.external_calendar_id ?? 'primary')}/events/${externalId}?fields=updated`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return null;
+      externalModifiedIso = (await res.json()).updated ?? null;
+    } else {
+      const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${externalId}?$select=lastModifiedDateTime`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return null;
+      externalModifiedIso = (await res.json()).lastModifiedDateTime ?? null;
+    }
+    if (!externalModifiedIso) return null;
+    const externalModified = new Date(externalModifiedIso).getTime();
+    const lastPulled = new Date(lastPulledAt).getTime();
+    if (externalModified > lastPulled) {
+      return `external changed at ${externalModifiedIso}, after our last pull at ${lastPulledAt}`;
+    }
+    return null;
+  } catch {
+    return null; // fail open — see comment above
   }
 }
 

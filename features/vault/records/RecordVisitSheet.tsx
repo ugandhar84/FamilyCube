@@ -174,8 +174,16 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       if (fnErr) throw new Error(fnErr.message);
       if (fnData?.error) throw new Error(fnData.error);
       if (fnData?.not_medical) {
-        setNotMedical(fnData.message ?? 'This does not appear to be a medical appointment.');
-        setPendingRecord(rec as MedRecord);
+        // Reject cleanly rather than leaving a record with no clinical
+        // content sitting in the vault forever — the strict content gate
+        // in analyze-appointment-recording's SYSTEM_PROMPT means this
+        // path fires for genuinely non-medical audio, so nothing here is
+        // worth keeping. Best-effort cleanup (not awaited-and-blocking on
+        // failure) since the user is already looking at the rejection
+        // message regardless of whether the delete itself succeeds.
+        supabase.storage.from('medical-audio').remove([up.path]).catch(() => {});
+        supabase.from('medical_records').delete().eq('id', rec.id).then(() => {});
+        setNotMedical(fnData.message ?? 'This recording does not appear to contain real medical or health content — only genuine clinical conversations are supported.');
         return;
       }
       const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;

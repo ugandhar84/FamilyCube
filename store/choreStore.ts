@@ -4893,9 +4893,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // stale System-B assignedToId so only the new PENDING assignment is
     // "live," matching the "only one assignment should ever be live"
     // guarantee above, but across both systems instead of just within A.
-    if (mode === 'DIRECT' && chore.assignedToId) {
-      get().updateChore(choreId, { assignedToId: undefined, isPool: chore.isPool ?? false } as any);
-    }
+    //
+    // MUST happen AFTER the parentAssignments insert below, not before —
+    // this used to run first, which cleared assignedToId synchronously
+    // while the new PENDING row didn't exist in local state until the
+    // `await dbInsert` a few lines down resolved. In that window,
+    // getParentQuestPool()/getActiveAssignmentChoreIds() had no PENDING
+    // assignment to exclude the chore by, so the Household Backlog
+    // briefly (but really) rendered it as a bare, claimable pool card —
+    // live-reported: a chore delegated from one parent to another showed
+    // up with "Take It"/"Delegate" before the delegate had even seen it,
+    // and tapping Take It raced the real assignment (an RPC that
+    // correctly refuses to touch an already-negotiating chore is a
+    // separate story — this fixes the window that let the bad card render
+    // at all).
+    const clearStaleAssignedToId = mode === 'DIRECT' && chore.assignedToId;
 
     // PULL mode: person self-claims from backlog (assignedTo = themselves)
     // DIRECT mode: explicitly assigned to partner, status starts PENDING —
@@ -4942,6 +4954,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return undefined as any;
     }
     set(s => ({ parentAssignments: [assignment, ...s.parentAssignments] }));
+
+    // Now safe to clear the stale System-B assignedToId — the new PENDING
+    // row above is already in local state, so getParentQuestPool()/
+    // getActiveAssignmentChoreIds() exclude this chore starting from the
+    // very same render, with no window where it looks bare-unassigned.
+    if (clearStaleAssignedToId) {
+      get().updateChore(choreId, { assignedToId: undefined, isPool: chore.isPool ?? false } as any);
+    }
 
     // The Household Backlog pool/mine/theirs split is computed from the chore's
     // OWN assignedToId (Household Backlog reads `quests`, not parentAssignments),

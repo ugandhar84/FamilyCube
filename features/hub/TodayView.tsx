@@ -184,7 +184,7 @@ export function TodayView({
 }: TodayViewProps) {
   const { quests, approveQuest } = useQuestStore();
   const chores = useChoreStore(s => s.chores);
-  const { events, updateEvent } = useEventStore();
+  const { events, updateEvent, dayLoading } = useEventStore();
 
   const [showPast, setShowPast] = useState(false);
 
@@ -254,7 +254,22 @@ export function TodayView({
               ))}
             </View>
           )}
-          {todayEvents.length === 0 ? (
+          {todayEvents.length === 0 && dayLoading ? (
+            // Was: rendered the "nothing on the calendar" empty state the
+            // instant todayEvents was empty, with no check for whether
+            // events had actually finished loading yet — on a fresh
+            // unlock/foreground, the store's events array is briefly
+            // empty before the real fetch resolves, so this flashed
+            // "Nothing on the calendar today" for a moment even on a day
+            // with real events, then snapped to the correct list once
+            // data landed (live-reported: "events not showing afterwards
+            // it is coming back"). CalendarScreen.tsx already makes this
+            // exact loading-vs-genuinely-empty distinction for its own
+            // day view; this mirrors it.
+            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+              Loading today's schedule…
+            </Text>
+          ) : todayEvents.length === 0 ? (
             <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
               Nothing on the calendar today — enjoy the breathing room.
             </Text>

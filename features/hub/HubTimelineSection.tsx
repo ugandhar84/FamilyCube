@@ -5,7 +5,7 @@ import { TimelineCard, LiveDot, SectionCard } from './hubComponents';
 import { TYPO } from '@/constants/theme';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
-import { isEventSensitive, eventAssignee } from '@/store/eventStore';
+import { isEventSensitive, eventAssignee, useEventStore } from '@/store/eventStore';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -25,6 +25,15 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
   colors: any; isDark: boolean;
 }) {
   const [showPast, setShowPast] = useState(false);
+  // Read directly from the store rather than threading a new prop through
+  // every caller (TeenView/KidTodaySection/KidView/SeniorView) — was:
+  // "Nothing on the calendar today" rendered the instant events was
+  // empty, with no check for whether the initial fetch had actually
+  // finished, so a fresh unlock/foreground briefly flashed the empty
+  // state even on a day with real events before snapping to the correct
+  // list (live-reported: "events not showing afterwards it is coming
+  // back"). Same fix as TodayView's own dayLoading check just above.
+  const dayLoading = useEventStore(s => s.dayLoading);
   const allNames = members.map(m => m.name);
   const today = localDateStr(new Date());
   const now = new Date();
@@ -84,7 +93,11 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
         badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
         collapsible defaultExpanded={todayEvents.length > 0}
         colors={colors} isDark={isDark}>
-      {todayEvents.length === 0 ? (
+      {todayEvents.length === 0 && dayLoading ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+          Loading today's schedule…
+        </Text>
+      ) : todayEvents.length === 0 ? (
         <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
           Nothing on the calendar today — enjoy the breathing room.
         </Text>

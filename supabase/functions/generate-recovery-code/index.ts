@@ -82,10 +82,21 @@ serve(async (req) => {
     if (!member || member.family_id?.toString() !== familyId) {
       return json({ error: 'Not a member of this family' }, 403);
     }
-    if (member.auth_user_id !== user.id) {
-      return json({ error: 'Not authorized for this member' }, 403);
-    }
-    if (!['parent', 'senior'].includes(member.role) && member.role !== 'grandparent') {
+    // Was: member.auth_user_id !== user.id — required the calling parent to
+    // be on THEIR OWN originally-registered device (auth_user_id identifies
+    // "which device is this member's own device," see JoinFamilyScreen.tsx's
+    // own comment: each device gets its own distinct anonymous auth
+    // session). PIN-switching a different member's identity into the local
+    // UI on a device that isn't theirs never changes that device's real
+    // session, so a genuinely legitimate parent PIN-switched into, say,
+    // their spouse's phone got rejected as "Not authorized for this
+    // member" — live-reported, and it defeats the whole point of this
+    // feature (a parent helping recover someone else's access is exactly
+    // the "borrowed device" scenario this needs to work from). Live
+    // decision: any parent, from any device, can generate a recovery code
+    // for another family member — verified purely by family membership +
+    // role below, no device-binding check at all.
+    if (member.role !== 'parent') {
       return json({ error: 'Only parents can generate recovery codes' }, 403);
     }
 

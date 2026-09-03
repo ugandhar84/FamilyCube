@@ -23,7 +23,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Mic, Square, X, Pause } from 'lucide-react-native';
+import { Mic, Square, X, Pause, Info } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
@@ -411,6 +411,19 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 Record this appointment to get an AI summary with discussion topics and next steps, saved
                 to {memberName}'s Records.
               </Text>
+              {/* Live-requested: recording a doctor/nurse conversation has
+                  real consent implications many places require by law (and
+                  is simply the respectful thing to do regardless) — this is
+                  a reminder shown every time, not a one-time dismissible
+                  notice, since the person being recorded changes with every
+                  visit. */}
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: BRAND.amber + '14',
+                borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginHorizontal: 4 }}>
+                <Info size={16} color={BRAND.amber} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                  Please let your doctor or nurse know you're recording this visit before you start.
+                </Text>
+              </View>
               <TouchableOpacity onPress={startRecording}
                 style={{ width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
                 <Mic size={34} color={colors.textInverse} />

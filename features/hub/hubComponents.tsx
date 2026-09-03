@@ -1156,12 +1156,18 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               isn't a kid/teen action. See features/vault/records/
               RecordVisitSheet.tsx for the full recording/upload/review flow. */}
           {cat === 'Medical' && isViewerParent && (
+            // Was a small left-aligned pill with a 14px icon — live-flagged
+            // as reading like a minor secondary action and wasting the
+            // sheet's full width, when this is actually the headline feature
+            // of a Medical event (record -> AI summary -> encrypted vault
+            // record). Full-width, taller, bigger icon — same visual weight
+            // as a primary action elsewhere in this sheet, not a footnote.
             <TouchableOpacity onPress={() => setRecordVisitOpen(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-                borderRadius: 10, borderWidth: 1, borderColor: cc + '50', backgroundColor: cc + '12',
-                paddingHorizontal: 10, paddingVertical: 6 }}>
-              <Ionicons name="mic-outline" size={14} color={cc} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: cc }}>Record Visit</Text>
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                borderRadius: 14, borderWidth: 1, borderColor: cc + '50', backgroundColor: cc + '12',
+                paddingHorizontal: 16, paddingVertical: 14 }}>
+              <Ionicons name="mic-outline" size={22} color={cc} />
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: cc }}>Record Visit</Text>
             </TouchableOpacity>
           )}
           {cat === 'Study' && ev.subject && (

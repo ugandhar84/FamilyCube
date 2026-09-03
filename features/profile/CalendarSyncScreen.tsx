@@ -39,6 +39,13 @@ interface ConnectionRow {
   connected_account_email: string | null;
   last_synced_at: string | null;
   last_error: string | null;
+  // Set by calendar-google-tasks-poll when a connection made before the
+  // tasks.readonly scope existed can't read Google Tasks — Calendar sync
+  // itself still works fine, so this doesn't flip the whole connection to
+  // status:'error'; it needs its own distinct hint instead (live-reported:
+  // a Google Task added never showed up in Chores with no visible signal
+  // why — this was previously only a server-side console.warn).
+  tasks_scope_missing: boolean | null;
 }
 
 const PROVIDER_LABEL: Record<CalendarProvider, string> = { google: 'Google Calendar', outlook: 'Outlook Calendar' };
@@ -115,7 +122,7 @@ export default function CalendarSyncScreen() {
     if (!activeMemberId) { setLoading(false); return; }
     const { data, error } = await supabase
       .from('calendar_connections_public')
-      .select('id, provider, purpose, status, connected_account_email, last_synced_at, last_error')
+      .select('id, provider, purpose, status, connected_account_email, last_synced_at, last_error, tasks_scope_missing')
       .eq('member_id', activeMemberId);
     if (error) console.warn('[CalendarSyncScreen] load failed', error.message);
     setConnections((data ?? []) as ConnectionRow[]);
@@ -234,6 +241,15 @@ export default function CalendarSyncScreen() {
         {connection?.last_synced_at && (
           <Text style={s.lastSynced}>
             Last checked {new Date(connection.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </Text>
+        )}
+        {/* Google Tasks sync (into Chores) needs a scope this connection
+            may predate — Calendar sync itself is unaffected, so this is a
+            separate, narrower hint from the full "Connection error" state
+            above, not a duplicate of it. */}
+        {provider === 'google' && purpose === 'personal' && connection?.status !== 'error' && connection?.tasks_scope_missing && (
+          <Text style={[s.lastSynced, { color: colors.amber }]}>
+            Reconnect to also sync Google Tasks into Chores
           </Text>
         )}
         <TouchableOpacity

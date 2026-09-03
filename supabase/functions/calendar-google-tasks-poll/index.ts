@@ -55,17 +55,31 @@ serve(async (req) => {
     if (!connections?.length) return new Response(JSON.stringify({ ok: true, polled: 0 }), { status: 200 });
 
     let polled = 0;
-    for (const connection of connections as (CalendarConnectionRow & { last_tasks_poll_at?: string })[]) {
+    for (const connection of connections as (CalendarConnectionRow & { last_tasks_poll_at?: string; tasks_scope_missing?: boolean })[]) {
       try {
         await pollOneConnection(supabase, connection);
         polled++;
+        // Clear a previously-set flag the moment a poll actually succeeds —
+        // covers the member reconnecting and picking up the missing scope.
+        // Only issue the write when the flag might actually be set, to
+        // avoid a pointless update on every single successful poll.
+        if (connection.tasks_scope_missing) {
+          await supabase.from('calendar_connections').update({ tasks_scope_missing: false }).eq('id', connection.id);
+        }
       } catch (e: any) {
         // Missing tasks.readonly scope (a connection made before this
         // feature existed) shows up here as a 403 — non-fatal, just skip;
         // the member needs to reconnect to pick up the new scope, same as
         // any other OAuth scope addition. Don't flip the whole connection
         // to 'error' over this alone since Calendar sync for the same
-        // connection is unaffected and still works.
+        // connection is unaffected and still works. Was ONLY a
+        // console.warn — completely invisible to the user, who'd just see
+        // their added Google Task silently never show up in Chores with no
+        // signal anything was wrong (live-reported). tasks_scope_missing
+        // gives CalendarSyncScreen something real to show instead.
+        if (e?.message?.includes('tasks.readonly scope missing')) {
+          await supabase.from('calendar_connections').update({ tasks_scope_missing: true }).eq('id', connection.id);
+        }
         console.warn(`[calendar-google-tasks-poll] skipped connection ${connection.id}:`, e?.message ?? e);
       }
     }
@@ -77,7 +91,7 @@ serve(async (req) => {
   }
 });
 
-async function pollOneConnection(supabase: any, connection: CalendarConnectionRow & { last_tasks_poll_at?: string }): Promise<void> {
+async function pollOneConnection(supabase: any, connection: CalendarConnectionRow & { last_tasks_poll_at?: string; tasks_scope_missing?: boolean }): Promise<void> {
   const accessToken = await getValidAccessToken(supabase, connection);
   const params = new URLSearchParams({ showHidden: 'true', showDeleted: 'true' });
   if (connection.last_tasks_poll_at) params.set('updatedMin', connection.last_tasks_poll_at);

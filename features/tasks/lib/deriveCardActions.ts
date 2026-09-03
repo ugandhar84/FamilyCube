@@ -250,9 +250,24 @@ export function deriveEventActions(
   // real location matches helperMissing's own narrower gate elsewhere in
   // this app (hubComponents.tsx) and the user's own call: "if the
   // location is set then we can show who is handling."
+  //
+  // Only gates OFFERING the picker on an event with no assignee yet — a
+  // second live-reported bug: some synced events (e.g. a health system's
+  // Google Calendar invite) put the real address inside the description/
+  // notes text instead of the structured location field, so hasLocation
+  // read false even though the event clearly has somewhere to go — and an
+  // assignee had already been set (pending) by an earlier code path. That
+  // left a stuck "Pending" badge with zero way to act on it: Remind,
+  // Reassign, Confirm, and Can't were all suppressed. Once a real assignee
+  // already exists, the location question is moot (something already
+  // decided this event needs a driver/helper) — always allow acting on an
+  // existing assignment regardless of hasLocation; hasLocation only
+  // controls whether a BRAND NEW assignment gets offered on an
+  // unassigned event.
   const hasLocation = !!ev.location;
-  const showRemind = !isPast && !isWork && isViewerParent && hasLocation && !!assignee.name && helperPending && !isSelfAssigned;
-  const showReassign = !isPast && !isWork && isViewerParent && hasLocation && (!assignee.name || (helperPending && !isSelfAssigned) || helperRejected);
+  const hasAssignee = !!assignee.name;
+  const showRemind = !isPast && !isWork && isViewerParent && (hasLocation || hasAssignee) && !!assignee.name && helperPending && !isSelfAssigned;
+  const showReassign = !isPast && !isWork && isViewerParent && (hasAssignee ? (helperPending && !isSelfAssigned) || helperRejected : hasLocation);
   const showAssignToMe = showReassign && !isSelfAssigned && viewer.hasCar !== false;
   const showOverride = !isPast && !isWork && isViewerParent && helperConfirmed && !isSelfAssigned;
   const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);

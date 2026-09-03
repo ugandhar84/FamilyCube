@@ -97,14 +97,6 @@ export default function ChatScreen() {
   const [attachType, setAttachType]       = useState<'image' | 'video'>('image');
   const [mentionQuery, setMentionQuery]   = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  // Collapses the channel strip + sub-header while the user scrolls up
-  // (toward older messages) to free up vertical space, and brings it back
-  // as soon as they scroll back down — direction-based, not just "am I at
-  // the bottom", so it also reveals while actively scrolling down through
-  // history, not only once they reach the very latest message.
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
-  const lastScrollY = useRef(0);
-  const headerAnim = useRef(new Animated.Value(0)).current; // 0 = shown, 1 = collapsed
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [lightboxUri, setLightboxUri]       = useState<string | null>(null);
   const [videoLightboxUri, setVideoLightboxUri] = useState<string | null>(null);
@@ -755,25 +747,15 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* maxHeight is a layout property — it can't run on the native
-          driver, so this whole animation (including the opacity fade
-          bundled into the same headerAnim value) was stuck on the JS
-          thread, fighting scroll-event processing for frame time. That's
-          what read as "bouncy, not smooth" on a pull-down rather than a
-          clean glide (direct feedback). translateY + scaleY + opacity all
-          run on the native driver instead — origin: 'top' on scaleY so it
-          collapses upward into nothing rather than squashing from the
-          center. AppHeader's own real height varies by content, so this
-          overshoots on purpose (translateY covers more than enough) rather
-          than trying to measure it exactly. */}
-      <Animated.View style={{
-        opacity: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-        overflow: 'hidden',
-        transform: [
-          { translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -120] }) },
-          { scaleY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.01] }) },
-        ],
-      }}>
+      {/* Was a scroll-direction-collapsing header (hide on scroll-up toward
+          older messages, reveal on scroll-down) — removed entirely rather
+          than fixed a third time. It had already gone through two live-
+          reported bug rounds (janky JS-thread animation, then getting
+          permanently stuck collapsed at the top of history with no way
+          back) before this; a fixed, always-visible header can't glitch,
+          bounce, or get stuck, because there's no collapse state machine
+          left to misbehave. */}
+      <View>
         <AppHeader
           memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
           memberRole={activeMember?.role ?? 'parent'}
@@ -829,7 +811,7 @@ export default function ChatScreen() {
             </ScrollView>
           </View>
         </View>
-      </Animated.View>
+      </View>
 
       {/* ── Channel sub-header: label + member avatars ──
           zIndex/elevation below 1 so this sibling row reliably renders
@@ -1004,64 +986,9 @@ export default function ChatScreen() {
               updateCellsBatchingPeriod={50}
               removeClippedSubviews
               onTouchStart={() => showAttachMenu && setShowAttachMenu(false)}
-              onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+              onScroll={({ nativeEvent: { contentOffset } }) => {
                 // In inverted list offset 0 = bottom; >200 means user scrolled up
                 setShowScrollBtn(contentOffset.y > 200);
-
-                // A short conversation (or already fully scrolled to the
-                // top) has no real scroll range left — iOS's elastic
-                // overscroll bounce still fires onScroll with the offset
-                // rubber-banding rapidly around 0 in that case, and each
-                // tiny back-and-forth independently crossed this handler's
-                // direction/threshold checks below, flipping
-                // headerCollapsed on and off several times a second (live-
-                // reported as the header "glitchy bouncing up and down"
-                // when there's nothing left to scroll). Skip entirely when
-                // the list can't actually scroll past its own bounds, and
-                // clamp out negative offsets (the bounce itself) so a real
-                // conversation's own overscroll at either end doesn't
-                // trigger this either.
-                const canScroll = contentSize.height > layoutMeasurement.height + 1;
-                if (!canScroll || contentOffset.y < 0) return;
-
-                // Reaching the TOP of history (max offset in this inverted
-                // list — the oldest message, nothing further to load) with
-                // the header still collapsed from scrolling up to get here
-                // had no way back: the only re-expand condition below fires
-                // on the NEXT scroll event, but there isn't one once the
-                // user is at rest against the end of real content — no more
-                // messages ever arrive above to keep triggering onScroll.
-                // Header stayed permanently collapsed (live-reported: "im
-                // still scrolling... nothing is there... header is still
-                // stuck", a blank gap where it used to be). Re-expand the
-                // instant the list is within a few px of its true max
-                // extent, regardless of direction.
-                const atTop = contentOffset.y >= contentSize.height - layoutMeasurement.height - 4;
-                if (atTop && headerCollapsed) {
-                  setHeaderCollapsed(false);
-                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-                  lastScrollY.current = contentOffset.y;
-                  return;
-                }
-
-                // Inverted list: a GROWING offset.y means the user is
-                // scrolling toward older messages (visually "up"); a
-                // shrinking one means back toward the latest ("down").
-                const dy = contentOffset.y - lastScrollY.current;
-                lastScrollY.current = contentOffset.y;
-                if (Math.abs(dy) < 2) return; // ignore jitter
-                const goingToOlder = dy > 0;
-                if (goingToOlder && contentOffset.y > 40 && !headerCollapsed) {
-                  setHeaderCollapsed(true);
-                  // Now driven entirely by opacity/transform (see the
-                  // header's own Animated.View above) — safe for the
-                  // native driver, which is what actually makes this run
-                  // smoothly off the JS thread during active scrolling.
-                  Animated.timing(headerAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-                } else if ((!goingToOlder || contentOffset.y <= 40) && headerCollapsed) {
-                  setHeaderCollapsed(false);
-                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-                }
               }}
               scrollEventThrottle={100}
               onScrollToIndexFailed={({ index, averageItemLength }) => {

@@ -173,11 +173,21 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
       .eq('family_id', familyId)
       .is('revoked_at', null);
     for (const d of familyDevices ?? []) {
+      let result: string;
       try {
         const sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key);
-        const result = decryptWithSessionKey(blob.ct, sessionKey);
-        if (!result.startsWith('[🔒')) return JSON.parse(result) as T;
-      } catch { /* try next device */ }
+        result = decryptWithSessionKey(blob.ct, sessionKey);
+      } catch { continue; } // wrong device's public key for this wrap — try the next one
+      if (result.startsWith('[🔒')) continue; // wrong key/corrupted ciphertext — try the next device
+      // The right device+key WAS found (decrypt succeeded) — a JSON.parse
+      // failure past this point means the underlying plaintext itself is
+      // corrupt, not a key-management problem. This must NOT be caught by
+      // the loop's own per-device try/catch above (it was, before this
+      // fix) — doing so made a genuinely-decrypted-but-corrupt record
+      // indistinguishable from "no device could decrypt this," silently
+      // returning null after exhausting every device even though the
+      // right key was already found on the first one.
+      return JSON.parse(result) as T;
     }
     return null;
   } catch (e: any) {

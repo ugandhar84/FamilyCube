@@ -163,6 +163,25 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
       if (!analysis?.summary) throw new Error('Invalid AI response');
       setPendingAnalysis(analysis);
+      // Live-requested: notify the person who recorded this to come review
+      // it — only on the FIRST analysis, not a re-analyze re-run, since
+      // the recorder is already looking at this exact sheet in that case
+      // (they just tapped "Re-analyze" themselves) and a push would be
+      // redundant. Non-blocking — a failed notification shouldn't stop
+      // the review sheet from opening, same as RecordsTab.tsx's own
+      // analyzeRecord() notification for the document-analysis flow.
+      if (!isReanalyze) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            familyId, memberId: actorId, type: 'custom',
+            payload: {
+              title: '📋 Visit Summary Ready',
+              body: `${eventTitle} — tap to review and approve the summary`,
+              data: { screen: 'vault', tab: 'records', record_id: rec.id },
+            },
+          },
+        }).catch(() => {});
+      }
     } catch (e: any) {
       showToast(e?.message ?? "Couldn't process the recording", 'error');
     } finally {
@@ -317,7 +336,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             <View style={{ gap: 16, alignItems: 'center', paddingVertical: 20 }}>
               <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>{notMedical}</Text>
               <TouchableOpacity onPress={handleClose} style={{ borderRadius: 14, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 24 }}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Close</Text>
+                <Text style={{ color: colors.textInverse, fontWeight: '800' }}>Close</Text>
               </TouchableOpacity>
             </View>
           ) : uploading || analyzing ? (
@@ -351,9 +370,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 {!paused && (
-                  <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', opacity: dotBlinkAnim }} />
+                  <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger, opacity: dotBlinkAnim }} />
                 )}
-                <Text style={{ fontSize: 12, fontWeight: '800', color: paused ? colors.textTertiary : '#EF4444', letterSpacing: 0.5 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: paused ? colors.textTertiary : colors.danger, letterSpacing: 0.5 }}>
                   {paused ? 'PAUSED' : 'RECORDING'}
                 </Text>
               </View>
@@ -376,9 +395,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                   <Text style={{ color: colors.textPrimary, fontWeight: '800', fontSize: 14 }}>{paused ? 'Resume' : 'Pause'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={stopAndProcess}
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: isDark ? '#fff' : '#111', paddingVertical: 14 }}>
-                  <Square size={14} color={isDark ? '#111' : '#fff'} fill={isDark ? '#111' : '#fff'} />
-                  <Text style={{ color: isDark ? '#111' : '#fff', fontWeight: '800', fontSize: 14 }}>Stop</Text>
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.textPrimary, paddingVertical: 14 }}>
+                  <Square size={14} color={colors.background} fill={colors.background} />
+                  <Text style={{ color: colors.background, fontWeight: '800', fontSize: 14 }}>Stop</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -394,7 +413,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
               </Text>
               <TouchableOpacity onPress={startRecording}
                 style={{ width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
-                <Mic size={34} color="#fff" />
+                <Mic size={34} color={colors.textInverse} />
               </TouchableOpacity>
               <Text style={{ fontSize: 12, color: colors.textTertiary }}>Tap to start recording</Text>
             </View>

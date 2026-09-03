@@ -37,7 +37,14 @@ export default function DataRecoveryScreen() {
 
   const [mode, setMode] = useState<Mode>('loading');
   const [hasKey, setHasKey] = useState(false);
-  const [current, setCurrent] = useState('');
+  // "Change passcode" and "Recover this device" render as two SEPARATE
+  // cards simultaneously once a key exists — they need their own current-
+  // passcode field each. Sharing one `current` state between them meant
+  // typing in one card silently populated the other's field too, and
+  // submitting either handler could send whichever card's value happened
+  // to be typed last, regardless of which button was actually tapped.
+  const [currentForChange, setCurrentForChange] = useState('');
+  const [currentForRecover, setCurrentForRecover] = useState('');
   const [passcode, setPasscode] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,26 +74,26 @@ export default function DataRecoveryScreen() {
   };
 
   const handleChange = async () => {
-    if (!current) { showAlert('Enter your current passcode', 'You need the current passcode to set a new one.'); return; }
+    if (!currentForChange) { showAlert('Enter your current passcode', 'You need the current passcode to set a new one.'); return; }
     if (passcode.length < 6) { showAlert('Make it longer', 'Use at least 6 characters so it’s hard to guess.'); return; }
     if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
     if (!familyId) return;
     setSaving(true);
-    const result = await changeFamilyRecoveryPasscode(familyId, current, passcode);
+    const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't change the passcode", result.error); return; }
-    setCurrent(''); setPasscode(''); setConfirm('');
+    setCurrentForChange(''); setPasscode(''); setConfirm('');
     showAlert('Updated', 'The family passcode has been changed. Share the new one with anyone who might need to recover a device.');
   };
 
   const handleRecover = async () => {
-    if (!current) { showAlert('Enter the family passcode', 'Ask a parent for the family security passcode.'); return; }
+    if (!currentForRecover) { showAlert('Enter the family passcode', 'Ask a parent for the family security passcode.'); return; }
     if (!familyId || !activeMemberId) return;
     setSaving(true);
-    const result = await recoverWithFamilyPasscode(familyId, activeMemberId, current);
+    const result = await recoverWithFamilyPasscode(familyId, activeMemberId, currentForRecover);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
-    setCurrent('');
+    setCurrentForRecover('');
     showAlert('Recovered', 'This device can now access your family’s chat, location, and medical records history.');
   };
 
@@ -125,8 +132,8 @@ export default function DataRecoveryScreen() {
             <View style={s.rowBetween}>
               <Text style={s.cardTitle}>Status</Text>
               <View style={s.badge}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.success ?? '#3D7A5A'} />
-                <Text style={[s.badgeText, { color: colors.success ?? '#3D7A5A' }]}>Set up</Text>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={[s.badgeText, { color: colors.success }]}>Set up</Text>
               </View>
             </View>
             <Text style={s.cardSub}>
@@ -163,7 +170,7 @@ export default function DataRecoveryScreen() {
               autoCorrect={false}
             />
             <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleSetUp} disabled={saving}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Set Up Passcode</Text>}
+              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Set Up Passcode</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -180,8 +187,8 @@ export default function DataRecoveryScreen() {
             <Text style={s.cardSub}>Requires the current passcode. Existing chat, location, and record history is unaffected.</Text>
             <TextInput
               style={s.input}
-              value={current}
-              onChangeText={setCurrent}
+              value={currentForChange}
+              onChangeText={setCurrentForChange}
               placeholder="Current passcode"
               placeholderTextColor={colors.textTertiary}
               secureTextEntry
@@ -209,7 +216,7 @@ export default function DataRecoveryScreen() {
               autoCorrect={false}
             />
             <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleChange} disabled={saving}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Change Passcode</Text>}
+              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Change Passcode</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -223,8 +230,8 @@ export default function DataRecoveryScreen() {
             </Text>
             <TextInput
               style={s.input}
-              value={current}
-              onChangeText={setCurrent}
+              value={currentForRecover}
+              onChangeText={setCurrentForRecover}
               placeholder="Family passcode"
               placeholderTextColor={colors.textTertiary}
               secureTextEntry
@@ -256,7 +263,7 @@ function styles(colors: any, isDark: boolean) {
     cardTitle: { fontSize: TYPO.body, fontWeight: '800' as const, color: colors.textPrimary },
     cardSub: { fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 },
     rowBetween: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const },
-    badge: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: (colors.success ?? '#3D7A5A') + '18' },
+    badge: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.success + '18' },
     badgeText: { fontSize: TYPO.micro, fontWeight: '800' as const },
     input: {
       borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
@@ -264,6 +271,6 @@ function styles(colors: any, isDark: boolean) {
       color: colors.textPrimary, backgroundColor: colors.surface,
     },
     btn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' as const, backgroundColor: colors.primary, marginTop: 4 },
-    btnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' as const },
+    btnText: { color: colors.textInverse, fontSize: TYPO.body, fontWeight: '800' as const },
   };
 }

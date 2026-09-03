@@ -105,7 +105,7 @@ export default function SecurityPasscodeScreen() {
               disabled={saving}
               activeOpacity={0.85}
             >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Set Up Passcode</Text>}
+              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Set Up Passcode</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity style={s.linkBtn} onPress={proceed} disabled={saving}>
@@ -133,7 +133,7 @@ function makeStyles(colors: any, isDark: boolean) {
     },
     hint: { fontSize: TYPO.micro, color: colors.textTertiary, lineHeight: 16, fontStyle: 'italic' },
     btn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: SPACING.sm },
-    btnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
+    btnText: { color: colors.textInverse, fontSize: TYPO.body, fontWeight: '800' },
     linkBtn: { alignItems: 'center', paddingVertical: SPACING.sm },
     linkText: { fontSize: TYPO.caption, color: colors.textSecondary, fontWeight: '600' },
   });

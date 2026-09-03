@@ -10,6 +10,7 @@ import {
   MapPin, AlertOctagon, Car, Navigation, AlertTriangle, X, User,
   Users, Backpack, Bell, Repeat, Check,
 } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
@@ -1084,6 +1085,26 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} />
             </View>
           )}
+
+          {/* Synced-from row — same info as EventCard's compact badge
+              (features/calendar/components/EventCard.tsx:257-274), spelled
+              out full-width here since the sheet has room for a real label
+              instead of a squeezed pill. Same provider glyph + member's
+              first name, same parent-only gate. */}
+          {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+            const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
+            const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
+              : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
+            const label = syncMember ? `Synced from ${syncMember.name.trim().split(/\s+/)[0]}'s ${providerLabel} calendar` : `Synced from ${providerLabel}`;
+            const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
+              : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+            return (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name={iconName as any} size={13} color={colors.textSecondary} />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textSecondary }}>{label}</Text>
+              </View>
+            );
+          })()}
 
           {/* Category-specific fields */}
           {cat === 'Medical' && ev.doctorName && (

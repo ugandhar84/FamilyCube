@@ -248,24 +248,26 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   email/generic provider name — redone with the real
                   provider glyph (Ionicons logo-google/logo-apple/mail,
                   matching CalendarSyncScreen's own icon choices) plus
-                  the syncing MEMBER's initials (e.g. "UN" for Ugandhar)
-                  instead of an email string, resolved from
+                  the syncing member's first name (e.g. "Ugandhar's
+                  calendar") instead of an email string or bare initials
+                  — initials alone left it ambiguous which family member
+                  a badge referred to at a glance. Resolved from
                   lastExternalSyncMemberId. Kids/teens don't care whose
                   personal calendar connection something came from —
                   parent-only, same isViewerParent gate the declined-
                   driver treatment above already uses. */}
               {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
                 const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                const initials = syncMember
-                  ? syncMember.name.trim().split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase()
-                  : null;
+                const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
+                  : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
+                const label = syncMember ? `${syncMember.name.trim().split(/\s+/)[0]}'s calendar` : providerLabel;
                 const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
                   : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                 return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
                     <Ionicons name={iconName as any} size={10} color={colors.textSecondary} />
                     <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
-                      {initials ?? (ev.lastExternalSyncProvider === 'google' ? 'Google' : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook')}
+                      {label}
                     </Text>
                   </View>
                 );

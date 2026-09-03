@@ -939,7 +939,17 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
 
   return (
     <>
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    {/* visible was hardcoded `true` (a bare boolean, not tied to any state)
+        — harmless while this was the only Modal on screen, but once
+        RecordVisitSheet (its own separate <Modal>, rendered as a sibling
+        below) needed to present on TOP of this one, iOS silently failed to
+        layer a second native Modal over a first one that never actually
+        yields, so tapping "Record Visit" appeared to do nothing at all.
+        Hide this sheet's Modal while the recording sheet is up; its own
+        state (scroll position, expanded sections, etc.) survives since the
+        component itself stays mounted — only the native Modal's presentation
+        toggles, exactly like closing/reopening any other RN Modal. */}
+    <Modal visible={!recordVisitOpen} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
           <Pressable style={{ flex: 1 }} onPress={onClose} />

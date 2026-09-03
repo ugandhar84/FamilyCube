@@ -109,6 +109,26 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   // elapsed-tracking timer needed, unlike ChatScreen.tsx's own
   // Date.now()-diff approach (which predates pause/resume existing here).
   const elapsed = recorderState.durationMillis / 1000;
+  // Belt-and-suspenders wall-clock fallback — live-reported: recorderState.
+  // durationMillis alone still produced "too short" on every single
+  // attempt on at least one real device, even after switching stopAndProcess
+  // to read it BEFORE calling stop() (the first, confirmed-real bug this
+  // exact symptom had). Rather than trust a single SDK-reported timing
+  // signal a second time, this now ALSO tracks how long recording has
+  // actually been running via Date.now(), refs (not state, so
+  // stopAndProcess always reads the current value with no closure/render-
+  // timing risk at all), and takes whichever of the two says MORE elapsed
+  // time — the true duration can only be undercounted by one signal being
+  // wrong, never overcounted by both being wrong in the same direction, so
+  // the max of the two is always the safer answer than either alone.
+  const recordStartRef = useRef<number | null>(null);
+  const pausedAccumRef = useRef(0); // total ms spent paused so far, subtracted out
+  const pauseStartRef = useRef<number | null>(null);
+  const wallClockElapsedSecs = () => {
+    if (recordStartRef.current == null) return 0;
+    const pausedSoFar = pausedAccumRef.current + (pauseStartRef.current != null ? Date.now() - pauseStartRef.current : 0);
+    return Math.max(0, (Date.now() - recordStartRef.current - pausedSoFar) / 1000);
+  };
   const dotBlinkAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -127,6 +147,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
+    recordStartRef.current = Date.now();
+    pausedAccumRef.current = 0;
+    pauseStartRef.current = null;
     setRecording(true);
     setPaused(false);
   };
@@ -136,8 +159,15 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   // excludes paused time on its own, so elapsed display naturally pauses
   // too without any extra bookkeeping here.
   const togglePause = () => {
-    if (paused) { recorder.record(); setPaused(false); }
-    else { recorder.pause(); setPaused(true); }
+    if (paused) {
+      recorder.record();
+      if (pauseStartRef.current != null) { pausedAccumRef.current += Date.now() - pauseStartRef.current; pauseStartRef.current = null; }
+      setPaused(false);
+    } else {
+      recorder.pause();
+      pauseStartRef.current = Date.now();
+      setPaused(true);
+    }
   };
 
   // Shared by the initial analysis (after recording stops) and the review
@@ -203,23 +233,37 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   };
 
   const stopAndProcess = async () => {
-    // Captured BEFORE stop(), not after — live-reported: every recording,
-    // regardless of actual length, failed with "too short." recorder.
-    // currentTime read AFTER await recorder.stop() resolves is unreliable
-    // (reads back near-zero once the recorder has already torn down),
-    // unlike `elapsed` above (recorderState.durationMillis), which is the
-    // same live value already driving the on-screen timer during
-    // recording and is guaranteed accurate up to the moment stop() is
-    // called. ChatScreen.tsx's own proven-working voice-note recording
-    // has the same shape — it captures its duration from a manual
-    // Date.now() diff taken before stop(), never reads the SDK's own
-    // currentTime post-stop either.
-    const dur = elapsed;
+    // Both captured BEFORE stop(), not after — recorder.currentTime read
+    // AFTER await recorder.stop() resolves is unreliable (reads back
+    // near-zero once the recorder has already torn down). Live-reported:
+    // "too short" STILL fired on every single attempt on at least one real
+    // device even after switching to recorderState.durationMillis alone
+    // (elapsed) — rather than trust one SDK-reported timing signal a
+    // second time with no way to verify it against anything, this also
+    // takes a manual wall-clock reading (wallClockElapsedSecs, tracked via
+    // refs from real record/pause/resume timestamps) and uses whichever
+    // of the two reports MORE elapsed time. The true duration can only be
+    // undercounted by one signal being wrong, never overcounted by both
+    // being wrong in the same direction — so the max is always at least as
+    // trustworthy as either alone, and strictly safer than picking one and
+    // hoping.
+    const dur = Math.max(elapsed, wallClockElapsedSecs());
     await recorder.stop();
     const uri = recorder.uri;
     setRecording(false);
     setPaused(false);
-    if (!uri || dur < 1) { showToast("Recording was too short — try again", 'error'); return; }
+    recordStartRef.current = null;
+    pauseStartRef.current = null;
+    // Temporary diagnostic — kept until this is confirmed fixed on the
+    // device that hit it, so if "too short" recurs there's a real signal
+    // to look at instead of guessing a third time: which half of the check
+    // failed (no uri at all vs. a real duration reading near-zero), and
+    // what each of the two duration signals independently reported.
+    console.log('[RecordVisitSheet] stopAndProcess', { uri, dur, elapsed, wallClock: wallClockElapsedSecs(), recorderCurrentTime: recorder.currentTime });
+    if (!uri || dur < 1) {
+      showToast(!uri ? "Couldn't save the recording — try again" : "Recording was too short — try again", 'error');
+      return;
+    }
 
     setUploading(true);
     try {

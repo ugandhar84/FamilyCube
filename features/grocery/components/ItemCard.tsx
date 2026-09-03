@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GroceryItem } from '@/store/groceryStore';
-import { CatIcon, catDotColor } from './types';
+import { CatIcon, catDotColor, itemEmoji } from './types';
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
@@ -46,7 +46,18 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
           </View>
         ) : (
           <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: (catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary) + '1A', alignItems: 'center', justifyContent: 'center' }}>
-            <CatIcon category={item.category} size={18} color={catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary} />
+            {/* Per-item emoji (e.g. 🧅 for "diced onion") when the item
+                name matches a known ingredient/household item — falls back
+                to the old category-level icon (same for every Produce
+                item, etc.) for anything unrecognized. See itemEmoji()'s
+                own comment in ./types for why this is keyword-matched
+                rather than AI-generated. */}
+            {(() => {
+              const emoji = itemEmoji(item.name);
+              return emoji
+                ? <Text style={{ fontSize: 17 }}>{emoji}</Text>
+                : <CatIcon category={item.category} size={18} color={catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary} />;
+            })()}
           </View>
         )}
       </View>

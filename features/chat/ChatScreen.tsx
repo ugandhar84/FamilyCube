@@ -767,7 +767,17 @@ export default function ChatScreen() {
         />
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-        {/* ── Channel strip ── */}
+        {/* ── Channel strip ──
+            Was a per-scroll-event Animated.Value collapse (see the removed-
+            feature comment above) — that's what kept glitching. This reuses
+            showScrollBtn instead: the SAME plain boolean, flipped once at a
+            fixed 200px threshold (see onScroll below), already used for the
+            scroll-to-bottom button. Hiding the strip while it's true reclaims
+            reading space the moment the user has scrolled away from the
+            latest message, with no separate collapse state, no animation,
+            and no way to get stuck — it can only ever be exactly in sync
+            with whatever showScrollBtn already is. */}
+        {!showScrollBtn && (
         <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
           <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2, alignItems: 'center' }}>
@@ -811,6 +821,7 @@ export default function ChatScreen() {
             </ScrollView>
           </View>
         </View>
+        )}
       </View>
 
       {/* ── Channel sub-header: label + member avatars ──

@@ -278,6 +278,7 @@ const TOOLS = [
           category:   { type: 'string', enum: ['Medical', 'Sports', 'Study', 'Ride', 'Work', 'Event', 'Birthday', 'Errand', 'Other'] },
           startAt:    { type: 'string', description: 'Local date+time in the family\'s own timezone, formatted YYYY-MM-DDTHH:MM:SS with NO trailing "Z" and NO UTC offset (e.g. "2026-09-02T23:22:00", never "2026-09-02T23:22:00Z" or "...-05:00"). The client parses this as a plain wall-clock time in the device\'s own zone — a "Z" suffix or explicit offset gets silently reinterpreted and lands at the wrong hour, which is exactly the class of bug this note exists to prevent (live-reported: an event set for 11:22 PM landed an hour early on the synced calendar).' },
           memberName: { type: 'string', description: 'Which family member this is for, if named' },
+          helperName: { type: 'string', description: 'A SECOND family member who is accompanying, helping, driving, or assigned to handle this event, if the request names one — e.g. "doctor appointment for Ugandhar accompanied by Praveena" -> memberName "Ugandhar", helperName "Praveena". Covers "accompanied by X", "with X", "X is driving", "X is taking them", "X is helping", "assigned to X" (as the helper, when memberName already covers who the event is FOR) phrasing. This is a real assignment (shows as a helper/driver on the event, pending their confirmation), not a note — never fold this person\'s name into `notes` instead of setting this field when one is clearly named as accompanying/helping/driving/assigned.' },
           notes:      { type: 'string' },
           alertCallLeadMinutes: {
             type: 'number',
@@ -1046,6 +1047,24 @@ async function executeTool(
       memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
       if (!memberId) unresolvedName = args.memberName;
     }
+    // A second named person ("accompanied by X", "X is driving") is a real
+    // helper/driver assignment, not free text — was previously only ever
+    // captured via the generic `notes` field (if at all), silently losing
+    // the actual accompanying-person assignment a Medical/Ride event needs.
+    // Same resolve-or-flag-unresolved treatment as memberName above; a
+    // name that fails to resolve is reported back rather than silently
+    // dropped or misfiled into notes.
+    let helperId: string | null = null;
+    let helperName: string | null = null;
+    let unresolvedHelperName: string | null = null;
+    if (args.helperName) {
+      helperId = await resolveMemberId(supabase, familyId, args.helperName, aliasMap);
+      if (helperId) {
+        helperName = members.find(m => m.id === helperId)?.name ?? args.helperName;
+      } else {
+        unresolvedHelperName = args.helperName;
+      }
+    }
     // alertCallLeadMinutes is opt-in — undefined/null means "no reminder
     // requested," matching the manual EventFormModal's own alertCall
     // boolean staying false by default. Only set alertCall true when the
@@ -1069,7 +1088,9 @@ async function executeTool(
       startAt: args.startAt ?? null, memberId, notes: args.notes ?? null,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
       recurrenceRule,
+      helperId, helperName,
       ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
+      ...(unresolvedHelperName ? { _unresolvedHelperName: unresolvedHelperName } : {}),
     };
   }
 
@@ -1581,7 +1602,9 @@ If a propose_event/propose_quest tool result includes "_unresolvedName", the per
 couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
 UNASSIGNED/open-pool instead. Say so plainly in your one-sentence reply (e.g. "I couldn't find someone named X, so
 I've left this unassigned — take a look below") rather than staying silent about it; don't just present the card as
-if the assignment worked.
+if the assignment worked. Same treatment for "_unresolvedHelperName" on a propose_event result — the accompanying/
+helping/driving person you tried to set couldn't be matched either, so the draft has no helper assigned; mention
+that too in your one-sentence reply rather than silently dropping it.
 CRITICAL: after calling a propose_* tool, your reply text must be SHORT — one sentence like "Here's an idea for
 tonight — take a look below" or "I've drafted a few options below, pick one that sounds good." The app already shows
 a rich visual card with the full title/ingredients/details right under your message, so NEVER restate the dish name,

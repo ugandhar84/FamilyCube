@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import { View, Text, Pressable, Image, TextInput } from 'react-native';
-import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2 } from 'lucide-react-native';
+import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2, Users } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import type { AskCubeProposal } from '@/lib/askCubeService';
@@ -750,6 +750,22 @@ export default function AskCubeProposalCard({
           </View>
         )}
       </View>
+      {/* A second named person ("accompanied by X", "X is driving/helping")
+          — shown here so the user can see the real assignment being made
+          before confirming, not just discover it after the fact. Was
+          previously invisible on this card entirely since the field didn't
+          exist (see helperName's own comment in ask-cube/index.ts). */}
+      {!!d.helperName && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Users size={12} color={colors.textSecondary} />
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>with {d.helperName}</Text>
+        </View>
+      )}
+      {!!d._unresolvedHelperName && (
+        <Text style={{ fontSize: TYPO.micro, color: colors.danger }}>
+          Couldn't find "{d._unresolvedHelperName}" — no helper assigned
+        </Text>
+      )}
       <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
       {Actions}
     </View>

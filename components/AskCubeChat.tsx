@@ -461,6 +461,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         // for a reminder (ask-cube/index.ts's system prompt) — mirrors the
         // manual EventFormModal's own opt-in alertCall toggle exactly.
         alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
+        // A second named person ("accompanied by X", "X is driving/helping")
+        // is a real helper assignment, not free text — was previously only
+        // ever captured (if at all) by falling into the generic `notes`
+        // field, live-reported as "accompanied by Praveena" landing as a
+        // pinned note instead of an actual assignment. Pending by default,
+        // same as every other helper assignment in the app (manual Add
+        // Event form, synced-calendar auto-default) — the named person
+        // still needs to confirm, this doesn't self-confirm on their behalf.
+        helper: d.helperName ?? undefined, helperId: d.helperId ?? undefined,
+        helperStatus: d.helperId ? 'pending' as const : undefined,
       };
       const eventDate = dt.toISOString().slice(0, 10);
       // Same live-reported duplicate-creation gap EventFormModal's own

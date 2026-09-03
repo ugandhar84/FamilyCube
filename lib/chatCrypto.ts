@@ -421,3 +421,197 @@ export function decryptWithSessionKey(ciphertext: string, sessionKey: Uint8Array
   }
 }
 
+// ─── Records session key (per-device envelope, long-lived) ───────────────────
+//
+// Same shape as the location session key above, family-scoped instead of
+// member-scoped — a medical record is visible to the whole family, not one
+// member's own devices. One long-lived AES-256 key per family, wrapped once
+// per family device into family_record_keys, re-encrypting each record's AI
+// analysis under that same still-valid key on every write.
+
+const LOCAL_RECORDS_KEY_PREFIX = 'familycube_records_sessionkey_';
+
+/**
+ * This device's cached copy of its family's records session key. Generates
+ * one on first call and persists it locally; the caller is responsible for
+ * wrapping it for every family device via wrapRecordsKeyForDevices once
+ * (see that function's own doc).
+ */
+export async function getOrCreateRecordsSessionKey(familyId: string): Promise<Uint8Array> {
+  const storageKey = LOCAL_RECORDS_KEY_PREFIX + familyId;
+  const stored = await SecureStore.getItemAsync(storageKey);
+  if (stored) return b64ToBytes(stored);
+  const key = randomBytes(32);
+  await SecureStore.setItemAsync(storageKey, bytesToB64(key));
+  return key;
+}
+
+/**
+ * Wraps a family's records session key for every given recipient device.
+ * Call once when a device is newly registered (or the first time a
+ * family's key is created) — NOT on every record write, which would defeat
+ * the point of a long-lived key. Returns one wrapped-key entry per device,
+ * to be upserted into family_record_keys.
+ */
+export async function wrapRecordsKeyForDevices(
+  sessionKey: Uint8Array,
+  recipients: { deviceId: string; publicKeyB64: string }[],
+): Promise<{ deviceId: string; wrappedKey: string }[]> {
+  const { privateKey: myPriv } = await getDeviceKeyPair();
+  return recipients.map(r => {
+    const theirPub  = b64ToBytes(r.publicKeyB64);
+    const shared     = x25519.getSharedSecret(myPriv, theirPub);
+    const wrapIv     = randomBytes(12);
+    const wrapCipher = gcm(shared.slice(0, 32), wrapIv);
+    const wrapped    = wrapCipher.encrypt(sessionKey);
+    return { deviceId: r.deviceId, wrappedKey: `${bytesToB64(wrapIv)}:${bytesToB64(wrapped)}` };
+  });
+}
+
+/** Unwraps a records session key using this device's own private key + the sender device's public key. */
+export async function unwrapRecordsKey(wrappedKey: string, senderPublicKeyB64: string): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const theirPub = b64ToBytes(senderPublicKeyB64);
+  const shared    = x25519.getSharedSecret(myPriv, theirPub);
+  const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
+  const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
+  return wrapCipher.decrypt(b64ToBytes(wrappedB64));
+}
+
+// ─── Family recovery key ──────────────────────────────────────────────────────
+//
+// Every per-device envelope above (chat, location, records) has NO recovery
+// by design — losing a device loses that device's ability to decrypt
+// anything wrapped for it. This section adds a family-wide recovery path
+// WITHOUT touching any of the encrypt/decrypt call sites above: a single
+// synthetic "recovery device" is registered in device_keys (device_id =
+// RECOVERY_DEVICE_ID) whose public key every wrap call already includes
+// automatically (encryptForDevices/wrapLocationKeyForDevices/
+// wrapRecordsKeyForDevices all just iterate whatever getFamilyDeviceDirectory
+// returns). Only this recovery key's PRIVATE half is special: it's
+// encrypted with a family passcode (PBKDF2 → AES-GCM) and stored server-side
+// in families.encrypted_recovery_privkey/recovery_key_salt, so a brand new
+// device can recover it by entering the passcode, then use it locally
+// exactly like any other device's key pair to unwrap everything the
+// recovery key was ever wrapped for.
+//
+// This is a DIFFERENT, PBKDF2-derived-AES-GCM-key scheme from the legacy
+// deriveWrappingKey()/wrapKeysWithPasscode() above (which wraps WebCrypto
+// CryptoKey objects via AES-KW, for the old single-shared-AES-key design) —
+// this wraps raw X25519 private key bytes via AES-GCM, matching the
+// @noble/ciphers primitives the rest of the per-device section uses.
+export const RECOVERY_DEVICE_ID = 'recovery';
+
+async function deriveRecoveryWrappingKey(passcode: string, saltHex: string): Promise<Uint8Array> {
+  const saltBuf = new Uint8Array(saltHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBuf, iterations: 310_000, hash: 'SHA-256' },
+    base, 256,
+  );
+  return new Uint8Array(bits);
+}
+
+function randomSaltHex(): string {
+  const bytes = randomBytes(16);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Generates a brand-new family recovery X25519 key pair, encrypts its
+ * private half with the given passcode, and returns everything the caller
+ * needs to persist: the public key (to upsert into device_keys as the
+ * RECOVERY_DEVICE_ID row) and the encrypted-private-key blob + salt (to
+ * store in families.encrypted_recovery_privkey/recovery_key_salt). Does
+ * NOT touch Secure Store or any network call itself — pure key generation +
+ * local wrapping, so the caller controls exactly when/how it's persisted.
+ */
+export async function createFamilyRecoveryKey(passcode: string): Promise<{
+  publicKeyB64: string; encryptedPrivateKey: string; saltHex: string;
+}> {
+  const privateKey = x25519.utils.randomSecretKey();
+  const publicKey  = x25519.getPublicKey(privateKey);
+  const saltHex    = randomSaltHex();
+  const wrapKey    = await deriveRecoveryWrappingKey(passcode, saltHex);
+  const iv         = randomBytes(12);
+  const cipher     = gcm(wrapKey, iv);
+  const encrypted  = cipher.encrypt(privateKey);
+  return {
+    publicKeyB64: bytesToB64(publicKey),
+    encryptedPrivateKey: `${bytesToB64(iv)}:${bytesToB64(encrypted)}`,
+    saltHex,
+  };
+}
+
+/**
+ * Re-encrypts an ALREADY-KNOWN recovery private key under a NEW passcode —
+ * used when a parent changes the family passcode. Deliberately does NOT
+ * generate a new key pair: the recovery key pair itself, and therefore
+ * every existing wrapped copy of every session key (chat/location/
+ * records), stays exactly as it was. Only the passcode-derived wrapping
+ * around the private key changes, so this is cheap — no re-encryption of
+ * any actual message/location/record data is needed or performed.
+ */
+export async function rewrapRecoveryPrivateKey(privateKey: Uint8Array, newPasscode: string): Promise<{
+  encryptedPrivateKey: string; saltHex: string;
+}> {
+  const saltHex   = randomSaltHex();
+  const wrapKey   = await deriveRecoveryWrappingKey(newPasscode, saltHex);
+  const iv        = randomBytes(12);
+  const cipher    = gcm(wrapKey, iv);
+  const encrypted = cipher.encrypt(privateKey);
+  return { encryptedPrivateKey: `${bytesToB64(iv)}:${bytesToB64(encrypted)}`, saltHex };
+}
+
+/**
+ * Recovers the family recovery key pair from the passcode + stored
+ * encrypted blob, and installs it into THIS device's own Secure Store
+ * exactly as if this device generated it via getDeviceKeyPair() — every
+ * unwrap function (decryptFromDevice/unwrapLocationKey/unwrapRecordsKey)
+ * then works unmodified, since this device's own device id now happens to
+ * be paired with the recovery key pair for the remainder of this recovery
+ * session. Throws (AES-GCM auth tag failure) on a wrong passcode — callers
+ * should catch and show a clear "wrong passcode" message, never treat a
+ * throw here as anything else.
+ */
+export async function recoverFamilyKeyWithPasscode(
+  passcode: string, encryptedPrivateKey: string, saltHex: string,
+): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+  const wrapKey = await deriveRecoveryWrappingKey(passcode, saltHex);
+  const [ivB64, encB64] = encryptedPrivateKey.split(':');
+  const cipher = gcm(wrapKey, b64ToBytes(ivB64));
+  const privateKey = cipher.decrypt(b64ToBytes(encB64)); // throws on wrong passcode
+  const publicKey  = x25519.getPublicKey(privateKey);
+  return { privateKey, publicKey };
+}
+
+/**
+ * Installs a recovered key pair into this device's own Secure Store slots
+ * (the same LOCAL_DEVICE_PRIVKEY/LOCAL_DEVICE_PUBKEY getDeviceKeyPair()
+ * reads from). After this call, getDeviceKeyPair() returns the RECOVERY
+ * key pair on this device — decryptFromDevice/unwrapLocationKey/
+ * unwrapRecordsKey all work completely unmodified, since they only ever
+ * call getDeviceKeyPair() to get "my private key," and this device's
+ * answer to that question is now the family's recovery key.
+ *
+ * One consequence worth knowing: this device's OWN real device_keys row
+ * (registered under its real, unique device id from getDeviceId(), which
+ * is untouched by this function) will end up holding a COPY of the
+ * recovery key's public key, not a freshly generated one of its own. This
+ * is harmless — both that row and the RECOVERY_DEVICE_ID row can now
+ * successfully decrypt anything wrapped for the recovery key, since
+ * they're mathematically the same key pair. It does mean this device can
+ * no longer be "the recovery key" and "an independent device with its own
+ * identity" at the same time — recovering IS adopting the shared identity,
+ * by design, not a bug to route around.
+ *
+ * Only call this after a user has explicitly completed recovery — this
+ * overwrites whatever key pair this device already had.
+ */
+export async function installRecoveredKeyPair(privateKey: Uint8Array, publicKey: Uint8Array): Promise<void> {
+  await Promise.all([
+    SecureStore.setItemAsync(LOCAL_DEVICE_PRIVKEY, bytesToB64(privateKey)),
+    SecureStore.setItemAsync(LOCAL_DEVICE_PUBKEY, bytesToB64(publicKey)),
+  ]);
+}
+

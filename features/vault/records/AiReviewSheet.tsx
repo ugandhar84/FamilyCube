@@ -1,22 +1,40 @@
+import { useState } from 'react';
 import {
   View, Text, Modal, ScrollView, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, CheckCircle, AlertTriangle, Clock, Lock, Sparkles } from 'lucide-react-native';
+import { X, CheckCircle, AlertTriangle, Clock, Lock, Sparkles, Circle, CheckCircle2 } from 'lucide-react-native';
 import { BRAND } from '../tabs/shared';
-import { MedRecord, AiAnalysis, URGENCY_META } from './types';
+import { MedRecord, AiAnalysis, AppointmentAnalysis, URGENCY_META, DISCUSSION_TAG_META } from './types';
 
 interface Props {
   rec:       MedRecord;
-  analysis:  AiAnalysis;
+  analysis:  AiAnalysis | AppointmentAnalysis;
   approving: boolean;
   onApprove: () => void;
   onDismiss: () => void;
 }
 
+// Distinguishes which shape `analysis` actually is — see the two
+// interfaces' own comments in ./types for why these are parallel, not
+// one replacing the other.
+function isAppointmentAnalysis(a: AiAnalysis | AppointmentAnalysis): a is AppointmentAnalysis {
+  return 'discussion_topics' in a;
+}
+
 export default function AiReviewSheet({ rec, analysis, approving, onApprove, onDismiss }: Props) {
   const insets  = useSafeAreaInsets();
   const urgMeta = URGENCY_META[analysis.urgency ?? 'routine'];
+  const isAppointment = isAppointmentAnalysis(analysis);
+  // Checking off a next step is a personal reading aid while reviewing —
+  // not persisted, not synced. Keyed by index since next_steps has no
+  // stable id of its own.
+  const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
+  const toggleStep = (i: number) => setCheckedSteps(prev => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onDismiss}>
@@ -86,35 +104,92 @@ export default function AiReviewSheet({ rec, analysis, approving, onApprove, onD
               </Text>
             </View>
 
-            {/* Key findings */}
-            {analysis.key_findings?.length > 0 && (
-              <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
-                <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
-                  KEY FINDINGS
-                </Text>
-                {analysis.key_findings.map((f, i) => (
-                  <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3,
-                      backgroundColor: BRAND.teal, marginTop: 6 }} />
-                    <Text style={{ fontSize: 13, color: '#C8C8D0', flex: 1, lineHeight: 19 }}>{f}</Text>
+            {isAppointment ? (
+              <>
+                {/* Discussion topics — richer per-topic cards with a
+                    severity tag, replacing the plain bullet-list KEY
+                    FINDINGS rendering below for a recorded appointment's
+                    conversation-shaped analysis. */}
+                {analysis.discussion_topics?.length > 0 && (
+                  <View style={{ gap: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
+                      DISCUSSION TOPICS
+                    </Text>
+                    {analysis.discussion_topics.map((topic, i) => {
+                      const tagMeta = DISCUSSION_TAG_META[topic.tag] ?? DISCUSSION_TAG_META.info;
+                      return (
+                        <View key={i} style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 6 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff', flex: 1 }}>{topic.title}</Text>
+                            <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: tagMeta.color + '20', borderWidth: 1, borderColor: tagMeta.color + '50' }}>
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: tagMeta.color }}>{tagMeta.label}</Text>
+                            </View>
+                          </View>
+                          <Text style={{ fontSize: 13, color: '#C8C8D0', lineHeight: 19 }}>{topic.description}</Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                ))}
-              </View>
-            )}
+                )}
 
-            {/* Follow-up */}
-            {analysis.follow_up_items?.length > 0 && (
-              <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
-                <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
-                  FOLLOW-UP ACTIONS
-                </Text>
-                {analysis.follow_up_items.map((f, i) => (
-                  <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                    <Clock size={13} color={BRAND.amber} style={{ marginTop: 2 }} />
-                    <Text style={{ fontSize: 13, color: '#C8C8D0', flex: 1, lineHeight: 19 }}>{f}</Text>
+                {/* Next steps — a real checkable list (local state only,
+                    see checkedSteps' own comment above) instead of a plain
+                    bullet list. */}
+                {analysis.next_steps?.length > 0 && (
+                  <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
+                      NEXT STEPS
+                    </Text>
+                    {analysis.next_steps.map((step, i) => {
+                      const checked = checkedSteps.has(i);
+                      return (
+                        <TouchableOpacity key={i} onPress={() => toggleStep(i)}
+                          style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                          {checked
+                            ? <CheckCircle2 size={16} color={BRAND.teal} style={{ marginTop: 1 }} />
+                            : <Circle size={16} color="#555" style={{ marginTop: 1 }} />}
+                          <Text style={{ fontSize: 13, color: checked ? '#7A7A85' : '#C8C8D0', flex: 1, lineHeight: 19, textDecorationLine: checked ? 'line-through' : 'none' }}>
+                            {step.text}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                ))}
-              </View>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Key findings */}
+                {analysis.key_findings?.length > 0 && (
+                  <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
+                      KEY FINDINGS
+                    </Text>
+                    {analysis.key_findings.map((f, i) => (
+                      <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                        <View style={{ width: 6, height: 6, borderRadius: 3,
+                          backgroundColor: BRAND.teal, marginTop: 6 }} />
+                        <Text style={{ fontSize: 13, color: '#C8C8D0', flex: 1, lineHeight: 19 }}>{f}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Follow-up */}
+                {analysis.follow_up_items?.length > 0 && (
+                  <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
+                      FOLLOW-UP ACTIONS
+                    </Text>
+                    {analysis.follow_up_items.map((f, i) => (
+                      <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                        <Clock size={13} color={BRAND.amber} style={{ marginTop: 2 }} />
+                        <Text style={{ fontSize: 13, color: '#C8C8D0', flex: 1, lineHeight: 19 }}>{f}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
             )}
 
             {/* Tags */}

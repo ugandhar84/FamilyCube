@@ -1709,9 +1709,9 @@ export default function ProfileSettingsScreen() {
         </View>
 
         {/* Security */}
-        {bioAvailable && (
-          <View style={{ marginBottom: 24 }}>
-            <SectionHeader label="Security" colors={colors} />
+        <View style={{ marginBottom: 24 }}>
+          <SectionHeader label="Security" colors={colors} />
+          {bioAvailable && (
             <Row
               icon="finger-print-outline"
               label={`Require ${bioLabel}`}
@@ -1729,8 +1729,15 @@ export default function ProfileSettingsScreen() {
                 />
               }
             />
-          </View>
-        )}
+          )}
+          <Row
+            icon="key-outline"
+            label="Data Recovery"
+            subtitle="Family passcode that protects chat, location, and medical records from loss"
+            onPress={() => router.push('/profile-settings/data-recovery')}
+            colors={colors} isDark={isDark}
+          />
+        </View>
 
         {/* Family Name — familyName was previously stuck forever at the
             store's 'Our Family' default (nothing fetched families.name or

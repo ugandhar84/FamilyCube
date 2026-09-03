@@ -408,6 +408,22 @@ export default function SetupFamilyScreen() {
     } catch {}
   };
 
+  // Both invite-step exit points ("Skip for now" and "Enter App") route
+  // through the optional security-passcode onboarding step next, reading
+  // the just-created family/member from the store (same pattern handleInvite
+  // above already uses at line ~381) rather than a local variable, since
+  // neither button is inside handleCreateFamily's own closure where `family`/
+  // `memberId` were originally scoped.
+  const goToSecurityPasscode = () => {
+    const state = useFamilyStore.getState();
+    const activeId = state.activeMemberId;
+    const fId = state.members.find(m => m.id === activeId)?.familyId;
+    router.replace({
+      pathname: '/onboarding/security-passcode',
+      params: fId && activeId ? { familyId: fId, memberId: activeId } : {},
+    });
+  };
+
   // Close the picker sheet fully before launching the native camera/library
   // UI — stacking a second native picker on top of a still-visible RN
   // <Modal> sheet is a known iOS freeze/deadlock (same ordering
@@ -653,7 +669,7 @@ export default function SetupFamilyScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary, marginTop: 12 }]} onPress={handleInvite} disabled={invitingMember}>
                   {invitingMember ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Get Their Invite Code →</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity style={{ marginTop: 14 }} onPress={() => router.replace('/onboarding/permissions')}>
+                <TouchableOpacity style={{ marginTop: 14 }} onPress={goToSecurityPasscode}>
                   <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: TYPO.caption }}>Skip for now — I'll invite people later</Text>
                 </TouchableOpacity>
               </View>
@@ -671,7 +687,7 @@ export default function SetupFamilyScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary, marginTop: 24 }]} onPress={handleShare}>
                   <Text style={s.btnText}>📤 Share Code</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary, marginTop: 10 }]} onPress={() => router.replace('/onboarding/permissions')}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary, marginTop: 10 }]} onPress={goToSecurityPasscode}>
                   <Text style={[s.btnText, { color: colors.primary }]}>Enter App →</Text>
                 </TouchableOpacity>
                 <Text style={[{ color: colors.textSecondary, fontSize: 12, marginTop: 16, textAlign: 'center' }]}>

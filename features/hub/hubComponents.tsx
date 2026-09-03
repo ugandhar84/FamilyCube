@@ -26,6 +26,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import { useDriverLocation } from '@/lib/hooks/useDriverLocation';
+import RecordVisitSheet from '@/features/vault/records/RecordVisitSheet';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
 // Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
@@ -866,6 +867,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
   // isSelfAssigned is already false by the time we'd check it here —
   // this remembers who just backed out so the row can exclude them.
   const [cancelledSelfName, setCancelledSelfName] = useState<string | undefined>(undefined);
+  const [recordVisitOpen, setRecordVisitOpen] = useState(false);
   const cat          = ev.category ?? 'Event';
   const hours        = hoursUntilEvent(ev.date, ev.time);
   const isPast       = hours < 0;
@@ -920,6 +922,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
   const helperConfirmed = assignee.status === 'confirmed';
 
   return (
+    <>
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
@@ -1118,6 +1121,22 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
             <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
               🩺 Doctor: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.doctorName}</Text>
             </Text>
+          )}
+          {/* Record visit — records the appointment's audio, transcribes +
+              AI-summarizes it (discussion topics + next steps), and saves
+              the encrypted result to this patient's Records in the Vault.
+              Parent-only, same isViewerParent gate onEditFull's Pencil
+              button above already uses — recording someone's medical visit
+              isn't a kid/teen action. See features/vault/records/
+              RecordVisitSheet.tsx for the full recording/upload/review flow. */}
+          {cat === 'Medical' && isViewerParent && (
+            <TouchableOpacity onPress={() => setRecordVisitOpen(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+                borderRadius: 10, borderWidth: 1, borderColor: cc + '50', backgroundColor: cc + '12',
+                paddingHorizontal: 10, paddingVertical: 6 }}>
+              <Ionicons name="mic-outline" size={14} color={cc} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: cc }}>Record Visit</Text>
+            </TouchableOpacity>
           )}
           {cat === 'Study' && ev.subject && (
             <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
@@ -1492,6 +1511,19 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
         </View>
       </KeyboardAvoidingView>
     </Modal>
+    {cat === 'Medical' && isViewerParent && (
+      <RecordVisitSheet
+        visible={recordVisitOpen}
+        onClose={() => setRecordVisitOpen(false)}
+        familyId={viewerMember?.familyId ?? ''}
+        memberId={ev.memberId ?? allAssignees[0]?.id ?? ''}
+        memberName={allAssignees[0]?.name ?? 'this patient'}
+        actorId={viewerMember?.id ?? activeMemberId ?? ''}
+        eventTitle={ev.title}
+        eventDate={ev.date}
+      />
+    )}
+    </>
   );
 }
 

@@ -235,8 +235,37 @@ const ITEM_EMOJI_RULES: { pattern: RegExp; emoji: string }[] = [
   { pattern: /\btoilet\s*paper|\bpaper\s*towel/, emoji: '🧻' },
   { pattern: /\bpaper\s*plate|\bpaper\s*cup|\bpaper\s*bowl/, emoji: '🍽️' },
   { pattern: /\bsoap\b|\bhand\s*soap|\bdish\s*soap/, emoji: '🧼' },
+  { pattern: /\bnapkin\s*ring/, emoji: '🍽️' },
   { pattern: /\btissue|\bnapkin/, emoji: '🧻' },
-  { pattern: /\bdetergent|\blaundry|\bfabric\s*softener/, emoji: '🧺' },
+  // Dishwasher — checked before the generic \bdetergent\b fallback in the
+  // Laundry section below, which would otherwise catch "dishwasher
+  // detergent" first (rules are first-match-wins, in list order).
+  { pattern: /\bdishwasher\s*pod[s]?|\bdishwasher\s*tablet[s]?/, emoji: '🍽️' },
+  { pattern: /\bdishwasher\s*detergent|\bdishwasher\s*soap/, emoji: '🍽️' },
+  { pattern: /\brinse\s*aid/, emoji: '🍽️' },
+  { pattern: /\bdishwasher\b/, emoji: '🍽️' },
+  // Laundry
+  { pattern: /\bdryer\s*sheet/, emoji: '🌬️' },
+  { pattern: /\bfabric\s*softener/, emoji: '🧴' },
+  { pattern: /\bstain\s*remover/, emoji: '🧴' },
+  { pattern: /\blaundry\s*detergent|\bdetergent\b/, emoji: '🧴' },
+  { pattern: /\blaundry\s*pod[s]?\b/, emoji: '🧴' },
+  { pattern: /\biron(?:ing)?\b/, emoji: '🧺' },
+  { pattern: /\bclothespin|\bhanger[s]?\b/, emoji: '🧺' },
+  { pattern: /\blaundry\b/, emoji: '🧺' },
+  // Oven / bakeware
+  { pattern: /\boven\s*mitt|\bpot\s*holder/, emoji: '🧤' },
+  { pattern: /\boven\s*cleaner/, emoji: '🧴' },
+  { pattern: /\bbaking\s*paper|\bparchment\s*paper/, emoji: '📄' },
+  { pattern: /\boven\s*bag|\broasting\s*bag/, emoji: '🧻' },
+  { pattern: /\boven\b/, emoji: '🍳' },
+  // Dining table
+  { pattern: /\btablecloth|\btable\s*runner/, emoji: '🍽️' },
+  { pattern: /\bplacemat/, emoji: '🍽️' },
+  { pattern: /\bcandle\s*holder|\bcenterpiece/, emoji: '🕯️' },
+  { pattern: /\bcoaster[s]?\b/, emoji: '🍽️' },
+  { pattern: /\bplatter|\bserving\s*dish/, emoji: '🍽️' },
+  { pattern: /\bwine\s*glass|\bglassware/, emoji: '🍷' },
   { pattern: /\bsponge/, emoji: '🧽' },
   { pattern: /\bbleach|\bdisinfect|\bcleaner\b|\bcleaning\s*spray/, emoji: '🧴' },
   { pattern: /\btrash\s*bag|\bgarbage\s*bag/, emoji: '🗑️' },

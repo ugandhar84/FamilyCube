@@ -91,6 +91,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   const [paused, setPaused] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const [approving, setApproving] = useState(false);
   const [pendingRecord, setPendingRecord] = useState<MedRecord | null>(null);
   const [pendingAnalysis, setPendingAnalysis] = useState<AiAnalysis | AppointmentAnalysis | null>(null);
@@ -131,6 +132,49 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     else { recorder.pause(); setPaused(true); }
   };
 
+  // Shared by the initial analysis (after recording stops) and the review
+  // screen's "Re-analyze" action (same audio, re-run because the first
+  // pass missed something or misheard part of the visit) — the audio at
+  // `audioPath` is only actually discarded once the user taps Approve
+  // (see approve()'s own comment), so re-running this before that point is
+  // always safe.
+  const runAnalysis = async (rec: MedRecord, audioPath: string, isReanalyze = false) => {
+    (isReanalyze ? setReanalyzing : setAnalyzing)(true);
+    try {
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('analyze-appointment-recording', {
+        body: { record_id: rec.id, member_name: memberName },
+      });
+      if (fnErr) throw new Error(fnErr.message);
+      if (fnData?.error) throw new Error(fnData.error);
+      if (fnData?.not_medical) {
+        // Reject cleanly rather than leaving a record with no clinical
+        // content sitting in the vault forever — the strict content gate
+        // in analyze-appointment-recording's SYSTEM_PROMPT means this
+        // path fires for genuinely non-medical audio, so nothing here is
+        // worth keeping. Best-effort cleanup (not awaited-and-blocking on
+        // failure) since the user is already looking at the rejection
+        // message regardless of whether the delete itself succeeds.
+        supabase.storage.from('medical-audio').remove([audioPath]).catch(() => {});
+        supabase.from('medical_records').delete().eq('id', rec.id).then(() => {});
+        setPendingAnalysis(null);
+        setNotMedical(fnData.message ?? 'This recording does not appear to contain real medical or health content — only genuine clinical conversations are supported.');
+        return;
+      }
+      const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
+      if (!analysis?.summary) throw new Error('Invalid AI response');
+      setPendingAnalysis(analysis);
+    } catch (e: any) {
+      showToast(e?.message ?? "Couldn't process the recording", 'error');
+    } finally {
+      (isReanalyze ? setReanalyzing : setAnalyzing)(false);
+    }
+  };
+
+  const handleReanalyze = () => {
+    if (!pendingRecord?.file_path) return; // file_path is only cleared post-approval, when this button is no longer reachable anyway
+    runAnalysis(pendingRecord, pendingRecord.file_path, true);
+  };
+
   const stopAndProcess = async () => {
     await recorder.stop();
     const uri = recorder.uri;
@@ -166,30 +210,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       if (insErr || !rec) throw new Error(insErr?.message ?? 'Could not save the record');
 
       setUploading(false);
-      setAnalyzing(true);
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('analyze-appointment-recording', {
-        body: { record_id: rec.id, member_name: memberName },
-      });
-      setAnalyzing(false);
-      if (fnErr) throw new Error(fnErr.message);
-      if (fnData?.error) throw new Error(fnData.error);
-      if (fnData?.not_medical) {
-        // Reject cleanly rather than leaving a record with no clinical
-        // content sitting in the vault forever — the strict content gate
-        // in analyze-appointment-recording's SYSTEM_PROMPT means this
-        // path fires for genuinely non-medical audio, so nothing here is
-        // worth keeping. Best-effort cleanup (not awaited-and-blocking on
-        // failure) since the user is already looking at the rejection
-        // message regardless of whether the delete itself succeeds.
-        supabase.storage.from('medical-audio').remove([up.path]).catch(() => {});
-        supabase.from('medical_records').delete().eq('id', rec.id).then(() => {});
-        setNotMedical(fnData.message ?? 'This recording does not appear to contain real medical or health content — only genuine clinical conversations are supported.');
-        return;
-      }
-      const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
-      if (!analysis?.summary) throw new Error('Invalid AI response');
       setPendingRecord(rec as MedRecord);
-      setPendingAnalysis(analysis);
+      await runAnalysis(rec as MedRecord, up.path);
     } catch (e: any) {
       setUploading(false);
       setAnalyzing(false);
@@ -207,8 +229,23 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         ai_tags: pendingAnalysis.tags ?? [],
         ai_analysis_json: encryptedBlob,
         ai_analyzed: true,
+        // Live-requested: once the summary is reviewed and approved, the
+        // raw audio has served its purpose — the encrypted summary is the
+        // actual deliverable going forward, and there's no reason to keep
+        // a privacy-sensitive, storage-heavy recording around indefinitely.
+        // Clearing file_path also means the "Recording" playback UI in
+        // Records (if any) correctly stops offering to play something
+        // that no longer exists, rather than a dangling reference.
+        file_path: null, file_name: null, file_size: null,
       }).eq('id', pendingRecord.id);
       if (error) throw new Error(error.message);
+      // Best-effort — the DB update above (clearing file_path) is the
+      // source of truth for "this record no longer has audio"; a failed
+      // storage delete just leaves an orphaned blob in medical-audio, not
+      // a broken/inconsistent record.
+      if (pendingRecord.file_path) {
+        supabase.storage.from('medical-audio').remove([pendingRecord.file_path]).catch(() => {});
+      }
       showToast('Visit summary saved to Records');
       reset();
       onClose();
@@ -251,6 +288,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         approving={approving}
         onApprove={approve}
         onDismiss={handleClose}
+        onReanalyze={handleReanalyze}
+        reanalyzing={reanalyzing}
       />
     );
   }

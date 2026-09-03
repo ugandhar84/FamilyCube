@@ -8,7 +8,7 @@
  * AddIntakeChooser already uses, transcribed on-device, sent as a normal
  * chat turn once the user stops speaking.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -69,6 +69,17 @@ interface ChatMessage {
   // occurrence of the title into a tap-through link to that chore on the
   // Chores tab, instead of the title just sitting there as plain text.
   chores?: AskCubeChoreRef[];
+  // 1-3 short, relevant next-thing-to-ask suggestions the model offered
+  // this turn (parsed server-side out of a trailing "SUGGESTIONS:" line —
+  // see ask-cube/index.ts's system prompt) — rendered as tappable chips
+  // right under this reply. Undefined/empty when nothing specific applied.
+  followUps?: string[];
+  // True once this message's typewriter reveal has finished — follow-up
+  // chips wait for this rather than just `!sending` (which flips false the
+  // instant the message is inserted, well before the typewriter loop
+  // actually finishes), so chips don't pop in next to still-empty/partial
+  // text. Always true for messages loaded from history (no typewriter).
+  revealDone?: boolean;
 }
 
 export default function AskCubeChat({ visible, onClose, activeMember, members }: {
@@ -83,7 +94,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const addRecurringEvent = useEventStore(s => s.addRecurringEvent);
   const updateEvent = useEventStore(s => s.updateEvent);
   const deleteEvent = useEventStore(s => s.deleteEvent);
-  const { addQuest } = useQuestStore();
+  const upcomingEvents = useEventStore(s => s.events);
+  const { addQuest, quests } = useQuestStore();
   const updateChore = useChoreStore(s => s.updateChore);
   const claimPoolQuest = useChoreStore(s => s.claimPoolQuest);
   const approveChore = useChoreStore(s => s.approveChore);
@@ -157,6 +169,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         proposals,
         proposalStatuses: proposals.map((_, i) => persistedStatuses?.[i] ?? (r.proposal_status as ProposalStatus) ?? 'pending'),
         chores: Array.isArray((r as any).chore_refs) ? (r as any).chore_refs : undefined,
+        followUps: Array.isArray((r as any).follow_ups) ? (r as any).follow_ups : undefined,
+        revealDone: true, // loaded from history — no typewriter reveal to wait for
       };
     }));
     // Land on the latest message immediately — no visible scroll
@@ -212,6 +226,34 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     await loadConversation(id);
   };
 
+  // Empty-state starter prompts — personalized to real upcoming data instead
+  // of a generic static hint, so the very first thing a user sees is
+  // something concretely tappable ("Remind me about [Doctor appointment]")
+  // rather than a made-up example they'd have to retype anyway. Falls back
+  // to a couple of always-safe generic prompts when there's genuinely
+  // nothing specific to surface (e.g. a brand new family with no data yet).
+  const starterPrompts = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const prompts: string[] = [];
+
+    const nextEvent = upcomingEvents
+      .filter(e => e.date >= todayStr)
+      .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))[0];
+    if (nextEvent) prompts.push(`Remind me about ${nextEvent.title}`);
+
+    const openQuest = quests.find(q => q.isPool && q.status === 'todo');
+    if (openQuest) prompts.push(`Who can do "${openQuest.title}"?`);
+
+    const overdueQuest = quests.find(q => q.status === 'todo' && q.dueDate && q.dueDate < todayStr);
+    if (overdueQuest) prompts.push(`What's overdue?`);
+
+    prompts.push("What's going on this week?");
+    prompts.push('Has anyone done the trash?');
+    // De-dupe (a generic fallback could coincidentally match something
+    // already added above) and cap at 3 — enough to be useful, not a wall.
+    return [...new Set(prompts)].slice(0, 3);
+  }, [upcomingEvents, quests]);
+
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
@@ -251,6 +293,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         id: msgId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
         proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
         chores: res.chores ?? [],
+        followUps: res.followUps ?? [],
       }]);
       setSending(false);
       let i = 0;
@@ -263,6 +306,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           if (i >= fullText.length) { clearInterval(interval); resolve(); }
         }, 16);
       });
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, revealDone: true } : m));
     } catch (e: any) {
       setMessages(prev => [...prev, { id: `local-${Date.now()}-err`, role: 'assistant', content: "Sorry, I couldn't reach the server — try again in a moment.", timestamp: new Date().toISOString() }]);
       setSending(false);
@@ -672,11 +716,24 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
               }}
               scrollEventThrottle={100}>
               {messages.length === 0 && !sending && (
-                <View style={{ alignItems: 'center', paddingVertical: 30, gap: 8 }}>
+                <View style={{ alignItems: 'center', paddingVertical: 30, gap: 14 }}>
                   <Sparkles size={28} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', maxWidth: 260 }}>
-                    Try "what's going on this week?" or "has anyone done the trash?"
+                    Ask me anything about your family's schedule and chores
                   </Text>
+                  {/* Personalized to real upcoming data (see starterPrompts
+                      above) instead of a static generic hint — tapping one
+                      sends it immediately via the same send() every other
+                      message goes through. */}
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 320 }}>
+                    {starterPrompts.map(p => (
+                      <Pressable key={p} onPress={() => send(p)}
+                        style={{ borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+                          backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 8 }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textPrimary }}>{p}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
                 </View>
               )}
               {messages.map(m => (
@@ -758,6 +815,27 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                       </View>
                     );
                   })() : null}
+
+                  {/* Only on the LAST assistant message, not stale ones from
+                      earlier in the conversation — tapping a suggestion from
+                      three exchanges ago against the CURRENT state would be
+                      confusing (the thing it referenced may already be done/
+                      changed). Gated on revealDone (set once the typewriter
+                      loop finishes, see send()) rather than !sending — sending
+                      flips false the instant the message is inserted, well
+                      before the typewriter reveal actually completes, which
+                      would pop the chips in next to still-empty/partial text. */}
+                  {m.role === 'assistant' && !!m.followUps?.length && m.id === messages[messages.length - 1]?.id && m.revealDone && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      {m.followUps.map(f => (
+                        <Pressable key={f} onPress={() => send(f)}
+                          style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.primary + '40',
+                            backgroundColor: colors.primary + '12', paddingHorizontal: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.primary }}>{f}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
                 </View>
               ))}
               {sending && (

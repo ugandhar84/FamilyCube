@@ -15,6 +15,7 @@ export interface AskCubeResponse {
   answer: string;
   proposals: AskCubeProposal[];
   chores: AskCubeChoreRef[];
+  followUps: string[];
 }
 
 export const askCube = {
@@ -24,7 +25,7 @@ export const askCube = {
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
-    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [] } as AskCubeResponse;
+    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [], followUps: data?.followUps ?? [] } as AskCubeResponse;
   },
 
   // Most-recently-updated conversation for this member, if any — so
@@ -52,7 +53,7 @@ export const askCube = {
 
   async getMessages(conversationId: string) {
     const { data, error } = await supabase.from('ask_cube_messages')
-      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, created_at')
+      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, follow_ups, created_at')
       .eq('conversation_id', conversationId)
       // tool rows (raw JSON results) and assistant rows that only carry
       // tool_calls (content null) are internal to the model loop — the chat

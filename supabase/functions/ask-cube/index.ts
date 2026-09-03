@@ -1622,7 +1622,17 @@ tool call in THIS turn — if you don't have real data for something, say so pla
 plausible-sounding but made-up answer. If an earlier message in this conversation mentioned an error, a failed
 lookup, or an apology about something not working, that was about a DIFFERENT, separate request — do not repeat,
 reference, or lead with it when answering a new, unrelated message now, even if it's still visible above in this
-same conversation.`;
+same conversation.
+After your reply sentence, if there's a genuinely useful, SPECIFIC next thing the user might want to do based on
+what you just told them (not a generic "anything else?"), add one final line starting with exactly "SUGGESTIONS:"
+followed by a JSON array of 1-3 short strings (each under 40 characters, phrased as something the user would say to
+you, e.g. "Remind Praveena about it" or "Add a follow-up chore"). Only include this line when a real, specific
+follow-up makes sense given THIS reply — e.g. after listing an appointment with no reminder set, suggesting one; after
+approving a chore, suggesting reassigning a similar one; after "what's on today" with a conflict, suggesting resolving
+it. Skip it entirely (do not add the line at all) for plain informational answers with no natural next action, and
+never suggest something you can't actually help with via one of your own tools. This line is stripped before the
+user sees your reply — it is a separate machine-readable signal, not part of the conversation text, so never
+reference "the suggestions below" in your actual reply sentence.`;
 
     const aliasedMessage = realNameToAlias(aliasMap, allMembers ?? [], body.message);
 
@@ -1720,6 +1730,28 @@ same conversation.`;
       break;
     }
 
+    // Pull the optional "SUGGESTIONS: [...]" line (see system prompt) out of
+    // the reply before anything else touches finalText — it's a machine-
+    // readable signal for the client's follow-up chips, never part of the
+    // conversation text itself. Only the LAST line is checked (the model was
+    // told to put it at the very end) so a legitimate "SUGGESTIONS:" the
+    // user's own message happened to contain mid-reply is never stripped.
+    let followUps: string[] = [];
+    {
+      const lines = finalText.split('\n');
+      const lastLine = lines[lines.length - 1]?.trim() ?? '';
+      const match = lastLine.match(/^SUGGESTIONS:\s*(\[.*\])\s*$/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          if (Array.isArray(parsed)) {
+            followUps = parsed.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, 3);
+          }
+        } catch { /* malformed — drop the line, keep no suggestions rather than surfacing broken JSON */ }
+        finalText = lines.slice(0, -1).join('\n').trimEnd();
+      }
+    }
+
     // Safety net: if the model ignored the system prompt and echoed a raw
     // tool payload back as its answer, don't ship that to the chat UI.
     const looksLikeRawJson = /^\s*[{[]/.test(finalText) && (() => { try { JSON.parse(finalText); return true; } catch { return false; } })();
@@ -1727,6 +1759,7 @@ same conversation.`;
       finalText = proposals.length
         ? (proposals.length > 1 ? "I've drafted a few options below — take a look and pick one." : "I've drafted that for you — take a look below and confirm if it looks right.")
         : "Here's what I found — let me know if you'd like more detail.";
+      followUps = []; // any suggestions the model returned were tied to the discarded reply text, not this fallback
     }
 
     // Grounding check — catches the exact live bug reported: the model
@@ -1752,6 +1785,7 @@ same conversation.`;
         console.warn('[ask-cube] grounding check failed — reply cited unverified title(s), discarding', { unverified, groundedTitles: [...groundedTitles] });
         finalText = "I don't actually have that on file right now — I may have mixed up an earlier answer. Could you ask again so I can look it up fresh?";
         proposals = []; // never ship a proposal built on the same ungrounded turn either
+        followUps = []; // ...nor a follow-up suggestion referencing the same discarded, possibly-invented content
       }
     }
     finalText = aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, finalText));
@@ -1766,6 +1800,7 @@ same conversation.`;
       conversation_id: conversationId, role: 'assistant', content: finalText,
       proposal: proposals.length ? proposals : null, proposal_status: proposals.length ? 'pending' : null,
       chore_refs: choreRefs.length ? choreRefs : null,
+      follow_ups: followUps.length ? followUps : null,
     });
     await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
@@ -1775,7 +1810,7 @@ same conversation.`;
     // in the visible reply.
     console.log('[ask-cube] response', { conversationId, answer: finalText, proposalCount: proposals.length });
 
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

@@ -148,12 +148,21 @@ serve(async (req) => {
       }
 
       case 'quest_assigned':
-        // Parent added a new quest and assigned it to a kid
+        // Parent added a new quest and assigned it to a kid — but a quest
+        // assigned to another PARENT/adult carries 0 coins by design (see
+        // AskCubeChat.tsx's addQuest call: coins default to 0 when the
+        // assignee's role is 'parent', since coins are a kid/teen
+        // motivator, not something adults earn from each other). "earn
+        // 0🪙" read as a real, slightly odd reward rather than "there is no
+        // reward" — only mention coins in the notification when there
+        // actually are some.
         if (assigneeId) {
           await fire('quest_assigned', [assigneeId], {
             ...base, coins,
             title: '📋 New Quest Assigned!',
-            body: `"${questTitle}" was assigned to you — earn ${coins}🪙 by completing it!`,
+            body: coins > 0
+              ? `"${questTitle}" was assigned to you — earn ${coins}🪙 by completing it!`
+              : `"${questTitle}" was assigned to you.`,
           });
         }
         break;
@@ -204,10 +213,14 @@ serve(async (req) => {
         // reached this notification — a kid got "try again" with zero
         // indication of what was actually wrong. Now included when present.
         if (assigneeId) {
+          // Same "earn 0🪙" gap as quest_assigned above — only mention
+          // coins when there actually are some to earn.
           await fire('quest_reopened', [assigneeId], {
             ...base,
             title: '🔄 Another Chance!',
-            body: `"${questTitle}" was reopened — give it another try and earn ${coins}🪙!${reason ? ` (${reason})` : ''}`,
+            body: (coins > 0
+              ? `"${questTitle}" was reopened — give it another try and earn ${coins}🪙!`
+              : `"${questTitle}" was reopened — give it another try!`) + (reason ? ` (${reason})` : ''),
             reason,
           });
         }

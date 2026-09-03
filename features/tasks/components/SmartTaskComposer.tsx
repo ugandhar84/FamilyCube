@@ -218,8 +218,22 @@ export default function SmartTaskComposer({
     setDetection(d);
     if (!touchedTitle && d.title) setTitle(d.title);
     if (!touchedMember && d.memberNames.length) {
+      // Exact-full-name-only match silently failed whenever the detected
+      // name was just a first name ("Praveena") against a full stored name
+      // ("Praveena Nellore") — live-reported: a task typed as "assigned to
+      // Praveena" landed completely unassigned (isPool:true) because this
+      // never matched, with only an easy-to-miss "Suggested: Praveena"
+      // hint below the member chips as the sole signal anything needed a
+      // manual tap. Same full-name-OR-first-name match ask-cube/index.ts's
+      // resolveMemberId already uses, for the same reason.
       const matches = d.memberNames
-        .map(n => members.find(m => m.name.toLowerCase() === n.toLowerCase()))
+        .map(n => {
+          const lower = n.toLowerCase().trim();
+          return members.find(m => {
+            const full = m.name.toLowerCase().trim();
+            return full === lower || full.split(' ')[0] === lower;
+          });
+        })
         .filter((m): m is FamilyMember => !!m)
         .map(m => m.id);
       if (matches.length) setForMemberIds(matches);

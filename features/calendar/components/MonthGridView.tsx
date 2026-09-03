@@ -7,6 +7,7 @@
  */
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
 import { fmtTimeParts } from '@/lib/dates';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -34,10 +35,13 @@ const ChevronRight = ({ c, size = 18 }: { c: string; size?: number }) => (
 // below the grid, and as the Day-first intro shown above the grid when
 // Month opens on today (before the user has scrolled into the full grid).
 export function DayEventsSummaryCard({
-  dateLabel, events, members, colors, isDark, onSelectEvent, onLongPressEvent,
+  dateLabel, events, members, colors, isDark, onSelectEvent, onLongPressEvent, loading, isViewerParent,
 }: {
   dateLabel: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelectEvent: (ev: FamilyEvent) => void;
+  // Same parent-only sync-source gate EventCard.tsx and hubComponents.tsx's
+  // EventDetailSheet already use for their own "synced from" badge/row.
+  isViewerParent?: boolean;
   // Long-press → edit (date/time/recurrence/driver/delete). This card had
   // NO long-press at all — a parent's actual default view (compact
   // defaults to isKid, so a parent lands here, not the compact time-grid
@@ -45,6 +49,14 @@ export function DayEventsSummaryCard({
   // reached the read-only detail sheet, with no way to edit or delete any
   // event, including a kid-created one, from the view parents actually use.
   onLongPressEvent?: (ev: FamilyEvent) => void;
+  // Tapping a day never visited this session has no _dayCache/disk-cache
+  // entry to paint from (eventStore.ts selectDate), so `events` still holds
+  // the PREVIOUS day's stale list while the DB fetch is in flight — without
+  // this flag the card rendered that stale/empty list as a confirmed "No
+  // scheduled events," matching the Day-view timeline's dayLoading gate
+  // just below this card (CalendarScreen.tsx) so both stop flashing a false
+  // empty state.
+  loading?: boolean;
 }) {
   const shown = events.filter(ev => ev.category !== 'Holiday');
   return (
@@ -53,14 +65,22 @@ export function DayEventsSummaryCard({
         <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
           Events for {dateLabel}
         </Text>
-        <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
-            {shown.length} item{shown.length === 1 ? '' : 's'}
-          </Text>
-        </View>
+        {!loading && (
+          <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
+              {shown.length} item{shown.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+        )}
       </View>
 
-      {shown.length === 0 ? (
+      {loading && shown.length === 0 ? (
+        <View style={{ gap: 8 }}>
+          {[48, 48].map((h, i) => (
+            <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: isDark ? '#1E293B' : '#E8E6F0', opacity: 0.5 + i * 0.15 }} />
+          ))}
+        </View>
+      ) : shown.length === 0 ? (
         <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 }}>
           No scheduled events for this day. Tap + to add one.
         </Text>
@@ -106,6 +126,28 @@ export function DayEventsSummaryCard({
                       </>
                     )}
                   </View>
+                  {/* Synced-from badge — this row is Month view's own
+                      hand-rolled card (separate from EventCard.tsx's
+                      EventCardRow used by Agenda), so it never had the
+                      "synced from X's calendar" badge those other views
+                      already got. Same fields/gate as EventCard.tsx:257-276
+                      and hubComponents.tsx's EventDetailSheet row. */}
+                  {!!ev.lastExternalSyncProvider && isViewerParent && (() => {
+                    const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
+                    const providerLabel = ev.lastExternalSyncProvider === 'google' ? 'Google'
+                      : ev.lastExternalSyncProvider === 'apple' ? 'Apple' : 'Outlook';
+                    const label = syncMember ? `${syncMember.name.trim().split(/\s+/)[0]}'s calendar` : providerLabel;
+                    const iconName = ev.lastExternalSyncProvider === 'google' ? 'logo-google'
+                      : ev.lastExternalSyncProvider === 'apple' ? 'logo-apple' : 'mail-outline';
+                    return (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
+                        <Ionicons name={iconName as any} size={10} color={colors.textTertiary} />
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary }} numberOfLines={1}>
+                          {label}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                 </View>
                 {assignee && (
                   <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40' }}>

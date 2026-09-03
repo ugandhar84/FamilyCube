@@ -1358,7 +1358,32 @@ export const useEventStore = create<EventState>((set, get) => ({
     _inFlight.add(key);
     try {
       const familyId = getFamilyId();
-      if (!familyId) { set({ dayLoading: false, loaded: true }); return; }
+      if (!familyId) {
+        // Cold-launch race: CalendarScreen's mount effect calls selectDate()
+        // immediately, before familyStore.loadFromStorage() (async — awaits
+        // AsyncStorage + supabase.auth.getUser(), sometimes a multi-second
+        // retry loop) has hydrated `members`/`activeMemberId`. Was: this
+        // silently no-op'd and NOTHING ever retried once family data did
+        // arrive — live-reported as an event only appearing after
+        // navigating away and back (which just happens to issue a fresh
+        // selectDate call later, by which point familyStore has resolved).
+        // familyLoadStatus is guaranteed to eventually settle to 'confirmed'
+        // (see loadFromStorage's own comment), so wait for exactly that
+        // transition and retry this same date once, instead of leaving the
+        // UI stuck on a false "no events" until the user happens to
+        // navigate elsewhere and back.
+        set({ dayLoading: false, loaded: true });
+        const { useFamilyStore } = require('@/store/familyStore');
+        if (useFamilyStore.getState().familyLoadStatus !== 'confirmed') {
+          const unsub = useFamilyStore.subscribe((s: any) => {
+            if (s.familyLoadStatus === 'confirmed') {
+              unsub();
+              if (get().currentDate === date) get().selectDate(date, true);
+            }
+          });
+        }
+        return;
+      }
 
       const { events, nextCursor, hasMore } = await fetchDayPage(familyId, date, null);
       if (signal.aborted) return;

@@ -1354,6 +1354,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <DayEventsSummaryCard
               dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
               events={dayEvents}
+              loading={dayLoading}
+              isViewerParent={isParent}
               members={members}
               colors={colors} isDark={isDark}
               onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Month day-summary card → open detail sheet [features/calendar/CalendarScreen.tsx:1230]`); setDetailEv(ev); }}

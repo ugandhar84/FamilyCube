@@ -164,7 +164,7 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
 // identical to editing it anywhere else in the app, with zero extra AI
 // round-trip. Only rendered when the caller supplies onChange (a still-
 // pending proposal) — same opt-in pattern as ReminderPicker/StorePicker.
-function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onChange }: {
+export function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onChange }: {
   dateStr?: string | null; timeStr?: string | null;
   accent: string; colors: any; isDark: boolean;
   onChange?: (next: { date: string; time?: string }) => void;

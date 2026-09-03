@@ -3,9 +3,14 @@ import {
   View, Text, Modal, ScrollView, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, CheckCircle, AlertTriangle, Clock, Lock, Sparkles, Circle, CheckCircle2, RotateCcw } from 'lucide-react-native';
+import { X, CheckCircle, AlertTriangle, Clock, Lock, Sparkles, Circle, CheckCircle2, RotateCcw, CalendarPlus, CheckSquare } from 'lucide-react-native';
+import { useTheme } from '@/lib/ThemeContext';
+import { useEventStore } from '@/store/eventStore';
+import { useQuestStore } from '@/store/choreAdapter';
+import { DateTimeEditRow } from '@/components/AskCubeProposalCard';
+import { showToast } from '@/components/AppToast';
 import { BRAND } from '../tabs/shared';
-import { MedRecord, AiAnalysis, AppointmentAnalysis, URGENCY_META, DISCUSSION_TAG_META } from './types';
+import { MedRecord, AiAnalysis, AppointmentAnalysis, NextStep, URGENCY_META, DISCUSSION_TAG_META } from './types';
 
 interface Props {
   rec:       MedRecord;
@@ -30,6 +35,113 @@ interface Props {
 // one replacing the other.
 function isAppointmentAnalysis(a: AiAnalysis | AppointmentAnalysis): a is AppointmentAnalysis {
   return 'discussion_topics' in a;
+}
+
+// One next-step item: the existing checkable bullet, PLUS — only when the
+// AI supplied a suggested_date/kind (see NextStep's own comment in
+// ./types) — a one-tap "Add to Schedule"/"Add as Task" affordance. Tapping
+// it reveals an editable date/time (DateTimeEditRow, the same picker
+// AskCubeProposalCard uses for AI-extracted items) and a Confirm button;
+// nothing is created until the user explicitly confirms, matching every
+// other AI-assist surface in this app (never auto-apply).
+function NextStepRow({ step, checked, onToggle, rec }: {
+  step: NextStep; checked: boolean; onToggle: () => void; rec: MedRecord;
+}) {
+  const { colors, isDark } = useTheme();
+  const addEvent = useEventStore(s => s.addEvent);
+  const { addQuest } = useQuestStore();
+  const [expanded, setExpanded] = useState(false);
+  const [added, setAdded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [date, setDate] = useState(step.suggested_date ?? '');
+  const [time, setTime] = useState(step.suggested_time ?? '');
+
+  const canSchedule = !!step.kind && (step.kind === 'task' || !!step.suggested_date);
+
+  const confirmAdd = async () => {
+    setSaving(true);
+    try {
+      if (step.kind === 'event') {
+        if (!date) { showToast('Pick a date first', 'error'); setSaving(false); return; }
+        await addEvent({
+          title: step.text, date, time: time || undefined,
+          type: 'event', category: 'Medical', allDay: !time,
+          memberId: rec.member_id,
+          approvalPending: false, conflict: false,
+        });
+      } else {
+        await addQuest({
+          title: step.text, category: 'Other', priority: 'medium',
+          coins: 0, xpReward: 0, isPool: false, isDaily: false, recurrence: 'once',
+          status: 'todo', assignedToIds: [rec.member_id], isAdultTask: false,
+          dueDate: date || undefined, photoRequired: false,
+          createdById: rec.uploaded_by ?? rec.member_id,
+        });
+      }
+      setAdded(true);
+      setExpanded(false);
+      showToast(step.kind === 'event' ? 'Added to Schedule' : 'Added as a task');
+    } catch (e: any) {
+      showToast(e?.message ?? "Couldn't add this", 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      <TouchableOpacity onPress={onToggle} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+        {checked
+          ? <CheckCircle2 size={16} color={BRAND.teal} style={{ marginTop: 1 }} />
+          : <Circle size={16} color="#555" style={{ marginTop: 1 }} />}
+        <Text style={{ fontSize: 13, color: checked ? '#7A7A85' : '#C8C8D0', flex: 1, lineHeight: 19, textDecorationLine: checked ? 'line-through' : 'none' }}>
+          {step.text}
+        </Text>
+      </TouchableOpacity>
+
+      {canSchedule && !added && (
+        expanded ? (
+          <View style={{ marginLeft: 26, gap: 8, backgroundColor: '#14141F', borderRadius: 10, padding: 10 }}>
+            {step.kind === 'event' && (
+              <DateTimeEditRow
+                dateStr={date} timeStr={time} accent={BRAND.teal} colors={colors} isDark={isDark}
+                onChange={(next) => { setDate(next.date); setTime(next.time ?? ''); }}
+              />
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => setExpanded(false)} disabled={saving}
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#333', paddingVertical: 9, alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#888' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmAdd} disabled={saving}
+                style={{ flex: 2, borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: saving ? 0.65 : 1 }}>
+                {saving ? <ActivityIndicator size="small" color="#fff" /> : (step.kind === 'event' ? <CalendarPlus size={13} color="#fff" /> : <CheckSquare size={13} color="#fff" />)}
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => setExpanded(true)}
+            style={{ marginLeft: 26, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+              borderRadius: 8, borderWidth: 1, borderColor: BRAND.teal + '50', backgroundColor: BRAND.teal + '15',
+              paddingHorizontal: 10, paddingVertical: 5 }}>
+            {step.kind === 'event' ? <CalendarPlus size={12} color={BRAND.teal} /> : <CheckSquare size={12} color={BRAND.teal} />}
+            <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.teal }}>
+              {step.kind === 'event' ? 'Add to Schedule' : 'Add as Task'}
+            </Text>
+          </TouchableOpacity>
+        )
+      )}
+      {added && (
+        <View style={{ marginLeft: 26, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <CheckCircle size={12} color={BRAND.teal} />
+          <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.teal }}>
+            {step.kind === 'event' ? 'Added to Schedule' : 'Added as a task'}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function AiReviewSheet({ rec, analysis, approving, onApprove, onDismiss, onReanalyze, reanalyzing }: Props) {
@@ -158,27 +270,21 @@ export default function AiReviewSheet({ rec, analysis, approving, onApprove, onD
                 )}
 
                 {/* Next steps — a real checkable list (local state only,
-                    see checkedSteps' own comment above) instead of a plain
-                    bullet list. */}
+                    see checkedSteps' own comment above), PLUS a one-tap
+                    "Add to Schedule"/"Add as Task" affordance for any step
+                    the AI could tie to a real date (see NextStep's own
+                    comment in ./types) — live-requested, same pattern
+                    AskCubeProposalCard's DateTimeEditRow already uses for
+                    AI-extracted items elsewhere in the app. */}
                 {analysis.next_steps?.length > 0 && (
-                  <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 10 }}>
+                  <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 14, gap: 12 }}>
                     <Text style={{ fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 0.8 }}>
                       NEXT STEPS
                     </Text>
-                    {analysis.next_steps.map((step, i) => {
-                      const checked = checkedSteps.has(i);
-                      return (
-                        <TouchableOpacity key={i} onPress={() => toggleStep(i)}
-                          style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                          {checked
-                            ? <CheckCircle2 size={16} color={BRAND.teal} style={{ marginTop: 1 }} />
-                            : <Circle size={16} color="#555" style={{ marginTop: 1 }} />}
-                          <Text style={{ fontSize: 13, color: checked ? '#7A7A85' : '#C8C8D0', flex: 1, lineHeight: 19, textDecorationLine: checked ? 'line-through' : 'none' }}>
-                            {step.text}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {analysis.next_steps.map((step, i) => (
+                      <NextStepRow key={i} step={step} checked={checkedSteps.has(i)} onToggle={() => toggleStep(i)}
+                        rec={rec} />
+                    ))}
                   </View>
                 )}
               </>

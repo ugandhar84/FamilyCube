@@ -24,10 +24,25 @@ export interface AiAnalysis {
 // time by checking `'discussion_topics' in analysis` (see AiReviewSheet.tsx).
 export type DiscussionTopicTag = 'important' | 'monitor' | 'info';
 
+// A next step the AI could tie to a concrete date/time (a follow-up
+// appointment, a medication pickup with a deadline, a lab draw) gets
+// suggested_date/suggested_time + a kind, so AiReviewSheet can offer a
+// one-tap "Add to Schedule"/"Add as Task" affordance — same date/time-
+// picker pattern AskCubeProposalCard's DateTimeEditRow already uses for
+// AI-extracted items elsewhere in the app. A step with no clear date (e.g.
+// "drink more water") simply omits these fields and renders as plain text,
+// same as before this was added.
+export interface NextStep {
+  text:            string;
+  suggested_date?: string | null;  // YYYY-MM-DD, relative to the visit's own date if the AI inferred "in 4 weeks" etc.
+  suggested_time?: string | null;  // HH:MM, 24h
+  kind?:           'event' | 'task' | null;
+}
+
 export interface AppointmentAnalysis {
   summary:           string;
   discussion_topics: { title: string; description: string; tag: DiscussionTopicTag }[];
-  next_steps:        { text: string }[];
+  next_steps:        NextStep[];
   tags:              string[];
   doc_type:          'visit_recording';
   urgency:           Urgency;

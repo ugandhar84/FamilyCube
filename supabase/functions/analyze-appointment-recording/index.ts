@@ -127,7 +127,12 @@ If it IS a medical appointment or closely related clinical call, return ONLY a v
     }
   ],
   "next_steps": [
-    { "text": "One concrete, specific action item — a real task the family can act on (e.g. 'Pick up amoxicillin from the pharmacy today', 'Schedule a follow-up in 4 weeks to recheck bloodwork', 'Start the new inhaler twice daily and track symptoms in a log'). Avoid vague items like 'follow doctor's advice.'" }
+    {
+      "text": "One concrete, specific action item — a real task the family can act on (e.g. 'Pick up amoxicillin from the pharmacy today', 'Schedule a follow-up in 4 weeks to recheck bloodwork', 'Start the new inhaler twice daily and track symptoms in a log'). Avoid vague items like 'follow doctor's advice.'",
+      "suggested_date": "YYYY-MM-DD if you can compute a real date from what was said (see date rule below), otherwise omit this field entirely — never guess a date nothing in the recording supports",
+      "suggested_time": "HH:MM 24h if a specific time was mentioned, otherwise omit this field entirely",
+      "kind": "\"event\" for anything tied to a specific date/time (a follow-up appointment, a lab draw, a scheduled call) — \"task\" for a same-day-or-soon action with no fixed appointment time (picking up a prescription, starting a medication, a lifestyle change) — omit this field entirely if neither fits (e.g. an ongoing thing to track ad-hoc, not a one-time action)"
+    }
   ],
   "tags": ["keyword1", "keyword2", "keyword3"],
   "doc_type": "visit_recording",
@@ -139,6 +144,7 @@ Guidelines:
 - discussion_topics: cover EVERY distinct medical topic actually discussed — a typical visit has 2-5. Don't compress multiple distinct topics into one entry. Each description should be detailed enough that re-listening to the recording wouldn't add much.
 - tag: "important" for a new diagnosis, a new medication, or anything the doctor emphasized; "monitor" for something to watch/track over time (a symptom, a borderline result); "info" for general education or reassurance that doesn't need action or tracking.
 - next_steps: every concrete action mentioned — medications to pick up or start, appointments to schedule, tests to get done, lifestyle changes, things to track. Be specific: include names, doses, timeframes, and locations exactly as stated when available. Order by how soon they need to happen.
+- Date rule for suggested_date: you are told this visit's own date below (the "Record date" field) — use it as the anchor to compute a real calendar date from relative phrases actually said in the recording ("in 4 weeks" → visit date + 28 days, "next Tuesday" → the following Tuesday from the visit date, "in 3 months" → visit date + ~90 days). Only compute a date when the recording actually gives you a real timeframe to anchor from — a next_step with no timeframe mentioned at all must omit suggested_date rather than inventing one.
 - tags: 3-6 searchable keywords for this visit (e.g. condition names, medication names, specialty).
 - urgency: "urgent" only if the recording indicates something needs immediate/emergency attention; "attention" for a new diagnosis, medication change, or a result that needs follow-up; "routine" for a normal check-up with nothing new or concerning.
 - If parts of the audio are unclear or hard to hear, still return your best-effort summary of what WAS understood — never fabricate specifics you didn't actually hear.

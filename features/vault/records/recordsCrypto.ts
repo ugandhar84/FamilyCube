@@ -141,6 +141,19 @@ async function encryptLegacyBlob(familyId: string, data: object): Promise<string
  * device hasn't been wrapped for yet (e.g. it just registered, or is
  * mid-recovery).
  */
+// Resolved records session key, per family, for THIS device — the expensive
+// part of decryptAnalysis (two table fetches + a per-device unwrap-and-try
+// loop) resolves to the exact same session key every time for a given
+// family+device, since family_record_keys' wrapped_key doesn't change
+// between record writes. RecordsTab.tsx re-runs decryptAnalysis for every
+// record on every realtime postgres_changes event for the whole family's
+// medical_records table (not just once per screen visit), so without this
+// cache, N records x M family devices worth of unwrap attempts repeats on
+// every unrelated record's insert/update. Cleared on unwrap failure so a
+// stale cached key (e.g. after a passcode-driven recovery re-wrap) doesn't
+// permanently mask a real "not wrapped yet" state.
+const _recordsSessionKeyCache = new Map<string, Uint8Array>();
+
 export async function decryptAnalysis<T = object>(familyId: string, stored: string): Promise<T | null> {
   let blob: EncryptedBlob;
   try {
@@ -153,6 +166,15 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
 
   if (!isFeatureEnabled('per_device_e2e')) return null; // v2 written but flag now off — nothing sensible to do
   try {
+    const cached = _recordsSessionKeyCache.get(familyId);
+    if (cached) {
+      const result = decryptWithSessionKey(blob.ct, cached);
+      if (!result.startsWith('[🔒')) {
+        try { return JSON.parse(result) as T; } catch { /* fall through to re-resolve below */ }
+      }
+      _recordsSessionKeyCache.delete(familyId); // stale — re-resolve from scratch
+    }
+
     const deviceId = await getDeviceId();
     const { data: keyRow } = await supabase
       .from('family_record_keys')
@@ -173,9 +195,10 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
       .eq('family_id', familyId)
       .is('revoked_at', null);
     for (const d of familyDevices ?? []) {
+      let sessionKey: Uint8Array;
       let result: string;
       try {
-        const sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key);
+        sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key);
         result = decryptWithSessionKey(blob.ct, sessionKey);
       } catch { continue; } // wrong device's public key for this wrap — try the next one
       if (result.startsWith('[🔒')) continue; // wrong key/corrupted ciphertext — try the next device
@@ -187,6 +210,7 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
       // indistinguishable from "no device could decrypt this," silently
       // returning null after exhausting every device even though the
       // right key was already found on the first one.
+      _recordsSessionKeyCache.set(familyId, sessionKey);
       return JSON.parse(result) as T;
     }
     return null;

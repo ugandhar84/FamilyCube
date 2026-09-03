@@ -208,6 +208,16 @@ serve(async (req) => {
       });
     }
 
+    // Client has no hard recording-duration cap (RecordVisitSheet.tsx only
+    // shows a soft warning past 45 minutes), so a very long HIGH_QUALITY
+    // recording could be tens of MB — base64 expands that by ~1.33x before
+    // it's held fully in memory below. Reject upfront rather than risking
+    // an OOM/timeout deep inside the Gemini call.
+    const MAX_AUDIO_BYTES = 60 * 1024 * 1024; // ~60MB raw — comfortably covers a 45min HIGH_QUALITY recording
+    if (typeof rec.file_size === 'number' && rec.file_size > MAX_AUDIO_BYTES) {
+      return json({ error: 'This recording is too long to analyze. Please re-record a shorter appointment.' }, 413);
+    }
+
     let rawText = '';
     try {
       const { data: fileBytes, error: dlErr } = await svcClient.storage
@@ -215,6 +225,9 @@ serve(async (req) => {
         .download(rec.file_path);
 
       if (dlErr || !fileBytes) throw new Error(`Storage download failed: ${dlErr?.message ?? 'empty response'}`);
+      if (fileBytes.size > MAX_AUDIO_BYTES) {
+        return json({ error: 'This recording is too long to analyze. Please re-record a shorter appointment.' }, 413);
+      }
 
       const name     = (rec.file_name ?? rec.file_path).toLowerCase();
       const mimeType = name.endsWith('.m4a')  ? 'audio/mp4'

@@ -134,13 +134,21 @@ const ITEM_EMOJI_RULES: { pattern: RegExp; emoji: string }[] = [
   { pattern: /\blentil/, emoji: '🫘' },
   { pattern: /\bchickpea|\bgarbanzo/, emoji: '🫘' },
   { pattern: /\bblack\s*bean|\bkidney\s*bean|\bpinto\s*bean|\bbean[s]?\b/, emoji: '🫘' },
-  { pattern: /\bsplit\s*pea|\bdal\b|\btoor\s*dal|\bmoong\s*dal|\bmasoor\s*dal|\bchana\s*dal/, emoji: '🫘' },
+  { pattern: /\bsplit\s*pea|\bdal\b|\bdaal\b|\btoor\b|\barhar\b|\bmoong\b|\bmung\b|\burad\b|\bmasoor\b|\bchana\b(?!\s*masala)|\brajma\b/, emoji: '🫘' },
   { pattern: /\bpea[s]?\b/, emoji: '🟢' },
   { pattern: /\bsoy\s*bean|\bedamame/, emoji: '🫘' },
   // Spices / condiments
   { pattern: /\bsalt\b/, emoji: '🧂' },
   { pattern: /\bsugar\b/, emoji: '🧂' },
-  { pattern: /\boil\b|\bolive\s*oil/, emoji: '🫙' },
+  // Oils — most specific type first so e.g. "coconut oil" doesn't fall
+  // through to the generic bottle emoji before its own rule is checked.
+  { pattern: /\bolive\s*oil/, emoji: '🫒' },
+  { pattern: /\bcoconut\s*oil/, emoji: '🥥' },
+  { pattern: /\bsesame\s*oil/, emoji: '🫙' },
+  { pattern: /\bmustard\s*oil/, emoji: '🫙' },
+  { pattern: /\bsunflower\s*oil|\bvegetable\s*oil|\bcanola\s*oil|\bpeanut\s*oil|\bgroundnut\s*oil/, emoji: '🫙' },
+  { pattern: /\bghee\b|\bclarified\s*butter/, emoji: '🧈' },
+  { pattern: /\bcooking\s*oil|\boil\b/, emoji: '🫙' },
   { pattern: /\bvinegar/, emoji: '🫙' },
   { pattern: /\bhoney/, emoji: '🍯' },
   { pattern: /\bketchup|\bmustard|\bmayo|\bsauce\b/, emoji: '🍯' },

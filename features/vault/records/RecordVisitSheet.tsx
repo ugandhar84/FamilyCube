@@ -241,39 +241,20 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     runAnalysis(pendingRecord, pendingRecord.file_path, true);
   };
 
-  // Tapping Stop no longer immediately uploads+analyzes — live-requested:
-  // give the user a chance to review first and choose Submit, Continue
-  // Recording, or Delete, instead of committing to the upload the instant
-  // Stop is tapped. This is a PAUSE (recorder.pause(), same mechanism
-  // togglePause already uses), not a real recorder.stop() — expo-audio's
-  // record()/pause() only resume in place on the SAME file when the
-  // recorder was paused, not once genuinely stopped, so staying paused
-  // here is what makes "Continue Recording" actually possible afterward.
-  const pauseForReview = () => {
-    recorder.pause();
-    if (pauseStartRef.current == null) pauseStartRef.current = Date.now();
-    setPaused(true);
-    setReviewingStop(true);
-  };
-
-  const resumeFromReview = () => {
-    recorder.record();
-    if (pauseStartRef.current != null) { pausedAccumRef.current += Date.now() - pauseStartRef.current; pauseStartRef.current = null; }
-    setPaused(false);
-    setReviewingStop(false);
-  };
-
-  const deleteRecording = async () => {
-    await recorder.stop();
-    setRecording(false);
-    setPaused(false);
-    setReviewingStop(false);
-    recordStartRef.current = null;
-    pauseStartRef.current = null;
-    onClose();
-  };
-
-  const submitForAnalysis = async () => {
+  // Live-requested: Stop now finalizes AND uploads immediately, creating a
+  // real (unanalyzed) medical_records row right away — not held only in
+  // the recorder's temporary in-memory buffer until a separate Submit tap.
+  // This is what makes an unsubmitted recording survive closing this sheet,
+  // backgrounding/killing the app, or even the appointment ending hours
+  // later: it already exists as a normal row (ai_analyzed:false,
+  // tag:'visit_recording') the moment recording stops, so it shows up in
+  // the Records tab with its own Submit/Delete actions (see RecordsTab.tsx/
+  // RecordCard's tag-aware branch) exactly like any other not-yet-analyzed
+  // record, reachable independently of this sheet ever being reopened.
+  // "Continue Recording" was considered and deliberately dropped — once
+  // Stop finalizes and uploads, there's no in-progress file left to resume;
+  // recording more means starting a genuinely new recording afterward.
+  const stopAndUpload = async () => {
     // Both captured BEFORE stop(), not after — recorder.currentTime read
     // AFTER await recorder.stop() resolves is unreliable (reads back
     // near-zero once the recorder has already torn down). Live-reported:
@@ -293,7 +274,6 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     const uri = recorder.uri;
     setRecording(false);
     setPaused(false);
-    setReviewingStop(false);
     recordStartRef.current = null;
     pauseStartRef.current = null;
     // Temporary diagnostic — kept until this is confirmed fixed on the
@@ -301,7 +281,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     // to look at instead of guessing a third time: which half of the check
     // failed (no uri at all vs. a real duration reading near-zero), and
     // what each of the two duration signals independently reported.
-    console.log('[RecordVisitSheet] submitForAnalysis', { uri, dur, elapsed, wallClock: wallClockElapsedSecs(), recorderCurrentTime: recorder.currentTime });
+    console.log('[RecordVisitSheet] stopAndUpload', { uri, dur, elapsed, wallClock: wallClockElapsedSecs(), recorderCurrentTime: recorder.currentTime });
     if (!uri || dur < 1) {
       showToast(!uri ? "Couldn't save the recording — try again" : "Recording was too short — try again", 'error');
       return;
@@ -351,12 +331,34 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
       setUploading(false);
       setPendingRecord(rec as MedRecord);
-      await runAnalysis(rec as MedRecord, up.path);
+      setReviewingStop(true);
     } catch (e: any) {
       setUploading(false);
-      setAnalyzing(false);
       showToast(e?.message ?? "Couldn't process the recording", 'error');
     }
+  };
+
+  // Submit half of the review gate — the record already exists (uploaded
+  // at Stop, see stopAndUpload above); this just kicks off the actual AI
+  // analysis on it, same as RecordsTab.tsx's analyzeRecord does for a
+  // record reached from the Records list instead of this sheet.
+  const submitForAnalysis = async () => {
+    if (!pendingRecord?.file_path) return;
+    setReviewingStop(false);
+    await runAnalysis(pendingRecord, pendingRecord.file_path);
+  };
+
+  // Delete half of the review gate — the record + its audio already exist
+  // in Supabase at this point (uploaded at Stop), so this is a real delete
+  // of a persisted row, not just discarding a local in-memory buffer.
+  const deleteUnsubmitted = async () => {
+    if (pendingRecord) {
+      if (pendingRecord.file_path) supabase.storage.from('medical-audio').remove([pendingRecord.file_path]).catch(() => {});
+      await supabase.from('medical_records').delete().eq('id', pendingRecord.id);
+    }
+    setReviewingStop(false);
+    setPendingRecord(null);
+    onClose();
   };
 
   const approve = async () => {
@@ -417,6 +419,12 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       ]);
       return;
     }
+    // The recording is already uploaded and saved at this point (see
+    // stopAndUpload) — closing without submitting doesn't lose it, it's
+    // just not analyzed yet. Say so, since silently closing after all that
+    // "review before submitting" framing could otherwise read as the
+    // recording having been discarded.
+    if (reviewingStop) showToast('Saved to Records — submit for analysis anytime');
     reset();
     onClose();
   };
@@ -471,11 +479,18 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 {analyzing ? 'This can take up to a minute for longer recordings.' : ''}
               </Text>
             </View>
-          ) : recording && reviewingStop ? (
-            // Live-requested review gate — Stop no longer immediately
-            // uploads. Three real choices: submit what's recorded, keep
-            // going (resumes the SAME file via recorder.record(), same as
-            // the mid-recording Pause/Resume above), or discard entirely.
+          ) : reviewingStop && pendingRecord ? (
+            // Live-requested review gate — the recording is already
+            // finalized AND uploaded at this point (see stopAndUpload),
+            // so this is reviewing a real, persisted record, not an
+            // in-memory buffer. Only Submit/Delete — "Continue Recording"
+            // was considered and dropped once Stop started finalizing
+            // immediately (there's no in-progress file left to resume;
+            // recording more means a genuinely new recording afterward).
+            // Also reachable independently from the Records tab if this
+            // sheet is closed/reopened before submitting — see
+            // RecordsTab.tsx/RecordCard's tag-aware branch for
+            // tag:'visit_recording'.
             <View style={{ gap: 18, alignItems: 'center', paddingVertical: 12 }}>
               <View style={{ alignItems: 'center', gap: 4 }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
@@ -484,25 +499,17 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
               </View>
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
-                Recording paused — review before submitting.
-              </Text>
-              <Text style={{ fontSize: 32, fontWeight: '900', color: colors.textPrimary, fontVariant: ['tabular-nums'], marginTop: -8 }}>
-                {formatElapsed(elapsed)}
+                Recording saved — review before submitting for analysis.
               </Text>
               <View style={{ gap: 10, width: '100%', marginTop: 6 }}>
                 <TouchableOpacity onPress={submitForAnalysis}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.primary, paddingVertical: 14 }}>
                   <Text style={{ color: colors.textInverse, fontWeight: '800', fontSize: 14 }}>Submit for Analysis</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={resumeFromReview}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 14 }}>
-                  <Mic size={16} color={colors.textPrimary} />
-                  <Text style={{ color: colors.textPrimary, fontWeight: '800', fontSize: 14 }}>Continue Recording</Text>
-                </TouchableOpacity>
                 <TouchableOpacity onPress={() => {
                   Alert.alert('Delete this recording?', 'This cannot be undone.', [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: deleteRecording },
+                    { text: 'Delete', style: 'destructive', onPress: deleteUnsubmitted },
                   ]);
                 }}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, borderWidth: 1.5, borderColor: colors.danger + '50', paddingVertical: 14 }}>
@@ -560,7 +567,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                     : <Pause size={16} color={colors.textPrimary} />}
                   <Text style={{ color: colors.textPrimary, fontWeight: '800', fontSize: 14 }}>{paused ? 'Resume' : 'Pause'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={pauseForReview}
+                <TouchableOpacity onPress={stopAndUpload}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.textPrimary, paddingVertical: 14 }}>
                   <Square size={14} color={colors.background} fill={colors.background} />
                   <Text style={{ color: colors.background, fontWeight: '800', fontSize: 14 }}>Stop</Text>

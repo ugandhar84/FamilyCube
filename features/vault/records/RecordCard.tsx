@@ -209,11 +209,14 @@ export default function RecordCard({
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 12, fontWeight: '800',
                   color: analyzing ? colors.textTertiary : BRAND.teal }}>
-                  {analyzing ? 'Analyzing…' : 'Analyze with AI'}
+                  {analyzing
+                    ? (rec.tag === 'visit_recording' ? 'Summarizing…' : 'Analyzing…')
+                    : (rec.tag === 'visit_recording' ? 'Submit for Analysis' : 'Analyze with AI')}
                 </Text>
                 {!analyzing && (
                   <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 1 }}>
-                    {rec.file_path ? 'Reads the actual document · name anonymized' : 'Based on title & notes'}
+                    {rec.tag === 'visit_recording' ? 'Transcribes and summarizes the recording'
+                      : rec.file_path ? 'Reads the actual document · name anonymized' : 'Based on title & notes'}
                   </Text>
                 )}
               </View>

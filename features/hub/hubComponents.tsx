@@ -1552,7 +1552,14 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
     {cat === 'Medical' && isViewerParent && (
       <RecordVisitSheet
         visible={recordVisitOpen}
-        onClose={() => setRecordVisitOpen(false)}
+        // Live-requested: closing Record Visit shouldn't drop back to the
+        // event detail sheet underneath — the whole thing should close,
+        // back to the Hub. recordVisitOpen only ever controlled which of
+        // the two stacked Modals was visible (see the visible={!recordVisitOpen}
+        // fix above); it never actually dismissed EventDetailSheet itself,
+        // so closing the recording sheet just revealed the (still-mounted)
+        // event sheet again. Calling both closes the whole stack in one tap.
+        onClose={() => { setRecordVisitOpen(false); onClose(); }}
         familyId={viewerMember?.familyId ?? ''}
         memberId={ev.memberId ?? allAssignees[0]?.id ?? ''}
         memberName={allAssignees[0]?.name ?? 'this patient'}

@@ -19,7 +19,7 @@ import AddRecordModal from '../records/AddRecordModal';
 import RecordsFilterSheet from '../records/RecordsFilterSheet';
 import { encryptAnalysis, decryptAnalysis, isEncryptedBlob } from '../records/recordsCrypto';
 import { downloadSingle, downloadZip } from '../records/recordsDownload';
-import { MedRecord, AiAnalysis, RecordForm } from '../records/types';
+import { MedRecord, AiAnalysis, AppointmentAnalysis, RecordForm } from '../records/types';
 import type * as DocumentPicker from 'expo-document-picker';
 import { showToast } from '@/components/AppToast';
 
@@ -62,7 +62,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     }
   }, []));
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  const [pending,     setPending]     = useState<Record<string, AiAnalysis>>({});
+  const [pending,     setPending]     = useState<Record<string, AiAnalysis | AppointmentAnalysis>>({});
   const [notMedical,  setNotMedical]  = useState<Record<string, string>>({});
   const [reviewRec,   setReviewRec]   = useState<MedRecord | null>(null);
   const [approving,   setApproving]   = useState(false);
@@ -181,20 +181,29 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   };
 
   // ── AI Analyze ────────────────────────────────────────────────────────────────
+  // Tag-aware: a 'visit_recording' row (created by RecordVisitSheet.tsx's
+  // stopAndUpload, which now uploads+creates the record immediately on
+  // Stop rather than waiting for a separate Submit tap — see its own
+  // comment) needs the AUDIO analyzer, not the document one. Reachable
+  // from here independently of that sheet ever being reopened: closing it
+  // before submitting leaves a real, unanalyzed row that shows up in this
+  // list like any other, with its own Analyze/Delete actions.
   const analyzeRecord = async (rec: MedRecord) => {
     if (rec.ai_analyzed) return;
     setAnalyzingId(rec.id);
+    const isVisitRecording = rec.tag === 'visit_recording';
     try {
-      const { data: fnData, error } = await supabase.functions.invoke('analyze-medical-record', {
-        body: { record_id: rec.id, member_name: memberName(rec.member_id) },
-      });
+      const { data: fnData, error } = await supabase.functions.invoke(
+        isVisitRecording ? 'analyze-appointment-recording' : 'analyze-medical-record',
+        { body: { record_id: rec.id, member_name: memberName(rec.member_id) } },
+      );
       if (error) throw new Error(error.message);
       if (fnData?.error) throw new Error(fnData.error);
       if (fnData?.not_medical) {
         setNotMedical(prev => ({ ...prev, [rec.id]: fnData.message ?? 'This does not appear to be a medical document.' }));
         return;
       }
-      const analysis: AiAnalysis = fnData?.analysis;
+      const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
       if (!analysis?.summary) throw new Error('Invalid AI response');
       setPending(prev => ({ ...prev, [rec.id]: analysis }));
       // Auto-open the review sheet
@@ -205,7 +214,11 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           familyId,
           memberId:   rec.member_id,
           type:       'custom',
-          payload: {
+          payload: isVisitRecording ? {
+            title: '📋 Visit Summary Ready',
+            body:  `${rec.title} — tap to review and approve the summary`,
+            data:  { screen: 'vault', tab: 'records', record_id: rec.id },
+          } : {
             title: '🧬 AI Analysis Ready',
             body:  `${rec.title} — tap to review and approve the findings`,
             data:  { screen: 'vault', tab: 'records', record_id: rec.id },

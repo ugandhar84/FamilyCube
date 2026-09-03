@@ -71,6 +71,22 @@ serve(async (req) => {
       ? await exchangeGoogle(code, codeVerifier)
       : await exchangeOutlook(code, codeVerifier);
 
+    // sync_token/external_calendar_id explicitly reset to null on every
+    // (re)connect — an upsert on this conflict key only touches columns
+    // present in the payload, so omitting them here left a RECONNECT
+    // (same family_id/member_id/provider/purpose row, e.g. after
+    // disconnecting and reconnecting, or a token expiring and being
+    // re-authed) silently inheriting the PRIOR connection lifecycle's
+    // stale sync_token. googleReconcile.ts's poller then treated the
+    // "brand new" connection as an established one resuming an unchanged
+    // delta — correctly reporting "0 items, token unchanged" against a
+    // cursor that already represented everything up to the OLD
+    // connection's last sync, rather than taking the full-initial-sync
+    // path (googleReconcile.ts's syncToken-is-falsy branch) a genuinely
+    // fresh connection needs. Live-reported: Praveena's newly connected
+    // Google account never synced a single event, even across cold
+    // restarts, because every poll's delta against the stale token
+    // legitimately found nothing new.
     const { error } = await supabase.from('calendar_connections').upsert({
       family_id: member.family_id,
       member_id: memberId,
@@ -82,6 +98,8 @@ serve(async (req) => {
       connected_account_email: tokens.email ?? null,
       status: 'active',
       last_error: null,
+      sync_token: null,
+      external_calendar_id: null,
     }, { onConflict: 'family_id,member_id,provider,purpose' });
 
     if (error) {

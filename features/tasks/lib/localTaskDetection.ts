@@ -332,11 +332,23 @@ export function extractDateTime(input: string): ExtractedDateTime {
     // UTC) would otherwise resolve to the wrong calendar date entirely.
     result.date = localDateStr(d);
   }
-  const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
+  // Live-requested: "user can mention 615 or 6.15 pm or PM, 405 4:05 pm or
+  // PM" — the old pattern only accepted a colon separator ("6:15pm"),
+  // silently failing on a period ("6.15pm" — worse, it PARTIALLY matched,
+  // treating the digits after the period as a fresh 1-2 digit hour and
+  // silently producing nonsense like "15:00" instead of "18:15") and on
+  // the compact no-separator shorthand real texting habits actually use
+  // ("615pm", "405pm"). Now accepts a colon OR period separator, OR no
+  // separator at all with the minutes as a plain trailing 2 digits — all
+  // still requiring am/pm, since a bare 1-4 digit number with no meridiem
+  // is too ambiguous against other numbers already in the sentence (a
+  // dollar amount, a coin count) to safely treat as a time at all.
+  const TIME_RE = /\b(\d{1,2})(?:[:.](\d{2})|(\d{2}))?\s?(am|pm)\b/i;
+  const timeMatch = input.match(TIME_RE);
   if (timeMatch) {
     let h = parseInt(timeMatch[1], 10);
-    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const mer = timeMatch[3].toLowerCase();
+    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+    const mer = timeMatch[4].toLowerCase();
     if (mer === 'pm' && h < 12) h += 12;
     if (mer === 'am' && h === 12) h = 0;
     result.time = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
@@ -350,11 +362,11 @@ export function extractDateTime(input: string): ExtractedDateTime {
   if (/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i.test(input)) {
     const dropIdx = input.search(/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i);
     const afterDrop = input.slice(dropIdx);
-    const returnMatch = afterDrop.match(/\b(?:pick(?:ing)?\s?up|collect(?:ing)?|return(?:ing)?)\b[^.,;]{0,40}?\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
+    const returnMatch = afterDrop.match(/\b(?:pick(?:ing)?\s?up|collect(?:ing)?|return(?:ing)?)\b[^.,;]{0,40}?\b(\d{1,2})(?:[:.](\d{2})|(\d{2}))?\s?(am|pm)\b/i);
     if (returnMatch) {
       let rh = parseInt(returnMatch[1], 10);
-      const rm = returnMatch[2] ? parseInt(returnMatch[2], 10) : 0;
-      const rmer = returnMatch[3].toLowerCase();
+      const rm = returnMatch[2] ? parseInt(returnMatch[2], 10) : returnMatch[3] ? parseInt(returnMatch[3], 10) : 0;
+      const rmer = returnMatch[4].toLowerCase();
       if (rmer === 'pm' && rh < 12) rh += 12;
       if (rmer === 'am' && rh === 12) rh = 0;
       const candidate = String(rh).padStart(2, '0') + ':' + String(rm).padStart(2, '0');
@@ -397,7 +409,12 @@ export function extractLocations(rawInput: string): ExtractedLocations {
   } else {
     m = rawInput.match(PICKUP_CONTEXT_RE);
     if (m) pickup = m[1].trim();
-    m = rawInput.match(/\b(?:drop(?:ping)?(?:\s|-)?off(?:\s+\w+)?\s+at|take (?:her|him|them) to)\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
+    // "drop off X at Y" and "drop off X to Y" are both real phrasings people
+    // use for the same thing (live-reported: "drop off jas to dance class
+    // at 415pm") — "to" used to be missing from this alternation entirely,
+    // so that exact wording fell through to the generic non-ride title path
+    // instead of populating a real dropoff location.
+    m = rawInput.match(/\b(?:drop(?:ping)?(?:\s|-)?off(?:\s+\w+)?\s+(?:at|to)|take (?:her|him|them) to)\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
     if (m) dropoff = m[1].trim();
   }
   const clean = (s: string | null) => s ? s.replace(/\s+/g, ' ').trim().replace(/^\w/, c => c.toUpperCase()) : null;
@@ -518,9 +535,14 @@ function suggestTitle(rawInput: string, entry: CategoryEntry, person: string | n
   let t = rawInput.trim();
   if (!t) return '';
   if (entry.key === 'ride') {
-    if (locs.pickup && locs.dropoff) return (person ? `Pick up ${person}` : 'Ride') + ` from ${locs.pickup} to ${locs.dropoff}`;
-    if (locs.pickup) return (person ? `Pick up ${person}` : 'Pickup') + ` from ${locs.pickup}`;
-    if (locs.dropoff) return (person ? `Drop off ${person}` : 'Drop-off') + ` at ${locs.dropoff}`;
+    // Live-reported: the title should lead with WHO and use the same
+    // to/from preposition the destination actually pairs with — "Drop Jas
+    // to Dance Class" / "Pickup Jas from Dance Class" — instead of the
+    // previous "Pick up X from A to B" phrasing, which read like a single
+    // door-to-door trip rather than naming the drop-off/pickup leg it is.
+    if (locs.pickup && locs.dropoff) return (person ? `Drop ${person}` : 'Drop-off') + ` to ${locs.dropoff}, pickup from ${locs.pickup}`;
+    if (locs.dropoff) return (person ? `Drop ${person}` : 'Drop-off') + ` to ${locs.dropoff}`;
+    if (locs.pickup) return (person ? `Pickup ${person}` : 'Pickup') + ` from ${locs.pickup}`;
   }
   t = t.replace(LEADING_FRAME_RE, '');
   const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;

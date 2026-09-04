@@ -117,8 +117,25 @@ export default function AppBottomSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={s.backdrop}>
+      {/* Live-reported ("form is hiding behind the keyboard litrally" /
+          "weird grey gap instead of blending to the keyboard") on the
+          hand-rolled sheets in EventFormModal.tsx/TaskFormShell.tsx traced
+          to the same underlying issue this component's own KeyboardAvoidingView
+          'padding' wrapper doesn't fully avoid either: `sheetHeight`/`maxPx`
+          are computed once against the full, keyboard-agnostic screenHeight,
+          then KeyboardAvoidingView ALSO eats into that same space with its
+          own padding once the keyboard opens — the sheet's explicit
+          `height: sheetHeight` doesn't reactively shrink to match, so the
+          KeyboardAvoidingView's padding can push a fixed-height sheet's
+          content down past where the keyboard-aware maxPx clamp assumed it
+          would end up. Applying the SAME fix that actually worked there:
+          reserve room for the keyboard via paddingBottom on the backdrop
+          (not by fighting over it with KeyboardAvoidingView) and drop
+          KeyboardAvoidingView entirely — the maxPx clamp already limits how
+          tall the sheet can grow, and the backdrop's flex:1 spacer above
+          the sheet naturally shrinks to close the same gap once padding
+          reserves the keyboard's space. */}
+        <View style={[s.backdrop, { paddingBottom: keyboardHeight }]}>
 
           {/* Tap outside to close */}
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -186,8 +203,18 @@ export default function AppBottomSheet({
             ) : null}
 
           </View>
+          {/* Filler pinned to the very bottom of the backdrop, UNDER the
+              sheet, same color as the sheet — closes the small gap from
+              keyboardWillShow's reported height not landing pixel-perfect
+              against where the keyboard actually settles, same fix as
+              TaskFormShell.tsx/EventFormModal.tsx's own filler. Positioned
+              absolute so it sits BEHIND the sheet's bottom edge instead of
+              competing with it for the backdrop's flex-end space. */}
+          {keyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+          )}
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -196,6 +223,7 @@ const s = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
   },
   sheet: {
     borderTopLeftRadius: 24,

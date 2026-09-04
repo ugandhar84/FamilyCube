@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
-  Modal, KeyboardAvoidingView, Platform, Keyboard, StyleSheet, TouchableOpacity,
+  Modal, Platform, Keyboard, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useGroceryStore, GroceryRun } from '@/store/groceryStore';
@@ -46,15 +46,24 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   const inputBg = colors.surface;
   const border  = colors.border;
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  // Live-requested: "apply same fixes in all bottomsheets - don't forget
+  // 75% is max but fit to the content" — was 90%.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 
@@ -132,10 +141,8 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
               </Pressable>
             )}
           </View>
-            </ScrollView>
-
-            {/* Sticky footer */}
-            <View style={{ padding: 16, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              {/* Live-requested: "add buttons also in the scroll view" —
+                  was a separate fixed footer below the ScrollView. */}
               <Pressable
                 onPress={handleSave}
                 disabled={!store.trim() || saving}
@@ -145,11 +152,14 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
                   ? <ActivityIndicator color={colors.textInverse} size="small" />
                   : <Text style={[sh.btnText, { color: colors.textInverse }]}>Start Trip</Text>}
               </Pressable>
-            </View>
+            </ScrollView>
 
           </View>
+          {keyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+          )}
         </View>
-      </KeyboardAvoidingView>
 
       <PickerOverlay
         showDate={pickerMode === 'date'}

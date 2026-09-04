@@ -9,6 +9,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun, GroceryRunItem } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { showToast } from '@/components/AppToast';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { sh, rd } from './styles';
 
 // ─── Run Detail Sheet ─────────────────────────────────────────────────────────
@@ -40,6 +41,10 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   // this doesn't need a separate addItemToRun call after creating it.
   const [quickAddName, setQuickAddName] = useState('');
   const [quickAdding,  setQuickAdding]  = useState(false);
+  // Live-requested: "apply same fixes in all bottomsheets - don't forget
+  // 75% is max but fit to the content" — was a flat 90%, no keyboard
+  // awareness at all despite the "add" tab's own TextInput.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   const pickReceipt = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -372,7 +377,8 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     <>
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border, maxHeight: '90%', minHeight: '72%', flex: 1 }]}>
+        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border,
+          maxHeight: keyboardAwareMaxHeight ?? '75%', minHeight: '72%', flex: 1 }]}>
           <View style={[sh.handle, { backgroundColor: colors.border }]} />
 
           {/* Header */}

@@ -1161,7 +1161,7 @@ function TypeToConfirmRow({
   );
 }
 
-export default function ProfileSettingsScreen() {
+export default function ProfileSettingsScreen({ hideBackButton = false }: { hideBackButton?: boolean } = {}) {
   const { colors, isDark, mode, setMode } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
   // with no selector, which subscribes to the ENTIRE store object and
@@ -1479,11 +1479,17 @@ export default function ProfileSettingsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Header */}
+      {/* Header — back button hidden on kiosk (KioskProfileTab passes
+          hideBackButton): kiosk embeds this screen directly inside its own
+          tabbed rail content, not pushed as a real route, so there's no
+          navigation stack entry for router.back() to pop — live-reported
+          as a "GO_BACK not handled" warning/dead button there. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        {!hideBackButton && (
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        )}
         <Text style={{ fontSize: TYPO.subheading, fontWeight: '900', color: colors.textPrimary }}>
           Profile & Settings
         </Text>

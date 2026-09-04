@@ -7,14 +7,17 @@
  * kiosk side bar" — Profile is the Hub's own AppsQuickAccessPills entry.
  *
  * ProfileSettingsScreen reads activeMemberId/router itself and has no
- * `hideHeader` prop the way SchoolScreen/HealthRecordsScreen do — its own
- * header (with a router.back() button) renders as-is here. Its internal
- * sub-navigation (router.push('/profile-settings/...'), '/admin', etc.)
- * are real routes and work unmodified from inside kiosk; router.back()
- * naturally returns to this tab.
+ * `hideHeader` prop the way SchoolScreen/HealthRecordsScreen do, but does
+ * take `hideBackButton` — kiosk isn't pushed onto a navigation stack (it's
+ * embedded directly inside KioskScreen's own tabbed rail), so there's no
+ * route for router.back() to pop; the phone's back chevron would otherwise
+ * be a dead button here (live-reported: "GO_BACK not handled" warning).
+ * Its internal sub-navigation (router.push('/profile-settings/...'),
+ * '/admin', etc.) are real routes and still work unmodified from inside
+ * kiosk since those DO push onto the stack.
  */
 import ProfileSettingsScreen from '@/features/profile/ProfileSettingsScreen';
 
 export function KioskProfileTab() {
-  return <ProfileSettingsScreen />;
+  return <ProfileSettingsScreen hideBackButton />;
 }

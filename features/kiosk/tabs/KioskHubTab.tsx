@@ -19,10 +19,15 @@ import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, type ChatMessage } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 
 const CHAT_CHANNEL = 'all';
+// Module-level, not inline `[]` in the render — a stable reference across
+// every render/instance, needed so chatMessages doesn't change identity
+// (and re-trigger downstream memoization) just because the channel hasn't
+// loaded yet.
+const EMPTY_MESSAGES: ChatMessage[] = [];
 
 export function KioskHubTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -30,7 +35,18 @@ export function KioskHubTab({ active, members, colors, isDark }: {
   const { quests } = useQuestStore();
   const dayEvents = useEventStore(s => s.dayEvents);
   const loadChatChannel = useChatStore(s => s.loadChannel);
-  const chatMessages = useChatStore(s => s.channels[CHAT_CHANNEL]?.messages ?? []);
+  // Was: useChatStore(s => s.channels[CHAT_CHANNEL]?.messages ?? []) — the
+  // `?? []` fallback lived INSIDE the selector, so every render before the
+  // channel loads returned a brand-new array literal; useSyncExternalStore
+  // (what Zustand's hook is built on) compares snapshots by reference and
+  // re-renders forever chasing a "changed" value that's actually the same
+  // empty state each time ("getSnapshot should be cached" warning/loop).
+  // Reading the channel object itself (stable reference once loaded, same
+  // `undefined` reference every render before that) and defaulting OUTSIDE
+  // the selector fixes it — same pattern KioskChatTab.tsx/ChatScreen.tsx
+  // already use via their whole-store `const { channels } = useChatStore()`.
+  const chatChannel = useChatStore(s => s.channels[CHAT_CHANNEL]);
+  const chatMessages = chatChannel?.messages ?? EMPTY_MESSAGES;
 
   // The dashboard's chat pulse reads channels['all'] straight from the
   // store like KioskChatTab does, but this tab may be the very first thing

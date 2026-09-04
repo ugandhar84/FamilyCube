@@ -86,7 +86,7 @@ async function ensureRecordsKeyWrapped(familyId: string, memberId: string): Prom
     await ensureDeviceRegistered(familyId, memberId);
     const directory = await getFamilyDeviceDirectory(familyId);
     if (directory.length === 0) return sessionKey;
-    const wrapped = await wrapRecordsKeyForDevices(sessionKey, directory);
+    const wrapped = await wrapRecordsKeyForDevices(sessionKey, directory, familyId);
     const { error } = await supabase.from('family_record_keys').upsert(
       wrapped.map(w => ({ family_id: familyId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
       { onConflict: 'family_id,device_id' },
@@ -198,7 +198,7 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
       let sessionKey: Uint8Array;
       let result: string;
       try {
-        sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key);
+        sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key, familyId);
         result = decryptWithSessionKey(blob.ct, sessionKey);
       } catch { continue; } // wrong device's public key for this wrap — try the next one
       if (result.startsWith('[🔒')) continue; // wrong key/corrupted ciphertext — try the next device

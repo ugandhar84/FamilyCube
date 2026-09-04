@@ -229,6 +229,13 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 const LOCAL_DEVICE_ID       = 'familycube_device_id_v1';
 const LOCAL_DEVICE_PRIVKEY  = 'familycube_device_privkey_v1';
 const LOCAL_DEVICE_PUBKEY   = 'familycube_device_pubkey_v1';
+// Per-family recovered key pair — see installRecoveredKeyPair's own doc for
+// why this is family-scoped while the device's normal identity above is
+// deliberately NOT: a member belonging to multiple families (a grandparent
+// in two households, sharing one tablet) recovering Family B's passcode
+// must not disturb Family A's still-working identity on the same device.
+const RECOVERED_PRIVKEY_PREFIX = 'familycube_recovered_privkey_v1_';
+const RECOVERED_PUBKEY_PREFIX  = 'familycube_recovered_pubkey_v1_';
 
 function bytesToB64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
@@ -254,8 +261,27 @@ export async function getDeviceId(): Promise<string> {
  * every subsequent call on this device returns the same pair. The private
  * key half never leaves this function's callers — it's read from Secure
  * Store and used locally, never serialized into any network payload.
+ *
+ * When `familyId` is given AND this device has recovered THAT family's
+ * passcode (installRecoveredKeyPair), returns the family-scoped recovered
+ * pair instead of the device's own real identity — recovering Family B's
+ * passcode must not disturb Family A's still-working identity on a device
+ * shared across multiple families (a grandparent's tablet, say). Every
+ * caller in this file that operates on a specific family's data passes its
+ * familyId through for this reason; callers with no family context (e.g.
+ * getDeviceId's own registration flow) omit it and always get the device's
+ * real identity.
  */
-export async function getDeviceKeyPair(): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+export async function getDeviceKeyPair(familyId?: string): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+  if (familyId) {
+    const [recoveredPriv, recoveredPub] = await Promise.all([
+      SecureStore.getItemAsync(RECOVERED_PRIVKEY_PREFIX + familyId),
+      SecureStore.getItemAsync(RECOVERED_PUBKEY_PREFIX + familyId),
+    ]);
+    if (recoveredPriv && recoveredPub) {
+      return { privateKey: b64ToBytes(recoveredPriv), publicKey: b64ToBytes(recoveredPub) };
+    }
+  }
   const [storedPriv, storedPub] = await Promise.all([
     SecureStore.getItemAsync(LOCAL_DEVICE_PRIVKEY),
     SecureStore.getItemAsync(LOCAL_DEVICE_PUBKEY),
@@ -272,9 +298,11 @@ export async function getDeviceKeyPair(): Promise<{ privateKey: Uint8Array; publ
   return { privateKey, publicKey };
 }
 
-/** This device's public key, base64 — the only half ever uploaded to device_keys. */
-export async function getDevicePublicKeyB64(): Promise<string> {
-  const { publicKey } = await getDeviceKeyPair();
+/** This device's public key for `familyId` (its recovered key if that
+ * family was recovered on this device, otherwise its real identity), base64
+ * — the half that gets uploaded to device_keys as this family's row. */
+export async function getDevicePublicKeyB64(familyId?: string): Promise<string> {
+  const { publicKey } = await getDeviceKeyPair(familyId);
   return bytesToB64(publicKey);
 }
 
@@ -287,6 +315,7 @@ export async function getDevicePublicKeyB64(): Promise<string> {
 export async function encryptForDevices(
   plaintext: string,
   recipients: { deviceId: string; publicKeyB64: string }[],
+  familyId?: string,
 ): Promise<{ ciphertext: string; wrappedKeys: { deviceId: string; wrappedKey: string }[] }> {
   const sessionKey = randomBytes(32); // AES-256
   const iv         = randomBytes(12);
@@ -295,7 +324,7 @@ export async function encryptForDevices(
   const encrypted  = cipher.encrypt(encoded);
   const ciphertext = `${bytesToB64(iv)}:${bytesToB64(encrypted)}`;
 
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
 
   const wrappedKeys = recipients.map(r => {
     const theirPub  = b64ToBytes(r.publicKeyB64);
@@ -322,8 +351,9 @@ export async function encryptForDevices(
 export async function unwrapSessionKeyFromDevice(
   wrappedKey: string,
   senderPublicKeyB64: string,
+  familyId?: string,
 ): Promise<Uint8Array> {
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
   const theirPub = b64ToBytes(senderPublicKeyB64);
   const shared    = x25519.getSharedSecret(myPriv, theirPub);
   const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
@@ -341,9 +371,10 @@ export async function decryptFromDevice(
   ciphertext: string,
   wrappedKey: string,
   senderPublicKeyB64: string,
+  familyId?: string,
 ): Promise<string> {
   try {
-    const sessionKey = await unwrapSessionKeyFromDevice(wrappedKey, senderPublicKeyB64);
+    const sessionKey = await unwrapSessionKeyFromDevice(wrappedKey, senderPublicKeyB64, familyId);
     const [ivB64, encB64] = ciphertext.split(':');
     const cipher  = gcm(sessionKey, b64ToBytes(ivB64));
     const decoded = cipher.decrypt(b64ToBytes(encB64));
@@ -409,8 +440,9 @@ export async function peekLocationSessionKey(memberId: string): Promise<Uint8Arr
 export async function wrapLocationKeyForDevices(
   sessionKey: Uint8Array,
   recipients: { deviceId: string; publicKeyB64: string }[],
+  familyId?: string,
 ): Promise<{ deviceId: string; wrappedKey: string }[]> {
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
   return recipients.map(r => {
     const theirPub  = b64ToBytes(r.publicKeyB64);
     const shared     = x25519.getSharedSecret(myPriv, theirPub);
@@ -422,8 +454,8 @@ export async function wrapLocationKeyForDevices(
 }
 
 /** Unwraps a location session key using this device's own private key + the sender device's public key. */
-export async function unwrapLocationKey(wrappedKey: string, senderPublicKeyB64: string): Promise<Uint8Array> {
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+export async function unwrapLocationKey(wrappedKey: string, senderPublicKeyB64: string, familyId?: string): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
   const theirPub = b64ToBytes(senderPublicKeyB64);
   const shared    = x25519.getSharedSecret(myPriv, theirPub);
   const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
@@ -486,8 +518,9 @@ export async function getOrCreateRecordsSessionKey(familyId: string): Promise<Ui
 export async function wrapRecordsKeyForDevices(
   sessionKey: Uint8Array,
   recipients: { deviceId: string; publicKeyB64: string }[],
+  familyId?: string,
 ): Promise<{ deviceId: string; wrappedKey: string }[]> {
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
   return recipients.map(r => {
     const theirPub  = b64ToBytes(r.publicKeyB64);
     const shared     = x25519.getSharedSecret(myPriv, theirPub);
@@ -499,8 +532,8 @@ export async function wrapRecordsKeyForDevices(
 }
 
 /** Unwraps a records session key using this device's own private key + the sender device's public key. */
-export async function unwrapRecordsKey(wrappedKey: string, senderPublicKeyB64: string): Promise<Uint8Array> {
-  const { privateKey: myPriv } = await getDeviceKeyPair();
+export async function unwrapRecordsKey(wrappedKey: string, senderPublicKeyB64: string, familyId?: string): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
   const theirPub = b64ToBytes(senderPublicKeyB64);
   const shared    = x25519.getSharedSecret(myPriv, theirPub);
   const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
@@ -595,14 +628,12 @@ export async function rewrapRecoveryPrivateKey(privateKey: Uint8Array, newPassco
 
 /**
  * Recovers the family recovery key pair from the passcode + stored
- * encrypted blob, and installs it into THIS device's own Secure Store
- * exactly as if this device generated it via getDeviceKeyPair() — every
- * unwrap function (decryptFromDevice/unwrapLocationKey/unwrapRecordsKey)
- * then works unmodified, since this device's own device id now happens to
- * be paired with the recovery key pair for the remainder of this recovery
- * session. Throws (AES-GCM auth tag failure) on a wrong passcode — callers
- * should catch and show a clear "wrong passcode" message, never treat a
- * throw here as anything else.
+ * encrypted blob. Pure computation only — does NOT persist anything itself;
+ * the caller passes the result to installRecoveredKeyPair (which stores it
+ * in a FAMILY-SCOPED slot, not the device's real identity — see that
+ * function's own doc). Throws (AES-GCM auth tag failure) on a wrong
+ * passcode — callers should catch and show a clear "wrong passcode"
+ * message, never treat a throw here as anything else.
  */
 export async function recoverFamilyKeyWithPasscode(
   passcode: string, encryptedPrivateKey: string, saltHex: string,
@@ -616,32 +647,38 @@ export async function recoverFamilyKeyWithPasscode(
 }
 
 /**
- * Installs a recovered key pair into this device's own Secure Store slots
- * (the same LOCAL_DEVICE_PRIVKEY/LOCAL_DEVICE_PUBKEY getDeviceKeyPair()
- * reads from). After this call, getDeviceKeyPair() returns the RECOVERY
- * key pair on this device — decryptFromDevice/unwrapLocationKey/
- * unwrapRecordsKey all work completely unmodified, since they only ever
- * call getDeviceKeyPair() to get "my private key," and this device's
- * answer to that question is now the family's recovery key.
+ * Installs a recovered key pair into a FAMILY-SCOPED Secure Store slot
+ * (RECOVERED_PRIVKEY_PREFIX/RECOVERED_PUBKEY_PREFIX + familyId), NOT the
+ * device's own real identity slot (LOCAL_DEVICE_PRIVKEY/LOCAL_DEVICE_PUBKEY).
+ * getDeviceKeyPair(familyId) then returns this recovered pair whenever
+ * called for THIS family, while every other family's data on this same
+ * device keeps using the device's real, untouched identity.
+ *
+ * This used to overwrite the device's one global identity outright — fine
+ * for a single-family device, but a real bug for a member belonging to
+ * multiple families on one shared device (a grandparent's tablet, say):
+ * recovering Family B's passcode would silently replace the identity
+ * Family A was relying on, breaking Family A's decryption on that device
+ * from that point on. Family-scoping fixes this without changing anything
+ * about the single-family case — decryptFromDevice/unwrapLocationKey/
+ * unwrapRecordsKey/encryptForDevices/etc. all already thread familyId
+ * through to getDeviceKeyPair for exactly this reason.
  *
  * One consequence worth knowing: this device's OWN real device_keys row
  * (registered under its real, unique device id from getDeviceId(), which
- * is untouched by this function) will end up holding a COPY of the
- * recovery key's public key, not a freshly generated one of its own. This
- * is harmless — both that row and the RECOVERY_DEVICE_ID row can now
- * successfully decrypt anything wrapped for the recovery key, since
- * they're mathematically the same key pair. It does mean this device can
- * no longer be "the recovery key" and "an independent device with its own
- * identity" at the same time — recovering IS adopting the shared identity,
- * by design, not a bug to route around.
- *
- * Only call this after a user has explicitly completed recovery — this
- * overwrites whatever key pair this device already had.
+ * is untouched by this function) is unaffected by recovery now — it keeps
+ * using the device's real identity for this family too, going forward,
+ * rather than adopting the recovery key pair as its own permanent
+ * identity. A future write for this family wraps for BOTH this device's
+ * real public key (registered normally) and the recovery key (registered
+ * separately in device_keys under RECOVERY_DEVICE_ID) — this device simply
+ * also happens to know how to decrypt things wrapped for the recovery key,
+ * for this family specifically.
  */
-export async function installRecoveredKeyPair(privateKey: Uint8Array, publicKey: Uint8Array): Promise<void> {
+export async function installRecoveredKeyPair(privateKey: Uint8Array, publicKey: Uint8Array, familyId: string): Promise<void> {
   await Promise.all([
-    SecureStore.setItemAsync(LOCAL_DEVICE_PRIVKEY, bytesToB64(privateKey)),
-    SecureStore.setItemAsync(LOCAL_DEVICE_PUBKEY, bytesToB64(publicKey)),
+    SecureStore.setItemAsync(RECOVERED_PRIVKEY_PREFIX + familyId, bytesToB64(privateKey)),
+    SecureStore.setItemAsync(RECOVERED_PUBKEY_PREFIX + familyId, bytesToB64(publicKey)),
   ]);
 }
 

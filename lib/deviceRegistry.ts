@@ -195,14 +195,16 @@ export async function changeFamilyRecoveryPasscode(
 }
 
 /**
- * Recovers this device's access using the family passcode — fetches the
- * encrypted recovery private key, decrypts it locally with the entered
- * passcode, and adopts it as THIS device's own key pair (see
- * installRecoveredKeyPair's own doc for what that means). After this
- * succeeds, this device can immediately decrypt anything previously
- * wrapped for the recovery key — no further action needed. Also registers
- * this device's real device_id under the recovered public key, so future
- * writes wrap for it under its own identity going forward too.
+ * Recovers this device's access to ONE family using its passcode — fetches
+ * the encrypted recovery private key, decrypts it locally with the entered
+ * passcode, and adopts it as this device's key pair FOR THIS FAMILY ONLY
+ * (see installRecoveredKeyPair's own doc — family-scoped, does not touch
+ * this device's real identity or any other family's data on it). After
+ * this succeeds, this device can immediately decrypt anything previously
+ * wrapped for the recovery key in this family — no further action needed
+ * for data written before recovery. This device's own real identity is
+ * still registered normally too (ensureDeviceRegistered, unaffected by
+ * recovery), so future writes for this family wrap for both.
  *
  * Returns a clear wrong-passcode result rather than throwing — callers
  * should show it as an inline error, not a crash.
@@ -219,11 +221,11 @@ export async function recoverWithFamilyPasscode(
     const { privateKey, publicKey } = await recoverFamilyKeyWithPasscode(
       passcode, data.encrypted_recovery_privkey, data.recovery_key_salt,
     );
-    await installRecoveredKeyPair(privateKey, publicKey);
+    await installRecoveredKeyPair(privateKey, publicKey, familyId);
 
-    // Register this device's own real identity under the recovered key too,
-    // so it shows up in the directory under its own device id going forward
-    // (see installRecoveredKeyPair's doc — harmless duplicate public key).
+    // This device's own real identity (untouched by recovery above) is
+    // still registered normally, so it also has its own working wrap for
+    // this family going forward — not just via the recovered key.
     _registeredMembers.delete(memberId);
     await ensureDeviceRegistered(familyId, memberId);
 
@@ -391,8 +393,8 @@ async function backfillChatRecoveryWraps(
       const pubKey = senderPubKey(senderDeviceId, senderId);
       if (!pubKey) continue;
       try {
-        const sessionKey = await unwrapSessionKeyFromDevice(row.wrapped_key, pubKey);
-        const [wrapped] = await wrapLocationKeyForDevices(sessionKey, recoveryEntry);
+        const sessionKey = await unwrapSessionKeyFromDevice(row.wrapped_key, pubKey, familyId);
+        const [wrapped] = await wrapLocationKeyForDevices(sessionKey, recoveryEntry, familyId);
         newRows.push({ message_id: row.message_id, device_id: wrapped.deviceId, wrapped_key: wrapped.wrappedKey });
       } catch {
         // One bad/mismatched row shouldn't abort the whole batch.

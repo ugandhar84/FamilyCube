@@ -351,7 +351,15 @@ async function resolveMessageText(row: DBRow): Promise<string> {
       .eq('member_id', row.sender_id)
       .maybeSingle();
     if (!senderDevice) return decryptMessage(cipher);
-    return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key);
+    // familyId matters here so a device that recovered THIS family's
+    // passcode (a family-scoped key, see chatCrypto.ts's installRecoveredKeyPair
+    // doc) tries that recovered key rather than only ever trying this
+    // device's own real identity — without it, a recovered device could
+    // never actually read what it just recovered.
+    const { useFamilyStore } = require('./familyStore');
+    const familyId = (useFamilyStore.getState().members as any[]).find(m => m.id === row.sender_id)?.familyId
+      ?? useFamilyStore.getState().activeFamilyId;
+    return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key, familyId);
   } catch (e: any) {
     console.warn('[chatStore] resolveMessageText envelope decrypt failed, falling back', e?.message ?? e);
     return decryptMessage(cipher);
@@ -912,7 +920,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const directory = await getFamilyDeviceDirectory(familyId);
           const myDeviceId = await getDeviceId();
           senderDeviceId = myDeviceId;
-          const envelope = await encryptForDevices(text, directory);
+          const envelope = await encryptForDevices(text, directory, familyId);
           ciphertext = envelope.ciphertext;
           wrappedKeysToInsert = envelope.wrappedKeys;
         } else {

@@ -42,7 +42,7 @@ async function ensureLocationKeyWrapped(familyId: string, memberId: string): Pro
     await ensureDeviceRegistered(familyId, memberId);
     const directory = await getFamilyDeviceDirectory(familyId);
     if (directory.length === 0) return sessionKey;
-    const wrapped = await wrapLocationKeyForDevices(sessionKey, directory);
+    const wrapped = await wrapLocationKeyForDevices(sessionKey, directory, familyId);
     const { error } = await supabase.from('member_location_keys').upsert(
       wrapped.map(w => ({ member_id: memberId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
       { onConflict: 'member_id,device_id' },
@@ -92,6 +92,15 @@ export async function decryptLocationText(memberId: string, ciphertext: string):
       .maybeSingle();
     if (!keyRow) return decryptMessage(ciphertext); // legacy row or not wrapped for this device yet
 
+    // familyId matters here so a device that recovered THIS family's
+    // passcode (a family-scoped key, see chatCrypto.ts's installRecoveredKeyPair
+    // doc) tries that recovered key rather than only ever trying this
+    // device's own real identity. Resolved from memberId rather than
+    // threaded through every one of this function's several call sites.
+    const { useFamilyStore } = require('@/store/familyStore');
+    const familyId = (useFamilyStore.getState().members as any[]).find((m: any) => m.id === memberId)?.familyId
+      ?? useFamilyStore.getState().activeFamilyId;
+
     // Unwrapping needs ECDH(my private key, WRITER's public key) — but
     // member_locations has no sender_device_id (unlike chat_messages;
     // it's a single overwritten "current position" row, not discrete
@@ -108,7 +117,7 @@ export async function decryptLocationText(memberId: string, ciphertext: string):
       .is('revoked_at', null);
     for (const d of memberDevices ?? []) {
       try {
-        const sessionKey = await unwrapLocationKey(keyRow.wrapped_key, d.public_key);
+        const sessionKey = await unwrapLocationKey(keyRow.wrapped_key, d.public_key, familyId);
         const result = decryptWithSessionKey(ciphertext, sessionKey);
         if (!result.startsWith('[🔒')) return result;
       } catch { /* try next device */ }

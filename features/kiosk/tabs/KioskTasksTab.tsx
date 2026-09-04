@@ -14,8 +14,12 @@ import { Plus, PartyPopper, Check } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
+import { assigneeStyle } from '@/features/calendar/components/EventCard';
+import { showToast } from '@/components/AppToast';
 import { KioskQuestComposer } from '../components/KioskQuestComposer';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 
@@ -31,13 +35,25 @@ export function KioskTasksTab({ active, members, colors, isDark }: {
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
-  return <KioskParentTasksView active={active} members={members} colors={colors} isDark={isDark} />;
+  return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} />;
 }
 
-function KioskParentTasksView({ active, members, colors, isDark }: {
+// Shared board for parent/kid/teen — one kanban, but every card's
+// available action (claim / submit / approve / edit / delete / nothing)
+// is now derived per-viewer via deriveQuestActions (the exact same
+// canClaim/canSubmit/canApprove/canEdit/canDelete rules QuestCard.tsx uses
+// on the phone). Previously this whole view assumed a parent regardless of
+// who was actually standing at the kiosk — a kid switching to their own
+// profile got the PARENT's create/edit/delete authority over every chore
+// including other kids', with no claim/submit action anywhere (live-
+// reported: "we need similar chore/event creation and claim like mobile
+// app... claim, submit, review all exact same mobile app functions").
+function KioskBoardView({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
-  const { quests } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
+  const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
+  const isParent = active.role === 'parent';
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
 
@@ -49,38 +65,100 @@ function KioskParentTasksView({ active, members, colors, isDark }: {
     [quests],
   );
 
+  // Per-kid summary strip — open count + coins earned today, tinted with
+  // that kid's own color (same system Calendar/Agenda already use). The
+  // status columns below stay the real workflow view (what's stuck where);
+  // this strip is the "how's everyone doing" glance a status board alone
+  // can't answer. Parent/senior-facing only — a kid viewing their own
+  // family's board doesn't need a leaderboard-shaped comparison of siblings
+  // front and center the way a parent glancing at the fridge does.
+  const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
+  const kidStats = useMemo(() => kids.map(k => {
+    const mine = quests.filter(q => q.assignedToId === k.id);
+    const open = mine.filter(q => q.status !== 'done' && q.status !== 'approved').length;
+    const total = mine.length;
+    return { member: k, open, total };
+  }), [kids, quests]);
+
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
+  const memberOf = (id?: string) => members.find(m => m.id === id);
+
+  const handleCardPress = (q: Quest, actions: ReturnType<typeof deriveQuestActions>) => {
+    if (actions.canClaim) { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); return; }
+    if (actions.canSubmit || actions.canResubmit) { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); return; }
+    if (actions.canApprove) { approveQuest(q.id, active.id); showToast('Approved ✓'); return; }
+    if (actions.canEdit) { setEditingQuest(q); return; }
+    // No action available to this viewer for this card (e.g. a kid looking
+    // at a sibling's assigned-but-not-theirs chore) — tapping does nothing,
+    // same as the phone's own cards with zero canX true.
+  };
+
+  const primaryLabel = (actions: ReturnType<typeof deriveQuestActions>): string | null => {
+    if (actions.canClaim) return 'Tap to claim';
+    if (actions.canResubmit) return 'Tap to resubmit';
+    if (actions.canSubmit) return 'Tap to submit';
+    if (actions.canApprove) return 'Tap to approve';
+    if (actions.canEdit) return null; // parent editing is implicit, not called out
+    return null;
+  };
 
   return (
     <View style={s.root}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.textPrimary }]}>Chores</Text>
-        <Pressable onPress={() => setComposerOpen(true)} style={[s.addBtn, { backgroundColor: colors.primary }]}>
-          <Plus size={18} color="#fff" />
-          <Text style={s.addBtnText}>New Chore</Text>
-        </Pressable>
+        {isParent && (
+          <Pressable onPress={() => setComposerOpen(true)} style={[s.addBtn, { backgroundColor: colors.primary }]}>
+            <Plus size={18} color="#fff" />
+            <Text style={s.addBtnText}>New Chore</Text>
+          </Pressable>
+        )}
       </View>
+
+      {isParent && kidStats.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.statStrip}>
+          {kidStats.map(({ member, open, total }) => {
+            const rs = assigneeStyle(member, colors, isDark);
+            return (
+              <View key={member.id} style={[s.statPill, { backgroundColor: rs.badge, borderColor: rs.dot + '55' }]}>
+                <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
+                <Text style={[s.statName, { color: rs.text }]}>{member.name.split(' ')[0]}</Text>
+                <Text style={[s.statFrac, { color: rs.text }]}>{total - open}/{total}</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
 
       <View style={s.columns}>
         {byColumn.map(col => (
           <View key={col.key} style={s.col}>
             <Text style={[s.colHead, { color: colors.textTertiary }]}>{col.label.toUpperCase()} · {col.items.length}</Text>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 20 }}>
-              {col.items.map(q => (
-                <Pressable
-                  key={q.id}
-                  onPress={() => setEditingQuest(q)}
-                  style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: colors.primary }]}
-                >
-                  <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-                  <View style={s.cardMeta}>
-                    <Text style={[s.cardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
-                    </Text>
-                    <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
-                  </View>
-                </Pressable>
-              ))}
+              {col.items.map(q => {
+                const rs = assigneeStyle(memberOf(q.assignedToId), colors, isDark);
+                const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
+                const label = primaryLabel(actions);
+                const canAct = actions.canClaim || actions.canSubmit || actions.canResubmit || actions.canApprove || actions.canEdit;
+                return (
+                  <Pressable
+                    key={q.id}
+                    onPress={() => handleCardPress(q, actions)}
+                    disabled={!canAct}
+                    style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, opacity: canAct ? 1 : 0.75 }]}
+                  >
+                    <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
+                    <View style={s.cardMeta}>
+                      <Text style={[s.cardSub, { color: q.isPool ? colors.textSecondary : rs.text, fontWeight: q.isPool ? '600' : '800' }]} numberOfLines={1}>
+                        {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
+                      </Text>
+                      <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                    </View>
+                    {label && (
+                      <Text style={[s.cardAction, { color: colors.primary }]}>{label}</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
               {col.items.length === 0 && (
                 <Text style={[s.emptyCol, { color: colors.textTertiary }]}>Nothing here</Text>
               )}
@@ -89,21 +167,25 @@ function KioskParentTasksView({ active, members, colors, isDark }: {
         ))}
       </View>
 
-      <KioskQuestComposer
-        visible={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        active={active}
-        members={members}
-        colors={colors}
-        isDark={isDark}
-      />
-      <KioskQuestEditor
-        quest={editingQuest}
-        onClose={() => setEditingQuest(null)}
-        members={members}
-        colors={colors}
-        isDark={isDark}
-      />
+      {isParent && (
+        <>
+          <KioskQuestComposer
+            visible={composerOpen}
+            onClose={() => setComposerOpen(false)}
+            active={active}
+            members={members}
+            colors={colors}
+            isDark={isDark}
+          />
+          <KioskQuestEditor
+            quest={editingQuest}
+            onClose={() => setEditingQuest(null)}
+            members={members}
+            colors={colors}
+            isDark={isDark}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -215,6 +297,10 @@ const s = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
   addBtnText: { color: '#fff', fontSize: TYPO.label, fontWeight: '800' },
+  statStrip: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  statPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
+  statName: { fontSize: 12, fontWeight: '800' },
+  statFrac: { fontSize: 11, fontWeight: '700', opacity: 0.85 },
   columns: { flex: 1, flexDirection: 'row', gap: 16 },
   col: { flex: 1 },
   colHead: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 10 },
@@ -223,6 +309,7 @@ const s = StyleSheet.create({
   cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   cardSub: { fontSize: 11, fontWeight: '600', flex: 1, marginRight: 8 },
   cardCoin: { fontSize: 11, fontWeight: '800' },
+  cardAction: { fontSize: 10.5, fontWeight: '800', marginTop: 8 },
   emptyCol: { fontSize: TYPO.caption, fontWeight: '600', textAlign: 'center', paddingTop: 20 },
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   gpCard: { width: 260, borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },

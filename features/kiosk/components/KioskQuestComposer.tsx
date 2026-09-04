@@ -8,11 +8,12 @@
  * here is indistinguishable from one created on a phone.
  */
 import { useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Platform, KeyboardAvoidingView } from 'react-native';
 import { X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 const COIN_PRESETS = [10, 15, 20, 30, 50];
 
@@ -26,6 +27,7 @@ export function KioskQuestComposer({ visible, onClose, active, members, colors, 
   const [assignedToId, setAssignedToId] = useState<string | undefined>(undefined);
 
   const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(80);
 
   const reset = () => { setTitle(''); setCoins(15); setAssignedToId(undefined); };
   const close = () => { reset(); onClose(); };
@@ -52,8 +54,8 @@ export function KioskQuestComposer({ visible, onClose, active, members, colors, 
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <View style={s.overlay}>
-        <View style={[s.card, { backgroundColor: colors.card }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.overlay}>
+        <View style={[s.card, { backgroundColor: colors.card, ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}>
           <View style={s.header}>
             <Text style={[s.headerTitle, { color: colors.textPrimary }]}>New Chore</Text>
             <Pressable onPress={close} hitSlop={12}><X size={22} color={colors.textSecondary} /></Pressable>
@@ -112,7 +114,7 @@ export function KioskQuestComposer({ visible, onClose, active, members, colors, 
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

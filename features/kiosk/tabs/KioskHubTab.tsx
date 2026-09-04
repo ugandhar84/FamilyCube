@@ -40,10 +40,6 @@ export function KioskHubTab({ active, members, colors, isDark }: {
   // the Chat tab already loaded it.
   useEffect(() => { loadChatChannel(CHAT_CHANNEL); }, [loadChatChannel]);
 
-  const now = new Date();
-  const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const clock = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-
   const isSenior = active.role === 'senior';
 
   const openPool = useMemo(() => {
@@ -66,38 +62,6 @@ export function KioskHubTab({ active, members, colors, isDark }: {
 
   return (
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      {/* Top clock/date bar + member strip */}
-      <View style={s.topbar}>
-        <View>
-          <Text style={[s.clock, { color: colors.textPrimary }]}>{clock}</Text>
-          <Text style={[s.date, { color: colors.textSecondary }]}>{today}</Text>
-        </View>
-        <View style={s.avatarRow}>
-          {members.slice(0, 5).map(m => {
-            const isActive = m.id === active.id;
-            const tint = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
-            return (
-              <View key={m.id} style={s.avatarItem}>
-                <View
-                  style={[
-                    s.avatarRing,
-                    { backgroundColor: colors.surface, borderColor: isActive ? tint : 'transparent' },
-                  ]}
-                >
-                  <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
-                </View>
-                <Text
-                  style={[s.avatarName, { color: isActive ? colors.textPrimary : colors.textTertiary }]}
-                  numberOfLines={1}
-                >
-                  {m.name.split(' ')[0]}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-
       {/* Three-zone layout */}
       <View style={s.grid}>
         {/* Column 1 — backlog */}
@@ -263,17 +227,6 @@ function SectionLabel({ text, color, colors }: { text: string; color: string; co
 
 const s = StyleSheet.create({
   scroll: { padding: 20, paddingBottom: 40 },
-  topbar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22 },
-  clock: { fontSize: 38, fontWeight: '800', letterSpacing: LETTER_SPACING.display, lineHeight: 40 },
-  date: { fontSize: TYPO.caption, fontWeight: '700', marginTop: 3 },
-  avatarRow: { flexDirection: 'row', gap: 14 },
-  avatarItem: { alignItems: 'center', gap: 5, width: 52 },
-  avatarRing: {
-    width: 46, height: 46, borderRadius: 23, borderWidth: 2.5,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarEmoji: { fontSize: 20 },
-  avatarName: { fontSize: 10.5, fontWeight: '700' },
   grid: { flexDirection: 'row', gap: 18 },
   col: { flex: 1, gap: 14 },
   col3Scroll: { gap: 14 },

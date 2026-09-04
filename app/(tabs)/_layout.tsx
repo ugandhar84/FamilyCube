@@ -20,6 +20,7 @@ import { useHelpStore } from '@/store/helpStore';
 import { useUIStore } from '@/store/uiStore';
 import { Sparkles, Plus, Home, ListChecks, MessageCircle } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
+import { useDeviceClass } from '@/lib/useDeviceClass';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -122,6 +123,13 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
 function CustomTabBar({ state, navigation }: any) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  // Kitchen-hub kiosk mode (features/kiosk/) replaces the Hub tab's content
+  // with its own full-screen nav rail — but this tab bar lives one level
+  // up, outside HubScreen's control, so it kept rendering underneath/
+  // alongside the rail regardless (live-reported: "I see bottom bar for
+  // kiosk"). The rail is the ONLY navigation kiosk mode should show.
+  const { deviceClass } = useDeviceClass();
+  const isKioskMode = deviceClass === 'kitchenHub';
   // Chat tab shows a plain unread DOT, not a count — distinct from the
   // AppHeader bell's numeric badge (general app notifications: quest
   // posted/approved/etc.). Reads chatStore's own per-channel unread
@@ -178,6 +186,11 @@ function CustomTabBar({ state, navigation }: any) {
 
   const [barHeight, setBarHeight] = useState(0);
   const totalHeight = barHeight + (insets.bottom || 16);
+
+  // Placed after every hook above (Rules of Hooks) so a live device-class
+  // change (rotation/resize) never skips a hook on some renders but not
+  // others — same ordering rule HubScreen's own kiosk guard follows.
+  if (isKioskMode) return null;
 
   return (
     <Animated.View style={{

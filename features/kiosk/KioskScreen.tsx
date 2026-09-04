@@ -5,9 +5,15 @@
  * reads (useFamilyStore, useQuestStore, useEventStore, useChatStore), but
  * owns its own layout and never touches ParentView/KidView/TeenView/
  * SeniorView or any existing tab screen. The ONLY existing file this
- * feature touches is HubScreen.tsx, with a single early-return guard at the
- * very top (see that file) — no other mobile screen or store logic is
- * modified by this feature.
+ * feature touches is HubScreen.tsx (single early-return guard) and the
+ * shared tab layout (hides the phone's own bottom tab bar while this is
+ * showing — see app/(tabs)/_layout.tsx's own comment on that fix).
+ *
+ * Layout: one persistent KioskHeader (family name/clock/avatars/Ask Fam)
+ * above an icon-only nav rail + active screen — previously the rail itself
+ * carried a second, separate avatar switcher stacked under the icons,
+ * which read as "two sidebars" (live-reported). One header now owns
+ * profile switching for every screen, not just Hub.
  *
  * Rail tabs mirror the same per-role split the real bottom tab bar already
  * uses (features/app/(tabs)/_layout.tsx's TABS_DEFAULT vs TABS_SENIOR):
@@ -16,16 +22,20 @@
  * FindFam) — this file re-derives that same split rather than importing
  * from the tab layout, keeping this feature fully decoupled from it.
  */
-import { useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Pressable, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Home, CheckSquare, Calendar as CalendarIcon, MessageCircle, MapPin, Gift, Images, Sparkles,
+  Home, CheckSquare, Calendar as CalendarIcon, MessageCircle, MapPin, Gift, Images,
 } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { Lock } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
+import { KioskHeader } from './KioskHeader';
+import { KioskLockScreen } from './KioskLockScreen';
+import { useKioskIdleLock } from './useKioskIdleLock';
 import { KioskHubTab } from './tabs/KioskHubTab';
 import { KioskTasksTab } from './tabs/KioskTasksTab';
 import { KioskScheduleTab } from './tabs/KioskScheduleTab';
@@ -59,9 +69,18 @@ const RAIL_SENIOR: RailItem[] = [
 
 export default function KioskScreen() {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, setActiveMember } = useFamilyStore();
+  const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
   const [tab, setTab] = useState<KioskTab>('hub');
   const [askCubeOpen, setAskCubeOpen] = useState(false);
+  const { locked, registerActivity, lockNow, unlock } = useKioskIdleLock();
+
+  // AskCubeChat renders via a real native Modal, which always sits above
+  // regular views in its own native layer regardless of z-index — the
+  // lock screen below (a plain View) would otherwise render BEHIND a
+  // still-open Ask Fam conversation, leaving someone's private AI chat
+  // visible through/under "locked." Force it closed the moment the kiosk
+  // locks, same privacy intent as the lock itself.
+  useEffect(() => { if (locked) setAskCubeOpen(false); }, [locked]);
 
   const active: FamilyMember | undefined = members.find(m => m.id === activeMemberId) ?? members[0];
   const isSenior = active?.role === 'senior';
@@ -74,27 +93,42 @@ export default function KioskScreen() {
   // rather than rendering a blank/invalid tab.
   const effectiveTab: KioskTab = rail.some(r => r.key === tab) ? tab : 'hub';
 
-  const otherMembers = useMemo(
-    () => members.filter(m => m.id !== active?.id),
-    [members, active?.id],
-  );
-
   if (!active) return null;
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={[s.root, { backgroundColor: colors.background }]}
+      edges={['top', 'bottom']}
+      onTouchStart={registerActivity}
+    >
+      {locked && (
+        <KioskLockScreen
+          familyName={familyName || 'Our Family'}
+          onUnlock={unlock}
+          colors={colors}
+        />
+      )}
+
+      <KioskHeader
+        familyName={familyName || 'Our Family'}
+        members={members}
+        activeId={active.id}
+        onSwitch={setActiveMember}
+        isParent={isParent}
+        onAskFam={() => setAskCubeOpen(true)}
+        onLock={lockNow}
+        colors={colors}
+      />
+
       <View style={s.row}>
-        {/* ── Nav rail — every screen this active profile's role can reach ── */}
+        {/* ── Nav rail — icon-only; profile switching lives in KioskHeader
+            above, not duplicated here. ── */}
         <View style={[s.rail, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
           <View style={s.railGroup}>
             {rail.map(({ key, label, Icon }) => {
               const on = effectiveTab === key;
               return (
-                <Pressable
-                  key={key}
-                  onPress={() => setTab(key)}
-                  style={s.railBtnWrap}
-                >
+                <Pressable key={key} onPress={() => setTab(key)} style={s.railBtnWrap}>
                   {on && <View style={[s.railIndicator, { backgroundColor: colors.primary }]} />}
                   <View style={[s.railBtn, on && { backgroundColor: colors.primaryLight }]}>
                     <Icon size={22} color={on ? colors.primary : colors.textTertiary} />
@@ -104,49 +138,13 @@ export default function KioskScreen() {
               );
             })}
           </View>
-
-          {/* Ask Cube — same parent-only gate the phone tab layout's shared
-              FAB uses (AskCubeChat can act broadly across the household on
-              the parent's behalf; not something a kid/teen/GP should
-              trigger). Kiosk mode has no bottom tab bar for the phone's FAB
-              to float above, so this rail is Ask Cube's only entry point
-              here rather than trying to reuse that absolutely-positioned
-              button in a layout it wasn't designed for. */}
-          <View style={s.railBottom}>
-            {isParent && (
-              <Pressable onPress={() => setAskCubeOpen(true)} style={s.askCubeBtn}>
-                <View style={[s.askCubeGradient, { backgroundColor: colors.pink, shadowColor: colors.pink }]}>
-                  <Sparkles size={21} color="#fff" />
-                </View>
-              </Pressable>
-            )}
-
-            {/* Family member switcher — a shared kitchen tablet needs to
-                swap whose view is showing without leaving kiosk mode at
-                all; reuses setActiveMember exactly like the phone app's own
-                profile switcher, just presented as a compact avatar stack
-                instead of a full-screen picker since there's rail space for
-                it here. */}
-            <View style={s.memberStack}>
-              {otherMembers.slice(0, 4).map(m => {
-                const tint = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
-                return (
-                  <Pressable key={m.id} onPress={() => setActiveMember(m.id)} style={s.memberDot}>
-                    <View style={[s.memberAvatar, { backgroundColor: colors.card, borderColor: tint }]}>
-                      <Text style={s.memberEmoji}>{m.emoji ?? '👤'}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
         </View>
 
         {/* ── Active screen ── */}
         <View style={s.content}>
           {effectiveTab === 'hub' && <KioskHubTab active={active} members={members} colors={colors} isDark={isDark} />}
           {effectiveTab === 'tasks' && <KioskTasksTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab colors={colors} isDark={isDark} />}
+          {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab members={members} colors={colors} isDark={isDark} />}
           {effectiveTab === 'chat' && <KioskChatTab active={active} members={members} colors={colors} isDark={isDark} />}
           {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab members={members} colors={colors} isDark={isDark} />}
           {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} colors={colors} isDark={isDark} />}
@@ -170,26 +168,13 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   row: { flex: 1, flexDirection: 'row' },
   rail: {
-    width: 88, borderRightWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center', paddingVertical: 22, justifyContent: 'space-between',
+    width: 84, borderRightWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center', paddingVertical: 20,
   },
   railGroup: { alignItems: 'center', gap: 10 },
   railBtnWrap: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
   railIndicator: { position: 'absolute', left: 0, width: 3, height: 28, borderRadius: 2 },
   railBtn: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 3 },
   railLabel: { fontSize: 10, fontWeight: '800' },
-  railBottom: { alignItems: 'center', gap: 16 },
-  askCubeBtn: { marginBottom: 2 },
-  askCubeGradient: {
-    width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
-    shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
-  },
-  memberStack: { alignItems: 'center', gap: 9 },
-  memberDot: { opacity: 0.9 },
-  memberAvatar: {
-    width: 42, height: 42, borderRadius: 21, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  memberEmoji: { fontSize: 18 },
   content: { flex: 1, minWidth: 0 },
 });

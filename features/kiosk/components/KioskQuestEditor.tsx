@@ -4,13 +4,14 @@
  * deleteChore the phone's EditQuestModal already calls.
  */
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, Alert, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, Alert, StyleSheet, Platform, KeyboardAvoidingView } from 'react-native';
 import { X, Trash2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { showToast } from '@/components/AppToast';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
   quest: Quest | null; onClose: () => void;
@@ -20,6 +21,7 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
   const deleteChore = useChoreStore(s => s.deleteChore);
   const [title, setTitle] = useState('');
   const [coins, setCoins] = useState('0');
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(80);
 
   useEffect(() => {
     if (quest) { setTitle(quest.title); setCoins(String(quest.coins)); }
@@ -43,8 +45,8 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
-        <View style={[s.card, { backgroundColor: colors.card }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.overlay}>
+        <View style={[s.card, { backgroundColor: colors.card, ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}>
           <View style={s.header}>
             <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Edit Chore</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={22} color={colors.textSecondary} /></Pressable>
@@ -78,7 +80,7 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

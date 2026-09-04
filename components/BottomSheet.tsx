@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, TouchableWithoutFeedback,
-  KeyboardAvoidingView, StyleSheet, Platform, Keyboard,
+  StyleSheet, Platform, Keyboard,
 } from 'react-native';
 import PickerOverlay from './PickerOverlay';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,21 +41,35 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
-  // ss.sheet's maxHeight: '92%' is a static percentage of the FULL screen
-  // — never clamped against the keyboard once it opens, so a sheet with a
-  // text input near its height ceiling (FeedbackSheet.tsx's description
-  // field, etc.) can get pushed up past the top of the screen. Shared hook
-  // clamps to a flat 80% of screen height once the keyboard is open,
-  // leaving the configured 92% completely unchanged otherwise.
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
+  // ss.sheet's maxHeight was 92% of the FULL screen — live-requested:
+  // "apply same fixes in all bottomsheets - don't forget 75% is max but
+  // fit to the content." Bumped topSafeMargin to 90, matching every other
+  // sheet's fix this session.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+
+  // Was: KeyboardAvoidingView 'padding' wrapping the whole sheet, relying
+  // on it alone to both shrink the sheet's available space AND reposition
+  // it above the keyboard. Every other sheet in the app that used this
+  // combination (AppBottomSheet.tsx, EventFormModal.tsx, TaskFormShell.tsx)
+  // turned out to double-count the keyboard height between KAV's own
+  // padding and the height clamp above, producing either a form hidden
+  // behind the keyboard or the sheet pushed too far up past the status bar
+  // (both live-reported this session). Same fix: reserve the keyboard's
+  // space via paddingBottom on the backdrop instead, and drop KAV entirely
+  // — the maxHeight clamp above already limits how tall the sheet grows.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss} onDismiss={onDismiss}>
-      {/* KAV owns full height so the sheet stays pinned to the keyboard */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        pointerEvents={visible ? 'auto' : 'none'}
-        style={{ flex: 1 }}>
+        <View pointerEvents={visible ? 'auto' : 'none'}
+          style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
         {/* Backdrop — only the flex area ABOVE the sheet, so it never sits on top of the sheet content */}
         <TouchableWithoutFeedback onPress={dismiss}>
           <View style={{ flex: 1 }} />
@@ -95,7 +110,15 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
 
             {visible ? children : null}
           </View>
-      </KeyboardAvoidingView>
+          {/* Filler pinned to the backdrop's bottom edge, UNDER the sheet,
+              same color as the sheet — closes the small gap from
+              keyboardWillShow's reported height not landing pixel-perfect
+              against where the keyboard actually settles. */}
+          {keyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+          )}
+        </View>
       <PickerOverlay />
     </Modal>
   );
@@ -107,7 +130,7 @@ const ss = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 0,
-    maxHeight: '92%',
+    maxHeight: '75%',
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.08,

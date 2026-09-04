@@ -20,7 +20,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Modal, Alert,
+  Modal, Alert, Keyboard, Platform,
   Switch, ActivityIndicator, Pressable,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -848,7 +848,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       step={step}
       setStep={setStep}
       accentColor={catColor}
-      headerTitle={isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : '+ New Event'}
+      headerTitle={isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : 'New Event'}
       headerSubtitle={
         isKid
           ? 'Your request goes to a parent for approval'
@@ -1572,6 +1572,22 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // that double-compensates with this same hook and was deliberately
   // removed) — this only adjusts the existing shrink amount.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  // Live-reported: "form is hiding behind the keyboard litrally" — capping
+  // the sheet's own maxHeight only stops its TOP from going above the
+  // screen; it does nothing to lift the sheet's BOTTOM off the physical
+  // screen edge, which is exactly where f.sheet's bottom-anchoring puts it
+  // and exactly what the keyboard now covers. A real vertical shift
+  // (marginBottom = keyboard height) is what actually moves the sheet
+  // above it — see TaskFormShell.tsx's identical fix for the fuller
+  // explanation of why the height-clamp-only approach fell short.
+  const [editKeyboardHeight, setEditKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setEditKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setEditKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const { updateEvent, addEvent, addRecurringEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
@@ -2097,7 +2113,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           height) below, which is enough to keep its content — including
           the Save/Close buttons, which scroll inside the body here — above
           the keyboard without the whole view physically translating. */}
-        <View style={f.backdrop}>
+        <View style={[f.backdrop, { paddingBottom: editKeyboardHeight }]}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
 
           {/* Sheet — header outside scroll, content scrolls */}
@@ -2710,6 +2726,26 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               )}
             </ScrollView>
           </View>
+          {/* Filler pinned to the very bottom of the backdrop, UNDER the
+              sheet, same color as the sheet — same fix as
+              TaskFormShell.tsx's own filler (live-requested: "tuck in to
+              the keyboard some part of form so that it will not expose
+              transparent, or close the transparent with the color
+              filled"). paddingBottom on the backdrop (above) reserves room
+              for the keyboard so the sheet's flex-end position naturally
+              lands above it; this absolutely-positioned filler covers that
+              same reserved region regardless of any px of measurement slop
+              between keyboardWillShow's reported height and where the
+              keyboard actually settles, so a small mismatch reads as "the
+              sheet's own color extends down to the keyboard" instead of
+              the backdrop's scrim showing through. Positioned absolute
+              (not a normal flex sibling) so it sits BEHIND the sheet's
+              bottom edge instead of competing with it for the backdrop's
+              flex-end space. */}
+          {editKeyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: editKeyboardHeight, backgroundColor: colors.card }} />
+          )}
         </View>
     </Modal>
   );

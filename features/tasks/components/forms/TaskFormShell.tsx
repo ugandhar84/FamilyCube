@@ -19,9 +19,9 @@
  * review step, inside the scroll, so a disabled-reason stays attached to the
  * summary it refers to.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Modal, Keyboard,
+  View, Text, TouchableOpacity, ScrollView, Modal, Keyboard, Platform,
   TouchableWithoutFeedback, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,15 +59,33 @@ export function TaskFormShell({
   // it once the keyboard opens so it can't get pushed past the top of the
   // screen (same class of bug fixed in AppBottomSheet.tsx). Falls through
   // to the sheet's own 75% when the keyboard is closed.
-  //
-  // Live-reported: "I've worse experience in the bottomsheet keyboard
-  // handling" — a field sat flush against the keyboard's top edge with no
-  // breathing room, on every step of this shell (not just one), since
-  // every AddEventModal/AddQuestModal step renders through this same
-  // instance. Bumped the default 60px topSafeMargin to 90px, matching the
-  // same fix applied to EditEventModal.tsx's own separate
-  // useKeyboardAwareMaxHeight call.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+
+  // Live-reported: "form is hiding behind the keyboard litrally" — capping
+  // the sheet's own maxHeight (above) only stops its TOP from going past
+  // the top of the screen; it does nothing to move the sheet's BOTTOM off
+  // the physical screen edge, which is exactly where s.backdrop's
+  // justifyContent:'flex-end' anchors it. With the keyboard covering that
+  // same physical bottom edge, the sheet kept rendering underneath it —
+  // shrinking its max height just meant less of the (still-hidden) sheet
+  // existed, not that any more of it became visible. The previous comment
+  // here reasoned the height clamp alone was sufficient; live testing
+  // showed the whole scrollable body invisible behind the keyboard, header
+  // and progress bar the only visible remnant. A real vertical shift
+  // (marginBottom = keyboard height) is what actually lifts the sheet
+  // above it — this is NOT the same thing as wrapping the whole Modal in
+  // KeyboardAvoidingView (already tried and reverted, see below): that
+  // slid the sheet AND kept it at its full un-clamped height, pushing the
+  // footer arbitrarily high. This only shifts position; the height clamp
+  // above still does the shrinking.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const currentStepId = stepIds[Math.min(step, stepIds.length - 1)];
   const isReview = currentStepId === reviewStepId;
@@ -78,16 +96,16 @@ export function TaskFormShell({
           sheet — 'padding' behavior slid the entire card (including the
           fixed Next button) up 1:1 with the keyboard, so the button kept
           chasing the keyboard instead of staying anchored near the
-          screen's bottom edge. Removed entirely: the sheet is already
-          bottom-anchored (s.backdrop's justifyContent:'flex-end') and
-          already clamps its OWN height via keyboardAwareMaxHeight below
-          (screen height minus the real keyboard height) — that clamp
-          alone keeps the sheet, and its footer, above the keyboard with
-          no need for the whole view to physically translate. The
-          ScrollView's flexShrink:1 lets the body shrink to fit inside
-          that clamped height while the header/progress row/footer button
-          all stay fixed in place. */}
-        <View style={s.backdrop}>
+          screen's bottom edge. Removed entirely — the sheet is
+          bottom-anchored (s.backdrop's justifyContent:'flex-end') and now
+          explicitly shifted up by the real keyboard height (marginBottom
+          below), independent of and in addition to its own maxHeight
+          clamp. The ScrollView's flexShrink:1 lets the body shrink to fit
+          inside that clamped height while the header/progress row all
+          stay fixed in place; the Next/submit button now lives INSIDE the
+          ScrollView (see below) so it's never a separate fixed element
+          that could end up mispositioned on its own. */}
+        <View style={[s.backdrop, { paddingBottom: keyboardHeight }]}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={[s.sheet, { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
@@ -156,26 +174,54 @@ export function TaskFormShell({
               // close the keyboard) instead of being swallowed silently.
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: isReview ? Math.max(48, insets.bottom + 32) : 48 }}
+              contentContainerStyle={{ paddingBottom: Math.max(16, insets.bottom + 8) }}
             >
               <StepTransition stepKey={currentStepId}>
                 {children}
               </StepTransition>
-            </ScrollView>
 
-            {/* ── Footer nav — Next on every step but review, which renders
-                its own submit button inside the scroll above instead. ── */}
-            {!isReview && (
-              <View style={{ paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8) }}>
-                <TouchableOpacity
-                  style={[s.footerBtn, { backgroundColor: accentColor }]}
-                  onPress={() => setStep(p => Math.min(p + 1, stepIds.length - 1))}
-                >
-                  <Text style={{ color: colors.textInverse, fontWeight: '900', fontSize: TYPO.body }}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+              {/* Live-requested: "add buttons also in the scroll view" — Next
+                  used to live in a fixed footer BELOW the ScrollView, a
+                  separate element the keyboard-shift/height-clamp above had
+                  to keep correctly positioned on its own. Moving it inside
+                  the scroll means it's just more content: it scrolls into
+                  view along with everything else and can never end up
+                  clipped or mispositioned independently of the fields above
+                  it. review's own submit button still renders as part of
+                  `children` (unchanged). */}
+              {!isReview && (
+                <View style={{ paddingTop: 10 }}>
+                  <TouchableOpacity
+                    style={[s.footerBtn, { backgroundColor: accentColor }]}
+                    onPress={() => setStep(p => Math.min(p + 1, stepIds.length - 1))}
+                  >
+                    <Text style={{ color: colors.textInverse, fontWeight: '900', fontSize: TYPO.body }}>Next</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
           </View>
+          {/* Filler pinned to the very bottom of the backdrop, UNDER the
+              sheet, same color as the sheet — live-requested: "tuck in to
+              the keyboard some part of form so that it will not expose
+              transparent, or close the transparent with the color filled."
+              paddingBottom on the backdrop (above) reserves room for the
+              keyboard so the sheet's flex-end position naturally lands
+              above it, but keyboardWillShow's reported height doesn't
+              always land pixel-perfect against where the keyboard actually
+              settles (predictive-text bar, slide-animation timing) — this
+              absolutely-positioned filler covers that reserved region
+              regardless of the exact px, so any measurement slop reads as
+              "the sheet's own color extends down to the keyboard" instead
+              of the backdrop's semi-transparent scrim showing through.
+              Positioned absolute (not a normal flex sibling) so it sits
+              BEHIND the sheet's bottom edge instead of competing with it
+              for the backdrop's flex-end space. pointerEvents:'none' since
+              the keyboard itself already physically occupies this area. */}
+          {keyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+          )}
         </View>
     </Modal>
   );

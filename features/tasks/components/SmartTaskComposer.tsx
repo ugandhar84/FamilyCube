@@ -497,15 +497,26 @@ export default function SmartTaskComposer({
       return;
     }
 
-    // Recurring EVENTS need addRecurringEvent's series-materialization,
-    // not this composer's plain addEvent call — hand off to the full form
-    // instead of silently dropping the recurrence and creating a one-time
-    // event the user explicitly asked to repeat. Quests don't have this
-    // problem: addChore takes recurrenceRule directly (see below).
-    if (isEvent && recurFreq !== 'once') {
+    // Recurring EVENTS need addRecurringEvent's series-materialization, and a
+    // Ride with a return time needs forkRideLegs's real two-row pickup/
+    // drop-off fork — neither happens through this composer's own plain
+    // addEvent call below, so either condition alone means "hand off to the
+    // full form" instead of silently dropping what was detected. These two
+    // used to be separate, mutually-exclusive `if`s (recurring checked
+    // first, Ride-with-return second) — a RECURRING Ride with a return time
+    // (e.g. "drop off Jas at dance class every Wednesday at 4:45pm, pick up
+    // at 6:15pm") hit the first branch's early return and never reached the
+    // second, so pickupLocation/dropLocation/returnTime/helperId were
+    // silently dropped from the handoff — the saved recurring series had no
+    // pickup leg at all, live-reported as "review not showing pickup, not
+    // forking same as drop off." Now a single handoff carries both sets of
+    // fields whenever either applies.
+    const isRecurring = isEvent && recurFreq !== 'once';
+    const isRideWithReturn = isEvent && (category ?? detected.category.eventCategory) === 'Ride' && returnTime.trim();
+    if (isRecurring || isRideWithReturn) {
       onOpenFullForm('event', {
         title: finalTitle,
-        category: category ?? detected.category.eventCategory,
+        category: isRideWithReturn ? 'Ride' : (category ?? detected.category.eventCategory),
         memberId: forMemberIds[0],
         startAt: detected.when.date ? (detected.when.date + `T${detected.when.time ?? fallbackTimeFor(detected.when.date)}:00`) : undefined,
         // Was dropped entirely on handoff — the composer's own detected/
@@ -515,45 +526,24 @@ export default function SmartTaskComposer({
         // day" and the composer having correctly detected it moments
         // earlier (live-reported: title "Pickup from Badminton every
         // day", Repeats showed "One-time").
-        recurFreq,
-        ...(recurFreq === 'weekly' && recurDays.length ? { recurDays } : {}),
-      });
-      close();
-      return;
-    }
-
-    // A Ride with a return time set is really TWO separate trips (drop-off
-    // + pickup/return), each with its own time and its own driver
-    // confirmation — features/hub/parent/rideLegs.ts's forkRideLegs already
-    // creates these as two fully independent event rows, but only
-    // EventFormModal's real "Return time" step ever calls it. This
-    // composer only ever wrote returnTime as a plain HH:MM string on the
-    // SAME single event — parseRideMeta (rideLegs.ts) expects a specially-
-    // encoded "RIDE:both:<timestamp>" marker to recognize a both-ways
-    // request at all, so a composer-created ride's return leg silently had
-    // no fork, no separate driver-confirmation, and no calendar entry of
-    // its own — live-reported as "why isn't the return trip tracked as its
-    // own thing." Hand off to the full form (same pattern as the recurring-
-    // event case above) instead of silently creating a return time nothing
-    // downstream ever forks.
-    if (isEvent && (category ?? detected.category.eventCategory) === 'Ride' && returnTime.trim()) {
-      onOpenFullForm('event', {
-        title: finalTitle,
-        category: 'Ride',
-        memberId: forMemberIds[0],
-        startAt: detected.when.date ? (detected.when.date + `T${detected.when.time ?? fallbackTimeFor(detected.when.date)}:00`) : undefined,
-        pickupLocation: pickupLocation.trim() || undefined,
-        dropLocation: dropLocation.trim() || undefined,
-        returnTime: returnTime.trim(),
-        // forkRideLegs only fires once a driver/helper is already set at
-        // submit time (EventFormModal.tsx's own transportSet check) — the
-        // Responsibility Engine's auto-assign (suggestion?.decisionType
-        // === 'auto', applied separately after this composer's OWN submit
-        // path) never reaches the full form at all, so without this the
-        // user would have to notice and manually re-pick the very driver
-        // this composer already confidently suggested, just to get the
-        // fork to actually happen.
-        helperId: suggestion?.selectedMemberId ?? undefined,
+        ...(isRecurring ? {
+          recurFreq,
+          ...(recurFreq === 'weekly' && recurDays.length ? { recurDays } : {}),
+        } : {}),
+        ...(isRideWithReturn ? {
+          pickupLocation: pickupLocation.trim() || undefined,
+          dropLocation: dropLocation.trim() || undefined,
+          returnTime: returnTime.trim(),
+          // forkRideLegs only fires once a driver/helper is already set at
+          // submit time (EventFormModal.tsx's own transportSet check) — the
+          // Responsibility Engine's auto-assign (suggestion?.decisionType
+          // === 'auto', applied separately after this composer's OWN submit
+          // path) never reaches the full form at all, so without this the
+          // user would have to notice and manually re-pick the very driver
+          // this composer already confidently suggested, just to get the
+          // fork to actually happen.
+          helperId: suggestion?.selectedMemberId ?? undefined,
+        } : {}),
       });
       close();
       return;

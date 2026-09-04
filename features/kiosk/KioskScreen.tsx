@@ -83,6 +83,26 @@ export default function KioskScreen() {
   useEffect(() => { if (locked) setAskCubeOpen(false); }, [locked]);
 
   const active: FamilyMember | undefined = members.find(m => m.id === activeMemberId) ?? members[0];
+
+  // Was: this fallback to members[0] only ever resolved `active` LOCALLY,
+  // for what the UI shows — useFamilyStore's own activeMemberId (the field
+  // lib/supabase.ts's getActiveMemberIdHeader() actually reads to send the
+  // x-active-member-id request header) stayed genuinely unset whenever a
+  // kiosk session booted straight into this fallback without ever calling
+  // setActiveMember. Every write's RLS/trigger identity check
+  // (resolve_active_member_id(), e.g. calendar_events_update_guard) then
+  // had no member to resolve at all, silently misidentifying (or outright
+  // rejecting) the caller — live-reported: editing a Study event's tutor
+  // name (not a "sensitive" field) saved fine, but assigning the student
+  // (member_id — one of the guarded fields) failed with a generic
+  // "couldn't save," even while KioskHeader visibly showed the parent as
+  // active. Writing the resolved id back to the store the moment it's
+  // implicit makes every subsequent request's header actually match what's
+  // on screen.
+  useEffect(() => {
+    if (!activeMemberId && active) setActiveMember(active.id);
+  }, [activeMemberId, active, setActiveMember]);
+
   const isSenior = active?.role === 'senior';
   const isParent = active?.role === 'parent';
   const rail = isSenior ? RAIL_SENIOR : RAIL_DEFAULT;

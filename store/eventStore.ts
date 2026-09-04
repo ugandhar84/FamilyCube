@@ -1944,7 +1944,19 @@ export const useEventStore = create<EventState>((set, get) => ({
     const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
     const { data: row, error } = await supabase.from('calendar_events').update(patch).eq('id', id).select().maybeSingle();
     if (error || !row) {
-      console.warn('[eventStore] update failed', id, error?.message);
+      // !row with no error is NOT a network failure — Postgres RLS on
+      // UPDATE doesn't throw when its USING/WITH CHECK excludes the target
+      // row, it just matches zero rows, which .maybeSingle() reports as a
+      // clean null. The generic "check your connection" toast was
+      // genuinely misleading for this case (live-reported: a same-device,
+      // same-session edit immediately after creating the event, no
+      // connectivity issue at all) — log which case actually happened so
+      // it's diagnosable instead of indistinguishable from a real drop.
+      if (!error && !row) {
+        console.warn('[eventStore] update matched 0 rows (RLS excluded it, or the row was deleted) — id:', id, 'patch keys:', Object.keys(patch));
+      } else {
+        console.warn('[eventStore] update failed', id, error?.message);
+      }
       showToast("Couldn't save — check your connection and try again", 'error');
       return;
     }

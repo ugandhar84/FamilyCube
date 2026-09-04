@@ -7,8 +7,6 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import type { Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
 
-const COIN_VAL = 0.10;
-
 // Money-green — "cash value" accent, distinct from brand teal used
 // elsewhere in this sheet. Not colors.success (which IS brand teal in this
 // app) — kept as one local constant.
@@ -83,6 +81,17 @@ export function PiggyBankSheet({
   // instead of needing the same floor repeated at each call site.
   mainCoins = Math.max(0, mainCoins);
   gpCoins = Math.max(0, gpCoins);
+  // Live-reported: "i've set 100 coins 1$ but in the kids bottom sheet
+  // says 10 coins 1$" — this sheet used a hardcoded local COIN_VAL = 0.10
+  // (and a hardcoded '$') completely disconnected from the family's real,
+  // parent-set conversion rate (ProfileSettingsScreen.tsx's CurrencySheet,
+  // householdSettings.pointsToFiatRatio/currencySymbol — the same fields
+  // ChildChoreBoard.tsx's cash-out sheet already correctly reads). Now
+  // reads the same live value everywhere else in the app does.
+  const householdSettings = useChoreStore(s => s.householdSettings);
+  const ratio = householdSettings.pointsToFiatRatio;
+  const symbol = householdSettings.currencySymbol;
+  const coinsPerUnit = ratio > 0 ? Math.round(1 / ratio) : 100;
   return (
     <AppBottomSheet
       visible={visible}
@@ -107,18 +116,18 @@ export function PiggyBankSheet({
         <View style={{ borderRadius: 14, padding: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: KID.tiny, color: colors.textSecondary }}>Main coins</Text>
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: MONEY_GREEN }}>${(mainCoins * COIN_VAL).toFixed(2)}</Text>
+            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: MONEY_GREEN }}>{symbol}{(mainCoins * ratio).toFixed(2)}</Text>
           </View>
           {gpCoins > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: KID.tiny, color: colors.textSecondary }}>GP bonus</Text>
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>${(gpCoins * COIN_VAL).toFixed(2)}</Text>
+              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>{symbol}{(gpCoins * ratio).toFixed(2)}</Text>
             </View>
           )}
           <View style={{ height: 1, backgroundColor: isDark ? colors.border : '#F1F5F9' }} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: KID.sub, fontWeight: '700', color: colors.textPrimary }}>Total 💰</Text>
-            <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }}>${((mainCoins + gpCoins) * COIN_VAL).toFixed(2)}</Text>
+            <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }}>{symbol}{((mainCoins + gpCoins) * ratio).toFixed(2)}</Text>
           </View>
         </View>
 
@@ -200,7 +209,7 @@ export function PiggyBankSheet({
             <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.teal }}>How cash-outs work</Text>
           </View>
           <Text style={{ fontSize: KID.tiny, color: colors.textSecondary, lineHeight: 16 }}>
-            10 Coins = $1.00 real allowance! Ask at{' '}
+            {coinsPerUnit} Coins = {symbol}1.00 real allowance! Ask at{' '}
             <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Friday Family Dinner</Text>
             {' '}to cash out.
           </Text>

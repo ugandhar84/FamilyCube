@@ -2412,45 +2412,47 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     if (chore.assignedToId) return; // Already claimed
 
-    // DB-is-truth: await the CAS write and only reflect a claim locally
-    // once we know it actually won — was optimistic (set immediately,
-    // rolled back on loss), which briefly showed the loser as the
-    // claimant during the race window. Conditional WHERE assigned_to_id
-    // IS NULL still ensures only the first request to actually land wins.
+    // Live QA finding (docs/qa_chore_handoff_bounty_audit.html, Medium):
+    // this was the same raw client-side .update() with no server-side
+    // identity check claimPoolQuest had before its own fix (Critical,
+    // pass 1) — chore_tasks' UPDATE RLS policy only scopes by family_id,
+    // not by who's being written into assigned_to_id, so any device in
+    // the family could claim a single-slot bounty on behalf of an
+    // arbitrary member. A single-slot bounty (maxClaimants<=1) is claimed
+    // identically to a regular pool quest at the DB level (is_pool=true,
+    // assigned_to_id IS NULL, same CAS shape) — reusing claim_pool_quest
+    // directly closes the identity gap AND the two behavioral divergences
+    // a prior QA trace already found here: this path used to leave status
+    // at 'todo' instead of 'in_progress' (so propose_terms_change's
+    // status==='in_progress' guard rejected editing terms on an already-
+    // claimed single-claimant bounty) and never set isPool:false (letting
+    // a claimed bounty re-appear as still-open in any pool filter that
+    // checks isPool+status without also checking !assignedToId) — the RPC
+    // already sets both correctly.
     _fetchedAt = 0;
-    const { data, error } = await supabase.from('chore_tasks')
-      .update({ assigned_to_id: childId, status: 'in_progress', is_pool: false })
-      .eq('id', choreId)
-      .is('assigned_to_id', null)
-      .select('id');
+    const { data: rpcData, error } = await supabase.rpc('claim_pool_quest', {
+      p_chore_id: choreId, p_member_id: childId,
+    });
     if (error) {
-      console.warn('[choreStore] claimBounty DB update failed', error.message);
+      console.warn('[choreStore] claimBounty RPC failed', error.message);
       showToast("Couldn't claim — please try again", 'error');
       return;
     }
-    if (!data || data.length === 0) {
+    const result = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (!result?.claimed) {
       console.warn('[choreStore] claimBounty lost the race on', choreId);
       // Spec 3.4 — distinguish "someone else claimed it" from "it was
       // deleted": a follow-up existence check is the only way to tell
-      // the two apart, since both produce the same 0-row CAS result.
+      // the two apart, since both produce the same "not claimed" result.
       if (onLost) {
         const { data: stillExists } = await supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle();
         onLost(stillExists ? 'claimed' : 'deleted');
       }
       return;
     }
-    // Deep QA trace found this diverged from every sibling claim path
-    // (claimPoolQuest, claimBountySlot) in two ways: it left status at
-    // 'todo' instead of 'in_progress' (meaning propose_terms_change's
-    // status==='in_progress' guard rejected editing terms on a claimed
-    // single-claimant bounty, unlike a pool-quest claim), AND it never
-    // set isPool: false at all — so a claimed bounty stayed isPool:true,
-    // status:'todo', letting it re-appear as still-open in any pool
-    // filter that checks isPool+status without also checking
-    // !assignedToId (several of the app's own pool filters do exactly
-    // that). Both are fixed here to match every other claim path.
+    const claimedAt = result.chore?.claimed_at ?? new Date().toISOString();
     set(s => ({
-      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'in_progress', isPool: false } : c),
+      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'in_progress', isPool: false, claimedAt } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     // Audit finding — the comment on claimBountySlot above (and this

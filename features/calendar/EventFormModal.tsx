@@ -1848,7 +1848,15 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         const newCoins = editTeenOpen && editRideCoins ? parseInt(editRideCoins, 10) : undefined;
         if (newCoins !== event.rideCoins) patch.rideCoins = newCoins;
       }
-      if (helperIsRoleFilled && event.category === 'Study') {
+      // Was gated on the FROZEN helperIsRoleFilled (the original event prop
+      // at open time) — an event created with NO tutor at all that then
+      // gets an external tutor + a driver assigned in this same edit
+      // session had helperIsRoleFilled=false the whole time, so this whole
+      // block (which writes rideRequired/driverName/driverId/driverStatus)
+      // never ran, silently dropping the driver assignment on save. Gate on
+      // whether a tutor exists NOW (helperName, the live state) or the
+      // section was ever shown (editRideRequired), not the stale snapshot.
+      if (event.category === 'Study' && (!!helperName.trim() || editRideRequired)) {
         if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
         // QA deep-trace finding: this used to compare only the trimmed
         // NAME string against event.driverName. Two different members who
@@ -2255,11 +2263,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* Helper/tutor/escort/coach reassignment — Ride always shows this (helper IS
-                  the driver there). For Medical/Study/Sports it only shows until a
-                  role-helper name is filled in; once set, Drive Assignment below takes
-                  over since the remaining question is transport, not who tutors. */}
-              {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && !helperIsRoleFilled && (
+              {/* Helper/tutor/escort/coach reassignment — Ride always shows this
+                  (helper IS the driver there). Was gated `!helperIsRoleFilled`
+                  (hidden once ANY tutor/escort/coach was already set), which
+                  meant a Study event created with a family-member tutor (or
+                  the default auto-assigned parent) had NO way to change who
+                  tutors at all — live-reported: "if I created an event with
+                  tutor family member... and later decided to send to other
+                  tutor." helperIsRoleFilled reflects the ORIGINAL event prop,
+                  frozen at open time, not the live edit — that's still used
+                  below to decide whether Drive Assignment auto-reveals, but
+                  it must never hide the picker for changing the tutor itself. */}
+              {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
                     {event.category === 'Medical' ? '🏥 Reassign escort' :
@@ -2276,7 +2291,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     }
                     selectedIds={helperId ? [helperId] : []}
                     members={adults}
-                    onToggle={(id) => { const m = members.find(x => x.id === id); console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${m?.name}" (id=${id}) for "reassign helper" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1608]`); handleHelperSelect(id); }}
+                    onToggle={(id) => { const m = members.find(x => x.id === id); console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${m?.name}" (id=${id}) for "reassign helper" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1608]`); handleHelperSelect(id); setHelperTouched(true); }}
                     colors={colors} isDark={isDark} siblings={siblings}
                   />
                   {!helperId && (
@@ -2296,21 +2311,30 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   do NOT get a separate driver field, matching the Create
                   form: the escort/drop-off adult IS the transport there
                   (HelperAssignmentSection's "Accompanied by"/"Drop-off by"
-                  labels), one person, not two. This used to also show for
-                  Medical/Sports here in Edit — a real inconsistency with
-                  Create (which never offered a second driver field for
-                  those two at all) — narrowed to match Create's one-person
-                  model instead of the reverse, per product decision. Study
-                  alone genuinely splits tutor (who runs the session) from
-                  driver (who gets them there) into two different people. */}
-              {!restricted && isParent && event.category === 'Study' && helperIsRoleFilled && (
+                  labels), one person, not two. Study alone genuinely splits
+                  tutor (who runs the session) from driver (who gets them
+                  there) into two different people.
+                  Auto-reveals from the LIVE tutor selection (helperId unset
+                  = an external, non-family tutor was just picked/typed —
+                  same automatic rule the Create form already uses), not
+                  just the frozen event.rideRequired snapshot — otherwise
+                  switching FROM a family tutor TO an external one here
+                  never surfaced "does this need a ride now?" at all, the
+                  other half of the same live-reported gap. Manually forcing
+                  the toggle on/off (editRideRequired, still respected) lets
+                  a parent override either direction regardless of who's
+                  currently picked as tutor. */}
+              {!restricted && isParent && event.category === 'Study' && (!helperId || editRideRequired) && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
-                  <View style={{ backgroundColor: isDark ? colors.surface : '#F8FAFC', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                      📚 Tutor:{' '}
-                      <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{event.helper}</Text> — already set
-                    </Text>
-                  </View>
+                  {!!helperName.trim() && (
+                    <View style={{ backgroundColor: isDark ? colors.surface : '#F8FAFC', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                        📚 Tutor:{' '}
+                        <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{helperName}</Text>
+                        {helperId ? ' — a family member, so no separate ride is assumed' : ' — external, assign who drives below'}
+                      </Text>
+                    </View>
+                  )}
                   <TouchableOpacity
                     onPress={() => { const v = !editRideRequired; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Ride Needed?" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1636]`); setEditRideRequired(v); }}
                     activeOpacity={0.8}

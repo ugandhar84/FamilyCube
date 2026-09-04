@@ -565,19 +565,51 @@ export async function unwrapRecordsKey(wrappedKey: string, senderPublicKeyB64: s
 // @noble/ciphers primitives the rest of the per-device section uses.
 export const RECOVERY_DEVICE_ID = 'recovery';
 
-async function deriveRecoveryWrappingKey(passcode: string, saltHex: string): Promise<Uint8Array> {
+// OWASP's current PBKDF2-SHA256 guidance moved to 600,000 iterations after
+// this was first built at 310,000 — raising the cost of brute-forcing a
+// leaked encrypted_recovery_privkey blob against a weak/reused passcode
+// (Argon2id would be the stronger choice generally, but adding it here
+// means a new native dependency — react-native-quick-crypto doesn't include
+// it — and a full rebuild; bumping the existing pure-JS/WebCrypto PBKDF2
+// count gets a real improvement with no native-module risk).
+//
+// The count travels WITH the salt (as "<iterations>.<saltHex>") rather than
+// living only in this constant, because bumping the constant alone would
+// silently break every family that already has a families.
+// encrypted_recovery_privkey blob wrapped at the OLD count — recovering
+// would derive a different key and fail decryption with no indication why.
+// Encoding it in the stored salt string means old blobs keep re-deriving at
+// whatever count they were actually wrapped with, while every new
+// setup/reset moves to the current, stronger count — no DB migration
+// needed since recovery_key_salt has always been an opaque string to every
+// caller.
+const RECOVERY_KDF_ITERATIONS = 600_000;
+const LEGACY_RECOVERY_KDF_ITERATIONS = 310_000; // pre-versioning blobs — bare hex, no "N." prefix
+
+function parseSaltHex(salt: string): { iterations: number; saltHex: string } {
+  const dot = salt.indexOf('.');
+  if (dot === -1) return { iterations: LEGACY_RECOVERY_KDF_ITERATIONS, saltHex: salt };
+  return { iterations: parseInt(salt.slice(0, dot), 10), saltHex: salt.slice(dot + 1) };
+}
+
+async function deriveRecoveryWrappingKey(passcode: string, salt: string): Promise<Uint8Array> {
+  const { iterations, saltHex } = parseSaltHex(salt);
   const saltBuf = new Uint8Array(saltHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: saltBuf, iterations: 310_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: saltBuf, iterations, hash: 'SHA-256' },
     base, 256,
   );
   return new Uint8Array(bits);
 }
 
+// Versioned — every NEW salt (setup/reset/change) is written with the
+// current iteration count prefixed on, so future bumps follow the same
+// backward-compatible pattern parseSaltHex already established.
 function randomSaltHex(): string {
   const bytes = randomBytes(16);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${RECOVERY_KDF_ITERATIONS}.${hex}`;
 }
 
 /**

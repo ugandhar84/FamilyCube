@@ -21,7 +21,7 @@ import {
   getOrCreateRecordsSessionKey, wrapRecordsKeyForDevices, unwrapRecordsKey,
   encryptWithSessionKey, decryptWithSessionKey,
 } from '@/lib/chatCrypto';
-import { ensureDeviceRegistered, getFamilyDeviceDirectory } from '@/lib/deviceRegistry';
+import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 
 const ENC = new TextEncoder();
@@ -84,9 +84,30 @@ async function ensureRecordsKeyWrapped(familyId: string, memberId: string): Prom
   if (_recordsKeyEnsured.has(familyId)) return sessionKey;
   try {
     await ensureDeviceRegistered(familyId, memberId);
-    const directory = await getFamilyDeviceDirectory(familyId);
+    // One entry per physical device, not per (device, profile) pair —
+    // family_record_keys is keyed (family_id, device_id) with no column for
+    // "which profile," so wrapping once per profile on a shared device
+    // produced duplicate device_id rows in one upsert batch and hit
+    // Postgres' "ON CONFLICT DO UPDATE command cannot affect row a second
+    // time" (see getUniqueWrapTargets' own doc — this silently broke every
+    // one of chat/location/records' wrap paths for any family with a
+    // device shared across more than one member profile).
+    const directory = await getUniqueWrapTargets(familyId);
     if (directory.length === 0) return sessionKey;
-    const wrapped = await wrapRecordsKeyForDevices(sessionKey, directory, familyId);
+    // Same staleness class as locationCrypto.ts's _locationKeyEnsured fix —
+    // this flag only proves a wrap succeeded at some point THIS app
+    // process, with no way to know the server rows were later deleted or
+    // the family's device set changed since. Check which of the CURRENT
+    // directory's devices are actually still missing a row before trusting
+    // the in-memory cache to skip the work.
+    const { data: existingRows } = await supabase
+      .from('family_record_keys')
+      .select('device_id')
+      .eq('family_id', familyId);
+    const existingDeviceIds = new Set((existingRows ?? []).map(r => r.device_id));
+    const missing = directory.filter(d => !existingDeviceIds.has(d.deviceId));
+    if (missing.length === 0) { _recordsKeyEnsured.add(familyId); return sessionKey; }
+    const wrapped = await wrapRecordsKeyForDevices(sessionKey, missing, familyId);
     const { error } = await supabase.from('family_record_keys').upsert(
       wrapped.map(w => ({ family_id: familyId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
       { onConflict: 'family_id,device_id' },

@@ -385,6 +385,26 @@ export function isBackgroundLocationSupported(): boolean {
   return getTaskManager() !== null;
 }
 
+// Eagerly (re-)registers the JS-side task handler as soon as this module
+// loads, instead of waiting for some screen to call
+// startBackgroundLocationTracking first. Was lazy-only — on every fresh JS
+// instance (a dev reload, or a real app relaunch) where the NATIVE side
+// still has the background task running from before (it survives a JS
+// reload independently), a location fix could arrive and get handed to the
+// native TaskManager bridge before any UI had re-invoked start/ensureTaskDefined
+// this session. With no JS handler registered yet, the bridge itself threw
+// "Task 'family-cube-background-location' not found for app ID
+// 'mainApplication'" as a promise nothing in JS ever attached a .catch()
+// to — live-reported exactly as an "Uncaught (in promise, id: 0)" error
+// right after a rebuild+reload. Registering here closes that window: by
+// the time any location fix can possibly arrive, the handler already
+// exists, independent of whether the user has touched GpsTab/KioskFindFamTab
+// yet this session.
+(() => {
+  const tm = getTaskManager();
+  if (tm) ensureTaskDefined(tm);
+})();
+
 /**
  * Requests foreground THEN background ("Always") permission and starts
  * updates. Must request foreground first — iOS rejects a direct jump to

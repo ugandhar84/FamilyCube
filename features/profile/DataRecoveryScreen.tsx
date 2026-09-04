@@ -429,6 +429,26 @@ export default function DataRecoveryScreen() {
               Kids, teens, and grandparents don't need their own — a parent shares this same passcode with
               them if they ever need to recover a device.
             </Text>
+            {/* The one sentence this screen most needs and previously
+                didn't have anywhere: what happens if the passcode is BOTH
+                forgotten AND never reset. The info card above and the
+                Reset flow's own copy both explain what the passcode does
+                and what resetting costs, but neither states the actual
+                permanent-loss case in plain terms — someone who forgets it
+                and doesn't know Reset exists (or can't reach whoever knows
+                it) has no way to learn their data is gone for good short of
+                reading this component's source. No password reset exists
+                for this by design (see chatCrypto.ts's recovery-key design
+                doc) — the server never holds anything that alone unlocks
+                the data, so there's genuinely nothing "forgot password" can
+                fall back to here the way it can for a normal account login. */}
+            <View style={[s.warnCard, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '40' }]}>
+              <Ionicons name="warning-outline" size={16} color={colors.danger} />
+              <Text style={[s.cardSub, { color: colors.danger, flex: 1 }]}>
+                If everyone forgets this passcode, this history can never be recovered on a lost or new
+                device — not even by us. Write it down somewhere safe.
+              </Text>
+            </View>
             <TextInput
               style={s.input}
               value={passcode}
@@ -600,6 +620,7 @@ function styles(colors: any, isDark: boolean) {
     },
     infoText: { flex: 1, fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 },
     card: { padding: 16, borderRadius: RADIUS.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 10 },
+    warnCard: { flexDirection: 'row' as const, gap: 8, padding: 10, borderRadius: RADIUS.sm, borderWidth: 1 },
     cardTitle: { fontSize: TYPO.body, fontWeight: '800' as const, color: colors.textPrimary },
     cardSub: { fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 },
     rowBetween: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const },

@@ -20,7 +20,7 @@ import {
   getOrCreateLocationSessionKey, wrapLocationKeyForDevices, unwrapLocationKey,
   encryptWithSessionKey, decryptWithSessionKey,
 } from './chatCrypto';
-import { ensureDeviceRegistered, getFamilyDeviceDirectory } from './deviceRegistry';
+import { ensureDeviceRegistered, getUniqueWrapTargets } from './deviceRegistry';
 import { isFeatureEnabled } from './featureFlags';
 
 // Devices this session has already confirmed are wrapped for — avoids
@@ -40,9 +40,38 @@ async function ensureLocationKeyWrapped(familyId: string, memberId: string): Pro
   if (_locationKeyEnsured.has(memberId)) return sessionKey;
   try {
     await ensureDeviceRegistered(familyId, memberId);
-    const directory = await getFamilyDeviceDirectory(familyId);
+    // getUniqueWrapTargets collapses the raw per-profile device directory to
+    // one entry per physical device_id — required here because
+    // member_location_keys is keyed (member_id, device_id) with no column
+    // for "which profile," so wrapping once per PROFILE on a shared device
+    // produced multiple rows sharing one device_id and the upsert below hit
+    // Postgres' "ON CONFLICT DO UPDATE command cannot affect row a second
+    // time" (see that function's own doc for the full history — this was
+    // silently breaking every location wrap for any family with a device
+    // shared across more than one member profile).
+    const directory = await getUniqueWrapTargets(familyId);
     if (directory.length === 0) return sessionKey;
-    const wrapped = await wrapLocationKeyForDevices(sessionKey, directory, familyId);
+    // The in-memory _locationKeyEnsured flag only proves a wrap succeeded
+    // at some point THIS app process — it has no way to know the server
+    // row was later deleted out from under it (e.g. a data reset, or the
+    // family's device set changing after this device already marked
+    // itself done). Checking which of the CURRENT directory's devices
+    // already have a row is cheap and makes this authoritative against
+    // the DB instead of a same-process assumption — live-reported: after
+    // wiping member_location_keys for a clean re-test, a device that had
+    // already run this once kept silently skipping the re-wrap on every
+    // subsequent write, so the table stayed empty forever despite fresh
+    // ciphertext appearing (encryptWithSessionKey doesn't need the
+    // directory, only the wrap-and-upsert step below does, and that step
+    // was the one being skipped).
+    const { data: existingRows } = await supabase
+      .from('member_location_keys')
+      .select('device_id')
+      .eq('member_id', memberId);
+    const existingDeviceIds = new Set((existingRows ?? []).map(r => r.device_id));
+    const missing = directory.filter(d => !existingDeviceIds.has(d.deviceId));
+    if (missing.length === 0) { _locationKeyEnsured.add(memberId); return sessionKey; }
+    const wrapped = await wrapLocationKeyForDevices(sessionKey, missing, familyId);
     const { error } = await supabase.from('member_location_keys').upsert(
       wrapped.map(w => ({ member_id: memberId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
       { onConflict: 'member_id,device_id' },

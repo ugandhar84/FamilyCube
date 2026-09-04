@@ -14,7 +14,7 @@ import {
   buildBlindIndex, hashQuery,
   getDeviceId, encryptForDevices, decryptFromDevice,
 } from '@/lib/chatCrypto';
-import { ensureDeviceRegistered, getFamilyDeviceDirectory } from '@/lib/deviceRegistry';
+import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -917,7 +917,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const familyId = sender?.familyId;
         if (familyId) {
           await ensureDeviceRegistered(familyId, senderId);
-          const directory = await getFamilyDeviceDirectory(familyId);
+          // One entry per physical device, not per (device, profile) pair —
+          // chat_message_keys is keyed (message_id, device_id) with no
+          // column for "which profile," so a device shared across more
+          // than one member profile produced multiple wrapped-key rows
+          // sharing one device_id for the SAME message, and the insert
+          // below hit Postgres' "ON CONFLICT DO UPDATE command cannot
+          // affect row a second time" — confirmed live as chat_message_keys
+          // sitting at zero rows despite real messages being sent, for any
+          // family with even one shared device (see getUniqueWrapTargets'
+          // own doc for the full history).
+          const directory = await getUniqueWrapTargets(familyId);
           const myDeviceId = await getDeviceId();
           senderDeviceId = myDeviceId;
           const envelope = await encryptForDevices(text, directory, familyId);

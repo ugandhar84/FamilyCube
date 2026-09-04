@@ -71,11 +71,65 @@ export async function getFamilyDeviceDirectory(
 ): Promise<{ deviceId: string; publicKeyB64: string; memberId: string }[]> {
   const { data, error } = await supabase
     .from('device_keys')
-    .select('device_id, public_key, member_id')
+    .select('device_id, public_key, member_id, created_at')
     .eq('family_id', familyId)
     .is('revoked_at', null);
   if (error || !data) { console.warn('[deviceRegistry] getFamilyDeviceDirectory failed', error?.message); return []; }
-  return data.map((r: any) => ({ deviceId: r.device_id, publicKeyB64: r.public_key, memberId: r.member_id }));
+  const rows = data.map((r: any) => ({ deviceId: r.device_id, publicKeyB64: r.public_key, memberId: r.member_id, createdAt: r.created_at }));
+  // The recovery slot (RECOVERY_DEVICE_ID) is a single family-wide keypair
+  // with no true owning member — setUpFamilyRecoveryKey now replaces its
+  // row on every setup/reset instead of inserting a new one, but a family
+  // that already accumulated duplicate recovery rows before that fix (one
+  // per member who ever set/reset the passcode, each a different keypair)
+  // would still have more than one here. Every wrap call that maps this
+  // directory straight into a device_id-keyed upsert (chat/location/records)
+  // collides on that duplicate — "ON CONFLICT DO UPDATE command cannot
+  // affect row a second time" — since it's genuinely the same slot inserted
+  // twice, unlike the real shared-device case below. Keep only the newest
+  // recovery row; real per-device entries are untouched (still deliberately
+  // NOT deduplicated by deviceId — see doc above).
+  const recoveryRows = rows.filter(r => r.deviceId === RECOVERY_DEVICE_ID);
+  if (recoveryRows.length <= 1) return rows;
+  const newestRecovery = recoveryRows.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+  return rows.filter(r => r.deviceId !== RECOVERY_DEVICE_ID || r === newestRecovery);
+}
+
+/**
+ * getFamilyDeviceDirectory, collapsed to ONE entry per physical device_id —
+ * the shape every "wrap one session/message key for every device" caller
+ * actually needs (chat's encryptForDevices, location's
+ * wrapLocationKeyForDevices, records' wrapRecordsKeyForDevices), because the
+ * tables those wraps land in (chat_message_keys, member_location_keys,
+ * family_record_keys) are all keyed by device_id alone — they have no
+ * column for "which member profile was active on that device," and don't
+ * need one, since unwrapping only ever depends on the recipient device's
+ * own keypair.
+ *
+ * Passing the raw, per-profile directory straight into one of those wrap
+ * calls produces multiple output rows sharing the same device_id whenever a
+ * device has ever been used by more than one family member profile (a
+ * shared kiosk/tablet, or a phone two kids each signed into) — upserting
+ * those together in one batch hits Postgres' "ON CONFLICT DO UPDATE command
+ * cannot affect row a second time," which was silently and completely
+ * breaking every one of the three encryption paths for any family with a
+ * shared device: confirmed live as member_location_keys AND
+ * chat_message_keys both sitting at zero rows despite real devices and
+ * real writes, surfacing to users as "wrong/corrupted key" on read even
+ * though the actual failure was upstream, on write, and had nothing to do
+ * with decryption at all.
+ *
+ * All of a device's directory rows carry the SAME public key regardless of
+ * which member's row it's attached to (getDevicePublicKeyB64 returns one
+ * keypair per physical device, not per profile — device_keys simply gets a
+ * new row per (device, profile) combination that has ever used it), so
+ * picking any single row per device_id loses nothing a wrap call needs.
+ */
+export async function getUniqueWrapTargets(
+  familyId: string,
+): Promise<{ deviceId: string; publicKeyB64: string }[]> {
+  const directory = await getFamilyDeviceDirectory(familyId);
+  const uniqueByDevice = new Map(directory.map(d => [d.deviceId, d]));
+  return Array.from(uniqueByDevice.values()).map(d => ({ deviceId: d.deviceId, publicKeyB64: d.publicKeyB64 }));
 }
 
 /**
@@ -130,13 +184,35 @@ export async function setUpFamilyRecoveryKey(
     }).eq('id', familyId);
     if (famErr) return { ok: false, error: famErr.message };
 
-    const { error: devErr } = await supabase.from('device_keys').upsert({
+    // device_keys' unique constraint is (family_id, device_id, member_id) —
+    // needed for the real shared-device case (one physical phone, two kid
+    // profiles, same device_id legitimately gets two rows). The recovery
+    // slot isn't that: it's ONE family-wide keypair with no true owning
+    // member (setupMemberId only ever satisfies this constraint, per this
+    // function's own doc above — the crypto never reads member_id). If a
+    // parent sets the passcode, then later a DIFFERENT parent resets it via
+    // "Forgot the current passcode?", an upsert scoped to
+    // (family_id, device_id, member_id) inserts a SECOND row instead of
+    // replacing the first, since member_id differs — confirmed live: two
+    // device_keys rows with device_id='recovery' for the same family, each
+    // with a different public key. getFamilyDeviceDirectory then legitimately
+    // returns both, and every wrap call (chat/location/records) that maps
+    // the directory straight into an upsert keyed on device_id collided on
+    // that duplicate — "ON CONFLICT DO UPDATE command cannot affect row a
+    // second time" — which is what actually broke location key wrapping,
+    // not a decryption bug. Delete any existing recovery row(s) for this
+    // family FIRST so there is only ever one, regardless of who set it up.
+    const { error: delErr } = await supabase.from('device_keys')
+      .delete().eq('family_id', familyId).eq('device_id', RECOVERY_DEVICE_ID);
+    if (delErr) return { ok: false, error: delErr.message };
+
+    const { error: devErr } = await supabase.from('device_keys').insert({
       family_id: familyId,
       member_id: setupMemberId,
       device_id: RECOVERY_DEVICE_ID,
       public_key: publicKeyB64,
       is_recovery_key: true,
-    }, { onConflict: 'family_id,device_id,member_id' });
+    });
     if (devErr) return { ok: false, error: devErr.message };
 
     return { ok: true };

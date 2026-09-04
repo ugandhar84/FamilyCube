@@ -74,6 +74,34 @@ export async function encryptLocationText(memberId: string, familyId: string | n
 }
 
 /**
+ * Live-reported: "i see the address still showing the encrypted wrong
+ * key" — traced to ensureLocationKeyWrapped only ever running as a side
+ * effect of encryptLocationText, which only fires on a REAL location
+ * write (movement of >= MIN_DISTANCE_METERS, see locationTracking.ts's
+ * own comment: "movement is the only real trigger — a stationary phone
+ * never wakes the GPS chip"). A device whose background tracking was
+ * ALREADY running when per_device_e2e briefly went off-then-back-on (this
+ * session's own earlier incident) had `already return true` short-circuit
+ * startBackgroundLocationTracking with no new write — so the wrap that
+ * should have self-healed on the next location update simply never got a
+ * next update to piggyback on, for however long the phone stays
+ * stationary. member_location_keys was confirmed empty for the affected
+ * family (0 rows) despite device_keys being fully populated (6 rows) —
+ * the directory was never the problem, the wrap step just never got
+ * triggered again.
+ *
+ * This forces that check NOW, independent of any real GPS fix — safe to
+ * call on every app foreground for whichever member this device is
+ * actively tracking (ensureLocationKeyWrapped's own in-memory cache keeps
+ * it a no-op after the first success, same as the write path).
+ */
+export async function forceRecheckLocationKeyWrap(familyId: string | null | undefined, memberId: string | null | undefined): Promise<void> {
+  if (!isFeatureEnabled('per_device_e2e') || !familyId || !memberId) return;
+  try { await ensureLocationKeyWrapped(familyId, memberId); }
+  catch (e: any) { console.warn('[locationCrypto] forceRecheckLocationKeyWrap failed', e?.message ?? e); }
+}
+
+/**
  * Decrypts one piece of location text for `memberId`'s location row, from
  * THIS device's perspective. Looks up this device's own wrapped copy of
  * memberId's session key; falls back to the legacy shared-key decrypt for

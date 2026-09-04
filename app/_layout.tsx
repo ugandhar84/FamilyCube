@@ -908,6 +908,27 @@ function RootNavigator() {
         }
       }
 
+      // Live-reported: "i see the address still showing the encrypted
+      // wrong key" — ensureLocationKeyWrapped only ever runs as a side
+      // effect of a REAL location write (movement past the distance
+      // threshold, see locationTracking.ts), so a device whose background
+      // tracking was already running when per_device_e2e briefly flipped
+      // off-then-on never got a fresh write to retry the wrap on, for
+      // however long the phone stayed stationary — member_location_keys
+      // stayed empty even though device_keys itself was fully populated.
+      // Forces that check on every foreground instead of waiting on GPS
+      // movement — cheap no-op once it's actually succeeded (see
+      // forceRecheckLocationKeyWrap's own doc).
+      {
+        const activeMemberIdForLocationWrap = useFamilyStore.getState().activeMemberId;
+        const familyIdForLocationWrap = useFamilyStore.getState().members.find(m => m.id === activeMemberIdForLocationWrap)?.familyId;
+        if (activeMemberIdForLocationWrap && familyIdForLocationWrap) {
+          import('@/lib/locationCrypto').then(({ forceRecheckLocationKeyWrap }) => {
+            forceRecheckLocationKeyWrap(familyIdForLocationWrap, activeMemberIdForLocationWrap).catch(() => {});
+          });
+        }
+      }
+
       // Track current device timezone silently on foreground (for travel banner).
       // Does NOT change home_timezone or timezone — only current_timezone updates.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

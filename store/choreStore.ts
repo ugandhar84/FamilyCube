@@ -2952,8 +2952,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  // Receiver: "can't either — put it back" — reopens straight to the pool,
-  // no reason required (master-flow's own framing for this exact case).
+  // Receiver: "can't either — put it back." Was: reopens straight to the
+  // general pool, no reason required (master-flow's own prior framing).
+  // Live QA finding: this made a declined handoff a WORSE outcome than
+  // never offering the chore at all — the offering kid's own chore became
+  // claimable by any uninvolved family member, not handed back to them,
+  // confirmed live to let a third kid take it before the original owner
+  // ever got a chance to reclaim it. Now reverts to whoever originally
+  // offered it (decline_chore_handoff RPC), matching the natural "handing
+  // it off undoes itself" model — only truly opens to the pool if for some
+  // reason there's no original offerer on record.
   declineChoreHandoff: async (choreId, memberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.pendingHandoffTo !== memberId) return;
@@ -2966,7 +2974,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? {
-        ...c, assignedToId: undefined, isPool: true, status: 'todo',
+        ...c, assignedToId: offeredBy, isPool: !offeredBy, status: 'todo',
         pendingHandoffTo: undefined, pendingHandoffReason: undefined,
         pendingHandoffOfferedBy: undefined, pendingHandoffOfferedAt: undefined,
       } : c),

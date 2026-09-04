@@ -27,7 +27,7 @@
  * element — kiosk's existing low-battery badge already mirrors GpsTab's
  * own <=20% styling threshold.
  */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Switch, Alert, Platform, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
@@ -82,6 +82,18 @@ async function openDirections(lat: number, lng: number, label: string) {
     try { await Linking.openURL(webFallback); }
     catch { Alert.alert('Could not open maps', 'Please try again.'); }
   }
+}
+
+// Same distance check GpsTab.tsx uses (GpsTab.tsx:63-70) to decide whether
+// a freshly-computed initialRegion is a MEANINGFUL move worth re-animating
+// the camera for, vs. GPS jitter on every realtime tick.
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export function KioskFindFamTab({ active, members, colors, isDark }: {
@@ -210,6 +222,25 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
     };
   }, [pinned]);
 
+  // Same "only re-animate on a meaningful move" guard GpsTab.tsx uses
+  // (GpsTab.tsx:505-519) — MapView's `initialRegion` prop is read ONCE at
+  // first render only, so without this the camera would zoom-to-fit
+  // whatever was loaded at that exact instant (often nothing yet, or a
+  // stale set) and never adjust again as real locations stream in via the
+  // realtime subscription. animateToRegion is called imperatively instead
+  // of feeding a new `region` prop every render, which GpsTab.tsx's own
+  // comment notes causes a glitchy re-center/re-zoom jump on every poll.
+  const mapRef = useRef<MapView>(null);
+  const lastAnimatedRegion = useRef<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => {
+    if (pinned.length === 0) return;
+    const prev = lastAnimatedRegion.current;
+    const moved = !prev || haversineMeters(prev.latitude, prev.longitude, initialRegion.latitude, initialRegion.longitude) > 40;
+    if (!moved) return;
+    lastAnimatedRegion.current = { latitude: initialRegion.latitude, longitude: initialRegion.longitude };
+    mapRef.current?.animateToRegion(initialRegion, 650);
+  }, [initialRegion, pinned.length]);
+
   return (
     <View style={s.root}>
       <View style={s.headerRow}>
@@ -244,6 +275,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
             once rather than trading one for the other. */}
         <View style={[s.mapWrap, { borderColor: colors.border }]}>
           <MapView
+            ref={mapRef}
             provider={PROVIDER_DEFAULT}
             style={StyleSheet.absoluteFill}
             initialRegion={initialRegion}

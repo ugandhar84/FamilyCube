@@ -559,7 +559,7 @@ function otherParentIds(excludeIds: (string | null | undefined)[]): string[] {
 }
 
 function notifyRideAssignment(
-  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_confirmed_for_kid' | 'ride_pool_opened',
+  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened',
   memberIds: string[],
   excludeMemberId: string | null,
   payload: Record<string, unknown>,
@@ -2026,6 +2026,14 @@ export const useEventStore = create<EventState>((set, get) => ({
   // calls, so a reassignment made from Schedule and one made from the Hub
   // behave — and render — identically, always.
   reassignEvent: async (eventId, newMemberId, role, actorId) => {
+    // Live QA finding (docs/qa_reassign_takeover_audit.html, Medium):
+    // Overriding someone else's already-CONFIRMED assignment silently
+    // replaced them with zero notification — captured BEFORE the RPC runs,
+    // since the row will already show the new assignee afterward.
+    const prevEvent = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
+    const prevAssignee = prevEvent ? eventAssignee(prevEvent) : undefined;
+    const wasOverridingConfirmed = prevAssignee?.status === 'confirmed' && !!prevAssignee.id && prevAssignee.id !== newMemberId;
+
     const { error } = await supabase.rpc('reassign_event', {
       p_event_id: eventId, p_new_member_id: newMemberId, p_role: role, p_actor_id: actorId,
     });
@@ -2056,6 +2064,16 @@ export const useEventStore = create<EventState>((set, get) => ({
       if (newMemberId !== actorId) {
         notifyRideAssignment('ride_assignment_offered', [newMemberId], actorId, {
           eventTitle: fresh.title, eventId: fresh.id, eventTime: fresh.time,
+          byName: memberById(actorId)?.name,
+        });
+      }
+      // The person who just got bumped — only when they're not also the
+      // one doing the reassigning (an actor overriding their OWN prior
+      // confirmed assignment needs no "you were replaced" ping about
+      // themselves).
+      if (wasOverridingConfirmed && prevAssignee!.id !== actorId) {
+        notifyRideAssignment('ride_assignment_overridden', [prevAssignee!.id!], actorId, {
+          eventTitle: fresh.title, eventId: fresh.id,
           byName: memberById(actorId)?.name,
         });
       }

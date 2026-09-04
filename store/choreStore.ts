@@ -2494,25 +2494,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     if (chore.assignedToId) return; // Already claimed or gone
 
-    // DB-is-truth: await the CAS write before reflecting a claim locally
-    // (see claimBounty's matching comment for why — was optimistic, briefly
-    // showed the loser as the claimant during the race window).
-    // claimedAt — used by the chore-noshow-sweep edge function to tell
-    // "claimed a while ago, gone silent" apart from "just claimed" (spec's
-    // "Gone quiet — still on?" exit branch).
-    const claimedAt = new Date().toISOString();
+    // Live QA finding (docs/qa_reassign_takeover_audit.html, Critical):
+    // this was a raw client-side .update() with no server-side identity
+    // check that the caller genuinely IS `memberId` — chore_tasks' UPDATE
+    // RLS policy only scopes by family_id, not by who's being written into
+    // assigned_to_id, so any device in the family could claim a pool chore
+    // on behalf of an arbitrary member. Routed through claim_pool_quest
+    // (the same RPC every other identity-sensitive write in this app
+    // already uses), which verifies resolve_active_member_id() === memberId
+    // server-side before writing anything — same shape as claimHelperSlot's
+    // own claim_event_slot call in eventStore.ts. DB-is-truth: awaited
+    // before reflecting the claim locally, same as before.
     _fetchedAt = 0;
-    const { data, error } = await supabase.from('chore_tasks')
-      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false, claimed_at: claimedAt })
-      .eq('id', choreId)
-      .is('assigned_to_id', null)
-      .select('id');
+    const { data, error } = await supabase.rpc('claim_pool_quest', {
+      p_chore_id: choreId, p_member_id: memberId,
+    });
     if (error) {
-      console.warn('[choreStore] claimPoolQuest DB update failed', error.message);
+      console.warn('[choreStore] claimPoolQuest RPC failed', error.message);
       showToast("Couldn't claim — please try again", 'error');
       return;
     }
-    if (!data || data.length === 0) {
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result?.claimed) {
       console.warn('[choreStore] claimPoolQuest lost the race on', choreId, '(see spec 3.1)');
       // Spec 3.4 — same claimed-vs-deleted disambiguation as claimBounty.
       if (onLost) {
@@ -2521,6 +2524,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       }
       return;
     }
+    const claimedAt = result.chore?.claimed_at ?? new Date().toISOString();
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false, claimedAt } : c),
     }));

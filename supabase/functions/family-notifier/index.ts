@@ -175,6 +175,14 @@ type NotifType =
   | 'ride_assignment_offered'
   | 'ride_assignment_accepted'
   | 'ride_assignment_declined'
+  // Live QA finding (docs/qa_reassign_takeover_audit.html, Medium): a
+  // parent Overriding someone else's already-CONFIRMED assignment goes
+  // straight to confirmed for the new assignee, same as a fresh claim —
+  // that part is intended, but the person who got bumped previously heard
+  // nothing at all, silently replaced. Distinct from
+  // ride_assignment_declined (which implies the PRIOR assignee backed out
+  // themselves) — this is specifically "someone else took over your slot."
+  | 'ride_assignment_overridden'
   | 'ride_confirmed_for_kid'
   // A parent flips isOpenToGrandparents/isOpenToTeens false→true on an
   // event (store/eventStore.ts's updateEvent) — previously only wrote a
@@ -307,6 +315,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   pool_unclaimed_urgent: 'chores', approval_cutoff_nudge: 'chores', approval_cutoff_escalated: 'chores',
   chore_handoff_offered: 'chores', chore_handoff_accepted: 'chores', chore_handoff_declined: 'chores',
   ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
+  ride_assignment_overridden: 'family',
   ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
   chore_deleted: 'chores', bounty_claim_approved: 'chores', bounty_claim_declined: 'chores',
   chore_redo_disputed: 'chores', chore_redo_dispute_resolved: 'chores',
@@ -824,6 +833,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
             sound: 'default',
             data: { screen: 'Schedule', eventId: p.eventId },
           };
+    case 'ride_assignment_overridden':
+      return {
+        title: '🔄 Reassigned',
+        body: `${p.byName ?? 'A parent'} took over "${p.eventTitle}" — you're off the hook.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
     case 'ride_confirmed_for_kid': {
       const t = to12Hour(p.eventTime as string);
       return {

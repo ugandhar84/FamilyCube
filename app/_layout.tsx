@@ -1045,6 +1045,20 @@ function RootNavigator() {
     return () => stopBatteryPolling();
   }, [activeMemberId]);
 
+  // Device battery + identity (device_status, separate from the per-member
+  // battery_level above) — live-requested: "we should also send the device
+  // battery - kiosk device model and name its battery." Fires once per
+  // active-member change (session start, profile switch, foreground after
+  // being signed out) rather than its own poll loop — model/name never
+  // change and battery is already kept fresh by startBatteryPolling above;
+  // this just needs to exist and not go stale for long stretches.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    if (!familyId) return;
+    import('@/lib/locationTracking').then(({ reportDeviceStatus }) => reportDeviceStatus(familyId));
+  }, [activeMemberId]);
+
   // External calendar sync (Google/Apple) — previously only checked on
   // Hub/Schedule tab focus (throttled to once per 10 minutes) or an
   // explicit pull-to-refresh, so a change made directly on Google

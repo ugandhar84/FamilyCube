@@ -214,6 +214,42 @@ export function stopBatteryPolling(): void {
   batteryPollMemberId = null;
 }
 
+/**
+ * Writes this physical device's own battery + identity to the
+ * device_status table (one row per device, keyed by getDeviceId() — the
+ * same stable per-install id device_keys already uses — not per member,
+ * since a device's model/name doesn't change as profiles switch). Live-
+ * requested: "we should also send the device battery - kiosk device model
+ * and name its battery." No existing mobile feature to mirror exactly —
+ * mobile's own battery_level/is_charging on member_locations is a
+ * per-MEMBER field (startBatteryPolling above), already covering a kiosk
+ * device's own battery for free with zero extra code; device model/name
+ * has never been persisted anywhere before (components/FeedbackSheet.tsx's
+ * Device.modelName/deviceName usage is read-only for a support form, never
+ * written to the DB). Safe to call on every app foreground/session start —
+ * cheap upsert, no polling loop needed since model/name never change and
+ * battery already has its own 5-minute poll via startBatteryPolling.
+ */
+export async function reportDeviceStatus(familyId: string | null | undefined): Promise<void> {
+  if (!familyId) return;
+  try {
+    const { getDeviceId } = await import('./chatCrypto');
+    const deviceId = await getDeviceId();
+    const { level, isCharging } = await readBatteryStatus();
+    await supabase.from('device_status').upsert({
+      device_id: deviceId,
+      family_id: familyId,
+      device_model: Device.modelName ?? null,
+      device_name: Device.deviceName ?? null,
+      ...(level !== null ? { battery_level: level } : {}),
+      ...(isCharging !== null ? { is_charging: isCharging } : {}),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'device_id' });
+  } catch (e: any) {
+    console.warn('[locationTracking] reportDeviceStatus failed', e?.message ?? e);
+  }
+}
+
 // Registered once, lazily, the first time getTaskManager() succeeds (rather
 // than at module load) — the task body itself reads the member id from a
 // small in-memory ref since TaskManager callbacks can't accept closures

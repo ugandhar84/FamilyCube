@@ -549,18 +549,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // confirmed, it's a settled commitment (visible in Schedule instead), not
   // something to pull off a backlog. Sourced from classifyEventUrgency
   // above (myPending) — see that file for the exact rule.
-  const myHelperEvents = myPending;
-  // A co-parent's own outstanding driver/helper assignment — read-only
-  // awareness for this viewer, with a "Take Over" escape hatch via the same
-  // HelperEventCard used for myHelperEvents (deriveEventActions already
-  // gates its actions on viewer identity, so reusing it here is safe: this
-  // viewer never sees "Confirm"/"Can't" for someone else's assignment, only
-  // Take Over). classifyEventUrgency computed this bucket already but
-  // nothing ever consumed it — a co-parent's pending ride/helper slot was
-  // silently invisible to the OTHER parent's Hub entirely, the exact
-  // "every unconfirmed schedule item must reach a parent's backlog" gap
-  // this pass was asked to close.
-  const coParentHelperEvents = coParentPending;
+  // Live-reported: a recurring ride ("Drop Jaswi for her dance class")
+  // showed EVERY future occurrence as its own pending card in the
+  // Household Backlog's "You're the driver / helper" section — Sep 9, 16,
+  // 23, 30, Oct 7, all stacked at once — instead of just the soonest one.
+  // dedupeRideSeries (only the soonest occurrence per seriesId survives)
+  // was already applied to pendingRequests/pendingRideRequiredEvents
+  // above for ActionNeededSection's own cards and this file's actionCount
+  // badge, but myPending/coParentPending (a SEPARATE classifyEventUrgency
+  // bucket feeding THIS section) never got the same treatment — the two
+  // buckets look similar but are independently derived, so fixing one
+  // silently left the other exposed to the identical bug.
+  const [myHelperEvents, coParentHelperEvents] = dedupeRideSeries(myPending, coParentPending);
 
   const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
     + coParentHelperEvents.length;

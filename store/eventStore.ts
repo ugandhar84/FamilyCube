@@ -2121,7 +2121,12 @@ export const useEventStore = create<EventState>((set, get) => ({
         });
       }
     }
-    showToast(useSeriesForward ? 'Confirmed — future rides too ✓' : 'Confirmed ✓');
+    // "future rides too" now covers both cases the series-forward RPC
+    // handles: an already-pending future occurrence flips to confirmed,
+    // AND a not-yet-assigned future occurrence gets this member pre-
+    // assigned (left pending, not auto-confirmed — each occurrence still
+    // gets its own explicit confirm as its day approaches).
+    showToast(useSeriesForward ? "You're set for future occurrences too ✓" : 'Confirmed ✓');
     return true;
   },
 

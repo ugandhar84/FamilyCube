@@ -1528,7 +1528,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // of the screen (same class of bug fixed in AppBottomSheet.tsx). Falls
   // through to the sheet's own 75% when the keyboard is closed.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
-  const { updateEvent, addEvent } = useEventStore();
+  const { updateEvent, addEvent, addRecurringEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
   const kids     = members.filter(m => m.role === 'kid');
@@ -1872,13 +1872,16 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       });
     };
 
-    // For 'following'/'all', forks a matching pickup leg for every sibling
-    // occurrence in range that doesn't already have a linked leg — each
-    // sibling forks with its OWN transport assignee when it has one (may
-    // legitimately differ per-occurrence, e.g. a co-parent covering one
-    // date), falling back to the assignee just set on THIS occurrence when
-    // the sibling has none of its own yet, so this also fills in pickup
-    // legs for occurrences that were never individually assigned at all.
+    // For 'following'/'all', the pickup leg itself needs to be a real
+    // recurring series mirroring the drop-off's own cadence — NOT one
+    // independent one-off event created per occurrence (that was the
+    // first version of this fix: it left every future drop-off occurrence
+    // retitled "— Drop-off" and tagged "has a Pickup leg" but pointing at
+    // its own disconnected single pickup event, live-reported as "creating
+    // the pickup leg whole series instead of the recurrent same like the
+    // dropoff leg"). Building it as one addRecurringEvent call (reusing
+    // the anchor's own recurrenceRule) gives the pickup leg a real
+    // seriesId, matching the drop-off leg's own shape exactly.
     const forkSiblings = async (scope: 'following' | 'all') => {
       const { data: rows, error } = await supabase.from('calendar_events')
         .select('*').eq('series_id', event.seriesId!).is('deleted_at', null);
@@ -1887,14 +1890,50 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         showToast("Couldn't add pickup events — please try again", 'error');
         return 0;
       }
-      const siblings = (scope === 'all' ? rows : rows.filter((r: any) => r.date >= event.date))
-        .map(fromRow)
-        .filter((r: FamilyEvent) => !r.linkedLegId && r.id !== event.id);
+      const allOccurrences = rows.map(fromRow);
+      const anchor = allOccurrences.find(r => r.isSeriesAnchor);
+      const siblings = (scope === 'all' ? allOccurrences : allOccurrences.filter(r => r.date >= event.date))
+        .filter(r => !r.linkedLegId && r.id !== event.id)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (!anchor?.recurrenceRule || siblings.length === 0) return 0;
+
+      const firstSibling = siblings[0];
+      const pickupTimeStr = fmtTime(editPickupTime!);
+      const pickupAnchorId = await addRecurringEvent({
+        title: `${merged.title} — Pickup`,
+        date: firstSibling.date,
+        time: pickupTimeStr,
+        type: 'event', category: merged.category, allDay: false, memberId: merged.memberId,
+        approvalPending: false, conflict: false,
+        ...(usesDriverField
+          ? { driverName: merged.driverName, driverStatus: merged.driverStatus, rideRequired: true }
+          : { helper: merged.helper, helperId: merged.helperId, helperStatus: merged.helperStatus }),
+        notes: merged.notes ? `(Return) ${merged.notes}` : `Pickup leg for "${merged.title}"`,
+        pickupLocation: merged.dropLocation,
+        dropLocation: merged.pickupLocation,
+      }, anchor.recurrenceRule);
+      if (!pickupAnchorId) return 0;
+
+      const { data: pickupRows, error: pickupErr } = await supabase.from('calendar_events')
+        .select('*').eq('series_id', pickupAnchorId).is('deleted_at', null);
+      if (pickupErr || !pickupRows) {
+        console.warn('[EventFormModal] pickup series lookup after create failed', pickupErr?.message);
+        return 0;
+      }
+      const pickupByDate = new Map(pickupRows.map(fromRow).map(r => [r.date, r]));
+
+      // Link each drop-off occurrence to its date-matching pickup
+      // occurrence — same pairwise linkedLegId both single-event
+      // forkRideLegs already establishes, just applied once per pair here
+      // since both series were built independently.
       for (const sib of siblings) {
-        const sibHasTransport = usesDriverField ? !!sib.driverName : !!sib.helper;
-        await forkOne(sibHasTransport ? sib : { ...sib, ...(usesDriverField
-          ? { driverName: merged.driverName, driverId: merged.driverId, driverStatus: merged.driverStatus, rideRequired: true }
-          : { helper: merged.helper, helperId: merged.helperId, helperStatus: merged.helperStatus }) });
+        const pickup = pickupByDate.get(sib.date);
+        if (!pickup) continue;
+        await updateEvent(sib.id, {
+          title: sib.id === event.id ? merged.title.endsWith(' — Drop-off') ? merged.title : `${merged.title} — Drop-off` : `${sib.title} — Drop-off`,
+          linkedLegId: pickup.id,
+        });
+        await updateEvent(pickup.id, { linkedLegId: sib.id });
       }
       return siblings.length;
     };

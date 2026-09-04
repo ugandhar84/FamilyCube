@@ -26,6 +26,7 @@ import { showAlert } from '@/components/AppAlert';
 import {
   familyHasRecoveryKey, setUpFamilyRecoveryKey,
   changeFamilyRecoveryPasscode, recoverWithFamilyPasscode,
+  backfillRecoveryWraps,
 } from '@/lib/deviceRegistry';
 
 type Mode = 'loading' | 'setup' | 'change' | 'recover';
@@ -202,6 +203,14 @@ export default function DataRecoveryScreen() {
     setSetByMemberId(activeMemberId);
     setSetAt(new Date().toISOString());
     offerToSharePasscode(justSet);
+    // Live-reported: recovering a device only saw messages sent AFTER the
+    // passcode was set up — setUpFamilyRecoveryKey only makes the recovery
+    // key a wrap recipient for FUTURE writes. This backfills EXISTING chat/
+    // location/records this device can already decrypt, from this device,
+    // so the family's actual past history becomes recoverable too. Fire-
+    // and-forget: best-effort, doesn't block the success flow the user
+    // already sees above.
+    backfillRecoveryWraps(familyId, members).catch(() => {});
   };
 
   const handleChange = async () => {
@@ -249,6 +258,12 @@ export default function DataRecoveryScreen() {
           setSetByMemberId(activeMemberId);
           setSetAt(new Date().toISOString());
           offerToSharePasscode(justSet);
+          // A reset generates a brand-new recovery key pair — every
+          // previously-wrapped recovery copy (even from a prior backfill)
+          // is now for the OLD key and useless. Re-backfill from this
+          // device against the NEW key so reset doesn't silently regress
+          // recovery coverage back to "only future writes."
+          backfillRecoveryWraps(familyId, members).catch(() => {});
         }},
       ],
     );

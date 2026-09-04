@@ -310,6 +310,28 @@ export async function encryptForDevices(
 }
 
 /**
+ * Unwraps just the session key from one recipient's wrapped-key entry —
+ * the first half of decryptFromDevice, without also decrypting the message
+ * body. Needed to RE-wrap an existing message's session key for a NEW
+ * recipient (the recovery key backfill — see backfillChatRecoveryWraps in
+ * deviceRegistry.ts) without touching the message ciphertext at all, since
+ * the session key is unchanged; only a new wrapped copy of it is added.
+ * Throws on a wrong/mismatched key — callers should catch per-message
+ * rather than let one bad row abort a whole backfill batch.
+ */
+export async function unwrapSessionKeyFromDevice(
+  wrappedKey: string,
+  senderPublicKeyB64: string,
+): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getDeviceKeyPair();
+  const theirPub = b64ToBytes(senderPublicKeyB64);
+  const shared    = x25519.getSharedSecret(myPriv, theirPub);
+  const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
+  const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
+  return wrapCipher.decrypt(b64ToBytes(wrappedB64));
+}
+
+/**
  * Decrypt a message this device was a wrap target for. senderPublicKeyB64
  * is the sender device's public key (looked up from device_keys) — ECDH is
  * symmetric, so deriving with (myPrivate, theirPublic) reproduces the exact
@@ -321,14 +343,7 @@ export async function decryptFromDevice(
   senderPublicKeyB64: string,
 ): Promise<string> {
   try {
-    const { privateKey: myPriv } = await getDeviceKeyPair();
-    const theirPub = b64ToBytes(senderPublicKeyB64);
-    const shared    = x25519.getSharedSecret(myPriv, theirPub);
-
-    const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
-    const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
-    const sessionKey = wrapCipher.decrypt(b64ToBytes(wrappedB64));
-
+    const sessionKey = await unwrapSessionKeyFromDevice(wrappedKey, senderPublicKeyB64);
     const [ivB64, encB64] = ciphertext.split(':');
     const cipher  = gcm(sessionKey, b64ToBytes(ivB64));
     const decoded = cipher.decrypt(b64ToBytes(encB64));
@@ -367,6 +382,21 @@ export async function getOrCreateLocationSessionKey(memberId: string): Promise<U
   const key = randomBytes(32);
   await SecureStore.setItemAsync(storageKey, bytesToB64(key));
   return key;
+}
+
+/**
+ * Reads a member's location session key WITHOUT generating one if it
+ * doesn't already exist on this device — unlike getOrCreateLocationSessionKey
+ * above. Needed by the recovery backfill (deviceRegistry.ts), which needs
+ * to ask "does this device actually have a key for this member?" for every
+ * family member without side effects — calling the generating version for
+ * a member this device never tracked would wrongly manufacture a brand new
+ * key (and a real device_keys wrap for it) for someone whose location this
+ * device has never actually written.
+ */
+export async function peekLocationSessionKey(memberId: string): Promise<Uint8Array | null> {
+  const stored = await SecureStore.getItemAsync(LOCAL_LOCATION_KEY_PREFIX + memberId);
+  return stored ? b64ToBytes(stored) : null;
 }
 
 /**

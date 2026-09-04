@@ -26,7 +26,8 @@ import { supabase } from '@/lib/supabase';
 import {
   getDeviceId, getDevicePublicKeyB64, RECOVERY_DEVICE_ID,
   createFamilyRecoveryKey, recoverFamilyKeyWithPasscode, installRecoveredKeyPair,
-  rewrapRecoveryPrivateKey,
+  rewrapRecoveryPrivateKey, unwrapSessionKeyFromDevice, wrapLocationKeyForDevices,
+  peekLocationSessionKey, getOrCreateRecordsSessionKey, wrapRecordsKeyForDevices,
 } from '@/lib/chatCrypto';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 
@@ -230,4 +231,149 @@ export async function recoverWithFamilyPasscode(
   } catch {
     return { ok: false, error: 'Wrong passcode' };
   }
+}
+
+/**
+ * Retroactively protects EXISTING chat/location/records history with the
+ * family recovery key, right after it's set up (or reset). Without this,
+ * setUpFamilyRecoveryKey only registers the recovery key as a wrap
+ * recipient for FUTURE writes — every encrypt call reads
+ * getFamilyDeviceDirectory() fresh, so the next chat message/location
+ * update/record write naturally includes it, but nothing already encrypted
+ * gets touched. Live-reported: "even i recover the device wi[t]h the sec
+ * key from profile i could[]n[']t see proper decrypted text of old
+ * messages" — recovery worked exactly as built, but "as built" only ever
+ * covered data written after setup, which reads as broken to anyone who
+ * (reasonably) expects "recover the family" to mean ALL of the family's
+ * history, not just whatever came after.
+ *
+ * Call this once, right after setUpFamilyRecoveryKey/changeFamilyRecoveryPasscode's
+ * reset path succeeds, from a device that's actually part of the family
+ * (i.e. can already decrypt the data it's about to also wrap for the
+ * recovery key) — DataRecoveryScreen.tsx is the one caller. Best-effort:
+ * each of the three data types is independent, and within chat each
+ * message is independent — one failure (a message this device happens not
+ * to have a wrap for, a network blip) doesn't abort the rest. Returns
+ * counts for the caller to optionally surface, but the whole thing is
+ * silent-by-design on partial failure since a family that already
+ * successfully set up recovery shouldn't see it reported as an error —
+ * worst case, a later backfill run (e.g. next passcode change) catches
+ * whatever this pass missed.
+ */
+export async function backfillRecoveryWraps(
+  familyId: string, members: { id: string }[],
+): Promise<{ locationMembers: number; recordsBackfilled: boolean; chatMessages: number }> {
+  const result = { locationMembers: 0, recordsBackfilled: false, chatMessages: 0 };
+  if (!isFeatureEnabled('per_device_e2e')) return result;
+
+  const directory = await getFamilyDeviceDirectory(familyId);
+  const recoveryEntry = directory.filter(d => d.deviceId === RECOVERY_DEVICE_ID);
+  if (recoveryEntry.length === 0) return result; // nothing to backfill onto yet
+
+  // ── Location: only for members this device actually has a cached
+  // session key for (peekLocationSessionKey, non-generating) — re-wrapping
+  // the SAME long-lived key covers every past AND future location row for
+  // that member in one call, no per-row work needed. ──
+  for (const m of members) {
+    try {
+      const sessionKey = await peekLocationSessionKey(m.id);
+      if (!sessionKey) continue; // this device never tracked this member's location
+      const wrapped = await wrapLocationKeyForDevices(sessionKey, recoveryEntry);
+      const { error } = await supabase.from('member_location_keys').upsert(
+        wrapped.map(w => ({ member_id: m.id, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
+        { onConflict: 'member_id,device_id' },
+      );
+      if (!error) result.locationMembers++;
+    } catch (e: any) {
+      console.warn('[deviceRegistry] backfillRecoveryWraps location failed for member', m.id, e?.message ?? e);
+    }
+  }
+
+  // ── Records: one family-wide long-lived key — same reasoning, one
+  // re-wrap covers all past and future records. ──
+  try {
+    const recordsKey = await getOrCreateRecordsSessionKey(familyId);
+    const wrapped = await wrapRecordsKeyForDevices(recordsKey, recoveryEntry);
+    const { error } = await supabase.from('family_record_keys').upsert(
+      wrapped.map(w => ({ family_id: familyId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
+      { onConflict: 'family_id,device_id' },
+    );
+    result.recordsBackfilled = !error;
+  } catch (e: any) {
+    console.warn('[deviceRegistry] backfillRecoveryWraps records failed', e?.message ?? e);
+  }
+
+  // ── Chat: unlike location/records, every message has its OWN fresh
+  // session key — there's no single key to re-wrap once. Walk every
+  // message this device can currently decrypt (has its own
+  // chat_message_keys row for), unwrap that message's session key, and add
+  // a new wrapped-key row for the recovery device. Ciphertext itself is
+  // never touched, only a new wrapped-key copy is added per message. ──
+  try {
+    const deviceId = await getDeviceId();
+    const { data: myKeyRows, error: keysErr } = await supabase
+      .from('chat_message_keys')
+      .select('message_id, wrapped_key, chat_messages!inner(sender_id, sender_device_id)')
+      .eq('device_id', deviceId);
+    if (keysErr || !myKeyRows) throw keysErr ?? new Error('no rows');
+
+    // Recovery might already be wrapped for some of these (e.g. a message
+    // sent AFTER setup, or a previous backfill run) — skip those rather
+    // than redundantly re-wrapping. Chunked (not one .in() with every id at
+    // once) — a long-lived family's message count could otherwise build a
+    // query too large for a single request; 500 is comfortably under any
+    // practical URL/param limit.
+    const CHUNK = 500;
+    const allMessageIds = myKeyRows.map((r: any) => r.message_id);
+    const alreadyWrapped = new Set<string>();
+    for (let i = 0; i < allMessageIds.length; i += CHUNK) {
+      const chunk = allMessageIds.slice(i, i + CHUNK);
+      const { data: existingRecoveryRows } = await supabase
+        .from('chat_message_keys')
+        .select('message_id')
+        .eq('device_id', RECOVERY_DEVICE_ID)
+        .in('message_id', chunk);
+      for (const r of existingRecoveryRows ?? []) alreadyWrapped.add((r as any).message_id);
+    }
+
+    // Sender device public keys, batched once rather than one query per
+    // message — a family's real device count is small, so this is cheap.
+    const senderDeviceIds = [...new Set(
+      myKeyRows.map((r: any) => r.chat_messages?.sender_device_id).filter(Boolean),
+    )];
+    const { data: senderDeviceRows } = senderDeviceIds.length > 0
+      ? await supabase.from('device_keys').select('device_id, member_id, public_key').in('device_id', senderDeviceIds)
+      : { data: [] as any[] };
+    const senderPubKey = (deviceId2: string, memberId: string) =>
+      (senderDeviceRows ?? []).find((d: any) => d.device_id === deviceId2 && d.member_id === memberId)?.public_key as string | undefined;
+
+    const newRows: { message_id: string; device_id: string; wrapped_key: string }[] = [];
+    for (const row of myKeyRows as any[]) {
+      if (alreadyWrapped.has(row.message_id)) continue;
+      const senderDeviceId = row.chat_messages?.sender_device_id;
+      const senderId = row.chat_messages?.sender_id;
+      if (!senderDeviceId || !senderId) continue; // legacy pre-per_device_e2e message, nothing to unwrap here
+      const pubKey = senderPubKey(senderDeviceId, senderId);
+      if (!pubKey) continue;
+      try {
+        const sessionKey = await unwrapSessionKeyFromDevice(row.wrapped_key, pubKey);
+        const [wrapped] = await wrapLocationKeyForDevices(sessionKey, recoveryEntry);
+        newRows.push({ message_id: row.message_id, device_id: wrapped.deviceId, wrapped_key: wrapped.wrappedKey });
+      } catch {
+        // One bad/mismatched row shouldn't abort the whole backfill.
+      }
+    }
+
+    if (newRows.length > 0) {
+      // insert, not upsert — alreadyWrapped above already excludes any
+      // (message_id, RECOVERY_DEVICE_ID) row that exists.
+      const { error: insertErr } = await supabase.from('chat_message_keys').insert(newRows);
+      if (!insertErr) result.chatMessages = newRows.length;
+      else console.warn('[deviceRegistry] backfillRecoveryWraps chat insert failed', insertErr.message);
+    }
+  } catch (e: any) {
+    console.warn('[deviceRegistry] backfillRecoveryWraps chat failed', e?.message ?? e);
+  }
+
+  return result;
 }

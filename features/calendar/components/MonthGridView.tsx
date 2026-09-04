@@ -14,7 +14,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { roleStyle } from './EventCard';
+import { assigneeStyle, MultiPersonTimeFill } from './EventCard';
 import { toDateStr, parseDate, DAY_SHORT, CAT_DOT, MONTH_LABELS, buildMonthGrid } from './calendarDateHelpers';
 import { eventAssignee } from '@/store/eventStore';
 
@@ -89,7 +89,10 @@ export function DayEventsSummaryCard({
         <View style={{ gap: 8 }}>
           {shown.map(ev => {
             const assignee = members.find(m => m.id === ev.memberId);
-            const rs = roleStyle(assignee?.role, colors);
+            const rs = assigneeStyle(assignee, colors, isDark);
+            const multiPersonColors = (ev.memberIds?.length ?? 0) > 1
+              ? ev.memberIds!.map(id => assigneeStyle(members.find(m => m.id === id), colors, isDark).dot)
+              : null;
             const { time, ampm } = fmtTimeParts(ev.time);
             // This card previously showed zero ride/driver context at all —
             // a "needs a ride" or "driver confirmed" event looked identical
@@ -155,8 +158,11 @@ export function DayEventsSummaryCard({
                   })()}
                 </View>
                 {assignee && (
-                  <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40' }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>
+                  <View style={{ backgroundColor: multiPersonColors ? colors.card : (isDark ? colors.card : '#fff'), borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40', overflow: 'hidden' }}>
+                    {multiPersonColors && (
+                      <MultiPersonTimeFill hexColors={multiPersonColors} scrimColor={colors.card} size={20} radius={8} />
+                    )}
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: multiPersonColors ? colors.textPrimary : rs.text }}>{assignee.name.split(' ')[0]}</Text>
                   </View>
                 )}
               </TouchableOpacity>

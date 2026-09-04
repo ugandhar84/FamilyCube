@@ -22,7 +22,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, ClipPath, Defs, G } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
@@ -31,6 +31,7 @@ import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
+import { memberColorStyle } from '@/constants/memberColors';
 import { s } from './calendarCardStyles';
 import { isEventPast, isEventNow } from './calendarDateHelpers';
 
@@ -40,6 +41,66 @@ function MapPinIcon({ c, size = 13 }: { c: string; size?: number }) {
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22z" fill={c} />
       <Circle cx={12} cy={9.5} r={2.6} fill="#fff" />
+    </Svg>
+  );
+}
+
+// Module-scope, auto-incrementing so two MultiPersonTimeFill instances on
+// screen at once (e.g. two multi-passenger cards in the same Agenda list)
+// never collide on the same <ClipPath> id — react-native-svg resolves
+// `url(#id)` globally per surface, not scoped to the individual <Svg>.
+let _mptfIdSeq = 0;
+
+/**
+ * MultiPersonTimeFill — diagonal-stripe tint filling the event card's own
+ * time chip whenever a card belongs to more than one person: multiple ride
+ * passengers, several kids sharing one family event, more than one
+ * "for/patient" — anywhere ev.memberIds has 2+ entries. That chip is
+ * normally one flat rs.badge tint (one person's color) — this replaces it
+ * with one diagonal band per involved person's own color instead of
+ * arbitrarily picking just the first one, so the chip still reads as
+ * "everyone this touches." Bands run at reduced opacity with a
+ * theme-card-colored scrim on top (mirrors the flat chip's own soft ~18%
+ * tint elsewhere) — raw brand hues at full strength read as a bold color
+ * block rather than the soft wash every single-person chip already has;
+ * live design review flagged the first pass as "still dark."
+ */
+export function MultiPersonTimeFill({ hexColors, scrimColor, size = 40, radius = 11 }: {
+  hexColors: string[]; scrimColor: string; size?: number; radius?: number;
+}) {
+  const clipId = useRef(`mptf-clip-${_mptfIdSeq++}`).current;
+  if (hexColors.length <= 1) return null;
+  const bandCount = Math.max(hexColors.length, 2);
+  // Diagonal bands drawn oversized and rotated, clipped to the chip's own
+  // rounded-rect footprint — cheap, resolution-independent (no repeating-
+  // pattern tiling math), and reads correctly at any size.
+  const bandW = (size * 2.4) / bandCount;
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={StyleSheet.absoluteFillObject}>
+      <Defs>
+        <ClipPath id={clipId}>
+          <Rect x={0} y={0} width={size} height={size} rx={radius} ry={radius} />
+        </ClipPath>
+      </Defs>
+      <G clipPath={`url(#${clipId})`} opacity={0.55}>
+        {hexColors.map((c, i) => (
+          <Rect
+            key={i}
+            x={i * bandW - size * 0.5}
+            y={-size * 0.4}
+            width={bandW}
+            height={size * 1.8}
+            fill={c}
+            transform={`rotate(28 ${i * bandW - size * 0.5 + bandW / 2} ${size / 2})`}
+          />
+        ))}
+      </G>
+      {/* Scrim — softens the bands toward the theme's own card color,
+          same relative effect in both light (lightens toward white) and
+          dark (mutes toward the dark card tone) mode, since it always
+          reads from the caller's actual colors.card rather than a fixed
+          white. */}
+      <Rect x={0} y={0} width={size} height={size} rx={radius} ry={radius} fill={scrimColor} opacity={0.62} />
     </Svg>
   );
 }
@@ -86,6 +147,22 @@ export function roleStyle(role: string | undefined, colors: any) {
   return { dot, badge: dot + '20', text: dot };
 }
 
+/**
+ * Per-person card color — live-requested: two members of the same role
+ * (two kids, two parents) previously looked identical on every event card
+ * (roleStyle() keys off role alone). Prefers the member's own color
+ * (assign_member_color() DB trigger — constants/memberColors.ts), falling
+ * back to the old role-based style only for a member who genuinely has no
+ * color yet (a row synced before that migration ran, or with no role
+ * match at all). Every EventCardRow/EventCardTimeline call site that used
+ * to call roleStyle(assignee?.role, colors) directly should call this
+ * instead, passing the member object itself rather than just its role.
+ */
+export function assigneeStyle(member: FamilyMember | undefined, colors: any, isDark: boolean) {
+  if (member?.color) return memberColorStyle(member.color, isDark);
+  return roleStyle(member?.role, colors);
+}
+
 const CAT_COLOR: Record<string, { dot: string; badge: string; text: string }> = {
   Medical:  { dot: '#EF4444', badge: '#FEE2E2', text: '#DC2626' },
   Work:     { dot: '#A855F7', badge: '#F3E8FF', text: '#7C3AED' },
@@ -130,7 +207,16 @@ export interface EventCardRowProps {
 
 export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress, timeStyle = 'inline', showCategory = false, showLocation = true, showHelperStatus = false, isViewerParent = false }: EventCardRowProps) {
   const assignee = members.find(m => m.id === ev.memberId);
-  const rs = roleStyle(assignee?.role, colors);
+  const rs = assigneeStyle(assignee, colors, isDark);
+  // Multiple people tied to this one card — several ride passengers, more
+  // than one kid on a shared family event, etc — get a diagonal-stripe
+  // edge instead of one person's flat color standing in for everyone.
+  // ev.memberIds is the multi-assignee list (ev.memberId is the single/
+  // primary one, already resolved above as `assignee`); only meaningful
+  // once it holds 2+ real members.
+  const multiPersonColors = (ev.memberIds?.length ?? 0) > 1
+    ? ev.memberIds!.map(id => assigneeStyle(members.find(m => m.id === id), colors, isDark).dot)
+    : null;
   const timeParts = fmtTimePartsLocal(ev.time);
   // Driver/accompanying-adult — calendar_events now has real driver_id/
   // helper_id columns, so resolve by id when available instead of a name
@@ -203,8 +289,12 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
             </View>
           )}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
+          <View style={{ width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            backgroundColor: multiPersonColors ? colors.card : (isDark ? rs.dot + '1A' : rs.badge),
+            borderWidth: 1, borderColor: rs.dot + '40' }}>
+            {multiPersonColors && (
+              <MultiPersonTimeFill hexColors={multiPersonColors} scrimColor={colors.card} size={40} radius={11} />
+            )}
             <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{timeParts.time}</Text>
             <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{timeParts.ampm}</Text>
           </View>

@@ -306,7 +306,12 @@ export default function SetupFamilyScreen() {
         p_member_id: memberId,
         p_member_name: name.trim(),
         p_avatar: avatar,
-        p_color: color,
+        // p_color intentionally omitted (defaults to null) — personal
+        // color is now auto-assigned by assign_member_color() on insert,
+        // not a decision made during onboarding. See that migration for
+        // why: a raw hex chosen here couldn't adapt to dark mode, and a
+        // free 5-swatch pick had no uniqueness guarantee against later
+        // members anyway.
         p_pin: pin,
         p_expo_push_token: expoPushToken ?? null,
       });
@@ -345,7 +350,11 @@ export default function SetupFamilyScreen() {
         id: memberId, name: name.trim(), role: 'parent' as any,
         emoji: isPhotoUrl ? undefined : avatarValue,
         avatarUrl: isPhotoUrl ? avatarValue : undefined,
-        color, coins: 0, mainCoins: 0, gpCoins: 0, xp: 0, level: 1, maxXp: 100,
+        // color intentionally omitted — the DB trigger assigned the real
+        // value server-side (see the RPC call above); this optimistic
+        // local object gets superseded by the real row on the next
+        // syncFromDB(), same as every other server-assigned field here.
+        coins: 0, mainCoins: 0, gpCoins: 0, xp: 0, level: 1, maxXp: 100,
         streak: 0, pin, pinEnabled: true, familyId: family.id,
         timezone: 'America/New_York', title: 'Explorer',
         questsCompleted: 0, questsPending: 0,
@@ -547,13 +556,7 @@ export default function SetupFamilyScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Profile color</Text>
-                <View style={s.colorRow}>
-                  {COLORS.map(c => (
-                    <TouchableOpacity key={c} style={[s.colorDot, { backgroundColor: c }, color === c && s.colorDotActive]} onPress={() => setColor(c)} />
-                  ))}
-                </View>
-                <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary }]} onPress={handleProfileNext}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary, marginTop: 20 }]} onPress={handleProfileNext}>
                   <Text style={s.btnText}>Next — Set PIN</Text>
                 </TouchableOpacity>
               </View>
@@ -722,9 +725,6 @@ const s = StyleSheet.create({
   input:        { borderRadius: 14, borderWidth: 1.5, padding: 14, fontSize: 16, width: '100%', marginBottom: 4 },
   emojiGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   emojiBtn:     { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  colorRow:     { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  colorDot:     { width: 32, height: 32, borderRadius: 16 },
-  colorDotActive: { borderWidth: 3, borderColor: '#fff', transform: [{ scale: 1.15 }], shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4 },
   btn:          { borderRadius: 16, paddingVertical: 15, paddingHorizontal: 28, alignItems: 'center', marginTop: 12, minWidth: 220 },
   btnText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
   error:        { color: '#EF4444', fontSize: 13, textAlign: 'center', marginTop: 8 },

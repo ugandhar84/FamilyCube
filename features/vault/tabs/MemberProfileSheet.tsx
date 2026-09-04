@@ -43,7 +43,8 @@ import { Coins, Flame, Star, Car, Clock, Lock, Pencil, ChevronRight, Mail, Refre
 import { fmtTime } from '@/lib/dates';
 import { roleColor } from './MemberCard';
 import { PhotoPickerSheet } from './RosterTab';
-import { RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMember } from '@/store/familyStore';
+import { RELATIONSHIPS_BY_ROLE, useFamilyStore, type MemberRole, type FamilyMember } from '@/store/familyStore';
+import { PALETTE_ORDER, MEMBER_COLORS, type MemberColorKey } from '@/constants/memberColors';
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -523,6 +524,33 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
   const currentAvatarPreview = photoUri ?? member.avatarUrl;
   const currentEmojiPreview = pickedEmoji ?? (member.avatarUrl ? undefined : member.emoji);
 
+  // Personal color — saved immediately on tap (own updateMember call, not
+  // bundled into the Save button below) since it's a standalone preference
+  // with no other field depending on it, same as a toggle. Optimistic
+  // local state so the swatch grid re-renders instantly rather than
+  // waiting on the round trip; savingColor guards against a second tap
+  // firing a duplicate write mid-flight.
+  const familyMembers = useFamilyStore(s => s.members);
+  const updateMemberColor = useFamilyStore(s => s.updateMember);
+  const [colorDraft, setColorDraft] = useState<MemberColorKey | undefined>(member.color);
+  const [savingColor, setSavingColor] = useState(false);
+  const takenColors = new Set(
+    familyMembers.filter(m => m.id !== member.id && m.color).map(m => m.color as MemberColorKey)
+  );
+  const handlePickColor = async (key: MemberColorKey) => {
+    if (key === colorDraft || savingColor) return;
+    const prev = colorDraft;
+    setColorDraft(key);
+    setSavingColor(true);
+    try {
+      await updateMemberColor(member.id, { color: key });
+    } catch {
+      setColorDraft(prev); // roundtrip failed — same rollback pattern updateMember's own callers use
+    } finally {
+      setSavingColor(false);
+    }
+  };
+
   const initialRole = member.role === 'kid' ? 'child' : member.role === 'teen' ? 'teenager' : (member.role ?? 'child');
   const [role, setRole] = useState(initialRole);
   const [hasCar, setHasCar] = useState(member.hasCar ?? (initialRole === 'parent'));
@@ -639,6 +667,37 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, r
             <Text style={{ fontSize: 18 }}>{e}</Text>
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* Personal color — tints this member's own events/chores on
+          Calendar, Agenda, and Hub (see assign_member_color() DB trigger).
+          Already-claimed colors are disabled/dimmed rather than hidden, so
+          it's clear WHY a swatch is unavailable, not just that it's
+          missing — a family only has 12 to go around. */}
+      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginTop: 10, marginBottom: 6 }}>Color</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+        {PALETTE_ORDER.map(key => {
+          const swatch = MEMBER_COLORS[key];
+          const hex = isDark ? swatch.dark : swatch.light;
+          const takenByOther = takenColors.has(key);
+          const selected = colorDraft === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              disabled={takenByOther || savingColor}
+              onPress={() => handlePickColor(key)}
+              accessibilityLabel={`${swatch.label}${takenByOther ? ', already used by another member' : ''}`}
+              style={{
+                width: 30, height: 30, borderRadius: 15, backgroundColor: hex,
+                opacity: takenByOther ? 0.25 : 1,
+                borderWidth: selected ? 3 : 0, borderColor: colors.textPrimary,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {selected && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' }} />}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginTop: 10, marginBottom: 6 }}>Name</Text>

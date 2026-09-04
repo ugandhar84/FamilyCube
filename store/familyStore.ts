@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import type { MemberColorKey } from '@/constants/memberColors';
 
 // Same fallback pattern already used in choreStore.ts/temporaryApproverStore.ts.
 const genId = (): string =>
@@ -118,6 +119,13 @@ export interface FamilyMember {
   pin?: string;
   pinEnabled?: boolean;
   familyId?: string;
+  // Personal color key (constants/memberColors.ts MemberColorKey) — tints
+  // this member's events/chores on Calendar/Agenda/Hub independent of
+  // role. Auto-assigned by the DB (assign_member_color() trigger) on
+  // insert; a member row synced before that migration ran, or created via
+  // some path that bypasses the trigger, can still be undefined —
+  // memberColorStyle() falls back to 'terracotta' for that case.
+  color?: MemberColorKey;
   // Teen-specific profile fields
   hasCar?: boolean;           // Opts teen into ride/pickup dispatch pool
   rideEarningsPerRun?: number; // Parent-configured coins per pickup run
@@ -371,6 +379,12 @@ function fromRow(row: any): FamilyMember {
     emoji:           isUrl ? undefined : (row.avatar || undefined),
     avatarUrl:       isUrl ? row.avatar : undefined,
     familyId:        row.family_id ?? undefined,
+    // A legacy row can hold a plain hex string from the earlier half-built
+    // attempt (see 20260931240000_assign_member_color.sql) if it was
+    // synced to this device's cache before that migration ran server-side
+    // — guard against passing a non-key value through to memberColorStyle,
+    // which would silently mis-render rather than fall back cleanly.
+    color:           typeof row.color === 'string' && /^[a-z]+$/.test(row.color) ? row.color as MemberColorKey : undefined,
     coins,
     mainCoins:       row.main_coins ?? coins,
     gpCoins:         row.gp_coins ?? 0,
@@ -423,6 +437,17 @@ function toRow(m: FamilyMember) {
     sub_role: m.subRole ?? null,
     relationship: m.relationship ?? null,
     avatar: m.avatarUrl ?? m.emoji ?? '👤',
+    // Only ever included when actually set — every updateMember() call
+    // sends the FULL toRow() payload regardless of which single field the
+    // caller meant to change (see quests_completed's own comment above for
+    // why that matters). A member whose color hasn't loaded into local
+    // state yet (e.g. an older cached row, or the in-flight moment right
+    // after addMember's insert response is still being merged) must never
+    // have this write null/undefined over whatever the DB trigger already
+    // assigned — omitting the key entirely when m.color is unset leaves
+    // the DB's own value untouched, which `color: m.color ?? null` would
+    // not.
+    ...(m.color ? { color: m.color } : {}),
     coins: m.coins,
     main_coins: m.mainCoins,
     gp_coins:   m.gpCoins,

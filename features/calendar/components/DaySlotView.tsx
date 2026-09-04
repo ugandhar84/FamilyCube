@@ -12,7 +12,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { TYPO } from '@/constants/theme';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { roleStyle } from './EventCard';
+import { assigneeStyle, MultiPersonTimeFill } from './EventCard';
 import { timeToMinutes } from './calendarDateHelpers';
 
 // One fixed-height row per hour (5am–11pm), not a proportional time-block
@@ -57,7 +57,16 @@ export default function DaySlotView({
               <View style={{ flex: 1, gap: 6 }}>
                 {matching.map(ev => {
                   const assignee = members.find(m => m.id === ev.memberId);
-                  const rs = roleStyle(assignee?.role, colors);
+                  const rs = assigneeStyle(assignee, colors, isDark);
+                  // Same "everyone this touches, not just the first name"
+                  // treatment as the boxed EventCardRow's time chip —
+                  // several people sharing one event (not to be confused
+                  // with DIFFERENT people's events landing in the same
+                  // hour bucket above, which this view already stacks as
+                  // separate cards, never overlapping).
+                  const multiPersonColors = (ev.memberIds?.length ?? 0) > 1
+                    ? ev.memberIds!.map(id => assigneeStyle(members.find(m => m.id === id), colors, isDark).dot)
+                    : null;
                   return (
                     <TouchableOpacity key={ev.id} onPress={() => onSelect(ev)}
                       onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined} delayLongPress={450}
@@ -67,8 +76,11 @@ export default function DaySlotView({
                           {ev.title}
                         </Text>
                         {assignee && (
-                          <View style={{ backgroundColor: rs.dot, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{assignee.name.split(' ')[0]}</Text>
+                          <View style={{ backgroundColor: multiPersonColors ? colors.card : rs.dot, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, overflow: 'hidden' }}>
+                            {multiPersonColors && (
+                              <MultiPersonTimeFill hexColors={multiPersonColors} scrimColor={colors.card} size={20} radius={6} />
+                            )}
+                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: multiPersonColors ? colors.textPrimary : '#fff' }}>{assignee.name.split(' ')[0]}</Text>
                           </View>
                         )}
                       </View>

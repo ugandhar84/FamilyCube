@@ -44,7 +44,7 @@ import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
-import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } from './components/EventCard';
+import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, assigneeStyle, LocationLink } from './components/EventCard';
 import { s as calCardStyles } from './components/calendarCardStyles';
 import { AiConflictBanner, type AiConflict, type AiResult } from './components/AiConflictBanner';
 import { CalendarSearchBar } from './components/CalendarSearchBar';
@@ -1216,7 +1216,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
               </TouchableOpacity>
               {members.map(m => {
-                const rs = roleStyle(m.role, colors);
+                const rs = assigneeStyle(m, colors, isDark);
                 const isSel = filterMember === m.id;
                 return (
                   <TouchableOpacity key={m.id}

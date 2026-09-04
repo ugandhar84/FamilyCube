@@ -485,6 +485,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     // Declining routes into eventStore's own auto-open-pool-on-decline,
     // so GP/Teen become the fallback without the creating parent having to
     // notice and manually flip those toggles.
+    // eventInput.helperId below defaults to this — only reassigned when
+    // the auto-assign branch actually fires, so an explicit MemberPicker
+    // choice (the normal `helperId` state) is never touched otherwise.
+    let helperIdOverride = helperId;
     if (isParent && category === 'Ride' && !helper && !openToGrandparents && !openToTeens) {
       // hasCar !== false — a parent who's explicitly turned off "Can Drive"
       // (RosterTab) shouldn't be auto-handed a ride they can't fulfill,
@@ -492,6 +496,18 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       const otherParents = members.filter(m => m.role === 'parent' && m.id !== activeMemberId && m.hasCar !== false);
       if (otherParents.length === 1) {
         helper = otherParents[0].name;
+        // Was setting `helper` (the display name) alone, leaving helperId
+        // null — confirm_event_assignment's legacy fallback requires
+        // helper_id = p_member_id to find the row at all, so this
+        // auto-assigned ride could NEVER be confirmed by anyone: tapping
+        // "Confirm I'll do it" always failed with "Couldn't confirm —
+        // please try again" (live-reported, traced from a recurring Ride
+        // created via this exact auto-assign path). helperId is what
+        // resolves "am I the one this is asking" everywhere else in the
+        // app (classifyEventUrgency, deriveEventActions, etc.) — a
+        // name-only assignment was already a latent bug for those too,
+        // this auto-assign path just never set it in the first place.
+        helperIdOverride = otherParents[0].id;
       }
     }
 
@@ -536,8 +552,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       // remove those options; Reassign/Cancel still reach them from a
       // confirmed assignment too.
       helper,
-      helperId,
-      helperStatus:    helper ? (helperId === activeMemberId ? 'confirmed' : 'pending') : undefined,
+      helperId:        helperIdOverride,
+      helperStatus:    helper ? (helperIdOverride === activeMemberId ? 'confirmed' : 'pending') : undefined,
       helperRequestedBy: isKid ? activeMember?.name : undefined,
       // Medical
       doctorName:      doctorName.trim() || undefined,

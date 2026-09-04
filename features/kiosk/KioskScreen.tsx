@@ -25,6 +25,7 @@ import {
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import AskCubeChat from '@/components/AskCubeChat';
 import { KioskHubTab } from './tabs/KioskHubTab';
 import { KioskTasksTab } from './tabs/KioskTasksTab';
 import { KioskScheduleTab } from './tabs/KioskScheduleTab';
@@ -60,9 +61,11 @@ export default function KioskScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const [tab, setTab] = useState<KioskTab>('hub');
+  const [askCubeOpen, setAskCubeOpen] = useState(false);
 
   const active: FamilyMember | undefined = members.find(m => m.id === activeMemberId) ?? members[0];
   const isSenior = active?.role === 'senior';
+  const isParent = active?.role === 'parent';
   const rail = isSenior ? RAIL_SENIOR : RAIL_DEFAULT;
 
   // A senior profile has no Schedule/FindFam/Store tabs — if the previously
@@ -90,27 +93,52 @@ export default function KioskScreen() {
                 <Pressable
                   key={key}
                   onPress={() => setTab(key)}
-                  style={[s.railBtn, on && { backgroundColor: colors.primaryLight }]}
+                  style={s.railBtnWrap}
                 >
-                  <Icon size={22} color={on ? colors.primary : colors.textTertiary} />
-                  <Text style={[s.railLabel, { color: on ? colors.primary : colors.textTertiary }]}>{label}</Text>
+                  {on && <View style={[s.railIndicator, { backgroundColor: colors.primary }]} />}
+                  <View style={[s.railBtn, on && { backgroundColor: colors.primaryLight }]}>
+                    <Icon size={22} color={on ? colors.primary : colors.textTertiary} />
+                    <Text style={[s.railLabel, { color: on ? colors.primary : colors.textTertiary }]}>{label}</Text>
+                  </View>
                 </Pressable>
               );
             })}
           </View>
-          {/* Family member switcher — a shared kitchen tablet needs to swap
-              whose view is showing without leaving kiosk mode at all; reuses
-              setActiveMember exactly like the phone app's own profile
-              switcher, just presented as a compact avatar stack instead of a
-              full-screen picker since there's rail space for it here. */}
-          <View style={s.memberStack}>
-            {otherMembers.slice(0, 4).map(m => (
-              <Pressable key={m.id} onPress={() => setActiveMember(m.id)} style={s.memberDot}>
-                <View style={[s.memberAvatar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Text style={s.memberEmoji}>{m.emoji ?? '👤'}</Text>
+
+          {/* Ask Cube — same parent-only gate the phone tab layout's shared
+              FAB uses (AskCubeChat can act broadly across the household on
+              the parent's behalf; not something a kid/teen/GP should
+              trigger). Kiosk mode has no bottom tab bar for the phone's FAB
+              to float above, so this rail is Ask Cube's only entry point
+              here rather than trying to reuse that absolutely-positioned
+              button in a layout it wasn't designed for. */}
+          <View style={s.railBottom}>
+            {isParent && (
+              <Pressable onPress={() => setAskCubeOpen(true)} style={s.askCubeBtn}>
+                <View style={[s.askCubeGradient, { backgroundColor: colors.pink, shadowColor: colors.pink }]}>
+                  <Sparkles size={21} color="#fff" />
                 </View>
               </Pressable>
-            ))}
+            )}
+
+            {/* Family member switcher — a shared kitchen tablet needs to
+                swap whose view is showing without leaving kiosk mode at
+                all; reuses setActiveMember exactly like the phone app's own
+                profile switcher, just presented as a compact avatar stack
+                instead of a full-screen picker since there's rail space for
+                it here. */}
+            <View style={s.memberStack}>
+              {otherMembers.slice(0, 4).map(m => {
+                const tint = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
+                return (
+                  <Pressable key={m.id} onPress={() => setActiveMember(m.id)} style={s.memberDot}>
+                    <View style={[s.memberAvatar, { backgroundColor: colors.card, borderColor: tint }]}>
+                      <Text style={s.memberEmoji}>{m.emoji ?? '👤'}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
 
@@ -125,6 +153,15 @@ export default function KioskScreen() {
           {effectiveTab === 'memories' && isSenior && <KioskMemoriesTab colors={colors} isDark={isDark} />}
         </View>
       </View>
+
+      {isParent && (
+        <AskCubeChat
+          visible={askCubeOpen}
+          onClose={() => setAskCubeOpen(false)}
+          activeMember={active}
+          members={members}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -133,16 +170,24 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   row: { flex: 1, flexDirection: 'row' },
   rail: {
-    width: 84, borderRightWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center', paddingVertical: 20, justifyContent: 'space-between',
+    width: 88, borderRightWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center', paddingVertical: 22, justifyContent: 'space-between',
   },
-  railGroup: { alignItems: 'center', gap: 8 },
+  railGroup: { alignItems: 'center', gap: 10 },
+  railBtnWrap: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
+  railIndicator: { position: 'absolute', left: 0, width: 3, height: 28, borderRadius: 2 },
   railBtn: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 3 },
   railLabel: { fontSize: 10, fontWeight: '800' },
-  memberStack: { alignItems: 'center', gap: 8 },
-  memberDot: { opacity: 0.85 },
+  railBottom: { alignItems: 'center', gap: 16 },
+  askCubeBtn: { marginBottom: 2 },
+  askCubeGradient: {
+    width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
+    shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  memberStack: { alignItems: 'center', gap: 9 },
+  memberDot: { opacity: 0.9 },
   memberAvatar: {
-    width: 40, height: 40, borderRadius: 20, borderWidth: 1.5,
+    width: 42, height: 42, borderRadius: 21, borderWidth: 2,
     alignItems: 'center', justifyContent: 'center',
   },
   memberEmoji: { fontSize: 18 },

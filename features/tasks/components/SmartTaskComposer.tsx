@@ -138,6 +138,10 @@ export default function SmartTaskComposer({
   // successful AI classification opens the toggle and fills it automatically.
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState('');
+  // Same touched-guard pattern as touchedPickup/touchedReturnTime — once
+  // the user has manually edited/cleared an auto-filled notes fallback, a
+  // later re-detection must not silently overwrite it.
+  const [touchedNotes, setTouchedNotes] = useState(false);
 
   // Grocery-list attachment — same shape/behavior as AddQuestModal's own
   // linkGroceries block (features/quests/components/AddQuestGrocerySection.tsx
@@ -218,7 +222,7 @@ export default function SmartTaskComposer({
     setLinkGroceries(false); setGroceryListOpen(false); setGroceryItemsList([]);
     setExpandedStores(new Set()); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
-    setShowNotes(false); setNotes('');
+    setShowNotes(false); setNotes(''); setTouchedNotes(false);
     setSuggestion(null); setLoadingSuggestion(false);
     dictation.reset();
   };
@@ -317,6 +321,25 @@ export default function SmartTaskComposer({
     // pattern as urgent above: once the user manually taps the toggle,
     // further typing/re-detection won't silently flip it back.
     if (!touchedAlertCall && d.alertCall) setAlertCall(true);
+    // Safety net for detail the local parser has no field for at all —
+    // live QA findings: "coach is Mike, bring cleats" (Sports), "RSVP by
+    // Wednesday, no gifts please" (Birthday/Event), and a second errand in
+    // one sentence (Errand) are silently and completely discarded today,
+    // with nothing anywhere recording that anything was dropped. Rather
+    // than build fragile per-category extraction for each (more surface
+    // area for new bugs), auto-open Notes with the raw sentence whenever
+    // the category is one of these known-lossy ones and notes are still
+    // empty — the user sees and can trim/keep whatever the structured
+    // fields didn't capture, instead of it vanishing outright. Scoped to
+    // categories the QA audit actually found this for, not applied
+    // blanket, so a clean single-fact sentence (most Medical/Study/Ride
+    // input) doesn't get a redundant notes dump.
+    const category = d.category.kind === 'event' ? d.category.eventCategory : d.category.questCategory;
+    const lossyCategories = ['Sports', 'Birthday', 'Errand'];
+    if (!touchedNotes && !notes.trim() && category && lossyCategories.includes(category) && input.trim().length > 0) {
+      setNotes(input.trim().slice(0, 300));
+      setShowNotes(true);
+    }
   };
 
   // Instant local re-classification on every keystroke — no debounce, no
@@ -1372,7 +1395,7 @@ export default function SmartTaskComposer({
                 classification opens it automatically with what the AI
                 inferred (family-ai's `requirements`, see applyAiResult). */}
             {!showNotes ? (
-              <Pressable onPress={() => setShowNotes(true)}
+              <Pressable onPress={() => { setShowNotes(true); setTouchedNotes(true); }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 }}>
                 <PenLine size={12} color={colors.textTertiary} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>+ Add a note</Text>
@@ -1381,13 +1404,13 @@ export default function SmartTaskComposer({
               <View style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Notes <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
-                  <Pressable onPress={() => { setShowNotes(false); setNotes(''); }}>
+                  <Pressable onPress={() => { setShowNotes(false); setNotes(''); setTouchedNotes(true); }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Remove</Text>
                   </Pressable>
                 </View>
                 <TextInput
                   value={notes}
-                  onChangeText={t => setNotes(t.slice(0, 300))}
+                  onChangeText={t => { setNotes(t.slice(0, 300)); setTouchedNotes(true); }}
                   placeholder="Any extra details or instructions…"
                   placeholderTextColor={colors.textTertiary}
                   multiline

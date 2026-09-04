@@ -14,12 +14,13 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
-import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle } from 'lucide-react-native';
+import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle, RotateCcw, Gift } from 'lucide-react-native';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useChatStore, type ChatMessage } from '@/store/chatStore';
+import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 
 const CHAT_CHANNEL = 'all';
@@ -104,6 +105,21 @@ export function KioskHubTab({ active, members, colors, isDark }: {
     const base = quests.filter(q => q.status === 'in_progress' || q.status === 'claimed');
     return isSenior ? base.filter(q => q.assignedToId === active.id || q.sponsorUserId === active.id) : base;
   }, [quests, isSenior, active.id]);
+  // Live-reported gap this closes too: a chore a parent sent back for redo
+  // (choreAdapter maps the DB's redo_requested status to Quest status
+  // 'declined') had NO glance visibility on the Hub either — same bug just
+  // fixed on the Tasks board (KioskTasksTab's new "Needs Redo" column),
+  // surfaced here too since the Hub's whole point is "everything at a
+  // glance" without needing to open Tasks.
+  const needsRedo = useMemo(() => quests.filter(q => q.status === 'declined'), [quests]);
+  // Store redemption approvals are parent-only on mobile (StoreScreen's own
+  // gate) — same rule here, no new permission invented.
+  const isParent = active.role === 'parent';
+  const redemptions = useRewardStore(s => s.redemptions);
+  const pendingRedemptions = useMemo(
+    () => isParent ? redemptions.filter(r => r.status === 'pending') : [],
+    [redemptions, isParent],
+  );
 
   const recentChat = useMemo(() => chatMessages.slice(-3).reverse(), [chatMessages]);
 
@@ -134,6 +150,34 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           footer down to the actual bottom via marginTop: 'auto' on it —
           content taller than the screen still scrolls normally either way. */}
       <View style={{ flex: 1, minHeight: '100%' }}>
+        {/* Needs-attention strip — only rendered when there's genuinely
+            something in it ("hide unnecessary info," live-requested), not
+            a permanent empty-state row. Redo requests + pending store
+            redemptions are exactly the kind of thing a parent glancing at
+            the kitchen tablet needs to catch without opening Tasks/Store
+            — the Hub's whole purpose is "everything at a glance," and both
+            of these previously had zero visibility here at all. */}
+        {(needsRedo.length > 0 || pendingRedemptions.length > 0) && (
+          <View style={s.alertStrip}>
+            {needsRedo.length > 0 && (
+              <View style={[s.alertPill, { backgroundColor: colors.danger + '14', borderColor: colors.danger + '40' }]}>
+                <RotateCcw size={14} color={colors.danger} />
+                <Text style={[s.alertText, { color: colors.danger }]}>
+                  {needsRedo.length} chore{needsRedo.length === 1 ? '' : 's'} sent back for redo
+                </Text>
+              </View>
+            )}
+            {pendingRedemptions.length > 0 && (
+              <View style={[s.alertPill, { backgroundColor: colors.pink + '14', borderColor: colors.pink + '40' }]}>
+                <Gift size={14} color={colors.pink} />
+                <Text style={[s.alertText, { color: colors.pink }]}>
+                  {pendingRedemptions.length} store redemption{pendingRedemptions.length === 1 ? '' : 's'} waiting on approval
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Three-zone layout — wraps to 2 or 1 columns per row on a
             narrower/portrait screen instead of staying rigidly 3-across
             (see columnsPerRow above). */}
@@ -344,6 +388,9 @@ function SectionLabel({ text, color, colors }: { text: string; color: string; co
 
 const s = StyleSheet.create({
   scroll: { padding: 20, paddingBottom: 40 },
+  alertStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 18 },
+  alertPill: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 },
+  alertText: { fontSize: 12.5, fontWeight: '800' },
   grid: { flexDirection: 'row', gap: 18 },
   col: { flex: 1, gap: 14 },
   colFullWidth: { flex: undefined, width: '100%' },

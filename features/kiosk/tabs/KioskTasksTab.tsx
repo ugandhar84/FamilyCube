@@ -11,7 +11,7 @@
 import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { Plus, PartyPopper, Check, Clock3 } from 'lucide-react-native';
-import { TYPO, RADIUS } from '@/constants/theme';
+import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
@@ -24,6 +24,7 @@ import { fmtDateShort } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestComposer } from '../components/KioskQuestComposer';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
+import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
 // the DB's 'redo_requested' status down to Quest status 'declined',
@@ -129,7 +130,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
   };
 
   return (
-    <View style={s.root}>
+    <ScrollView style={s.root} contentContainerStyle={s.rootContent} showsVerticalScrollIndicator={false}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.textPrimary }]}>Chores</Text>
         {isParent && (
@@ -159,17 +160,16 @@ function KioskBoardView({ active, members, colors, isDark }: {
         {byColumn.map(col => (
           <View key={col.key} style={[s.col, { width: columnWidth }]}>
             <Text style={[s.colHead, { color: colors.textTertiary }]}>{col.label.toUpperCase()} · {col.items.length}</Text>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.cardGrid}>
+            {/* Plain View, not a nested ScrollView — the whole screen
+                scrolls now (see the root return above), so a column just
+                hugs its own content height instead of claiming an
+                unbounded scroll area that used to stretch the full
+                screen even for 1-2 cards. */}
+            <View style={s.cardGrid}>
               {col.items.map(q => {
                 const rs = assigneeStyle(memberOf(q.assignedToId), colors, isDark);
                 const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
                 const btn = primaryAction(q, actions);
-                // Parent (or anyone with edit rights) can still tap the card
-                // body itself to open the editor — a real button only
-                // replaces the "tap the whole card" pattern for the
-                // claim/submit/approve actions, which need to be unmissable
-                // from arm's length, not for the parent's own edit flow.
-                const CardShell = actions.canEdit ? Pressable : View;
                 // Coins are a kid/teen incentive mechanic — an adult task
                 // (a parent/GP chore, q.isAdultTask) or one assigned
                 // directly to a parent/senior member has no payout concept
@@ -180,60 +180,77 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: colors.textTertiary };
                 const cardWidth = cardsPerRow === 2 ? (columnWidth - 10) / 2 : columnWidth;
                 return (
-                  <CardShell
-                    key={q.id}
-                    {...(actions.canEdit ? { onPress: () => setEditingQuest(q) } : {})}
-                    style={[s.card, { width: cardWidth, backgroundColor: colors.card, borderColor: colors.border }]}
-                  >
-                    <View style={s.cardTopRow}>
-                      <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
-                        <Text style={{ fontSize: 16 }}>{catMeta.emoji}</Text>
-                      </View>
-                      {!isAdultAssignee && (
-                        <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
-                          <Text style={[s.coinPillText, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                  <View key={q.id} style={{ width: cardWidth }}>
+                    {/* Same CollapsibleQuestCard mobile's own QuestCard.tsx
+                        uses — header always visible (compact: category +
+                        coin + title), tap to expand for the due date/decline
+                        reason/action button. Was: everything always shown at
+                        full height, reading as "too much height
+                        unnecessarily" for a card that's mostly just a title
+                        and one button — same concept as mobile, not a new
+                        one invented for kiosk. */}
+                    <CollapsibleQuestCard
+                      accentColor={catMeta.color}
+                      cardBg={colors.card}
+                      cardBord={colors.border}
+                      onDoubleTap={actions.canEdit ? () => setEditingQuest(q) : undefined}
+                      header={
+                        <View style={s.cardTopRow}>
+                          <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
+                            <Text style={{ fontSize: 15 }}>{catMeta.emoji}</Text>
+                          </View>
+                          <Text style={[s.cardTitle, { color: colors.textPrimary, flex: 1 }]} numberOfLines={1}>{q.title}</Text>
+                          {!isAdultAssignee && (
+                            <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
+                              <Text style={[s.coinPillText, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                            </View>
+                          )}
+                        </View>
+                      }
+                    >
+                      {col.key === 'redo' && !!q.declineReason && (
+                        <View style={[s.reasonBanner, { backgroundColor: colors.danger + '14' }]}>
+                          <Text style={[s.reasonText, { color: colors.danger }]} numberOfLines={2}>↩ {q.declineReason}</Text>
                         </View>
                       )}
-                    </View>
 
-                    <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-
-                    {col.key === 'redo' && !!q.declineReason && (
-                      <View style={[s.reasonBanner, { backgroundColor: colors.danger + '14' }]}>
-                        <Text style={[s.reasonText, { color: colors.danger }]} numberOfLines={2}>↩ {q.declineReason}</Text>
-                      </View>
-                    )}
-
-                    <View style={s.cardMeta}>
-                      <View style={[s.assigneeChip, { backgroundColor: q.isPool ? colors.surface : rs.badge, borderColor: q.isPool ? colors.border : rs.dot + '55' }]}>
-                        {!q.isPool && <Text style={{ fontSize: 12 }}>{assignee?.emoji ?? '👤'}</Text>}
-                        <Text style={[s.assigneeChipText, { color: q.isPool ? colors.textSecondary : rs.text }]} numberOfLines={1}>
-                          {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
-                        </Text>
-                      </View>
-                      {!!q.dueDate && (
-                        <View style={s.dueRow}>
-                          <Clock3 size={11} color={colors.textTertiary} />
-                          <Text style={[s.dueText, { color: colors.textTertiary }]}>{fmtDateShort(q.dueDate)}</Text>
+                      <View style={s.cardMeta}>
+                        <View style={[s.assigneeChip, { backgroundColor: q.isPool ? colors.surface : rs.badge, borderColor: q.isPool ? colors.border : rs.dot + '55' }]}>
+                          {!q.isPool && <Text style={{ fontSize: 12 }}>{assignee?.emoji ?? '👤'}</Text>}
+                          <Text style={[s.assigneeChipText, { color: q.isPool ? colors.textSecondary : rs.text }]} numberOfLines={1}>
+                            {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
+                          </Text>
                         </View>
-                      )}
-                    </View>
+                        {!!q.dueDate && (
+                          <View style={s.dueRow}>
+                            <Clock3 size={11} color={colors.textTertiary} />
+                            <Text style={[s.dueText, { color: colors.textTertiary }]}>{fmtDateShort(q.dueDate)}</Text>
+                          </View>
+                        )}
+                      </View>
 
-                    {btn && (
-                      <Pressable
-                        onPress={btn.action}
-                        style={[s.cardActionBtn, { backgroundColor: btn.accent }]}
-                      >
-                        <Text style={s.cardActionBtnText}>{btn.label}</Text>
-                      </Pressable>
-                    )}
-                  </CardShell>
+                      {actions.canEdit && (
+                        <Pressable onPress={() => setEditingQuest(q)} style={s.editLink}>
+                          <Text style={[s.editLinkText, { color: colors.primary }]}>Edit details</Text>
+                        </Pressable>
+                      )}
+
+                      {btn && (
+                        <Pressable
+                          onPress={btn.action}
+                          style={[s.cardActionBtn, { backgroundColor: btn.accent }]}
+                        >
+                          <Text style={s.cardActionBtnText}>{btn.label}</Text>
+                        </Pressable>
+                      )}
+                    </CollapsibleQuestCard>
+                  </View>
                 );
               })}
               {col.items.length === 0 && (
                 <Text style={[s.emptyCol, { color: colors.textTertiary, width: columnWidth }]}>Nothing here</Text>
               )}
-            </ScrollView>
+            </View>
           </View>
         ))}
       </View>
@@ -259,7 +276,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           />
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -297,7 +314,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={{ gap: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+    <ScrollView style={s.root} contentContainerStyle={{ gap: 24, padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
       <Text style={[s.title, { color: colors.textPrimary }]}>Cheer Your Grandkids</Text>
 
       <View style={s.gpGrid}>
@@ -368,7 +385,8 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 20 },
+  root: { flex: 1 },
+  rootContent: { padding: 20, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
   title: { fontSize: 24, fontWeight: '800' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
@@ -385,23 +403,30 @@ const s = StyleSheet.create({
   statPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
   statName: { fontSize: 12, fontWeight: '800' },
   statFrac: { fontSize: 11, fontWeight: '700', opacity: 0.85 },
-  columns: { flex: 1, flexDirection: 'row', gap: 16 },
+  // Was flex:1 — forced every column (and its inner ScrollView) to
+  // stretch the full remaining screen height even when there were only 1-2
+  // cards, reading as a huge dead void below a handful of cards
+  // (live-reported: "too much height unnecessarily"). Columns now hug
+  // their own content; the outer screen ScrollView (see the root return)
+  // handles scrolling if a column's real content ever exceeds the screen.
+  columns: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   col: { flexShrink: 0 },
   colHead: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 10 },
   // Cards wrap into a grid (see cardsPerRow above) instead of one per row
   // stretching a whole narrow column — live-reported: a single card sat
   // in a huge empty column with nothing else to fill the space.
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20, alignContent: 'flex-start' },
-  card: { borderRadius: RADIUS.lg, borderWidth: 1, padding: 14, gap: 10 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  catBadge: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  catBadge: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   coinPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   coinPillText: { fontSize: 11.5, fontWeight: '800' },
   cardTitle: { fontSize: TYPO.body, fontWeight: '800', lineHeight: 19 },
   cardSub: { fontSize: 12, fontWeight: '600' },
-  reasonBanner: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  reasonBanner: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginBottom: 8 },
   reasonText: { fontSize: 11, fontWeight: '700' },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
+  editLink: { alignSelf: 'flex-start', marginBottom: 8 },
+  editLinkText: { fontSize: 11.5, fontWeight: '800' },
   assigneeChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999,
     paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, flexShrink: 1,

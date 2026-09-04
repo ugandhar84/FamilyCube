@@ -1077,6 +1077,41 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       throw error;
     }
 
+    // Multi-family membership — a grandparent's PIN is kept in sync
+    // across ALL of their family member rows, not just this one, per live
+    // product decision: one PIN to remember, rather than a separate one
+    // per family. Safe to do even though this write reaches a family
+    // OTHER than the one currently active, because knowing/using this PIN
+    // still only ever authenticates "you are the GP's row IN THAT ONE
+    // FAMILY" (resolve_active_member_id's x-active-member-id path
+    // resolves one specific member id, tied to one family) — it can never
+    // grant access to the family switcher itself, which is gated on the
+    // GP's own real device auth session and is never reachable via a
+    // PIN-switch grant at all (see refreshMyFamilies' own comment). Only
+    // ever applies to a grandparent (role: 'senior') — a parent/kid/teen's
+    // PIN is single-family by definition and must never sync anywhere.
+    //
+    // Routed through a SECURITY DEFINER RPC, not a direct client update —
+    // a plain `.update().eq('auth_user_id', ...)` only succeeds via
+    // members_update's RLS when the ACTOR themselves satisfies
+    // auth_user_id=auth.uid() OR family_id=current_user_family_id() for
+    // the OTHER row being written; a PARENT resetting the grandparent's
+    // PIN on their behalf has no such authority in a family they aren't a
+    // member of, so that write would silently fail RLS and leave the two
+    // PINs out of sync again. The RPC independently re-verifies the
+    // caller had real authority over the ORIGINAL row (self, or a parent
+    // in ITS family) before touching any other row — see the migration's
+    // own comment for the full server-side logic. Best-effort,
+    // non-blocking: the PIN write to THIS row already succeeded above; a
+    // failure to also sync the other row leaves that other family's PIN
+    // merely out of sync, not broken.
+    if (before?.role === 'senior' && before.authUserId) {
+      supabase.rpc('sync_grandparent_pin_across_families', { p_member_id: id, p_new_pin: pin ?? null })
+        .then(({ error: syncErr }: any) => {
+          if (syncErr) console.warn('[familyStore] setMemberPin cross-family sync failed', syncErr.message);
+        });
+    }
+
     // Security-relevant event — notify the other parent(s) whenever this
     // PIN change was made BY someone other than the member it's being made
     // FOR (a parent resetting a kid's forgotten PIN, or one parent

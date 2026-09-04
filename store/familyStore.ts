@@ -517,8 +517,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
 
   // Multi-family membership — see myFamilies' own comment for the full
   // rationale, and setActiveMember's caller for the security gating
-  // (real-login-only, never via a PIN-switch grant). Queries `members`
-  // directly rather than `families` — members_select's own RLS
+  // (grandparent role + real-login-only, never via a PIN-switch grant).
+  // Re-checked here too, defensively, so any future caller can't
+  // accidentally bypass the scope by calling this directly. Queries
+  // `members` directly rather than `families` — members_select's own RLS
   // (auth_user_id = auth.uid() OR family_id = current_user_family_id())
   // already permits exactly this cross-family read with zero policy
   // changes, and a plain members query avoids needing a second table join
@@ -526,6 +528,8 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   refreshMyFamilies: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { set({ myFamilies: [] }); return; }
+    const activeMember = get().members.find(m => m.id === get().activeMemberId);
+    if (activeMember?.role !== 'senior') { set({ myFamilies: [] }); return; }
     const { data, error } = await supabase
       .from('members')
       .select('family_id, families(name)')
@@ -604,20 +608,25 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       };
     });
     AsyncStorage.setItem(ACTIVE_KEY, id);
-    // Multi-family membership — reveal OTHER families this member belongs
-    // to ONLY when they were switched into via their own real device auth
-    // session, never via a PIN-switch grant (even a fully legitimate one,
-    // switching to a family member who happens to have their own separate
-    // login elsewhere). Live-flagged risk: if this ran for every switch,
-    // whoever is physically holding a shared device could PIN-switch INTO
-    // a step-parent's profile for the family they share, and — merely by
-    // that profile existing — see a list of that step-parent's OTHER,
-    // unrelated families. Gating on the real auth session (not just "is
-    // this member's own row") means the switcher/family list only ever
-    // appears on the one device that's genuinely THEIRS to begin with.
+    // Multi-family membership — scoped to grandparent (role: 'senior')
+    // members only, per explicit product decision: a grandparent
+    // genuinely belonging to two of their children's separate households
+    // is a normal, unremarkable fact; the same mechanism applied to any
+    // role (e.g. two step-parents each in their own second family) raised
+    // real concerns this session about emotionally loaded UX and
+    // misclick risk that a grandparent-only scope avoids — a GP's two
+    // families are typically their kids' own separate homes, not a
+    // blended/co-parenting situation with the sensitivity that implies.
+    // Reveal OTHER families this member belongs to ONLY when BOTH: (1)
+    // their role is 'senior', and (2) they were switched into via their
+    // own real device auth session, never via a PIN-switch grant (even a
+    // fully legitimate one). The auth-session gate closes a separate real
+    // leak risk: without it, whoever is physically holding a shared
+    // device could PIN-switch INTO a multi-family GP's profile and, merely
+    // by that profile existing, see their other households.
     supabase.auth.getUser().then(({ data: { user } }) => {
       const member = get().members.find(m => m.id === id);
-      if (user && member?.authUserId === user.id) {
+      if (user && member?.authUserId === user.id && member?.role === 'senior') {
         get().refreshMyFamilies();
       }
     }).catch(() => {});
@@ -1088,12 +1097,16 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           loaded: true,
           familyLoadStatus: 'confirmed',
         });
-        // Multi-family membership — same real-login-only gate as
-        // setActiveMember's own (see its comment): only populate the
-        // OTHER-families list when the member this load resolved to is
-        // genuinely this device's own real auth session, never a cached
-        // PIN-switch grant riding along from a previous launch.
-        if (realAuthMemberId && resolvedActiveId === realAuthMemberId) get().refreshMyFamilies();
+        // Multi-family membership — same grandparent-only + real-login-only
+        // gate as setActiveMember's own (see its comment): only populate
+        // the OTHER-families list when the member this load resolved to is
+        // genuinely this device's own real auth session (never a cached
+        // PIN-switch grant riding along from a previous launch) AND holds
+        // the 'senior' role.
+        if (realAuthMemberId && resolvedActiveId === realAuthMemberId) {
+          const resolvedMember = cached.find(m => m.id === resolvedActiveId);
+          if (resolvedMember?.role === 'senior') get().refreshMyFamilies();
+        }
         // Refresh in background
         get().syncFromDB();
         return;

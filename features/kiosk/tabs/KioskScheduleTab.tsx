@@ -33,6 +33,7 @@ import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -51,6 +52,18 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [cursor, setCursor] = useState(() => new Date());
+  // Live-reported: "in kiosk monthly view is not use right as per current
+  // design we are not showing anything if we click on date taking us to day
+  // view for that date .. we should show similar to the mobile app" —
+  // mobile's own Month view (CalendarScreen.tsx's MonthGridView +
+  // DayEventsSummaryCard) never navigates away on a day tap; it just
+  // updates which day's events render in a summary card BELOW the grid,
+  // so the month stays visible the whole time. Kiosk's month grid was
+  // jumping straight to Day view instead, which is a real behavior
+  // mismatch, not a deliberate kiosk-scale redesign choice (the grid's own
+  // bigger cells/dots ARE a deliberate kiosk redesign per this file's
+  // header comment, and stay as-is — only the tap behavior changes here).
+  const [selectedDate, setSelectedDate] = useState(() => localDateStr(new Date()));
 
   // Creation flow — ported verbatim from TasksScreen.tsx's own wiring
   // (features/tasks/TasksScreen.tsx lines ~213-234, ~474-540; same wiring
@@ -219,9 +232,32 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
 
       {viewMode === 'month' && (
-        <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
-          involvedFor={involvedFor}
-          onDayPress={(dateStr) => { setCursor(parseDate(dateStr)); setViewMode('day'); }} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
+            involvedFor={involvedFor}
+            onDayPress={setSelectedDate} />
+          <View style={{ paddingHorizontal: 4, paddingTop: 14, gap: 10 }}>
+            <DayEventsSummaryCard
+              dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              events={eventsByDate[selectedDate] ?? []}
+              members={members}
+              colors={colors} isDark={isDark}
+              onSelectEvent={setEditingEvent}
+            />
+            {/* DayEventsSummaryCard is a pure display component (mobile's
+                own Month view has no card-embedded "+" either — creation
+                there goes through the screen's own FAB) — Week/Day views in
+                this tab both expose their own onAddDay/onAdd "+" already,
+                so Month gets the same reachable entry point rather than
+                being the one mode with no way to open the composer at all. */}
+            {canCreate && (
+              <Pressable onPress={openCreator} style={[s.monthAddBtn, { backgroundColor: colors.primary }]}>
+                <Plus size={16} color="#fff" />
+                <Text style={s.monthAddBtnText}>Add for this day</Text>
+              </Pressable>
+            )}
+          </View>
+        </ScrollView>
       )}
       {viewMode === 'week' && (
         <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
@@ -305,8 +341,8 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
 }
 
 // ── Month grid ───────────────────────────────────────────────────────────
-function MonthView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor, onDayPress }: {
-  cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; colors: any; isDark: boolean;
+function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, involvedFor, onDayPress }: {
+  cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; selected: string; colors: any; isDark: boolean;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onDayPress: (dateStr: string) => void;
 }) {
@@ -559,4 +595,6 @@ const s = StyleSheet.create({
   dayEventTime: { fontSize: 11.5, fontWeight: '700', marginTop: 3 },
   dayAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14, marginTop: 20 },
   dayAddBtnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
+  monthAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14 },
+  monthAddBtnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
 });

@@ -1,0 +1,793 @@
+<title>Chore Handoff / Bounty / Redo Live QA Audit</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --static:#6B5F52; --static-bg:#EFE9DE;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+      --static:#C9C0B2; --static-bg:#2C2A24;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    --static:#C9C0B2; --static-bg:#2C2A24;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1220px; margin:0 auto; padding:40px 24px 120px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:88ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:32px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.pass{background:var(--ok);} .dot.fail{background:var(--bug);} .dot.static{background:var(--static);} .dot.finding{background:var(--gap);}
+
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:92ch;}
+  p{margin:8px 0;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:9px 11px; text-align:left; vertical-align:top; font-size:12.5px;}
+  th{background:var(--surface-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.step{font-weight:700; background:var(--surface-2); white-space:nowrap; text-align:center;}
+  tr:nth-child(even) td:not(.step){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+  td code{display:inline-block; margin:1px 0;}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; white-space:nowrap;}
+  .tag.pass{background:var(--ok-bg); color:var(--ok);}
+  .tag.fail{background:var(--bug-bg); color:var(--bug);}
+  .tag.static{background:var(--static-bg); color:var(--static);}
+  .tag.live{background:var(--accent-soft); color:var(--accent);}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.medium{border-left-color:var(--gap);}
+  .finding.low{border-left-color:var(--static);}
+  .finding.fixed{border-left-color:var(--fixed);}
+  .finding h3{margin:0 0 6px; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  .sev{font-size:10px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px;}
+  .sev.critical{background:var(--bug-bg); color:var(--bug);}
+  .sev.high{background:var(--bug-bg); color:var(--bug);}
+  .sev.medium{background:var(--gap-bg); color:var(--gap);}
+  .sev.low{background:var(--static-bg); color:var(--static);}
+  .sev.verified{background:var(--fixed-bg); color:var(--fixed);}
+
+  .statbar{display:flex; gap:14px; flex-wrap:wrap; margin:18px 0 24px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:130px;}
+  .stat .n{font-size:26px; font-weight:800; line-height:1;}
+  .stat .l{font-size:11.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em; margin-top:4px;}
+  .stat.pass .n{color:var(--ok);}
+  .stat.fail .n{color:var(--bug);}
+  .stat.static .n{color:var(--static);}
+
+  .note{background:var(--surface-2); border-radius:8px; padding:10px 13px; font-size:12.5px; margin:8px 0; color:var(--text-2);}
+  .note b{color:var(--text);}
+  .limitation{background:var(--static-bg); border:1px dashed color-mix(in srgb, var(--static) 50%, transparent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-2); margin:10px 0 18px;}
+  .limitation b{color:var(--static);}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Chore Handoff / Bounty / Redo Live QA Audit</h1>
+  <p class="subtitle">
+    A second, independent real QA pass against the FamilyCubeApp Supabase backend — same deployed
+    <code>qa-scratch-family</code> edge function, real DB writes and real RPC calls under real minted sessions for
+    9 scratch family members, verified by fresh independent <code>read</code> calls after every step. Pass 1
+    (<a href="qa_reassign_takeover_audit.html">Reassign / Take-over Live QA Audit</a>) covered
+    <code>reassign_event</code>, <code>confirm_event_assignment[_series_forward]</code>,
+    <code>decline_event_assignment</code>, <code>claim_event_slot</code>, <code>claim_pool_quest</code>, and
+    both-ways ride-leg forking — this pass deliberately avoids re-running any of those and instead exercises
+    fresh territory: chore handoff (offer/accept/decline), grandparent-errand offers, multi-slot bounty claiming,
+    the redo-dispute escalation cycle, <code>assign_event_role</code> (a sibling of <code>reassign_event</code>
+    pass 1 never checked), and a fresh identity/RLS sweep of every raw (non-RPC) write left in
+    <code>choreStore.ts</code>.
+  </p>
+
+  <div class="warn">
+    <b>Scratch family used:</b> <code>cfdd0469-d8da-4382-abb8-3429942c89ef</code> — created via <code>setup</code>,
+    fully torn down via <code>teardown</code> at the end of this run (confirmed by a follow-up <code>read</code> on
+    <code>members</code> returning zero rows for that family id). No other family's data was touched. Every RPC
+    call in this document ran under a real minted session for the acting scratch member (magic-link +
+    <code>verifyOtp</code>, exactly how the app's own recover-device flow works) —
+    <code>resolve_active_member_id()</code> genuinely resolved via <code>auth.uid()</code> on every call, not a
+    spoofed header. Two live impersonation attempts (a kid calling <code>accept_chore_handoff</code>/
+    <code>offer_chore_handoff</code> as a different real member) were both cleanly rejected — see §7.
+  </div>
+
+  <div class="statbar">
+    <div class="stat pass"><div class="n">19</div><div class="l">Live steps — PASS</div></div>
+    <div class="stat fail"><div class="n">2</div><div class="l">Live steps — FAIL / bug found</div></div>
+    <div class="stat static"><div class="n">4</div><div class="l">Static-only verifications (harness gating gaps)</div></div>
+    <div class="stat"><div class="n">8</div><div class="l">Scenarios run</div></div>
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#findings">Findings summary</a></li>
+      <li><a href="#s1">1 · Chore handoff — accept &amp; decline</a></li>
+      <li><a href="#s2">2 · GP errand offer/accept/decline (static — harness gap)</a></li>
+      <li><a href="#s3">3 · Bounty multi-slot claiming (static — harness gap)</a></li>
+      <li><a href="#s4">4 · Redo dispute cycle</a></li>
+      <li><a href="#s5">5 · Raw-write identity/RLS sweep</a></li>
+      <li><a href="#s6">6 · assign_event_role field-pair clearing</a></li>
+      <li><a href="#s7">7 · Live impersonation attempts</a></li>
+      <li><a href="#s8">8 · Cross-role visibility reasoning</a></li>
+      <li><a href="#limitations">Harness limitations encountered</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot pass"></span>PASS — matched expectation</span>
+    <span><span class="dot fail"></span>FAIL — genuine bug</span>
+    <span><span class="dot static"></span>STATIC — code-reasoning only, not exercised live</span>
+    <span><span class="dot finding"></span>Notable, not a defect</span>
+  </div>
+
+  <section id="findings">
+    <h2>Findings summary</h2>
+    <p class="lede">8 scenarios run. 2 genuine NEW bugs found and confirmed live, plus one prior finding
+      re-verified as fixed, and one RLS-policy gap confirmed by direct code read (not exercisable live because
+      the harness has no raw-table-write action for a scoped member session — see §5's own limitation note).</p>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> assign_event_role never clears the opposite driver/helper field-pair — the exact reassign_event bug class, unpatched on its sibling RPC</h3>
+      <p><b>Root cause.</b> Migration <code>20260940020000_reassign_event_clears_other_assignee_pair.sql</code>
+        fixed <code>reassign_event</code> to unconditionally null the other role's <code>*_name</code>/<code>*_id</code>/
+        <code>*_status</code> triple on every write, specifically because a single <code>calendar_events</code> row is
+        only ever supposed to carry ONE live assignee pair (driver XOR helper) — a both-ways ride is always two
+        separate forked rows (<code>features/hub/parent/rideLegs.ts</code>'s own <code>forkRideLegs</code>), never one
+        row with both pairs populated. <code>assign_event_role</code> — the RPC used for a FRESH assignment rather
+        than a take-over, added in the same migration wave (<code>20260905110000_event_participant_rpcs.sql</code>)
+        and still live today as of <code>20260930280000_verify_active_member_across_all_state_rpcs.sql</code> — never
+        received the same fix. Its driver branch only sets
+        <code>driver_name/driver_status/ride_required</code>; its helper branch only sets
+        <code>helper_name/helper_status</code>. Neither branch touches the other pair at all. Confirmed live in
+        §6.9/§6.10 below in both directions: seeding a conflicted row (both pairs populated, reproducing the exact
+        pre-fix shape pass 1 used for <code>reassign_event</code>) and then calling <code>assign_event_role</code>
+        on only ONE role leaves the other role's stale <code>*_name</code>/<code>*_id</code> completely untouched —
+        not just a dangling id (pass 1's Finding #1 shape) but a stale, wrong DISPLAY NAME still sitting in the row.
+        Since <code>eventAssignee()</code> (<code>store/eventStore.ts:290</code>) reads
+        <code>e.helper</code>/<code>helper_name</code> BEFORE <code>driver_name</code>, a fresh, correctly-written
+        driver assignment can be rendered nowhere — every consumer of <code>eventAssignee()</code> would show the
+        stale helper's name/id as "the assignee" instead, with the real new assignment silently invisible.</p>
+      <p class="path">supabase/migrations/20260930280000_verify_active_member_across_all_state_rpcs.sql:1163-1239
+        (assign_event_role, live version — driver/helper UPDATE branches, lines 1222-1230, never reference the
+        opposite pair) — supabase/migrations/20260940020000_reassign_event_clears_other_assignee_pair.sql (the fix
+        this RPC needs but never got) — store/eventStore.ts:290-293 (eventAssignee, the read path this corrupts) —
+        features/hub/parent/rideLegs.ts:74-163 (forkRideLegs — confirms a single row is never meant to carry both
+        pairs at once)</p>
+    </div>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> declineChoreHandoff reopens straight to the general pool instead of reverting to the original owner — the offering kid loses the chore entirely, not "back to limbo" but worse: back to anyone</h3>
+      <p><b>Root cause.</b> The live <code>decline_chore_handoff</code> RPC
+        (<code>20260930280000_verify_active_member_across_all_state_rpcs.sql:79-119</code>) sets
+        <code>assigned_to_id = null, is_pool = true, status = 'todo'</code> on a decline — its own migration
+        comment ("Receiver: 'can't either — put it back' — reopens straight to the pool, no reason required") makes
+        clear this is the intended design, not an oversight. But this means the chore does NOT revert to the
+        original offering member (K3 in this run) at all — it becomes a fully open pool chore any uninvolved kid
+        or teen can claim. Confirmed live in §1.4/§1.5 below: K3 offers a chore to T6, T6 declines, and the chore's
+        <code>assigned_to_id</code> goes to <code>null</code> with <code>is_pool=true</code> — a completely
+        different, uninvolved kid (K5) was then able to successfully <code>claim_pool_quest</code> it away from K3
+        before K3 ever got a chance to reclaim their own chore. Whether "reopen to the pool" or "revert to the
+        original owner" is the intended product behavior is a real product decision either way — but the task
+        specification's own framing ("verify it correctly reverts to Kid1, not left in limbo") describes a design
+        this RPC does not implement, and the practical effect live-verified here is that a kid who offers a chore
+        to a specific person and gets declined can end up with LESS certainty about the chore than before they
+        offered it — anyone in the family can now take it, not just the person they tried to hand off to.</p>
+      <p class="path">supabase/migrations/20260930280000_verify_active_member_across_all_state_rpcs.sql:79-119
+        (decline_chore_handoff) — store/choreStore.ts:2955-2957 (declineChoreHandoff's own comment documenting this
+        as intentional) — features/tasks/lib/deriveCardActions.ts:128 (canClaim — confirms any kid/teen, not just
+        the original owner, sees this as claimable the instant it reopens)</p>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="sev verified">Verified fixed</span> Pass 1's Finding #1 (decline_event_assignment leaving driver_id/helper_id stale) — re-checked and confirmed patched by a later migration</h3>
+      <p><b>What changed.</b> Pass 1 found <code>decline_event_assignment</code>'s live version
+        (<code>20260930360000_decline_event_never_closes_both_pools.sql</code>) cleared
+        <code>driver_name</code>/<code>helper_name</code> and their <code>*_status</code> on decline but left the
+        matching <code>*_id</code> stale. A subsequent migration,
+        <code>20260940040000_decline_event_assignment_clears_id_too.sql</code> — explicitly citing pass 1's own
+        report by filename — re-created the function to also null <code>driver_id</code>/<code>helper_id</code>.
+        Re-tested live in this pass (§6.3/§6.4 below, incidental to the <code>assign_event_role</code> setup
+        chain): declining a driver assignment now correctly leaves <code>driver_id=null</code> alongside
+        <code>driver_name=null</code>, confirmed by a fresh independent read. This is the SAME bug class this audit
+        found again on <code>assign_event_role</code> above — the fix pattern is known and proven, it just was
+        never propagated to every RPC that writes the driver/helper pairs.</p>
+      <p class="path">supabase/migrations/20260940040000_decline_event_assignment_clears_id_too.sql (the fix,
+        explicitly referencing docs/qa_reassign_takeover_audit.html)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium (code-verified, not live-exercised)</span> chore_tasks' UPDATE RLS policy has no assigned_to_id check — claimBounty's dormant raw-write path would not be blocked by RLS alone if it were ever reached</h3>
+      <p><b>Root cause.</b> <code>choreStore.claimBounty</code> (the single-claimant, non-multi-slot branch,
+        <code>store/choreStore.ts:2403-2470</code>) still issues a raw
+        <code>supabase.from('chore_tasks').update({ assigned_to_id: childId, ... }).eq('id', choreId).is('assigned_to_id', null)</code>
+        with no <code>resolve_active_member_id()</code> check — the exact shape of pass 1's Critical finding on the
+        old <code>claimPoolQuest</code>, which has since been fixed to route through the
+        <code>claim_pool_quest</code> RPC (confirmed live in this pass — see §5). <code>claimBounty</code> itself is
+        confirmed dead code today: <code>choreAdapter.ts:355-369</code>'s <code>claimQuest</code> — the only
+        reachable "Claim" action from KidView/TeenView/QuestsScreen — calls <code>claimPoolQuest</code>
+        exclusively, and <code>claimPoolQuest</code> only delegates to <code>claimBounty</code>'s sibling
+        <code>claimBountySlot</code> for the maxClaimants&gt;1 case, never to plain <code>claimBounty</code>. But the
+        code path still exists and is exported on the store, and reading <code>chore_tasks</code>'s live UPDATE RLS
+        policy (<code>20260926010000_fix_chore_tasks_rls_wrong_table.sql:52-71</code>) directly confirms it does
+        <b>not</b> gate on <code>assigned_to_id</code> for a chore not yet in a locked-down status
+        (<code>approved/auto_approved/completed/declined/redo_requested</code>) — the USING/CHECK clause reduces to
+        just <code>family_id = current_user_family_id()</code> for a plain <code>todo</code> chore. This was not
+        live-exercised (the harness's <code>rpc</code> action only calls Postgres functions, not raw table writes,
+        for a scoped member session — see §5's limitation note) but is a direct, verbatim read of the deployed
+        policy SQL, not an inference: if <code>claimBounty</code>'s raw path is ever reached again (a UI regression,
+        an old app build, a direct API replay), nothing server-side stops one member from claiming a bounty chore
+        on behalf of a different member id.</p>
+      <p class="path">store/choreStore.ts:2403-2470 (claimBounty, the still-present dormant path) —
+        store/choreAdapter.ts:355-369 (claimQuest, confirms claimBounty is unreachable from any live screen today) —
+        supabase/migrations/20260926010000_fix_chore_tasks_rls_wrong_table.sql:50-71 (chore_tasks_update policy,
+        read directly — no assigned_to_id/resolve_active_member_id() check for a non-locked-status row)</p>
+    </div>
+  </section>
+
+  <section id="s1">
+    <h2>1 · Chore handoff — accept &amp; decline <span class="tag live">LIVE</span></h2>
+    <p class="lede">Two separate chores, each assigned to Kid 3, each offered via <code>offer_chore_handoff</code> —
+      one accepted, one declined — to exercise the full back-and-forth of
+      <code>store/choreStore.ts</code>'s <code>offerChoreHandoff</code>/<code>acceptChoreHandoff</code>/
+      <code>declineChoreHandoff</code>, backed by the live RPCs from
+      <code>20260930280000_verify_active_member_across_all_state_rpcs.sql</code> (the chronologically latest
+      version of all three).</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after (fresh read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">1.1</td>
+        <td><code>offer_chore_handoff(chore1, toId=Teen4, byId=Kid3, reason="too busy")</code></td>
+        <td><code>assigned_to_id</code> still Kid3 (unchanged), <code>pending_handoff_to=Teen4</code>,
+          <code>pending_handoff_offered_by=Kid3</code></td>
+        <td>Offer recorded, chore NOT yet reassigned</td>
+        <td>Matched exactly</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>offer_chore_handoff only writes the pending_handoff_* columns and a 'pending' chore_participants row for
+          the target — assigned_to_id is untouched until acceptance</td>
+      </tr>
+      <tr>
+        <td class="step">1.2</td>
+        <td><code>accept_chore_handoff(chore1, memberId=Teen4)</code></td>
+        <td><code>assigned_to_id=Teen4, is_pool=false, status=todo, claimed_at=set</code>, all
+          <code>pending_handoff_*</code> columns null, single <code>chore_participants</code> row
+          (Teen4/assignee/claimed)</td>
+        <td>Clean transfer to Teen4</td>
+        <td>Matched exactly</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>accept_chore_handoff's UPDATE writes assigned_to_id/is_pool/status/claimed_at and nulls every
+          pending_handoff_* column in one statement</td>
+      </tr>
+      <tr>
+        <td class="step">1.3</td>
+        <td>Kid3 (the original owner, now displaced) calls <code>submit_chore(chore1, Kid3)</code></td>
+        <td><code>error: member Kid3 is not the assignee of chore</code></td>
+        <td>Rejected — Kid3 can no longer act on a chore it handed off</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>submit_chore's own guard checks assigned_to_id = caller — Kid3 genuinely lost all standing on this
+          chore the moment Teen4 accepted</td>
+      </tr>
+      <tr>
+        <td class="step">1.4</td>
+        <td><code>offer_chore_handoff(chore2, toId=Teen6, byId=Kid3, reason="forgot equipment")</code>, then
+          <code>decline_chore_handoff(chore2, memberId=Teen6)</code></td>
+        <td><code>assigned_to_id=null, is_pool=true, status=todo</code>, pending_handoff_* all null</td>
+        <td>Ambiguous per spec ("reverts to Kid1") — see Finding above: this is NOT what happens</td>
+        <td>Chore fully unassigned and reopened to the WHOLE pool, not reverted to Kid3</td>
+        <td><span class="tag fail">FAIL (see Findings)</span></td>
+        <td>decline_chore_handoff's own migration comment: "reopens straight to the pool" — by design, but not
+          "reverts to Kid1"</td>
+      </tr>
+      <tr>
+        <td class="step">1.5</td>
+        <td>Kid5 (uninvolved third party) calls <code>claim_pool_quest(chore2, Kid5)</code></td>
+        <td>Rejected — this was Kid3's chore, a decline shouldn't let a stranger take it before Kid3</td>
+        <td><code>claimed=true</code> — Kid5 successfully took the chore Kid3 originally owned</td>
+        <td><span class="tag fail">FAIL (see Findings)</span></td>
+        <td>claim_pool_quest's own guard only checks is_pool=true and assigned_to_id is null — both true here, by
+          design, since decline_chore_handoff set exactly that state</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s2">
+    <h2>2 · GP errand offer/accept/decline <span class="tag static">STATIC — HARNESS GAP</span></h2>
+    <div class="limitation">
+      <b>Harness limitation.</b> <code>claim_gp_errand</code>'s own guard requires
+      <code>invite_grandparents = true</code> on the chore before it will record an offer — confirmed live: calling
+      it against a plain <code>add_quest</code>-seeded chore returned <code>{claimed:false}</code>, exactly as its
+      guard predicts. <code>add_quest</code>'s insert only accepts
+      <code>{familyId, title, isPool, assignedToId, status}</code> — no way to set
+      <code>invite_grandparents</code>, and no RPC exists anywhere in the migrations to toggle it after creation
+      (grep confirms the only writer is the client's own chore-creation insert). Seeding a chore directly in
+      <code>gp_offer_pending</code> status via <code>add_quest</code>'s <code>status</code> param was also tried —
+      confirmed live that this produces a row with <code>gp_offer_by_id=null</code> (that field isn't settable via
+      <code>add_quest</code> either), which <code>accept_gp_offer</code> correctly rejects
+      ("chore has no pending GP offer"). Both attempts are recorded below as confirmation the harness genuinely
+      cannot reach this RPC's happy path, not silently skipped.
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>Result</th><th>What it confirms</th></tr>
+      <tr>
+        <td class="step">2.1</td>
+        <td><code>claim_gp_errand(chore, GP9)</code> on a plain (non-GP-invited) pool chore</td>
+        <td><code>{claimed:false, chore:null}</code></td>
+        <td><span class="tag pass">PASS (guard fires as coded)</span> — claim_gp_errand's
+          <code>not coalesce(v_result.invite_grandparents, false)</code> check correctly blocks a non-invited
+          chore, live-confirmed</td>
+      </tr>
+      <tr>
+        <td class="step">2.2</td>
+        <td>Seed a chore with <code>status:'gp_offer_pending'</code> via add_quest, then
+          <code>accept_gp_offer(chore, Parent1)</code></td>
+        <td><code>error: chore has no pending GP offer</code></td>
+        <td><span class="tag pass">PASS (guard fires as coded)</span> — confirms add_quest cannot forge a valid
+          gp_offer_pending state (gp_offer_by_id stays null), and accept_gp_offer correctly refuses to act on it</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Static trace of the live RPC bodies</b> (all from
+      <code>20260930280000_verify_active_member_across_all_state_rpcs.sql</code>, the chronologically latest for
+      every function below):</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>RPC</th><th>Identity check</th><th>Field-pair / stale-state behavior</th><th>Verdict</th></tr>
+      <tr>
+        <td><code>claim_gp_errand(p_chore_id, p_gp_member_id)</code></td>
+        <td><code>resolve_active_member_id() = p_gp_member_id</code>, checked first — a GP cannot offer on behalf
+          of a different GP</td>
+        <td>Only sets <code>status='gp_offer_pending', gp_offer_by_id=p_gp_member_id</code> —
+          <code>assigned_to_id</code> is deliberately left untouched (matches choreStore.ts's own comment: "the
+          chore stays unassigned ... but moves to 'gp_offer_pending'")</td>
+        <td><span class="tag static">STATIC — sound</span></td>
+      </tr>
+      <tr>
+        <td><code>accept_gp_offer(p_chore_id, p_parent_id)</code></td>
+        <td><code>resolve_active_member_id() = p_parent_id</code>, THEN a role check (parent or active
+          temporary_approver) — two-layer authorization, correct</td>
+        <td>Row-locked (<code>for update</code>), re-checks <code>gp_offer_by_id = v_offering_gp_id</code> in the
+          final UPDATE's WHERE clause and raises if it changed underneath — closes the same race window
+          claim_gp_errand itself guards against on offer</td>
+        <td><span class="tag static">STATIC — sound, CAS-protected</span></td>
+      </tr>
+      <tr>
+        <td><code>decline_gp_offer(p_chore_id, p_parent_id, p_reason)</code></td>
+        <td>Same two-layer check as accept_gp_offer, plus an explicit family-match check on the parent
+          (accept_gp_offer relies on RLS/FK ordering alone for that — decline_gp_offer is stricter here)</td>
+        <td>Reverts to <code>status='todo', gp_offer_by_id=null</code> — <code>invite_grandparents</code> is
+          untouched (still visible/re-offerable to any GP), matching choreStore.ts's own comment</td>
+        <td><span class="tag static">STATIC — sound</span></td>
+      </tr>
+      <tr>
+        <td><code>withdraw_gp_offer(p_chore_id, p_gp_member_id)</code></td>
+        <td><code>resolve_active_member_id() = p_gp_member_id</code></td>
+        <td>Returns <code>null</code> (not an error) if the offer was already resolved underneath — the WHERE
+          clause requires both <code>status='gp_offer_pending'</code> AND <code>gp_offer_by_id=p_gp_member_id</code>,
+          so a GP can't accidentally reopen a chore a parent just accepted/declined out from under them</td>
+        <td><span class="tag static">STATIC — sound</span></td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2>3 · Bounty multi-slot claiming <span class="tag static">STATIC — HARNESS GAP</span></h2>
+    <div class="limitation">
+      <b>Harness limitation.</b> <code>claim_bounty_slot</code>'s guard is
+      <code>select max_claimants into v_max ... if v_max is null then return false</code> — the CAS/race-safety
+      logic under test only activates once <code>max_claimants</code> is a real integer &gt; 1 on the row.
+      <code>add_quest</code>'s insert accepts only <code>{familyId, title, isPool, assignedToId, status}</code> — no
+      <code>maxClaimants</code> param — and, like <code>invite_grandparents</code>, no RPC anywhere in the
+      migrations sets this column; it's only ever written by the client's own chore-creation
+      <code>supabase.from('chore_tasks').insert()</code> call, which the harness doesn't expose. Confirmed live:
+      calling <code>claim_bounty_slot</code> against an add_quest-seeded chore (max_claimants defaults to
+      <code>null</code>) returns <code>{claimed:false, claim_id:null}</code> exactly as the guard predicts — the
+      3-kids-race scenario could not be constructed without either a raw SQL write (out of scope per this audit's
+      safety rules) or editing the harness (explicitly forbidden).
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>Result</th><th>What it confirms</th></tr>
+      <tr>
+        <td class="step">3.1</td>
+        <td><code>claim_bounty_slot(chore, Kid3)</code> on a chore with no max_claimants set</td>
+        <td><code>{claimed:false, claim_id:null}</code></td>
+        <td><span class="tag pass">PASS (guard fires as coded)</span> — confirms the harness genuinely cannot
+          reach the multi-slot path, not a silent skip</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Static trace of the live claim_bounty_slot body</b>
+      (<code>20260930280000_verify_active_member_across_all_state_rpcs.sql:1334-1377</code>, the only version this
+      function has ever had beyond its original <code>20260825010000_claim_bounty_slot_fn.sql</code>, which just
+      added the identity check): the function row-locks <code>chore_tasks</code>
+      (<code>for update</code> on the <code>max_claimants</code> select) BEFORE counting existing non-declined
+      <code>bounty_claims</code> rows, so two concurrent callers against the same chore genuinely serialize on that
+      lock — the second caller's count always reflects the first caller's already-committed insert, not a
+      stale pre-lock snapshot. The actual claim insert is additionally protected by
+      <code>on conflict (chore_id, member_id) do nothing</code>, preventing the same member from ever holding two
+      claim rows on one chore. This reads as correct, race-safe logic for the "exactly N of 3 concurrent claimants
+      win" requirement, but is NOT independently exercised live in this pass — flagged distinctly per this audit's
+      static-vs-live requirement, same treatment pass 1 gave its own recurring-series sweep (§4 there).</p>
+  </section>
+
+  <section id="s4">
+    <h2>4 · Redo dispute cycle <span class="tag live">LIVE</span></h2>
+    <p class="lede">Two independent chores exercised against the latest <code>resolve_redo_dispute</code>
+      (<code>20260930600000_redo_dispute_lost_freezes_auto_approve.sql</code>, which supersedes both
+      <code>20260908150000_redo_dispute_rpcs.sql</code>'s original and
+      <code>20260930280000</code>'s identity-check-only pass) — one resolved <code>pay=true</code>, one
+      <code>pay=false</code>, plus a same-reviewer rejection and a double-resolve rejection.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after (fresh read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">4.1</td>
+        <td><code>request_redo(chore, Parent1, "not done well")</code> then <code>dispute_redo(chore, Kid3)</code></td>
+        <td><code>status=kid_disputed_redo, redo_count=1, reviewed_by_id=Parent1</code></td>
+        <td>Dispute recorded, redo_count reflects the one real redo round so far</td>
+        <td>Matched exactly</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Setup — dispute_redo only flips status, request_redo already incremented redo_count</td>
+      </tr>
+      <tr>
+        <td class="step">4.2</td>
+        <td>Parent1 (the SAME reviewer who requested the redo) calls
+          <code>resolve_redo_dispute(chore, Parent1, pay=true)</code></td>
+        <td><code>error: member requested this redo — a different parent must resolve the dispute</code></td>
+        <td>Rejected — the reviewer who made the original call can't also be the tiebreaker</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>resolve_redo_dispute's own explicit check: <code>v_chore.reviewed_by_id = p_reviewer_id → raise</code></td>
+      </tr>
+      <tr>
+        <td class="step">4.3</td>
+        <td>Parent2 (a different, independent parent) calls
+          <code>resolve_redo_dispute(chore, Parent2, pay=true)</code></td>
+        <td><code>status=approved, coins_paid=10</code>; Kid3's coin balance 0→10, xp 0→15</td>
+        <td>Kid sided with, real payout lands</td>
+        <td>Matched exactly on both the chore row and Kid3's member row (independently re-read)</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>award_coins fired atomically inside the same transaction as the status update</td>
+      </tr>
+      <tr>
+        <td class="step">4.4</td>
+        <td>Parent2 calls <code>resolve_redo_dispute(chore, Parent2, pay=true)</code> a SECOND time on the
+          already-resolved chore</td>
+        <td><code>error: chore has no pending redo dispute (status=approved)</code>; Kid3's balance unchanged at 10</td>
+        <td>Rejected cleanly, no double-pay</td>
+        <td>Matched — error returned, balance re-read and confirmed still exactly 10, not 20</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>The function's own <code>if v_chore.status != 'kid_disputed_redo' then raise</code> guard — once status
+          moves to 'approved' the function is a pure no-op-via-exception on any replay</td>
+      </tr>
+      <tr>
+        <td class="step">4.5</td>
+        <td>Second independent chore: same request_redo → dispute_redo cycle, then
+          <code>resolve_redo_dispute(chore2, Parent2, pay=false)</code></td>
+        <td><code>status=redo_requested</code> (kid genuinely has to redo it), <code>redo_disputes_lost=1</code>,
+          Kid5's balance stays 0</td>
+        <td>No payout, redo really has to happen, and the loss is tracked separately from redo_count</td>
+        <td>Matched exactly</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Confirms the fix in 20260930600000 is live: redo_disputes_lost increments independently of redo_count,
+          which is what prevents a kid from farming auto-approval by repeatedly disputing and losing (submit_chore's
+          own v_effective_redo_count = redo_count - redo_disputes_lost formula, read statically, matches this
+          live-observed increment)</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s5">
+    <h2>5 · Raw-write identity/RLS sweep <span class="tag live">LIVE (RPC-reachable parts) + code-read (RLS text)</span></h2>
+    <p class="lede">Grepped every <code>.from('chore_tasks')</code>/<code>.from('chore_participants')</code>/
+      <code>.from('bounty_claims')</code> call in <code>store/choreStore.ts</code> that is NOT a plain read, then
+      cross-referenced each against <code>choreAdapter.ts</code> and the Kid/Teen/Parent/Senior view components for
+      whether any live button actually reaches it.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Raw write site</th><th>Reachable from a live button?</th><th>Identity check</th><th>Result</th></tr>
+      <tr>
+        <td><code>choreStore.ts:2421</code> — claimBounty's <code>chore_tasks.update({assigned_to_id, status,
+          is_pool})</code> CAS</td>
+        <td>NO — choreAdapter.ts:355-368's claimQuest (the only reachable Claim action in KidView/TeenView/
+          QuestsScreen) calls claimPoolQuest exclusively, never claimBounty</td>
+        <td>None — raw client CAS only, no resolve_active_member_id() anywhere in this path</td>
+        <td><span class="tag fail">Gap confirmed by direct RLS-policy read (§ Findings)</span> — chore_tasks_update
+          RLS (20260926010000) has no assigned_to_id/identity check for a non-terminal-status row, so if this path
+          is ever reached, nothing server-side stops writing an arbitrary member's id into assigned_to_id</td>
+      </tr>
+      <tr>
+        <td><code>choreStore.ts:2509</code> — claimPoolQuest's <code>rpc('claim_pool_quest', ...)</code></td>
+        <td>YES — this IS the reachable path (choreAdapter.ts:368)</td>
+        <td>claim_pool_quest RPC calls resolve_active_member_id() first, confirmed by direct code read of
+          20260930280000</td>
+        <td><span class="tag pass">Fixed since pass 1</span> — pass 1's Critical finding on this exact function
+          (it used to be a raw unauthenticated update) is confirmed resolved; the comment at choreStore.ts:2497-2507
+          explicitly documents the fix and cites pass 1's own report file</td>
+      </tr>
+      <tr>
+        <td><code>choreStore.ts:2301</code> — approveBountyClaim's slot-rollup
+          <code>chore_tasks.update({status:'approved'})</code></td>
+        <td>Reachable, but only fires after approveBountyClaim's own <code>canApprove(reviewerId)</code> client
+          check already passed and every bounty slot is independently approved</td>
+        <td>None directly on this specific write, but chore_tasks_update RLS's locked-status list
+          (approved/auto_approved/...) doesn't block a transition INTO 'approved' — the real gate is
+          canApprove()'s client-side check plus bounty_claims' own RLS already having required is_approver() to
+          get each individual claim to 'approved' first</td>
+        <td><span class="tag pass">Low risk in practice</span> — by the time this write is reachable, the caller
+          has already needed is_approver() to approve every individual bounty_claims row; this is a rollup
+          convenience write, not a fresh authorization decision</td>
+      </tr>
+      <tr>
+        <td><code>choreStore.ts:2233/2265/2338/2386</code> — submitBountyClaim/approveBountyClaim/
+          declineBountyClaim/withdrawBountyClaim's raw <code>bounty_claims</code> writes</td>
+        <td>Reachable — these ARE the live paths for bounty claim review</td>
+        <td>No resolve_active_member_id() call in the client code, but bounty_claims' own RLS
+          (20260925111000_bounty_claims_approver_only_write.sql) enforces
+          <code>member_id = resolve_active_member_id() OR is_approver()</code> on UPDATE/DELETE server-side</td>
+        <td><span class="tag pass">Correctly protected — contrast case</span> — unlike chore_tasks, bounty_claims'
+          RLS itself is the real security boundary here, not just a client-side canApprove() courtesy check; this
+          is the SAFE version of the same pattern claimBounty gets wrong</td>
+      </tr>
+    </table>
+    </div>
+    <p class="limitation"><b>Harness limitation.</b> The <code>qa-scratch-family</code> edge function's
+      <code>'rpc'</code> action only calls <code>scopedClient.rpc(fnName, args)</code> — there is no action that
+      performs a raw <code>.from(table).update()</code> as a specific minted member session, so
+      <code>claimBounty</code>'s exact vulnerable code path (and the RLS-policy gap it would hit) could not be
+      LITERALLY executed end-to-end in this run. The RLS-policy conclusion above is a direct, verbatim read of the
+      deployed policy SQL (<code>20260926010000_fix_chore_tasks_rls_wrong_table.sql</code>), not a live
+      demonstration — flagged accordingly in the Findings section as "code-verified, not live-exercised," the same
+      distinction pass 1 drew for its own static-only sections.</p>
+  </section>
+
+  <section id="s6">
+    <h2>6 · assign_event_role field-pair clearing <span class="tag live">LIVE</span></h2>
+    <p class="lede">Direct test of the task's exact hypothesis: does <code>assign_event_role</code> — a sibling of
+      <code>reassign_event</code>, used for a FRESH assignment rather than a take-over — get the same
+      other-pair-clearing fix <code>reassign_event</code> needed in
+      <code>20260940020000_reassign_event_clears_other_assignee_pair.sql</code>? Tested in both directions
+      (assign driver after a stale helper pair; assign helper after a stale driver pair), plus an incidental
+      re-verification of pass 1's Finding #1 fix.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after (fresh read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">6.1</td>
+        <td>Fresh Ride event; <code>assign_event_role(ev, Parent2, 'helper', actor=Parent1)</code></td>
+        <td><code>helper_name=Parent2, helper_id=Parent2, helper_status=pending</code>, driver_* untouched (all
+          null, since the row started clean)</td>
+        <td>Clean helper assignment</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Baseline — no pre-existing stale pair to test against yet</td>
+      </tr>
+      <tr>
+        <td class="step">6.2</td>
+        <td>Same event: <code>decline_event_assignment(ev, Parent2, 'helper')</code>, then
+          <code>assign_event_role(ev, Parent1, 'helper', actor=Parent1)</code></td>
+        <td><code>driver_id</code> correctly stayed null throughout — no staleness to find here since the row never
+          had a driver assigned</td>
+        <td>N/A — this step re-confirmed decline_event_assignment's id-clearing fix (pass 1 Finding #1) is live:
+          after decline, driver_name AND driver_id both null (not just driver_name)</td>
+        <td>Matched — driver_id genuinely null, not stale</td>
+        <td><span class="tag pass">PASS (fix re-verified)</span></td>
+        <td>20260940040000_decline_event_assignment_clears_id_too.sql is live and working — see Findings</td>
+      </tr>
+      <tr>
+        <td class="step">6.3</td>
+        <td>NEW event, seeded via <code>add_event</code> with BOTH <code>driverId=Parent2</code> AND
+          <code>helperId=Parent2</code> populated (reproducing the pre-fix conflicted-row shape) — then
+          <code>assign_event_role(ev, Parent1, 'driver', actor=Parent1)</code>, a FRESH driver assignment</td>
+        <td>Per the reassign_event fix pattern: driver flips to Parent1/pending, AND the stale
+          <code>helper_name=Parent2/helper_id=Parent2</code> pair gets cleared alongside it</td>
+        <td><code>driver_name=Parent1, driver_id=Parent1, driver_status=pending</code> — but
+          <code>helper_name=Parent2, helper_id=Parent2, helper_status=null</code> SURVIVED completely untouched</td>
+        <td><span class="tag fail">FAIL (see Findings)</span></td>
+        <td>assign_event_role's driver branch (line 1222-1225 of the live migration) only writes
+          driver_name/driver_status/ride_required — no helper_* reference anywhere in the function body</td>
+      </tr>
+      <tr>
+        <td class="step">6.4</td>
+        <td>Reverse direction: another NEW event seeded with BOTH <code>driverId=Parent1</code> AND
+          <code>helperId=Parent1</code> populated, then <code>assign_event_role(ev, Parent2, 'helper', actor=Parent1)</code></td>
+        <td>Helper flips to Parent2/pending; stale driver_name=Parent1/driver_id=Parent1 gets cleared</td>
+        <td><code>helper_name=Parent2, helper_id=Parent2, helper_status=pending</code> — but
+          <code>driver_name=Parent1, driver_id=Parent1, driver_status=null</code> SURVIVED untouched</td>
+        <td><span class="tag fail">FAIL (see Findings)</span></td>
+        <td>Same omission, confirmed on the other branch — the bug is symmetric, not direction-specific</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Why this isn't a legitimate "both-ways ride" state:</b>
+      <code>features/hub/parent/rideLegs.ts</code>'s own <code>forkRideLegs</code> always splits a both-ways ride
+      request into TWO separate <code>calendar_events</code> rows (a pickup leg and a drop-off leg) — a single row
+      is never product-intentionally supposed to carry both a live driver_* AND a live helper_* pair at once. The
+      conflicted state produced in §6.3/§6.4 is purely leftover staleness, exactly like the pre-fix
+      <code>reassign_event</code> bug pass 1 found, not a real dual-assignee event.</p>
+  </section>
+
+  <section id="s7">
+    <h2>7 · Live impersonation attempts <span class="tag live">LIVE</span></h2>
+    <p class="lede">Two direct attempts to call an identity-sensitive RPC as one real scratch member while passing
+      a DIFFERENT real member's id as the "who is doing this" parameter — the exact attack
+      <code>resolve_active_member_id()</code> exists to block.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>Actual result</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">7.1</td>
+        <td>Kid5's real session calls <code>accept_chore_handoff(chore, p_member_id=Teen4)</code> — attempting to
+          accept a handoff on Teen4's behalf</td>
+        <td><code>error: caller is not member [Teen4's id]</code></td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>accept_chore_handoff's first check: resolve_active_member_id() (resolves to Kid5, the real caller) is
+          distinct from p_member_id (Teen4) → immediate exception, no row touched</td>
+      </tr>
+      <tr>
+        <td class="step">7.2</td>
+        <td>Teen8's real session calls
+          <code>offer_chore_handoff(chore, toId=Teen8, byId=Kid3)</code> — attempting to offer a chore Teen8 doesn't
+          own, claiming to be Kid3</td>
+        <td><code>error: caller is not member [Kid3's id]</code></td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Same guard shape on p_by_member_id — confirms this identity check is consistently applied across every
+          chore-handoff RPC parameter that represents "who is really doing this," not just the most obvious one</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s8">
+    <h2>8 · Cross-role visibility reasoning <span class="tag static">STATIC REASONING OVER LIVE STATES</span></h2>
+    <p class="lede">For each DB state produced above, which role(s) should see it on Hub vs. Tasks/Schedule, per
+      <code>deriveQuestActions</code>/<code>deriveEventActions</code> in
+      <code>features/tasks/lib/deriveCardActions.ts</code> — and whether the actual view components match that
+      computed result.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>DB state (from above)</th><th>Should see it</th><th>Governing condition</th><th>View-component match?</th></tr>
+      <tr>
+        <td>§1.2 — chore1, assigned_to_id=Teen4 (post-accept)</td>
+        <td>Teen4 sees <code>canSubmit</code>/<code>canKidDecline</code>/<code>canGiveBack</code>; Kid3 sees
+          nothing actionable at all — no card should route any button to Kid3 for this chore anymore</td>
+        <td><code>deriveCardActions.ts:128-141</code> — every canX for a kid/teen viewer requires
+          <code>isAssignedTo(q, myId)</code>, and Kid3 no longer is</td>
+        <td><span class="tag pass">Consistent</span> — confirmed live in §1.3: submit_chore itself independently
+          enforces the same assignee check server-side, so even a stale client showing Kid3 a submit button would
+          have the write rejected</td>
+      </tr>
+      <tr>
+        <td>§1.4/§1.5 — chore2, assigned_to_id=null, is_pool=true (post-decline), later claimed by Kid5</td>
+        <td>Before Kid5's claim: every kid/teen in the family (including Kid3, the original owner) sees
+          <code>canClaim</code> equally — nothing distinguishes Kid3 as "more entitled" to reclaim it. After Kid5's
+          claim: only Kid5 sees canSubmit/canGiveBack; Kid3 sees nothing, having lost the chore entirely to a
+          decline they didn't cause</td>
+        <td><code>deriveCardActions.ts:128</code> — <code>canClaim = isKidOrTeen &amp;&amp; pool &amp;&amp;
+          !q.inviteGrandparents</code> — no field anywhere in this predicate distinguishes "the original owner
+          before a handoff" from any other kid/teen in the family</td>
+        <td><span class="tag fail">Confirms the Finding</span> — the UI layer faithfully reflects exactly the DB
+          state decline_chore_handoff produces (an undifferentiated open pool item), which is precisely why the
+          RPC-level design choice is the real bug, not a UI mismatch on top of correct data</td>
+      </tr>
+      <tr>
+        <td>§4.3 — redo dispute resolved pay=true, chore approved, Kid3 paid</td>
+        <td>Kid3 sees the chore in Done/history with no further actions (<code>done</code> gates every canX
+          false); both parents see it in a completed state, no outstanding review action for either</td>
+        <td><code>isDoneCard</code>/<code>canEdit = isParent &amp;&amp; !done</code>
+          (deriveCardActions.ts:51,173)</td>
+        <td><span class="tag pass">Consistent</span> — status=approved is a terminal state in every predicate
+          checked</td>
+      </tr>
+      <tr>
+        <td>§6.3 — event with driver=Parent1/pending (fresh, correct) but helper_name STALE=Parent2 surviving from
+          before assign_event_role's driver write</td>
+        <td>Parent1 should see themselves as the pending driver (<code>showCantMakeIt</code>/self-assigned state);
+          Parent2 should see NOTHING — they were never really re-confirmed as helper on this fresh assignment</td>
+        <td><code>eventAssignee()</code> (store/eventStore.ts:290) — <code>if (e.helper) return {name: e.helper,
+          id: e.helperId, status: e.helperStatus}</code> — helper is checked FIRST, unconditionally</td>
+        <td><span class="tag fail">MISMATCH — confirms the Finding</span> — every consumer of
+          <code>deriveEventActions</code> (ParentView, SeniorView, hubComponents' EventDetailSheet) would resolve
+          <code>assignee = {name: 'Parent2', id: Parent2, status: null}</code> for this row, showing Parent2 as
+          the (non-pending, non-confirmed — status null falls through both <code>helperPending</code> and
+          <code>helperConfirmed</code>) assignee, while Parent1's real, fresh, correctly-written driver assignment
+          renders NOWHERE — no showConfirm, no showCantMakeIt, no visible pending state for anyone, on an event
+          that genuinely has one</td>
+      </tr>
+      <tr>
+        <td>§7.1/§7.2 — both impersonation attempts, zero DB rows changed</td>
+        <td>No visibility question — no state changed for any role to see</td>
+        <td>N/A</td>
+        <td><span class="tag pass">Consistent</span> — confirmed via the exception path alone; no follow-up read
+          needed since the RPCs both raised before any UPDATE/INSERT executed</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="limitations">
+    <h2>Harness limitations encountered</h2>
+    <ul>
+      <li><code>add_quest</code>'s insert only accepts
+        <code>{familyId, title, isPool, assignedToId, status}</code> — no way to set
+        <code>inviteGrandparents</code>, <code>maxClaimants</code>, or <code>gpOfferById</code>. This blocked a true
+        live exercise of §2 (GP errand offer's happy path) and §3 (bounty multi-slot race) end-to-end; both were
+        confirmed to genuinely hit their RPC's own guard (not silently skipped) and then traced statically against
+        the live SQL instead, flagged distinctly per this audit's static-vs-live requirement.</li>
+      <li>The <code>'rpc'</code> action only calls <code>scopedClient.rpc(fnName, args)</code> as a minted member
+        session — there is no harness action for a raw <code>.from(table).update()/.insert()</code> as a scoped
+        member. This meant <code>claimBounty</code>'s exact dead-but-present raw-write vulnerability (§5) could be
+        confirmed by direct RLS-policy-SQL read, but not literally executed end-to-end in this run.</li>
+      <li>All RPCs that COULD be exercised live in this pass (<code>offer_chore_handoff</code>,
+        <code>accept_chore_handoff</code>, <code>decline_chore_handoff</code>, <code>claim_gp_errand</code>,
+        <code>accept_gp_offer</code> (guard-rejection path), <code>request_redo</code>, <code>dispute_redo</code>,
+        <code>resolve_redo_dispute</code>, <code>assign_event_role</code>, <code>decline_event_assignment</code>,
+        <code>claim_pool_quest</code>, <code>submit_chore</code>) behaved exactly as their own SQL predicts, with no
+        errors beyond the ones this report explicitly calls out as findings or expected rejections.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Produced via a real, live pass against the deployed <code>qa-scratch-family</code> edge function — every PASS/
+    FAIL above reflects an actual fresh <code>read</code> response, not a prediction from the SQL alone (SQL is
+    cited to explain <i>why</i>, not as the source of the result), except where a section is explicitly marked
+    STATIC. Scratch family <code>cfdd0469-d8da-4382-abb8-3429942c89ef</code> fully torn down at the end of this
+    run, confirmed by a follow-up <code>read</code> on <code>members</code> returning zero rows.
+    <div class="backtotop"><a href="#top">&uarr; back to top</a></div>
+  </footer>
+</div>

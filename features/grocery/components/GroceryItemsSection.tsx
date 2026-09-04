@@ -120,11 +120,28 @@ export function GroceryItemsSection({
   // measure the ScrollView's own rendered height.
   const [viewportHeight] = useState(() => Dimensions.get('window').height);
 
+  // storeAtY is plain JS (reads a ref, no worklet context) — updateHoveredStore
+  // wraps it in a stable, hoisted function so the worklet below always calls
+  // runOnJS on the SAME reference every frame.
+  const updateHoveredStore = useCallback((y: number) => {
+    setHoveredStore(storeAtY(y));
+  }, [storeAtY]);
+
   // Live hover highlight + edge auto-scroll while a drag is in flight —
   // runs as a UI-thread reaction on dragAbsoluteY (updated every pan frame
   // by DraggableItemRow) rather than polling, so the highlighted section
   // and the auto-scroll both track the finger smoothly. storeAtY/onAutoScroll
   // themselves are plain JS, hence the runOnJS hops.
+  //
+  // Was: `runOnJS((y: number) => setHoveredStore(storeAtY(y)))(curr.y)` —
+  // constructing a brand-new inline closure INSIDE the worklet body on every
+  // reaction firing (including the very first one, since draggingId flips to
+  // non-null the instant Gesture.Pan's onStart runs, before any finger
+  // movement) instead of calling runOnJS with a stable, hoisted reference.
+  // Reanimated 4's stricter worklet/JSI boundary doesn't reliably tolerate a
+  // freshly-allocated function crossing that boundary this way — live-
+  // reported as an immediate crash on first touching the drag handle, before
+  // any drag motion, which is exactly when this reaction first fires.
   useAnimatedReaction(
     () => ({ y: dragAbsoluteY.value, dragging: draggingId.value !== null }),
     (curr, prev) => {
@@ -135,14 +152,14 @@ export function GroceryItemsSection({
         }
         return;
       }
-      runOnJS((y: number) => setHoveredStore(storeAtY(y)))(curr.y);
+      runOnJS(updateHoveredStore)(curr.y);
       if (onAutoScroll && viewportHeight > 0) {
         if (curr.y < AUTOSCROLL_EDGE) runOnJS(onAutoScroll)(-AUTOSCROLL_SPEED);
         else if (curr.y > viewportHeight - AUTOSCROLL_EDGE) runOnJS(onAutoScroll)(AUTOSCROLL_SPEED);
         else runOnJS(onAutoScroll)(null);
       }
     },
-    [viewportHeight]
+    [viewportHeight, updateHoveredStore]
   );
 
   const handleDrop = useCallback((itemId: string, pageY: number) => {
@@ -153,7 +170,21 @@ export function GroceryItemsSection({
     const store = storeAtY(pageY);
     if (!store || store === (item.storePreference ?? 'Any store')) return;
     const target = store === 'Any store' ? undefined : store;
-    updateItem(itemId, { storePreference: target });
+    // DraggableItemRow.tsx's own inFlight guard only keeps the DRAGGED row's
+    // GestureDetector mounted through its own drop — it can't protect
+    // SIBLING rows. Moving the last item out of a store section collapses
+    // groupedItems (computed by this component's caller) down by one
+    // section on the very next render, unmounting every OTHER
+    // DraggableItemRow in that now-empty section (each keyed by item id
+    // inside a `key={store}` section View) in the same synchronous update
+    // that runs while the gesture handler's onEnd callback is still on the
+    // stack — the exact still-live version of the SIGSEGV/"pointer
+    // authentication failure" crash DraggableItemRow.tsx's own comment
+    // describes, just scoped to rows other than the one that was dragged.
+    // Deferring the actual store mutation lets onEnd fully return control
+    // to the native gesture handler first, so the resulting re-render/
+    // unmount happens on a clean stack instead of mid-callback.
+    setTimeout(() => updateItem(itemId, { storePreference: target }), 0);
   }, [itemsById, updateItem, storeAtY, onAutoScroll]);
 
   if (groceryItems.length === 0 && !hasSuppliesOrClothing) {

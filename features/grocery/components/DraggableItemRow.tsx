@@ -13,7 +13,7 @@
  * measurement, hit-testing, and the parent ScrollView's auto-scroll near
  * viewport edges — this component has no knowledge of sections at all.
  */
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -60,13 +60,22 @@ export function DraggableItemRow({
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
 
-  const finishDrop = (id: string, y: number) => {
+  // Stable reference across renders (useCallback with an empty dep array —
+  // it only ever reads onDropRef.current, never a stale closed-over value)
+  // rather than a plain function re-allocated every render. Not the same
+  // crash class as GroceryItemsSection's inline-closure-inside-a-worklet
+  // bug (this one is only ever referenced by the FRESH Gesture.Pan() built
+  // in the same render, so it was never actually stale), but hardened to
+  // the same stable-reference pattern for consistency now that this whole
+  // crash class has been traced to exactly this kind of closure churn
+  // crossing the JSI/worklet boundary.
+  const finishDrop = useCallback((id: string, y: number) => {
     try {
       onDropRef.current(id, y);
     } finally {
       setInFlight(false);
     }
-  };
+  }, []);
 
   const pan = Gesture.Pan()
     .onStart(() => {

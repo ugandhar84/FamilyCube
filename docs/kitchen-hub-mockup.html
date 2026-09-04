@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kitchen Hub Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800;900&display=swap">
+<style>
+  :root {
+    --primary: #CD7B57;
+    --primary-light: #F3E1D6;
+    --primary-dark: #A05939;
+    --sage: #69927C;
+    --sage-light: #E3EDE8;
+    --amber: #C9964F;
+    --amber-light: #F2E6CE;
+    --lavender: #9686B5;
+    --lavender-light: #E9E3F1;
+    --navy: #2C2722;
+
+    --bg: #FDFBF7;
+    --surface: #F8F3EA;
+    --card: #FFFFFF;
+    --border: rgba(44,39,34,0.09);
+    --text-primary: #2C2722;
+    --text-secondary: #6B5F52;
+    --text-tertiary: #A69A8A;
+    --success: #69927C;
+    --danger: #C0654A;
+  }
+
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #12141C;
+      --surface: #181B24;
+      --card: #1B1E28;
+      --border: rgba(219,146,112,0.16);
+      --text-primary: #EDE8E0;
+      --text-secondary: #B8AC9C;
+      --text-tertiary: #7A6E60;
+      --primary: #DB9270;
+      --primary-light: rgba(219,146,112,0.16);
+      --sage: #86AC97;
+      --sage-light: rgba(134,172,151,0.16);
+      --amber: #D9AF74;
+      --amber-light: rgba(217,175,116,0.16);
+      --lavender: #AC9BC7;
+      --lavender-light: rgba(172,155,199,0.16);
+      --success: #86AC97;
+      --danger: #DE9C82;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141C;
+    --surface: #181B24;
+    --card: #1B1E28;
+    --border: rgba(219,146,112,0.16);
+    --text-primary: #EDE8E0;
+    --text-secondary: #B8AC9C;
+    --text-tertiary: #7A6E60;
+    --primary: #DB9270;
+    --primary-light: rgba(219,146,112,0.16);
+    --sage: #86AC97;
+    --sage-light: rgba(134,172,151,0.16);
+    --amber: #D9AF74;
+    --amber-light: rgba(217,175,116,0.16);
+    --lavender: #AC9BC7;
+    --lavender-light: rgba(172,155,199,0.16);
+    --success: #86AC97;
+    --danger: #DE9C82;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  .frame {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .intro {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 40px 28px 8px;
+    text-align: center;
+  }
+  .intro .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+  .intro h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 30px;
+    font-weight: 600;
+    margin: 8px 0 6px;
+    text-wrap: balance;
+  }
+  .intro p {
+    font-size: 14.5px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 620px;
+    margin: 0 auto;
+  }
+
+  /* ── Device chrome ── */
+  .stage {
+    padding: 28px 20px 56px;
+    display: flex;
+    justify-content: center;
+  }
+  .tablet {
+    width: min(100%, 1180px);
+    aspect-ratio: 16 / 10.2;
+    border-radius: 28px;
+    background: var(--bg);
+    box-shadow: 0 40px 90px -30px rgba(44,39,34,0.35), 0 2px 0 rgba(44,39,34,0.06) inset;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+  }
+
+  /* ── Kiosk nav rail ── */
+  .rail {
+    width: clamp(58px, 5.4vw, 84px);
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(14px, 1.8vw, 22px) 0;
+    gap: clamp(4px, 0.6vw, 8px);
+  }
+  .rail .railgroup { display: flex; flex-direction: column; align-items: center; gap: clamp(4px, 0.6vw, 8px); flex: 1; }
+  .rail-btn {
+    width: clamp(42px, 3.8vw, 58px);
+    height: clamp(42px, 3.8vw, 58px);
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .rail-btn .ic { width: clamp(19px, 1.9vw, 24px); height: clamp(19px, 1.9vw, 24px); display: flex; }
+  .rail-btn .ic svg { width: 100%; height: 100%; }
+  .rail-btn .lb { font-size: clamp(7.5px, 0.65vw, 9px); font-weight: 800; letter-spacing: 0.02em; }
+  .rail-btn.on { background: var(--primary-light); color: var(--primary-dark, var(--primary)); }
+  .rail-btn:not(.on):hover { background: var(--card); color: var(--text-secondary); }
+  .rail-ask {
+    width: clamp(42px, 3.8vw, 58px);
+    height: clamp(42px, 3.8vw, 58px);
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--lavender), var(--primary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: 0 8px 18px -6px rgba(150,134,181,0.55);
+    margin-bottom: clamp(6px, 0.8vw, 10px);
+    cursor: pointer;
+  }
+
+  .screenwrap { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+
+  /* Profile switcher — demo control only, not part of the layout concept itself */
+  .profileswitch {
+    position: absolute;
+    top: 14px; right: 20px;
+    display: flex; gap: 6px;
+    z-index: 5;
+  }
+  .profileswitch .pill {
+    font-size: 10.5px; font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    cursor: pointer;
+  }
+  #p-default:checked ~ .profileswitch label[for="p-default"],
+  #p-senior:checked ~ .profileswitch label[for="p-senior"] {
+    background: var(--primary); color: #fff; border-color: var(--primary);
+  }
+
+  /* Which rail buttons show for which active profile */
+  .only-senior { display: none; }
+  #p-senior:checked ~ .rail .only-default { display: none; }
+  #p-senior:checked ~ .rail .only-senior { display: flex; }
+
+  /* ── Top bar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: clamp(14px, 2.2vw, 26px) clamp(20px, 3vw, 40px);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar .clock {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .topbar .time {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(30px, 4.2vw, 52px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .topbar .date {
+    font-size: clamp(12px, 1.1vw, 16px);
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .topbar .familyname {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(14px, 1.4vw, 19px);
+    font-weight: 600;
+    color: var(--primary-dark, var(--primary));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .topbar .familyname .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px var(--sage-light);
+  }
+
+  .avatars {
+    display: flex;
+    gap: clamp(8px, 1.1vw, 16px);
+    padding: 0 clamp(20px, 3vw, 40px);
+    margin-top: clamp(10px, 1.4vw, 18px);
+    flex-shrink: 0;
+  }
+  .avatar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.55;
+  }
+  .avatar.active { opacity: 1; }
+  .avatar .ring {
+    width: clamp(40px, 4.6vw, 60px);
+    height: clamp(40px, 4.6vw, 60px);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(18px, 2vw, 26px);
+    border: 2.5px solid transparent;
+    background: var(--surface);
+    position: relative;
+  }
+  .avatar.active .ring { border-color: var(--ac, var(--primary)); }
+  .avatar .badge {
+    position: absolute;
+    top: -3px; right: -3px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .avatar .name {
+    font-size: clamp(9.5px, 0.85vw, 12px);
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+  .avatar.active .name { color: var(--text-primary); }
+
+  /* ── Main grid ── */
+  .grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1.15fr 1.55fr 1.1fr;
+    gap: 1px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .col {
+    background: var(--bg);
+    padding: clamp(16px, 2vw, 26px) clamp(16px, 2vw, 24px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 1.8vw, 20px);
+  }
+
+  .sectiontitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: clamp(10.5px, 0.95vw, 12.5px);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .sectiontitle .swatch {
+    width: 9px; height: 9px; border-radius: 3px;
+    background: var(--ac, var(--primary));
+  }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: clamp(13px, 1.5vw, 18px);
+  }
+
+  /* ── Column 1: Weather-style + backlog ── */
+  .bigstat {
+    display: flex;
+    align-items: center;
+    gap: clamp(12px, 1.6vw, 18px);
+  }
+  .bigstat .icon {
+    font-size: clamp(32px, 3.6vw, 46px);
+    line-height: 1;
+  }
+  .bigstat .num {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(26px, 3vw, 38px);
+    font-weight: 600;
+    line-height: 1;
+  }
+  .bigstat .label {
+    font-size: clamp(10.5px, 0.95vw, 12.5px);
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-top: 2px;
+  }
+
+  .backlogrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: clamp(9px, 1vw, 12px) 0;
+    border-top: 1px solid var(--border);
+  }
+  .backlogrow:first-of-type { border-top: none; }
+  .backlogrow .who {
+    display: flex; align-items: center; gap: 9px;
+    font-size: clamp(12.5px, 1.05vw, 14.5px);
+    font-weight: 700;
+  }
+  .backlogrow .who .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ac, var(--text-tertiary));
+    flex-shrink: 0;
+  }
+  .backlogrow .coins {
+    font-size: clamp(11px, 0.95vw, 13px);
+    font-weight: 800;
+    color: var(--amber);
+    background: var(--amber-light);
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+
+  .approverbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: clamp(10px, 1.1vw, 13px) clamp(12px, 1.3vw, 15px);
+    border-radius: 14px;
+    background: var(--lavender-light);
+    border: 1px solid transparent;
+  }
+  .approverbar .icon { font-size: clamp(16px, 1.5vw, 20px); }
+  .approverbar .txt { font-size: clamp(11px, 0.95vw, 13px); font-weight: 700; color: var(--lavender); }
+
+  /* ── Column 2: Timeline ── */
+  .timeline { position: relative; flex: 1; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: clamp(38px, 4vw, 52px);
+    top: 6px; bottom: 6px;
+    width: 2px;
+    background: var(--border);
+  }
+  .tl-item {
+    display: flex;
+    gap: clamp(12px, 1.5vw, 18px);
+    padding-bottom: clamp(16px, 2vw, 24px);
+    position: relative;
+  }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-time {
+    width: clamp(38px, 4vw, 52px);
+    flex-shrink: 0;
+    text-align: right;
+    font-size: clamp(11px, 1vw, 13.5px);
+    font-weight: 800;
+    color: var(--text-secondary);
+    padding-top: 2px;
+  }
+  .tl-dot {
+    position: absolute;
+    left: clamp(34px, 3.65vw, 48px);
+    top: 4px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--ac, var(--primary));
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--ac, var(--primary));
+  }
+  .tl-card {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--ac, var(--primary));
+    border-radius: 14px;
+    padding: clamp(11px, 1.3vw, 15px) clamp(13px, 1.5vw, 17px);
+  }
+  .tl-card .title {
+    font-size: clamp(14px, 1.25vw, 17px);
+    font-weight: 800;
+    line-height: 1.3;
+  }
+  .tl-card .meta {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 5px;
+    font-size: clamp(11px, 1vw, 13px);
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .tl-card .who-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: clamp(10.5px, 0.95vw, 12.5px);
+    font-weight: 800;
+    color: var(--ac, var(--primary));
+  }
+  .tl-card .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: clamp(10px, 0.9vw, 11.5px);
+    font-weight: 800;
+    padding: 3px 9px;
+    border-radius: 999px;
+    margin-top: 7px;
+  }
+  .status.pending { background: var(--amber-light); color: var(--amber); }
+  .status.confirmed { background: var(--sage-light); color: var(--sage); }
+  .status.enroute { background: var(--primary-light); color: var(--primary-dark, var(--primary)); }
+
+  /* ── Column 3: chores + chat pulse ── */
+  .chorecard {
+    display: flex;
+    align-items: center;
+    gap: clamp(10px, 1.2vw, 14px);
+    padding: clamp(10px, 1.1vw, 13px);
+    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .chorecard .emoji {
+    font-size: clamp(20px, 2vw, 26px);
+    width: clamp(34px, 3.4vw, 42px);
+    height: clamp(34px, 3.4vw, 42px);
+    border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--ac-light, var(--surface));
+    flex-shrink: 0;
+  }
+  .chorecard .body { flex: 1; min-width: 0; }
+  .chorecard .name {
+    font-size: clamp(12.5px, 1.05vw, 14.5px);
+    font-weight: 800;
+  }
+  .chorecard .sub {
+    font-size: clamp(10.5px, 0.9vw, 12px);
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .chorecard .coinpill {
+    font-size: clamp(10.5px, 0.9vw, 12.5px);
+    font-weight: 800;
+    color: var(--amber);
+    flex-shrink: 0;
+  }
+
+  .chatpulse {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: clamp(10px, 1.1vw, 13px);
+  }
+  .chatpulse .bubble-emoji { font-size: clamp(16px, 1.4vw, 19px); }
+  .chatpulse .txt { font-size: clamp(11.5px, 1vw, 13.5px); line-height: 1.45; }
+  .chatpulse .txt b { font-weight: 800; }
+  .chatpulse .txt .meta { display: block; margin-top: 3px; font-size: clamp(10px, 0.85vw, 11.5px); color: var(--text-tertiary); font-weight: 600; }
+
+  .col3-scroll { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+
+  /* ── Screen switching (pure CSS, radio-driven) ── */
+  .screenradio { display: none; }
+  .screen { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  #s-hub:checked ~ .rail .rail-btn[for="s-hub"],
+  #s-tasks:checked ~ .rail .rail-btn[for="s-tasks"],
+  #s-schedule:checked ~ .rail .rail-btn[for="s-schedule"],
+  #s-findfam:checked ~ .rail .rail-btn[for="s-findfam"],
+  #s-chat:checked ~ .rail .rail-btn[for="s-chat"],
+  #s-store:checked ~ .rail .rail-btn[for="s-store"],
+  #s-memories:checked ~ .rail .rail-btn[for="s-memories"] { background: var(--primary-light); color: var(--primary-dark, var(--primary)); }
+  #s-hub:checked ~ .screenwrap #screen-hub,
+  #s-tasks:checked ~ .screenwrap #screen-tasks,
+  #s-schedule:checked ~ .screenwrap #screen-schedule,
+  #s-findfam:checked ~ .screenwrap #screen-findfam,
+  #s-chat:checked ~ .screenwrap #screen-chat,
+  #s-store:checked ~ .screenwrap #screen-store,
+  #s-memories:checked ~ .screenwrap #screen-memories { display: flex; }
+
+  /* ── Generic sub-screen shell (Tasks / Schedule / FindFam / Chat / Store) ── */
+  .subheader {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: clamp(16px, 2vw, 24px) clamp(20px, 3vw, 36px);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .subheader h2 {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(20px, 2.2vw, 28px);
+    font-weight: 600;
+    margin: 0;
+  }
+  .subheader .sub-meta { font-size: clamp(11px, 1vw, 13.5px); color: var(--text-secondary); font-weight: 600; }
+  .subbody { flex: 1; padding: clamp(16px, 2vw, 26px) clamp(20px, 3vw, 36px); overflow: hidden; }
+
+  /* Tasks/Quests screen */
+  .taskgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; height: 100%; }
+  .taskcol { display: flex; flex-direction: column; gap: 10px; }
+  .taskcol .colhead { font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); padding-bottom: 4px; }
+  .taskchip {
+    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--ac, var(--primary));
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .taskchip .t-title { font-size: 13.5px; font-weight: 800; }
+  .taskchip .t-meta { font-size: 11px; color: var(--text-secondary); font-weight: 600; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
+
+  /* Schedule / Calendar screen */
+  .weekstrip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; height: 100%; }
+  .daycol { display: flex; flex-direction: column; gap: 8px; }
+  .daycol .dayhead { text-align: center; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+  .daycol.today .dayhead { border-bottom-color: var(--primary); }
+  .daycol .dow { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); }
+  .daycol .dnum { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 600; margin-top: 2px; }
+  .daycol.today .dnum { color: var(--primary); }
+  .evchip { background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 6px 8px; font-size: 10px; font-weight: 700; border-left: 3px solid var(--ac, var(--sage)); }
+
+  /* FindFam / map screen */
+  .mapshell {
+    height: 100%; border-radius: 18px; border: 1px solid var(--border); overflow: hidden;
+    background:
+      radial-gradient(circle at 30% 35%, var(--sage-light) 0, transparent 45%),
+      radial-gradient(circle at 70% 65%, var(--primary-light) 0, transparent 45%),
+      var(--surface);
+    position: relative;
+  }
+  .mappin {
+    position: absolute; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .mappin .pindot {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 2.5px solid var(--ac, var(--primary));
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    box-shadow: 0 6px 14px -4px rgba(44,39,34,0.25);
+  }
+  .mappin .pinlabel { font-size: 10.5px; font-weight: 800; background: var(--card); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+
+  /* Chat screen */
+  .chatlist { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: hidden; }
+  .chatrow { display: flex; gap: 10px; max-width: 60%; }
+  .chatrow.me { align-self: flex-end; flex-direction: row-reverse; }
+  .chatrow .av { width: 34px; height: 34px; border-radius: 50%; background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .chatrow .bub { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; font-size: 13.5px; }
+  .chatrow.me .bub { background: var(--sage-light); }
+  .chatrow .who { font-size: 10.5px; font-weight: 800; color: var(--text-tertiary); margin-bottom: 3px; }
+
+  /* Store screen */
+  .storegrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .rewardcard { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px; text-align: center; }
+  .rewardcard .r-emoji { font-size: 30px; }
+  .rewardcard .r-title { font-size: 12.5px; font-weight: 800; margin-top: 6px; }
+  .rewardcard .r-cost { font-size: 12px; font-weight: 800; color: var(--amber); margin-top: 4px; }
+
+  /* ── Bottom ambient strip ── */
+  .ambient {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: clamp(10px, 1.3vw, 15px) clamp(20px, 3vw, 40px);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .ambient .tagline {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(11px, 1vw, 13.5px);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-tertiary);
+  }
+  .ambient .tagline b { color: var(--primary); }
+  .ambient .weatherish {
+    display: flex; align-items: center; gap: 8px;
+    font-size: clamp(11px, 1vw, 13.5px);
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  /* ── Annotations panel ── */
+  .notes {
+    max-width: 1180px;
+    margin: 8px auto 0;
+    padding: 0 20px;
+  }
+  .notes .grid3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 6px;
+  }
+  .note {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .note .n-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .note.c-sage .n-title { color: var(--sage); }
+  .note.c-amber .n-title { color: var(--amber); }
+  .note.c-lav .n-title { color: var(--lavender); }
+  .note p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  @media (max-width: 780px) {
+    .grid3, .notes .grid3 { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: 1fr; }
+    .tablet { aspect-ratio: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="intro">
+    <div class="eyebrow">Kitchen Hub · Layout Concept</div>
+    <h1>An always-on dashboard for the fridge tablet</h1>
+    <p>
+      This is a mockup only — no app behavior yet. Shown at the size a wall-mounted
+      iPad/Android tablet would use in landscape: bigger type, glanceable from a few
+      feet away, no scrolling required to see today at a glance.
+    </p>
+  </div>
+
+  <div class="stage">
+    <div class="tablet">
+      <input type="radio" name="screen" id="s-hub" class="screenradio" checked>
+      <input type="radio" name="screen" id="s-tasks" class="screenradio">
+      <input type="radio" name="screen" id="s-schedule" class="screenradio">
+      <input type="radio" name="screen" id="s-findfam" class="screenradio">
+      <input type="radio" name="screen" id="s-chat" class="screenradio">
+      <input type="radio" name="screen" id="s-store" class="screenradio">
+      <input type="radio" name="screen" id="s-memories" class="screenradio">
+      <input type="radio" name="profile" id="p-default" class="screenradio" checked>
+      <input type="radio" name="profile" id="p-senior" class="screenradio">
+
+      <!-- Kiosk nav rail — every real tab THIS active profile can reach, not
+           just the dashboard. Mirrors the phone app's own role split:
+           parent/kid/teen get Hub·Tasks·Store·Chat·FindFam; a senior
+           profile gets Hub·Tasks·Chat·Memories instead (no Store/FindFam). -->
+      <div class="rail">
+        <div class="railgroup">
+          <label class="rail-btn" for="s-hub"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>
+          </span><span class="lb">Hub</span></label>
+          <label class="rail-btn" for="s-tasks"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="m8.5 12 2.2 2.2L15.5 9"/></svg>
+          </span><span class="lb">Tasks</span></label>
+          <label class="rail-btn only-default" for="s-schedule"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>
+          </span><span class="lb">Plan</span></label>
+          <label class="rail-btn" for="s-chat"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v11H9l-4 3.5v-3.5H4Z"/></svg>
+          </span><span class="lb">Chat</span></label>
+          <label class="rail-btn only-default" for="s-findfam"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.3"/></svg>
+          </span><span class="lb">Find</span></label>
+          <label class="rail-btn only-default" for="s-store"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 8.5 18.5 4h-13L4 8.5"/><path d="M4 8.5h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M9 12.5a3 3 0 0 0 6 0"/></svg>
+          </span><span class="lb">Store</span></label>
+          <label class="rail-btn only-senior" for="s-memories"><span class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="14" rx="2"/><path d="m3.5 8 8.5 5 8.5-5"/></svg>
+          </span><span class="lb">Memories</span></label>
+        </div>
+        <div class="rail-ask">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="21" height="21"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M5.6 18.4l2-2M16.4 7.6l2-2"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+      </div>
+
+      <!-- Profile switcher — demo only, toggles which tab set the rail shows -->
+      <div class="profileswitch">
+        <label for="p-default" class="pill">Parent / Kid</label>
+        <label for="p-senior" class="pill">Senior / GP</label>
+      </div>
+
+      <div class="screenwrap">
+      <!-- ═══ SCREEN: HUB (dashboard) ═══ -->
+      <div class="screen" id="screen-hub">
+      <!-- Top bar -->
+      <div class="topbar">
+        <div class="clock">
+          <span class="time">4:12</span>
+          <span class="date">Thursday, August 27</span>
+        </div>
+        <div class="familyname"><span class="dot"></span> The Maddali Family</div>
+      </div>
+
+      <div class="avatars">
+        <div class="avatar active" style="--ac: var(--sage)">
+          <div class="ring">🐶</div>
+          <div class="name">Ugandhar</div>
+        </div>
+        <div class="avatar" style="--ac: var(--sage)">
+          <div class="ring">👩</div>
+          <div class="name">Priya</div>
+        </div>
+        <div class="avatar" style="--ac: var(--amber)">
+          <div class="ring">
+            🦁
+            <span class="badge">1</span>
+          </div>
+          <div class="name">Leo</div>
+        </div>
+        <div class="avatar" style="--ac: var(--amber)">
+          <div class="ring">🐰</div>
+          <div class="name">Maya</div>
+        </div>
+      </div>
+
+      <!-- Main 3-column grid -->
+      <div class="grid">
+        <!-- Column 1 — Backlog + approver -->
+        <div class="col">
+          <div class="sectiontitle"><span class="swatch" style="--ac: var(--amber)"></span> Household Backlog</div>
+          <div class="card">
+            <div class="bigstat">
+              <div class="icon">📋</div>
+              <div>
+                <div class="num">3</div>
+                <div class="label">chores open in the pool</div>
+              </div>
+            </div>
+            <div style="margin-top:14px">
+              <div class="backlogrow">
+                <div class="who"><span class="dot" style="--ac: var(--amber)"></span>Clean dishwasher</div>
+                <div class="coins">15 🪙</div>
+              </div>
+              <div class="backlogrow">
+                <div class="who"><span class="dot" style="--ac: var(--amber)"></span>Take out recycling</div>
+                <div class="coins">10 🪙</div>
+              </div>
+              <div class="backlogrow">
+                <div class="who"><span class="dot" style="--ac: var(--amber)"></span>Fold laundry</div>
+                <div class="coins">20 🪙</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sectiontitle"><span class="swatch" style="--ac: var(--sage)"></span> Chore Reviews</div>
+          <div class="card">
+            <div class="bigstat">
+              <div class="icon">✅</div>
+              <div>
+                <div class="num">2</div>
+                <div class="label">waiting on your approval</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="approverbar">
+            <span class="icon">🔑</span>
+            <span class="txt">Priya is temporary approver until 6:00 PM</span>
+          </div>
+        </div>
+
+        <!-- Column 2 — Timeline -->
+        <div class="col">
+          <div class="sectiontitle"><span class="swatch"></span> Today's Timeline</div>
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-time">3:31<br>PM</div>
+              <div class="tl-dot" style="--ac: var(--amber)"></div>
+              <div class="tl-card" style="--ac: var(--amber)">
+                <div class="title">🔄 Pick up Leo from Soccer</div>
+                <div class="meta">📍 Celina Sports Complex</div>
+                <span class="status pending">⏳ Awaiting driver</span>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-time">5:00<br>PM</div>
+              <div class="tl-dot" style="--ac: var(--sage)"></div>
+              <div class="tl-card" style="--ac: var(--sage)">
+                <div class="title">🍽️ Family dinner</div>
+                <div class="meta">Everyone</div>
+                <span class="status confirmed">✓ Confirmed</span>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-time">6:30<br>PM</div>
+              <div class="tl-dot" style="--ac: var(--lavender)"></div>
+              <div class="tl-card" style="--ac: var(--lavender)">
+                <div class="title">🎹 Maya — Piano lesson</div>
+                <div class="meta">📍 Riverside Music Studio</div>
+                <span class="who-chip">👩 Priya driving</span>
+                <span class="status enroute">🚗 En route · 8 min</span>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-time">8:00<br>PM</div>
+              <div class="tl-dot" style="--ac: var(--primary)"></div>
+              <div class="tl-card" style="--ac: var(--primary)">
+                <div class="title">🛁 Bedtime routine</div>
+                <div class="meta">Leo, Maya</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 3 — Chores in progress + chat pulse -->
+        <div class="col">
+          <div class="sectiontitle"><span class="swatch" style="--ac: var(--amber)"></span> In Progress</div>
+          <div class="col3-scroll">
+            <div class="chorecard">
+              <div class="emoji" style="--ac-light: var(--amber-light)">🧺</div>
+              <div class="body">
+                <div class="name">Leo — Fold laundry</div>
+                <div class="sub">Claimed 12 min ago</div>
+              </div>
+              <div class="coinpill">20 🪙</div>
+            </div>
+            <div class="chorecard">
+              <div class="emoji" style="--ac-light: var(--sage-light)">🧹</div>
+              <div class="body">
+                <div class="name">Maya — Sweep porch</div>
+                <div class="sub">Submitted for review</div>
+              </div>
+              <div class="coinpill">15 🪙</div>
+            </div>
+
+            <div class="sectiontitle" style="margin-top:6px"><span class="swatch" style="--ac: var(--lavender)"></span> Family Chat</div>
+            <div class="card" style="padding:6px 4px">
+              <div class="chatpulse">
+                <span class="bubble-emoji">💬</span>
+                <div class="txt"><b>Priya:</b> Running 5 min late for pickup!<span class="meta">2 min ago</span></div>
+              </div>
+              <div class="chatpulse">
+                <span class="bubble-emoji">🎉</span>
+                <div class="txt"><b>Leo</b> earned the <b>7-day streak</b> badge!<span class="meta">1 hr ago</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ambient bottom strip -->
+      <div class="ambient">
+        <div class="tagline"><b>CONNECT.</b> ORGANIZE. CARE. GROW.</div>
+        <div class="weatherish">☀️ 78°F · Kitchen Hub · Always On</div>
+      </div>
+      </div><!-- /screen-hub -->
+
+      <!-- ═══ SCREEN: TASKS / QUESTS ═══ -->
+      <div class="screen" id="screen-tasks">
+        <div class="subheader">
+          <h2>Quests</h2>
+          <span class="sub-meta">4 open · 2 in review</span>
+        </div>
+        <div class="subbody">
+          <div class="taskgrid">
+            <div class="taskcol">
+              <div class="colhead">To Do</div>
+              <div class="taskchip" style="--ac: var(--amber)">
+                <div class="t-title">🧺 Fold laundry</div>
+                <div class="t-meta"><span>Open to all</span><span>20 🪙</span></div>
+              </div>
+              <div class="taskchip" style="--ac: var(--amber)">
+                <div class="t-title">🧹 Sweep porch</div>
+                <div class="t-meta"><span>Open to all</span><span>15 🪙</span></div>
+              </div>
+              <div class="taskchip" style="--ac: var(--sage)">
+                <div class="t-title">🍽️ Load dishwasher</div>
+                <div class="t-meta"><span>Leo</span><span>15 🪙</span></div>
+              </div>
+            </div>
+            <div class="taskcol">
+              <div class="colhead">In Progress</div>
+              <div class="taskchip" style="--ac: var(--primary)">
+                <div class="t-title">🧺 Fold laundry</div>
+                <div class="t-meta"><span>Claimed by Leo</span><span>20 🪙</span></div>
+              </div>
+            </div>
+            <div class="taskcol">
+              <div class="colhead">In Review</div>
+              <div class="taskchip" style="--ac: var(--lavender)">
+                <div class="t-title">🧹 Sweep porch</div>
+                <div class="t-meta"><span>Maya submitted</span><span>15 🪙</span></div>
+              </div>
+              <div class="taskchip" style="--ac: var(--lavender)">
+                <div class="t-title">🐾 Feed the dog</div>
+                <div class="t-meta"><span>Leo submitted</span><span>10 🪙</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SCREEN: SCHEDULE / CALENDAR ═══ -->
+      <div class="screen" id="screen-schedule">
+        <div class="subheader">
+          <h2>Schedule</h2>
+          <span class="sub-meta">August 24 – 30</span>
+        </div>
+        <div class="subbody">
+          <div class="weekstrip">
+            <div class="daycol"><div class="dayhead"><div class="dow">Mon</div><div class="dnum">24</div></div><div class="evchip" style="--ac: var(--sage)">Soccer 4p</div></div>
+            <div class="daycol"><div class="dayhead"><div class="dow">Tue</div><div class="dnum">25</div></div><div class="evchip" style="--ac: var(--lavender)">Piano 6p</div></div>
+            <div class="daycol"><div class="dayhead"><div class="dow">Wed</div><div class="dnum">26</div></div></div>
+            <div class="daycol today"><div class="dayhead"><div class="dow">Thu</div><div class="dnum">27</div></div><div class="evchip" style="--ac: var(--amber)">Soccer 3:30p</div><div class="evchip" style="--ac: var(--lavender)">Piano 6:30p</div></div>
+            <div class="daycol"><div class="dayhead"><div class="dow">Fri</div><div class="dnum">28</div></div><div class="evchip" style="--ac: var(--primary)">Dentist 10a</div></div>
+            <div class="daycol"><div class="dayhead"><div class="dow">Sat</div><div class="dnum">29</div></div><div class="evchip" style="--ac: var(--sage)">Birthday party</div></div>
+            <div class="daycol"><div class="dayhead"><div class="dow">Sun</div><div class="dnum">30</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SCREEN: FINDFAM ═══ -->
+      <div class="screen" id="screen-findfam">
+        <div class="subheader">
+          <h2>FindFam</h2>
+          <span class="sub-meta">3 sharing location</span>
+        </div>
+        <div class="subbody">
+          <div class="mapshell">
+            <div class="mappin" style="--ac: var(--sage); top: 30%; left: 22%;">
+              <div class="pindot">🐶</div>
+              <div class="pinlabel">Ugandhar · Home</div>
+            </div>
+            <div class="mappin" style="--ac: var(--amber); top: 55%; left: 62%;">
+              <div class="pindot">🦁</div>
+              <div class="pinlabel">Leo · Soccer</div>
+            </div>
+            <div class="mappin" style="--ac: var(--primary); top: 22%; left: 70%;">
+              <div class="pindot">👩</div>
+              <div class="pinlabel">Priya · En route</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SCREEN: CHAT ═══ -->
+      <div class="screen" id="screen-chat">
+        <div class="subheader">
+          <h2>Family Chat</h2>
+          <span class="sub-meta">All Family</span>
+        </div>
+        <div class="subbody">
+          <div class="chatlist">
+            <div class="chatrow">
+              <div class="av">👩</div>
+              <div><div class="who">Priya</div><div class="bub">Running 5 min late for pickup!</div></div>
+            </div>
+            <div class="chatrow me">
+              <div class="av">🐶</div>
+              <div><div class="who">Ugandhar</div><div class="bub">No worries, I'll grab him 👍</div></div>
+            </div>
+            <div class="chatrow">
+              <div class="av">🎉</div>
+              <div><div class="who">Family Cube</div><div class="bub">Leo earned the <b>7-day streak</b> badge!</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SCREEN: STORE ═══ -->
+      <div class="screen" id="screen-store">
+        <div class="subheader">
+          <h2>Reward Store</h2>
+          <span class="sub-meta">Leo has 145 🪙</span>
+        </div>
+        <div class="subbody">
+          <div class="storegrid">
+            <div class="rewardcard"><div class="r-emoji">🎮</div><div class="r-title">30 min gaming</div><div class="r-cost">50 🪙</div></div>
+            <div class="rewardcard"><div class="r-emoji">🍦</div><div class="r-title">Ice cream trip</div><div class="r-cost">75 🪙</div></div>
+            <div class="rewardcard"><div class="r-emoji">🎬</div><div class="r-title">Movie night pick</div><div class="r-cost">100 🪙</div></div>
+            <div class="rewardcard"><div class="r-emoji">💤</div><div class="r-title">Late bedtime</div><div class="r-cost">60 🪙</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SCREEN: MEMORIES (senior/GP profile only) ═══ -->
+      <div class="screen" id="screen-memories">
+        <div class="subheader">
+          <h2>Memories</h2>
+          <span class="sub-meta">28 photos this month</span>
+        </div>
+        <div class="subbody">
+          <div class="storegrid">
+            <div class="rewardcard" style="aspect-ratio:1"><div class="r-emoji">🏖️</div><div class="r-title">Beach day</div></div>
+            <div class="rewardcard" style="aspect-ratio:1"><div class="r-emoji">🎂</div><div class="r-title">Leo's birthday</div></div>
+            <div class="rewardcard" style="aspect-ratio:1"><div class="r-emoji">⚽</div><div class="r-title">Soccer finals</div></div>
+            <div class="rewardcard" style="aspect-ratio:1"><div class="r-emoji">🎨</div><div class="r-title">Art class</div></div>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /screenwrap -->
+    </div>
+  </div>
+
+  <div class="intro" style="padding-top:4px">
+    <p style="font-size:13px">👈 Tap the icons in the left rail — <b>Hub · Tasks · Plan · Chat · Find · Store</b> — to see the other real screens this tablet can reach. The Hub dashboard is the resting/home state; everything else is one tap away, same as swiping tabs on a phone.</p>
+  </div>
+
+  <div class="notes">
+    <div class="sectiontitle" style="justify-content:center; margin-bottom:4px">Design Notes</div>
+    <div class="grid3">
+      <div class="note c-sage">
+        <div class="n-title">Why a rail, not just the dashboard</div>
+        <p>A kitchen tablet parked on one static screen forever is less useful than one that can also become the full Quests board, Calendar, FindFam map, Chat, or Store on demand — this is the same 6 tabs the phone app has (Ask Cube stays a floating action, not a tab, matching how it already works everywhere else), just reachable via a persistent side rail instead of a bottom bar so the dashboard keeps its full width.</p>
+      </div>
+      <div class="note c-amber">
+        <div class="n-title">Type &amp; scale</div>
+        <p>Fraunces (serif) carries the clock, headlines, and big numbers — warmer and more "kitchen" than a pure data-dashboard sans. Inter handles dense schedule/chore text. Everything sized up from phone scale for a few-feet viewing distance.</p>
+      </div>
+      <div class="note c-lav">
+        <div class="n-title">Not yet decided</div>
+        <p>Keep-awake / always-on-display behavior, an idle timeout back to the Hub dashboard after inactivity, whether PIN-switching still applies per-screen in kiosk mode, and how the existing bottom tab bar and this rail coexist (replace it in kitchenHub mode, or keep both?). Flag your reactions to the layout first — behavior comes next.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

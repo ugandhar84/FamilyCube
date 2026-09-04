@@ -87,13 +87,24 @@ serve(async (req) => {
     // member's own real events. Work-purpose connections stay untouched —
     // they only ever read FreeBusy, never write real events at all.
     let externalCalendarId: string | null = null;
+    // Was a silent console.warn-and-fall-back — the actual Google/Outlook
+    // rejection reason (a 403 for a missing scope, say) never reached
+    // anywhere visible, so a real failure here looked identical to
+    // "working as intended, just using primary," and stayed undiagnosable
+    // without directly querying the row for last_error and finding it was
+    // never even written. Surfaced into the connection's own last_error
+    // column (already client-visible via calendar_connections_public) so
+    // CalendarSyncScreen can show it, matching how every other connection-
+    // level failure in this table is already surfaced.
+    let dedicatedCalendarError: string | null = null;
     if (purpose === 'personal') {
       try {
         externalCalendarId = provider === 'google'
           ? await ensureGoogleFamilyCubeCalendar(tokens.accessToken)
           : await ensureOutlookFamilyCubeCalendar(tokens.accessToken);
       } catch (e) {
-        console.warn('[calendar-oauth-exchange] could not create dedicated FamilyCube calendar, falling back to primary:', e instanceof Error ? e.message : e);
+        dedicatedCalendarError = `Could not create the FamilyCube calendar (using your main calendar instead): ${e instanceof Error ? e.message : String(e)}`;
+        console.warn('[calendar-oauth-exchange]', dedicatedCalendarError);
       }
     }
 
@@ -123,7 +134,7 @@ serve(async (req) => {
       token_expires_at: new Date(Date.now() + tokens.expiresInSec * 1000).toISOString(),
       connected_account_email: tokens.email ?? null,
       status: 'active',
-      last_error: null,
+      last_error: dedicatedCalendarError,
       sync_token: null,
       external_calendar_id: externalCalendarId,
     }, { onConflict: 'family_id,member_id,provider,purpose' });

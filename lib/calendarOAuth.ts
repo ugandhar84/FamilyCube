@@ -90,9 +90,16 @@ function scopeFor(provider: CalendarProvider, purpose: CalendarPurpose): string 
     // dedicated-calendar feature exists to fix) — live-reported: hundreds
     // of stray test events ended up mixed into the member's own real
     // Google Calendar with no dedicated place to find/bulk-clean them.
+    // Separately: connected_account_email has been null on every
+    // connection ever made (confirmed live, both old and new rows) —
+    // exchangeGoogle's own userinfo lookup was silently 403ing this whole
+    // time because no scope here ever actually granted profile/email
+    // access; its own try/catch swallowed that failure with nothing
+    // surfaced anywhere. userinfo.email is the minimal addition to fix it.
+    const emailScope = 'https://www.googleapis.com/auth/userinfo.email';
     return purpose === 'work'
-      ? 'https://www.googleapis.com/auth/calendar.freebusy'
-      : 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/tasks.readonly';
+      ? `https://www.googleapis.com/auth/calendar.freebusy ${emailScope}`
+      : `https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/tasks.readonly ${emailScope}`;
   }
   // Graph has no dedicated freebusy-only scope — Calendars.Read is the
   // narrowest that still permits getSchedule (freebusy) for a work

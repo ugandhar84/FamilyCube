@@ -27,7 +27,7 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 
 1. WHAT FAMILY CUBE IS
 
-1.1 The Service. Family Cube ("Service", "App") is a family organization app. It lets members of a household share a private "family" space to coordinate chores and rewards ("Quests"), a shared calendar and event scheduling, group and direct messaging ("Chat"), real-time family location sharing ("FindFam"), a coin-based reward store, a photo memories feed, and an AI assistant ("Ask Cube") that can answer questions and help create/manage the above from natural-language requests.
+1.1 The Service. Family Cube ("Service", "App") is a family organization app. It lets members of a household share a private "family" space to coordinate chores and rewards ("Quests"), a shared calendar and event scheduling, group and direct messaging ("Chat"), real-time family location sharing ("FindFam"), a coin-based reward store, a photo memories feed, and an AI assistant ("Ask Fam") that can answer questions and help create/manage the above from natural-language requests.
 
 1.2 Not a general social network. Family Cube is designed for private use within one self-organized family group. It has no public feed, no stranger-matching, and no discovery of other users outside a family the account holder creates or is invited into.
 
@@ -62,7 +62,7 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 
 4.2 Licence to operate the Service. You grant PeopleOnTech LLC a limited, non-exclusive licence to store, process, transmit, and display your User Content solely as necessary to provide the Service to you and the other members of your family (e.g., delivering a chat message, showing a calendar event to family members, rendering a photo in the Memories feed). This licence ends when the content or your account is deleted, subject to §7.6 (backup retention).
 
-4.3 No use of your content to train third-party AI models without consent. We do not send your identifiable family data to a third-party AI provider for model-training purposes. See §6.7 for how Ask Cube processes what you send it.
+4.3 No use of your content to train third-party AI models without consent. We do not send your identifiable family data to a third-party AI provider for model-training purposes. See §6.7 for how Ask Fam processes what you send it.
 
 4.4 User Content standards. You are responsible for content you or your family members submit. You must not submit content that is unlawful, infringes another person's rights, or that you do not have the right to share (e.g., a photo of someone outside your family without their consent, where consent is legally required).
 
@@ -95,7 +95,7 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 
 7.3 Aggregate data. We may use de-identified, aggregated data derived from Service usage (e.g., "average number of chores completed per week") for analytics, research, and product development. This data cannot reasonably be used to re-identify you or your family.
 
-7.4 Data sharing. We do not sell your personal data. We share data only: with Supabase (our database/infrastructure and authentication provider); with third-party AI providers as described in §6.7 (Ask Cube), scoped to what's needed to generate a response; with Apple, Google, or RevenueCat for subscription processing; with a successor entity in any merger or acquisition (§7.5); and where required by law or valid legal process.
+7.4 Data sharing. We do not sell your personal data. We share data only: with Supabase (our database/infrastructure and authentication provider); with third-party AI providers as described in §6.7 (Ask Fam), scoped to what's needed to generate a response; with Apple, Google, or RevenueCat for subscription processing; with a successor entity in any merger or acquisition (§7.5); and where required by law or valid legal process.
 
 7.5 Business transfers. In any merger, acquisition, or sale of assets, your data may be transferred to the successor entity, who will remain bound to protect it under materially equivalent terms.
 
@@ -110,15 +110,15 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 7.10 Children's privacy (COPPA). We do not knowingly allow a child under 13 to create their own independent account outside a family a parent or guardian has set up and consented to. A parent/guardian creating a child's profile is providing the verifiable consent COPPA requires, and may review, edit, or delete that child's data at any time. If you believe a child's data was collected without appropriate parental consent, contact us through the App's support channel and we will investigate and delete it promptly.
 
 
-8. ASK CUBE (AI ASSISTANT)
+8. ASK FAM (AI ASSISTANT)
 
-8.1 Nature of the feature. Ask Cube is an AI-powered assistant that can answer questions and help create or manage chores, events, and other in-app items from natural-language requests. It is powered by a third-party large language model.
+8.1 Nature of the feature. Ask Fam is an AI-powered assistant that can answer questions and help create or manage chores, events, and other in-app items from natural-language requests. It is powered by a third-party large language model.
 
-8.2 Not professional advice. Ask Cube is a convenience and organizational tool. It does not provide medical, legal, financial, or safety-critical advice, and nothing it generates should be treated as such. For any medical, legal, or emergency matter, consult an appropriate licensed professional or contact emergency services directly.
+8.2 Not professional advice. Ask Fam is a convenience and organizational tool. It does not provide medical, legal, financial, or safety-critical advice, and nothing it generates should be treated as such. For any medical, legal, or emergency matter, consult an appropriate licensed professional or contact emergency services directly.
 
-8.3 Accuracy. Like any AI system, Ask Cube can occasionally produce inaccurate, incomplete, or nonsensical responses ("hallucinations"). Review anything Ask Cube creates or suggests (e.g., a scheduled event, an assigned chore) before relying on it.
+8.3 Accuracy. Like any AI system, Ask Fam can occasionally produce inaccurate, incomplete, or nonsensical responses ("hallucinations"). Review anything Ask Fam creates or suggests (e.g., a scheduled event, an assigned chore) before relying on it.
 
-8.4 Data sent to the AI provider. When you use Ask Cube, the text of your request and relevant context needed to answer it (such as your family's upcoming events or chore list) is sent to our third-party AI provider to generate a response. We configure this integration so that data is used only to generate your response, not to train the provider's general-purpose models. The provider's own terms govern their handling of data in transit to and processing by their systems.
+8.4 Data sent to the AI provider. When you use Ask Fam, the text of your request and relevant context needed to answer it (such as your family's upcoming events or chore list) is sent to our third-party AI provider to generate a response. We configure this integration so that data is used only to generate your response, not to train the provider's general-purpose models. The provider's own terms govern their handling of data in transit to and processing by their systems.
 
 8.5 Beta features. Some AI-assisted features may be labelled beta or experimental, may have a higher error rate, and may be changed or withdrawn without notice.
 

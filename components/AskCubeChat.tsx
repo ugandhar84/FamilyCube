@@ -623,7 +623,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       // other branches in trusting that check rather than re-deriving it.
       if (d.action === 'claim') claimPoolQuest(d.choreId, activeMember.id);
       else if (d.action === 'approve') approveChore(d.choreId, activeMember.id);
-      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Cube');
+      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Fam');
       else if (d.action === 'complete') submitChore(d.choreId);
       else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
     } else if (proposal.kind === 'cancel_event') {
@@ -685,7 +685,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                 <Sparkles size={18} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Ask Cube</Text>
+                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Ask Fam</Text>
                 <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Ask about the family's schedule or chores</Text>
               </View>
               <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
@@ -902,7 +902,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                 <TextInput
                   value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
                   onChangeText={setInput}
-                  placeholder="Ask Cube anything…"
+                  placeholder="Ask Fam anything…"
                   placeholderTextColor={colors.placeholder}
                   editable={voice.state !== 'listening'}
                   style={{ fontSize: TYPO.body,

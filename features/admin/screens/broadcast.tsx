@@ -97,7 +97,7 @@ export default function BroadcastScreen() {
           <TextInput
             value={title}
             onChangeText={setTitle}
-            placeholder={audience === 'parents' ? 'e.g. Unlock Premium for your family' : 'e.g. New feature: Ask Cube'}
+            placeholder={audience === 'parents' ? 'e.g. Unlock Premium for your family' : 'e.g. New feature: Ask Fam'}
             placeholderTextColor={colors.placeholder}
             maxLength={80}
             style={{

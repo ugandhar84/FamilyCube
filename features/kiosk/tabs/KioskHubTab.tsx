@@ -13,7 +13,7 @@
  * status normalizer) instead of hand-rolling that logic here.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle } from 'lucide-react-native';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { fmtTime, localDateStr } from '@/lib/dates';
@@ -32,6 +32,26 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 export function KioskHubTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  // Live-reported: the 3-column layout was fixed regardless of orientation
+  // — on a portrait kiosk/iPad, each column was squeezed narrow enough to
+  // truncate its own content ("chores open in the poo...") while ~75% of
+  // the screen below sat empty, since the columns' natural height was far
+  // shorter than the screen once cramped into three thin strips.
+  // useWindowDimensions (not a one-time device-class check) so this
+  // reflows live on rotation/Split View/Stage Manager resizing, not just
+  // at mount. minWidth-based wrap: 3-across only when there's genuinely
+  // room for three ~300px+ columns side by side, 2-across for a narrower
+  // (portrait) width, single column narrower still.
+  const { width: winWidth } = useWindowDimensions();
+  const columnsPerRow = winWidth >= 980 ? 3 : winWidth >= 620 ? 2 : 1;
+  // s.scroll's own horizontal padding is 20 a side, GRID_GAP matches
+  // s.grid's own `gap` — computed explicitly (not a percentage flexBasis,
+  // which fights with `gap` unpredictably) so a narrower/2-up row's
+  // columns actually fill the available width evenly.
+  const GRID_GAP = 18;
+  const GRID_PADDING = 20;
+  const availableWidth = winWidth - GRID_PADDING * 2;
+  const halfColWidth = (availableWidth - GRID_GAP) / 2;
   const { quests } = useQuestStore();
   const dayEvents = useEventStore(s => s.dayEvents);
   const loadChatChannel = useChatStore(s => s.loadChannel);
@@ -114,10 +134,15 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           footer down to the actual bottom via marginTop: 'auto' on it —
           content taller than the screen still scrolls normally either way. */}
       <View style={{ flex: 1, minHeight: '100%' }}>
-        {/* Three-zone layout */}
-        <View style={s.grid}>
-        {/* Column 1 — backlog */}
-        <View style={s.col}>
+        {/* Three-zone layout — wraps to 2 or 1 columns per row on a
+            narrower/portrait screen instead of staying rigidly 3-across
+            (see columnsPerRow above). */}
+        <View style={[s.grid, { flexWrap: columnsPerRow < 3 ? 'wrap' : 'nowrap' }]}>
+        {/* Column 1 — backlog. 2-up row: `order` pushes this below the
+            full-width Timeline (order 1) so it pairs with Column 3 on
+            their own row instead of the Timeline splitting them. 1-up:
+            full width, stacked in natural order. */}
+        <View style={[s.col, columnsPerRow === 2 && ({ flex: undefined, width: halfColWidth, order: 2 } as any), columnsPerRow === 1 && s.colFullWidth]}>
           <SectionLabel text={isSenior ? 'Your Chores' : 'Household Backlog'} color={colors.amber} colors={colors} />
           <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={s.bigStat}>
@@ -161,8 +186,10 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           </View>
         </View>
 
-        {/* Column 2 — today's timeline */}
-        <View style={[s.col, { flex: 1.35 }]}>
+        {/* Column 2 — today's timeline. order:1 (2-up only) so it's
+            always the first, full-width row, with columns 1+3 (order:2)
+            pairing up beneath it. */}
+        <View style={[s.col, columnsPerRow < 3 ? ({ flexBasis: '100%', order: 1 } as any) : { flex: 1.35 }, columnsPerRow === 1 && s.colFullWidth]}>
           <SectionLabel text="Today's Timeline" color={colors.primary} colors={colors} />
           {dayEvents.length === 0 ? (
             <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, alignItems: 'center', paddingVertical: 30 }]}>
@@ -205,8 +232,10 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           )}
         </View>
 
-        {/* Column 3 — in progress + activity pulse */}
-        <View style={s.col}>
+        {/* Column 3 — in progress + activity pulse. Same order:2 as Column
+            1 so both pair up on their own row below the full-width
+            Timeline when 2-up; full width when 1-up. */}
+        <View style={[s.col, columnsPerRow === 2 && ({ flex: undefined, width: halfColWidth, order: 2 } as any), columnsPerRow === 1 && s.colFullWidth]}>
           <SectionLabel text="In Progress" color={colors.amber} colors={colors} />
           <View style={s.col3Scroll}>
             {inProgress.slice(0, 4).map(q => (
@@ -317,6 +346,7 @@ const s = StyleSheet.create({
   scroll: { padding: 20, paddingBottom: 40 },
   grid: { flexDirection: 'row', gap: 18 },
   col: { flex: 1, gap: 14 },
+  colFullWidth: { flex: undefined, width: '100%' },
   col3Scroll: { gap: 14 },
   sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   swatch: { width: 8, height: 8, borderRadius: 3 },

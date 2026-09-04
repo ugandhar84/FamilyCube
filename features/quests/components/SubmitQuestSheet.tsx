@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image, Modal,
-  KeyboardAvoidingView, ScrollView, Platform, Keyboard, StyleSheet, ActivityIndicator,
+  ScrollView, Platform, Keyboard, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -32,16 +32,23 @@ export function SubmitQuestSheet({
   proofPhotoViewerUri, setProofPhotoViewerUri, colors, isDark,
 }: Props) {
   const dismiss = () => { Keyboard.dismiss(); closeSubmitSheet(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   return (
     <>
       <Modal visible={!!submitTarget} transparent animationType="slide" onRequestClose={dismiss}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
             <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
             <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-              maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
+              maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
 
               {/* Drag handle */}
               <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
@@ -121,27 +128,26 @@ export function SubmitQuestSheet({
                       </TouchableOpacity>
                     </View>
                   </View>
+                  <TouchableOpacity
+                    onPress={submitWithProof}
+                    disabled={(submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      borderRadius: 14, paddingVertical: 14,
+                      backgroundColor: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.border : BRAND.purple }}>
+                    {isUploadingProof && <ActivityIndicator color={colors.textTertiary} size="small" />}
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.textTertiary : '#fff' }}>
+                      {isUploadingProof ? 'Uploading photo…' : 'Submit for review'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </ScrollView>
 
-              {/* Sticky footer */}
-              <View style={{ padding: 16, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-                <TouchableOpacity
-                  onPress={submitWithProof}
-                  disabled={(submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    borderRadius: 14, paddingVertical: 14,
-                    backgroundColor: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.border : BRAND.purple }}>
-                  {isUploadingProof && <ActivityIndicator color={colors.textTertiary} size="small" />}
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.textTertiary : '#fff' }}>
-                    {isUploadingProof ? 'Uploading photo…' : 'Submit for review'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
             </View>
+            {keyboardHeight > 0 && (
+              <View pointerEvents="none"
+                style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+            )}
           </View>
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* Full-screen review of a submitted photo proof */}

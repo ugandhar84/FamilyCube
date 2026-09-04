@@ -142,6 +142,18 @@ export function GroceryItemsSection({
   // freshly-allocated function crossing that boundary this way — live-
   // reported as an immediate crash on first touching the drag handle, before
   // any drag motion, which is exactly when this reaction first fires.
+  // Was also unconditionally calling runOnJS every single onUpdate frame
+  // (~60-120fps) regardless of whether the finger had actually crossed into
+  // a different section — live-reported as the drag feeling "not
+  // firm"/janky once it stopped crashing and a full gesture could actually
+  // be felt through. React's setState already no-ops a same-value primitive
+  // update, but that doesn't save the worklet->JS thread hop itself, which
+  // is the actual per-frame cost. Only cross the bridge when the finger's Y
+  // has moved enough to plausibly land in a different section (matching
+  // AUTOSCROLL_EDGE's own granularity) — the UI-thread translateY/isActive
+  // drag-follow visuals are untouched by any of this, they never went
+  // through JS to begin with.
+  const HOVER_CHECK_THRESHOLD = 8;
   useAnimatedReaction(
     () => ({ y: dragAbsoluteY.value, dragging: draggingId.value !== null }),
     (curr, prev) => {
@@ -152,7 +164,8 @@ export function GroceryItemsSection({
         }
         return;
       }
-      runOnJS(updateHoveredStore)(curr.y);
+      const movedEnough = !prev?.dragging || Math.abs(curr.y - prev.y) >= HOVER_CHECK_THRESHOLD;
+      if (movedEnough) runOnJS(updateHoveredStore)(curr.y);
       if (onAutoScroll && viewportHeight > 0) {
         if (curr.y < AUTOSCROLL_EDGE) runOnJS(onAutoScroll)(-AUTOSCROLL_SPEED);
         else if (curr.y > viewportHeight - AUTOSCROLL_EDGE) runOnJS(onAutoScroll)(AUTOSCROLL_SPEED);

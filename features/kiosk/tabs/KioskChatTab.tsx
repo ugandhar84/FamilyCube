@@ -26,11 +26,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet,
-  Modal, Image, Alert, Clipboard,
+  Modal, Image, Alert, Clipboard, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import {
   Send, Lock, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
-  MapPin, X, XCircle, CornerUpLeft, type LucideIcon,
+  MapPin, X, XCircle, CornerUpLeft, Pencil, type LucideIcon,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -50,6 +50,9 @@ import {
 import { MessageBubble } from '@/features/chat/components/MessageBubble';
 import { MessageActionSheet } from '@/features/chat/components/MessageActionSheet';
 import { RecordingBar, VoiceReviewBar } from '@/features/chat/components/VoiceComponents';
+import { GroceryModal } from '@/features/chat/components/GroceryModal';
+import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
+import { useGroceryStore } from '@/store/groceryStore';
 import type { FamilyMember } from '@/store/familyStore';
 
 interface ChannelEntry {
@@ -77,6 +80,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const addReaction = useChatStore(s => s.addReaction);
   const deleteMessage = useChatStore(s => s.deleteMessage);
   const retryMessage = useChatStore(s => s.retryMessage);
+  const { addItem: addGrocery } = useGroceryStore();
   const setOpenChannelId = useChatStore(s => s.setOpenChannelId);
 
   const isParent = active.role === 'parent';
@@ -98,7 +102,6 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // of that logic here.
   const entries: ChannelEntry[] = useMemo(() => {
     const parents = members.filter(m => m.role === 'parent');
-    const parentsCount = parents.length;
     const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
       if (!isSenior) return null;
       if (!(active as any).linkedParentId) return 'unlinked';
@@ -108,7 +111,20 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     })();
     const groupChannels = buildGroupChannels(members)
       .filter(ch => ch.id !== 'all' || !isSenior)
-      .filter(ch => ch.id !== 'parents' || parentsCount > 2)
+      // Was `ch.id !== 'parents' || parentsCount > 2` — a fabricated
+      // condition with no mobile counterpart (ChatScreen.tsx never filters
+      // #parents-vault out of its channel list by parent count at all) and
+      // no real security value: it happened to hide the channel from EVERY
+      // viewer (including parents themselves) in any family with <=2
+      // parents, while doing nothing to stop a KID from seeing it in a
+      // family with 3+ parents — exactly backwards from what a lock gate
+      // should do. Mobile's actual, only gate is role-based: `(ch as any)
+      // .lock && !isParent` hides a locked channel from the sidebar
+      // entirely for anyone who isn't a parent (ChatScreen.tsx:785), and a
+      // parent who somehow still reaches it sees a full block screen
+      // (ChatScreen.tsx:938, parentLocked). Match that exactly instead of
+      // a parent-count heuristic.
+      .filter(ch => !ch.lock || isParent)
       .filter(ch => !ch.seniorOnly || isSenior || isParent)
       .filter(ch => {
         if (!isSenior) return true;
@@ -140,6 +156,15 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
   const [quickEmojiFor, setQuickEmojiFor] = useState<ChatMessage | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+  // Edit/grocery-convert/shared-card — ChatScreen.tsx's own editingMsg/
+  // groceryMsg/sharedCardPayload state (lines 88, ~onAddGrocery/
+  // onOpenSharedCard call sites), wired here instead of the no-op stubs
+  // this tab previously shipped with (live audit finding: tapping "Edit,"
+  // "Add to List," or a shared meal/event/quest card silently did nothing
+  // on kiosk while working fully on mobile).
+  const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null);
+  const [groceryMsg, setGroceryMsg] = useState<ChatMessage | null>(null);
+  const [sharedCardPayload, setSharedCardPayload] = useState<any>(null);
 
   // ── Attachments ────────────────────────────────────────────────────────
   const [attachUri, setAttachUri] = useState<string | null>(null);
@@ -235,6 +260,11 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       if (check.blocked) { setModerationWarning(true); return; }
     }
     setModerationWarning(false);
+
+    // Same "edit" mechanism ChatScreen.tsx uses (ChatScreen.tsx:471) — there
+    // is no true in-place edit anywhere in this data model; editing deletes
+    // the original message and sends a new one with the updated text.
+    if (editingMsg) { deleteMessage(activeChannel, editingMsg.id); setEditingMsg(null); }
 
     const finalText = sourceText.trim();
     const localAttachUri = attachUri;
@@ -455,7 +485,13 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
       {/* ── Message thread — width-capped, centered, not stretched ── */}
       <View style={s.threadOuter}>
-        <View style={s.thread}>
+        {/* Same behavior/scoping as ChatScreen.tsx:937 — was missing
+            entirely here, so the on-screen keyboard (a real concern on an
+            iPad-class kiosk, which does show one) simply overlapped the
+            input bar/messages with no adjustment instead of the screen
+            shrinking to make room. Scoped to just the thread column (not
+            the whole root View) so the channel sidebar never shifts. */}
+        <KeyboardAvoidingView style={s.thread} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Text style={[s.title, { color: colors.textPrimary }]} numberOfLines={1}>
             {currentEntry?.label ?? 'Chat'}
           </Text>
@@ -513,7 +549,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     onQuoteTap={msg.replyTo ? () => scrollToQuotedMsg(msg.replyTo!.id) : undefined}
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
-                    onOpenSharedCard={() => {}}
+                    onOpenSharedCard={setSharedCardPayload}
                     onRetry={() => retryMessage(activeChannel, msg.id)}
                   />
                 );
@@ -530,6 +566,18 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               <Text style={{ fontSize: 16 }}>🙏</Text>
               <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Let's keep it kind — that message wasn't sent.</Text>
               <Pressable onPress={() => setModerationWarning(false)}><X size={18} color={colors.danger} /></Pressable>
+            </View>
+          )}
+
+          {/* ── Edit banner — same amber "Editing: ..." bar ChatScreen.tsx
+              shows (ChatScreen.tsx:1146-1153) ── */}
+          {editingMsg && (
+            <View style={[s.banner, { backgroundColor: colors.amberLight, borderTopColor: colors.amber }]}>
+              <Pencil size={16} color={colors.amber} />
+              <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.textSecondary }} numberOfLines={1}>
+                Editing: {editingMsg.text}
+              </Text>
+              <Pressable onPress={() => { setEditingMsg(null); setText(''); }}><X size={18} color={colors.textTertiary} /></Pressable>
             </View>
           )}
 
@@ -637,7 +685,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               )}
             </View>
           )}
-        </View>
+        </KeyboardAvoidingView>
       </View>
 
       {/* ── Quick emoji (double-tap) ── */}
@@ -660,15 +708,40 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       <MessageActionSheet
         visible={!!actionMsg} msg={actionMsg}
         isMe={actionMsg?.senderId === active.id}
-        canEdit={false}
+        // Same 60s edit window ChatScreen.tsx applies (ChatScreen.tsx:1322)
+        // — was hardcoded false, so no message could ever be edited on
+        // kiosk regardless of age or sender. MessageActionSheet itself
+        // already gates on `isMe && canEdit` internally, so this prop
+        // correctly omits its own isMe check, matching mobile exactly.
+        canEdit={!!actionMsg && (Date.now() - new Date(actionMsg.timestamp).getTime()) < 60_000}
         colors={colors} isDark={isDark}
         onClose={() => setActionMsg(null)}
         onReact={emoji => { if (actionMsg) addReaction(activeChannel, actionMsg.id, emoji, active.id); }}
         onReply={() => { if (actionMsg) { setReplyingTo(actionMsg); inputRef.current?.focus(); } }}
         onCopy={() => { if (actionMsg?.text) { Clipboard.setString(actionMsg.text); showToast('Copied!'); } }}
-        onEdit={() => {}}
+        onEdit={() => { if (actionMsg) { setEditingMsg(actionMsg); setText(actionMsg.text); inputRef.current?.focus(); } }}
         onDelete={() => { if (actionMsg) deleteMessage(activeChannel, actionMsg.id); }}
-        onAddGrocery={() => {}}
+        onAddGrocery={() => { if (actionMsg) setGroceryMsg(actionMsg); }}
+      />
+
+      {/* ── Shared card detail (read-only) — ChatScreen.tsx:1295-1300 ── */}
+      <AskCubeRecipeSheet
+        visible={!!sharedCardPayload}
+        data={sharedCardPayload?.data ?? null}
+        chefName={sharedCardPayload?.data?.chefId ? members.find(m => m.id === sharedCardPayload.data.chefId)?.name : undefined}
+        onClose={() => setSharedCardPayload(null)}
+      />
+
+      {/* ── Grocery modal — "Add to List" from a message, ChatScreen.tsx:1334-1347 ── */}
+      <GroceryModal
+        visible={!!groceryMsg}
+        initialName={groceryMsg?.text ?? ''}
+        onClose={() => setGroceryMsg(null)}
+        onAdd={item => {
+          if (!active.familyId) return;
+          addGrocery({ ...item, familyId: active.familyId, addedBy: active.id });
+          showToast(`"${item.name}" added to the shopping list.`);
+        }}
       />
 
       {/* ── Image lightbox ── */}

@@ -1161,7 +1161,7 @@ function TypeToConfirmRow({
   );
 }
 
-export default function ProfileSettingsScreen({ hideBackButton = false }: { hideBackButton?: boolean } = {}) {
+export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false }: { hideBackButton?: boolean; hideSensitiveAdminRows?: boolean } = {}) {
   const { colors, isDark, mode, setMode } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
   // with no selector, which subscribes to the ENTIRE store object and
@@ -1736,13 +1736,15 @@ export default function ProfileSettingsScreen({ hideBackButton = false }: { hide
               }
             />
           )}
-          <Row
-            icon="key-outline"
-            label="Data Recovery"
-            subtitle="Family passcode that protects chat, location, and medical records from loss"
-            onPress={() => router.push('/profile-settings/data-recovery')}
-            colors={colors} isDark={isDark}
-          />
+          {!hideSensitiveAdminRows && (
+            <Row
+              icon="key-outline"
+              label="Data Recovery"
+              subtitle="Family passcode that protects chat, location, and medical records from loss"
+              onPress={() => router.push('/profile-settings/data-recovery')}
+              colors={colors} isDark={isDark}
+            />
+          )}
         </View>
 
         {/* Family Name — familyName was previously stuck forever at the
@@ -1834,7 +1836,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false }: { hide
             row) via the same useIsAppAdmin() hook the /admin gate itself
             uses, so a non-admin parent never sees this row AND can't reach
             the gate by any other path either — see features/admin/_layout.tsx. */}
-        {isParent && isAppAdmin && (
+        {isParent && isAppAdmin && !hideSensitiveAdminRows && (
           <View style={{ marginBottom: 24 }}>
             <SectionHeader label="Admin" colors={colors} />
             <Row

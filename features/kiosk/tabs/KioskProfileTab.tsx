@@ -19,5 +19,15 @@
 import ProfileSettingsScreen from '@/features/profile/ProfileSettingsScreen';
 
 export function KioskProfileTab() {
-  return <ProfileSettingsScreen hideBackButton />;
+  // hideSensitiveAdminRows — live audit finding: Data Recovery (the family
+  // passcode that decrypts chat/location/medical history) and Admin
+  // Console were both reachable here with kiosk's 30-minute idle-lock
+  // instead of a phone's near-instant lock/biometric gate. Permissions
+  // aren't wrong (same isParent gate as mobile), but a shared wall-mounted
+  // device left unlocked for half an hour is a materially bigger exposure
+  // window for these two admin/security actions than a phone anyone would
+  // notice missing from their pocket. Both are setup actions a parent can
+  // still do from their own phone — hiding them here doesn't remove the
+  // capability, just this extra, higher-risk entry point to it.
+  return <ProfileSettingsScreen hideBackButton hideSensitiveAdminRows />;
 }

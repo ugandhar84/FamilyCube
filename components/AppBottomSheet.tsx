@@ -16,7 +16,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, StyleSheet, Platform, Keyboard, Dimensions,
-  type LayoutChangeEvent,
+  useWindowDimensions, type LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -56,6 +56,18 @@ export default function AppBottomSheet({
 }: AppBottomSheetProps) {
   const { colors, isDark } = useTheme();
   const accent = accentColor ?? (isDark ? '#A78BFA' : '#7C3AED');
+
+  // Edge-to-edge full-width worked fine on a phone-portrait sheet, but the
+  // same unbounded width on a wide/landscape screen (tablet, kiosk) stretches
+  // form rows across a foot of screen with the mic/input controls pinned way
+  // out at the edges — live-reported: "this is wider form instead we can use
+  // the centered form with nice layout.. and same for the landscape mode it
+  // is worse." Cap the panel at a comfortable reading width and center it
+  // once the window is wider than a phone in portrait; narrower viewports
+  // (the common case) are completely unaffected.
+  const { width: windowWidth } = useWindowDimensions();
+  const isWide = windowWidth >= 560;
+  const sheetWidth = isWide ? Math.min(560, windowWidth - 48) : undefined;
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
@@ -112,7 +124,8 @@ export default function AppBottomSheet({
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
 
           {/* Sheet panel */}
-          <View style={[s.sheet, { backgroundColor: colors.card, height: sheetHeight, maxHeight: maxPx }]}>
+          <View style={[s.sheet, { backgroundColor: colors.card, height: sheetHeight, maxHeight: maxPx },
+            isWide ? { width: sheetWidth, maxWidth: sheetWidth, alignSelf: 'center', borderBottomLeftRadius: 24, borderBottomRightRadius: 24, marginBottom: 24 } : null]}>
 
             <View onLayout={(e: LayoutChangeEvent) => setChromeHeight(e.nativeEvent.layout.height)}>
               {/* Drag handle */}

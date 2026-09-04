@@ -1,25 +1,35 @@
 /**
- * KioskFindFamTab — family location roster for kiosk mode. Deliberately a
- * list, not an embedded interactive map (react-native-maps' pan/zoom/drag-
- * sheet gestures — see GpsTab.tsx's PanResponder-driven bottom sheet,
- * features/vault/tabs/GpsTab.tsx:558-596 — are built for a handheld touch
- * surface a person holds and repositions, not a fixed wall-mounted display
- * glanced at in passing). That's a presentation choice, not a feature cut:
- * every actual capability GpsTab.tsx offers a viewer is reused here —
- * same `member_locations` table + decryptLocationText path (GpsTab.tsx:17,
- * 128-129), same Share My Location toggle backed by the identical
- * lib/locationTracking.ts functions GpsTab.tsx itself calls (GpsTab.tsx:20,
- * 207-260), and the same tap-to-navigate-in-native-Maps action
- * (GpsTab.tsx:441-456, openDirections). No AI ETA/arrival-prediction and no
- * geofence-trigger UI exist anywhere in GpsTab.tsx to parity-match — the
- * only geofence-adjacent field is safe_zone_name, a plain display string
- * (GpsTab.tsx:48), and low-battery alerts are a push-notification pipeline
- * (lib/locationTracking.ts's maybeAlertLowBattery, fired from the
- * background task itself), not a UI element — kiosk's existing low-battery
- * badge already mirrors GpsTab's own <=20% styling threshold.
+ * KioskFindFamTab — family map + location roster for kiosk mode.
+ *
+ * Live-reported: "why there is no map view?" — an earlier pass here
+ * reasoned that react-native-maps needed GpsTab.tsx's PanResponder-driven
+ * draggable bottom sheet (GpsTab.tsx:558-596) and skipped the map
+ * entirely on that basis. That reasoning didn't hold up: MapView/Marker
+ * (GpsTab.tsx:610-649) are a self-contained map render with no dependency
+ * on the sheet gesture at all — the sheet is a SEPARATE phone-only detail
+ * panel layered on top, not something the map itself needs. Kiosk now
+ * shows the real map, full-width above the roster (no draggable sheet —
+ * there's no need to trade map space for list space on a screen this
+ * wide, so both are simply shown at once, not chosen between).
+ *
+ * Every actual capability GpsTab.tsx offers a viewer is reused here — same
+ * `member_locations` table + decryptLocationText path (GpsTab.tsx:17,
+ * 128-129), same avatar-pin Marker rendering and initialRegion bounding-box
+ * math (GpsTab.tsx:464-480, 618-647), same Share My Location toggle backed
+ * by the identical lib/locationTracking.ts functions GpsTab.tsx itself
+ * calls (GpsTab.tsx:20, 207-260), and the same tap-to-navigate-in-native-
+ * Maps action (GpsTab.tsx:441-456, openDirections). No AI ETA/arrival-
+ * prediction and no geofence-trigger UI exist anywhere in GpsTab.tsx to
+ * parity-match — the only geofence-adjacent field is safe_zone_name, a
+ * plain display string (GpsTab.tsx:48), and low-battery alerts are a
+ * push-notification pipeline (lib/locationTracking.ts's
+ * maybeAlertLowBattery, fired from the background task itself), not a UI
+ * element — kiosk's existing low-battery badge already mirrors GpsTab's
+ * own <=20% styling threshold.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Switch, Alert, Platform, Linking } from 'react-native';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -31,6 +41,7 @@ import {
   startBatteryPolling, stopBatteryPolling,
 } from '@/lib/locationTracking';
 import type { FamilyMember } from '@/store/familyStore';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import CubeSpinner from '@/components/CubeSpinner';
 
 interface MemberLocation {
@@ -172,6 +183,33 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
 
   const locFor = (id: string) => locations.find(l => l.member_id === id);
 
+  // Same role-color mapping GpsTab.tsx's own roleColor uses (GpsTab.tsx:292-293).
+  const roleColor = (role: string) =>
+    role === 'parent' ? colors.accent : role === 'senior' ? colors.info : colors.success;
+
+  // Same "who has a live pin" filter and bounding-box region math GpsTab.tsx
+  // uses (GpsTab.tsx:461, 464-480) — centers/zooms to fit everyone sharing,
+  // falling back to a continental-US view until at least one real pin exists.
+  const pinned = useMemo(
+    () => locations.filter(l => l.lat != null && l.lng != null && l.share_location_enabled !== false),
+    [locations],
+  );
+  const initialRegion = useMemo(() => {
+    if (pinned.length === 0) {
+      return { latitude: 39.5, longitude: -98.35, latitudeDelta: 20, longitudeDelta: 20 };
+    }
+    const lats = pinned.map(p => p.lat!);
+    const lngs = pinned.map(p => p.lng!);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    return {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max(0.02, (maxLat - minLat) * 1.6),
+      longitudeDelta: Math.max(0.02, (maxLng - minLng) * 1.6),
+    };
+  }, [pinned]);
+
   return (
     <View style={s.root}>
       <View style={s.headerRow}>
@@ -199,7 +237,48 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
       ) : (
-      <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+        {/* Real map — same MapView/Marker/avatar-pin rendering GpsTab.tsx
+            uses, just laid out full-width above the roster instead of
+            behind a draggable sheet, since kiosk has room to show both at
+            once rather than trading one for the other. */}
+        <View style={[s.mapWrap, { borderColor: colors.border }]}>
+          <MapView
+            provider={PROVIDER_DEFAULT}
+            style={StyleSheet.absoluteFill}
+            initialRegion={initialRegion}
+            showsMyLocationButton={false}
+            showsCompass={false}
+          >
+            {pinned.map(loc => {
+              const m = members.find(mb => mb.id === loc.member_id);
+              const rc = roleColor(m?.role ?? 'kid');
+              return (
+                <Marker key={loc.member_id} coordinate={{ latitude: loc.lat!, longitude: loc.lng! }}
+                  title={m?.name ?? 'Family member'} description={loc.status_text ?? STATUS_LABEL[loc.status]}
+                  anchor={{ x: 0.5, y: 1 }}>
+                  <View style={s.mapPinWrap}>
+                    <View style={[s.mapPinAvatar, { borderColor: rc }]}>
+                      <FamilyAvatar name={m?.name ?? ''} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={34} />
+                    </View>
+                    <View style={[s.mapPinTail, { borderTopColor: rc }]} />
+                  </View>
+                </Marker>
+              );
+            })}
+          </MapView>
+          {pinned.length === 0 && (
+            <View pointerEvents="none" style={s.mapEmptyOverlay}>
+              <MapPin size={20} color="#fff" />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginTop: 4, textAlign: 'center' }}>
+                No one is sharing their location yet
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={s.grid}>
         {members.map(m => {
           const rawLoc = locFor(m.id);
           // A member who explicitly turned "Share my location" off still
@@ -250,6 +329,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
             </View>
           );
         })}
+        </View>
       </ScrollView>
       )}
     </View>
@@ -264,6 +344,26 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 14, marginBottom: 18 },
   toggleLabel: { fontSize: TYPO.body, fontWeight: '800' },
   toggleSub: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  // Fixed height rather than flex — a map needs a real, generous glance-
+  // able area on a kiosk (not a cramped strip), but shouldn't consume the
+  // whole screen the way it does on a phone (where it's the only content
+  // before scrolling to the sheet); 380px gives it genuine presence while
+  // leaving the roster grid below fully visible without excess scrolling.
+  mapWrap: { height: 380, borderRadius: 20, borderWidth: 1, overflow: 'hidden', marginBottom: 20 },
+  mapPinWrap: { alignItems: 'center' },
+  mapPinAvatar: {
+    borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  mapPinTail: {
+    width: 0, height: 0, marginTop: -2,
+    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+  },
+  mapEmptyOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
+  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, width: 300, borderRadius: 16, borderWidth: 1, padding: 14 },
   avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },

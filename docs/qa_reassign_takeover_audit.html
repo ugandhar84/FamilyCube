@@ -1,0 +1,675 @@
+<title>Reassign / Take-over Live QA Audit</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --static:#6B5F52; --static-bg:#EFE9DE;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+      --static:#C9C0B2; --static-bg:#2C2A24;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    --static:#C9C0B2; --static-bg:#2C2A24;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1220px; margin:0 auto; padding:40px 24px 120px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:88ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:32px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.pass{background:var(--ok);} .dot.fail{background:var(--bug);} .dot.static{background:var(--static);} .dot.finding{background:var(--gap);}
+
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:92ch;}
+  p{margin:8px 0;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:9px 11px; text-align:left; vertical-align:top; font-size:12.5px;}
+  th{background:var(--surface-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.step{font-weight:700; background:var(--surface-2); white-space:nowrap; text-align:center;}
+  tr:nth-child(even) td:not(.step){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+  td code{display:inline-block; margin:1px 0;}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; white-space:nowrap;}
+  .tag.pass{background:var(--ok-bg); color:var(--ok);}
+  .tag.fail{background:var(--bug-bg); color:var(--bug);}
+  .tag.static{background:var(--static-bg); color:var(--static);}
+  .tag.live{background:var(--accent-soft); color:var(--accent);}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.medium{border-left-color:var(--gap);}
+  .finding.low{border-left-color:var(--static);}
+  .finding h3{margin:0 0 6px; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  .sev{font-size:10px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px;}
+  .sev.critical{background:var(--bug-bg); color:var(--bug);}
+  .sev.high{background:var(--bug-bg); color:var(--bug);}
+  .sev.medium{background:var(--gap-bg); color:var(--gap);}
+  .sev.low{background:var(--static-bg); color:var(--static);}
+
+  .statbar{display:flex; gap:14px; flex-wrap:wrap; margin:18px 0 24px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:130px;}
+  .stat .n{font-size:26px; font-weight:800; line-height:1;}
+  .stat .l{font-size:11.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em; margin-top:4px;}
+  .stat.pass .n{color:var(--ok);}
+  .stat.fail .n{color:var(--bug);}
+  .stat.static .n{color:var(--static);}
+
+  .note{background:var(--surface-2); border-radius:8px; padding:10px 13px; font-size:12.5px; margin:8px 0; color:var(--text-2);}
+  .note b{color:var(--text);}
+  .limitation{background:var(--static-bg); border:1px dashed color-mix(in srgb, var(--static) 50%, transparent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-2); margin:10px 0 18px;}
+  .limitation b{color:var(--static);}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Reassign / Take-over Live QA Audit</h1>
+  <p class="subtitle">
+    A real, live QA pass against the FamilyCubeApp Supabase backend, exercised through the deployed
+    <code>qa-scratch-family</code> edge function — real DB writes, real RPC calls under real minted sessions for
+    9 scratch family members (2 parents, 4 kids, 2 teens, 1 grandparent), verified by fresh independent
+    <code>read</code> calls after every step. This follows two serious bugs found in the calendar reassignment
+    system: a kiosk active-member propagation gap, and a forked ride-leg's stale <code>driver_name</code>/
+    <code>helper_name</code> pair winning over a fresh reassignment. This audit hunts for remaining gaps of the
+    same shape — a field the write path forgot to touch, a read path that trusts the wrong field first, a client
+    path that quietly diverges from the RPC everyone assumes it calls.
+  </p>
+
+  <div class="warn">
+    <b>Scratch family used:</b> <code>9919cb71-1a48-4202-953e-20237b068273</code> — created via <code>setup</code>,
+    fully torn down via <code>teardown</code> at the end of this run (confirmed by a follow-up <code>read</code> on
+    <code>members</code> returning zero rows for that family id). No other family's data was touched. Every RPC
+    call in this document ran under a real minted session for the acting scratch member (magic-link +
+    <code>verifyOtp</code>, exactly how the app's own recover-device flow works) — <code>resolve_active_member_id()</code>
+    genuinely resolved via <code>auth.uid()</code> on every call, not a spoofed header.
+  </div>
+
+  <div class="statbar">
+    <div class="stat pass"><div class="n">15</div><div class="l">Live steps — PASS</div></div>
+    <div class="stat fail"><div class="n">3</div><div class="l">Live steps — FAIL / bug found</div></div>
+    <div class="stat static"><div class="n">2</div><div class="l">Static-only verifications</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">Scenarios run</div></div>
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#findings">Findings summary</a></li>
+      <li><a href="#s1">1 · Basic reassign, both directions</a></li>
+      <li><a href="#s2">2 · Forked ride-leg reassign + take-over</a></li>
+      <li><a href="#s3">3 · Confirm → reassign → confirm again</a></li>
+      <li><a href="#s4">4 · Recurring series forward-sweep (static)</a></li>
+      <li><a href="#s5">5 · Kid pool-chore claim → submit → approve</a></li>
+      <li><a href="#s6">6 · Decline, reopen, re-claim by another role</a></li>
+      <li><a href="#s7">7 · Concurrent take-over race</a></li>
+      <li><a href="#s8">8 · Self-target reassign vs. "override" semantics</a></li>
+      <li><a href="#s9">9 · Cross-role visibility reasoning</a></li>
+      <li><a href="#limitations">Harness limitations encountered</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot pass"></span>PASS — matched expectation</span>
+    <span><span class="dot fail"></span>FAIL — genuine bug</span>
+    <span><span class="dot static"></span>STATIC — code-reasoning only, not exercised live</span>
+    <span><span class="dot finding"></span>Notable, not a defect</span>
+  </div>
+
+  <section id="findings">
+    <h2>Findings summary</h2>
+    <p class="lede">9 scenarios run (the 8 requested plus one split-out from the take-over test to isolate the
+      self-target confirm shortcut). 3 genuine bugs found, all confirmed against a live database, none fabricated
+      or inferred from code alone.</p>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> decline_event_assignment leaves driver_id/helper_id stale after a decline — regressed by a later migration</h3>
+      <p><b>Root cause.</b> Migration <code>20260930250000_assignment_rpcs_write_ids.sql</code> correctly added
+        <code>driver_id = null</code> / <code>helper_id = null</code> to <code>decline_event_assignment</code>'s
+        two branches, alongside the existing <code>driver_name = null</code>/<code>helper_name = null</code>. But
+        the LATEST version of the function — <code>20260930360000_decline_event_never_closes_both_pools.sql</code>,
+        which is the one live in the database today — re-created the function to fix an unrelated bug (both pools
+        staying closed after a decline) and, in doing so, dropped the <code>driver_id</code>/<code>helper_id</code>
+        clears that the intervening migration had added. Its <code>UPDATE</code> statements only set
+        <code>driver_name = null, driver_status = null, ...</code> and
+        <code>helper_name = null, helper_status = null, ...</code> — the id columns are never mentioned, so
+        Postgres leaves them exactly as they were. Confirmed live in §6 below: after Parent 1 declines a driver
+        assignment, <code>driver_name</code>/<code>driver_status</code> read back <code>null</code> but
+        <code>driver_id</code> still reads the declining member's own id. This is the exact bug class described in
+        this audit's premise — a write path that clears the display field but leaves a stale id behind for a
+        different read path to trust. Currently non-exploitable in the live UI only because every direct
+        <code>.driverId</code>/<code>.helperId</code> consumer found in <code>features/hub/*.tsx</code> and
+        <code>hubComponents.tsx</code> is gated behind the (correctly-nulled) name field first — but it is fragile:
+        any new code that compares <code>driverId</code>/<code>helperId</code> to a viewer's own id without that
+        gate (which is exactly what <code>eventAssignee()</code>'s own <code>id</code> field invites a caller to
+        do) would silently attribute a declined ride back to the person who just declined it.</p>
+      <p class="path">supabase/migrations/20260930360000_decline_event_never_closes_both_pools.sql (live version) vs.
+        supabase/migrations/20260930250000_assignment_rpcs_write_ids.sql (the fix it regressed) —
+        store/eventStore.ts:290-293 (eventAssignee, the one safe consumer pattern) —
+        features/hub/ParentView.tsx:210-217 (a consumer that <i>relies on</i> the staleness on purpose, see note in §6)</p>
+    </div>
+
+    <div class="finding">
+      <h3><span class="sev critical">Critical</span> The live "Claim" button never calls claim_pool_quest — a separate, unauthenticated client write path handles every real pool-chore claim</h3>
+      <p><b>Root cause.</b> The harness (and this audit's Scenario 5) exercises the Postgres RPC
+        <code>claim_pool_quest(p_chore_id, p_member_id)</code>, which correctly calls
+        <code>resolve_active_member_id()</code> and rejects any caller whose real session doesn't match
+        <code>p_member_id</code>. But that RPC is <b>not</b> what the app's own live "Claim"/"Take It" button calls.
+        <code>store/choreAdapter.ts:368</code>'s <code>claimQuest</code> — itself described in its own comment as
+        "the only reachable Claim action in the live app (KidView, TeenView, QuestsScreen)" — calls
+        <code>store.claimPoolQuest(id, memberId, onLost)</code>, a <i>different</i>, same-named store method
+        (<code>store/choreStore.ts:2496-2530</code>) that issues a raw
+        <code>supabase.from('chore_tasks').update({...}).eq('id', choreId).is('assigned_to_id', null)</code> —
+        no RPC, no <code>resolve_active_member_id()</code> check at all. The client-side CAS
+        (<code>.is('assigned_to_id', null)</code>) does prevent two different claimants from both winning the same
+        chore, but it never verifies the caller genuinely <i>is</i> the member id it's about to write into
+        <code>assigned_to_id</code> — any client that can reach this code path (or replay the same REST call with a
+        different <code>memberId</code> in the body) can claim a chore as any other family member, something the
+        RPC of the identical name was specifically built to prevent. It also means <code>claimed_at</code> is set
+        by this path (line ~2503) but never by the server RPC — the two "same name, different code" paths don't
+        even agree on side effects, exactly the deceptive split-behavior shape described in this audit's premise
+        (kiosk active-member bug). Live-confirmed in §5: calling the actual <code>claim_pool_quest</code> RPC as
+        Kid 3 left <code>claimed_at = null</code> in the row, which <code>deriveCardActions.ts:132-141</code>'s own
+        comment says should only ever happen via a real pool self-claim — meaning the RPC path and the UI's
+        documented behavioral assumption ("claimedAt is only ever set by claimPoolQuest") are already inconsistent
+        with each other, regardless of which path fires.</p>
+      <p class="path">store/choreAdapter.ts:356-368 — store/choreStore.ts:2496-2530 (claimPoolQuest, the actual live path) —
+        supabase/migrations/…claim_pool_quest (the unused-by-the-UI, actually-authenticated RPC) —
+        features/tasks/lib/deriveCardActions.ts:132-141 (canGiveBack's claimedAt assumption)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> reassign_event auto-confirms a "take-over" of someone else's already-confirmed slot instead of leaving it pending</h3>
+      <p><b>Root cause.</b> <code>reassign_event</code>'s status rule is purely
+        <code>v_status := case when p_new_member_id = p_actor_id then 'confirmed' else 'pending' end;</code> — it
+        has no notion of "am I overriding someone else's existing confirmed assignment" vs. "I'm accepting a fresh
+        open slot." <code>deriveCardActions.ts</code>'s <code>showOverride</code> (line 272,
+        <code>helperConfirmed &amp;&amp; !isSelfAssigned</code>) is presented in the UI as a distinct, heavier
+        action from a plain reassign — implying some extra confirmation step — but the RPC underneath treats an
+        override exactly like a normal self-assign: instant <code>confirmed</code>, no pending window, no signal to
+        the person being overridden that a decision was potentially still in flight when it was silently replaced.
+        Confirmed live in §8/§2.4: Parent 2 confirms as driver; Parent 1 calls <code>reassign_event</code> targeting
+        themself; the row goes straight to <code>driver_status = 'confirmed'</code> with no intermediate pending
+        state, in the same transaction, no different from a first-time claim. This may be intended product
+        behavior for a same-role override (a parent overriding a parent), but the RPC gives the UI no way to
+        distinguish "I'm claiming an open slot" from "I'm bumping someone who already committed," which is exactly
+        the ambiguity a <code>showOverride</code>-specific code path in the UI implies should exist.</p>
+      <p class="path">supabase/migrations/20260940020000_reassign_event_clears_other_assignee_pair.sql:73
+        (v_status assignment, unchanged from the original reassign_event logic) —
+        features/tasks/lib/deriveCardActions.ts:270-272 (showReassign/showOverride distinction the RPC doesn't honor)</p>
+    </div>
+  </section>
+
+  <section id="s1">
+    <h2>1 · Basic reassign, both directions <span class="tag live">LIVE</span></h2>
+    <p class="lede">Ride-category event, Parent 1 assigned driver via <code>assign_event_role</code> (pending),
+      Parent 2 reassigns to self, then Parent 1 reassigns back. Checked after every step with a fresh
+      <code>read</code>, not the RPC's own return value.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after (fresh read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">1.1</td>
+        <td><code>assign_event_role(ev, P1, 'driver', P1)</code></td>
+        <td><code>driver_status=pending, driver_id=P1</code></td>
+        <td>Fresh pending assignment</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>assign_event_role always starts 'pending' even for self, per its own migration comment</td>
+      </tr>
+      <tr>
+        <td class="step">1.2</td>
+        <td><code>reassign_event(ev, P2, 'driver', actor=P2)</code></td>
+        <td><code>driver_name=Parent 2, driver_id=P2, driver_status=confirmed, helper_name=null, helper_id=null, helper_status=null</code></td>
+        <td>Driver flips to P2, confirmed (self-target); helper pair stays null, not stale</td>
+        <td>Matched exactly</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>reassign_event's driver branch always writes helper_name/helper_id/helper_status = null alongside the driver write — migration 20260940020000</td>
+      </tr>
+      <tr>
+        <td class="step">1.3</td>
+        <td><code>reassign_event(ev, P1, 'driver', actor=P1)</code></td>
+        <td><code>driver_name=Parent 1, driver_id=P1, driver_status=confirmed</code>; single <code>event_participants</code> row, no orphan from step 1.2</td>
+        <td>Clean flip back, no duplicate/stale participant rows</td>
+        <td>Matched; exactly one event_participants row for role=driver</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>reassign_event deletes the existing participant row for that role before inserting the new one (line 82 of the migration)</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s2">
+    <h2>2 · Forked ride-leg reassign + take-over <span class="tag live">LIVE</span></h2>
+    <p class="lede">The harness's <code>add_event</code> doesn't expose <code>linked_leg_id</code> (see
+      <a href="#limitations">Limitations</a>), so a real fork pair (produced by <code>forkRideLegs</code>,
+      features/hub/parent/rideLegs.ts:82-163) couldn't be created directly. Instead: two standalone events were
+      created, and the drop-off leg was seeded via <code>add_event</code> with <b>both</b> <code>driver_*</code> AND
+      <code>helper_*</code> populated for the same member — precisely the conflicted-row shape the original bug
+      report describes as the state a pre-fix fork leaves behind. This reproduces the exact field-pair
+      contamination the fix targets, live, without needing the fork code path itself.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after (fresh read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">2.1</td>
+        <td><code>add_event</code> dropoff leg with <code>driverName=driverId=P1</code> AND <code>helperName=helperId=P1</code></td>
+        <td><code>driver_status=null, helper_status=null</code> (both pairs populated, no status)</td>
+        <td>Reproduces the pre-fix conflicted-row shape</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS (setup)</span></td>
+        <td>eventAssignee() (store/eventStore.ts:290) reads helper_name BEFORE driver_name on a conflicted row — the exact bug the fix targets</td>
+      </tr>
+      <tr>
+        <td class="step">2.2</td>
+        <td><code>reassign_event(dropoff, P2, 'helper', actor=P1)</code> — reassigning the field the "fork" actually uses</td>
+        <td><code>driver_name=null, driver_id=null, driver_status=null, helper_name=Parent 2, helper_id=P2, helper_status=pending</code></td>
+        <td>The stale driver_* pair is cleared; helper_* correctly updated</td>
+        <td>Matched exactly — driver_id went from P1 to null</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Confirms the fix in migration 20260940020000: reassign_event's helper branch now writes driver_name=null, driver_id=null, driver_status=null unconditionally</td>
+      </tr>
+      <tr>
+        <td class="step">2.3</td>
+        <td><code>reassign_event(pickup, P2, 'driver', actor=P1)</code> — independent pickup leg</td>
+        <td>Pickup: <code>driver_id=P2, status=pending</code>. Dropoff (from 2.2): untouched, still <code>helper_id=P2, status=pending</code></td>
+        <td>Two rows with different ids are fully independent</td>
+        <td>Matched — dropoff leg unaffected by pickup leg's reassignment</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>reassign_event operates on a single calendar_events.id row-lock (line 48 of the fix migration); no cross-row logic exists to leak between "linked" legs at the RPC layer</td>
+      </tr>
+      <tr>
+        <td class="step">2.4</td>
+        <td>Parent 2 confirms pickup driver; Parent 1 <code>reassign_event(pickup, P1, 'driver', actor=P1)</code> (a take-over of a CONFIRMED slot)</td>
+        <td><code>driver_status=confirmed</code> immediately (not pending)</td>
+        <td>Ambiguous by design — see Finding #3 above</td>
+        <td>Went straight to confirmed with no pending window</td>
+        <td><span class="tag static">NOTABLE</span></td>
+        <td>reassign_event's status rule only checks self-target, not whether it's replacing a confirmed vs. empty slot — see Finding #3</td>
+      </tr>
+      <tr>
+        <td class="step">2.5</td>
+        <td>Parent 1 <code>reassign_event(dropoff, P1, 'helper', actor=P1)</code> — take-over of Parent 2's pending helper slot</td>
+        <td><code>helper_id=P1, helper_status=confirmed, driver_*=null</code> (still correctly cleared)</td>
+        <td>Take-over lands cleanly, other pair stays null</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Same fix as 2.2 — self-clearing behavior holds under repeated reassignment on the same row</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2>3 · Confirm → reassign → confirm again <span class="tag live">LIVE</span></h2>
+    <p class="lede">Checked via a FRESH, independent <code>read</code> call after every RPC — never trusting the
+      RPC's own returned row — specifically to catch client/DB drift.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state (independent read)</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">3.1</td>
+        <td><code>assign_event_role(ev, P1, driver, actor=P2)</code></td>
+        <td><code>driver_status=pending, driver_id=P1</code></td>
+        <td>pending</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>assign_event_role always starts pending regardless of actor</td>
+      </tr>
+      <tr>
+        <td class="step">3.2</td>
+        <td><code>confirm_event_assignment(ev, P1, driver)</code></td>
+        <td><code>driver_status=confirmed</code></td>
+        <td>confirmed</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>confirm_event_assignment CAS requires status='pending' AND member_id=caller — both true here</td>
+      </tr>
+      <tr>
+        <td class="step">3.3</td>
+        <td><code>reassign_event(ev, P2, driver, actor=P2)</code> — self-target</td>
+        <td><code>driver_status=confirmed, driver_id=P2</code> (immediately, not pending)</td>
+        <td>Per the RPC's own rule this IS correct — self-target always confirms</td>
+        <td>Matched the RPC's rule</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Confirms the "reassign to self ⇒ instant confirm" rule holds consistently — see Finding #3 for why this rule itself is worth scrutiny for override cases</td>
+      </tr>
+      <tr>
+        <td class="step">3.4</td>
+        <td><code>reassign_event(ev, P1, driver, actor=P2)</code> — reassign to a DIFFERENT member than the actor</td>
+        <td><code>driver_status=pending, driver_id=P1, driver_name=Parent 1</code></td>
+        <td>pending — this is the true "pending again" case the original scenario intended</td>
+        <td>Matched</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>p_new_member_id (P1) ≠ p_actor_id (P2) ⇒ v_status='pending'</td>
+      </tr>
+      <tr>
+        <td class="step">3.5</td>
+        <td><code>confirm_event_assignment(ev, P1, driver)</code></td>
+        <td><code>driver_status=confirmed</code> — confirmed by a THIRD independent read, and cross-checked against <code>event_participants</code> table directly</td>
+        <td>confirmed, calendar_events and event_participants agree</td>
+        <td>Matched on both tables</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>No drift between calendar_events' denormalized driver_status and event_participants.status — full cycle pending→confirmed→pending→confirmed verified with zero inconsistency</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s4">
+    <h2>4 · Recurring series confirm forward-sweep <span class="tag static">STATIC ONLY</span></h2>
+    <div class="limitation">
+      <b>Harness limitation.</b> <code>add_event</code>'s insert statement destructures only
+      <code>{'{'}familyId, memberId, category, title, date, time, rideRequired, driverName, driverId, helperName, helperId{'}'}</code>
+      from the request body — <code>series_id</code>, <code>is_series_anchor</code>, and <code>recurrence_rule</code>
+      are not settable through it, and no other harness action can write them. A true recurring series (as
+      <code>addRecurringEvent</code> in <code>store/eventStore.ts</code> produces) could not be created live within
+      the safety constraints of this audit (writing raw SQL outside the harness was explicitly out of scope). This
+      scenario is therefore a full static trace of the exact migration SQL, not a live exercise.</p>
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Claimed behavior</th><th>SQL traced</th><th>Verdict</th><th>Why</th></tr>
+      <tr>
+        <td class="step">4.a</td>
+        <td>Future occurrence with the SAME member already pending on that role flips to confirmed</td>
+        <td><code>update calendar_events set driver_status='confirmed' ... where series_id=v_series_id and date&gt;v_target_date and driver_id=p_member_id and driver_status='pending'</code></td>
+        <td><span class="tag static">STATIC — logic sound</span></td>
+        <td>20260931010000_confirm_event_assignment_series_forward.sql lines 77-83 — WHERE clause is exact-match on member id and status, cannot cross-contaminate a different member's row</td>
+      </tr>
+      <tr>
+        <td class="step">4.b</td>
+        <td>Future occurrence with NO assignee on that role gets claimed as pending for this member</td>
+        <td><code>update calendar_events set driver_name=v_member_name, driver_id=p_member_id, driver_status='pending' ... where date&gt;v_target_date and driver_id is null and driver_name is null</code></td>
+        <td><span class="tag static">STATIC — logic sound, is the documented fix</span></td>
+        <td>20260940010000_confirm_series_forward_claims_unassigned.sql lines 90-97 — this is the newer of the two sweep migrations (chronologically latest), added specifically because the original sweep (4.a alone) swept zero rows for the common "only occurrence #1 has a named driver" case</td>
+      </tr>
+      <tr>
+        <td class="step">4.c</td>
+        <td>Occurrence assigned to a DIFFERENT member is left untouched</td>
+        <td>Both UPDATE statements' WHERE clauses require either <code>driver_id = p_member_id</code> (4.a) or <code>driver_id is null</code> (4.b) — a row with a different member's id matches neither</td>
+        <td><span class="tag static">STATIC — logic sound</span></td>
+        <td>Same two WHERE clauses as above are mutually exclusive with "assigned to someone else," by construction</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Not independently verified live</b> — this is a read of the SQL's own logic, which is
+      internally consistent and matches its own migration comments precisely, but was not exercised against real
+      rows in this run. Flagged distinctly from the LIVE-tagged sections above per this audit's explicit static-vs-live
+      requirement.</p>
+  </section>
+
+  <section id="s5">
+    <h2>5 · Kid pool-chore claim → submit → approve <span class="tag live">LIVE</span></h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">5.1</td>
+        <td><code>add_quest(isPool=true)</code></td>
+        <td><code>is_pool=true, assigned_to_id=null, status=todo</code></td>
+        <td>Unclaimed pool chore</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>Setup step</td>
+      </tr>
+      <tr>
+        <td class="step">5.2</td>
+        <td><code>claim_pool_quest(chore, Kid3)</code></td>
+        <td><code>is_pool=false, assigned_to_id=Kid3, status=in_progress, claimed_at=null</code></td>
+        <td>Claimed, in_progress — but <code>claimed_at</code> unexpectedly null</td>
+        <td>Claimed correctly; <code>claimed_at</code> stayed null</td>
+        <td><span class="tag fail">FAIL (see Finding #2)</span></td>
+        <td>The Postgres RPC claim_pool_quest never sets claimed_at — only the DIFFERENT client-side choreStore.claimPoolQuest path does (store/choreStore.ts:2503) — and that path is the one actually wired to every live Claim button, bypassing this RPC and its resolve_active_member_id() check entirely</td>
+      </tr>
+      <tr>
+        <td class="step">5.3</td>
+        <td>Kid5 (different kid) calls <code>claim_pool_quest</code> on the same, now-claimed chore</td>
+        <td><code>claimed=false, chore=null</code></td>
+        <td>No-op, no state change</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>RPC's own guard: <code>if v_result.assigned_to_id is not null ... return false</code></td>
+      </tr>
+      <tr>
+        <td class="step">5.4</td>
+        <td><code>submit_chore(chore, Kid3)</code></td>
+        <td><code>status=pending_approval, submitted_at=set, coins_paid=0, auto_approved=false</code></td>
+        <td>Normal review path — not self-assigned-parent, not redo-cap</td>
+        <td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>submit_chore re-derives branch from created_by_id/assigned_to_id/redo_count on the row itself, not client claims (migration 20260908130000)</td>
+      </tr>
+      <tr>
+        <td class="step">5.5</td>
+        <td><code>approve_chore(chore, P1)</code></td>
+        <td><code>status=approved, reviewed_by_id=P1, coins_paid=10</code>; member balance <code>coins=10</code></td>
+        <td>Approved, payout landed</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>approve_chore requires role='parent' or an active temporary_approver row; pays via award_coins atomically</td>
+      </tr>
+      <tr>
+        <td class="step">5.6</td>
+        <td>Teen4 calls <code>claim_pool_quest</code> on the already-approved chore</td>
+        <td><code>claimed=false</code></td>
+        <td>Rejected — chore is neither pool nor unassigned</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>Same guard as 5.3</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Gating fields not exercisable live:</b> <code>add_quest</code> doesn't expose
+      <code>inviteGrandparents</code>/<code>isOpenToTeens</code>, so the "does a teen see a GP-only-invited chore"
+      half of this scenario could only be reasoned statically against
+      <code>deriveCardActions.ts:128</code> (<code>canClaim = isKidOrTeen && pool && !q.inviteGrandparents</code>) —
+      logic reads correct on inspection, not independently exercised.</p>
+  </section>
+
+  <section id="s6">
+    <h2>6 · Decline, reopen, re-claim by another role <span class="tag live">LIVE</span></h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">6.1</td>
+        <td><code>assign_event_role(ev, P1, driver, actor=P1)</code></td>
+        <td><code>driver_status=pending, driver_id=P1</code></td>
+        <td>pending</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>Setup — Parent1 assigns self first since a direct teen/GP assignment is correctly rejected by the open-pool guard (see 6.1a)</td>
+      </tr>
+      <tr>
+        <td class="step">6.1a</td>
+        <td><code>assign_event_role(ev, Teen4, driver, actor=P1)</code> attempted directly (before any pool is open)</td>
+        <td><code>error: not_open_to_teens</code>, no row change</td>
+        <td>Rejected — event isn't open to teens yet</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>migration 20260927180000_fix_assign_event_role_open_flag_guard.sql added the same is_open_to_teens/is_open_to_grandparents guard to assign_event_role that reassign_event already had</td>
+      </tr>
+      <tr>
+        <td class="step">6.2</td>
+        <td><code>decline_event_assignment(ev, P1, driver)</code></td>
+        <td><code>driver_name=null, driver_status=null, driver_id=P1 (STALE), is_open_to_grandparents=true, is_open_to_teens=true</code></td>
+        <td>Both name/status null AND id cleared; both pools opened (parent is in neither pool)</td>
+        <td>Name/status cleared correctly; <b>driver_id NOT cleared</b> — still shows the declining parent's own id</td>
+        <td><span class="tag fail">FAIL (see Finding #1)</span></td>
+        <td>Live migration 20260930360000's driver branch never sets driver_id=null — regressed from 20260930250000 which did. Pool-reopen logic itself is correct: v_reopen_gp/teens both true because v_member_role='parent' is neither 'teenager' nor 'grandparent'</td>
+      </tr>
+      <tr>
+        <td class="step">6.2b</td>
+        <td>Same decline test repeated on the HELPER role (separate event, Parent 2)</td>
+        <td><code>helper_name=null, helper_status=null, helper_id=P2 (STALE)</code></td>
+        <td>Same bug, confirmed on the other field pair</td>
+        <td>Matched the driver-branch bug exactly</td>
+        <td><span class="tag fail">FAIL (see Finding #1)</span></td>
+        <td>Same migration's helper branch has the identical omission</td>
+      </tr>
+      <tr>
+        <td class="step">6.3</td>
+        <td><code>claim_event_slot(ev, GP9, driver, actor=GP9)</code> — grandparent claims the reopened slot</td>
+        <td><code>driver_name=GP 9, driver_id=GP9, driver_status=confirmed</code></td>
+        <td>Clean claim overwrites the stale id</td>
+        <td>Matched — the stale id from 6.2 is silently overwritten here</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>claim_event_slot's own UPDATE always writes a fresh driver_id, so the staleness from 6.2 is a narrow window (between decline and the next real assignment), not a permanent corruption — still real for anything reading state in that window</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note"><b>Notable, not a defect:</b> <code>features/hub/ParentView.tsx:210-217</code>'s own code
+      comment documents this exact staleness and uses it <i>deliberately</i> as a signal — "a lingering id with no
+      name is a reliable signal this slot was filled and is now open again" — to catch a declined assignment that
+      would otherwise render nowhere on the parent's Hub. This confirms the staleness is real, currently live in
+      production, and the team already worked around it in at least one place rather than fixing the RPC. It does
+      not make Finding #1 a non-issue — it means one consumer treats the leak as a feature while every other
+      consumer either doesn't touch the id field or is coincidentally gated by the name check, which is a fragile
+      thing for the correctness of a security/identity-adjacent field to depend on.</p>
+  </section>
+
+  <section id="s7">
+    <h2>7 · Concurrent take-over race <span class="tag live">LIVE</span></h2>
+    <p class="lede">Two <code>reassign_event</code> calls (Parent 1 → self, Parent 2 → self) fired back-to-back
+      with no wait between them (shell-backgrounded, ~80ms apart per server timestamps — true simultaneity isn't
+      guaranteed by this mechanism, but the two calls genuinely overlapped in flight).</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">7.1</td>
+        <td>Fire <code>reassign_event(ev, P1, driver, P1)</code> and <code>reassign_event(ev, P2, driver, P2)</code> concurrently</td>
+        <td>Final: <code>driver_name=Parent 2, driver_id=P2, driver_status=confirmed</code>; exactly one <code>event_participants</code> row (P2, driver, confirmed) — P1's row from the losing call is gone</td>
+        <td>Last-write-wins is acceptable; no split state between calendar_events and event_participants</td>
+        <td>Matched — both tables agree, no orphaned participant row, no mixed driver_id/driver_name pairing</td>
+        <td><span class="tag pass">PASS</span></td>
+        <td>Both calls take a row lock (<code>for update</code>) on the same calendar_events.id, serializing the two transactions; each does its own delete-then-insert on event_participants for that role, so the loser's insert is fully superseded, not merged</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s8">
+    <h2>8 · Self-target reassign vs. "override" semantics <span class="tag live">LIVE</span></h2>
+    <p class="lede">Isolates the finding first noticed in step 2.4: does <code>reassign_event</code> distinguish
+      "claiming an empty/pending slot for myself" from "bumping someone else's already-CONFIRMED assignment"?</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Action</th><th>DB state after</th><th>Expected</th><th>Actual</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="step">8.1</td>
+        <td>Parent 2 confirms as driver (from a prior pending assignment)</td>
+        <td><code>driver_status=confirmed, driver_id=P2</code></td>
+        <td>confirmed</td><td>Matched</td><td><span class="tag pass">PASS</span></td>
+        <td>Setup</td>
+      </tr>
+      <tr>
+        <td class="step">8.2</td>
+        <td>Parent 1 calls <code>reassign_event(ev, P1, driver, actor=P1)</code> — a self-target override of Parent 2's CONFIRMED slot</td>
+        <td><code>driver_status=confirmed</code> (immediately)</td>
+        <td>Ambiguous — see Finding #3. A UI that shows a distinct "Override" button (deriveEventActions.showOverride) implies this should feel different from a plain claim, but the RPC treats it identically</td>
+        <td>Went straight to confirmed, same as any fresh self-assign</td>
+        <td><span class="tag static">NOTABLE — see Finding #3</span></td>
+        <td>reassign_event's v_status rule (line 73 of the live migration) only checks p_new_member_id = p_actor_id — it has no branch for "was the slot already confirmed by someone else"</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s9">
+    <h2>9 · Cross-role visibility reasoning <span class="tag static">STATIC REASONING OVER LIVE STATES</span></h2>
+    <p class="lede">For each DB state produced above, which role(s) should see it on Hub vs. Tasks/Schedule, per
+      <code>deriveEventActions</code>/<code>deriveQuestActions</code> — and whether the actual view components
+      match that computed result.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>DB state (from above)</th><th>Should see it</th><th>Governing condition</th><th>View-component match?</th></tr>
+      <tr>
+        <td>§1.2 — Ride, driver=Parent2, confirmed, self-assigned</td>
+        <td>Both parents (Hub Action Needed / Agenda); the confirmed driver sees <code>showCantMakeIt</code>, the other parent sees <code>showOverride</code></td>
+        <td><code>deriveCardActions.ts:272-273</code> — <code>showOverride = ... helperConfirmed && !isSelfAssigned</code>; <code>showCantMakeIt = isSelfAssigned && (helperConfirmed || helperPending)</code></td>
+        <td><span class="tag pass">Consistent</span> — ParentView.tsx:308/585 both route through <code>eventAssignee(e)</code> the same way deriveEventActions does</td>
+      </tr>
+      <tr>
+        <td>§2.2 — Dropoff leg, helper=Parent2, pending (driver_* freshly cleared)</td>
+        <td>Parent 2 sees <code>showConfirm</code>; Parent 1 sees <code>showRemind</code>/<code>showReassign</code></td>
+        <td><code>deriveCardActions.ts:269-274</code></td>
+        <td><span class="tag pass">Consistent</span> — eventAssignee() correctly resolves the helper pair first (line 290) so no stale driver data leaks into either parent's view for this row</td>
+      </tr>
+      <tr>
+        <td>§6.2 — Ride declined by Parent1, driver_name=null but driver_id STALE=P1</td>
+        <td>Both pools now open — GP9 and Teen4/6/8 should see it as claimable; Parent1 should NOT see themselves as "assigned" to it</td>
+        <td><code>eventAssignee()</code> (store/eventStore.ts:290) checks <code>e.helper</code>/<code>e.driverName</code> first — both null here, so <code>assignee = {'{'}undefined, undefined, undefined{'}'}</code>, correctly showing "unassigned" everywhere that goes through it</td>
+        <td><span class="tag pass">Consistent for every CURRENT consumer</span> — but only because every consumer checked (ParentView, SeniorView, hubComponents) is gated behind the name field. A future direct <code>driver_id === viewer.id</code> comparison, bypassing eventAssignee(), would misfire here — flagged as Finding #1's real risk, not a currently-observed UI mismatch</td>
+      </tr>
+      <tr>
+        <td>§5.2 — Pool chore claimed by Kid3, claimed_at=null (RPC path)</td>
+        <td>Kid5/Teen4 should NOT see it as claimable (assigned_to_id is set, is_pool=false)</td>
+        <td><code>isPoolCard</code> (deriveCardActions.ts:47) — <code>!!q.isPool &amp;&amp; q.status==='todo'</code>; false here on both counts</td>
+        <td><span class="tag pass">Consistent</span> — confirmed live in 5.3/5.6, both other kids/teens correctly rejected</td>
+      </tr>
+      <tr>
+        <td>§5.2 (same row) — claimed_at=null via the RPC path specifically</td>
+        <td>Kid3 should see <code>canGiveBack</code> (an "undo my own claim" button) per deriveCardActions.ts:140-141</td>
+        <td><code>canGiveBack = isKidOrTeen && (todo||in_progress) && isAssignedTo(myId) && !!q.claimedAt</code></td>
+        <td><span class="tag fail">MISMATCH if this RPC path is ever what actually ran</span> — <code>claimedAt</code> stays falsy, so <code>canGiveBack</code> silently evaluates false for a chore Kid3 genuinely just claimed from the pool. In practice the LIVE app never calls this RPC for a real claim (see Finding #2) — its own <code>choreStore.claimPoolQuest</code> path does set <code>claimed_at</code> — so real users are not hitting this specific mismatch today, but it means the two "claim" implementations are not interchangeable despite sharing a name, and anything that switches to the RPC path (e.g. a future server-side claim endpoint, or the dormant <code>addParentQuest</code> PULL branch that already does call this RPC) will silently lose the Give Back button</td>
+      </tr>
+      <tr>
+        <td>§7.1 — Race resolved to Parent2, confirmed</td>
+        <td>Parent 1's own device (mid-race) sees whatever its last successful read shows — no permanent split-brain since only one final row state exists</td>
+        <td><code>deriveEventActions</code> is stateless/computed-per-render off whatever calendar_events row the client currently has, so a client that hasn't re-fetched will show the LOSING state until its next sync — acceptable, not a data-integrity bug</td>
+        <td><span class="tag pass">Consistent (eventually)</span> — no permanent inconsistency; a client showing pre-race state briefly is a UI staleness question, not a derivation-logic bug</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="limitations">
+    <h2>Harness limitations encountered</h2>
+    <ul>
+      <li><code>add_event</code>'s insert only accepts <code>{'{'}familyId, memberId, category, title, date, time, rideRequired, driverName, driverId, helperName, helperId{'}'}</code> — no way to set <code>linked_leg_id</code>, <code>series_id</code>, <code>is_series_anchor</code>, or <code>recurrence_rule</code>. Scenario 2's true fork-leg linkage and Scenario 4's recurring series had to be approximated (2) or verified statically (4) as a result. Both are noted explicitly at the point they occur above rather than silently asserted as fully live.</li>
+      <li><code>add_quest</code> only accepts <code>{'{'}familyId, title, isPool, assignedToId, status{'}'}</code> — no way to set <code>inviteGrandparents</code>/<code>isOpenToTeens</code> gating flags on a chore, so the GP/teen-eligibility half of Scenario 5's pool visibility check is static-only.</li>
+      <li>All other RPCs tested (<code>assign_event_role</code>, <code>reassign_event</code>, <code>confirm_event_assignment</code>, <code>decline_event_assignment</code>, <code>claim_event_slot</code>, <code>claim_pool_quest</code>, <code>submit_chore</code>, <code>approve_chore</code>) worked exactly as documented in the harness header, with no errors beyond the one expected/correct rejection in step 6.1a.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Produced via a real, live pass against the deployed <code>qa-scratch-family</code> edge function — every PASS/FAIL
+    above reflects an actual fresh <code>read</code> response, not a prediction from the SQL alone (SQL is cited to
+    explain <i>why</i>, not as the source of the result). Scratch family <code>9919cb71-1a48-4202-953e-20237b068273</code>
+    fully torn down at the end of this run.
+    <div class="backtotop"><a href="#top">&uarr; back to top</a></div>
+  </footer>
+</div>

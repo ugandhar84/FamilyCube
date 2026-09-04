@@ -173,6 +173,11 @@ export default function DataRecoveryScreen() {
   const [setAt, setSetAt] = useState<string | null>(null);
   const setByName = members.find(m => m.id === setByMemberId)?.name ?? null;
 
+  // Manual "Secure older history" button state — see its own comment above
+  // for why this exists alongside the automatic background pass.
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+
   useEffect(() => {
     if (!familyId) { setMode('setup'); return; }
     familyHasRecoveryKey(familyId).then(exists => {
@@ -232,6 +237,18 @@ export default function DataRecoveryScreen() {
     setSetByMemberId(activeMemberId);
     setSetAt(new Date().toISOString());
     offerToSharePasscode(justSet);
+    // Was skipped here on the reasoning that Change keeps the same
+    // recovery key pair, so there's nothing NEW to backfill — true, but it
+    // meant Change was a dead end for anyone whose FIRST backfill attempt
+    // (right after initial Setup) had failed or never actually run,
+    // leaving no easy way to retry without a full Reset (which invalidates
+    // the passcode everyone already has). Cheap/idempotent either way:
+    // backfillRecoveryWraps skips anything already covered, so re-running
+    // it here on every Change costs nothing extra when there's genuinely
+    // nothing new to do.
+    backfillRecoveryWraps(familyId, members).then(r => {
+      if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
+    }).catch(() => {});
   };
 
   // For when nobody remembers the current passcode at all — setUpFamilyRecoveryKey
@@ -275,6 +292,32 @@ export default function DataRecoveryScreen() {
         }},
       ],
     );
+  };
+
+  const runManualBackfill = async () => {
+    if (!familyId) return;
+    setBackfillRunning(true);
+    setBackfillResult(null);
+    try {
+      const r = await backfillRecoveryWraps(familyId, members);
+      if (r.skippedReason) {
+        setBackfillResult(r.skippedReason);
+        return;
+      }
+      if (!r.chatDone) {
+        const { runChatRecoveryBackfillInBackground } = await import('@/lib/deviceRegistry');
+        runChatRecoveryBackfillInBackground(familyId).catch(() => {});
+      }
+      setBackfillResult(
+        `Secured ${r.locationMembers} member${r.locationMembers === 1 ? '' : 's'}' location, ` +
+        `${r.recordsBackfilled ? 'records, ' : ''}and ${r.chatMessages} message${r.chatMessages === 1 ? '' : 's'} on this device` +
+        (r.chatDone ? '.' : ' — continuing in the background.'),
+      );
+    } catch (e: any) {
+      setBackfillResult(`Couldn't finish: ${e?.message ?? 'unknown error'}. Try again in a moment.`);
+    } finally {
+      setBackfillRunning(false);
+    }
   };
 
   const handleRecover = async () => {
@@ -351,6 +394,30 @@ export default function DataRecoveryScreen() {
               <Text style={[s.cardSub, { color: colors.textTertiary }]}>
                 Can be managed by: {managingParentNames.join(', ')}
               </Text>
+            )}
+            {/* Live-reported gap: the backfill that protects OLDER chat/
+                location/records history with the recovery key only ever
+                fired automatically (app foreground/cold-start) or as a
+                side effect of Setup/Reset — Change Passcode deliberately
+                skipped it (same key pair, nothing new to backfill), and
+                there was no way to tell whether the automatic background
+                pass had actually run or silently failed on a given device.
+                This button calls the exact same backfillRecoveryWraps this
+                device would otherwise run silently, but with real visible
+                results — tap it on whichever device has always had the
+                real chat/location/records history, if a newly-recovered
+                device still isn't showing old messages. */}
+            <TouchableOpacity
+              style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, marginTop: 4, opacity: backfillRunning ? 0.7 : 1 }]}
+              onPress={runManualBackfill}
+              disabled={backfillRunning || !familyId}
+            >
+              {backfillRunning
+                ? <ActivityIndicator color={colors.primary} />
+                : <Text style={[s.btnText, { color: colors.primary }]}>Secure older history on this device</Text>}
+            </TouchableOpacity>
+            {backfillResult && (
+              <Text style={[s.cardSub, { color: colors.textTertiary }]}>{backfillResult}</Text>
             )}
           </View>
         )}

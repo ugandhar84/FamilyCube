@@ -264,13 +264,30 @@ export async function recoverWithFamilyPasscode(
  */
 export async function backfillRecoveryWraps(
   familyId: string, members: { id: string }[],
-): Promise<{ locationMembers: number; recordsBackfilled: boolean; chatMessages: number; chatDone: boolean }> {
-  const result = { locationMembers: 0, recordsBackfilled: false, chatMessages: 0, chatDone: true };
-  if (!isFeatureEnabled('per_device_e2e')) return result;
+): Promise<{ locationMembers: number; recordsBackfilled: boolean; chatMessages: number; chatDone: boolean; skippedReason?: string }> {
+  const result: { locationMembers: number; recordsBackfilled: boolean; chatMessages: number; chatDone: boolean; skippedReason?: string } =
+    { locationMembers: 0, recordsBackfilled: false, chatMessages: 0, chatDone: true };
+  if (!isFeatureEnabled('per_device_e2e')) {
+    result.skippedReason = 'Per-device encryption is off for this build';
+    return result;
+  }
 
   const directory = await getFamilyDeviceDirectory(familyId);
   const recoveryEntry = directory.filter(d => d.deviceId === RECOVERY_DEVICE_ID);
-  if (recoveryEntry.length === 0) return result; // nothing to backfill onto yet
+  console.log('[RecoveryBackfill] directory size:', directory.length, 'recovery rows found:', recoveryEntry.length, 'familyId:', familyId);
+  if (recoveryEntry.length === 0) {
+    // Was a silent no-op — this is the single most likely reason "nothing
+    // happens" after setting up a passcode: the RECOVERY_DEVICE_ID row
+    // never made it into device_keys (setUpFamilyRecoveryKey's insert
+    // failed, RLS blocked it, or this device's read of the directory just
+    // failed) even though `families.encrypted_recovery_privkey` itself
+    // looks set. Surfaced now instead of swallowed, since there is nothing
+    // else this function can do without that row existing.
+    result.skippedReason = directory.length === 0
+      ? "Couldn't read this family's device directory (check your connection)"
+      : 'No recovery key is registered as a device yet — try Reset Passcode once to re-register it';
+    return result;
+  }
 
   // ── Location: only for members this device actually has a cached
   // session key for (peekLocationSessionKey, non-generating) — re-wrapping
@@ -349,7 +366,9 @@ async function backfillChatRecoveryWraps(
       .eq('device_id', deviceId)
       .order('message_id', { ascending: true })
       .limit(SCAN_CAP);
+    if (keysErr) console.log('[RecoveryBackfill] chat_message_keys query error:', keysErr.message, keysErr.details, keysErr.hint);
     if (keysErr || !myKeyRows) throw keysErr ?? new Error('no rows');
+    console.log('[RecoveryBackfill] this device has', myKeyRows.length, 'chat_message_keys rows (deviceId:', deviceId, ')');
     if (myKeyRows.length === 0) return { wrapped: 0, done: true };
 
     const allMessageIds = myKeyRows.map((r: any) => r.message_id);
@@ -369,6 +388,7 @@ async function backfillChatRecoveryWraps(
     }
 
     const pending = (myKeyRows as any[]).filter(r => !alreadyWrapped.has(r.message_id)).slice(0, limit);
+    console.log('[RecoveryBackfill] already recovery-wrapped:', alreadyWrapped.size, 'pending to wrap now:', pending.length);
     if (pending.length === 0) {
       // Nothing pending within this scan window — done only if the window
       // wasn't truncated by SCAN_CAP (otherwise there could be more
@@ -385,27 +405,37 @@ async function backfillChatRecoveryWraps(
     const senderPubKey = (deviceId2: string, memberId: string) =>
       (senderDeviceRows ?? []).find((d: any) => d.device_id === deviceId2 && d.member_id === memberId)?.public_key as string | undefined;
 
+    let skippedNoSenderInfo = 0, skippedNoPubKey = 0, skippedUnwrapFailed = 0;
     const newRows: { message_id: string; device_id: string; wrapped_key: string }[] = [];
     for (const row of pending) {
       const senderDeviceId = row.chat_messages?.sender_device_id;
       const senderId = row.chat_messages?.sender_id;
-      if (!senderDeviceId || !senderId) continue; // legacy pre-per_device_e2e message, nothing to unwrap here
+      if (!senderDeviceId || !senderId) { skippedNoSenderInfo++; continue; } // legacy pre-per_device_e2e message, nothing to unwrap here
       const pubKey = senderPubKey(senderDeviceId, senderId);
-      if (!pubKey) continue;
+      if (!pubKey) { skippedNoPubKey++; continue; }
       try {
         const sessionKey = await unwrapSessionKeyFromDevice(row.wrapped_key, pubKey, familyId);
         const [wrapped] = await wrapLocationKeyForDevices(sessionKey, recoveryEntry, familyId);
         newRows.push({ message_id: row.message_id, device_id: wrapped.deviceId, wrapped_key: wrapped.wrappedKey });
-      } catch {
+      } catch (e: any) {
         // One bad/mismatched row shouldn't abort the whole batch.
+        skippedUnwrapFailed++;
+        console.log('[RecoveryBackfill] unwrap/rewrap failed for message', row.message_id, e?.message ?? e);
       }
     }
+    console.log('[RecoveryBackfill] batch result — wrapped:', newRows.length,
+      'skipped(no sender device/id):', skippedNoSenderInfo,
+      'skipped(no sender pubkey found):', skippedNoPubKey,
+      'skipped(unwrap threw):', skippedUnwrapFailed);
 
     if (newRows.length > 0) {
       // insert, not upsert — alreadyWrapped above already excludes any
       // (message_id, RECOVERY_DEVICE_ID) row that exists.
       const { error: insertErr } = await supabase.from('chat_message_keys').insert(newRows);
-      if (insertErr) { console.warn('[deviceRegistry] backfillChatRecoveryWraps insert failed', insertErr.message); return { wrapped: 0, done: false }; }
+      if (insertErr) {
+        console.log('[RecoveryBackfill] insert into chat_message_keys FAILED:', insertErr.message, insertErr.details, insertErr.hint);
+        return { wrapped: 0, done: false };
+      }
     }
     // More work likely remains whenever this pass's scan window was full
     // (SCAN_CAP) or it found a full `limit` worth of pending rows — either
@@ -435,6 +465,8 @@ const _chatBackfillRunning = new Set<string>();
  * loop indefinitely — a future app open picks up wherever this left off.
  */
 export async function runChatRecoveryBackfillInBackground(familyId: string): Promise<void> {
+  console.log('[RecoveryBackfill] runChatRecoveryBackfillInBackground called for family', familyId,
+    'per_device_e2e:', isFeatureEnabled('per_device_e2e'), 'already running:', _chatBackfillRunning.has(familyId));
   if (!isFeatureEnabled('per_device_e2e') || _chatBackfillRunning.has(familyId)) return;
   _chatBackfillRunning.add(familyId);
   // Lazy import — avoids a store dependency in this crypto/plumbing file

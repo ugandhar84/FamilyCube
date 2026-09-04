@@ -220,8 +220,28 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   // drop-off/pickup split a kid's approved "both ways" request already
   // goes through — right after the initial event is created (see the
   // needsPickup effect near the submit handler).
-  const [needsPickup,    setNeedsPickup]    = useState(false);
-  const [pickupTime,     setPickupTime]     = useState<Date | null>(null);
+  // Live-reported: "saved it but not created the pickup leg .. maybe issue
+  // in the step 4 only" — SmartTaskComposer's hand-off (see its own
+  // comment on the Ride+returnTime case) passes returnTime as a prefill
+  // specifically so this form forks a real, separate pickup leg via
+  // forkRideLegs (below) — but needsPickup/pickupTime (the actual toggle
+  // that drives that fork) were both hardcoded to start off/null
+  // regardless of prefill, completely disconnected from returnDate above
+  // (a SEPARATE state var that only feeds the single event's own
+  // returnTime FIELD, never the fork). The composer's return time landed
+  // on the saved event correctly; the fork simply never had anything to
+  // trigger it. Seed both from the same prefill so a composer-created ride
+  // with a return time actually forks on save, same as manually turning
+  // the toggle on would.
+  const [needsPickup,    setNeedsPickup]    = useState(!!prefill?.returnTime);
+  const [pickupTime,     setPickupTime]     = useState<Date | null>(() => {
+    if (!prefill?.returnTime) return null;
+    const [h, m] = prefill.returnTime.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+  });
   const [showPickupTimePick, setShowPickupTimePick] = useState(false);
   const [generalLocation,setGeneralLocation]= useState(prefill?.generalLocation ?? '');
   const [openToGrandparents, setOpenToGrandparents] = useState(false);
@@ -656,9 +676,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     // nothing — returnTime was written to the row but nothing ever read it
     // back out to actually create the second leg (only KidRequestModal's
     // parseRideMeta call consumed it, which never runs for a parent's own
-    // submission). Recurring series are excluded — forking a repeating
-    // ride into two repeating series is a materially bigger problem this
-    // fix doesn't attempt to solve.
+    // submission).
     // Which field actually carries the transport assignee varies by
     // category: Ride/Medical/Sports use `helper` (HelperAssignmentSection
     // labels it "Accompanied by"/"Drop-off by" for those two — it IS the
@@ -666,8 +684,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     // (`helper`) from driver (`driverName`) into two different people.
     const usesDriverField = category === 'Study';
     const transportSet = usesDriverField ? !!eventInput.driverName : !!eventInput.helper;
-    if (repeatFreq === 'none' && needsPickup && pickupTime && !isKid && transportSet
-        && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study')) {
+    const canFork = needsPickup && pickupTime && !isKid && transportSet
+      && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study');
+    if (canFork && repeatFreq === 'none') {
       try {
         const assignedId = usesDriverField ? driverId : eventInput.helperId;
         await forkRideLegs({
@@ -689,6 +708,62 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
         });
       } catch (e: any) {
         console.warn('[EventFormModal] forkRideLegs (parent-created pickup leg) failed:', e?.message);
+      }
+    } else if (canFork && newEventId) {
+      // Recurring case — live-reported: "saved it but not created the
+      // pickup leg .. maybe issue in the step 4 only", for a weekly "every
+      // Wednesday" ride. forkRideLegs itself only ever forks ONE row; a
+      // recurring drop-off series needs a parallel recurring PICKUP series
+      // (its own seriesId, same recurrenceRule), not N independent one-off
+      // pickup events. Reuses EditEventModal's own proven forkSiblings
+      // pattern (features/calendar/EventFormModal.tsx, the "following"/
+      // "all" edit-time fork) — same shape, simpler here since the
+      // recurrence rule/materialized rows are already in hand from the
+      // addRecurringEvent call above instead of needing a fresh DB lookup.
+      try {
+        const { data: rows, error } = await supabase.from('calendar_events')
+          .select('*').eq('series_id', newEventId).is('deleted_at', null);
+        if (error || !rows) throw error ?? new Error('series lookup returned no rows');
+        const occurrences = rows.map(fromRow).sort((a, b) => a.date.localeCompare(b.date));
+        const anchor = occurrences.find(r => r.isSeriesAnchor) ?? occurrences[0];
+        if (anchor?.recurrenceRule && occurrences.length > 0) {
+          const pickupTimeStr = fmtTime(pickupTime!);
+          const assignedId = usesDriverField ? driverId : eventInput.helperId;
+          const selfDrive = !!(assignedId && assignedId === activeMemberId);
+          const pickupAnchorId = await useEventStore.getState().addRecurringEvent({
+            title: `${finalTitle} — Pickup`,
+            date: occurrences[0].date,
+            time: pickupTimeStr,
+            type: 'event', category: eventInput.category, allDay: false, memberId: eventInput.memberId,
+            approvalPending: false, conflict: false,
+            ...(usesDriverField
+              ? { driverName: eventInput.driverName, driverStatus: eventInput.driverStatus, rideRequired: true }
+              : { helper: eventInput.helper, helperId: eventInput.helperId, helperStatus: eventInput.helperStatus }),
+            notes: eventInput.notes ? `(Return) ${eventInput.notes}` : `Pickup leg for "${finalTitle}"`,
+            isOpenToGrandparents: !selfDrive,
+            isOpenToTeens: !selfDrive,
+            pickupLocation: eventInput.dropLocation,
+            dropLocation: eventInput.pickupLocation,
+          }, anchor.recurrenceRule);
+          if (pickupAnchorId) {
+            const { data: pickupRows, error: pickupErr } = await supabase.from('calendar_events')
+              .select('*').eq('series_id', pickupAnchorId).is('deleted_at', null);
+            if (pickupErr || !pickupRows) throw pickupErr ?? new Error('pickup series lookup returned no rows');
+            const pickupByDate = new Map(pickupRows.map(fromRow).map(r => [r.date, r]));
+            for (const dropoff of occurrences) {
+              const pickup = pickupByDate.get(dropoff.date);
+              if (!pickup) continue;
+              await updateEvent(dropoff.id, {
+                title: dropoff.title.endsWith(' — Drop-off') ? dropoff.title : `${dropoff.title} — Drop-off`,
+                linkedLegId: pickup.id,
+              });
+              await updateEvent(pickup.id, { linkedLegId: dropoff.id });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn('[EventFormModal] recurring forkRideLegs (parent-created pickup series) failed:', e?.message);
+        showToast("Couldn't create the recurring pickup leg — please try again", 'error');
       }
     }
 

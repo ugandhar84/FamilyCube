@@ -52,6 +52,7 @@ import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid, isEv
 import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView';
 import WeekView from './components/WeekView';
 import AgendaView from './components/AgendaView';
+import SwipeableEventCard from './components/SwipeableEventCard';
 import DaySlotView from './components/DaySlotView';
 import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
 
@@ -352,76 +353,6 @@ function FadeInView({ children }: { children: React.ReactNode }) {
     }}>
       {children}
     </Animated.View>
-  );
-}
-
-// ─── Swipeable event card wrapper ────────────────────────────────────────────
-// Swipe left to reveal delete. Only shown for future events (per RBAC).
-function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelete }: {
-  children: React.ReactNode; onDelete: () => void; onLongPress: () => void; onPress?: () => void; canDelete: boolean;
-}) {
-  const tx      = useRef(new Animated.Value(0)).current;
-  const [open, setOpen] = useState(false);
-  const DELETE_W = 84;
-
-  const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => canDelete && Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
-    onPanResponderMove: (_, g) => {
-      if (!canDelete) return;
-      const base = open ? -DELETE_W : 0;
-      const clamped = Math.max(-DELETE_W, Math.min(0, base + g.dx));
-      tx.setValue(clamped);
-    },
-    onPanResponderRelease: (_, g) => {
-      if (!canDelete) return;
-      const dest = (open ? g.dx < DELETE_W / 2 : g.dx < -(DELETE_W / 2)) ? -DELETE_W : 0;
-      setOpen(dest !== 0);
-      Animated.spring(tx, { toValue: dest, useNativeDriver: true, friction: 7, tension: 60 }).start();
-    },
-  })).current;
-
-  const close = () => {
-    setOpen(false);
-    Animated.spring(tx, { toValue: 0, useNativeDriver: true }).start();
-  };
-
-  // Slide whole row left so delete zone slides in from right (overflow clipped by parent)
-  return (
-    <View style={{ flexDirection: 'row', overflow: 'hidden' }}>
-      <Animated.View
-        {...pan.panHandlers}
-        style={{ flexDirection: 'row', transform: [{ translateX: tx }], width: '100%' }}
-      >
-        {/* Card content — takes full width, slides left */}
-        <View style={{ width: '100%' }}>
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onLongPress={onLongPress}
-            onPress={open ? close : onPress}
-            delayLongPress={450}
-          >
-            {children}
-          </TouchableOpacity>
-        </View>
-
-        {/* Delete zone — revealed when slid left */}
-        {canDelete && (
-          <TouchableOpacity
-            onPress={() => { close(); onDelete(); }}
-            style={{
-              width: DELETE_W, alignItems: 'center', justifyContent: 'center', gap: 4,
-              backgroundColor: '#EF4444', borderRadius: 18,
-              marginLeft: 8, flexShrink: 0,
-            }}
-          >
-            <Text style={{ fontSize: 22 }}>🗑️</Text>
-            <Text style={{ fontSize: 10, color: '#fff', fontWeight: '900', letterSpacing: 0.5 }}>
-              Delete
-            </Text>
-          </TouchableOpacity>
-        )}
-      </Animated.View>
-    </View>
   );
 }
 
@@ -1334,12 +1265,13 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               </View>
             ) : (
               <AgendaView
-                events={collapsedRangeEvents}
+                events={scopedRangeEvents}
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Agenda view → open detail sheet [features/calendar/CalendarScreen.tsx:1187]`); setDetailEv(ev); }}
                 onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Agenda view → routeLongPress [features/calendar/CalendarScreen.tsx:1188]`); routeLongPress(ev); }}
                 isViewerParent={isParent}
+                canDeleteEvent={(ev) => !isEventPast(ev.date, ev.time) && (isParent || ((isKid || isTeen) && !!ev.approvalPending && ev.memberId === activeMemberId))}
               />
             )}
           </FadeInView>

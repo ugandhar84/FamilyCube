@@ -2897,6 +2897,19 @@ function offsetDate(dateStr: string, days: number): string {
 // periodically to keep pushing the horizon forward.
 const RECURRENCE_WINDOW_DAYS = 84; // 12 weeks
 
+// Live-requested guardrail: "this creates 85 events over 12 weeks —
+// continue?" before a Daily/Weekly-with-no-end-date rule silently
+// materializes a large batch — the exact accident that flooded Agenda with
+// ~170 rows (a drop-off + linked pickup series both created with an
+// accidentally-Daily rule instead of Weekly). Exported so EventFormModal
+// can show the real count at confirm-time — reuses generateOccurrenceDates
+// itself (below) rather than a separately-maintained estimate, so the
+// warning is always exactly what will actually be created, anchor row
+// included.
+export function estimateOccurrenceCount(fromDate: string, rule: EventRecurrenceRule): number {
+  return generateOccurrenceDates(fromDate, rule, 1).length + 1; // +1 for the anchor row itself
+}
+
 // Every date `rule` implies strictly AFTER `fromDate`, capped by the window,
 // rule.endDate, and rule.occurrences (whichever is most restrictive).
 function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, existingCount: number): string[] {

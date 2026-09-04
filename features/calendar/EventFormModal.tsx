@@ -28,7 +28,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFamilyStore } from '@/store/familyStore';
-import { useEventStore, fromRow, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
+import { useEventStore, fromRow, FamilyEvent, EventType, HelperStatus, estimateOccurrenceCount } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
@@ -485,8 +485,38 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const canSubmit = !!finalTitle && (allDay || true); // time optional
 
   // ── Submit ─────────────────────────────────────────────────────────────────
+  // Live-requested guardrail — "this creates 85 events over 12 weeks —
+  // continue?" — after a Daily rule (accidentally picked instead of
+  // Weekly) flooded Agenda with ~170 rows (a drop-off + linked pickup
+  // series, both silently 85 occurrences each, no confirmation anywhere
+  // in the flow). Only warns above a threshold that's genuinely surprising
+  // — a normal "every Wednesday for 12 weeks" (12 occurrences) or even a
+  // 4-day-a-week rule (~48) never interrupts; only a rule dense enough to
+  // approach the full 84-day/12-week window's row count does.
+  const OCCURRENCE_WARNING_THRESHOLD = 40;
+  const confirmLargeRecurrence = (): Promise<boolean> => {
+    if (repeatFreq === 'none') return Promise.resolve(true);
+    const count = estimateOccurrenceCount(localDateStr(eventDate), {
+      frequency: repeatFreq,
+      days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [eventDate.getDay()]) : undefined,
+      endDate: repeatEndDate ? localDateStr(repeatEndDate) : undefined,
+    });
+    if (count < OCCURRENCE_WARNING_THRESHOLD) return Promise.resolve(true);
+    return new Promise(resolve => {
+      Alert.alert(
+        'That\'s a lot of events',
+        `This creates ${count} events over the next ${Math.ceil(count / 7)} weeks${needsPickup ? ' (plus a matching pickup series)' : ''}. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Create anyway', style: 'destructive', onPress: () => resolve(true) },
+        ],
+      );
+    });
+  };
+
   const submit = async () => {
     if (!canSubmit) return;
+    if (!(await confirmLargeRecurrence())) return;
     setSaving(true);
 
     const primaryKidRideDate = isKid && kidRideNeeded
@@ -749,16 +779,40 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             const { data: pickupRows, error: pickupErr } = await supabase.from('calendar_events')
               .select('*').eq('series_id', pickupAnchorId).is('deleted_at', null);
             if (pickupErr || !pickupRows) throw pickupErr ?? new Error('pickup series lookup returned no rows');
-            const pickupByDate = new Map(pickupRows.map(fromRow).map(r => [r.date, r]));
+            const pickupEvents = pickupRows.map(fromRow);
+            const pickupByDate = new Map(pickupEvents.map(r => [r.date, r]));
+            // Was one updateEvent() call per side per pair, awaited
+            // sequentially — updateEvent does real per-call work (local
+            // dayEvents/rangeEvents/_rangeCache updates, notification/sync-
+            // push side effects meant for a single user-driven edit), so a
+            // daily rule's 85 pairs meant up to 170 sequential awaited round
+            // trips. Live-reported: "step 4 still showing in progress" —
+            // the save spinner stayed up the whole time this ran, since
+            // setSaving(false) only fires after this entire block finishes.
+            // Pairing is just two independent-per-row column writes with no
+            // cross-row ordering requirement, so run them as direct
+            // Supabase writes in parallel instead of routing each one
+            // through updateEvent's full per-call bookkeeping.
+            const pairs: { dropoffId: string; pickupId: string; dropoffTitle: string }[] = [];
+            let skipped = 0;
             for (const dropoff of occurrences) {
               const pickup = pickupByDate.get(dropoff.date);
-              if (!pickup) continue;
-              await updateEvent(dropoff.id, {
-                title: dropoff.title.endsWith(' — Drop-off') ? dropoff.title : `${dropoff.title} — Drop-off`,
-                linkedLegId: pickup.id,
+              if (!pickup) { skipped++; continue; }
+              pairs.push({
+                dropoffId: dropoff.id, pickupId: pickup.id,
+                dropoffTitle: dropoff.title.endsWith(' — Drop-off') ? dropoff.title : `${dropoff.title} — Drop-off`,
               });
-              await updateEvent(pickup.id, { linkedLegId: dropoff.id });
             }
+            await Promise.all(pairs.flatMap(p => [
+              supabase.from('calendar_events').update({ title: p.dropoffTitle, linked_leg_id: p.pickupId }).eq('id', p.dropoffId),
+              supabase.from('calendar_events').update({ linked_leg_id: p.dropoffId }).eq('id', p.pickupId),
+            ]));
+            // Local dayEvents/rangeEvents caches still hold the pre-pairing
+            // rows (title without " — Drop-off", no linkedLegId) since the
+            // writes above bypassed updateEvent's local-state sync entirely
+            // — refetch the family's current view once now rather than
+            // reconstructing 2×pairs.length of local patches by hand.
+            await useEventStore.getState().syncFromDB();
           }
         }
       } catch (e: any) {

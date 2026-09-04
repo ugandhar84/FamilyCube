@@ -28,6 +28,7 @@ import {
 } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { parseLocalDate, localDateStr, todayLocal } from '@/lib/dates';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 // Money-green — "done/positive" accent, distinct from brand teal used for
 // confirmed/assigned state elsewhere. Not colors.success (which IS brand
@@ -426,6 +427,11 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
   const [note, setNote]         = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
+  // This sheet's maxHeight: '90%' is a static percentage of the FULL
+  // screen — clamp it once the keyboard opens (note field) so it can't be
+  // pushed past the top of the screen (same class of bug already fixed in
+  // AppBottomSheet.tsx/TaskFormShell.tsx).
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   const isRedo      = task?.status === 'redo_requested';
   const isClaimOnly = task?.categoryType === 'bounty' && !task.assignedToId;
@@ -509,7 +515,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 
@@ -870,6 +876,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
   const [spendPct, setSpendPct] = useState(householdSettings.spendAllocationPct);
   const [savePct,  setSavePct]  = useState(householdSettings.saveAllocationPct);
   const [loading, setLoading]   = useState(false);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   const amount = Math.max(0, Math.min(bal.total, parseInt(pts || '0', 10) || 0));
   const givePct = 100 - spendPct - savePct;
@@ -896,7 +903,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

@@ -22,6 +22,7 @@ import {
 } from '@/store/choreStore';
 import { choreToQuest } from '@/store/choreAdapter';
 import { QuestApprovalCard } from '../hub/parent/QuestApprovalCard';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { GpOfferReviewCard } from '../hub/parent/GpOfferReviewCard';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -397,6 +398,7 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
   const [preset, setPreset]   = useState<RejectionPresetKey | null>(null);
   const [customMsg, setCustomMsg] = useState('');
   const [loading, setLoading]     = useState(false);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
 
   const handleSend = () => {
     if (!task) return;
@@ -425,7 +427,7 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

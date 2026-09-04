@@ -31,6 +31,7 @@ import { View, Text, Pressable, TextInput, Modal, LayoutAnimation, Platform, UIM
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useHelpStore, HelpRequest } from '@/store/helpStore';
@@ -160,6 +161,11 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
 }) {
   const insets = useSafeAreaInsets();
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+  // maxHeight: '92%' below is a static percentage of the full screen —
+  // clamp to 80% once the keyboard opens (this sheet's own OfferModal/
+  // decline/reject forms all have a TextInput) so it can't get pushed
+  // past the top of the screen.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
@@ -177,7 +183,7 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
           borderTopLeftRadius: 28, borderTopRightRadius: 28,
           paddingHorizontal: 20,
           paddingBottom: Math.max(insets.bottom, 8) + 8,
-          maxHeight: '92%',
+          maxHeight: keyboardAwareMaxHeight ?? '92%',
           shadowColor: '#000', shadowOpacity: 0.1,
           shadowOffset: { width: 0, height: -3 }, shadowRadius: 10,
           elevation: 20,

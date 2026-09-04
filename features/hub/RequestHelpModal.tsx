@@ -149,7 +149,7 @@ interface Props {
 
 export default function RequestHelpModal({ visible, onClose, activeMemberId }: Props) {
   const { colors } = useTheme();
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(70, 40);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(70);
   const members    = useFamilyStore(s => s.members);
   const sendRequest = useKidRequestStore(s => s.sendRequest);
 

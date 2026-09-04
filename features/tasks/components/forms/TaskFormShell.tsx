@@ -59,7 +59,15 @@ export function TaskFormShell({
   // it once the keyboard opens so it can't get pushed past the top of the
   // screen (same class of bug fixed in AppBottomSheet.tsx). Falls through
   // to the sheet's own 75% when the keyboard is closed.
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
+  //
+  // Live-reported: "I've worse experience in the bottomsheet keyboard
+  // handling" — a field sat flush against the keyboard's top edge with no
+  // breathing room, on every step of this shell (not just one), since
+  // every AddEventModal/AddQuestModal step renders through this same
+  // instance. Bumped the default 60px topSafeMargin to 90px, matching the
+  // same fix applied to EditEventModal.tsx's own separate
+  // useKeyboardAwareMaxHeight call.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   const currentStepId = stepIds[Math.min(step, stepIds.length - 1)];
   const isReview = currentStepId === reviewStepId;

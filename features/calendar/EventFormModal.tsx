@@ -1561,7 +1561,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // clamp it once the keyboard opens so it can't get pushed past the top
   // of the screen (same class of bug fixed in AppBottomSheet.tsx). Falls
   // through to the sheet's own 75% when the keyboard is closed.
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
+  // Live-reported: "I've worse experience in the bottomsheet keyboard
+  // handling" — screenshot showed a location field ("Chess Club, Oa...")
+  // sitting flush against the keyboard's top edge with no breathing room.
+  // The default 60px topSafeMargin (useKeyboardAwareMaxHeight's own
+  // default) was correctly shrinking the sheet to fit above the keyboard,
+  // but left no visual gap once it did — bumped to 90px for a bit more
+  // comfortable clearance. Not re-adding automaticallyAdjustKeyboardInsets
+  // here (see TaskFormShell.tsx/MealFormSheet.tsx's own comments on why
+  // that double-compensates with this same hook and was deliberately
+  // removed) — this only adjusts the existing shrink amount.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
   const { updateEvent, addEvent, addRecurringEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
@@ -2177,7 +2187,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               // (live-requested: tapping outside a text input should close it).
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
+              contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
             >
               {/* Date / Time — spec 2.9. Same PickerOverlay AddEventModal uses.
                   Spec 5.7 — also available to a senior editing their own event. */}

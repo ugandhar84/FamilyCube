@@ -13,11 +13,11 @@
  * timer and lets the touch pass through to whatever's actually being
  * tapped, rather than intercepting it. See KioskIdleTouchLayer below.
  *
- * Unlocking is a plain tap, no PIN — consistent with kiosk mode's other
- * PIN-free interactions (profile switching in KioskHeader): this is a
- * shared device the whole family already has physical access to, so a
- * lock screen here is about "don't leave someone's private view up," not
- * "keep an outsider out" the way a real device lock is.
+ * Unlocking now requires picking a profile (KioskLockScreen), and a PIN
+ * too for any member who has one set — matching the phone app's own
+ * `pinEnabled && pin` rule. This hook only owns the idle timer/locked
+ * boolean; KioskLockScreen and KioskScreen's onUnlock handler own the
+ * actual profile pick + auth + setActiveMember flow.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';

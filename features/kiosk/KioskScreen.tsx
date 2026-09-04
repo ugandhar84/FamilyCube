@@ -124,7 +124,8 @@ export default function KioskScreen() {
       {locked && (
         <KioskLockScreen
           familyName={familyName || 'Our Family'}
-          onUnlock={unlock}
+          members={members}
+          onUnlock={(memberId) => { setActiveMember(memberId); unlock(); }}
           colors={colors}
         />
       )}
@@ -178,6 +179,7 @@ export default function KioskScreen() {
           onClose={() => setAskCubeOpen(false)}
           activeMember={active}
           members={members}
+          variant="kiosk"
         />
       )}
     </SafeAreaView>

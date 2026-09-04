@@ -83,11 +83,18 @@ interface ChatMessage {
   revealDone?: boolean;
 }
 
-export default function AskCubeChat({ visible, onClose, activeMember, members }: {
+export default function AskCubeChat({ visible, onClose, activeMember, members, variant = 'sheet' }: {
   visible: boolean;
   onClose: () => void;
   activeMember: FamilyMember;
   members: FamilyMember[];
+  /** 'sheet' (default, unchanged): full-width bottom sheet, right for a
+   * phone screen. 'kiosk': live-flagged — a full-width sheet on a wide
+   * landscape kitchen tablet stretched every line to an unreadable measure
+   * and looked like a takeover rather than a quick chat. Renders instead as
+   * a smaller centered floating window, docked to the bottom-right corner
+   * near where AskFam's own launch button lives in KioskHeader. */
+  variant?: 'sheet' | 'kiosk';
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -668,15 +675,29 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     }));
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-          <Pressable style={{ flex: 1 }} onPress={onClose} />
-          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            height: '85%', paddingTop: 12 }}>
+  const isKiosk = variant === 'kiosk';
 
-            <View style={{ width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, backgroundColor: colors.border }} />
+  return (
+    <Modal visible={visible} transparent animationType={isKiosk ? 'fade' : 'slide'} onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={
+          isKiosk
+            ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'flex-end', alignItems: 'flex-end', padding: 24 }
+            : { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }
+        }>
+          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} />
+          <View style={
+            isKiosk
+              ? { backgroundColor: colors.card, borderRadius: 26, width: 420, maxWidth: '100%', height: 560,
+                  maxHeight: '80%', paddingTop: 14, overflow: 'hidden',
+                  shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 12 }
+              : { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+                  height: '85%', paddingTop: 12 }
+          }>
+
+            {!isKiosk && (
+              <View style={{ width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, backgroundColor: colors.border }} />
+            )}
 
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
               borderBottomWidth: 1, borderBottomColor: colors.border }}>

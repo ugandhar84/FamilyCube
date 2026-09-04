@@ -14,18 +14,21 @@
  * rather than the two competing for the same visual weight on one
  * baseline-aligned row. Avatar labels are sized up for the same reason.
  *
- * Switching is intentionally PIN-free here, unlike the phone app's own
- * PersonaSwitcherSheet — a wall-mounted shared kitchen tablet is used by
- * whoever's standing in front of it; gating a tap-to-switch behind a PIN
- * on a device the whole family already shares physical access to adds
- * friction with no real security benefit, and no kiosk reference product
- * (Skylight, Hearth, etc.) gates it either.
+ * Switching matches the phone app's own PersonaSwitcherSheet rule exactly
+ * (live-requested fix — this used to be unconditionally PIN-free, which
+ * was flagged as a real gap: a wall-mounted shared tablet is still used by
+ * whoever's standing in front of it, but a member who deliberately set a
+ * PIN on their profile expects that PIN to matter everywhere, not just on
+ * phones): a member with no PIN set switches to instantly, exactly as
+ * before; a member with `pinEnabled && pin` requires it, via the same
+ * PinEntryModal the phone app uses.
  */
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Sparkles, Lock } from 'lucide-react-native';
 import { LETTER_SPACING } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
+import PinEntryModal from '@/components/PinEntryModal';
 
 export function KioskHeader({
   familyName, members, activeId, onSwitch, isParent, onAskFam, onLock, colors,
@@ -42,6 +45,18 @@ export function KioskHeader({
   onLock: () => void;
   colors: any;
 }) {
+  const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+
+  const handleSwitch = (id: string) => {
+    if (id === activeId) return;
+    const m = members.find(x => x.id === id);
+    if (m?.pinEnabled && m.pin) {
+      setPinTarget(m);
+    } else {
+      onSwitch(id);
+    }
+  };
+
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -67,9 +82,14 @@ export function KioskHeader({
             const isActive = m.id === activeId;
             const tint = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
             return (
-              <Pressable key={m.id} onPress={() => onSwitch(m.id)} style={s.avatarItem}>
+              <Pressable key={m.id} onPress={() => handleSwitch(m.id)} style={s.avatarItem}>
                 <View style={[s.avatarRing, { backgroundColor: colors.surface, borderColor: isActive ? tint : colors.border }]}>
                   <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
+                  {!!m.pinEnabled && !!m.pin && (
+                    <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <Lock size={8} color={colors.textSecondary} />
+                    </View>
+                  )}
                 </View>
                 <Text style={[s.avatarName, { color: isActive ? colors.textPrimary : colors.textTertiary }]} numberOfLines={1}>
                   {m.name.split(' ')[0]}
@@ -91,6 +111,13 @@ export function KioskHeader({
           <Lock size={17} color={colors.textSecondary} />
         </Pressable>
       </View>
+
+      <PinEntryModal
+        visible={pinTarget !== null}
+        member={pinTarget}
+        onSuccess={(member) => { onSwitch(member.id); setPinTarget(null); }}
+        onCancel={() => setPinTarget(null)}
+      />
     </View>
   );
 }
@@ -113,6 +140,10 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarEmoji: { fontSize: 19 },
+  pinBadge: {
+    position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
   avatarName: { fontSize: 11, fontWeight: '700' },
   divider: { width: StyleSheet.hairlineWidth, height: 34 },
   askFam: {

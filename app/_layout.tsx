@@ -89,10 +89,10 @@ const TAG = 'RootLayout';
 // KioskScreen there when deviceClass === 'kitchenHub'); every OTHER tab
 // route (tasks.tsx, calendar.tsx, chat.tsx, store.tsx, gps.tsx, etc.)
 // renders its own plain phone screen unconditionally, no kiosk gate at all.
-// A handful of phone destinations (grocery, meals, family-health, school,
-// profile-settings) have no kiosk-native equivalent yet — those fall back
-// to Hub rather than a route that would strand the kiosk on a bare phone
-// screen with no way back except the notification bell.
+// A couple of phone destinations (grocery, meals) still have no
+// kiosk-native equivalent — those fall back to Hub rather than a route
+// that would strand the kiosk on a bare phone screen with no way back
+// except the notification bell.
 const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
   '/(tabs)': 'hub',
   '/(tabs)/tasks': 'tasks',
@@ -101,6 +101,9 @@ const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
   '/(tabs)/store': 'store',
   '/(tabs)/gps': 'findfam',
   '/(tabs)/memories': 'memories',
+  '/(tabs)/school': 'school',
+  '/(tabs)/family-health': 'health',
+  '/profile-settings': 'profile',
 };
 
 /** Navigates to a notification's destination, kiosk-safe: on a kiosk

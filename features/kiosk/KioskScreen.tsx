@@ -27,6 +27,7 @@ import { View, Pressable, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Home, CheckSquare, Calendar as CalendarIcon, MessageCircle, MapPin, Gift, Images,
+  BookOpen, Heart, UserCircle2,
 } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -44,8 +45,11 @@ import { KioskChatTab } from './tabs/KioskChatTab';
 import { KioskFindFamTab } from './tabs/KioskFindFamTab';
 import { KioskStoreTab } from './tabs/KioskStoreTab';
 import { KioskMemoriesTab } from './tabs/KioskMemoriesTab';
+import { KioskSchoolTab } from './tabs/KioskSchoolTab';
+import { KioskHealthTab } from './tabs/KioskHealthTab';
+import { KioskProfileTab } from './tabs/KioskProfileTab';
 
-type KioskTab = 'hub' | 'tasks' | 'schedule' | 'chat' | 'findfam' | 'store' | 'memories';
+type KioskTab = 'hub' | 'tasks' | 'schedule' | 'chat' | 'findfam' | 'store' | 'memories' | 'school' | 'health' | 'profile';
 
 interface RailItem {
   key: KioskTab;
@@ -53,6 +57,13 @@ interface RailItem {
   Icon: typeof Home;
 }
 
+// School/Health/Profile added per live request: "add all the pills for the
+// pages which is on the mobile hub screen [to] the kiosk side bar" — these
+// three are the Hub's own AppsQuickAccessPills entries with no kiosk-native
+// tab until now (Memories was already covered, for seniors, below).
+// 'health' isn't offered to a teen/senior role on the phone's own pill
+// list (AppsQuickAccessPills.tsx's PILLS roles array: parent/kid only) —
+// matched here too rather than inventing a new kiosk-only availability.
 const RAIL_DEFAULT: RailItem[] = [
   { key: 'hub',      label: 'Hub',      Icon: Home },
   { key: 'tasks',    label: 'Tasks',    Icon: CheckSquare },
@@ -60,12 +71,16 @@ const RAIL_DEFAULT: RailItem[] = [
   { key: 'chat',     label: 'Chat',     Icon: MessageCircle },
   { key: 'findfam',  label: 'Find',     Icon: MapPin },
   { key: 'store',    label: 'Store',    Icon: Gift },
+  { key: 'school',   label: 'School',   Icon: BookOpen },
+  { key: 'health',   label: 'Health',   Icon: Heart },
+  { key: 'profile',  label: 'Profile',  Icon: UserCircle2 },
 ];
 const RAIL_SENIOR: RailItem[] = [
   { key: 'hub',       label: 'Hub',      Icon: Home },
   { key: 'tasks',     label: 'Tasks',    Icon: CheckSquare },
   { key: 'chat',      label: 'Chat',     Icon: MessageCircle },
   { key: 'memories',  label: 'Memories', Icon: Images },
+  { key: 'profile',   label: 'Profile',  Icon: UserCircle2 },
 ];
 
 export default function KioskScreen() {
@@ -120,7 +135,12 @@ export default function KioskScreen() {
 
   const isSenior = active?.role === 'senior';
   const isParent = active?.role === 'parent';
-  const rail = isSenior ? RAIL_SENIOR : RAIL_DEFAULT;
+  const isTeen = active?.role === 'teen';
+  const isKidRole = active?.role === 'kid';
+  // School/Health pills are parent/kid-only on the phone (Hub's
+  // AppsQuickAccessPills.tsx PILLS array) — matched here rather than
+  // inventing a wider kiosk-only availability. Teen gets neither.
+  const rail = isSenior ? RAIL_SENIOR : isTeen ? RAIL_DEFAULT.filter(r => r.key !== 'school' && r.key !== 'health') : RAIL_DEFAULT;
 
   // A senior profile has no Schedule/FindFam/Store tabs — if the previously
   // active profile had one of those open and the kiosk switches to a senior
@@ -185,6 +205,9 @@ export default function KioskScreen() {
           {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab members={members} colors={colors} isDark={isDark} />}
           {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} colors={colors} isDark={isDark} />}
           {effectiveTab === 'memories' && isSenior && <KioskMemoriesTab colors={colors} isDark={isDark} />}
+          {effectiveTab === 'school' && !isSenior && !isTeen && <KioskSchoolTab isKid={isKidRole} colors={colors} isDark={isDark} />}
+          {effectiveTab === 'health' && !isSenior && !isTeen && <KioskHealthTab isKid={isKidRole} colors={colors} isDark={isDark} />}
+          {effectiveTab === 'profile' && <KioskProfileTab />}
         </View>
       </View>
 

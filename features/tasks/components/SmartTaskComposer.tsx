@@ -32,7 +32,7 @@ import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker'
 import { detectLocalTask, type LocalDetectionResult } from '../lib/localTaskDetection';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { localDateStr, todayLocal, nextHourRoundedStr } from '@/lib/dates';
+import { localDateStr, todayLocal, nextHourRoundedStr, fmtTime } from '@/lib/dates';
 
 // A detected date with no explicit time defaults to literal midnight,
 // which for TODAY specifically already reads as "in the past" the moment
@@ -75,6 +75,7 @@ export default function SmartTaskComposer({
     title: string; category?: string; memberId?: string; startAt?: string;
     notes?: string; coins?: number; photoRequired?: boolean;
     recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+    pickupLocation?: string; dropLocation?: string; returnTime?: string; helperId?: string;
   }) => void;
 }) {
   const { colors, isDark } = useTheme();
@@ -521,6 +522,43 @@ export default function SmartTaskComposer({
       return;
     }
 
+    // A Ride with a return time set is really TWO separate trips (drop-off
+    // + pickup/return), each with its own time and its own driver
+    // confirmation — features/hub/parent/rideLegs.ts's forkRideLegs already
+    // creates these as two fully independent event rows, but only
+    // EventFormModal's real "Return time" step ever calls it. This
+    // composer only ever wrote returnTime as a plain HH:MM string on the
+    // SAME single event — parseRideMeta (rideLegs.ts) expects a specially-
+    // encoded "RIDE:both:<timestamp>" marker to recognize a both-ways
+    // request at all, so a composer-created ride's return leg silently had
+    // no fork, no separate driver-confirmation, and no calendar entry of
+    // its own — live-reported as "why isn't the return trip tracked as its
+    // own thing." Hand off to the full form (same pattern as the recurring-
+    // event case above) instead of silently creating a return time nothing
+    // downstream ever forks.
+    if (isEvent && (category ?? detected.category.eventCategory) === 'Ride' && returnTime.trim()) {
+      onOpenFullForm('event', {
+        title: finalTitle,
+        category: 'Ride',
+        memberId: forMemberIds[0],
+        startAt: detected.when.date ? (detected.when.date + `T${detected.when.time ?? fallbackTimeFor(detected.when.date)}:00`) : undefined,
+        pickupLocation: pickupLocation.trim() || undefined,
+        dropLocation: dropLocation.trim() || undefined,
+        returnTime: returnTime.trim(),
+        // forkRideLegs only fires once a driver/helper is already set at
+        // submit time (EventFormModal.tsx's own transportSet check) — the
+        // Responsibility Engine's auto-assign (suggestion?.decisionType
+        // === 'auto', applied separately after this composer's OWN submit
+        // path) never reaches the full form at all, so without this the
+        // user would have to notice and manually re-pick the very driver
+        // this composer already confidently suggested, just to get the
+        // fork to actually happen.
+        helperId: suggestion?.selectedMemberId ?? undefined,
+      });
+      close();
+      return;
+    }
+
     if (isEvent) {
       const dt = whenDate;
       const finalCategory = category ?? detected.category.eventCategory ?? 'Other';
@@ -918,7 +956,7 @@ export default function SmartTaskComposer({
                         borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, alignSelf: 'flex-start' }}>
                       <Calendar size={14} color={colors.textSecondary} />
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: returnTime ? colors.textPrimary : colors.textTertiary }}>
-                        {returnTime || 'Tap to choose'}
+                        {returnTime ? fmtTime(returnTime) : 'Tap to choose'}
                       </Text>
                     </Pressable>
                     {showReturnPicker && (

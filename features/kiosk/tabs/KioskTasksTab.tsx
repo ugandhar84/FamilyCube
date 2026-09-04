@@ -95,6 +95,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const [manualEventPrefill, setManualEventPrefill] = useState<{
     title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
     recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+    pickupLocation?: string; dropLocation?: string; returnTime?: string; helperId?: string;
   } | undefined>(undefined);
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);

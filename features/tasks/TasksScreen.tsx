@@ -164,14 +164,26 @@ export default function TasksScreen() {
         (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents);
       return isSubjectOrAssignee || isOpenUnassigned;
     });
-    let pending = 0, active = 0;
+    // A recurring series materializes one full row PER OCCURRENCE
+    // (addRecurringEvent in eventStore.ts) — each still independently
+    // pending its own driver confirmation, so this isn't wrong data, but a
+    // weekly ride with 13 upcoming Wednesdays read as "13 pending" next to
+    // Agenda's single-day view showing just one card, which looked
+    // alarmingly wrong at a glance (live-reported). Collapse to one count
+    // per series (by seriesId, falling back to the event's own id for a
+    // genuinely one-time event) so the badge answers "how many DIFFERENT
+    // things need a decision," matching what a user scanning the list
+    // would actually count — not how many rows exist in the DB.
+    const pendingSeries = new Set<string>();
+    const activeSeries = new Set<string>();
     for (const e of upcoming) {
       const a = eventAssignee(e);
       if (!a.status) continue;
-      if (a.status === 'pending') pending++;
-      else if (a.status === 'confirmed') active++;
+      const seriesKey = e.seriesId ?? e.id;
+      if (a.status === 'pending') pendingSeries.add(seriesKey);
+      else if (a.status === 'confirmed') activeSeries.add(seriesKey);
     }
-    return { pending, active };
+    return { pending: pendingSeries.size, active: activeSeries.size };
   }, [events, rangeEvents, isSenior, activeMemberId, activeMember?.name]);
 
   // Reported live: a kid's "1 pending" badge here counted a chore assigned
@@ -217,6 +229,7 @@ export default function TasksScreen() {
   const [manualEventPrefill, setManualEventPrefill] = useState<{
     title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
     recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+    pickupLocation?: string; dropLocation?: string; returnTime?: string; helperId?: string;
   } | undefined>(undefined);
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);

@@ -17,13 +17,17 @@ import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useChatStore } from '@/store/chatStore';
+import { useDismissedHubItemsStore } from '@/store/dismissedHubItemsStore';
+import { useCelebrationStore } from '@/store/celebrationStore';
+import { parseDbTime, withinLast24h } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
-import type { Quest } from '@/store/questStore';
+import type { Quest, QuestCheer } from '@/store/questStore';
 import { localToday, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
+import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { HubTimelineSection } from './HubTimelineSection';
@@ -124,6 +128,16 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const { loaded: approverGrantsLoaded, loadFromStorage: loadApproverGrants } = useTemporaryApproverStore();
   useEffect(() => { if (!approverGrantsLoaded) loadApproverGrants(); }, [approverGrantsLoaded]);
 
+  // "Needs You" — chore-approval celebration + dismissible feed, same
+  // DB-backed store KidView uses (dismissed_hub_items table — survives
+  // reinstall and syncs across a shared/second device). Was entirely
+  // missing for teens: no approvedQuests computed, no cheer feed, no
+  // celebration trigger at all — teens got the push notification for an
+  // approved chore but nothing ever showed on the Hub itself, and no
+  // celebration animation ever fired (live-reported gap).
+  const { dismissedIds, loaded: dismissedLoaded, load: loadDismissedHubItems, dismissItem } = useDismissedHubItemsStore();
+  useEffect(() => { loadDismissedHubItems(active.id); }, [active.id]);
+
   const siblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
 
   // ── My Chores (same normalized model KidView uses) ──────────────────────────
@@ -138,10 +152,25 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
+  const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));
   const cancelledQuestsToday = myQuests.filter(q => q.status === 'cancelled' && (q.cancelledAt ?? '').startsWith(today));
   const pendingCoins = reviewQuests.reduce((sum, q) => sum + (q.coins ?? 0) + (q.bonusCoins ?? 0), 0);
   const [declineQuest, setDeclineQuest] = useState<ChoreTask | null>(null);
   const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
+
+  // Cheers landed on this teen's own completed quests — same feed KidView
+  // surfaces in its "Needs You" list.
+  const cheersForMe = myQuests.flatMap(q => (q.cheers ?? []).map(c => ({ quest: q, cheer: c })));
+  // Approved/declined replies to this teen's own requests (tutor offers,
+  // emergency/delegation asks) — same recency window KidView uses. Scoped
+  // to requests THIS teen sent, same as KidView's myRequests filter.
+  const myOwnRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
+  const recentReplies = myOwnRequests.filter(r =>
+    ['approved', 'declined'].includes(r.status) &&
+    ['permission', 'question', 'medication', 'checkin', 'tutor', 'cheer'].includes(r.type) &&
+    !dismissedIds.has(r.id) &&
+    withinLast24h(r.respondedAt)
+  );
 
   const handleSubmitTap = (q: Quest) => {
     if (q.photoRequired) setSubmitProofQuest(q);
@@ -465,6 +494,24 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
       ))}
 
       <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+
+      {/* Needs You — chore-approval celebration + dismissible feed (approved
+          chores, cheers, request replies). Rides already have their own
+          banner above (KidRideBanner/PickupRadarStatus), so the ride-only
+          props here are left empty rather than duplicating that feed. */}
+      {dismissedLoaded && (
+        <KidNeedsYouSection
+          declinedRides={[]} pendingRides={[]}
+          declinedQuests={[]} approvedQuests={approvedQuests}
+          cheersForMe={cheersForMe} recentReplies={recentReplies}
+          confirmedRide={undefined} rideCountdown={null}
+          awaitingDriverRide={undefined}
+          active={active} members={members} colors={colors} isDark={isDark}
+          dismissedIds={dismissedIds} onDismiss={dismissItem}
+          onConfirmPickup={() => {}} onSendDriverLate={() => {}}
+          lateNudgeSent={{}}
+        />
+      )}
 
       <MyQuestsSection
         title="My Chores"

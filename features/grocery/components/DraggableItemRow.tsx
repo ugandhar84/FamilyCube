@@ -13,7 +13,7 @@
  * measurement, hit-testing, and the parent ScrollView's auto-scroll near
  * viewport edges — this component has no knowledge of sections at all.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -44,11 +44,35 @@ export function DraggableItemRow({
 }) {
   const isActive = useSharedValue(false);
   const translateY = useSharedValue(0);
+  // Was: handleDrop's own store mutation (updateItem) can shrink
+  // groupedItems down to one store section, collapsing the parent's
+  // dragEnabled to false and unmounting this row's GestureDetector — but
+  // that mutation is triggered BY the drop itself, so it was possible for
+  // the unmount to land while the native gesture handler was still mid-
+  // callback for that very drop. Crashed live (SIGSEGV inside
+  // RNGestureHandler handleGesture: → Reanimated worklet dispatch — a
+  // stale/torn-down JSI function pointer, "possible pointer authentication
+  // failure") while dragging a grocery item between stores. inFlight keeps
+  // the GestureDetector mounted for the remainder of this row's OWN drag
+  // even if dragEnabled goes false mid-gesture as a side effect of it,
+  // only actually unmounting once onDrop has fully returned.
+  const [inFlight, setInFlight] = useState(false);
+  const onDropRef = useRef(onDrop);
+  onDropRef.current = onDrop;
+
+  const finishDrop = (id: string, y: number) => {
+    try {
+      onDropRef.current(id, y);
+    } finally {
+      setInFlight(false);
+    }
+  };
 
   const pan = Gesture.Pan()
     .onStart(() => {
       isActive.value = true;
       draggingId.value = item.id;
+      runOnJS(setInFlight)(true);
     })
     .onUpdate((e) => {
       translateY.value = e.translationY;
@@ -59,7 +83,7 @@ export function DraggableItemRow({
       isActive.value = false;
       draggingId.value = null;
       translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
-      runOnJS(onDrop)(item.id, finalY);
+      runOnJS(finishDrop)(item.id, finalY);
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -76,7 +100,7 @@ export function DraggableItemRow({
   return (
     <Animated.View style={animatedStyle}>
       <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
-        {dragEnabled && (
+        {(dragEnabled || inFlight) && (
           <GestureDetector gesture={pan}>
             <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }} hitSlop={{ left: 6, right: 2 }}>
               <Ionicons name="reorder-two" size={16} color={colors.textTertiary} />

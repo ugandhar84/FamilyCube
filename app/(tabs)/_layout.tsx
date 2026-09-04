@@ -282,6 +282,16 @@ function CustomTabBar({ state, navigation }: any) {
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function TabLayout() {
   const { colors } = useTheme();
+  // Live-reported: a duplicate floating Ask Cube FAB appeared over kiosk
+  // mode's own Tasks tab, on top of KioskHeader's own dedicated Ask Fam
+  // button — this shared FAB is phone-navigation-specific (it reads
+  // uiStore.activeTabName, a flag kiosk never sets, so it silently rode
+  // along with whatever stale tab name the phone side last set) and was
+  // never actually gated off for kiosk. Kiosk has its own header button
+  // and each kiosk tab's own explicit "+ New Chore"/"+ New Event" controls
+  // — this phone-only FAB should never render there at all.
+  const { deviceClass } = useDeviceClass();
+  const isKioskMode = deviceClass === 'kitchenHub';
   const { loaded: familyLoaded, loadFromStorage: loadFamily, members, activeMemberId } = useFamilyStore();
   const { loaded: eventsLoaded, loadFromStorage: loadEvents } = useEventStore();
   const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
@@ -546,7 +556,7 @@ export default function TabLayout() {
           FindFam. Memories' and Grocery's "+" are the two exceptions
           carved out of the gate below — posting a memory or adding a
           grocery item isn't a parent-only action the way Ask Cube is. */}
-      {(activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (
+      {!isKioskMode && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (
         <>
           {/* Hidden on the Chat tab — a second AI entry point on top of the
               family's own messaging surface was redundant/confusing there.

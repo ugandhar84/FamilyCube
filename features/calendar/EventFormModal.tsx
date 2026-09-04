@@ -1566,6 +1566,32 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                         </Text>
                       </View>
                     </View>
+
+                    {/* ── Pickup/return leg summary — live-reported: the
+                        Review card showed Who/When/Category/Repeats but
+                        never the pickup/drop-off locations or return time a
+                        parent just set, even though needsPickup+pickupTime
+                        now correctly fork a real linked pickup leg on
+                        submit (see forkRideLegs above). A parent should SEE
+                        this is about to happen, not just trust it silently
+                        worked. Shown for any category that can carry a
+                        return leg, matching the fork's own category gate. */}
+                    {needsPickup && pickupTime && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study') && (
+                      <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#E2E8F0', paddingTop: 10 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                          ↩ Return / Pickup leg
+                        </Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }}>
+                          {fmtTimeDisplay(pickupTime)}
+                          {pickupLocation.trim() || dropLocation.trim()
+                            ? ` · ${dropLocation.trim() || '—'} → ${pickupLocation.trim() || '—'}`
+                            : ''}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                          Creates a separate, linked pickup {repeatFreq === 'none' ? 'event' : 'series'} on save
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* ── Notes — kept on the Review step (not "What") since

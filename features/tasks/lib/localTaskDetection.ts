@@ -639,11 +639,27 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // all, misclassifying every one-time weekday appointment as weekly.
   let recurrence: LocalDetectionResult['recurrence'] = 'once';
   const recurrenceDays: number[] = [];
+  // Was a hand-built "(sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat)
+  // (day)?s?" alternation — the "abbreviation + optional 'day' suffix"
+  // trick silently breaks for any day whose full spelling ISN'T its
+  // abbreviation plus literally "day": wednesday is "wed"+"nesday", not
+  // "wed"+"day", and saturday is "sat"+"urday", not "sat"+"day". Every
+  // OTHER day (sun→sunday, mon→monday, tue→tuesday, thu→thursday,
+  // fri→friday) happens to fit the pattern, which is exactly why this went
+  // unnoticed — live-reported: "every Wednesday" wasn't recognized as
+  // recurring at all, while "every wed" was. DAY_TOKEN_MAP below already
+  // has every correct spelling as its own explicit key (including
+  // wednesday/saturday) for the recurrenceDays population two lines down —
+  // reusing those same keys here instead of a second, inconsistent
+  // hand-written list removes the class of bug entirely rather than just
+  // patching this one pair of days.
+  const dayTokenAlternation = Object.keys(DAY_TOKEN_MAP).sort((a, b) => b.length - a.length).join('|');
+  const weeklyDayRe = new RegExp(`\\bevery\\s+(${dayTokenAlternation})s?\\b`);
   if (/\bdaily\b|\bevery day\b/.test(input)) {
     recurrence = 'daily';
   } else if (/\bmonthly\b|\bevery month\b/.test(input)) {
     recurrence = 'monthly';
-  } else if (/\bweekly\b|\bevery week\b|\bevery\s+(sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat)(day)?s?\b/.test(input)) {
+  } else if (/\bweekly\b|\bevery week\b/.test(input) || weeklyDayRe.test(input)) {
     recurrence = 'weekly';
     Object.entries(DAY_TOKEN_MAP).forEach(([token, num]) => {
       if (new RegExp('\\b' + token + '\\b').test(input) && !recurrenceDays.includes(num)) recurrenceDays.push(num);

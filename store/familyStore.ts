@@ -267,7 +267,12 @@ interface FamilyState {
   // family switch happens, empty array for the overwhelming majority of
   // accounts today (exactly one entry). The family-switcher UI should
   // render nothing at all whenever this has fewer than 2 entries.
-  myFamilies: { id: string; name: string }[];
+  // memberId is THIS grandparent's own member row id WITHIN that specific
+  // family — needed anywhere a family-scoped action (e.g. recovering the
+  // family passcode) must act as the correct member for a family that
+  // ISN'T necessarily the currently active one (see
+  // DataRecoveryScreen.tsx's multi-family view).
+  myFamilies: { id: string; name: string; memberId: string }[];
 
   setMembers: (members: FamilyMember[]) => void;
   setActiveMember: (id: string) => void;
@@ -543,17 +548,17 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     if (activeMember?.role !== 'senior') { set({ myFamilies: [] }); return; }
     const { data, error } = await supabase
       .from('members')
-      .select('family_id, families(name)')
+      .select('id, family_id, families(name)')
       .eq('auth_user_id', user.id);
     if (get().activeMemberId !== calledForMemberId) return; // stale — a different member is active now
     if (error || !data) { console.warn('[familyStore] refreshMyFamilies failed', error?.message); return; }
     const seen = new Set<string>();
-    const families: { id: string; name: string }[] = [];
+    const families: { id: string; name: string; memberId: string }[] = [];
     for (const row of data as any[]) {
       const id = row.family_id ? String(row.family_id) : null;
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      families.push({ id, name: row.families?.name ?? 'Family' });
+      families.push({ id, name: row.families?.name ?? 'Family', memberId: String(row.id) });
     }
     set({ myFamilies: families });
   },

@@ -50,12 +50,89 @@ function offerToSharePasscode(newPasscode: string) {
   );
 }
 
+// Multi-family membership — a grandparent belonging to more than one
+// family (see familyStore.ts's myFamilies) needs to see AND recover each
+// of their OTHER families' passcodes too, not just whichever is currently
+// active (the card above already covers the active one). Per the same
+// live product decision restricting setup/change to parents, this is
+// deliberately VIEW + RECOVER only — no setup/change section, regardless
+// of which family. Self-contained (its own status/passcode/saving state)
+// so each family's card is fully independent of the others and of the
+// active-family card above.
+function OtherFamilyRecoveryCard({ family, memberId, colors, s }: {
+  family: { id: string; name: string; memberId: string };
+  memberId: string;
+  colors: any;
+  s: ReturnType<typeof styles>;
+}) {
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [passcode, setPasscode] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    familyHasRecoveryKey(family.id).then(setHasKey);
+  }, [family.id]);
+
+  const handleRecover = async () => {
+    if (!passcode) { showAlert('Enter the family passcode', `Ask a parent in ${family.name} for their security passcode.`); return; }
+    setSaving(true);
+    const result = await recoverWithFamilyPasscode(family.id, memberId, passcode);
+    setSaving(false);
+    if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
+    setPasscode('');
+    showAlert('Recovered', `This device can now access ${family.name}'s chat, location, and medical records history.`);
+  };
+
+  return (
+    <View style={s.card}>
+      <View style={s.rowBetween}>
+        <Text style={s.cardTitle}>{family.name}</Text>
+        {hasKey != null && (
+          <View style={[s.badge, !hasKey && { backgroundColor: colors.border }]}>
+            {hasKey && <Ionicons name="checkmark-circle" size={14} color={colors.success} />}
+            <Text style={[s.badgeText, { color: hasKey ? colors.success : colors.textTertiary }]}>
+              {hasKey ? 'Set up' : 'Not set up'}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={s.cardSub}>
+        {hasKey
+          ? "If this device isn't seeing old history for this family, enter its passcode to recover it."
+          : `${family.name} hasn't set up a recovery passcode yet — ask a parent there to set one up from their own device.`}
+      </Text>
+      {hasKey && (
+        <>
+          <TextInput
+            style={s.input}
+            value={passcode}
+            onChangeText={setPasscode}
+            placeholder={`${family.name} passcode`}
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, opacity: saving ? 0.7 : 1 }]} onPress={handleRecover} disabled={saving}>
+            {saving ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.btnText, { color: colors.primary }]}>Recover This Device</Text>}
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function DataRecoveryScreen() {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId } = useFamilyStore();
+  const { members, activeMemberId, myFamilies, activeFamilyId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId ?? '';
   const isParent = activeMember?.role === 'parent';
+  // Multi-family membership — every OTHER family this grandparent belongs
+  // to (myFamilies is already scoped to grandparent-role, real-login-only
+  // sessions — see familyStore.ts). Excludes whichever family is currently
+  // active since that one is already fully covered by the cards above.
+  const otherFamilies = myFamilies.filter(f => f.id !== (activeFamilyId ?? familyId));
 
   const [mode, setMode] = useState<Mode>('loading');
   const [hasKey, setHasKey] = useState(false);
@@ -350,6 +427,22 @@ export default function DataRecoveryScreen() {
               {saving ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.btnText, { color: colors.primary }]}>Recover This Device</Text>}
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* Multi-family membership — a grandparent's OTHER families, each
+            with their own independent passcode status + recover action.
+            View + recover only, no setup/change (see OtherFamilyRecoveryCard's
+            own comment) — matches the live product decision that setup/
+            change stays parent-only even in this multi-family view. */}
+        {otherFamilies.length > 0 && (
+          <>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>
+              Your other families
+            </Text>
+            {otherFamilies.map(f => (
+              <OtherFamilyRecoveryCard key={f.id} family={f} memberId={f.memberId} colors={colors} s={s} />
+            ))}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>

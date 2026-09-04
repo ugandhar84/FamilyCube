@@ -32,6 +32,16 @@ import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker'
 import { detectLocalTask, type LocalDetectionResult } from '../lib/localTaskDetection';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { localDateStr, todayLocal, nextHourRoundedStr } from '@/lib/dates';
+
+// A detected date with no explicit time defaults to literal midnight,
+// which for TODAY specifically already reads as "in the past" the moment
+// it's created (live-reported: typing "today" alone shouldn't schedule at
+// 00:00). A genuinely future date with no time keeps midnight as a neutral
+// default — "next hour" only makes sense relative to right now.
+function fallbackTimeFor(dateStr: string): string {
+  return dateStr === todayLocal() ? nextHourRoundedStr() : '00:00';
+}
 import { useGroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
@@ -246,8 +256,8 @@ export default function SmartTaskComposer({
       // A bare time with no date word ("at 4pm", no "today"/"tomorrow"/
       // weekday) still means something — default the date part to today
       // rather than dropping the detected time entirely.
-      const datePart = d.when.date ?? new Date().toISOString().slice(0, 10);
-      const dt = new Date(datePart + (d.when.time ? `T${d.when.time}:00` : 'T00:00:00'));
+      const datePart = d.when.date ?? todayLocal();
+      const dt = new Date(datePart + `T${d.when.time ?? fallbackTimeFor(datePart)}:00`);
       if (!isNaN(dt.getTime())) setWhenDate(dt);
     }
     // Was "only fill if currently empty" — once a stale detection (e.g.
@@ -457,7 +467,7 @@ export default function SmartTaskComposer({
         title: finalTitle,
         category: category ?? detected.category.eventCategory,
         memberId: forMemberIds[0],
-        startAt: detected.when.date ? (detected.when.date + (detected.when.time ? `T${detected.when.time}:00` : 'T00:00:00')) : undefined,
+        startAt: detected.when.date ? (detected.when.date + `T${detected.when.time ?? fallbackTimeFor(detected.when.date)}:00`) : undefined,
         // Was dropped entirely on handoff — the composer's own detected/
         // chosen recurrence (e.g. "every day") never reached the full
         // form's prefill, so REPEATS silently reset to "One-time" on
@@ -495,7 +505,7 @@ export default function SmartTaskComposer({
 
       addEvent({
         title: finalTitle,
-        date: (dt ?? new Date()).toISOString().slice(0, 10),
+        date: localDateStr(dt ?? new Date()),
         time: dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined,
         type: 'event',
         category: finalCategory as any,
@@ -599,7 +609,7 @@ export default function SmartTaskComposer({
                 if (!itemIds.length) continue;
                 const { data: runRow, error: runErr } = await supabase
                   .from('grocery_runs')
-                  .insert({ family_id: familyId, name: finalTitle, store: store === 'Any store' ? 'Store' : store, status: 'draft', created_by: activeMemberId, planned_at: whenDate ? whenDate.toISOString().slice(0, 10) : (detected.when.date ?? new Date().toISOString().slice(0, 10)) })
+                  .insert({ family_id: familyId, name: finalTitle, store: store === 'Any store' ? 'Store' : store, status: 'draft', created_by: activeMemberId, planned_at: whenDate ? localDateStr(whenDate) : (detected.when.date ?? todayLocal()) })
                   .select('id').single();
                 if (!runErr && runRow?.id) {
                   // Was a raw bulk insert into grocery_run_items — that table
@@ -1265,13 +1275,13 @@ export default function SmartTaskComposer({
                     borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, alignSelf: 'flex-start' }}>
                   <Calendar size={14} color={colors.textSecondary} />
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-                    {(whenDate ?? new Date((detected.when.date ?? new Date().toISOString().slice(0, 10)) + (detected.when.time ? `T${detected.when.time}:00` : 'T00:00:00'))).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {(whenDate ?? new Date((detected.when.date ?? todayLocal()) + `T${detected.when.time ?? fallbackTimeFor(detected.when.date ?? todayLocal())}:00`)).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                   </Text>
                 </Pressable>
                 {showWhenPicker && (
                   <View style={{ backgroundColor: isDark ? colors.surface : colors.inputBg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
                     <DateTimePicker
-                      value={whenDate ?? new Date((detected.when.date ?? new Date().toISOString().slice(0, 10)) + (detected.when.time ? `T${detected.when.time}:00` : 'T00:00:00'))}
+                      value={whenDate ?? new Date((detected.when.date ?? todayLocal()) + `T${detected.when.time ?? fallbackTimeFor(detected.when.date ?? todayLocal())}:00`)}
                       mode="datetime" display="spinner"
                       onChange={(_, d) => { if (d) { setWhenDate(d); setTouchedWhen(true); } }}
                       textColor={colors.textPrimary}
@@ -1382,7 +1392,7 @@ export default function SmartTaskComposer({
                 title: title.trim() || detected.title,
                 category: isEvent ? (category ?? detected.category.eventCategory) : undefined,
                 memberId: forMemberIds[0],
-                startAt: detected.when.date ? (detected.when.date + (detected.when.time ? `T${detected.when.time}:00` : 'T00:00:00')) : undefined,
+                startAt: detected.when.date ? (detected.when.date + `T${detected.when.time ?? fallbackTimeFor(detected.when.date)}:00`) : undefined,
                 coins: !isEvent ? (parseInt(coinsStr, 10) || undefined) : undefined,
                 photoRequired: !isEvent ? photoRequired : undefined,
                 notes: notes.trim() || undefined,

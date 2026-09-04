@@ -20,6 +20,7 @@ import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { fromRow, useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { localToday } from './hubUtils';
+import { localDateStr } from '@/lib/dates';
 
 const WINDOW_DAYS = 14;
 
@@ -32,7 +33,12 @@ export function useUpcomingOpenEvents(familyId: string | undefined) {
     const from = localToday();
     const toDate = new Date();
     toDate.setDate(toDate.getDate() + WINDOW_DAYS);
-    const to = toDate.toISOString().slice(0, 10);
+    // localDateStr, not toISOString().slice(0,10) — that reads the UTC
+    // calendar date, which silently truncates this window by a day for
+    // anyone west of UTC late at night (or extends it for anyone east of
+    // UTC early in the morning), inconsistent with `from` above already
+    // using the correct local-date helper.
+    const to = localDateStr(toDate);
 
     supabase
       .from('calendar_events')
@@ -112,7 +118,7 @@ export function useUpcomingOpenEvents(familyId: string | undefined) {
             const today = localToday();
             const windowEnd = new Date();
             windowEnd.setDate(windowEnd.getDate() + WINDOW_DAYS);
-            const withinWindow = ev.date >= today && ev.date <= windowEnd.toISOString().slice(0, 10);
+            const withinWindow = ev.date >= today && ev.date <= localDateStr(windowEnd);
             if (!withinWindow) return prev.filter(e => e.id !== id);
 
             const exists = prev.some(e => e.id === id);

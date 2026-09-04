@@ -13,6 +13,7 @@ import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle } from 'lucide-react-native';
+import { localDateStr, todayLocal } from '@/lib/dates';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import { askCube, AskCubeProposal, AskCubeChoreRef } from '@/lib/askCubeService';
@@ -233,7 +234,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   // to a couple of always-safe generic prompts when there's genuinely
   // nothing specific to surface (e.g. a brand new family with no data yet).
   const starterPrompts = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = todayLocal();
     const prompts: string[] = [];
 
     const nextEvent = upcomingEvents
@@ -516,7 +517,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         helper: d.helperName ?? undefined, helperId: d.helperId ?? undefined,
         helperStatus: d.helperId ? 'pending' as const : undefined,
       };
-      const eventDate = dt.toISOString().slice(0, 10);
+      // localDateStr, not toISOString().slice(0,10) — dt's hours/minutes
+      // above are already read as LOCAL time (startAtLocal was explicitly
+      // stripped of any timezone marker for exactly this reason); slicing
+      // the UTC date here would silently disagree with that local time on
+      // the same Date object near midnight.
+      const eventDate = localDateStr(dt);
       // Same live-reported duplicate-creation gap EventFormModal's own
       // submit() just got this check added for — Ask Cube proposing "add
       // this ride" is an equally real way to end up creating a second copy

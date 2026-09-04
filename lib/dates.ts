@@ -20,6 +20,23 @@ export function todayLocal(): string {
 }
 
 /**
+ * Current local time as "HH:MM", rounded forward to the next half-hour.
+ * For any "when" default that has a date but no explicit time — e.g. a
+ * user typing just "today" into SmartTaskComposer with no clock time
+ * mentioned — this is the sensible default, not literal midnight: a task
+ * detected as "today" with midnight silently defaulted already reads as
+ * overdue the instant it's created, since the actual current time has
+ * already passed 00:00.
+ */
+export function nextHourRoundedStr(): string {
+  const d = new Date();
+  const m = d.getMinutes();
+  d.setMinutes(m < 30 ? 30 : 0, 0, 0);
+  if (m >= 30) d.setHours(d.getHours() + 1);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
  * Parse a date-only string ("YYYY-MM-DD", e.g. a Postgres `date` column like
  * quest/chore due_date) as LOCAL midnight. `new Date("YYYY-MM-DD")` parses it
  * as UTC midnight instead — for anyone west of UTC that instant already fell

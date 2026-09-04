@@ -16,6 +16,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
 import type { ExtractResponsibilityResult } from '@/lib/familyAiService';
+import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 
 export default function VoiceIntakeReviewSheet({
@@ -71,7 +72,9 @@ export default function VoiceIntakeReviewSheet({
       const dt = task.startAt ? new Date(task.startAt) : new Date();
       addEvent({
         title: finalTitle,
-        date: dt.toISOString().slice(0, 10),
+        // localDateStr, not toISOString().slice(0,10) — the time fields
+        // just below read dt's hours/minutes as LOCAL; the date must match.
+        date: localDateStr(dt),
         time: task.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined,
         type: 'event',
         category: eventCategory,
@@ -96,7 +99,7 @@ export default function VoiceIntakeReviewSheet({
         status: 'todo',
         assignedToIds: forMemberId ? [forMemberId] : [],
         isAdultTask: assignedToAdult,
-        dueDate: task.startAt ? new Date(task.startAt).toISOString().slice(0, 10) : undefined,
+        dueDate: task.startAt ? localDateStr(new Date(task.startAt)) : undefined,
         photoRequired,
         createdById: activeMemberId,
       });

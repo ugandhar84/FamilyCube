@@ -14,7 +14,7 @@ import type { AskCubeProposal } from '@/lib/askCubeService';
 import type { FamilyMember } from '@/store/familyStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
-import { fmtDate, fmtTime } from '@/lib/dates';
+import { fmtDate, fmtTime, todayLocal } from '@/lib/dates';
 import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import { RADIUS } from '@/constants/theme';
 
@@ -188,7 +188,7 @@ export function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onCh
   // split the merged Date back into those same two string shapes on change
   // (matching exactly what propose_update/propose_event/propose_quest's own
   // dueDate/dueTime or date/time fields expect).
-  const [y, m, d] = (dateStr ?? new Date().toISOString().slice(0, 10)).split('-').map(Number);
+  const [y, m, d] = (dateStr ?? todayLocal()).split('-').map(Number);
   const [hh, mm] = (timeStr ?? '09:00').split(':').map(Number);
   const asDate = new Date(y || new Date().getFullYear(), (m || 1) - 1, d || 1, hh || 9, mm || 0);
 

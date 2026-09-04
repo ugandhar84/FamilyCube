@@ -1,3 +1,5 @@
+import { localDateStr } from '@/lib/dates';
+
 /**
  * localTaskDetection — pure client-side "just describe it" classifier,
  * ported from the reference mock's categoryDB/scoreCategory/entity-
@@ -292,14 +294,18 @@ function extractDayOfWeek(input: string): number | null {
 
 export interface ExtractedDateTime { date: string | null; time: string | null }
 
-// "today"/"tonight"/"tomorrow", weekday names (with optional "next"), and
-// clock times like "4pm"/"2:30pm" — only fills a field when it finds an
-// explicit signal, never a guess.
+// "today"/"tonight"/"tomorrow"/"day after tomorrow", weekday names (with
+// optional "next"), and clock times like "4pm"/"2:30pm" — only fills a
+// field when it finds an explicit signal, never a guess.
 export function extractDateTime(input: string): ExtractedDateTime {
   const today = new Date();
   const result: ExtractedDateTime = { date: null, time: null };
   let daysAhead: number | null = null;
-  if (/\btonight\b|\btoday\b/.test(input)) daysAhead = 0;
+  // "day after tomorrow" must be checked BEFORE the plain "tomorrow" match
+  // below — it contains that same substring, so the bare /tomorrow/ regex
+  // would otherwise match first and resolve to +1 day instead of +2.
+  if (/\bday after tomorrow\b/.test(input)) daysAhead = 2;
+  else if (/\btonight\b|\btoday\b/.test(input)) daysAhead = 0;
   else if (/\btomorrow\b/.test(input)) daysAhead = 1;
   else {
     const d = extractDayOfWeek(input);
@@ -308,7 +314,10 @@ export function extractDateTime(input: string): ExtractedDateTime {
   if (daysAhead !== null) {
     const d = new Date(today);
     d.setDate(d.getDate() + daysAhead);
-    result.date = d.toISOString().slice(0, 10);
+    // localDateStr, not toISOString().slice(0,10) — typing "today" late at
+    // night in a timezone west of UTC (or "tomorrow" early morning east of
+    // UTC) would otherwise resolve to the wrong calendar date entirely.
+    result.date = localDateStr(d);
   }
   const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
   if (timeMatch) {

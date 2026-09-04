@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet, LayoutAnimation, Platform, UI
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { localDateStr } from '@/lib/dates';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -38,7 +39,9 @@ function datesBetween(start: string, end: string): string[] {
   const cur = new Date(start);
   const last = new Date(end);
   while (cur <= last) {
-    result.push(cur.toISOString().slice(0, 10));
+    // localDateStr, not toISOString().slice(0,10) — the UTC-sliced date
+    // can land on the wrong side of local midnight for anyone not on UTC.
+    result.push(localDateStr(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return result;

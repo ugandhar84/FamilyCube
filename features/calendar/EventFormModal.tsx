@@ -1059,14 +1059,33 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               />
 
               {repeatFreq !== 'none' && (
-                <TouchableOpacity
-                  onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Repeat end date" field on AddEventModal [features/calendar/EventFormModal.tsx:865]`); setShowRepeatEndDatePick(p => !p); }}
-                  style={[f.dateBtn, { marginTop: 8, backgroundColor: showRepeatEndDatePick ? catColor + '20' : colors.surface, borderColor: showRepeatEndDatePick ? catColor : colors.border }]}>
-                  <Text style={{ fontSize: 13 }}>🏁</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-                    {repeatEndDate ? `Until ${fmtDisplay(repeatEndDate)}` : 'No end date (12 weeks ahead)'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Repeat end date" field on AddEventModal [features/calendar/EventFormModal.tsx:865]`); setShowRepeatEndDatePick(p => !p); }}
+                    activeOpacity={0.8}
+                    style={[f.dateBtn, { justifyContent: 'space-between',
+                      backgroundColor: showRepeatEndDatePick ? catColor + '20' : colors.surface,
+                      borderColor: repeatEndDate ? catColor + '80' : (showRepeatEndDatePick ? catColor : colors.border) }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 13 }}>🏁</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: repeatEndDate ? catColor : colors.textPrimary }}>
+                        {/* "12 weeks" alone read as a fixed limit, not an
+                            editable default — this is the auto-stop point
+                            if you never set one, and tapping changes it.
+                            Live design note: make clear it's a real control. */}
+                        {repeatEndDate ? `Ends ${fmtDisplay(repeatEndDate)}` : 'Stops after 12 weeks — tap to set an end date'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{showRepeatEndDatePick ? '︿' : '﹀'}</Text>
+                  </TouchableOpacity>
+                  {repeatEndDate && (
+                    <TouchableOpacity
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} cleared "Repeat end date" on AddEventModal [features/calendar/EventFormModal.tsx]`); setRepeatEndDate(null); setShowRepeatEndDatePick(false); }}
+                      style={{ alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 2 }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Clear — back to 12-week default</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
               {showRepeatEndDatePick && (
                 <PickerOverlay

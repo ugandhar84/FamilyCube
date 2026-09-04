@@ -22,9 +22,15 @@ import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
-import { KioskQuestComposer } from '../components/KioskQuestComposer';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
+import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
+import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
+import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
+import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
 // the DB's 'redo_requested' status down to Quest status 'declined',
@@ -66,8 +72,41 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const isParent = active.role === 'parent';
-  const [composerOpen, setComposerOpen] = useState(false);
+  const isKidCreator = active.role === 'kid';
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
+
+  // Creation flow — ported verbatim from TasksScreen.tsx's own wiring
+  // (features/tasks/TasksScreen.tsx lines ~213-234, ~474-540): a parent
+  // gets the real free-text SmartTaskComposer (classifies Event vs Quest
+  // live, auto-fills, "Adjust in full form" hands off to the real
+  // AddEventModal/AddQuestModal pre-filled); a kid gets the same
+  // Kid-safe AskParentSheet the phone's Tasks tab and Hub FAB use instead
+  // — no free-text guessing, no direct assignment. Mobile's real gate for
+  // this button is actually role === 'parent' only (the shared FAB in
+  // app/(tabs)/_layout.tsx that opens SmartTaskComposer on the Tasks tab
+  // is parent-role-gated — teen/senior currently have no creation entry
+  // point there at all on mobile itself, see this port's own notes) —
+  // kiosk's pre-existing `isParent &&` gate on the "New Chore" button
+  // already matched that exactly, so it's left as-is here.
+  const [showComposer, setShowComposer] = useState(false);
+  const [manualQuestPrefill, setManualQuestPrefill] = useState<{
+    title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
+  } | undefined>(undefined);
+  const [manualEventPrefill, setManualEventPrefill] = useState<{
+    title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+    recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+  } | undefined>(undefined);
+  const [showManualQuest, setShowManualQuest] = useState(false);
+  const [showManualEvent, setShowManualEvent] = useState(false);
+
+  const [showAskParentSheet, setShowAskParentSheet] = useState(false);
+  const [groceryModal, setGroceryModal] = useState(false);
+  const [suppliesModal, setSuppliesModal] = useState(false);
+  const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
+  const [questProposalModal, setQuestProposalModal] = useState(false);
+  const [choreProposalModal, setChoreProposalModal] = useState(false);
+  const [rideRequestModal, setRideRequestModal] = useState(false);
+  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
   // Live-reported: a single card sat at a fixed narrow width inside a
   // whole column's worth of empty space ("cute buttons and use the space
@@ -134,9 +173,15 @@ function KioskBoardView({ active, members, colors, isDark }: {
       <View style={s.header}>
         <Text style={[s.title, { color: colors.textPrimary }]}>Chores</Text>
         {isParent && (
-          <Pressable onPress={() => setComposerOpen(true)} style={[s.addBtn, { backgroundColor: colors.primary }]}>
+          <Pressable onPress={openCreator} style={[s.addBtn, { backgroundColor: colors.primary }]}>
             <Plus size={18} color="#fff" />
             <Text style={s.addBtnText}>New Chore</Text>
+          </Pressable>
+        )}
+        {isKidCreator && (
+          <Pressable onPress={openCreator} style={[s.addBtn, { backgroundColor: colors.primary }]}>
+            <Plus size={18} color="#fff" />
+            <Text style={s.addBtnText}>Ask Parent</Text>
           </Pressable>
         )}
       </View>
@@ -256,25 +301,80 @@ function KioskBoardView({ active, members, colors, isDark }: {
       </View>
 
       {isParent && (
-        <>
-          <KioskQuestComposer
-            visible={composerOpen}
-            onClose={() => setComposerOpen(false)}
-            active={active}
-            members={members}
-            colors={colors}
-            isDark={isDark}
-          />
-          <KioskQuestEditor
-            quest={editingQuest}
-            active={active}
-            isActiveApprover={isActiveApprover}
-            onClose={() => setEditingQuest(null)}
-            members={members}
-            colors={colors}
-            isDark={isDark}
-          />
-        </>
+        <KioskQuestEditor
+          quest={editingQuest}
+          active={active}
+          isActiveApprover={isActiveApprover}
+          onClose={() => setEditingQuest(null)}
+          members={members}
+          colors={colors}
+          isDark={isDark}
+        />
+      )}
+
+      {/* Real creation flow, ported from TasksScreen.tsx lines ~474-540 —
+          see this file's top-of-function comment for the full mapping. */}
+      <AskParentSheet
+        visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}
+        onPick={(choice) => {
+          setShowAskParentSheet(false);
+          setTimeout(() => {
+            if (choice === 'ride') setRideRequestModal(true);
+            else if (choice === 'grocery') setGroceryModal(true);
+            else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
+            else if (choice === 'chore') setChoreProposalModal(true);
+            else setAskModal(choice);
+          }, 300);
+        }}
+      />
+      <GroceryModal visible={groceryModal} onClose={() => setGroceryModal(false)} active={active} />
+      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
+      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
+      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
+      <KidChoreProposalModal
+        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
+        active={active} members={members} familyId={active.familyId ?? ''}
+      />
+      <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
+
+      <SmartTaskComposer
+        visible={showComposer}
+        members={members}
+        activeMemberId={active.id}
+        familyId={active.familyId ?? ''}
+        onClose={() => setShowComposer(false)}
+        onCreated={() => setShowComposer(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowComposer(false);
+          if (kind === 'quest') {
+            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+            setShowManualQuest(true);
+          } else {
+            setManualEventPrefill(prefill as typeof manualEventPrefill);
+            setShowManualEvent(true);
+          }
+        }}
+      />
+
+      {showManualQuest && (
+        <AddQuestModal
+          visible={showManualQuest}
+          onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualQuestPrefill}
+          initialStep={manualQuestPrefill ? 'review' : undefined}
+        />
+      )}
+
+      {showManualEvent && (
+        <AddEventModal
+          visible={showManualEvent}
+          onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualEventPrefill as any}
+          initialStep="review"
+        />
       )}
     </ScrollView>
   );

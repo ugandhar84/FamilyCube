@@ -22,11 +22,17 @@ import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { localDateStr } from '@/lib/dates';
+import { localDateStr, fmtTime } from '@/lib/dates';
 import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS } from '../../calendar/components/calendarDateHelpers';
 import { assigneeStyle, MultiPersonTimeFill } from '@/features/calendar/components/EventCard';
-import { KioskEventComposer } from '../components/KioskEventComposer';
 import { KioskEventEditor } from '../components/KioskEventEditor';
+import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
+import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
+import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
+import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -41,11 +47,56 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const rangeEvents = useEventStore(s => s.rangeEvents);
   const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
-  const [composerDate, setComposerDate] = useState<string | null>(null);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
   const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [cursor, setCursor] = useState(() => new Date());
+
+  // Creation flow — ported verbatim from TasksScreen.tsx's own wiring
+  // (features/tasks/TasksScreen.tsx lines ~213-234, ~474-540; same wiring
+  // also lives in KioskTasksTab.tsx's KioskBoardView — see its top-of-
+  // function comment for the full source mapping). Mobile's real Tasks tab
+  // unifies Schedule + Chores creation into this ONE free-text
+  // SmartTaskComposer regardless of which segment is active (TasksScreen.tsx
+  // line ~208's own "one + regardless of segment" comment) — there is no
+  // per-day-anchored "+" in the live unified Tasks tab; CalendarScreen's own
+  // inline "+Event" (which used to take a selectedDate) is hidden via
+  // hideCreateButton whenever it's embedded there. That means the old
+  // KioskEventComposer's per-day prefill (tapping a specific day's "+"
+  // pre-filled that date) has NO equivalent once routed through the real
+  // SmartTaskComposer, which takes no date-context prop at all — this is a
+  // genuine, unavoidable behavior loss from matching mobile exactly, not an
+  // oversight. Kid gets the same Kid-safe AskParentSheet mobile uses.
+  const isKidCreator = active.role === 'kid';
+  // Mobile's real Tasks tab shared FAB (app/(tabs)/_layout.tsx, the button
+  // that actually opens SmartTaskComposer) is gated role === 'parent' only
+  // — a teen currently has NO creation entry point on the live unified
+  // Tasks/Schedule tab at all (its own inline "+Event"/"+Quest" fallback
+  // buttons exist in CalendarScreen/QuestsScreen but are hidden via
+  // hideCreateButton whenever embedded there, which is always, on the live
+  // nav). That's a real, pre-existing gap in mobile itself, not something
+  // to invent a fix for here — kiosk must match it exactly rather than
+  // quietly granting teen a capability mobile doesn't actually give them.
+  const canCreate = active.role === 'parent' || isKidCreator;
+  const [showComposer, setShowComposer] = useState(false);
+  const [manualQuestPrefill, setManualQuestPrefill] = useState<{
+    title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
+  } | undefined>(undefined);
+  const [manualEventPrefill, setManualEventPrefill] = useState<{
+    title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+    recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+  } | undefined>(undefined);
+  const [showManualQuest, setShowManualQuest] = useState(false);
+  const [showManualEvent, setShowManualEvent] = useState(false);
+
+  const [showAskParentSheet, setShowAskParentSheet] = useState(false);
+  const [groceryModal, setGroceryModal] = useState(false);
+  const [suppliesModal, setSuppliesModal] = useState(false);
+  const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
+  const [questProposalModal, setQuestProposalModal] = useState(false);
+  const [choreProposalModal, setChoreProposalModal] = useState(false);
+  const [rideRequestModal, setRideRequestModal] = useState(false);
+  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
   const todayStr = localDateStr(new Date());
 
@@ -174,16 +225,81 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
       {viewMode === 'week' && (
         <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
-          involvedFor={involvedFor} onEventPress={setEditingEvent} onAddDay={setComposerDate} />
+          involvedFor={involvedFor} onEventPress={setEditingEvent}
+          onAddDay={canCreate ? openCreator : undefined} />
       )}
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
           involvedFor={involvedFor} onEventPress={setEditingEvent}
-          onAdd={() => setComposerDate(toDateStr(cursor))} />
+          onAdd={canCreate ? openCreator : undefined} />
       )}
 
-      <KioskEventComposer date={composerDate} onClose={() => setComposerDate(null)} colors={colors} isDark={isDark} />
       <KioskEventEditor event={editingEvent} active={active} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
+
+      {/* Real creation flow, ported from TasksScreen.tsx lines ~474-540 —
+          see this file's top-of-function comment for the full mapping. */}
+      <AskParentSheet
+        visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}
+        onPick={(choice) => {
+          setShowAskParentSheet(false);
+          setTimeout(() => {
+            if (choice === 'ride') setRideRequestModal(true);
+            else if (choice === 'grocery') setGroceryModal(true);
+            else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
+            else if (choice === 'chore') setChoreProposalModal(true);
+            else setAskModal(choice);
+          }, 300);
+        }}
+      />
+      <GroceryModal visible={groceryModal} onClose={() => setGroceryModal(false)} active={active} />
+      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
+      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
+      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
+      <KidChoreProposalModal
+        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
+        active={active} members={members} familyId={active.familyId ?? ''}
+      />
+      <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
+
+      <SmartTaskComposer
+        visible={showComposer}
+        members={members}
+        activeMemberId={active.id}
+        familyId={active.familyId ?? ''}
+        onClose={() => setShowComposer(false)}
+        onCreated={() => setShowComposer(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowComposer(false);
+          if (kind === 'quest') {
+            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+            setShowManualQuest(true);
+          } else {
+            setManualEventPrefill(prefill as typeof manualEventPrefill);
+            setShowManualEvent(true);
+          }
+        }}
+      />
+
+      {showManualQuest && (
+        <AddQuestModal
+          visible={showManualQuest}
+          onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualQuestPrefill}
+          initialStep={manualQuestPrefill ? 'review' : undefined}
+        />
+      )}
+
+      {showManualEvent && (
+        <AddEventModal
+          visible={showManualEvent}
+          onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualEventPrefill as any}
+          initialStep="review"
+        />
+      )}
     </View>
   );
 }
@@ -245,7 +361,7 @@ function MonthView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor
 function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor, onEventPress, onAddDay }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; colors: any; isDark: boolean;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  onEventPress: (ev: FamilyEvent) => void; onAddDay: (dateStr: string) => void;
+  onEventPress: (ev: FamilyEvent) => void; onAddDay?: () => void;
 }) {
   const days = useMemo(() => {
     const ws = startOfWeek(cursor);
@@ -275,7 +391,12 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
                     style={[s.evChip, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
                     {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
                     <Text style={[s.evTitle, { color: colors.textPrimary }]} numberOfLines={2}>{ev.title}</Text>
-                    {!!ev.time && <Text style={[s.evTime, { color: colors.textSecondary }]}>{ev.time}</Text>}
+                    {/* Live-reported: raw ev.time ("HH:MM" 24h, the DB's
+                        actual stored format) was rendered directly instead
+                        of through fmtTime — mobile's own event cards always
+                        format via fmtTime (lib/dates.ts), which always
+                        produces 12h AM/PM regardless of device locale. */}
+                    {!!ev.time && <Text style={[s.evTime, { color: colors.textSecondary }]}>{fmtTime(ev.time)}</Text>}
                     {involved.length > 0 && (
                       <Text style={[s.evWho, { color: rs.dot }]} numberOfLines={1}>
                         {involved.map(m => m.name.split(' ')[0]).join(', ')}
@@ -285,9 +406,11 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
                 );
               })}
             </ScrollView>
-            <Pressable onPress={() => onAddDay(dateStr)} style={[s.addDay, { borderColor: colors.border }]}>
-              <Plus size={14} color={colors.textTertiary} />
-            </Pressable>
+            {onAddDay && (
+              <Pressable onPress={onAddDay} style={[s.addDay, { borderColor: colors.border }]}>
+                <Plus size={14} color={colors.textTertiary} />
+              </Pressable>
+            )}
           </View>
         );
       })}
@@ -303,7 +426,7 @@ const DAY_END_HOUR = 22;
 function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPress, onAdd }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  onEventPress: (ev: FamilyEvent) => void; onAdd: () => void;
+  onEventPress: (ev: FamilyEvent) => void; onAdd?: () => void;
 }) {
   const dateStr = toDateStr(cursor);
   const dayEvents = useMemo(
@@ -351,7 +474,7 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
                     style={[s.dayEventCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
                     {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
                     <Text style={[s.dayEventTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
-                    <Text style={[s.dayEventTime, { color: colors.textSecondary }]}>{ev.time}{ev.endTime ? ` – ${ev.endTime}` : ''}</Text>
+                    <Text style={[s.dayEventTime, { color: colors.textSecondary }]}>{fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}</Text>
                     {involved.length > 0 && (
                       <Text style={[s.evWho, { color: rs.dot }]} numberOfLines={1}>
                         {involved.map(m => m.name.split(' ')[0]).join(', ')}
@@ -364,10 +487,12 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
           </View>
         );
       })}
-      <Pressable onPress={onAdd} style={[s.dayAddBtn, { backgroundColor: colors.primary }]}>
-        <Plus size={16} color="#fff" />
-        <Text style={s.dayAddBtnText}>Add Event</Text>
-      </Pressable>
+      {onAdd && (
+        <Pressable onPress={onAdd} style={[s.dayAddBtn, { backgroundColor: colors.primary }]}>
+          <Plus size={16} color="#fff" />
+          <Text style={s.dayAddBtnText}>Add Event</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }

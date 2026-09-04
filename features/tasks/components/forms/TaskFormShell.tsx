@@ -21,8 +21,8 @@
  */
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Modal,
-  KeyboardAvoidingView, Platform, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, Modal, Keyboard,
+  TouchableWithoutFeedback, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,7 +66,19 @@ export function TaskFormShell({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      {/* Live-reported: KeyboardAvoidingView previously wrapped the WHOLE
+          sheet — 'padding' behavior slid the entire card (including the
+          fixed Next button) up 1:1 with the keyboard, so the button kept
+          chasing the keyboard instead of staying anchored near the
+          screen's bottom edge. Removed entirely: the sheet is already
+          bottom-anchored (s.backdrop's justifyContent:'flex-end') and
+          already clamps its OWN height via keyboardAwareMaxHeight below
+          (screen height minus the real keyboard height) — that clamp
+          alone keeps the sheet, and its footer, above the keyboard with
+          no need for the whole view to physically translate. The
+          ScrollView's flexShrink:1 lets the body shrink to fit inside
+          that clamped height while the header/progress row/footer button
+          all stay fixed in place. */}
         <View style={s.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={[s.sheet, { backgroundColor: colors.card,
@@ -76,14 +88,21 @@ export function TaskFormShell({
             {/* Drag handle */}
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 
-            {/* ── Fixed header ── */}
+            {/* ── Fixed header — the title/subtitle text block is wrapped
+                to dismiss the keyboard on tap (live-requested: tapping
+                outside a text input should close it); the close button
+                stays a sibling Touchable, untouched, so it keeps working
+                in one tap rather than risking TouchableWithoutFeedback
+                swallowing it. ── */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[s.title, { color: colors.textPrimary }]}>{headerTitle}</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accentColor }}>
-                  {headerSubtitle}
-                </Text>
-              </View>
+              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={[s.title, { color: colors.textPrimary }]}>{headerTitle}</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accentColor }}>
+                    {headerSubtitle}
+                  </Text>
+                </View>
+              </TouchableWithoutFeedback>
               <TouchableOpacity
                 onPress={onClose}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
@@ -108,9 +127,11 @@ export function TaskFormShell({
                 {step + 1}/{stepIds.length}
               </Text>
             </View>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accentColor, marginBottom: 10, marginTop: -6 }}>
-              {stepTitles[currentStepId]}
-            </Text>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accentColor, marginBottom: 10, marginTop: -6 }}>
+                {stepTitles[currentStepId]}
+              </Text>
+            </TouchableWithoutFeedback>
 
             {/* ── Scrollable step body. flexShrink:1 here + on the sheet is
                 the footer-clipping fix, applied once for both modals. ── */}
@@ -120,7 +141,12 @@ export function TaskFormShell({
                 a blank gap above the real content. */}
             <ScrollView
               style={{ flexShrink: 1 }}
-              keyboardShouldPersistTaps="always"
+              // 'handled' (not 'always'): a tap on any real button/input
+              // still registers in one tap same as before, but a tap on
+              // blank space now falls through and dismisses the keyboard
+              // (live-requested — tapping outside a text input should
+              // close the keyboard) instead of being swallowed silently.
+              keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: isReview ? Math.max(48, insets.bottom + 32) : 48 }}
             >
@@ -143,7 +169,6 @@ export function TaskFormShell({
             )}
           </View>
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }

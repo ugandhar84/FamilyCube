@@ -20,7 +20,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Modal, KeyboardAvoidingView, Platform, Alert,
+  Modal, Alert,
   Switch, ActivityIndicator, Pressable,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -2079,7 +2079,14 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      {/* Live-reported: KeyboardAvoidingView previously wrapped the whole
+          sheet — 'padding' behavior slid the entire card up 1:1 with the
+          keyboard instead of the sheet staying anchored near the screen's
+          bottom edge. Removed: the sheet already clamps its own height via
+          keyboardAwareMaxHeight (screen height minus the real keyboard
+          height) below, which is enough to keep its content — including
+          the Save/Close buttons, which scroll inside the body here — above
+          the keyboard without the whole view physically translating. */}
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
 
@@ -2164,7 +2171,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
             {/* ── Scrollable body (editable fields only) ── */}
             <ScrollView
-              keyboardShouldPersistTaps="always"
+              // 'handled' (not 'always') — a tap on any real button/input
+              // still registers in one tap, but a tap on blank space now
+              // dismisses the keyboard instead of being swallowed silently
+              // (live-requested: tapping outside a text input should close it).
+              keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
             >
@@ -2690,7 +2701,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
             </ScrollView>
           </View>
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }

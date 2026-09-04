@@ -144,6 +144,13 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 // claim/submit/approve actions, which need to be unmissable
                 // from arm's length, not for the parent's own edit flow.
                 const CardShell = actions.canEdit ? Pressable : View;
+                // Coins are a kid/teen incentive mechanic — an adult task
+                // (a parent/GP chore, q.isAdultTask) or one assigned
+                // directly to a parent/senior member has no payout concept
+                // on the phone app either, so showing "0 🪙"/a stray coin
+                // figure here read as broken rather than by-design.
+                const assignee = memberOf(q.assignedToId);
+                const isAdultAssignee = q.isAdultTask || assignee?.role === 'parent' || assignee?.role === 'senior';
                 return (
                   <CardShell
                     key={q.id}
@@ -155,7 +162,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
                       <Text style={[s.cardSub, { color: q.isPool ? colors.textSecondary : rs.text, fontWeight: q.isPool ? '600' : '800' }]} numberOfLines={1}>
                         {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
                       </Text>
-                      <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                      {!isAdultAssignee && (
+                        <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                      )}
                     </View>
                     {btn && (
                       <Pressable

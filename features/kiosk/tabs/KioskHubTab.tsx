@@ -12,11 +12,11 @@
  * only, reusing eventAssignee() (eventStore's own helper/driverName +
  * status normalizer) instead of hand-rolling that logic here.
  */
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle } from 'lucide-react-native';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
-import { fmtTime } from '@/lib/dates';
+import { fmtTime, localDateStr } from '@/lib/dates';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
@@ -40,6 +40,20 @@ export function KioskHubTab({ active, members, colors, isDark }: {
   // the Chat tab already loaded it.
   useEffect(() => { loadChatChannel(CHAT_CHANNEL); }, [loadChatChannel]);
 
+  // Live "now" marker on the timeline — a wall-mounted kiosk showing
+  // "today's schedule" with no indication of where "now" actually falls
+  // among it reads as a static poster, not a live dashboard (live-
+  // requested, matching the reference kiosk mock's red now-line). Ticks
+  // once a minute — this timeline has no proportional time axis (each row
+  // is a fixed-height list item, not positioned by clock time), so the
+  // marker is inserted as its own row at the correct SORTED position
+  // among today's events, rather than a pixel-positioned overlay line.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   const isSenior = active.role === 'senior';
 
   const openPool = useMemo(() => {
@@ -59,6 +73,19 @@ export function KioskHubTab({ active, members, colors, isDark }: {
 
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
   const memberEmoji = (id?: string) => members.find(m => m.id === id)?.emoji ?? '👤';
+
+  // Only meaningful for TODAY's own timeline — dayEvents is already scoped
+  // to the current day elsewhere in this app, but guard explicitly in case
+  // that ever changes, rather than showing a stray "now" marker on the
+  // wrong day's list.
+  const nowHHMM = now.toTimeString().slice(0, 5);
+  const showNowMarker = dayEvents.length > 0 && localDateStr(now) === localDateStr(new Date());
+  // Insertion index: first event whose time is AFTER now — timed events
+  // sort before/without-a-time all-day events per sortByTime, so this
+  // naturally lands the marker among the timed ones and after any all-day
+  // entries at the top.
+  const nowMarkerIndex = dayEvents.findIndex(ev => !!ev.time && ev.time > nowHHMM);
+  const nowInsertAt = nowMarkerIndex === -1 ? dayEvents.length : nowMarkerIndex;
 
   return (
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -89,9 +116,14 @@ export function KioskHubTab({ active, members, colors, isDark }: {
             {openPool.slice(0, 4).map((q, i) => (
               <View key={q.id} style={[s.backlogRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
                 <Text style={[s.backlogTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-                <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
-                  <Text style={[s.coinText, { color: colors.amber }]}>{q.coins} 🪙</Text>
-                </View>
+                {/* Coins are a kid/teen incentive — a GP's own sponsored
+                    adult task (isSenior's openPool branch above can include
+                    these) has no payout concept on the phone app either. */}
+                {!q.isAdultTask && (
+                  <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
+                    <Text style={[s.coinText, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                  </View>
+                )}
               </View>
             ))}
             {openPool.length === 0 && (
@@ -124,24 +156,32 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           ) : (
             <View style={s.timeline}>
               <View style={[s.timelineRail, { backgroundColor: colors.border }]} />
-              {dayEvents.map(ev => {
+              {showNowMarker && nowInsertAt === 0 && (
+                <NowMarkerRow time={now} colors={colors} />
+              )}
+              {dayEvents.map((ev, i) => {
                 const assignee = eventAssignee(ev);
                 const hasAssignee = !!assignee.name;
                 const accent = hasAssignee ? colors.primary : colors.teal;
                 return (
-                  <View key={ev.id} style={s.tlItem}>
-                    <Text style={[s.tlTime, { color: colors.textSecondary }]}>{ev.time ? fmtTime(ev.time) : 'All day'}</Text>
-                    <View style={[s.tlDot, { backgroundColor: accent, borderColor: colors.background, shadowColor: accent }]} />
-                    <View style={[s.tlCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: accent }]}>
-                      <Text style={[s.tlTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
-                      {!!ev.location && <Text style={[s.tlMeta, { color: colors.textSecondary }]} numberOfLines={1}>📍 {ev.location}</Text>}
-                      {hasAssignee && (
-                        <View style={s.tlStatusRow}>
-                          <Text style={[s.tlWho, { color: colors.primary }]} numberOfLines={1}>🚗 {assignee.name} driving</Text>
-                          <StatusPill status={assignee.status} colors={colors} />
-                        </View>
-                      )}
+                  <View key={ev.id}>
+                    <View style={s.tlItem}>
+                      <Text style={[s.tlTime, { color: colors.textSecondary }]}>{ev.time ? fmtTime(ev.time) : 'All day'}</Text>
+                      <View style={[s.tlDot, { backgroundColor: accent, borderColor: colors.background, shadowColor: accent }]} />
+                      <View style={[s.tlCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: accent }]}>
+                        <Text style={[s.tlTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
+                        {!!ev.location && <Text style={[s.tlMeta, { color: colors.textSecondary }]} numberOfLines={1}>📍 {ev.location}</Text>}
+                        {hasAssignee && (
+                          <View style={s.tlStatusRow}>
+                            <Text style={[s.tlWho, { color: colors.primary }]} numberOfLines={1}>🚗 {assignee.name} driving</Text>
+                            <StatusPill status={assignee.status} colors={colors} />
+                          </View>
+                        )}
+                      </View>
                     </View>
+                    {showNowMarker && nowInsertAt === i + 1 && (
+                      <NowMarkerRow time={now} colors={colors} />
+                    )}
                   </View>
                 );
               })}
@@ -164,7 +204,9 @@ export function KioskHubTab({ active, members, colors, isDark }: {
                     {memberName(q.assignedToId) ?? 'Unassigned'}
                   </Text>
                 </View>
-                <Text style={[s.choreCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                {!q.isAdultTask && (
+                  <Text style={[s.choreCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                )}
               </View>
             ))}
             {inProgress.length === 0 && (
@@ -228,6 +270,24 @@ function StatusPill({ status, colors }: { status?: string; colors: any }) {
   );
 }
 
+// A horizontal line across the timeline rail marking "now," per the
+// kitchen-kiosk reference the user pointed to (a red now-line cutting
+// across the current day column) — reimagined for THIS timeline's rail-
+// and-dot shape (a fixed-height item list, not a proportional time grid)
+// as its own inserted row rather than a pixel-positioned overlay line,
+// since there's no continuous time axis here to position a line against.
+function NowMarkerRow({ time, colors }: { time: Date; colors: any }) {
+  return (
+    <View style={s.nowRow}>
+      <Text style={[s.tlTime, { color: colors.primary, fontWeight: '900' }]}>
+        {time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+      </Text>
+      <View style={[s.nowDot, { backgroundColor: colors.primary, borderColor: colors.background }]} />
+      <View style={[s.nowLine, { backgroundColor: colors.primary }]} />
+    </View>
+  );
+}
+
 function SectionLabel({ text, color, colors }: { text: string; color: string; colors: any }) {
   return (
     <View style={s.sectionLabelRow}>
@@ -270,6 +330,13 @@ const s = StyleSheet.create({
   tlWho: { fontSize: 11.5, fontWeight: '800', flex: 1, marginRight: 8 },
   statusPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999 },
   statusText: { fontSize: 10, fontWeight: '800' },
+  // Same row shape as tlItem (time label + dot-on-rail + content), but the
+  // "content" is a plain horizontal line instead of a card — marks exactly
+  // where "now" falls among today's events without competing with them
+  // for visual weight the way a full card would.
+  nowRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  nowDot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2.5 },
+  nowLine: { flex: 1, height: 2, marginLeft: 6, borderRadius: 1 },
   choreCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 15, borderWidth: 1, padding: 12 },
   choreEmoji: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   choreTitle: { fontSize: TYPO.label, fontWeight: '800' },

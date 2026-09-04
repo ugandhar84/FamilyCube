@@ -12,37 +12,45 @@
  * there's no need to trade map space for list space on a screen this
  * wide, so both are simply shown at once, not chosen between).
  *
- * Every actual capability GpsTab.tsx offers a viewer is reused here — same
+ * READ-ONLY by design — live-requested: "for kiosk we don't need to poll
+ * the kiosk device location, instead show whatever is there from DB which
+ * is mobile's updated one." A wall-mounted kiosk has no meaningful GPS
+ * position of its own to share, and whichever member profile happens to be
+ * switched in on it at a given moment isn't "at" the kiosk's physical
+ * location in any way worth reporting — a phone's GPS answers "where is
+ * this person," a kiosk's GPS would only ever answer "where is the
+ * kitchen wall," which nobody needs. This tab used to carry a full "Share
+ * my location" toggle + startBackgroundLocationTracking/battery-polling
+ * cold-start re-attach, copied verbatim from GpsTab.tsx (the phone's own
+ * tab, where tracking genuinely makes sense) — removed entirely. Every
+ * `member_locations` row shown here was always going to be one some
+ * phone's own GpsTab wrote; this tab only ever needs to read and decrypt
+ * it, same as it already did for the map/roster.
+ *
+ * Every other capability GpsTab.tsx offers a viewer is reused here — same
  * `member_locations` table + decryptLocationText path (GpsTab.tsx:17,
  * 128-129), same avatar-pin Marker rendering and initialRegion bounding-box
- * math (GpsTab.tsx:464-480, 618-647), same Share My Location toggle backed
- * by the identical lib/locationTracking.ts functions GpsTab.tsx itself
- * calls (GpsTab.tsx:20, 207-260), and the same tap-to-navigate-in-native-
- * Maps action (GpsTab.tsx:441-456, openDirections). No AI ETA/arrival-
- * prediction and no geofence-trigger UI exist anywhere in GpsTab.tsx to
- * parity-match — the only geofence-adjacent field is safe_zone_name, a
- * plain display string (GpsTab.tsx:48), and low-battery alerts are a
- * push-notification pipeline (lib/locationTracking.ts's
- * maybeAlertLowBattery, fired from the background task itself), not a UI
- * element — kiosk's existing low-battery badge already mirrors GpsTab's
- * own <=20% styling threshold.
+ * math (GpsTab.tsx:464-480, 618-647), and the same tap-to-navigate-in-
+ * native-Maps action (GpsTab.tsx:441-456, openDirections). No AI ETA/
+ * arrival-prediction and no geofence-trigger UI exist anywhere in
+ * GpsTab.tsx to parity-match — the only geofence-adjacent field is
+ * safe_zone_name, a plain display string (GpsTab.tsx:48), and low-battery
+ * alerts are a push-notification pipeline (lib/locationTracking.ts's
+ * maybeAlertLowBattery, fired from the background task itself, i.e. from
+ * whichever phone is actually tracking), not a UI element — kiosk's
+ * existing low-battery badge already mirrors GpsTab's own <=20% styling
+ * threshold, reading the same battery_level column any tracking phone
+ * already writes.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Switch, Alert, Platform, Linking } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
-import {
-  startBackgroundLocationTracking, stopBackgroundLocationTracking,
-  isBackgroundLocationTracking, isBackgroundLocationSupported,
-  setBackgroundLocationMemberId, setBackgroundLocationFamilyId,
-  startBatteryPolling, stopBatteryPolling,
-} from '@/lib/locationTracking';
 import type { FamilyMember } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import CubeSpinner from '@/components/CubeSpinner';
 
 interface MemberLocation {
   member_id: string;
@@ -101,13 +109,32 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
 }) {
   const [locations, setLocations] = useState<MemberLocation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tracking, setTracking] = useState(false);
-  const [togglingTrack, setTogglingTrack] = useState(false);
 
-  const familyId = active.familyId;
+  // Live-reported: "can we have map view lil taller in the portrait mode" —
+  // a fixed 380px reads fine in landscape (where width is already scarce
+  // and vertical room is at a premium relative to it) but leaves the map
+  // feeling short on a portrait kiosk screen, which has far more spare
+  // vertical space to give it. Scale off the actual window height instead
+  // of a flat constant, capped so a very tall screen doesn't turn the map
+  // into most of the tab.
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const isPortrait = winHeight >= winWidth;
+  const mapHeight = isPortrait ? Math.min(560, Math.round(winHeight * 0.42)) : 380;
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('member_locations').select('*');
+    // Stable order matters here beyond cosmetics: react-native-maps' Fabric
+    // interop layer (RCTLegacyViewManagerInteropComponentView, since
+    // newArchEnabled is on) has been observed crashing natively
+    // ("insertObject:atIndex: object cannot be nil" inside AIRMap) when its
+    // Marker children reorder between renders with no stable backing sort —
+    // a bare `select('*')` with no .order() doesn't guarantee row order
+    // between calls, and this reloads on every single realtime change to
+    // member_locations (any member, not just this one). Ordering by
+    // member_id keeps pinned's derived array (and therefore each render's
+    // Marker list) in the same relative order every time, so the interop
+    // layer is diffing a genuinely stable list rather than churn from
+    // nothing more than Postgres returning rows in a different sequence.
+    const { data } = await supabase.from('member_locations').select('*').order('member_id');
     setLoading(false);
     if (data) {
       // Decrypt address/neighborhood (per-device envelope, same as every
@@ -125,73 +152,34 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
 
   useEffect(() => {
     load();
+    // Debounced — react-native-maps' Fabric interop layer
+    // (RCTLegacyViewManagerInteropComponentView, since newArchEnabled is on;
+    // the library isn't fully Fabric-native yet) has a known native crash
+    // ("insertObject:atIndex: object cannot be nil" inside AIRMap) triggered
+    // by Marker children mounting/unmounting in quick succession. A bare
+    // per-event `load()` re-renders (and therefore re-mounts every Marker
+    // via the pinned.map() below) on EVERY single row change to
+    // member_locations, for ANY member — a burst of several updates close
+    // together (multiple members moving, or repeated writes while testing)
+    // fired that mount/unmount churn repeatedly within milliseconds, right
+    // in the window this crash needs. Collapsing a burst into one reload
+    // 400ms after the last event in it doesn't fix the underlying library
+    // limitation, but removes the actual trigger this screen was
+    // repeatedly hitting it with.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(load, 400);
+    };
     const channelName = `kiosk_member_locations_${Math.random().toString(36).slice(2)}`;
     const ch = supabase.channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, debouncedLoad)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(ch);
+    };
   }, [load]);
-
-  // Same cold-start re-attach GpsTab.tsx does (GpsTab.tsx:160-191) — the
-  // task-body ref in locationTracking.ts lives in memory only, so a kiosk
-  // app relaunch while tracking was already OS-level active would
-  // otherwise deliver updates with no member to attribute them to.
-  useEffect(() => {
-    if (!active.id) return;
-    (async () => {
-      const isActive = await isBackgroundLocationTracking().catch(() => false);
-      if (isActive) {
-        setTracking(true);
-        setBackgroundLocationMemberId(active.id);
-        setBackgroundLocationFamilyId(familyId ?? null);
-        return;
-      }
-      const { data } = await supabase.from('member_locations').select('share_location_enabled').eq('member_id', active.id).maybeSingle();
-      if (data?.share_location_enabled && isBackgroundLocationSupported()) {
-        const ok = await startBackgroundLocationTracking(active.id, familyId).catch(() => false);
-        if (ok) { setTracking(true); startBatteryPolling(active.id); }
-      }
-    })();
-  }, [active.id, familyId]);
-
-  // Same toggle logic as GpsTab.tsx's toggleTracking (GpsTab.tsx:207-260) —
-  // reused function-for-function, not reimplemented, so kiosk shares the
-  // exact same permission flow, persisted-intent row, and error handling.
-  const toggleTracking = async () => {
-    if (!active.id) return;
-    if (!isBackgroundLocationSupported()) {
-      Alert.alert('Update needed', 'Location sharing needs a fresh app build to work on this device.');
-      return;
-    }
-    setTogglingTrack(true);
-    try {
-      if (tracking) {
-        await stopBackgroundLocationTracking();
-        stopBatteryPolling();
-        setTracking(false);
-        await supabase.from('member_locations').update({ share_location_enabled: false }).eq('member_id', active.id);
-      } else {
-        const ok = await startBackgroundLocationTracking(active.id, familyId);
-        if (!ok) {
-          Alert.alert('Location permission needed',
-            Platform.OS === 'ios'
-              ? 'Go to Settings → Family Cube → Location and choose "Always" to share location from this device.'
-              : 'Allow location access to share this device\'s position with the family.');
-        } else {
-          startBatteryPolling(active.id);
-          await supabase.from('member_locations').upsert({
-            member_id: active.id, family_id: familyId, share_location_enabled: true,
-          }, { onConflict: 'member_id' });
-        }
-        setTracking(ok);
-      }
-    } catch (e) {
-      console.warn('[KioskFindFamTab] toggleTracking failed', (e as Error)?.message ?? e);
-      Alert.alert('Could not update location sharing', 'Something went wrong — please try again.');
-    } finally {
-      setTogglingTrack(false);
-    }
-  };
 
   const locFor = (id: string) => locations.find(l => l.member_id === id);
 
@@ -203,15 +191,27 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
   // uses (GpsTab.tsx:461, 464-480) — centers/zooms to fit everyone sharing,
   // falling back to a continental-US view until at least one real pin exists.
   const pinned = useMemo(
-    () => locations.filter(l => l.lat != null && l.lng != null && l.share_location_enabled !== false),
+    () => locations.filter(
+      (l): l is MemberLocation & { lat: number; lng: number } =>
+        // Was `l.lat != null && l.lng != null` with the Marker below reading
+        // loc.lat!/loc.lng! — a type-level promise, not a runtime one. NaN
+        // passes `!= null` (NaN !== null and NaN !== undefined are both
+        // true) yet is exactly the kind of value a native map view chokes
+        // on — react-native-maps' Fabric interop layer has been observed
+        // crashing natively ("insertObject:atIndex: object cannot be nil")
+        // when a Marker's coordinate isn't a real finite number. Number.isFinite
+        // rejects null/undefined/NaN/Infinity in one check, so nothing
+        // downstream needs the `!` assertions anymore.
+        Number.isFinite(l.lat) && Number.isFinite(l.lng) && l.share_location_enabled !== false,
+    ),
     [locations],
   );
   const initialRegion = useMemo(() => {
     if (pinned.length === 0) {
       return { latitude: 39.5, longitude: -98.35, latitudeDelta: 20, longitudeDelta: 20 };
     }
-    const lats = pinned.map(p => p.lat!);
-    const lngs = pinned.map(p => p.lng!);
+    const lats = pinned.map(p => p.lat);
+    const lngs = pinned.map(p => p.lng);
     const minLat = Math.min(...lats), maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
     return {
@@ -247,24 +247,6 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
         <Text style={[s.title, { color: colors.textPrimary }]}>Find Family</Text>
       </View>
 
-      {/* Share My Location — same toggle GpsTab.tsx exposes for whoever's
-          active (GpsTab.tsx:733-748), scoped to the kiosk's own currently
-          switched-in profile since a kiosk has no single "owner" phone. */}
-      <View style={[s.toggleRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <View style={{ flex: 1, marginRight: 10 }}>
-          <Text style={[s.toggleLabel, { color: colors.textPrimary }]}>
-            Share {active.name.split(' ')[0]}'s location
-          </Text>
-          <Text style={[s.toggleSub, { color: colors.textTertiary }]}>
-            {tracking ? 'Visible to the rest of the family' : 'Off — not shared with the family'}
-          </Text>
-        </View>
-        {togglingTrack
-          ? <CubeSpinner size={18} />
-          : <Switch value={tracking} onValueChange={toggleTracking}
-              trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />}
-      </View>
-
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
       ) : (
@@ -273,7 +255,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
             uses, just laid out full-width above the roster instead of
             behind a draggable sheet, since kiosk has room to show both at
             once rather than trading one for the other. */}
-        <View style={[s.mapWrap, { borderColor: colors.border }]}>
+        <View style={[s.mapWrap, { height: mapHeight, borderColor: colors.border }]}>
           <MapView
             ref={mapRef}
             provider={PROVIDER_DEFAULT}
@@ -286,7 +268,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
               const m = members.find(mb => mb.id === loc.member_id);
               const rc = roleColor(m?.role ?? 'kid');
               return (
-                <Marker key={loc.member_id} coordinate={{ latitude: loc.lat!, longitude: loc.lng! }}
+                <Marker key={loc.member_id} coordinate={{ latitude: loc.lat, longitude: loc.lng }}
                   title={m?.name ?? 'Family member'} description={loc.status_text ?? STATUS_LABEL[loc.status]}
                   anchor={{ x: 0.5, y: 1 }}>
                   <View style={s.mapPinWrap}>
@@ -321,7 +303,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
           // so it kept showing someone's last status/battery/neighborhood
           // as if it were live even after they opted out.
           const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
-          const isLive = !!(loc && loc.lat != null && loc.lng != null);
+          const isLive = !!(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng));
           return (
             <View key={m.id} style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[s.avatar, { backgroundColor: colors.primaryLight }]}>
@@ -372,16 +354,12 @@ const s = StyleSheet.create({
   root: { flex: 1, padding: 20 },
   headerRow: { marginBottom: 14 },
   title: { fontSize: 24, fontWeight: '800' },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1,
-    paddingHorizontal: 16, paddingVertical: 14, marginBottom: 18 },
-  toggleLabel: { fontSize: TYPO.body, fontWeight: '800' },
-  toggleSub: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   // Fixed height rather than flex — a map needs a real, generous glance-
   // able area on a kiosk (not a cramped strip), but shouldn't consume the
   // whole screen the way it does on a phone (where it's the only content
   // before scrolling to the sheet); 380px gives it genuine presence while
   // leaving the roster grid below fully visible without excess scrolling.
-  mapWrap: { height: 380, borderRadius: 20, borderWidth: 1, overflow: 'hidden', marginBottom: 20 },
+  mapWrap: { borderRadius: 20, borderWidth: 1, overflow: 'hidden', marginBottom: 20 },
   mapPinWrap: { alignItems: 'center' },
   mapPinAvatar: {
     borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2,

@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { logActivity, type ActivityAction } from '@/lib/activityLog';
+import { localDateStr } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -801,6 +802,53 @@ function dbUpdate(id: string, patch: Record<string, unknown>, onFailure?: () => 
       onSuccess?.();
     }
   });
+}
+
+// Live-requested: "if driver is confirmed one event it should apply
+// automatically for other in that series of leg" — once a driver/helper
+// confirms on one occurrence of a recurring series, the same confirmed
+// assignment is applied to every OTHER future occurrence of that SAME
+// series that doesn't already have its own confirmed driver/helper.
+// Deliberately scoped narrowly per the user's own follow-up ("we
+// shouldn't be annoying and filling too many hub pendings... if they have
+// something they can reassign each event when it comes up"):
+//  - Same series only — NOT the linked pickup/drop-off counterpart series
+//    (a separate seriesId, joined via linkedLegId) — confirming a drop-off
+//    driver does not also auto-confirm them on the pickup series.
+//  - Future occurrences only (date > today) — past occurrences are done
+//    and shouldn't change retroactively.
+//  - Skips any occurrence that already has ITS OWN confirmed driver/helper
+//    — never silently overrides an existing confirmed assignment; a
+//    parent can always reassign an individual future occurrence later,
+//    same as normal.
+//  - Applied as direct rows updates (not one updateEvent() call per row)
+//    to avoid re-triggering this same fan-out recursively and to avoid
+//    the sequential-round-trip slowness a large series already hit once
+//    (EventFormModal's pickup-leg pairing) — writes go straight to
+//    calendar_events, then one syncFromDB() refreshes local state.
+async function applySeriesConfirmation(updated: FamilyEvent, wasDriverField: boolean): Promise<void> {
+  if (!updated.seriesId) return;
+  const today = localDateStr(new Date());
+  const { data: rows, error } = await supabase.from('calendar_events')
+    .select('id, date, driver_status, helper_status')
+    .eq('series_id', updated.seriesId)
+    .neq('id', updated.id)
+    .gt('date', today)
+    .is('deleted_at', null);
+  if (error || !rows?.length) return;
+
+  const statusCol = wasDriverField ? 'driver_status' : 'helper_status';
+  const targetIds = rows.filter(r => (r as any)[statusCol] !== 'confirmed').map(r => r.id);
+  if (targetIds.length === 0) return;
+
+  const patch = wasDriverField
+    ? { driver_name: updated.driverName ?? null, driver_id: updated.driverId ?? null, driver_status: 'confirmed', ride_required: true }
+    : { helper: updated.helper ?? null, helper_id: updated.helperId ?? null, helper_status: 'confirmed' };
+  const { error: updateErr } = await supabase.from('calendar_events').update(patch).in('id', targetIds);
+  if (updateErr) { console.warn('[eventStore] applySeriesConfirmation bulk update failed:', updateErr.message); return; }
+
+  await useEventStore.getState().syncFromDB();
+  showToast(`Applied to ${targetIds.length} more upcoming event${targetIds.length === 1 ? '' : 's'} in this series`);
 }
 
 // Extracted from updateEvent so it can run AFTER the DB write is confirmed
@@ -1985,6 +2033,21 @@ export const useEventStore = create<EventState>((set, get) => ({
       justDeclined, justDeclinedDriver, justAssignedHelper, justAssignedDriver,
       justConfirmed, justConfirmedDriver,
     });
+
+    // Live-requested: "if driver is confirmed on one event it should apply
+    // automatically for other in that series of leg" — scoped to future
+    // occurrences of the SAME series only (not the linked pickup/drop-off
+    // counterpart series — user explicitly didn't want this "flooding the
+    // Hub with too many pendings"), and only occurrences that don't
+    // already have their OWN confirmed driver/helper (never override an
+    // existing confirmed assignment someone else set up). Fire-and-forget,
+    // after this occurrence's own save/notifications are already done —
+    // a parent can always reassign any individual future occurrence
+    // afterward, same as normal.
+    if (justConfirmed && updated.seriesId) {
+      applySeriesConfirmation(updated, justConfirmedDriver).catch(e =>
+        console.warn('[eventStore] applySeriesConfirmation failed:', e?.message));
+    }
   },
 
   // Scenario 2.11 — RSVP is its own per-member map, not a status field on

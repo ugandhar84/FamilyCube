@@ -43,6 +43,7 @@ import GroceryLinkSection from './components/eventForm/GroceryLinkSection';
 import CategoryFields from './components/eventForm/CategoryFields';
 import HelperAssignmentSection from './components/eventForm/HelperAssignmentSection';
 import { KidRideSection } from './components/eventForm/KidRideSection';
+import { forkRideLegs } from '@/features/hub/parent/rideLegs';
 import { f } from './components/eventForm/styles';
 import {
   EventCategory, CATEGORIES, SUGGESTIONS, SPORT_TYPES, SUBJECTS, APPT_TYPES,
@@ -210,6 +211,18 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     setDriverId(id);
     setDriverName(m?.name ?? '');
   };
+  // Parent creating a ride/escorted event directly (not a kid's own
+  // request — that flow already has kidRideType/'both') had no way to also
+  // flag a return pickup: "Drop Jaswi for dance class" only ever created
+  // the one drop-off leg, with no path to the pickup afterward. Live-
+  // reported: "why there is no option for pickup needed? If pickup need
+  // who will drive?" Reuses forkRideLegs (rideLegs.ts) — the same
+  // drop-off/pickup split a kid's approved "both ways" request already
+  // goes through — right after the initial event is created (see the
+  // needsPickup effect near the submit handler).
+  const [needsPickup,    setNeedsPickup]    = useState(false);
+  const [pickupTime,     setPickupTime]     = useState<Date | null>(null);
+  const [showPickupTimePick, setShowPickupTimePick] = useState(false);
   const [generalLocation,setGeneralLocation]= useState(prefill?.generalLocation ?? '');
   const [openToGrandparents, setOpenToGrandparents] = useState(false);
   const [openToTeens,        setOpenToTeens]        = useState(false);
@@ -606,6 +619,50 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
           days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [primaryKidRideDate.getDay()]) : undefined,
           endDate: repeatEndDate ? localDateStr(repeatEndDate) : undefined,
         });
+
+    // Parent flagged "needs a pickup too" on a ride/escorted event they're
+    // creating directly (as opposed to a kid's OWN "both ways" request,
+    // which already goes through this same fork via the approval flow).
+    // Live-reported: a parent could already fill in "Return pickup" date/
+    // time on a Ride/rideRequired event, save, and it silently did
+    // nothing — returnTime was written to the row but nothing ever read it
+    // back out to actually create the second leg (only KidRequestModal's
+    // parseRideMeta call consumed it, which never runs for a parent's own
+    // submission). Recurring series are excluded — forking a repeating
+    // ride into two repeating series is a materially bigger problem this
+    // fix doesn't attempt to solve.
+    // Which field actually carries the transport assignee varies by
+    // category: Ride/Medical/Sports use `helper` (HelperAssignmentSection
+    // labels it "Accompanied by"/"Drop-off by" for those two — it IS the
+    // driver, there's no separate field); Study alone splits tutor
+    // (`helper`) from driver (`driverName`) into two different people.
+    const usesDriverField = category === 'Study';
+    const transportSet = usesDriverField ? !!eventInput.driverName : !!eventInput.helper;
+    if (repeatFreq === 'none' && needsPickup && pickupTime && !isKid && transportSet
+        && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study')) {
+      try {
+        const assignedId = usesDriverField ? driverId : eventInput.helperId;
+        await forkRideLegs({
+          ev: { ...eventInput, id: newEventId },
+          selfDrive: !!(assignedId && assignedId === activeMemberId),
+          // Both legs get the SAME already-decided assignee — this isn't
+          // the open-pool "who's driving" decision RideRequiredEventCard's
+          // own "I'll Drive" vs "Approve & Split" buttons make (that's why
+          // its assigneePatch branches on `confirmed`); a parent filling
+          // out this form already picked (or typed) exactly who's driving
+          // before ever reaching this toggle.
+          assigneePatch: () => (
+            usesDriverField
+              ? { driverName: eventInput.driverName, driverStatus: eventInput.driverStatus, rideRequired: true }
+              : { helper: eventInput.helper, helperId: eventInput.helperId, helperStatus: eventInput.helperStatus }
+          ),
+          updateEvent, addEvent, tryAutoDispatch: () => {},
+          pickupTimeOverride: fmtTime(pickupTime),
+        });
+      } catch (e: any) {
+        console.warn('[EventFormModal] forkRideLegs (parent-created pickup leg) failed:', e?.message);
+      }
+    }
 
     // Persist custom title so it appears in future suggestions for this family
     if (category === 'Other' && finalTitle && familyId) {
@@ -1120,6 +1177,87 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               />
             )}
 
+            {/* ── Needs pickup too? (parent creating a ride/escorted event
+                directly — separate from a kid's OWN "both ways" request,
+                which already has this via KidRideSection). Live-reported:
+                "Drop Jaswi for dance class" had no way to also flag she
+                needs picking up afterward, and CategoryFields' existing
+                "Return pickup (optional)" date/time fields for Ride/Study
+                turned out to be silently dead for this exact case — they
+                wrote to returnTime, but nothing ever read that back out
+                for a parent's own submission (only a kid's request parses
+                it). This toggle drives a REAL fork via forkRideLegs
+                instead, creating an actual second, linked Pickup event on
+                save — same mechanism a kid's approved "both ways" request
+                already uses. */}
+            {!isKid && (
+              category === 'Ride'
+              // Medical/Sports: HelperAssignmentSection's `helper` field IS
+              // the transport assignment here ("Accompanied by (adult)" /
+              // "Drop-off by (adult)" — see that component's own label
+              // logic), there's no separate driver field to check.
+              || (!!helperName.trim() && (category === 'Sports' || category === 'Medical'))
+              // Study alone genuinely separates tutor (helper) from driver
+              // (driverName) — a tutor isn't necessarily who's driving.
+              || (!!driverName.trim() && category === 'Study')
+            ) && (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    const v = !needsPickup;
+                    console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Needs pickup too?" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx]`);
+                    setNeedsPickup(v);
+                    if (v && !pickupTime) setPickupTime(new Date(eventDate.getTime() + 90 * 60 * 1000));
+                  }}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
+                    borderWidth: 1.5,
+                    borderColor: needsPickup ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                    backgroundColor: needsPickup
+                      ? (isDark ? catColor + '20' : catColor + '14')
+                      : (isDark ? colors.surface : '#F9FAFB'),
+                  }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                      color: needsPickup ? catColor : colors.textPrimary }}>
+                      🔁 Needs pickup too?
+                    </Text>
+                    <Text style={{ fontSize: TYPO.label, color: needsPickup ? catColor : colors.textSecondary }}>
+                      {needsPickup ? 'Creates a linked pickup event when you save' : 'Off · just the drop-off'}
+                    </Text>
+                  </View>
+                  <View style={{ width: 44, height: 26, borderRadius: 13,
+                    backgroundColor: needsPickup ? catColor : (isDark ? colors.border : '#D1D5DB'),
+                    justifyContent: 'center', paddingHorizontal: 2 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff',
+                      alignSelf: needsPickup ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+
+                {needsPickup && (
+                  <TouchableOpacity
+                    onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup time" field on AddEventModal [features/calendar/EventFormModal.tsx]`); setShowPickupTimePick(true); }}
+                    style={[f.dateBtn, { marginBottom: 14, backgroundColor: showPickupTimePick ? catColor + '20' : colors.surface, borderColor: showPickupTimePick ? catColor : (pickupTime ? catColor + '80' : colors.border) }]}
+                  >
+                    <Text style={{ fontSize: 13 }}>🕐</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showPickupTimePick ? catColor : (pickupTime ? colors.textPrimary : colors.textTertiary) }}>
+                      {pickupTime ? `Pickup at ${fmtTimeDisplay(pickupTime)}` : 'Pickup time'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <PickerOverlay
+                  showDate={false} showTime={showPickupTimePick}
+                  value={pickupTime ?? eventDate}
+                  onChangeDate={() => {}}
+                  onChangeTime={d => { const m = pickupTime ? new Date(pickupTime) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setPickupTime(m); }}
+                  onDone={() => setShowPickupTimePick(false)}
+                  accentColor={catColor} colors={colors}
+                  timeLabel="🕐 Pickup Time"
+                />
+              </>
+            )}
+
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
             {!isKid && !isTeen && category !== 'Ride' && (
               <TouchableOpacity
@@ -1355,7 +1493,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // of the screen (same class of bug fixed in AppBottomSheet.tsx). Falls
   // through to the sheet's own 75% when the keyboard is closed.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
-  const { updateEvent } = useEventStore();
+  const { updateEvent, addEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
   const kids     = members.filter(m => m.role === 'kid');
@@ -1499,6 +1637,15 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editDriverId,     setEditDriverId]     = useState<string | undefined>(
     event.driverId ?? members.find((m: any) => m.name === event.driverName)?.id
   );
+  // "Needs pickup too?" — same fork-a-linked-pickup-leg feature as
+  // AddEventModal, added here so a parent who created a drop-off-only ride
+  // and later changes their mind can still add the pickup afterward, not
+  // just at original creation time. Only offered when this event doesn't
+  // already have a linked leg (event.linkedLegId) — it already has its
+  // pickup/drop-off pair, a second fork would create a stray third event.
+  const [needsPickup,      setNeedsPickup]      = useState(false);
+  const [editPickupTime,   setEditPickupTime]   = useState<Date | null>(null);
+  const [showEditPickupTimePick, setShowEditPickupTimePick] = useState(false);
   const [alertCall,            setAlertCall]            = useState(event.alertCall ?? false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(event.alertCallLeadMinutes ?? 10);
   // Scenarios 2.6/5.4 — editable by a parent, or by the event's own
@@ -1622,7 +1769,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         const newCoins = editTeenOpen && editRideCoins ? parseInt(editRideCoins, 10) : undefined;
         if (newCoins !== event.rideCoins) patch.rideCoins = newCoins;
       }
-      if (helperIsRoleFilled) {
+      if (helperIsRoleFilled && event.category === 'Study') {
         if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
         // QA deep-trace finding: this used to compare only the trimmed
         // NAME string against event.driverName. Two different members who
@@ -1690,6 +1837,43 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       updateEvent(event.id, patch);
       showToast('Event updated');
     }
+
+    // "Needs pickup too?" was toggled on here — fork now, using the
+    // MERGED event (existing row + whatever else this save just changed,
+    // e.g. a driver reassignment done in the same edit) as the drop-off
+    // leg's actual current state. Independent of the `patch` non-empty
+    // check above — a parent toggling ONLY this (nothing else edited)
+    // must still fork. Excluded for a recurring series and for an event
+    // that already has a linked leg, same reasoning as AddEventModal's
+    // own gate (see its own comment).
+    if (!event.seriesId && !event.linkedLegId && needsPickup && editPickupTime) {
+      const merged: FamilyEvent = { ...event, ...patch };
+      // Same per-category transport-field split as everywhere else in this
+      // file: Study alone uses the separate driverName; Ride/Medical/Sports
+      // use helper (their escort/drop-off adult IS the transport).
+      const usesDriverField = merged.category === 'Study';
+      const transportSet = usesDriverField ? !!merged.driverName : !!merged.helper;
+      if (transportSet && (merged.category === 'Ride' || merged.category === 'Medical' || merged.category === 'Sports' || merged.category === 'Study')) {
+        try {
+          const assignedId = usesDriverField ? merged.driverId : merged.helperId;
+          await forkRideLegs({
+            ev: merged,
+            selfDrive: !!(assignedId && assignedId === activeMemberId),
+            assigneePatch: () => (
+              usesDriverField
+                ? { driverName: merged.driverName, driverStatus: merged.driverStatus, rideRequired: true }
+                : { helper: merged.helper, helperId: merged.helperId, helperStatus: merged.helperStatus }
+            ),
+            updateEvent, addEvent, tryAutoDispatch: () => {},
+            pickupTimeOverride: fmtTime(editPickupTime),
+          });
+          showToast('Pickup event added ✓');
+        } catch (e: any) {
+          console.warn('[EventFormModal] forkRideLegs (edit-added pickup leg) failed:', e?.message);
+        }
+      }
+    }
+
     setSaving(false);
     onClose();
   };
@@ -1940,15 +2124,22 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* Drive Assignment — Medical/Study/Sports once the tutor/escort/coach is
-                  already set (e.g. by the kid). Transport is a separate, parent-decided
-                  need from who's running the actual session. */}
-              {!restricted && isParent && helperIsRoleFilled && (
+              {/* Drive Assignment — Study only. Medical/Sports deliberately
+                  do NOT get a separate driver field, matching the Create
+                  form: the escort/drop-off adult IS the transport there
+                  (HelperAssignmentSection's "Accompanied by"/"Drop-off by"
+                  labels), one person, not two. This used to also show for
+                  Medical/Sports here in Edit — a real inconsistency with
+                  Create (which never offered a second driver field for
+                  those two at all) — narrowed to match Create's one-person
+                  model instead of the reverse, per product decision. Study
+                  alone genuinely splits tutor (who runs the session) from
+                  driver (who gets them there) into two different people. */}
+              {!restricted && isParent && event.category === 'Study' && helperIsRoleFilled && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <View style={{ backgroundColor: isDark ? colors.surface : '#F8FAFC', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                      {event.category === 'Medical' ? '🏥' : event.category === 'Study' ? '📚' : '🏅'}{' '}
-                      {event.category === 'Medical' ? 'Escort' : event.category === 'Study' ? 'Tutor' : 'Coach'}:{' '}
+                      📚 Tutor:{' '}
                       <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{event.helper}</Text> — already set
                     </Text>
                   </View>
@@ -2022,6 +2213,73 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Drop to" on "${event.title}" (id=${event.id}) newValue=${editDropLocation} [features/calendar/EventFormModal.tsx]`)}
                     />
                   </View>
+                </View>
+              )}
+
+              {/* "Needs pickup too?" — lets a parent add a linked pickup
+                  leg AFTER the fact (live-requested: "Later they change
+                  mind they can add both"), not just at original creation.
+                  Hidden once a linked leg already exists (event.linkedLegId)
+                  — that pair is already forked, offering this again would
+                  create a stray third event. Same per-category transport-
+                  field split as AddEventModal's own gate: Ride/Medical/
+                  Sports key off `helper` (their escort IS the driver),
+                  Study alone off the separate `driverName`/editRideRequired
+                  pair. */}
+              {isParent && !isPast && !event.linkedLegId && (
+                event.category === 'Ride'
+                || (!!event.helper && (event.category === 'Medical' || event.category === 'Sports'))
+                || (helperIsRoleFilled && event.category === 'Study' && editRideRequired)
+              ) && (
+                <View style={{ gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const v = !needsPickup;
+                      console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Needs pickup too?" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx]`);
+                      setNeedsPickup(v);
+                      if (v && !editPickupTime) setEditPickupTime(new Date(editEventDate.getTime() + 90 * 60 * 1000));
+                    }}
+                    activeOpacity={0.8}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
+                      borderColor: needsPickup ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+                      backgroundColor: needsPickup ? (isDark ? '#0D2A2A' : '#ECFDF5') : (isDark ? colors.surface : '#F9FAFB'),
+                    }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: needsPickup ? BRAND.teal : colors.textPrimary }}>
+                        🔁 Needs pickup too?
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, color: needsPickup ? BRAND.teal : colors.textSecondary }}>
+                        {needsPickup ? 'Adds a linked pickup event when you save' : 'Off · just this drop-off'}
+                      </Text>
+                    </View>
+                    <View style={{ width: 40, height: 24, borderRadius: 12,
+                      backgroundColor: needsPickup ? BRAND.teal : (isDark ? '#334155' : '#CBD5E1'),
+                      justifyContent: 'center', paddingHorizontal: 3 }}>
+                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
+                        alignSelf: needsPickup ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </TouchableOpacity>
+                  {needsPickup && (
+                    <TouchableOpacity
+                      onPress={() => setShowEditPickupTimePick(true)}
+                      style={[f.dateBtn, { backgroundColor: showEditPickupTimePick ? BRAND.teal + '20' : colors.surface, borderColor: showEditPickupTimePick ? BRAND.teal : (editPickupTime ? BRAND.teal + '80' : colors.border) }]}
+                    >
+                      <Text style={{ fontSize: 13 }}>🕐</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditPickupTimePick ? BRAND.teal : (editPickupTime ? colors.textPrimary : colors.textTertiary) }}>
+                        {editPickupTime ? `Pickup at ${fmtTimeDisplay(editPickupTime)}` : 'Pickup time'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <PickerOverlay
+                    showDate={false} showTime={showEditPickupTimePick}
+                    value={editPickupTime ?? editEventDate}
+                    onChangeDate={() => {}}
+                    onChangeTime={d => { const m = editPickupTime ? new Date(editPickupTime) : new Date(editEventDate); m.setHours(d.getHours(), d.getMinutes()); setEditPickupTime(m); }}
+                    onDone={() => setShowEditPickupTimePick(false)}
+                    accentColor={BRAND.teal} colors={colors}
+                    timeLabel="🕐 Pickup Time"
+                  />
                 </View>
               )}
 

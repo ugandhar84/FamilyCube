@@ -275,3 +275,64 @@ export function deriveEventActions(
 
   return { assignee, assigneeRole, isSelfAssigned, showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm };
 }
+
+export interface EventEditPermission {
+  // Full edit surface (reassign helper/driver, change memberIds, GP/Teen
+  // pool toggles, etc.) — parent, or a senior editing an event they're the
+  // subject/organiser of.
+  canEditFull: boolean;
+  // Can still change SOME fields (notes/alertCall/date-time) but not the
+  // full reassignment surface — a kid/teen's own still-pending request, or
+  // a senior's own event.
+  canEditRestricted: boolean;
+  // Read-only — past, an already-approved event viewed by the requesting
+  // kid, or ANY event viewed by a teen who isn't its own pending request.
+  restricted: boolean;
+  isOwnPending: boolean;
+}
+
+// Extracted from EventFormModal.tsx's EditEventModal (isParent/isPast/
+// isOwnPending/isOwnEventBySenior/isForeignToTeen/restricted) so a second
+// surface with edit access to a calendar event — the kiosk's own event
+// editor — can call the EXACT same rule instead of a second, driftable
+// copy. Live-reported gap this closes: KioskEventEditor.tsx had ZERO role
+// checks at all, so any kid/teen active on a shared kiosk device could
+// edit or delete ANY family event, matching neither this permission model
+// nor RBAC in general.
+export function deriveEventEditPermission(
+  ev: Pick<FamilyEvent, 'date' | 'time' | 'approvalPending' | 'memberId' | 'memberIds' | 'category' | 'rideRequired' | 'isOpenToGrandparents'>,
+  viewer: { id: string; role: FamilyMember['role'] },
+): EventEditPermission {
+  const isParent = viewer.role === 'parent';
+  const isKid = viewer.role === 'kid';
+  const isTeen = viewer.role === 'teen';
+  const isSenior = viewer.role === 'senior';
+
+  const isPast = (() => {
+    if (!ev.date) return false;
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (ev.date < todayStr) return true;
+    if (ev.date > todayStr) return false;
+    if (!ev.time) return false;
+    const [h, m] = ev.time.split(':').map(Number);
+    return h < today.getHours() || (h === today.getHours() && m <= today.getMinutes());
+  })();
+
+  const isOwnPending = (isKid || isTeen) && !!ev.approvalPending && ev.memberId === viewer.id;
+  const isOwnEventBySenior = isSenior && (
+    ev.memberId === viewer.id ||
+    (!ev.memberId && !ev.memberIds?.length &&
+      (ev.category !== 'Ride' && !ev.rideRequired ? true : !!ev.isOpenToGrandparents))
+  );
+  const isParentApproved = !ev.approvalPending;
+  const isForeignToTeen = isTeen && !isOwnPending;
+  const restricted = isPast || (isKid && isParentApproved) || isForeignToTeen;
+
+  return {
+    canEditFull: !restricted && (isParent || isOwnEventBySenior),
+    canEditRestricted: !restricted && !isParent && (isOwnPending || isOwnEventBySenior),
+    restricted,
+    isOwnPending,
+  };
+}

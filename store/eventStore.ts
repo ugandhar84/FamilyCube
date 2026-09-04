@@ -2419,6 +2419,29 @@ export const useEventStore = create<EventState>((set, get) => ({
     set({ dayEvents: next, events: next });
     set({ rangeEvents: prevRange.filter(e => e.id !== id) });
 
+    // Live QA finding (docs/qa_form_combinations_audit.html): deleting one
+    // leg of a forked both-ways ride (forkRideLegs, linkedLegId pointing at
+    // each other) left the OTHER leg's linkedLegId dangling, pointing at a
+    // now-deleted event — its "This is the Pickup/Drop-off half of a
+    // both-ways ride" banner (hubComponents.tsx) then referenced a dead
+    // event with no warning. Clears the surviving leg's linkedLegId rather
+    // than also deleting it — a parent deleting one leg may genuinely want
+    // to keep the other standing alone as its own independent event.
+    if (deletedEvent?.linkedLegId) {
+      const otherLegId = deletedEvent.linkedLegId;
+      const { error: unlinkError } = await supabase.from('calendar_events')
+        .update({ linked_leg_id: null }).eq('id', otherLegId);
+      if (unlinkError) {
+        console.warn('[eventStore] deleteEvent: failed to unlink surviving leg', otherLegId, unlinkError.message);
+      } else {
+        const clearLink = (e: FamilyEvent) => e.id === otherLegId ? { ...e, linkedLegId: undefined } : e;
+        set(s => ({
+          dayEvents: s.dayEvents.map(clearLink), events: s.events.map(clearLink),
+          rangeEvents: s.rangeEvents.map(clearLink),
+        }));
+      }
+    }
+
     // Personal-calendar 2-way sync — only push the delete once confirmed,
     // same reasoning as updateEvent's own sync push.
     const familyId = getFamilyId();

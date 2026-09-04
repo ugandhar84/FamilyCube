@@ -37,7 +37,7 @@ function startOfWeek(d: Date): Date {
   return r;
 }
 
-export function KioskScheduleTab({ members, colors, isDark }: { members: FamilyMember[]; colors: any; isDark: boolean }) {
+export function KioskScheduleTab({ active, members, colors, isDark }: { active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean }) {
   const rangeEvents = useEventStore(s => s.rangeEvents);
   const loadRange = useEventStore(s => s.loadRange);
   const [composerDate, setComposerDate] = useState<string | null>(null);
@@ -169,7 +169,7 @@ export function KioskScheduleTab({ members, colors, isDark }: { members: FamilyM
       )}
 
       <KioskEventComposer date={composerDate} onClose={() => setComposerDate(null)} colors={colors} isDark={isDark} />
-      <KioskEventEditor event={editingEvent} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
+      <KioskEventEditor event={editingEvent} active={active} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
     </View>
   );
 }

@@ -71,6 +71,32 @@ serve(async (req) => {
       ? await exchangeGoogle(code, codeVerifier)
       : await exchangeOutlook(code, codeVerifier);
 
+    // Live-requested: "create a FamilyCube calendar in any of the
+    // provider first, else it will be a mess" — a personal connection
+    // used to push straight into the member's PRIMARY calendar (the
+    // 'primary'/'me' fallback every calendar-sync-push/reconcile call
+    // already had), mixing every FamilyCube-created event in with the
+    // member's own real events. Live-reported disaster: repeated
+    // recurring-series test pushes left hundreds of stray "Drop-off"
+    // events scattered across the member's actual Google Calendar with no
+    // dedicated place to find or bulk-clean them from. A dedicated
+    // "FamilyCube" calendar (same concept the Apple/EventKit sync path
+    // already uses — see lib/calendarSync2Way.ts's SYNC_CALENDAR_NAME)
+    // means every future push/pull is fully contained and trivially
+    // wipeable (delete the one calendar) without ever touching the
+    // member's own real events. Work-purpose connections stay untouched —
+    // they only ever read FreeBusy, never write real events at all.
+    let externalCalendarId: string | null = null;
+    if (purpose === 'personal') {
+      try {
+        externalCalendarId = provider === 'google'
+          ? await ensureGoogleFamilyCubeCalendar(tokens.accessToken)
+          : await ensureOutlookFamilyCubeCalendar(tokens.accessToken);
+      } catch (e) {
+        console.warn('[calendar-oauth-exchange] could not create dedicated FamilyCube calendar, falling back to primary:', e instanceof Error ? e.message : e);
+      }
+    }
+
     // sync_token/external_calendar_id explicitly reset to null on every
     // (re)connect — an upsert on this conflict key only touches columns
     // present in the payload, so omitting them here left a RECONNECT
@@ -99,7 +125,7 @@ serve(async (req) => {
       status: 'active',
       last_error: null,
       sync_token: null,
-      external_calendar_id: null,
+      external_calendar_id: externalCalendarId,
     }, { onConflict: 'family_id,member_id,provider,purpose' });
 
     if (error) {
@@ -113,6 +139,53 @@ serve(async (req) => {
     return json({ ok: false, error: e?.message ?? 'Exchange failed' }, 500);
   }
 });
+
+const FAMILYCUBE_CALENDAR_NAME = 'FamilyCube';
+
+// Finds the member's existing "FamilyCube" secondary calendar if a prior
+// connect already created one (re-authing an expired token, or
+// disconnect-then-reconnect, shouldn't spawn a duplicate calendar every
+// time), otherwise creates it fresh. Returns the calendar's id (used as
+// external_calendar_id everywhere calendar-sync-push/googleReconcile.ts
+// already read `connection.external_calendar_id ?? 'primary'`).
+async function ensureGoogleFamilyCubeCalendar(accessToken: string): Promise<string> {
+  const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=owner', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (listRes.ok) {
+    const list = await listRes.json();
+    const existing = (list.items ?? []).find((c: any) => c.summary === FAMILYCUBE_CALENDAR_NAME);
+    if (existing?.id) return existing.id;
+  }
+  const createRes = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary: FAMILYCUBE_CALENDAR_NAME, description: 'Events synced from the FamilyCube app.' }),
+  });
+  if (!createRes.ok) throw new Error(`Google calendar create failed: ${createRes.status} ${await createRes.text()}`);
+  return (await createRes.json()).id;
+}
+
+// Outlook/Microsoft Graph equivalent — a secondary calendar under the
+// member's own mailbox, same "FamilyCube" name, same idempotent
+// find-or-create shape.
+async function ensureOutlookFamilyCubeCalendar(accessToken: string): Promise<string> {
+  const listRes = await fetch('https://graph.microsoft.com/v1.0/me/calendars', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (listRes.ok) {
+    const list = await listRes.json();
+    const existing = (list.value ?? []).find((c: any) => c.name === FAMILYCUBE_CALENDAR_NAME);
+    if (existing?.id) return existing.id;
+  }
+  const createRes = await fetch('https://graph.microsoft.com/v1.0/me/calendars', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: FAMILYCUBE_CALENDAR_NAME }),
+  });
+  if (!createRes.ok) throw new Error(`Outlook calendar create failed: ${createRes.status} ${await createRes.text()}`);
+  return (await createRes.json()).id;
+}
 
 async function exchangeGoogle(code: string, codeVerifier?: string): Promise<{ accessToken: string; refreshToken: string; expiresInSec: number; email?: string }> {
   const res = await fetch('https://oauth2.googleapis.com/token', {

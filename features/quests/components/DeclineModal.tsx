@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, Platform, Keyboard } from 'react-native';
 import { TYPO } from '@/constants/theme';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
@@ -21,13 +21,20 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
   const [custom, setCustom]     = useState('');
   const finalReason = custom.trim() || selected;
   const dismiss = () => { Keyboard.dismiss(); onCancel(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <View style={dm.backdrop}>
-        <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '90%' }]}>
+      <View style={[dm.backdrop, { paddingBottom: keyboardHeight }]}>
+        <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
           <View style={[dm.handle, { backgroundColor: colors.border }]} />
           <Text style={[dm.title, { color: colors.textPrimary }]}>Decline Chore</Text>
           <Text style={[dm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{questTitle}"</Text>
@@ -67,8 +74,11 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
             </TouchableOpacity>
           </View>
         </View>
+        {keyboardHeight > 0 && (
+          <View pointerEvents="none"
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+        )}
       </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }

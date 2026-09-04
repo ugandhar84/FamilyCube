@@ -34,14 +34,14 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
     onClose();
   };
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
         <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16, overflow: 'hidden',
-          maxHeight: keyboardAwareMaxHeight ?? '90%',
+          maxHeight: keyboardAwareMaxHeight ?? '75%',
           borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
           shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

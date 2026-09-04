@@ -8,7 +8,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, Pressable, TextInput, Alert,
-  ActivityIndicator, Image, Modal, KeyboardAvoidingView,
+  ActivityIndicator, Image, Modal,
   ScrollView, Platform, Keyboard, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { CheckCircle2 } from 'lucide-react-native';
@@ -398,7 +398,15 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
   const [preset, setPreset]   = useState<RejectionPresetKey | null>(null);
   const [customMsg, setCustomMsg] = useState('');
   const [loading, setLoading]     = useState(false);
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const handleSend = () => {
     if (!task) return;
@@ -423,11 +431,10 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 
@@ -520,8 +527,11 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
         </View>
             </ScrollView>
           </View>
+          {keyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+          )}
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }

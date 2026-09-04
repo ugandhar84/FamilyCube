@@ -25,7 +25,7 @@ export function ReceiptSubmissionModal({
 }) {
   const actorName = active?.name ?? 'senior';
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
@@ -33,7 +33,7 @@ export function ReceiptSubmissionModal({
       <Pressable style={{ flex: 1, backgroundColor: '#00000060', justifyContent: 'flex-end' }} onPress={dismiss}>
         <Pressable onPress={e => e.stopPropagation()}
           style={{ backgroundColor: isDark ? '#1E293B' : '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden',
-            padding: 24, gap: 16, maxHeight: keyboardAwareMaxHeight ?? '90%' }}>
+            padding: 24, gap: 16, maxHeight: keyboardAwareMaxHeight ?? '75%' }}>
 
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

@@ -92,7 +92,7 @@ export function CantMakeItSheet({
     m.id !== byMemberId &&
     (actingMember?.role !== 'kid' || m.role === 'kid' || m.role === 'teen')
   );
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
     <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>
@@ -100,7 +100,7 @@ export function CantMakeItSheet({
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <Pressable style={{ flex: 1 }} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card,
+            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />

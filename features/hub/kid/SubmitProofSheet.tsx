@@ -43,7 +43,7 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
   };
 
   const dismiss = () => { Keyboard.dismiss(); close(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
     <Modal visible={!!quest} transparent animationType="slide" onRequestClose={dismiss}>
@@ -51,7 +51,7 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card }}>
+            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
 
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
 

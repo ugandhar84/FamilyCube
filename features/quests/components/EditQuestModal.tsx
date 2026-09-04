@@ -65,6 +65,17 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [photoReq,          setPhotoReq]          = useState(quest.photoRequired ?? false);
   const [isAdultTask,       setIsAdultTask]        = useState(quest.isAdultTask ?? false);
   const [inviteGrandparent, setInviteGrandparent] = useState(quest.inviteGrandparents ?? false);
+  // Live QA finding (docs/qa_form_combinations_audit.html, High): this
+  // edit form had ZERO trace of isOpenToTeens at all — no state, no UI,
+  // no patch field — despite the store/RPC layer fully supporting it and
+  // AddQuestModal offering it at create time (its own "Teens Only" chip,
+  // AddQuestRecurrenceSection.tsx). A chore's isOpenToTeens flag became
+  // permanently create-only: there was no way to add or remove the
+  // restriction after the fact, and — separately — the assign-member
+  // picker had no teens-only eligibility filter to match it, so a kid
+  // could still be picked as assignee on a chore flagged teens-only,
+  // directly contradicting the flag.
+  const [teensOnly, setTeensOnly] = useState(quest.isOpenToTeens ?? false);
   // Master-flow spec: grandparent-done work has NO coin field, ever — not
   // zeroed, absent. AddQuestModal.tsx's coinsDisabled already enforces this
   // at CREATE time; this edit form had no equivalent, so toggling Invite
@@ -178,6 +189,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         photoRequired: photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,
+        isOpenToTeens: teensOnly,
         recurrence: routineFreq,
         alertCall, alertCallLeadMinutes,
         linkedEventId,
@@ -206,6 +218,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         photoRequired: photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,
+        isOpenToTeens: teensOnly,
         dueDate: localDateStr(dueDate),
         dueTime: fmtTimeLabel(dueDate),
         recurrence: routineFreq,
@@ -639,6 +652,45 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </TouchableOpacity>
               )}
 
+              {/* Teens Only toggle — independent of Adult-Only Task, matching
+                  AddQuestModal's own "Teens Only" chip (AddQuestRecurrenceSection.tsx):
+                  restricts an ordinary KID-facing pool chore to teens
+                  specifically, not an adult-delegation concept. Was entirely
+                  absent from this edit form — a chore's isOpenToTeens flag
+                  was permanently create-only, with no way to add or remove
+                  the restriction after the fact (live QA finding, High). */}
+              {!isAdultTask && (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 10,
+                    backgroundColor: teensOnly ? colors.pinkLight : (isDark ? colors.surface : '#F8FAFC'),
+                    borderWidth: 1.5, borderColor: teensOnly ? colors.pink : colors.border }}
+                  onPress={() => {
+                    const v = !teensOnly;
+                    setTeensOnly(v);
+                    // Same cleanup the create form's toggle needs — a kid
+                    // already picked as assignee directly contradicts
+                    // "teens only" the moment this turns on.
+                    if (v) setAssignIds(prev => prev.filter(id => members.find((m: any) => m.id === id)?.role !== 'kid'));
+                  }}
+                  activeOpacity={0.8}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: teensOnly ? colors.pink : colors.textPrimary }}>
+                      🚗 {teensOnly ? 'Teens only' : 'Teens Only?'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                      {teensOnly ? 'Hidden from kids' : 'Any kid can claim'}
+                    </Text>
+                  </View>
+                  <View style={{ width: 40, height: 24, borderRadius: 12,
+                    backgroundColor: teensOnly ? colors.pink : (isDark ? '#334155' : '#CBD5E1'),
+                    justifyContent: 'center', padding: 2 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                      alignSelf: teensOnly ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+              )}
+
               {/* Assign To */}
               <Text style={[aq.label, { color: colors.textSecondary }]}>
                 Assign To{'  '}
@@ -663,6 +715,10 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                     if (m.role === 'senior') return inviteGrandparent; // only when GP invited
                     return false;
                   }
+                  // Was missing the teensOnly gate entirely — a kid could be
+                  // picked as assignee on a chore flagged isOpenToTeens,
+                  // directly contradicting the flag (live QA finding, High).
+                  if (teensOnly && m.role === 'kid') return false;
                   return m.role === 'kid' || m.role === 'teen' || m.role === 'parent' || m.role === 'senior';
                 }).map(m => {
                   const sel = assignIds.includes(m.id) && !isPool;

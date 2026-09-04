@@ -509,6 +509,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     if (val) { setCoins('0'); setBonusCoins(''); }
   };
 
+  // Live QA finding (docs/qa_form_combinations_audit.html, High): a kid
+  // could already be selected in assignIds before Teens Only is toggled
+  // on — the raw setTeensOnly passed directly as toggleTeensOnly never
+  // cleared them, leaving a chore's isOpenToTeens flag directly
+  // contradicting its own assignee. Same cleanup shape as
+  // toggleAdultTask above.
+  const toggleTeensOnly = (val: boolean) => {
+    setTeensOnly(val);
+    if (val) setAssignIds(prev => prev.filter(id => members.find(m => m.id === id)?.role !== 'kid'));
+  };
+
   // Scenario 9.4 — before creating a new POOL quest, check for an
   // already-open (not claimed, not completed) pool chore with a very
   // similar title and offer a soft, dismissible Merge/Keep Both prompt.
@@ -1165,7 +1176,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               colors={colors} isDark={isDark}
               isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
               inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
-              teensOnly={teensOnly} toggleTeensOnly={setTeensOnly}
+              teensOnly={teensOnly} toggleTeensOnly={toggleTeensOnly}
               hideAdultToggles={creatorIsTeen}
               routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
               recurrenceDays={recurrenceDays} setRecurrenceDays={setRecurrenceDays}
@@ -1186,6 +1197,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               isPool={isPool} setIsPool={setIsPool}
               assignIds={assignIds} setAssignIds={setAssignIds}
               inviteGrandparent={inviteGrandparent}
+              teensOnly={teensOnly}
               maxClaimants={maxClaimants} setMaxClaimants={setMaxClaimants}
               coins={coins}
               pillBg={pillBg}

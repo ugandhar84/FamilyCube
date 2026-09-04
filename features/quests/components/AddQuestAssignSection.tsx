@@ -18,6 +18,7 @@ export function AddQuestAssignSection({
   isPool, setIsPool,
   assignIds, setAssignIds,
   inviteGrandparent,
+  teensOnly,
   maxClaimants, setMaxClaimants,
   coins,
   pillBg,
@@ -28,6 +29,11 @@ export function AddQuestAssignSection({
   isPool: boolean; setIsPool: (v: boolean) => void;
   assignIds: string[]; setAssignIds: (v: string[]) => void;
   inviteGrandparent: boolean;
+  // Live QA finding (docs/qa_form_combinations_audit.html, High): this
+  // section had a senior/GP-welcome eligibility gate (line ~70) but no
+  // equivalent for teensOnly — a kid could still be picked as assignee on
+  // a chore flagged isOpenToTeens, directly contradicting the flag.
+  teensOnly: boolean;
   maxClaimants: number; setMaxClaimants: (v: number) => void;
   coins: string;
   pillBg: string;
@@ -68,6 +74,7 @@ export function AddQuestAssignSection({
             so offering them as a direct-assign target is misleading. */}
         {members
           .filter(m => m.role === 'senior' ? inviteGrandparent : true)
+          .filter(m => !(teensOnly && m.role === 'kid'))
           .filter(m => isAdultTask ? (m.role === 'parent' || m.role === 'senior') : (m.role === 'kid' || m.role === 'teen' || m.role === 'parent' || m.role === 'senior'))
           .map(m => {
             const sel       = assignIds.includes(m.id) && !isPool;

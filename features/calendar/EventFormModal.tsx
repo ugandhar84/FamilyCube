@@ -402,8 +402,20 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   // Same teen-inclusion gap fixed in the edit form's own `adults` below —
   // kept symmetric so a prefilled/pre-assigned teen driver on the create
   // form doesn't hit the identical "picker shows nothing selected" bug.
+  // Live-reported: a teen with NO car (never opted into the ride/pickup
+  // dispatch pool, hasCar defaults false) and a grandparent showed up as a
+  // pickable driver/helper option here regardless — this picker checked
+  // role + the Welcome toggle only, with no hasCar gate at all, unlike the
+  // parent-only `otherParents` list a few lines below (line ~496) which
+  // already excludes hasCar===false. hasCar IS this app's real driving-
+  // eligibility flag for exactly these two roles (its own field comment:
+  // "Opts teen into ride/pickup dispatch pool"; SeniorView.tsx's own
+  // openRides gates identically on active.hasCar) — offering someone who
+  // never opted in was a genuine ambiguity in the form, not a cosmetic gap.
   const adults = members.filter(m =>
-    m.role === 'parent' || (m.role === 'senior' && openToGrandparents) || (m.role === 'teen' && openToTeens)
+    m.role === 'parent'
+    || (m.role === 'senior' && openToGrandparents && (m.hasCar === true || m.id === helperId))
+    || (m.role === 'teen' && openToTeens && (m.hasCar === true || m.id === helperId))
   );
   // Show all family members in "For" picker; exclude the selected helper so one person isn't in both roles
   const forMembers = members.filter(m => m.id !== helperId);
@@ -1296,7 +1308,21 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
             {!isKid && !isTeen && category !== 'Ride' && (
               <TouchableOpacity
-                onPress={() => { const v = !openToGrandparents; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Grandparents Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:984]`); setGpTeenToggledByUser(true); setOpenToGrandparents(v); }}
+                onPress={() => {
+                  const v = !openToGrandparents;
+                  console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Grandparents Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:984]`);
+                  setGpTeenToggledByUser(true); setOpenToGrandparents(v);
+                  // Live-reported: turning the toggle back OFF left a
+                  // previously-picked grandparent still selected as helper
+                  // — `adults` (this picker's candidate list) correctly
+                  // stops including them once the toggle is off, but
+                  // nothing ever cleared the already-committed
+                  // helperId/helperName state, so it silently saved anyway
+                  // on submit despite the toggle now reading "Off."
+                  if (!v && helperId && members.find(m => m.id === helperId)?.role === 'senior') {
+                    setHelperId(undefined); setHelperName('');
+                  }
+                }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
@@ -1331,7 +1357,15 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 for a medical appointment) ── */}
             {!isKid && !isTeen && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
               <TouchableOpacity
-                onPress={() => { const v = !openToTeens; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Teens Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1019]`); setGpTeenToggledByUser(true); setOpenToTeens(v); }}
+                onPress={() => {
+                  const v = !openToTeens;
+                  console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Teens Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1019]`);
+                  setGpTeenToggledByUser(true); setOpenToTeens(v);
+                  // Same stale-selection fix as Grandparents Welcome above.
+                  if (!v && helperId && members.find(m => m.id === helperId)?.role === 'teen') {
+                    setHelperId(undefined); setHelperName('');
+                  }
+                }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
@@ -1651,8 +1685,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // the ride looked unassigned from the parent's edit view even though it
   // wasn't (live-reported: "assigned to picker is not showing as teen
   // already assigned person").
+  //
+  // Live-reported (separate bug): a teen with no car (hasCar defaults
+  // false — never opted into the ride/pickup dispatch pool) and a
+  // grandparent still showed up here as a pickable option, same missing
+  // gate as the create form. hasCar OR already being the current helperId
+  // — an already-assigned teen/GP who happens to have hasCar:false must
+  // still appear (that's the fix the comment above already made this
+  // list depend on), just not as a NEW pickable option for anyone else.
   const adults = members.filter(m =>
-    m.role === 'parent' || (m.role === 'senior' && editGPOpen) || (m.role === 'teen' && editTeenOpen)
+    m.role === 'parent'
+    || (m.role === 'senior' && editGPOpen && (m.hasCar === true || m.id === helperId))
+    || (m.role === 'teen' && editTeenOpen && (m.hasCar === true || m.id === helperId))
   );
 
   // Drive assignment — separate from the tutor/escort/coach (`helper`) once
@@ -2420,7 +2464,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               {isParent && !isPast && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <TouchableOpacity
-                    onPress={() => { const v = !editGPOpen; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Grandparents Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1689]`); setEditGPOpen(v); }}
+                    onPress={() => {
+                      const v = !editGPOpen;
+                      console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Grandparents Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1689]`);
+                      setEditGPOpen(v);
+                      // Same stale-selection fix as the create form — turning
+                      // this off must not leave an already-picked grandparent
+                      // silently still assigned.
+                      if (!v && helperId && members.find(m => m.id === helperId)?.role === 'senior') {
+                        setHelperId(undefined); setHelperName('');
+                      }
+                    }}
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
@@ -2449,7 +2503,14 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
                   {event.category !== 'Medical' && members.some(m => m.role === 'teen') && (
                     <TouchableOpacity
-                      onPress={() => { const v = !editTeenOpen; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Teens Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1718]`); setEditTeenOpen(v); }}
+                      onPress={() => {
+                        const v = !editTeenOpen;
+                        console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Teens Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1718]`);
+                        setEditTeenOpen(v);
+                        if (!v && helperId && members.find(m => m.id === helperId)?.role === 'teen') {
+                          setHelperId(undefined); setHelperName('');
+                        }
+                      }}
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,

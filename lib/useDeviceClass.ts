@@ -14,20 +14,22 @@ try {
   // below instead of crashing the app.
 }
 
-// Layout breakpoints for phone / tablet / a large wall-mounted "kitchen hub"
-// display (an iPad or Android tablet mounted on a fridge, viewed from a few
-// feet away — same device class as tablet, but wide enough to want a
-// noticeably bigger type scale, not just more columns).
-export type DeviceClass = 'phone' | 'tablet' | 'kitchenHub';
+// Layout breakpoints for phone vs. any iPad/tablet-class device, which all
+// get the same KioskScreen dashboard (nav rail, bigger type) rather than the
+// phone Hub stretched. There is no separate mid-size 'tablet' layout — an
+// earlier three-tier version (phone/tablet/kitchenHub at 1000dp) left iPads
+// under 1000dp shortest side silently falling through to the plain phone
+// layout, since HubScreen only ever branched on 'kitchenHub'. Collapsed back
+// to two tiers so every iPad-class device actually gets the tablet UI.
+// Live-reported: "on the bigger screen it is not optimized layout... I see
+// similar to the mobile layout" on a standard iPad (shortest side ~810dp).
+export type DeviceClass = 'phone' | 'kitchenHub';
 
-const TABLET_MIN = 700;   // shortest side, dp — iPad mini and up
-const HUB_MIN     = 1000; // shortest side, dp — full-size iPad landscape and up
+const HUB_MIN = 700; // shortest side, dp — iPad mini and up
 
 export function deviceClassFor(width: number, height: number): DeviceClass {
   const shortSide = Math.min(width, height);
-  if (shortSide >= HUB_MIN) return 'kitchenHub';
-  if (shortSide >= TABLET_MIN) return 'tablet';
-  return 'phone';
+  return shortSide >= HUB_MIN ? 'kitchenHub' : 'phone';
 }
 
 /**

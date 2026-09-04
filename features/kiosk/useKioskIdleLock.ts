@@ -22,7 +22,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
-const DEFAULT_IDLE_MINUTES = 5;
+// Live-requested: "it should lock only when the timeout of 30 min or just
+// user explicit click on lock" — was 5 minutes.
+const DEFAULT_IDLE_MINUTES = 30;
+// Same threshold used for "was this a genuine backgrounding, not a brief
+// bounce" below.
+const BACKGROUND_LOCK_AFTER_MS = 30 * 60_000;
 
 export function useKioskIdleLock(idleMinutes: number = DEFAULT_IDLE_MINUTES) {
   const [locked, setLocked] = useState(false);
@@ -61,12 +66,31 @@ export function useKioskIdleLock(idleMinutes: number = DEFAULT_IDLE_MINUTES) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Backgrounding the app (someone switches to another app, or the device
-  // sleeps) should lock immediately on return — same reasoning as the idle
-  // timer, just triggered by a different real-world signal.
+  // Live-reported bug this fixes: "if the camera open or map open, or
+  // something is open from the app it is immediately locking the hub...
+  // not good." The previous version locked on 'inactive' too — but
+  // 'inactive' is iOS's transient state for MANY momentary interruptions
+  // that are NOT someone actually leaving the kiosk: opening the camera, a
+  // native image/document picker, a system permission dialog, or handing
+  // off to the native Maps app (exactly what KioskFindFamTab's own
+  // openDirections does). Same lesson the phone app's own biometric
+  // re-lock in app/_layout.tsx already learned — its own comment: "ignore
+  // 'inactive' (e.g. the bio prompt itself)." Only a genuine
+  // background->active round trip, held for a real stretch (same 30-
+  // minute threshold as the idle timer, not an instant bounce), locks the
+  // kiosk now — camera/map/picker/permission-dialog interruptions leave it
+  // exactly as it was.
+  const backgroundedAt = useRef<number | null>(null);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background' || state === 'inactive') lockNow();
+      if (state === 'background') {
+        if (backgroundedAt.current == null) backgroundedAt.current = Date.now();
+        return;
+      }
+      if (state !== 'active') return; // ignore 'inactive' entirely
+      const awayMs = backgroundedAt.current != null ? Date.now() - backgroundedAt.current : 0;
+      backgroundedAt.current = null;
+      if (awayMs >= BACKGROUND_LOCK_AFTER_MS) lockNow();
     });
     return () => sub.remove();
   }, [lockNow]);

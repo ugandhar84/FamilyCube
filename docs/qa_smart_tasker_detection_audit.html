@@ -1,0 +1,637 @@
+<title>Smart Task Composer — Detection Quality &amp; Create→Edit Audit</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --static:#6B5F52; --static-bg:#EFE9DE;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+      --static:#C9C0B2; --static-bg:#2C2A24;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    --static:#C9C0B2; --static-bg:#2C2A24;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1220px; margin:0 auto; padding:40px 24px 120px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:92ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:32px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.pass{background:var(--ok);} .dot.fail{background:var(--bug);} .dot.static{background:var(--static);} .dot.finding{background:var(--gap);}
+
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:92ch;}
+  p{margin:8px 0;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:9px 11px; text-align:left; vertical-align:top; font-size:12.5px;}
+  th{background:var(--surface-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.step{font-weight:700; background:var(--surface-2); white-space:nowrap; text-align:center;}
+  tr:nth-child(even) td:not(.step){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+  td code{display:inline-block; margin:1px 0;}
+  pre{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border-radius:8px; padding:12px 14px; overflow-x:auto; border:1px solid var(--border);}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; white-space:nowrap;}
+  .tag.pass{background:var(--ok-bg); color:var(--ok);}
+  .tag.fail{background:var(--bug-bg); color:var(--bug);}
+  .tag.static{background:var(--static-bg); color:var(--static);}
+  .tag.live{background:var(--accent-soft); color:var(--accent);}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.medium{border-left-color:var(--gap);}
+  .finding.low{border-left-color:var(--static);}
+  .finding h3{margin:0 0 6px; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  .sev{font-size:10px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px;}
+  .sev.critical{background:var(--bug-bg); color:var(--bug);}
+  .sev.high{background:var(--bug-bg); color:var(--bug);}
+  .sev.medium{background:var(--gap-bg); color:var(--gap);}
+  .sev.low{background:var(--static-bg); color:var(--static);}
+
+  .statbar{display:flex; gap:14px; flex-wrap:wrap; margin:18px 0 24px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:130px;}
+  .stat .n{font-size:26px; font-weight:800; line-height:1;}
+  .stat .l{font-size:11.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em; margin-top:4px;}
+  .stat.pass .n{color:var(--ok);}
+  .stat.fail .n{color:var(--bug);}
+  .stat.static .n{color:var(--static);}
+
+  .note{background:var(--surface-2); border-radius:8px; padding:10px 13px; font-size:12.5px; margin:8px 0; color:var(--text-2);}
+  .note b{color:var(--text);}
+  .limitation{background:var(--static-bg); border:1px dashed color-mix(in srgb, var(--static) 50%, transparent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-2); margin:10px 0 18px;}
+  .limitation b{color:var(--static);}
+  .sentence{background:var(--accent-soft); border-radius:8px; padding:10px 14px; font-size:13.5px; font-style:italic; color:var(--text); margin:8px 0 14px;}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Smart Task Composer — Detection Quality &amp; Create→Edit Audit</h1>
+  <p class="subtitle">
+    A third QA pass on FamilyCubeApp, scoped to the local "just describe it" quick-add parser
+    (<code>features/tasks/lib/localTaskDetection.ts</code>) and its composer UI
+    (<code>features/tasks/components/SmartTaskComposer.tsx</code>) — not the reassign/claim RPC territory
+    two other in-flight passes already cover. This follows a just-fixed bug (commit <code>64022f5f</code>):
+    typing a both-ways ride in one sentence silently dropped the second (return/pickup) time, with the only
+    manual fallback UI gated behind a location field that never populated for a named-venue phrasing. Every
+    extraction result below was produced by executing the REAL exported functions from
+    <code>localTaskDetection.ts</code> (copied verbatim, only its <code>@/lib/dates</code> import rewired to a
+    same-file shim of <code>localDateStr</code>) via <code>npx tsx</code> — not a reimplementation, not a
+    prediction from reading the regex.
+  </p>
+
+  <div class="warn">
+    <b>Method.</b> 7 realistic, deliberately-ambiguous sentences (one or more per category) run through the real
+    <code>detectLocalTask</code>/<code>extractDateTime</code>/<code>extractLocations</code>/<code>extractAmount</code>/
+    <code>extractDriver</code>/<code>extractPerson</code>/<code>extractMemberNames</code> exports, output captured
+    verbatim below. No live DB writes were needed for this pass — this is detection/UI-logic territory, not RPC
+    identity — so the <code>qa-scratch-family</code> harness wasn't used. The composer UI
+    (<code>SmartTaskComposer.tsx</code>) and full edit forms (<code>CategoryFields.tsx</code>,
+    <code>EventFormModal.tsx</code>'s <code>EditEventModal</code>, <code>EditQuestModal.tsx</code>) were read in full
+    to determine, for each dropped detail, whether ANY manual field exists anywhere in the app to add it back.
+  </div>
+
+  <div class="statbar">
+    <div class="stat fail"><div class="n">2</div><div class="l">High-severity gaps</div></div>
+    <div class="stat static"><div class="n">4</div><div class="l">Medium-severity gaps</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Low-severity gaps</div></div>
+    <div class="stat pass"><div class="n">7</div><div class="l">Scenarios traced live</div></div>
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#findings">Findings summary</a></li>
+      <li><a href="#s1">1 · Medical — two doctors, two dates</a></li>
+      <li><a href="#s2">2 · Sports — two recurring weekdays + equipment note</a></li>
+      <li><a href="#s3">3 · Study — two tutors, two days</a></li>
+      <li><a href="#s4">4 · Ride — third-party return leg</a></li>
+      <li><a href="#s5">5 · Birthday — RSVP deadline + "no gifts"</a></li>
+      <li><a href="#s6">6 · Errand — two items, one deadline</a></li>
+      <li><a href="#s7">7 · Other — amount among multiple numbers</a></li>
+      <li><a href="#roundtrip">Create→edit round-trip</a></li>
+      <li><a href="#limitations">Method notes</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot pass"></span>PASS — extracted correctly / fallback exists</span>
+    <span><span class="dot fail"></span>FAIL — silently dropped, no/weak fallback</span>
+    <span><span class="dot static"></span>Traced from real function output</span>
+    <span><span class="dot finding"></span>Notable, not a defect</span>
+  </div>
+
+  <section id="findings">
+    <h2>Findings summary</h2>
+    <p class="lede">7 hand-crafted sentences, one per requested category (Ride got the requested extra
+      third-party-return variant). Every one of them lost at least one real, correctly-stated detail. Two gaps
+      have literally no field anywhere in the app to recover the lost information (High); four have a workaround
+      only in the full form, undiscoverable from the quick composer (Medium); three have a working manual
+      fallback in the composer itself (Low).</p>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> A second doctor+date in the same sentence is completely and silently discarded — no field anywhere captures it</h3>
+      <p><b>Root cause.</b> <code>extractDateTime</code>'s date-word regexes (<code>day after tomorrow</code> /
+        <code>today</code> / <code>tomorrow</code> / <code>extractDayOfWeek</code>) each only ever match the FIRST
+        occurrence in the sentence — exactly the same "no <code>/g/</code> flag, first-match-wins" shape as the
+        just-fixed return-time bug, except here it's the DATE field, not a bolted-on second time field. For
+        "…next Tuesday at 3pm, then a follow-up with Dr. Chen the week after," <code>extractDayOfWeek</code>
+        resolves once to Tuesday (matched against "next Tuesday"), and there is no regex anywhere in the file that
+        recognizes "the week after" as a second, later, RELATIVE date — it isn't a weekday name, "tomorrow," or
+        "day after tomorrow," so it silently produces nothing. The second doctor name (<code>Dr. Chen</code>) is
+        never extracted at all — <code>localTaskDetection.ts</code> has no doctor/coach/tutor-name extraction
+        function of any kind; those fields exist purely as SmartTaskComposer <code>TextInput</code>s the user fills
+        by hand. Confirmed live: <code>detectLocalTask</code> on this sentence returns
+        <code>when: {date: "2026-09-15", time: "15:00"}</code> (only the first appointment) and a title truncated
+        to <code>"Emma has a dentist appointment with Dr. Patel"</code> — Dr. Chen's follow-up leaves zero trace in
+        any field. Because the composer is single-event-per-submission by design, there is genuinely no field
+        anywhere in the quick-add flow OR the full <code>EventFormModal</code> that can hold "a second, different
+        appointment" — a parent who dictates this exact common two-appointment sentence gets one correct event and
+        one silently vanished one, with no error, warning, or "wasn't totally clear" banner (confidence reads 95%,
+        the detector's own most-confident tier).</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:277-293 (extractDayOfWeek, single-match) —
+        features/tasks/lib/localTaskDetection.ts:313-343 (extractDateTime, no second-date support outside the
+        Ride-specific returnTime carve-out) — features/tasks/components/SmartTaskComposer.tsx (single addEvent()
+        call per submission, no multi-event support)</p>
+    </div>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> A second tutor+day+time pairing is silently dropped with the sentence still reading as high-confidence and error-free</h3>
+      <p><b>Root cause.</b> Same shape as the medical finding above, but worse: for
+        "Math tutoring with Ms. Rao on Mondays at 4, and Wednesdays with Mr. Lee at 4:30," the ENTIRE when block
+        comes back <code>{date: null, time: null}</code> — confirmed live. Neither "Mondays" nor "Wednesdays" match
+        <code>extractDayOfWeek</code>'s day-name regexes (they require the bare/near-bare weekday token; the
+        plural "Mondays" still matches the substring "monday" via <code>\bmonday\b</code>... but the recurrence
+        block (a SEPARATE code path, see Sports finding below) is what actually reads plural/weekday tokens for
+        <i>recurrence</i>, and <code>extractDayOfWeek</code> here is gated behind the non-recurring one-shot
+        date path, which this sentence never reaches because "weekly"/"every" isn't present, so recurrence stays
+        <code>'once'</code> AND the date fields stay null). "Ms. Rao" and "Mr. Lee" are both completely invisible
+        to the detector — there is no tutor-name extraction function, and the sentence never contains a known
+        family-member first name, so <code>extractMemberNames</code>/<code>extractPerson</code> also return nothing.
+        Confirmed: category correctly resolves to <code>school</code>/Study (82% confidence — a real "wasn't
+        totally clear" banner does NOT show, since that only fires at confidence 0), title reads
+        "Math tutoring with Ms. Rao on Mondays" (Mr. Lee's Wednesday session isn't even in the truncated title).
+        This is fundamentally NOT representable as a single event — two tutors, two days, two times, one subject —
+        and the app has no multi-occurrence-per-sentence handling anywhere; the second tutor/day/time is not
+        merely hard to reach, it never lands in the app's data model in any form, silently.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:277-293, 640-651 (recurrence day-token matching is a
+        separate code path from the one-shot date path, and this sentence satisfies neither cleanly) —
+        features/tasks/lib/localTaskDetection.ts (no extractTutorName/extractCoachName/extractDoctorName function
+        exists at all) — features/calendar/components/eventForm/CategoryFields.tsx:171-175 (Study's single
+        <code>tutorName</code> TextInput — one tutor per event, by construction)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> "bring cleats" (equipment note) has no field anywhere in the quick composer, only reachable via full-form Notes</h3>
+      <p><b>Root cause.</b> For "Soccer practice every Tuesday and Thursday at 5pm, coach is Mike, bring cleats" —
+        confirmed live, <code>recurrenceDays</code> correctly captured BOTH <code>[2, 4]</code> (Tuesday AND
+        Thursday; the day-token loop at line 648 iterates every matching token, not just the first, so this part
+        works correctly and is a genuine PASS, worth calling out since it's the opposite of the bug class this
+        audit is hunting). "Coach is Mike" is also silently dropped — <code>coachName</code> has no extraction
+        function; the composer's Coach field (line 948 of SmartTaskComposer.tsx) exists but starts empty and is
+        never auto-filled, so "Mike" never appears unless the parent manually re-types it into that field after
+        seeing the composer's Sports fields appear. "Bring cleats" has no representation anywhere in structured
+        fields — the composer's Notes section (<code>showNotes</code>/<code>notes</code>) is COLLAPSED by default
+        for local (non-AI) detection by explicit design (comment: "Local detection never invents this... stays
+        off/empty until the user opts in") and is never auto-populated or auto-opened, unlike the AI voice path
+        which does open Notes automatically from <code>requirements</code>. A parent who types this and taps Create
+        without noticing the collapsed "+ Add a note" affordance loses the equipment reminder entirely, silently.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts (no coachName/equipment extraction) —
+        features/tasks/components/SmartTaskComposer.tsx:1374-1379 (Notes stays collapsed, no auto-open for local
+        detection) — features/tasks/components/SmartTaskComposer.tsx:944-959 (Coach TextInput exists, starts
+        empty, is the fallback — reachable but requires the parent to notice and manually type)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> A third-party return leg ("grandma... bring him back") resolves to nothing — no driver, no return time, no location for the return</h3>
+      <p><b>Root cause.</b> For "Pick up Jack from school at 3:15 and drop at grandma's, she'll bring him back by
+        7" — confirmed live: <code>when: {date: null, time: null, returnTime: null}</code> (the bare "3:15"/"7"
+        have no am/pm suffix, and <code>extractDateTime</code>'s time regex REQUIRES an am/pm token —
+        <code>/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i</code> — so both clock times are silently dropped purely
+        because the parent didn't say "pm," a very natural omission when the context makes it obvious).
+        <code>locations.pickup</code> correctly resolves to <code>"School"</code> (a genuine PASS —
+        <code>PICKUP_CONTEXT_RE</code> correctly finds "from school"). <code>extractDriver</code> returns
+        <code>null</code> — it only recognizes an ADULT family member matched by first name against explicit
+        driver-phrasing regexes ("the driver should be X," "driven by X," "X should drive"); "grandma's" (a
+        location, not a name) and "she" (a pronoun) match neither pattern nor any member's first name, so the
+        entire third-party-return concept — a DIFFERENT person than whoever the ride is nominally "for" doing the
+        return leg — is invisible to the detector. Worse: this sentence's own composer flow assumes ONE driver
+        field (<code>helperId</code>) for the WHOLE ride, with no concept of "driver for the drop-off" vs. "driver
+        for the return" as distinct people — even manually, a parent cannot record "Grandma does the return leg"
+        anywhere in the Ride category's fields (pickupLocation/dropLocation/returnTime/helperId is one undifferentiated
+        driver for the entire round trip). The closest workaround is typing "Grandma" into the free-text Drop-off
+        location field or the collapsed Notes box, neither of which is a real driver assignment.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:335 (time regex requires am/pm, no bare-hour
+        fallback) — features/tasks/lib/localTaskDetection.ts:412-427 (extractDriver, single first-name/adult-only
+        match, no third-party/pronoun handling) — features/calendar/components/eventForm/CategoryFields.tsx:280-336
+        (Ride fields: one driverId for the whole round trip, no separate return-leg driver anywhere, quick composer
+        or full form)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> RSVP deadline and "no gifts please" both vanish — RSVP has no field anywhere in the app; "no gifts" only reachable via collapsed Notes</h3>
+      <p><b>Root cause.</b> For "Mia's birthday party Saturday 2-4pm at Chuck E Cheese, RSVP by Wednesday, no gifts
+        please" — confirmed live: category correctly resolves Birthday (95% confidence), date/time correctly
+        resolve to Saturday 4pm (the SECOND clock time in "2-4pm" wins, since the time regex isn't anchored to the
+        first number in a range — worth noting as accidentally-correct behavior, not a deliberate range parser: a
+        sentence like "9-10am" would keep the LAST match too, which is usually but not always the desired one).
+        <code>locations</code> comes back <code>null/null</code> — "Chuck E Cheese" is never captured anywhere;
+        Birthday's only location field in CategoryFields.tsx is <code>generalLocation</code>, which the composer
+        does expose (line 970, "Location (optional)") — so this one has a real fallback, just requires the parent
+        to notice the venue was dropped from the auto-detected fields and manually retype it. "RSVP by Wednesday"
+        has literally NO representation in the data model — there is no rsvpDeadline/rsvpBy field on
+        <code>FamilyEvent</code> anywhere in the app referenced by either CategoryFields.tsx or EventFormModal.tsx;
+        a parent's only options are burying it in free-text Notes (collapsed by default, see the Sports finding
+        above) or the event title itself. "No gifts please" has the same fate — no dedicated field, Notes-only,
+        Notes collapsed by default.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:391-405 (extractLocations has no venue-name pattern,
+        only from/to and drop-off-verb patterns — a bare "at Chuck E Cheese" with no preceding ride verb matches
+        nothing) — features/calendar/components/eventForm/CategoryFields.tsx:422-460 (Birthday fields: location +
+        return-pickup only, no RSVP field exists anywhere in the schema) —
+        features/tasks/components/SmartTaskComposer.tsx:1374-1379 (Notes collapsed by default, the only place "no
+        gifts" could land)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> Two distinct errands in one sentence get merged into a single miscategorized chore titled with both tasks run together</h3>
+      <p><b>Root cause.</b> For "Pick up dry cleaning and drop off library books, need to do both before 5pm
+        today" — confirmed live: category resolves to <b>Laundry</b> (95% confidence, <code>questCategory: 'Laundry'</code>),
+        not Errand — "dry cleaning" is a Laundry keyword (2-word phrase match, weight 6) and beats "library" (an
+        Errand keyword, single word, lower weight), so the SECOND errand (library books) doesn't just fail to get
+        its own task — it actively mis-steers the category of the ONE task that does get created. The title is
+        truncated to "Pick up dry cleaning and drop off library books, need to do both be…" (the cutoff regex only
+        strips trailing date/time/urgency tokens, not the mid-sentence "and" splitting two independent tasks), so
+        the library errand is technically still visible as text inside the title, but nowhere as a structured,
+        separately trackable/completable task. The app has zero multi-item/multi-task detection anywhere in
+        <code>detectLocalTask</code> — it is fundamentally a single-category, single-title, single-date-time
+        function with no sentence-splitting logic. A parent who dictates two real errands in one breath — a very
+        natural way to talk — gets one chore, wrongly categorized, with a run-on title, and the app gives no
+        signal ("wasn't totally clear") that anything was collapsed since confidence reads 95%, its most confident
+        tier.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:566-669 (detectLocalTask: single title, single
+        category, single when — no sentence-splitting or multi-task output type exists) —
+        features/tasks/lib/localTaskDetection.ts:80-85 vs 104-108 (errand vs. laundry keyword weight collision:
+        "dry cleaning" is filed under laundry's kw list, not errand's, so an errand sentence that happens to
+        mention dry cleaning is silently re-categorized)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> extractAmount correctly isolates $45 from a sentence with two other bare numbers, but the title still gets truncated mid-sentence</h3>
+      <p><b>Root cause.</b> For "Pay the babysitter $45 for Friday night, she watches the kids from 6 to 11" —
+        confirmed live: <code>extractAmount</code> correctly returns exactly <code>45</code> — the
+        <code>$</code>-anchored regex (<code>/\$\s?(\d+(?:\.\d{1,2})?)/</code>) can't accidentally match the bare
+        "6" or "11" since neither has a dollar sign or "dollars/bucks" suffix; this is a genuine PASS, and the
+        amount correctly lands in the composer's Coins field (repurposed for a payment amount here, same shared
+        <code>coinsStr</code> field). The more interesting silent-drop is elsewhere: <code>extractLocations</code>'s
+        bare "from X to Y" pattern (line 393, with NO required ride-context verb before it, unlike the guarded
+        "from" fallback documented in that file's own comment) spuriously matches "from 6 to 11" and sets
+        <code>locations.pickup = "6"</code>, <code>locations.dropoff = "11"</code> — confirmed live. This is
+        harmless in THIS case only because category resolves to <code>general_task</code> (confidence 0, no
+        keywords hit), so the Ride-only pickup/dropoff UI never renders and these garbage values are invisible —
+        but it demonstrates the exact "from X to Y" pattern the file's own PICKUP_CONTEXT_RE comment says was
+        already tightened once for a near-identical false-positive ("I'm in the living room" matching an unrelated
+        "from"). The unconditional <code>from X to Y</code> regex at line 393 was never given the same scoping.
+        Also silently dropped: "she watches the kids from 6 to 11" (the actual work-hours context) has no field
+        anywhere — Notes-only, collapsed by default, same as prior findings.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:471-476 (extractAmount, correct) —
+        features/tasks/lib/localTaskDetection.ts:391-397 (unconditional bare "from X to Y" match, unlike the
+        scoped PICKUP_CONTEXT_RE right below it) — currently non-exploitable in the UI only because general_task
+        never renders Ride fields, same fragility pattern as the reassign audit's Finding #1 (a latent bad value
+        that happens to be gated off today by an unrelated check)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> Sports' two-weekday recurrence detection is a genuine PASS — flagged here only to document it against the audit's premise</h3>
+      <p>Included for completeness per the audit's Scenario 2 ask: <code>recurrenceDays</code> correctly returns
+        <code>[2, 4]</code> (Tuesday + Thursday) for "every Tuesday and Thursday at 5pm" — the day-token
+        <code>forEach</code> loop at line 648 tests every token in <code>DAY_TOKEN_MAP</code> against the input
+        independently and pushes every match, so this is NOT subject to the same "first-match-only" bug class as
+        <code>extractDayOfWeek</code>/the pre-fix time regex. No manual-fallback question applies since nothing was
+        dropped.</p>
+      <p class="path">features/tasks/lib/localTaskDetection.ts:640-651</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> A second-appointment-shaped "week after" date phrase has a full-form fallback via "Adjust in full form," but only if the parent notices something is missing</h3>
+      <p>The Medical scenario's dropped second date/doctor (Finding #1 above) technically has a reachable path:
+        SmartTaskComposer's "Adjust in full form" handoff (line 1414) opens <code>onOpenFullForm('event', ...)</code>,
+        and a parent could then manually create a SECOND, separate event for Dr. Chen's follow-up from scratch.
+        This is real but weak — nothing in the UI signals that a second appointment was mentioned and dropped, so
+        this "fallback" only helps a parent who already suspects something is missing and manually re-reads their
+        own sentence against the single event that got created. Downgraded from the Medium this might otherwise
+        earn only because the underlying single-event-per-creation design is an explicit, defensible product
+        constraint, not an oversight — the bug is the total silence, not the architecture.</p>
+      <p class="path">features/tasks/components/SmartTaskComposer.tsx:1414-1427 (Adjust in full form handoff)</p>
+    </div>
+  </section>
+
+  <section id="s1">
+    <h2>1 · Medical — two doctors, two dates <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Emma has a dentist appointment with Dr. Patel next Tuesday at 3pm, then a follow-up with Dr. Chen the week after"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>medical</code> / Medical, confidence 95</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>title</code></td><td>"Emma has a dentist appointment with Dr. Patel"</td><td>Dr. Chen's follow-up entirely absent from title</td><td>None — title truncation has no undo, only manual retype</td><td><span class="tag fail">FAIL</span></td></tr>
+      <tr><td><code>when.date/time</code></td><td><code>{"2026-09-15","15:00"}</code> — Tuesday 3pm only</td><td>"the week after" (2nd appointment date) — <b>completely dropped, no field anywhere</b></td><td>None in composer or full EventFormModal — a second appointment needs a wholly separate manual event creation</td><td><span class="tag fail">FAIL — High</span></td></tr>
+      <tr><td>Doctor name(s)</td><td>none extracted (no such function exists)</td><td>Both "Dr. Patel" and "Dr. Chen" — neither ever auto-fills the Doctor field</td><td>features/tasks/components/SmartTaskComposer.tsx:930-933 — Doctor TextInput exists, starts empty, one doctor per event only</td><td><span class="tag fail">FAIL — one doctor recoverable by hand, the second has no home at all</span></td></tr>
+      <tr><td><code>memberNames</code></td><td><code>["Emma"]</code></td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "medical", "label": "Medical", "eventCategory": "Medical" },
+  "confidence": 95,
+  "title": "Emma has a dentist appointment with Dr. Patel",
+  "when": { "date": "2026-09-15", "time": "15:00", "returnTime": null },
+  "locations": { "pickup": null, "dropoff": null },
+  "memberNames": ["Emma"],
+  "amount": null, "recurrence": "once", "recurrenceDays": [],
+  "urgent": false, "driverName": null, "driverId": null, "alertCall": false
+}</pre>
+  </section>
+
+  <section id="s2">
+    <h2>2 · Sports — two recurring weekdays + equipment note <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Soccer practice every Tuesday and Thursday at 5pm, coach is Mike, bring cleats"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>sports</code> / Sports, confidence 95</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>recurrence/recurrenceDays</code></td><td><code>"weekly"</code>, <code>[2, 4]</code> (Tue + Thu, BOTH days)</td><td>No — this is the one place multi-day recurrence works correctly</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td>Coach name</td><td>none extracted (no coach-name function exists)</td><td>"coach is Mike" — silently dropped from detection</td><td>features/tasks/components/SmartTaskComposer.tsx:947-950 — Coach TextInput exists, starts empty</td><td><span class="tag fail">FAIL — Medium (fallback exists but is full-form-adjacent, not auto-filled)</span></td></tr>
+      <tr><td>Equipment note ("bring cleats")</td><td>none — no structured field for this concept anywhere</td><td>Yes, entirely</td><td>Notes section exists but is COLLAPSED by default for local detection (SmartTaskComposer.tsx:1374-1379) — never auto-opened/auto-filled</td><td><span class="tag fail">FAIL — Medium</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "sports", "eventCategory": "Sports" },
+  "confidence": 95,
+  "title": "Soccer practice",
+  "when": { "date": "2026-09-08", "time": "17:00", "returnTime": null },
+  "recurrence": "weekly", "recurrenceDays": [2, 4],
+  "memberNames": [], "amount": null, "urgent": false,
+  "driverName": null, "driverId": null, "alertCall": false
+}</pre>
+  </section>
+
+  <section id="s3">
+    <h2>3 · Study — two tutors, two days <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Math tutoring with Ms. Rao on Mondays at 4, and Wednesdays with Mr. Lee at 4:30"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>school</code> / Study, confidence 82</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>when.date/time</code></td><td><code>{null, null}</code> — nothing at all</td><td>Both Monday-4pm-Rao AND Wednesday-4:30-Lee — the entire when block is empty</td><td>Composer's "When" section (line 1291) only renders <code>if (whenDate || detected.when.date || detected.when.time)</code> — since all three are falsy, <b>the When field never even appears</b> in the quick composer for this sentence</td><td><span class="tag fail">FAIL — High (no when field renders at all, not just wrong data)</span></td></tr>
+      <tr><td>Tutor names</td><td>none extracted</td><td>Both "Ms. Rao" and "Mr. Lee" — neither reaches the Tutor field</td><td>features/tasks/components/SmartTaskComposer.tsx:963-967 — one Tutor TextInput, one name only, no second slot</td><td><span class="tag fail">FAIL — one tutor recoverable, the second structurally cannot fit anywhere, even the full form (Study has one tutorName field, CategoryFields.tsx:171)</span></td></tr>
+      <tr><td><code>title</code></td><td>"Math tutoring with Ms. Rao on Mondays"</td><td>Mr. Lee's Wednesday session entirely absent</td><td>None</td><td><span class="tag fail">FAIL</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "school", "eventCategory": "Study" },
+  "confidence": 82,
+  "title": "Math tutoring with Ms. Rao on Mondays",
+  "when": { "date": null, "time": null, "returnTime": null },
+  "memberNames": [], "amount": null, "recurrence": "once", "recurrenceDays": [],
+  "urgent": false, "driverName": null, "driverId": null, "alertCall": false
+}</pre>
+    <p class="note">This is genuinely un-representable as one event by design — two tutors × two days × two times
+      for one subject needs two separate calendar events. The real bug is not that the app can't model it (that's
+      a reasonable data-model boundary) — it's that the composer creates ONE partial, confidently-labeled event
+      (82%, no warning banner) and gives zero signal that a second tutoring session was ever mentioned.</p>
+  </section>
+
+  <section id="s4">
+    <h2>4 · Ride — third-party return leg <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Pick up Jack from school at 3:15 and drop at grandma's, she'll bring him back by 7"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>ride</code> / Ride, confidence 95</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>locations.pickup</code></td><td><code>"School"</code></td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>locations.dropoff</code></td><td><code>null</code></td><td>"grandma's" not recognized as a drop-off destination (no preceding drop-off verb the regex requires)</td><td>Drop-off TextInput exists (SmartTaskComposer.tsx:862-875), empty, user can type "Grandma's"</td><td><span class="tag fail">FAIL — Low, real fallback exists</span></td></tr>
+      <tr><td><code>when.time / returnTime</code></td><td>both <code>null</code></td><td>Both "3:15" and "7" dropped — bare hour with no am/pm suffix never matches the time regex at all</td><td>Return-time picker now unconditional post-fix (showReturnTime is reachable), but detection contributes nothing to seed it — must be entered fully by hand</td><td><span class="tag fail">FAIL — Medium</span></td></tr>
+      <tr><td>Return-leg driver ("she"/grandma)</td><td><code>extractDriver</code> → <code>null</code></td><td>Yes — no concept of a DIFFERENT driver for the return leg exists in the extraction OR the schema</td><td>None — Ride's <code>helperId</code>/driver field is singular for the whole round trip in both SmartTaskComposer and CategoryFields.tsx; no per-leg driver field exists anywhere</td><td><span class="tag fail">FAIL — Medium (full-form doesn't have it either — this is a genuine schema gap, not just a UI gap)</span></td></tr>
+      <tr><td><code>memberNames</code></td><td><code>["Jack", "Grandma"]</code></td><td>Grandma gets pulled in as a second ASSIGNEE ("for"), not as the driver — likely wrong: she's doing the driving, not being driven</td><td>"For" chips are manually editable — a parent can untick Grandma</td><td><span class="tag fail">FAIL — Low, silent misclassification with an easy manual fix once noticed</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (verbatim):</b></p>
+    <pre>extractDateTime("...at 3:15 and...back by 7") => {"date":null,"time":null,"returnTime":null}
+extractLocations(...) => {"pickup":"School","dropoff":null}
+extractDriver(...) => null
+extractPerson(...) => "Jack"
+extractMemberNames(...) => ["Jack","Grandma"]
+
+// with explicit am/pm, times DO resolve correctly (confirms the am/pm requirement is the actual blocker):
+extractDateTime("...at 3:15pm and...back by 7pm") => {"date":null,"time":"15:15","returnTime":null}</pre>
+  </section>
+
+  <section id="s5">
+    <h2>5 · Birthday — RSVP deadline + "no gifts" <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Mia's birthday party Saturday 2-4pm at Chuck E Cheese, RSVP by Wednesday, no gifts please"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>birthday</code> / Birthday, confidence 95</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>when.date/time</code></td><td><code>{"2026-09-09","16:00"}</code> — Saturday 4pm (2nd number in the range wins, incidentally correct here)</td><td>The 2pm START of the party window is lost — only the end time survives</td><td>The "When" time picker can be manually adjusted, but a parent who doesn't independently notice 2pm vs 4pm won't think to check</td><td><span class="tag fail">FAIL — Low</span></td></tr>
+      <tr><td>Venue ("Chuck E Cheese")</td><td>none extracted</td><td>Yes</td><td>Location field IS exposed for Birthday (SmartTaskComposer.tsx:970-977, generalLocation) — real, working fallback</td><td><span class="tag fail">FAIL — Low, fallback exists and is easy to find</span></td></tr>
+      <tr><td>RSVP deadline</td><td>none — no such field exists anywhere</td><td>Yes, completely</td><td><b>None anywhere in the app</b> — no rsvpDeadline/rsvpBy column referenced by CategoryFields.tsx or EventFormModal.tsx for any category</td><td><span class="tag fail">FAIL — Medium (Notes-only, and Notes is collapsed by default)</span></td></tr>
+      <tr><td>"No gifts please"</td><td>none extracted</td><td>Yes, completely</td><td>Notes only, collapsed by default (SmartTaskComposer.tsx:1374-1379)</td><td><span class="tag fail">FAIL — Medium</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "birthday", "eventCategory": "Birthday" },
+  "confidence": 95,
+  "title": "Mia's birthday party",
+  "when": { "date": "2026-09-09", "time": "16:00", "returnTime": null },
+  "locations": { "pickup": null, "dropoff": null },
+  "memberNames": ["Mia"], "amount": null, "recurrence": "once", "recurrenceDays": []
+}</pre>
+  </section>
+
+  <section id="s6">
+    <h2>6 · Errand — two items, one shared deadline <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Pick up dry cleaning and drop off library books, need to do both before 5pm today"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>category</code></td><td><code>laundry</code> / Laundry, confidence 95 — <b>NOT Errand</b></td><td>Wrong category entirely — "dry cleaning" is filed under Laundry's keyword list, outscores Errand's "library" keyword</td><td>Category chips are manually re-selectable, but a parent must notice the mismatch first</td><td><span class="tag fail">FAIL — Medium</span></td></tr>
+      <tr><td><code>kindOverride</code></td><td><code>"quest"</code> (correct — "need to do" triggers QUEST_VERB_RE)</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>title</code></td><td>"Pick up dry cleaning and drop off library books, need to do both be…" (truncated at 70 chars)</td><td>Both tasks are jammed into one title string, not split</td><td>None — no multi-task detection exists anywhere in <code>detectLocalTask</code></td><td><span class="tag fail">FAIL — Medium</span></td></tr>
+      <tr><td><code>when.date/time</code></td><td><code>{"2026-09-04","17:00"}</code> — "today"/"5pm" correctly resolved</td><td>No (this part is fine — shared deadline applies to the single merged task)</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "laundry", "questCategory": "Laundry" },
+  "confidence": 95,
+  "title": "Pick up dry cleaning and drop off library books, need to do both be…",
+  "when": { "date": "2026-09-04", "time": "17:00", "returnTime": null },
+  "kindOverride": "quest",
+  "memberNames": [], "amount": null, "recurrence": "once", "recurrenceDays": []
+}</pre>
+    <p class="note">No multi-item handling exists anywhere in the app — this silently becomes one confused,
+      wrong-category chore with a run-on title rather than two separate, correctly-categorized errands.</p>
+  </section>
+
+  <section id="s7">
+    <h2>7 · Other/general_task — amount among multiple numbers <span class="tag static">TRACED — REAL CODE</span></h2>
+    <div class="sentence">"Pay the babysitter $45 for Friday night, she watches the kids from 6 to 11"</div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Field</th><th>Extracted</th><th>Dropped?</th><th>Manual fallback</th><th>Verdict</th></tr>
+      <tr><td><code>amount</code></td><td><code>45</code> — correctly isolated from the bare 6 and 11</td><td>No</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>category</code></td><td><code>general_task</code>, confidence 0 ("wasn't totally clear" banner DOES show here)</td><td>No — correctly low-confidence</td><td>—</td><td><span class="tag pass">PASS</span></td></tr>
+      <tr><td><code>locations</code></td><td><code>{"pickup":"6","dropoff":"11"}</code> — garbage, from an unguarded "from X to Y" match against "from 6 to 11"</td><td>Not user-visible today only because general_task never renders Ride fields — latent, not exploited</td><td>N/A — not surfaced in UI for this category</td><td><span class="tag fail">FAIL — Low (dormant bug, same fragility class as reassign audit's Finding #1)</span></td></tr>
+      <tr><td>Work-hours context ("6 to 11")</td><td>none structured</td><td>Yes</td><td>Notes only, collapsed by default</td><td><span class="tag fail">FAIL — Low</span></td></tr>
+      <tr><td><code>memberNames</code></td><td><code>["Emma","Jack","Mia"]</code> (test fixture's 3 kids — "kids" keyword matched)</td><td>No — arguably correct behavior (bare "kids" broadly matches per design) though not who this task is actually "for"</td><td>"For" chips manually editable</td><td><span class="tag pass">PASS (by design, flagged as worth a second look)</span></td></tr>
+    </table>
+    </div>
+    <p class="note"><b>Real output (detectLocalTask, verbatim):</b></p>
+    <pre>{
+  "category": { "key": "general_task", "questCategory": "Other" },
+  "confidence": 0,
+  "title": "Pay the babysitter $45 for",
+  "when": { "date": "2026-09-04", "time": null, "returnTime": null },
+  "locations": { "pickup": "6", "dropoff": "11" },
+  "memberNames": ["Emma", "Jack", "Mia"],
+  "amount": 45
+}</pre>
+  </section>
+
+  <section id="roundtrip">
+    <h2>Create→edit round-trip <span class="tag static">CODE-READ, NOT LIVE DB</span></h2>
+    <p class="lede">Read <code>features/calendar/EventFormModal.tsx</code>'s <code>EditEventModal</code> export and
+      <code>features/quests/components/EditQuestModal.tsx</code> in full to check: does every field the composer
+      actually saved get correctly re-loaded into the edit form, and does saving an unrelated field silently wipe
+      one that wasn't touched?</p>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> Doctor / Coach / Tutor / Clinic / Venue / Subject / Appointment-type / Sport-type are permanently un-editable after creation — EditEventModal never renders CategoryFields at all</h3>
+      <p><b>Root cause.</b> <code>EditEventModal</code> (features/calendar/EventFormModal.tsx, from line 1512) has
+        NO <code>useState</code> for <code>doctorName</code>, <code>coachName</code>, <code>tutorName</code>,
+        <code>clinicLocation</code>, <code>venueLocation</code>, <code>subject</code>, <code>apptType</code>, or
+        <code>sportType</code> anywhere in its body, and never imports/renders <code>CategoryFields</code> — grepped
+        for confirmation, zero matches for <code>&lt;CategoryFields</code> in the entire Edit modal. The only trace
+        of these fields in the edit form is three READ-ONLY <code>&lt;Text&gt;</code> displays
+        (<code>event.doctorName</code> at line 2089, <code>event.subject</code>/<code>event.coachName</code> just
+        after) — a parent can SEE "🩺 Dr. Patel" on an existing Medical event but has no TextInput, no picker, no
+        way to correct a typo or change doctors once the event exists. This means a doctor/coach/tutor set once
+        (via the composer or the full create-time <code>AddEventModal</code>) is locked forever — the only recovery
+        is deleting and recreating the whole event. The GP/Teen-Welcome ride toggles got exactly this same
+        create-vs-edit gap fixed already (see the code comment at EventFormModal.tsx:2424-2431, explicitly
+        documenting "previously excluded... a parent could open a ride to the GP/teen pool at creation but never
+        change it afterward") — doctor/coach/tutor/clinic/venue/subject never received the equivalent fix.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:1512-2600ish (EditEventModal body — no
+        doctorName/coachName/tutorName/clinicLocation/venueLocation/subject state, no CategoryFields import) —
+        features/calendar/EventFormModal.tsx:2089-2101 (read-only display of the same fields) —
+        features/calendar/EventFormModal.tsx:2424-2431 (the GP/Teen-Welcome comment documenting the identical class
+        of gap being fixed for a DIFFERENT field, confirming the team is aware of this pattern in general)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> EditQuestModal correctly round-trips every chore field it owns — no silent-wipe pattern found</h3>
+      <p>By contrast, <code>EditQuestModal.tsx</code> seeds every piece of editable state directly from the real
+        <code>quest.X</code> object (title, description, coins, bonusCoins, isPool, photoRequired, isAdultTask,
+        inviteGrandparents, alertCall/alertCallLeadMinutes — confirmed at lines 57-93), and its <code>save()</code>
+        (line 131) builds an explicit <code>patch</code> object per branch (locked vs. unlocked) that always
+        re-sends every field it owns rather than a sparse diff — so an edit to one field cannot silently omit
+        (and thus null out) an untouched one. The one deliberate exception is documented explicitly in the code:
+        "locked" chores intentionally withhold dueDate/description from the patch once claimed/in-progress, "per
+        explicit product decision," not as an oversight. No quest-side equivalent of the Medical/Sports/Study
+        edit-blackout above was found.</p>
+      <p class="path">features/quests/components/EditQuestModal.tsx:57-93 (state seeded from quest.X directly) —
+        features/quests/components/EditQuestModal.tsx:131-210 (save() patch construction, both branches)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> Ride's helper/driver seeding on edit correctly falls back across both field pairs — a previously-fixed bug, re-verified by code read only</h3>
+      <p><code>EditEventModal</code>'s <code>helperId</code>/<code>helperName</code> seeding (lines 1625-1636) has
+        an explicit, well-commented fallback chain: prefers <code>event.helper</code>/<code>event.helperId</code>,
+        falls back to <code>event.driverName</code>/<code>event.driverId</code> for Ride specifically — the code
+        comment documents this was itself a live-reported fix ("this ride already assigned to Praveena but in the
+        edit it is not showing the preselected picker"). Re-verified by reading, not re-exercised live in this
+        pass (that RPC-facing territory belongs to the other in-flight reassign/claim QA pass per this audit's own
+        scope boundary) — cited here only to confirm it is NOT a regression of the same shape as the doctor/coach/
+        tutor finding above.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:1604-1636</p>
+    </div>
+  </section>
+
+  <section id="limitations">
+    <h2>Method notes</h2>
+    <ul>
+      <li>Every extraction result in Sections 1-7 came from executing the actual
+        <code>features/tasks/lib/localTaskDetection.ts</code> file (copied byte-for-byte, only its
+        <code>@/lib/dates</code> import redirected to a same-directory shim reproducing <code>localDateStr</code>
+        verbatim from <code>lib/dates.ts</code>) via <code>npx tsx</code> against a small fixture family (Emma,
+        Jack, Mia — kids; Priya — parent; Grandma — senior). This is the real code path SmartTaskComposer runs on
+        every keystroke, not a reimplementation or a reading of the regex.</li>
+      <li>Dates resolve relative to the actual run date (2026-09-04); "next Tuesday" → 2026-09-15,
+        "today" → 2026-09-04, etc. — real output, not fabricated.</li>
+      <li>No live Supabase writes were made in this pass — the <code>qa-scratch-family</code> harness was read for
+        context but not invoked, since this audit is about client-side detection/UI logic, not RPC-layer identity
+        or DB persistence, matching the scope this pass was explicitly asked to stay within.</li>
+      <li>EditEventModal/EditQuestModal round-trip conclusions are from a full read of both files' state
+        initialization and save/patch logic, not a live create-then-reopen exercise — flagged distinctly from the
+        live-executed Sections 1-7 above.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Detection results reflect real execution of <code>features/tasks/lib/localTaskDetection.ts</code>'s actual
+    exported functions via <code>npx tsx</code> — not inferred from reading the regex, not reimplemented. No
+    application source code was modified. No other QA pass's scratch family or report file was touched.
+    <div class="backtotop"><a href="#top">&uarr; back to top</a></div>
+  </footer>
+</div>

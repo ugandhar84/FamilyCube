@@ -3769,8 +3769,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // lost race or authorization failure.
     const { error } = await supabase.rpc('request_redo', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason });
     if (error) {
+      // Live-reported: this failed with a generic "couldn't save" and no
+      // visible reason — request_redo's own raise exception messages are
+      // specific (wrong caller, wrong family, not authorized, already had
+      // 2 redo rounds, not pending_approval) but were only ever logged to
+      // the console, never surfaced. Temporary: show the real server
+      // message in the toast itself so a live failure is diagnosable
+      // without needing a Metro console open.
       console.warn(`[choreStore] requestRedo RPC rejected ${choreId}:`, error.message);
-      showToast("Couldn't save — please try again", 'error');
+      showToast(`Couldn't save: ${error.message}`, 'error');
       return;
     }
     set(s => ({

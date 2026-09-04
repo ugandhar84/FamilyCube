@@ -80,7 +80,7 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
               photoRequired: false,
               isDaily: false,
             });
-            Alert.alert('↩️ Quest Created', `${m.name} will return ${item.name}`);
+            Alert.alert('↩️ Chore Created', `${m.name} will return ${item.name}`);
           },
         })),
         { text: 'Cancel', style: 'cancel' },

@@ -978,21 +978,21 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     case 'grandparent_quest_routed':
       return {
-        title: '✅ Your Quest Was Approved',
+        title: '✅ Your Chore Was Approved',
         body: `A parent approved "${p.questTitle}" — it's ${p.routedToPool ? 'in the bounty pool now' : 'assigned and ready'}.`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'grandparent_quest_declined_by_parent':
       return {
-        title: '❌ Quest Declined',
+        title: '❌ Chore Declined',
         body: `A parent declined "${p.questTitle}"${p.reason ? `: ${p.reason}` : ''}`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'grandparent_quest_needs_review':
       return {
-        title: '🙋 Grandparent Quest Needs Review',
+        title: '🙋 Grandparent Chore Needs Review',
         body: `${p.gpName ?? 'A grandparent'} posted "${p.questTitle}" — review and approve or decline.`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },

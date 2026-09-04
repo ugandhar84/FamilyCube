@@ -168,7 +168,7 @@ export function KidQuestCard({
       )}
       {q.rewardPendingReview && (
         <Text style={{ fontSize: KID.body, color: BRAND.amber }}>
-          Your requested reward ({q.coins} 🪙) needs a parent's OK since it's above the household limit — go ahead and start the quest, the reward will be confirmed separately.
+          Your requested reward ({q.coins} 🪙) needs a parent's OK since it's above the household limit — go ahead and start the chore, the reward will be confirmed separately.
         </Text>
       )}
       {isDeclined && q.declineReason && (
@@ -249,7 +249,7 @@ export function KidQuestCard({
                 style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
                 <Zap size={15} color="#fff" fill="#ffffff30" />
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Chore</Text>
               </Pressable>
               {canDeclinePlain && (
                 <Pressable onPress={() => { onDeclineGpQuest(q); }}

@@ -35,7 +35,7 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
   };
 
   const confirmDelete = () => {
-    Alert.alert('Delete this quest?', `"${quest.title}" will be permanently removed.`, [
+    Alert.alert('Delete this chore?', `"${quest.title}" will be permanently removed.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => { deleteChore(quest.id); showToast('Chore deleted'); onClose(); } },
     ]);
@@ -46,7 +46,7 @@ export function KioskQuestEditor({ quest, onClose, members, colors, isDark }: {
       <View style={s.overlay}>
         <View style={[s.card, { backgroundColor: colors.card }]}>
           <View style={s.header}>
-            <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Edit Quest</Text>
+            <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Edit Chore</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={22} color={colors.textSecondary} /></Pressable>
           </View>
 

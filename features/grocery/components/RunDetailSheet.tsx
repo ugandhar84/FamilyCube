@@ -321,7 +321,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     setReturnIds(new Set());
     setShowReturnPicker(false);
     Alert.alert(
-      '↩️ Return Quest Created',
+      '↩️ Return Chore Created',
       `"Return items to ${run?.store}" added to ${assignee?.name ?? 'their'} To-Do list.\n\nItems:\n${itemList}`,
       [{ text: 'OK' }]
     );

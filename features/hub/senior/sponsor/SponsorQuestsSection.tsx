@@ -108,9 +108,9 @@ export function SponsorQuestsSection({
         {totalSponsored === 0 && (
           <View style={{ alignItems: 'center', paddingVertical: 18, gap: 8 }}>
             <Text style={{ fontSize: 32 }}>🌟</Text>
-            <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>Sponsor a Connection Quest</Text>
+            <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>Sponsor a Connection Chore</Text>
             <Text style={{ fontSize: GP.sub, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
-              Create in-person or virtual quests — cook together, tell family stories, quiz them before exams.
+              Create in-person or virtual chores — cook together, tell family stories, quiz them before exams.
             </Text>
           </View>
         )}

@@ -42,7 +42,7 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
         flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         {c.questMode === 'virtual' ? <Laptop size={15} color="#fff" /> : <Leaf size={15} color="#fff" />}
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
-          {c.questMode === 'virtual' ? 'Virtual' : 'In-Person'} Quest · {pts} pts
+          {c.questMode === 'virtual' ? 'Virtual' : 'In-Person'} Chore · {pts} pts
         </Text>
         <Text style={{ fontSize: TYPO.micro, color: '#fff', opacity: 0.8 }}>
           from {sponsor?.name.split(' ')[0] ?? 'Grandparent'}{linkedParent ? ` (${linkedParent.name.split(' ')[0]}'s parent)` : ''}
@@ -755,7 +755,7 @@ export function ChoreReviewSection({
                   <Coins size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
                     textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                    Teen Quests — High-Value Reward Review
+                    Teen Chores — High-Value Reward Review
                   </Text>
                 </View>
                 {teenRewardPending.map(c => (
@@ -837,7 +837,7 @@ export function ChoreReviewSection({
                   <HeartHandshake size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
                     textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                    Grandparent Quests — Safety Review
+                    Grandparent Chores — Safety Review
                   </Text>
                 </View>
                 {gpPending.map(c => (
@@ -857,7 +857,7 @@ export function ChoreReviewSection({
                   <HandCoins size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
                     textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                    Grandparent Quests — Turned Down
+                    Grandparent Chores — Turned Down
                   </Text>
                 </View>
                 {gpDeclined.map(c => (
@@ -875,7 +875,7 @@ export function ChoreReviewSection({
                   <Camera size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
                     textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                    Grandparent Quests — Awaiting Grandparent Review
+                    Grandparent Chores — Awaiting Grandparent Review
                   </Text>
                 </View>
                 {gpAwaitingSponsor.map(c => (

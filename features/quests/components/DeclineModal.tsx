@@ -29,7 +29,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
       <View style={dm.backdrop}>
         <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '90%' }]}>
           <View style={[dm.handle, { backgroundColor: colors.border }]} />
-          <Text style={[dm.title, { color: colors.textPrimary }]}>Decline Quest</Text>
+          <Text style={[dm.title, { color: colors.textPrimary }]}>Decline Chore</Text>
           <Text style={[dm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{questTitle}"</Text>
 
           <Text style={[dm.label, { color: colors.textSecondary }]}>Select a reason:</Text>
@@ -63,7 +63,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
               onPress={() => finalReason && onConfirm(finalReason)}
               disabled={!finalReason}
             >
-              <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.caption }}>Decline Quest</Text>
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.caption }}>Decline Chore</Text>
             </TouchableOpacity>
           </View>
         </View>

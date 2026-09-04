@@ -431,11 +431,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       dueDate: schedule?.dueDate ?? todayLocal(),
       ...(schedule ? { dueTime: schedule.dueTime, alertCall: schedule.alertCall, alertCallLeadMinutes: schedule.alertCallLeadMinutes } : {}),
     });
-    approveRequest(req.id, active.id, `Approved as a ${finalCoins}-coin quest!`);
+    approveRequest(req.id, active.id, `Approved as a ${finalCoins}-coin chore!`);
     try {
       const { useChatStore } = require('@/store/chatStore');
       useChatStore.getState().sendMessage(req.fromMemberId, active.id,
-        `✅ Your quest idea "${req.detail}" was approved for ${finalCoins} coins — go ahead!`);
+        `✅ Your chore idea "${req.detail}" was approved for ${finalCoins} coins — go ahead!`);
     } catch (e) {
       console.warn('[ParentView] approveQuestProposal notification failed', e);
     }
@@ -446,7 +446,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     try {
       const { useChatStore } = require('@/store/chatStore');
       useChatStore.getState().sendMessage(req.fromMemberId, active.id,
-        `Your quest idea "${req.detail}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
+        `Your chore idea "${req.detail}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
     } catch (e) {
       console.warn('[ParentView] declineQuestProposal notification failed', e);
     }

@@ -78,7 +78,7 @@ export function useVoiceIntake(onParsed: (result: ExtractResponsibilityResult) =
       const result = await familyAi.extractResponsibility(transcript, existingMembers);
       clearTimeout(timer);
       if (!result || (!result.task && !result.errand)) {
-        throw new Error("Could not figure out an event, quest, or errand from that — try again with more detail.");
+        throw new Error("Could not figure out an event, chore, or errand from that — try again with more detail.");
       }
       onParsedRef.current(result);
       setState('done');

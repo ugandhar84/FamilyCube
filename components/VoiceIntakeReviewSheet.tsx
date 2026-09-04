@@ -125,7 +125,7 @@ export default function VoiceIntakeReviewSheet({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {isEvent ? <Calendar size={16} color={colors.primary} /> : <ClipboardList size={16} color={colors.primary} />}
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-            {isEvent ? `Event · ${eventCategory}` : 'Quest'}
+            {isEvent ? `Event · ${eventCategory}` : 'Chore'}
           </Text>
         </View>
 
@@ -236,7 +236,7 @@ export default function VoiceIntakeReviewSheet({
           <Pressable onPress={create} disabled={!title.trim() && !task.title}
             style={{ flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center', backgroundColor: colors.primary }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-              Create {isEvent ? 'Event' : 'Quest'}
+              Create {isEvent ? 'Event' : 'Chore'}
             </Text>
           </Pressable>
         </View>

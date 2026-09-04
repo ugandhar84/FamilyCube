@@ -800,7 +800,7 @@ export default function SmartTaskComposer({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {isEvent ? <Calendar size={16} color={colors.primary} /> : <ClipboardList size={16} color={colors.primary} />}
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                {isEvent ? 'Event' : 'Quest'}{catMeta ? ` · ${catMeta.emoji} ${catMeta.label}` : ''}
+                {isEvent ? 'Event' : 'Chore'}{catMeta ? ` · ${catMeta.emoji} ${catMeta.label}` : ''}
               </Text>
               {!touchedCategory && catMeta && <AutoBadge />}
             </View>
@@ -1382,7 +1382,7 @@ export default function SmartTaskComposer({
               <Pressable onPress={create} disabled={!title.trim() && !detected.title}
                 style={{ flex: 2, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', backgroundColor: colors.primary }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-                  {isEvent && recurFreq !== 'once' ? 'Set Up Recurring →' : `Create ${isEvent ? 'Event' : 'Quest'}`}
+                  {isEvent && recurFreq !== 'once' ? 'Set Up Recurring →' : `Create ${isEvent ? 'Event' : 'Chore'}`}
                 </Text>
               </Pressable>
             </View>

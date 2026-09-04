@@ -329,7 +329,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
     setReturnIds(new Set());
     setReturnMode(false);
     setTimeout(refreshBought, 600);
-    Alert.alert('↩️ Return Quest Created', `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} queued for return and assigned to ${members.find(m => m.id === assigneeId)?.name ?? 'a member'}.`);
+    Alert.alert('↩️ Return Chore Created', `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} queued for return and assigned to ${members.find(m => m.id === assigneeId)?.name ?? 'a member'}.`);
   };
 
   const scrollRef = useRef<ScrollView>(null);

@@ -141,7 +141,7 @@ serve(async (req) => {
           .map((m: any) => m.id);
         await fire('quest_posted', eligibleIds, {
           ...base,
-          title: '🆕 New Quest Available!',
+          title: '🆕 New Chore Available!',
           body: `"${questTitle}" was just posted to the pool — be first to claim it!`,
         });
         break;
@@ -159,7 +159,7 @@ serve(async (req) => {
         if (assigneeId) {
           await fire('quest_assigned', [assigneeId], {
             ...base, coins,
-            title: '📋 New Quest Assigned!',
+            title: '📋 New Chore Assigned!',
             body: coins > 0
               ? `"${questTitle}" was assigned to you — earn ${coins}🪙 by completing it!`
               : `"${questTitle}" was assigned to you.`,
@@ -172,7 +172,7 @@ serve(async (req) => {
         await fire('quest_claimed', approverIds, {
           ...base,
           kidName: assignee?.name ?? 'A kid',
-          title: `🙋 ${assignee?.name ?? 'A kid'} claimed a quest`,
+          title: `🙋 ${assignee?.name ?? 'A kid'} claimed a chore`,
           body: `"${questTitle}" was just claimed`,
         });
         break;
@@ -237,7 +237,7 @@ serve(async (req) => {
         // Notify parents it happened
         await fire('quest_reassigned', approverIds, {
           ...base,
-          title: '🔀 Quest Reassigned',
+          title: '🔀 Chore Reassigned',
           body: `"${questTitle}" moved from ${memberMap[prevId ?? '']?.name ?? 'unassigned'} → ${memberMap[nextId ?? '']?.name ?? '?'}`,
         });
         break;

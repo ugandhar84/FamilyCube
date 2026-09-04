@@ -308,7 +308,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
                     <Text style={{ fontSize: 32, marginBottom: 8 }}>✨</Text>
                     <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>You're all caught up</Text>
                     <Text style={[s.emptyBody, { color: colors.textSecondary }]}>
-                      New quest, chore, and family updates will show up here.
+                      New chore, calendar, and family updates will show up here.
                     </Text>
                   </View>
                 ) : (

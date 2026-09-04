@@ -150,12 +150,13 @@ async function choreBalance(body: Record<string, unknown>) {
   const kids = (members as any[]).filter((m: any) => m.role === 'kid' || m.role === 'child');
   const prompt = `You are the AI Household Chore Auto-Balancer for FamilyCube.
 Kids: ${JSON.stringify(kids)}
-Current quest pool: ${JSON.stringify(quests)}
+Current chore pool: ${JSON.stringify(quests)}
 
 Rules:
 - Distribute by age-appropriateness, difficulty, and coin equity
 - Flag any kid who is clearly overloaded vs underloaded
-- Suggest 2-3 NEW quest ideas for underloaded kids based on their age
+- Suggest 2-3 NEW chore ideas for underloaded kids based on their age
+- Refer to these as "chores" in any text you write for a parent to read (summary, reason fields, etc) — never "quests".
 
 Return JSON: {
   summary: string,
@@ -233,7 +234,7 @@ async function fomoEngine(body: Record<string, unknown>) {
         : `${currentAssignee?.name ?? 'A kid'} started this ${daysOver}d ago and still hasn't submitted — overdue.`;
 
     const selectionNote = target
-      ? `${target.name} was randomly selected (${target.load ?? 0} open quests — fair load)`
+      ? `${target.name} was randomly selected (${target.load ?? 0} open chores — fair load)`
       : 'No eligible kid found';
 
     return {
@@ -256,8 +257,9 @@ async function fomoEngine(body: Record<string, unknown>) {
   // ── AI-generated nudge messages for bonus alerts ──────────────────────────────
   let aiNudges: Record<string, string> = {};
   if (bonusCandidates.length > 0) {
-    const nudgePrompt = `You are the FamilyCube gamification engine. Generate short, fun, age-appropriate FOMO messages for kids to claim these quests:
+    const nudgePrompt = `You are the FamilyCube gamification engine. Generate short, fun, age-appropriate FOMO messages for kids to claim these chores:
 ${JSON.stringify(bonusCandidates.map((q: any) => ({ title: q.title, coins: q.coins, dueDate: q.dueDate })))}
+Refer to these as "chores" in the messages you write — never "quests".
 
 Return JSON: { [questTitle]: "one-line exciting message max 80 chars, use emojis" }`;
     try {
@@ -274,8 +276,8 @@ Return JSON: { [questTitle]: "one-line exciting message max 80 chars, use emojis
 
   const totalIssues = bonusCandidates.length + penaltyCandidates.length;
   const fomoNudgeSummary = totalIssues === 0
-    ? 'All quests are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
-    : `${bonusCandidates.length} quest${bonusCandidates.length !== 1 ? 's' : ''} need a bonus nudge — ${penaltyCandidates.length} need a penalty action.${bonusIgnored.length > 0 ? ` ⚠️ ${bonusIgnored.length} ignored a previous bonus — penalties escalated.` : ''}`;
+    ? 'All chores are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
+    : `${bonusCandidates.length} chore${bonusCandidates.length !== 1 ? 's' : ''} need a bonus nudge — ${penaltyCandidates.length} need a penalty action.${bonusIgnored.length > 0 ? ` ⚠️ ${bonusIgnored.length} ignored a previous bonus — penalties escalated.` : ''}`;
 
   return { fomoNudgeSummary, urgentAlerts: enrichedAlerts, penaltiesAndForceAssigns };
 }
@@ -387,7 +389,7 @@ ${JSON.stringify(kidStats)}
 Rules:
 - If any kid has ghosted > 0: flag the "claim and ignore" loophole explicitly and suggest a family rule
 - If a kid has overdue > 2: suggest breaking tasks into smaller steps
-- Top performer = kid with most "done" quests
+- Top performer = kid with most "done" chores
 - Encouragement notes must be specific to each kid's actual numbers
 
 Return JSON: {

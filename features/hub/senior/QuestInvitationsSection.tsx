@@ -26,7 +26,7 @@ export function QuestInvitationsSection({
   return (
     <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
       <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.accent,
-        textTransform: 'uppercase', letterSpacing: 0.8 }}>Quest Invitations</Text>
+        textTransform: 'uppercase', letterSpacing: 0.8 }}>Chore Invitations</Text>
       {invitations.map(c => {
         const kid = members.find(m => m.id === c.assignedToId);
         const alreadyPassed = (c.gpWithdrawnIds ?? []).includes(active.id);
@@ -39,7 +39,7 @@ export function QuestInvitationsSection({
               <HeartHandshake size={15} color={colors.accent} />
               <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '800', color: colors.accent,
                 textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                Quest Invitation
+                Chore Invitation
               </Text>
               {c.basePoints > 0 && (
                 <View style={{ backgroundColor: colors.card, borderRadius: RADIUS.sm, paddingHorizontal: 8, paddingVertical: 3 }}>

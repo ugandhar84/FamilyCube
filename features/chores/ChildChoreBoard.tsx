@@ -47,7 +47,7 @@ const CAT_META: Record<ChoreCategoryType, { Icon: any; label: string; color: str
   routine:           { Icon: Star,           label: 'Routine',     color: BRAND.purple, bg: '#EDE9FE' },
   bounty:            { Icon: Gem,            label: 'Bounty',      color: BOUNTY_AMBER, bg: BOUNTY_AMBER_BG },
   shopping:          { Icon: ShoppingBag,    label: 'Shopping',    color: '#0D9488',    bg: '#CCFBF1' },
-  grandparent_quest: { Icon: HeartHandshake, label: 'GP Quest',    color: GP_BLUE,      bg: GP_BLUE_BG },
+  grandparent_quest: { Icon: HeartHandshake, label: 'GP Chore',    color: GP_BLUE,      bg: GP_BLUE_BG },
   parent_only_quest: { Icon: Lock,           label: 'Adult Task',  color: '#6B7280',    bg: '#F3F4F6' },
 };
 
@@ -262,7 +262,7 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <View style={{ backgroundColor: isDark ? `${GP_BLUE}20` : GP_BLUE_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <HeartHandshake size={11} color={GP_BLUE} />
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: GP_BLUE }}>GP Quest</Text>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: GP_BLUE }}>GP Chore</Text>
         </View>
         {/* GP quests never show pts — GPs don't earn coins */}
         {task.basePoints > 0 && task.categoryType !== 'grandparent_quest' && (
@@ -296,7 +296,7 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <Pressable
             onPress={() => Alert.alert(
-              'Decline Quest?',
+              'Decline Chore?',
               `You won't be able to earn the ${task.basePoints} pts. Your grandparent will be notified.`,
               [
                 { text: 'Keep it', style: 'cancel' },
@@ -320,7 +320,7 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
           >
             {isPooled ? <HandMetal size={14} color="#fff" /> : <Play size={14} color="#fff" fill="#fff" />}
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>
-              {isPooled ? "I'll Take It" : 'Start Quest'}
+              {isPooled ? "I'll Take It" : 'Start Chore'}
             </Text>
           </Pressable>
         </View>
@@ -434,7 +434,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
   const needsPhoto  = !!task?.requiresPhotoProof && !isClaimOnly && !isGPStart;
   const canSubmit   = !needsPhoto || !!photoUri;
 
-  const title = isClaimOnly ? 'Claim Bounty' : isGPStart ? 'Start Quest' : isRedo ? 'Resubmit' : 'Mark Done';
+  const title = isClaimOnly ? 'Claim Bounty' : isGPStart ? 'Start Chore' : isRedo ? 'Resubmit' : 'Mark Done';
 
   // Reset photo when sheet opens for a new task
   useEffect(() => { if (visible) setPhotoUri(null); }, [visible]);
@@ -555,7 +555,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
 
         {isGPStart && (
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 20, lineHeight: 20 }}>
-            Starting this quest marks it in-progress — your grandparent will see you're on it.
+            Starting this chore marks it in-progress — your grandparent will see you're on it.
           </Text>
         )}
 
@@ -661,7 +661,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
           {loading
             ? <ActivityIndicator color="#fff" />
             : <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                {isClaimOnly ? 'Claim Bounty' : isGPStart ? 'Start Quest' : isRedo ? 'Resubmit' : 'Submit for Approval'}
+                {isClaimOnly ? 'Claim Bounty' : isGPStart ? 'Start Chore' : isRedo ? 'Resubmit' : 'Submit for Approval'}
               </Text>
           }
         </Pressable>
@@ -1212,7 +1212,7 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         {/* Grandparent Quests */}
         {dash.grandparentQuests.length > 0 && (
           <>
-            <SectionHeader Icon={HeartHandshake} iconColor={GP_BLUE} title="Grandparent Quests" count={dash.grandparentQuests.length} colors={colors} />
+            <SectionHeader Icon={HeartHandshake} iconColor={GP_BLUE} title="Grandparent Chores" count={dash.grandparentQuests.length} colors={colors} />
             {dash.grandparentQuests.map(task => (
               <GPQuestCard
                 key={task.id} task={task} childId={member.id} members={members}

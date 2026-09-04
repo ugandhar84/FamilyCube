@@ -28,7 +28,7 @@ export function ReturnModeToolbar({ returnMode, returnIds, members, colors, hand
           ]
         );
       }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: colors.warning }}>
-        <Text style={{ color: colors.textInverse, fontSize: 13, fontWeight: '700' }}>↩️ Create Quest</Text>
+        <Text style={{ color: colors.textInverse, fontSize: 13, fontWeight: '700' }}>↩️ Create Chore</Text>
       </Pressable>
     </View>
   );

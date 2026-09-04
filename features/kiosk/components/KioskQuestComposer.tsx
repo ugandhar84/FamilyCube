@@ -55,7 +55,7 @@ export function KioskQuestComposer({ visible, onClose, active, members, colors, 
       <View style={s.overlay}>
         <View style={[s.card, { backgroundColor: colors.card }]}>
           <View style={s.header}>
-            <Text style={[s.headerTitle, { color: colors.textPrimary }]}>New Quest</Text>
+            <Text style={[s.headerTitle, { color: colors.textPrimary }]}>New Chore</Text>
             <Pressable onPress={close} hitSlop={12}><X size={22} color={colors.textSecondary} /></Pressable>
           </View>
 
@@ -108,7 +108,7 @@ export function KioskQuestComposer({ visible, onClose, active, members, colors, 
               <Text style={[s.btnText, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
             <Pressable onPress={save} disabled={!title.trim()} style={[s.btn, { backgroundColor: title.trim() ? colors.primary : colors.border, flex: 2 }]}>
-              <Text style={[s.btnText, { color: '#fff' }]}>Create Quest</Text>
+              <Text style={[s.btnText, { color: '#fff' }]}>Create Chore</Text>
             </Pressable>
           </View>
         </View>

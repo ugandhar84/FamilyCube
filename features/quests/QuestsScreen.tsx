@@ -740,8 +740,8 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       Alert.alert(
         reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
         reason === 'deleted'
-          ? 'This quest was just removed by a parent.'
-          : 'Someone else already claimed this quest — check the pool for others.',
+          ? 'This chore was just removed by a parent.'
+          : 'Someone else already claimed this chore — check the pool for others.',
       );
     });
     setIsClaiming(p => ({ ...p, [id]: false }));
@@ -858,7 +858,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               </Text>
               {isParent && (
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-                  Add quests, approve chores & distribute coins
+                  Add chores, approve completions & distribute coins
                 </Text>
               )}
             </View>
@@ -893,7 +893,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                 paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
                 backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <I.PlusCircle c={colors.success} />
-              <Text style={{ color: colors.success, fontSize: TYPO.label, fontWeight: '900' }}>+ Quest</Text>
+              <Text style={{ color: colors.success, fontSize: TYPO.label, fontWeight: '900' }}>+ Chore</Text>
             </TouchableOpacity>
           )}
           {isSenior && (
@@ -920,7 +920,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         {isParent && isAiLoading && (
           <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12, backgroundColor: colors.primaryLight, borderColor: colors.primary + '40' }]}>
             <ActivityIndicator color={BRAND.purple} size="small" />
-            <Text style={[s.aiLoadingText, { color: colors.primary }]}>CubeAI is analysing your household quests...</Text>
+            <Text style={[s.aiLoadingText, { color: colors.primary }]}>CubeAI is analysing your household chores...</Text>
           </View>
         )}
         {isParent && !isAiLoading && showAiTool !== 'none' && aiFromCache[showAiTool] && (
@@ -1034,7 +1034,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                     backgroundColor: colors.tealLight, borderRadius: 20,
                     paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.teal + '30' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.teal }}>👴 Grandparent Quests</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.teal }}>👴 Grandparent Chores</Text>
                     <View style={{ backgroundColor: colors.teal, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.grandparent.length}</Text>
                     </View>
@@ -1205,7 +1205,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
             const assigneeId = editTarget.assignedToId;
             if (assigneeId && (editTarget.status === 'in_progress' || editTarget.status === 'pending_approval')) {
               const parentName = activeMember?.name?.split(' ')[0] ?? 'A parent';
-              const msg = `📝 ${parentName} updated "${editTarget.title}" — check your quest for the latest details.`;
+              const msg = `📝 ${parentName} updated "${editTarget.title}" — check your chore for the latest details.`;
               useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
             }
             updateQuest(id, patch, activeMember?.id);
@@ -1217,7 +1217,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
             const assigneeId = editTarget.assignedToId;
             if (assigneeId && (editTarget.status === 'in_progress' || editTarget.status === 'pending_approval')) {
               const parentName = activeMember?.name?.split(' ')[0] ?? 'A parent';
-              const msg = `🗑️ ${parentName} removed the quest "${editTarget.title}" that was assigned to you.`;
+              const msg = `🗑️ ${parentName} removed the chore "${editTarget.title}" that was assigned to you.`;
               useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
             }
             deleteQuest(id);

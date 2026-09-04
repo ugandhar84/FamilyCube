@@ -47,7 +47,7 @@ function RecentActivityList({ colors, isDark, memberId }: { colors: any; isDark:
         return (
           <View key={t.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: KID.tiny, color: colors.textSecondary, flex: 1, marginRight: 8 }} numberOfLines={1}>
-              {t.notes || (t.transactionType === 'EARNED' ? 'Quest reward' : t.transactionType)}
+              {t.notes || (t.transactionType === 'EARNED' ? 'Chore reward' : t.transactionType)}
             </Text>
             <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: isNegative ? colors.danger : '#10B981' }}>
               {sign}{Math.abs(t.amount)} 🪙

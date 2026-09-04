@@ -354,7 +354,7 @@ export function KidNeedsYouSection({
         const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
         return (
           <NeedsYouRow key={q.id} Icon={RotateCcw} accent={BRAND.purple} colors={colors} isDark={isDark}
-            title="Quest sent back" detail={note ? `"${note}"` : q.title}
+            title="Chore sent back" detail={note ? `"${note}"` : q.title}
             onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
             onDismiss={() => { onDismiss(`quest-${q.id}`); }} />
         );
@@ -362,7 +362,7 @@ export function KidNeedsYouSection({
 
       {filteredApprovedQuests.map(q => (
         <NeedsYouRow key={`approved-${q.id}`} Icon={PartyPopper} accent={MONEY_GREEN} colors={colors} isDark={isDark}
-          title="Quest approved!" detail={`${q.title} · +${q.coins} coins`}
+          title="Chore approved!" detail={`${q.title} · +${q.coins} coins`}
           onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
           onDismiss={() => { onDismiss(`quest-approved-${q.id}`); }} />
       ))}

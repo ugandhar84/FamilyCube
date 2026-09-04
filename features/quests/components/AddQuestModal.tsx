@@ -528,7 +528,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     const dupe = findSimilarOpenPoolChore();
     if (dupe) {
       Alert.alert(
-        'Similar quest already exists',
+        'Similar chore already exists',
         `"${dupe.title}" is already open in the pool — merge or keep both?`,
         [
           {
@@ -760,7 +760,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     if (creatorIsTeen && (newQ as any)?.rewardPendingReview) {
       Alert.alert(
         'Reward needs a parent’s OK',
-        `This quest's reward is above the family's usual limit, so a parent will need to approve the payout once it's done. The quest itself is ready to go now.`,
+        `This chore's reward is above the family's usual limit, so a parent will need to approve the payout once it's done. The chore itself is ready to go now.`,
       );
     }
     showToast('Chore created');
@@ -786,7 +786,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
 
             {currentStepId === 'what' && <>
             {/* Title */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Chore Title *</Text>
             <TextInput
               style={[aq.input, { color: colors.textPrimary,
                 // Neutral border until the parent has actually left this

@@ -266,7 +266,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
               {/* Title — editable in both modes; only due date/time and
                   description stay locked once a chore is claimed/in-progress. */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Chore Title *</Text>
               <TextInput
                 style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
                 value={title} onChangeText={setTitle} returnKeyType="next"

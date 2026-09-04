@@ -27,7 +27,7 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 
 1. WHAT FAMILY CUBE IS
 
-1.1 The Service. Family Cube ("Service", "App") is a family organization app. It lets members of a household share a private "family" space to coordinate chores and rewards ("Quests"), a shared calendar and event scheduling, group and direct messaging ("Chat"), real-time family location sharing ("FindFam"), a coin-based reward store, a photo memories feed, and an AI assistant ("Ask Fam") that can answer questions and help create/manage the above from natural-language requests.
+1.1 The Service. Family Cube ("Service", "App") is a family organization app. It lets members of a household share a private "family" space to coordinate chores and rewards ("Chores"), a shared calendar and event scheduling, group and direct messaging ("Chat"), real-time family location sharing ("FindFam"), a coin-based reward store, a photo memories feed, and an AI assistant ("Ask Fam") that can answer questions and help create/manage the above from natural-language requests.
 
 1.2 Not a general social network. Family Cube is designed for private use within one self-organized family group. It has no public feed, no stranger-matching, and no discovery of other users outside a family the account holder creates or is invited into.
 

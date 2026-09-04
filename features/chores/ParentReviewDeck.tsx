@@ -103,7 +103,7 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
         )}
         {isGP && (
           <View style={{ backgroundColor: isDark ? colors.infoLight : '#DBEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.info : '#2563EB' }}>GP Quest</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.info : '#2563EB' }}>GP Chore</Text>
           </View>
         )}
         {/* GPs are never paid coins (master-flow R_COINS) — this read

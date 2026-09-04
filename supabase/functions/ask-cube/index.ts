@@ -683,7 +683,7 @@ async function executeTool(
   }
 
   if (name === 'get_quest_pace') {
-    if (viewerRole !== 'parent') return { error: 'Quest pace is only available to parents.' };
+    if (viewerRole !== 'parent') return { error: 'Chore pace is only available to parents.' };
     const id = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
     if (!id) return { error: `Couldn't find a family member named "${args.memberName}".` };
     const { data: recent, error } = await supabase.from('chore_tasks')
@@ -695,7 +695,7 @@ async function executeTool(
     if (error) return { error: error.message };
     const rows = recent ?? [];
     if (rows.length < 3) {
-      return { note: 'Not enough completed quest history yet to compare pace meaningfully (fewer than 3 recent completions).' };
+      return { note: 'Not enough completed chore history yet to compare pace meaningfully (fewer than 3 recent completions).' };
     }
     // Split the last 20 into an older baseline half and a recent half —
     // comparing recent pace against the SAME kid's own history, not an
@@ -1201,7 +1201,7 @@ async function executeTool(
         return { error: `"${chore.title}" isn't currently held by the person chatting, so they can't mark it complete themselves. Tell the user plainly.` };
       }
       if (chore.photo_required) {
-        return { error: `"${chore.title}" requires a photo to submit — that has to be done from the Quests tab, not through chat. Tell the user plainly.` };
+        return { error: `"${chore.title}" requires a photo to submit — that has to be done from the Tasks tab, not through chat. Tell the user plainly.` };
       }
     } else if (action === 'cancel') {
       if (viewerRole !== 'parent' && viewerRole !== 'senior' && chore.created_by_id !== viewerId) {
@@ -1585,7 +1585,7 @@ amount; it can never claim, approve, decline, complete, or cancel). "I'll take t
 "Approve Leo's dishes" / "decline that, it's not done right" -> action: 'approve'/'decline' (parent/approver only —
 if a kid asks this, tell them plainly only a parent can approve chores, don't propose it anyway). "Mark the laundry
 chore done" -> action: 'complete', but only for a chore with no photo requirement — if propose_chore_action reports
-one is needed, tell the user plainly they need to submit it with a photo from the Quests tab instead. "Cancel/remove
+one is needed, tell the user plainly they need to submit it with a photo from the Tasks tab instead. "Cancel/remove
 the garage chore" -> action: 'cancel'. These only PROPOSE, they do not create, change, or perform anything
 - "Cancel"/"delete"/"remove" is genuinely overloaded across THREE unrelated domains — pick based on what kind of
   thing is being cancelled, never guess: a chore ("cancel the garage cleanup") -> propose_chore_action with

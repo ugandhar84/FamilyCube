@@ -1792,7 +1792,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
       if (editableFields.some(f => f in rawUpdates)) {
         console.warn(`[choreStore] blocked edit to grandparent_quest ${id} — status is ${prevChore.status}, not pending_parent_approval`);
-        showToast("This quest has already been reviewed — it can't be edited anymore", 'error');
+        showToast("This chore has already been reviewed — it can't be edited anymore", 'error');
         return;
       }
     }

@@ -89,7 +89,7 @@ export default function AnalyticsScreen() {
           <StatCard icon="person-add-outline" label="Solo families" value={stats.singleMemberFamilies} accent={colors.accent} colors={colors} />
         </Section>
 
-        <Section title="Quests" colors={colors}>
+        <Section title="Chores" colors={colors}>
           <StatCard icon="checkmark-circle-outline" label="Total chores" value={stats.totalChores} accent={colors.kid} colors={colors} />
           <StatCard icon="ribbon-outline" label="Completed" value={stats.choresCompleted} accent={colors.kid} colors={colors} />
         </Section>

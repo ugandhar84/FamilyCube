@@ -475,8 +475,8 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           Alert.alert(
             reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
             reason === 'deleted'
-              ? 'This quest was just removed by a parent.'
-              : 'Someone else already claimed this quest — check the pool for others.',
+              ? 'This chore was just removed by a parent.'
+              : 'Someone else already claimed this chore — check the pool for others.',
           );
         })}
         onStart={(id) => submitQuest(id, undefined, active.id)}

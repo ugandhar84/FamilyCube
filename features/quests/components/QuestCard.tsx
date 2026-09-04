@@ -398,7 +398,7 @@ export function QuestCard({
           [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete Anyway', style: 'destructive', onPress: () => {
             if (isActive && assigneeId) {
               const parentName = activeMember?.name?.split(' ')[0] ?? 'A parent';
-              const msg = `🗑️ ${parentName} removed the quest "${q.title}" that was assigned to you — no action needed on your end.`;
+              const msg = `🗑️ ${parentName} removed the chore "${q.title}" that was assigned to you — no action needed on your end.`;
               try {
                 const { useChatStore } = require('@/store/chatStore');
                 useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
@@ -893,7 +893,7 @@ export function QuestCard({
           >
             {isClaiming[q.id]
               ? <ActivityIndicator color={colors.textInverse} size="small" />
-              : <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Claim Quest</Text>}
+              : <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Claim Chore</Text>}
           </TouchableOpacity>
         )}
 

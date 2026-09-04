@@ -54,10 +54,10 @@ function KioskParentTasksView({ active, members, colors, isDark }: {
   return (
     <View style={s.root}>
       <View style={s.header}>
-        <Text style={[s.title, { color: colors.textPrimary }]}>Quests</Text>
+        <Text style={[s.title, { color: colors.textPrimary }]}>Chores</Text>
         <Pressable onPress={() => setComposerOpen(true)} style={[s.addBtn, { backgroundColor: colors.primary }]}>
           <Plus size={18} color="#fff" />
-          <Text style={s.addBtnText}>New Quest</Text>
+          <Text style={s.addBtnText}>New Chore</Text>
         </Pressable>
       </View>
 
@@ -184,7 +184,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 
       {(myGpQuestsOpen.length > 0 || myGpQuestsAssigned.length > 0) && (
         <>
-          <Text style={[s.title, { color: colors.textPrimary, fontSize: 18 }]}>Your Sponsored Quests</Text>
+          <Text style={[s.title, { color: colors.textPrimary, fontSize: 18 }]}>Your Sponsored Chores</Text>
           <View style={s.gpGrid}>
             {myGpQuestsOpen.map(q => (
               <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

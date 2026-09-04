@@ -79,7 +79,7 @@ export function MySponsoredQuestsSection({ quests, inProgressQuests = [], colors
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Hourglass size={16} color={BRAND.purple} />
             <Text style={{ fontSize: GP.title, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>
-              My Sponsored Quests
+              My Sponsored Chores
             </Text>
           </View>
 

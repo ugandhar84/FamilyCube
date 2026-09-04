@@ -31,7 +31,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           <Camera size={16} color={colors.parent} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }} numberOfLines={1}>
-              Quest done — {q.title}
+              Chore done — {q.title}
             </Text>
             {kid && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>

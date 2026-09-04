@@ -1322,6 +1322,32 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         if (currentKnownFamilyId && currentKnownFamilyId !== knownFamilyIdAtStart) return;
       }
       const members = dedupeMembers(data.map(fromRow));
+      // Live-reported bug this closes: a member logging in with their OWN
+      // real auth account for the very first time on a device (no
+      // AsyncStorage cache yet, so loadFromStorage's own `if (cached...)`
+      // branch above is skipped entirely and control falls through to
+      // this syncFromDB call, which is ALSO the "no cache" retry loop's
+      // own call site) landed with activeMemberId defaulted to "first
+      // parent" (applyActive's own fallback) instead of their own member
+      // row — reported as a teen's own login immediately demanding the
+      // PARENT's PIN, since AppPinLockOverlay then challenges for
+      // whoever activeMemberId actually resolved to.
+      //
+      // Only resolved/applied when activeMemberId is STILL null at this
+      // point (genuinely nothing set yet, this session) — NOT
+      // unconditionally on every syncFromDB call, which also runs on
+      // realtime updates/foreground resume during an ALREADY-established
+      // PIN-switch session; applyActive's realAuthMemberId param is
+      // documented to always win when passed (see its own comment above),
+      // so passing it on every call would snap an active PIN-switch (e.g.
+      // ugandhar switched to praveena mid-session) back to the real
+      // owner the next time a chore/event/anything else triggers a sync —
+      // a real regression this guard exists specifically to avoid.
+      let realAuthMemberId: string | null = null;
+      if (!get().activeMemberId) {
+        const { data: { user: syncedUser } } = await supabase.auth.getUser();
+        realAuthMemberId = syncedUser ? members.find(m => m.authUserId === syncedUser.id)?.id ?? null : null;
+      }
       // Logged QA gap, fixed: a member's school schedule/homework (local-
       // only AsyncStorage data — schoolStore has no server table at all)
       // was never cleaned up on removal, the same dangling-reference class
@@ -1349,7 +1375,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         }
       }
       {
-        const resolvedActiveId = applyActive(members, activeId, get().activeMemberId);
+        const resolvedActiveId = applyActive(members, activeId, get().activeMemberId, realAuthMemberId);
         // Same grant-clearing guard as loadFromStorage's own call above —
         // syncFromDB runs on every members-realtime update and app
         // foreground, not just boot, so this direct set() needed the same

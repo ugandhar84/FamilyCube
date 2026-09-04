@@ -1,0 +1,16 @@
+-- Live-reported: EVERY chat message (not just old ones) was showing
+-- "[🔒 encrypted — wrong key or corrupted]" on every device. Traced via a
+-- diagnostic query to per_device_e2e being OFF in the live feature_flags
+-- table right now, even though 20260925030000_enable_per_device_e2e.sql
+-- already turned it on once — it must have been toggled off again since,
+-- outside of any migration (most likely via the admin console's feature
+-- flag toggle), since no migration in this repo's history sets it back to
+-- false. With the flag off, every encrypt/decrypt call in
+-- lib/chatCrypto.ts falls back to the legacy single-shared-key scheme
+-- (encryptMessage/decryptMessage) — but messages already written under
+-- the per-device envelope (ciphertext + chat_message_keys rows) are NOT
+-- shaped like that legacy scheme's ciphertext, so decryptMessage can't
+-- make sense of them either. Flipping this back on is necessary for the
+-- per-device envelope (and today's recovery-key backfill work, which is
+-- entirely inert while this flag is off) to do anything at all.
+update feature_flags set enabled = true, updated_at = now() where key = 'per_device_e2e';

@@ -33,6 +33,20 @@ const ROLES   = [
   { value: 'grandparent', label: 'Grandparent',   emoji: '👴', desc: 'View & support the family' },
 ];
 
+// Display-only map for a per-invitee join's READ-ONLY role text — covers
+// every real role value a pre-created member row can actually have
+// (including 'teenager', which ROLES above has no interactive card for
+// at all, since the picker is never shown for this path in the first
+// place). Raw value shown as a fallback for anything not listed here.
+const PREFILLED_ROLE_DISPLAY: Record<string, { label: string; emoji: string }> = {
+  kid:         { label: 'Kid',          emoji: '🧒' },
+  teenager:    { label: 'Teen',         emoji: '🧑' },
+  teen:        { label: 'Teen',         emoji: '🧑' },
+  parent:      { label: 'Parent',       emoji: '👩' },
+  grandparent: { label: 'Grandparent',  emoji: '👴' },
+  senior:      { label: 'Grandparent',  emoji: '👴' },
+};
+
 type Step = 'code' | 'invite-check' | 'profile' | 'pin' | 'confirm';
 
 // ─── Invite-code step icon — an envelope holding a key, since this step is
@@ -122,6 +136,19 @@ export default function JoinFamilyScreen() {
 
   const [checkingCode, setCheckingCode] = useState(false);
   const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null);
+  // Per-invitee join (code scoped to a pre-created member row — set below
+  // whenever the peek response includes one) vs. a family-wide/legacy
+  // code (fresh member, no pre-created row). join-family's own claim path
+  // NEVER touches role for a per-invitee join (see its own comment: "the
+  // row already has its real name/relationship/role... don't let the
+  // joiner overwrite those") — the role picker below is genuinely
+  // non-functional for this case (whatever's tapped is silently ignored
+  // server-side), and had no matching card at all for a pre-created
+  // 'teenager' role, reading as broken rather than merely inert
+  // (live-reported: "why is there no teen when inviting I selected
+  // teen"). Read-only text instead of a picker for this path — see its
+  // own render below.
+  const [prefilledRole, setPrefilledRole] = useState<string | null>(null);
 
   // ── Step 1: Validate code ────────────────────────────────────────────────────
   const handleCodeNext = async () => {
@@ -159,6 +186,10 @@ export default function JoinFamilyScreen() {
         if (data.member.name) setName(data.member.name);
         if (data.member.role) setRole(data.member.role === 'child' ? 'kid' : data.member.role === 'grandparent' ? 'grandparent' : data.member.role);
         if (data.member.relationship) setRelationship(data.member.relationship);
+        // Raw, unmapped role string (e.g. 'teenager') — the picker below
+        // can't represent every real role value, but read-only display
+        // text can just show whatever it actually is.
+        setPrefilledRole(data.member.role ?? null);
         // date_of_birth isn't shown on THIS screen (deliberately deferred to
         // CompleteProfileScreen.tsx, see its own header comment) — it's
         // already on the DB row from addPendingMember and join-family's
@@ -472,21 +503,43 @@ export default function JoinFamilyScreen() {
                   autoFocus
                 />
 
-                {/* Role */}
-                <Text style={[s.label, { color: colors.textSecondary }]}>I am a…</Text>
-                <View style={s.roleRow}>
-                  {ROLES.map(r => (
-                    <TouchableOpacity
-                      key={r.value}
-                      style={[s.roleCard, { backgroundColor: card, borderColor: role === r.value ? colors.primary : colors.border ?? '#E0E0E0', borderWidth: role === r.value ? 2 : 1 }]}
-                      onPress={() => { setRole(r.value); setRelationship(undefined); }}
-                    >
-                      <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
-                      <Text style={[s.roleLabel, { color: colors.textPrimary }]}>{r.label}</Text>
-                      <Text style={[s.roleDesc, { color: colors.textSecondary }]}>{r.desc}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {/* Role — read-only for a per-invitee join (prefilledRole
+                    set): the parent already chose this when creating the
+                    profile, and join-family's claim path never lets this
+                    screen's picker change it, so offering a picker here
+                    would be actively misleading (and had no matching card
+                    at all for a role like 'teenager', reading as broken).
+                    The interactive picker below only applies to a
+                    family-wide/legacy code with no pre-created row, where
+                    picking a role IS what actually creates the profile. */}
+                {prefilledRole ? (
+                  <>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>You've been invited as</Text>
+                    <View style={[s.roleCard, { backgroundColor: card, borderColor: colors.primary, borderWidth: 2, alignSelf: 'flex-start', paddingHorizontal: 16 }]}>
+                      <Text style={{ fontSize: 22 }}>{PREFILLED_ROLE_DISPLAY[prefilledRole]?.emoji ?? '🙂'}</Text>
+                      <Text style={[s.roleLabel, { color: colors.textPrimary }]}>
+                        {PREFILLED_ROLE_DISPLAY[prefilledRole]?.label ?? prefilledRole}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>I am a…</Text>
+                    <View style={s.roleRow}>
+                      {ROLES.map(r => (
+                        <TouchableOpacity
+                          key={r.value}
+                          style={[s.roleCard, { backgroundColor: card, borderColor: role === r.value ? colors.primary : colors.border ?? '#E0E0E0', borderWidth: role === r.value ? 2 : 1 }]}
+                          onPress={() => { setRole(r.value); setRelationship(undefined); }}
+                        >
+                          <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
+                          <Text style={[s.roleLabel, { color: colors.textPrimary }]}>{r.label}</Text>
+                          <Text style={[s.roleDesc, { color: colors.textSecondary }]}>{r.desc}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
 
                 {/* Relationship — purely descriptive, scoped to options that
                     make sense for the role just picked above (same list

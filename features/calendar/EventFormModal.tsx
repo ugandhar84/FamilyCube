@@ -1755,11 +1755,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     setEditDriverId(id);
     setEditDriverName(m?.name ?? '');
   };
-  // Categories where `helper` means a role (tutor/escort/coach), not the driver —
-  // Ride keeps `helper` as the driver directly, unchanged.
-  const ROLE_HELPER_CATEGORIES = ['Medical', 'Study', 'Sports'];
-  const helperIsRoleFilled = ROLE_HELPER_CATEGORIES.includes(event.category ?? '') && !!event.helper;
-
   const catColor = CATEGORIES.find(c => c.key === event.category)?.color ?? BRAND.purple;
   const catEmoji = CATEGORIES.find(c => c.key === event.category)?.emoji ?? '📅';
 
@@ -2270,10 +2265,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   the default auto-assigned parent) had NO way to change who
                   tutors at all — live-reported: "if I created an event with
                   tutor family member... and later decided to send to other
-                  tutor." helperIsRoleFilled reflects the ORIGINAL event prop,
-                  frozen at open time, not the live edit — that's still used
-                  below to decide whether Drive Assignment auto-reveals, but
-                  it must never hide the picker for changing the tutor itself. */}
+                  tutor." helperIsRoleFilled reflected the ORIGINAL event
+                  prop, frozen at open time, not the live edit — removed
+                  entirely (including from the Drive Assignment/"Needs
+                  pickup too?" sections below, which had the identical bug)
+                  since live state (helperName/helperId, editRideRequired)
+                  already fully captures what each section needs. */}
               {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
@@ -2418,10 +2415,23 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   Sports key off `helper` (their escort IS the driver),
                   Study alone off the separate `driverName`/editRideRequired
                   pair. */}
+              {/* Study's own condition was `helperIsRoleFilled && ... &&
+                  editRideRequired` — helperIsRoleFilled reflects the
+                  FROZEN event.helper at open time, the exact stale-prop
+                  bug already fixed for this file's tutor picker and
+                  driver-save logic (commit f1bb4139) but missed here.
+                  editRideRequired alone already fully captures "is a ride
+                  currently needed" (it's the SAME live toggle that section
+                  reads/writes), so the extra frozen check only ever
+                  narrowed it incorrectly — live tap sequence: open a Study
+                  event created with no tutor, assign an external tutor +
+                  driver in the same edit session (now works), but "Needs
+                  pickup too?" never appeared since helperIsRoleFilled
+                  stayed false for the whole session regardless. */}
               {isParent && !isPast && !event.linkedLegId && (
                 event.category === 'Ride'
                 || (!!event.helper && (event.category === 'Medical' || event.category === 'Sports'))
-                || (helperIsRoleFilled && event.category === 'Study' && editRideRequired)
+                || (event.category === 'Study' && editRideRequired)
               ) && (
                 <View style={{ gap: 8 }}>
                   <TouchableOpacity

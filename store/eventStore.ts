@@ -390,6 +390,14 @@ interface EventState {
   loadStrip:     (dates: string[]) => Promise<void>;
   loadRange:     (from: string, to: string, force?: boolean) => Promise<void>;
   prefetchDate:  (date: string) => void;
+  // Multi-family membership — clears every cached calendar read (strip
+  // dots, day/range event caches, and their TTL bookkeeping) without
+  // touching anything else. Must run on a family switch: none of this
+  // state was previously scoped by family at all, so a grandparent
+  // switching families could otherwise see the PREVIOUS family's dots/
+  // events for as long as the relevant TTL window (up to 15 min for
+  // strip data) before it naturally refreshed.
+  resetCalendarCache: () => void;
 
   // Compat shims
   loadFromStorage: (force?: boolean) => Promise<void>;
@@ -1496,10 +1504,23 @@ export const useEventStore = create<EventState>((set, get) => ({
     const key  = `strip:${from}:${to}`;
     if (_inFlight.has(key)) return;
 
-    // TTL: check if all dates are already fresh (use fetchedAt stored in _dayCache or a strip TTL flag)
-    // Simple approach: track last strip fetch time per range using a single timestamp
+    // TTL: was a single global timestamp — "was ANY strip range fetched
+    // recently" — which silently treated a completely different, never-
+    // actually-fetched date range as fresh just because some other range
+    // happened to load moments ago. Harmless while every loadStrip caller
+    // requested roughly the same nearby dates, but became a real bug once
+    // CalendarScreen.tsx started silently pre-fetching a full ±12-month
+    // window on mount: navigating to a month OUTSIDE that window within
+    // the 15-min TTL would incorrectly skip fetching it, showing zero
+    // dots (indistinguishable from "no events") instead of loading them.
+    // Now tracks the actual min/max dates covered by the last successful
+    // fetch, and only skips when the CURRENTLY REQUESTED range is fully
+    // contained within that covered span AND still fresh.
     const stripTs = (get() as any)._stripFetchedAt as number | undefined;
-    if (stripTs && Date.now() - stripTs < STRIP_TTL_MS) return;
+    const coveredFrom = (get() as any)._stripCoveredFrom as string | undefined;
+    const coveredTo = (get() as any)._stripCoveredTo as string | undefined;
+    const isCovered = coveredFrom && coveredTo && from >= coveredFrom && to <= coveredTo;
+    if (stripTs && isCovered && Date.now() - stripTs < STRIP_TTL_MS) return;
 
     _inFlight.add(key);
     set({ stripLoading: true });
@@ -1547,7 +1568,22 @@ export const useEventStore = create<EventState>((set, get) => ({
       for (const d of dates) delete next[d];
       Object.assign(next, map);
       const nextRows = get().stripRows.filter(r => !dates.includes(r.date)).concat(rows);
-      set({ stripMap: next, stripRows: nextRows, stripLoading: false, _stripFetchedAt: Date.now() } as any);
+      // Widen the covered span only when this fetch's range actually
+      // overlaps/touches the previously covered one — unioning two
+      // disjoint ranges would falsely claim a gap between them was
+      // fetched when it never was (e.g. a 15-day window near today, then
+      // separately a single far-future month with a real gap in between).
+      // Otherwise this fetch's own range simply becomes the new covered
+      // span, same as if nothing had been covered before.
+      const prevFrom = (get() as any)._stripCoveredFrom as string | undefined;
+      const prevTo = (get() as any)._stripCoveredTo as string | undefined;
+      const overlaps = prevFrom && prevTo && from <= prevTo && to >= prevFrom;
+      const nextCoveredFrom = overlaps ? (prevFrom! < from ? prevFrom! : from) : from;
+      const nextCoveredTo = overlaps ? (prevTo! > to ? prevTo! : to) : to;
+      set({
+        stripMap: next, stripRows: nextRows, stripLoading: false, _stripFetchedAt: Date.now(),
+        _stripCoveredFrom: nextCoveredFrom, _stripCoveredTo: nextCoveredTo,
+      } as any);
       AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
     } catch (e) {
       console.warn('[eventStore] loadStrip failed', e);
@@ -1623,6 +1659,15 @@ export const useEventStore = create<EventState>((set, get) => ({
       })
       .catch(() => { /* silent */ })
       .finally(() => _inFlight.delete(key));
+  },
+
+  resetCalendarCache: () => {
+    set({
+      dayEvents: [], stripMap: {}, stripRows: [], _dayCache: {},
+      rangeEvents: [], _rangeCache: {}, events: [],
+      _stripFetchedAt: undefined, _stripCoveredFrom: undefined, _stripCoveredTo: undefined,
+    } as any);
+    AsyncStorage.removeItem(DISK_STRIP).catch(() => {});
   },
 
   // ── Compat shims ──────────────────────────────────────────────────────────

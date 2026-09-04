@@ -532,6 +532,30 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live-requested: Month view's date dots only ever loaded for whichever
+  // month was currently visible (see the monthCursor effect below), so
+  // navigating to a new month always meant a fresh per-month fetch before
+  // its dots appeared — felt slow/laggy for month-to-month browsing even
+  // though each individual fetch was cheap. Silently pre-fetches a full
+  // year (±12 months from today) of the SAME lightweight date+category
+  // strip data in the background, once, on mount — not blocking the
+  // initial 15-day window load above. loadStrip's own STRIP_TTL_MS check
+  // (15 min) means once this lands, every later per-month loadStrip call
+  // below (still needed for anything outside this ±12-month window, or
+  // once the cache goes stale) becomes an instant no-op for any month
+  // already covered, since stripMap is already populated and the TTL
+  // hasn't expired — no separate "is this month cached" bookkeeping
+  // needed beyond what loadStrip already does.
+  React.useEffect(() => {
+    const today = new Date();
+    const from = toDateStr(new Date(today.getFullYear(), today.getMonth() - 12, 1));
+    const to   = toDateStr(new Date(today.getFullYear(), today.getMonth() + 13, 0));
+    const dates: string[] = [];
+    for (let d = parseDate(from); d <= parseDate(to); d = addDays(d, 1)) dates.push(toDateStr(d));
+    loadStrip(dates);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Recurring series only materialize occurrences up to a rolling window
   // (RECURRENCE_WINDOW_DAYS in eventStore.ts) — without something to push
   // that window forward, an ongoing "every Mon/Wed/Fri" class would

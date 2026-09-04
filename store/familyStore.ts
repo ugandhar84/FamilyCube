@@ -577,6 +577,21 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       return;
     }
     set({ activeFamilyId: familyId, members: [], activeMemberId: null, familyLoadStatus: 'loading' });
+    // eventStore's cached calendar reads (strip dots, day/range event
+    // caches) were never scoped by family at all — without this, a
+    // grandparent switching families could see the PREVIOUS family's
+    // calendar dots/events for as long as the relevant cache TTL (up to
+    // 15 min for strip data) before it naturally refreshed. require()
+    // (not a static import) to avoid a circular dependency between the
+    // two stores, matching this file's own existing pattern for
+    // cross-store calls elsewhere (e.g. removeMember's choreStore/
+    // eventStore requires).
+    try {
+      const { useEventStore } = require('./eventStore');
+      useEventStore.getState().resetCalendarCache();
+    } catch (e) {
+      console.warn('[familyStore] setActiveFamily: eventStore cache reset failed', e);
+    }
     await get().syncFromDB();
   },
 

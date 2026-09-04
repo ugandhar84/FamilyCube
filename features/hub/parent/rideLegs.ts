@@ -98,6 +98,27 @@ export async function forkRideLegs({
   const rideMeta = parseRideMeta(ev.returnTime, ev.date);
   const pickupTime = pickupTimeOverride ?? rideMeta.pickupTime ?? ev.time;
 
+  // assigneePatch returns EITHER the helper/helperStatus pair (Ride/
+  // Medical/Sports) OR the driverName/driverStatus pair (Study/rideRequired
+  // categories) — never both. The pickup leg is a brand-new row via
+  // addEvent so it only ever has whichever pair got set. The DROP-OFF leg
+  // is the ORIGINAL pre-fork row via updateEvent, which only patches the
+  // fields it's given — a stale value in the OTHER pair (left over from
+  // before this event became a both-ways ride, or from an earlier edit)
+  // survives untouched. eventAssigneeRole()/eventAssignee() (used by every
+  // confirm/reassign/decline surface) can then read the stale pair instead
+  // of the one this fork actually set, live-reported as "able to reassign
+  // the pickup leg, not able to reassign the drop-off leg itself" — the
+  // exact "conflicting data" shape event_participants' own migration
+  // comment (20260905100000) already documented as a real production bug
+  // for this app. Explicitly null out whichever pair assigneePatch did NOT
+  // return, on both legs, so this can't recur.
+  const patchResult = assigneePatch(selfDrive);
+  const usesDriverPair = 'driverName' in patchResult;
+  const clearOtherPair = usesDriverPair
+    ? { helper: undefined, helperId: undefined, helperStatus: undefined }
+    : { driverName: undefined, driverId: undefined, driverStatus: undefined };
+
   // The 2 legs are otherwise fully independent rows with no way for any
   // role encountering just one of them (e.g. in Schedule's Agenda/Week/Day,
   // or a GP who wasn't around for the other leg) to know a companion leg
@@ -113,7 +134,8 @@ export async function forkRideLegs({
     time: pickupTime,
     type: 'event', category: ev.category, allDay: false, memberId: ev.memberId,
     approvalPending: false, conflict: false,
-    ...assigneePatch(selfDrive),
+    ...clearOtherPair,
+    ...patchResult,
     notes: ev.notes ? `(Return) ${ev.notes}` : `Pickup leg for "${ev.title}"`,
     color: PICKUP_INDIGO,
     isOpenToGrandparents: !selfDrive,
@@ -127,7 +149,8 @@ export async function forkRideLegs({
 
   await updateEvent(ev.id, {
     approvalPending: false,
-    ...assigneePatch(selfDrive),
+    ...clearOtherPair,
+    ...patchResult,
     returnTime: undefined,
     title: `${ev.title} — Drop-off`,
     notes: ev.notes,

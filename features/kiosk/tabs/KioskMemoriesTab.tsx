@@ -4,7 +4,7 @@
  * on-mount, no realtime — matches that screen's existing behavior).
  */
 import { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Image, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { TYPO } from '@/constants/theme';
 import { fmtDate } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
@@ -21,15 +21,19 @@ interface Memory {
 export function KioskMemoriesTab({ colors, isDark }: { colors: any; isDark: boolean }) {
   const familyId = useFamilyStore(s => (s.members[0] as any)?.familyId);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!familyId) return;
     (async () => {
-      const { data } = await supabase.from('family_memories')
+      const { data, error } = await supabase.from('family_memories')
         .select('*').eq('family_id', familyId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(200);
+      setLoading(false);
+      if (error) { setLoadError(true); return; }
       if (data) setMemories(data as Memory[]);
     })();
   }, [familyId]);
@@ -37,6 +41,11 @@ export function KioskMemoriesTab({ colors, isDark }: { colors: any; isDark: bool
   return (
     <View style={s.root}>
       <Text style={[s.title, { color: colors.textPrimary }]}>Family Memories</Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+      ) : loadError ? (
+        <Text style={[s.empty, { color: colors.danger }]}>Couldn't load memories — check your connection</Text>
+      ) : (
       <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
         {memories.map(m => {
           const img = m.photo_urls?.[0] ?? m.photo_url;
@@ -55,6 +64,7 @@ export function KioskMemoriesTab({ colors, isDark }: { colors: any; isDark: bool
           <Text style={[s.empty, { color: colors.textTertiary }]}>No memories shared yet</Text>
         )}
       </ScrollView>
+      )}
     </View>
   );
 }

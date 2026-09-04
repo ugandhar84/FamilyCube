@@ -103,12 +103,12 @@ export function KioskHeader({
 
         {isParent && (
           <Pressable onPress={onAskFam} style={[s.askFam, { backgroundColor: colors.pink }]}>
-            <Sparkles size={19} color="#fff" />
+            <Sparkles size={22} color="#fff" />
           </Pressable>
         )}
 
         <Pressable onPress={onLock} style={[s.lockBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} hitSlop={8}>
-          <Lock size={17} color={colors.textSecondary} />
+          <Lock size={20} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -146,12 +146,16 @@ const s = StyleSheet.create({
   },
   avatarName: { fontSize: 11, fontWeight: '700' },
   divider: { width: StyleSheet.hairlineWidth, height: 34 },
+  // Bumped from 44/40px to match the rest of kiosk's touch-target scale
+  // (nav rail buttons are 60px, avatar rings 44-76px elsewhere) — these two
+  // are frequently-tapped controls on a few-feet-away kitchen tablet, so
+  // they shouldn't be smaller than everything else on screen.
   askFam: {
-    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center',
     shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5,
   },
   lockBtn: {
-    width: 40, height: 40, borderRadius: 20, borderWidth: 1,
+    width: 48, height: 48, borderRadius: 24, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
 });

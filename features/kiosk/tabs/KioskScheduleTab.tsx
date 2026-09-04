@@ -16,7 +16,7 @@
  * session that never mounted the phone's own calendar screen.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
@@ -39,6 +39,7 @@ function startOfWeek(d: Date): Date {
 
 export function KioskScheduleTab({ active, members, colors, isDark }: { active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean }) {
   const rangeEvents = useEventStore(s => s.rangeEvents);
+  const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
   const [composerDate, setComposerDate] = useState<string | null>(null);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
@@ -152,6 +153,19 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           })}
         </ScrollView>
       </View>
+
+      {rangeLoading && eventsByDate && Object.keys(eventsByDate).length === 0 && (
+        // Only shown while the FIRST fetch for this range is still in
+        // flight and nothing's rendered yet — a background refetch (e.g.
+        // after switching filters) shouldn't flash this over an already-
+        // populated grid. Was previously indistinguishable from "no events
+        // this range" (blank grid either way) while a fetch failed or was
+        // still loading.
+        <View style={s.loadingStrip}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading schedule…</Text>
+        </View>
+      )}
 
       {viewMode === 'month' && (
         <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
@@ -360,6 +374,8 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
 
 const s = StyleSheet.create({
   root: { flex: 1, padding: 20 },
+  loadingStrip: { alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 48 },
+  loadingText: { fontSize: TYPO.body, fontWeight: '700' },
   header: { marginBottom: 16, gap: 10 },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   navRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

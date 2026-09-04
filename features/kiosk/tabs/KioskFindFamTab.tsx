@@ -6,7 +6,7 @@
  * kept fully independent of that screen's file.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { MapPin, BatteryLow } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -36,9 +36,11 @@ export function KioskFindFamTab({ members, colors, isDark }: {
   members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
   const [locations, setLocations] = useState<MemberLocation[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('member_locations').select('*');
+    setLoading(false);
     if (data) {
       // Decrypt address/neighborhood (per-device envelope, same as every
       // other member_locations reader) — this was rendering raw ciphertext
@@ -67,6 +69,9 @@ export function KioskFindFamTab({ members, colors, isDark }: {
   return (
     <View style={s.root}>
       <Text style={[s.title, { color: colors.textPrimary }]}>Find Family</Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+      ) : (
       <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
         {members.map(m => {
           const rawLoc = locFor(m.id);
@@ -111,6 +116,7 @@ export function KioskFindFamTab({ members, colors, isDark }: {
           );
         })}
       </ScrollView>
+      )}
     </View>
   );
 }

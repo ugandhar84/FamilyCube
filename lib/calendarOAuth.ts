@@ -76,12 +76,23 @@ function randomToken(): Promise<string> {
 function scopeFor(provider: CalendarProvider, purpose: CalendarPurpose): string {
   if (provider === 'google') {
     // calendar.freebusy: read-only busy/free blocks, no event content at
-    // all. calendar.events + tasks.readonly: full read/write on real
-    // events, plus read-only Google Tasks (synced into Chores/Quests —
-    // Tasks is a completely separate API from Calendar, its own scope).
+    // all. Personal needs more than calendar.events now: creating/finding
+    // the dedicated "FamilyCube" secondary calendar (calendar-oauth-
+    // exchange's ensureGoogleFamilyCubeCalendar) needs calendar.calendarlist
+    // (list calendars) and calendar.app.created (create a new calendar,
+    // and — critically — Google restricts a calendar created under this
+    // scope to only ever being readable/writable by an app using this same
+    // scope, which is exactly the isolation this dedicated calendar wants).
+    // calendar.events stays too, since that's still what's needed to
+    // read/write actual event content once the target calendar exists.
+    // Without this broader scope, calendar creation 403s and silently
+    // falls back to the member's primary calendar (the exact bug this
+    // dedicated-calendar feature exists to fix) — live-reported: hundreds
+    // of stray test events ended up mixed into the member's own real
+    // Google Calendar with no dedicated place to find/bulk-clean them.
     return purpose === 'work'
       ? 'https://www.googleapis.com/auth/calendar.freebusy'
-      : 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks.readonly';
+      : 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/tasks.readonly';
   }
   // Graph has no dedicated freebusy-only scope — Calendars.Read is the
   // narrowest that still permits getSchedule (freebusy) for a work

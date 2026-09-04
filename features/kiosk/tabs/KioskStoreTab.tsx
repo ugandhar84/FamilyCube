@@ -201,9 +201,12 @@ export function KioskStoreTab({ active, colors, isDark }: {
       {/* Jar picker — same choice StoreScreen's JarPickerModal offers when
           neither wallet alone covers the cost, or both do. */}
       {jarPicker && (
-        <View style={StyleSheet.absoluteFill}>
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center' }]}>
           <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} onPress={() => setJarPicker(null)} />
-          <View style={{ position: 'absolute', left: 24, right: 24, top: '30%',
+          {/* width capped — left/right:24 alone would stretch edge-to-edge
+              on a wide kiosk landscape screen; centered + maxWidth keeps it
+              a proper dialog regardless of screen width. */}
+          <View style={{ position: 'absolute', width: 420, maxWidth: '90%', top: '30%',
             backgroundColor: colors.card, borderRadius: 20, padding: 22, gap: 14,
             borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Pay with which jar?</Text>

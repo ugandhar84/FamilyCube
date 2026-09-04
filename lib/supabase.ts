@@ -80,13 +80,35 @@ function getActiveMemberGrantHeader(): string | undefined {
   }
 }
 
+// Multi-family membership support — see migration
+// 20260931200000_multi_family_membership_active_family_header.sql. Only
+// meaningful when activeMemberId is unset (resolve_active_member_id's own
+// x-active-member-id path already unambiguously determines the family via
+// the specific member id, so this header is ignored server-side whenever
+// that one is present). Untrusted input, same as every other active-*
+// header here: the server independently re-validates that the claimed
+// family is genuinely one this auth.uid() has a real member row in before
+// ever trusting it, so a stale/wrong value here can only ever fail closed
+// to the server's own pre-existing arbitrary-pick fallback, never expose a
+// family this session doesn't actually belong to.
+function getActiveFamilyIdHeader(): string | undefined {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    return useFamilyStore.getState().activeFamilyId ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const debugFetch: typeof fetch = async (input, init) => {
   const activeMemberId = getActiveMemberIdHeader();
   const activeMemberGrant = getActiveMemberGrantHeader();
-  if (activeMemberId || activeMemberGrant) {
+  const activeFamilyId = getActiveFamilyIdHeader();
+  if (activeMemberId || activeMemberGrant || activeFamilyId) {
     const headers = new Headers(init?.headers ?? (input as Request)?.headers);
     if (activeMemberId) headers.set('x-active-member-id', activeMemberId);
     if (activeMemberGrant) headers.set('x-active-member-grant', activeMemberGrant);
+    if (activeFamilyId) headers.set('x-active-family-id', activeFamilyId);
     init = { ...init, headers };
   }
   const url    = typeof input === 'string' ? input : (input as Request).url;

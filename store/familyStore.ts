@@ -229,6 +229,20 @@ interface FamilyState {
   // to anyone else," so the grant survives its own PinEntryModal→
   // setActiveMember call but is dropped on any subsequent switch away.
   activeMemberGrantMemberId: string | null;
+  // Multi-family membership — see migration
+  // 20260931200000_multi_family_membership_active_family_header.sql. Which
+  // of the CURRENTLY ACTIVE member's own families is active right now, for
+  // the rare case their auth_user_id has a real member row in more than
+  // one (e.g. a grandparent or step-parent in two households). Reset by
+  // setActiveMember on every switch — this is scoped to whichever person
+  // is active, not to the device, precisely because two different people
+  // sharing one device (e.g. two step-parents, each in their own second
+  // family alongside the one they share) could otherwise have person A's
+  // last-picked family silently leak into person B's requests after a
+  // PIN-switch. Only meaningful (and only ever sent as a header) when the
+  // active member genuinely has more than one family row — see
+  // familiesForActiveMember below.
+  activeFamilyId: string | null;
   loaded: boolean;
   // 'idle' before any load attempt; 'loading' while loadFromStorage's cache
   // read / bounded retry loop is still running; 'confirmed' once either a
@@ -245,6 +259,15 @@ interface FamilyState {
   // Create/Join Family screen because of a transient auth-propagation race).
   familyLoadStatus: 'idle' | 'loading' | 'confirmed';
   familyName: string;
+  // Multi-family membership — every family THIS device's real auth.uid()
+  // has a member row in, regardless of which is currently active. Members
+  // itself is scoped to just the active family (syncFromDB's
+  // eq('family_id', knownFamilyId) query), so this is a separate, lighter
+  // fetch (see refreshMyFamilies) — populated at load time and whenever a
+  // family switch happens, empty array for the overwhelming majority of
+  // accounts today (exactly one entry). The family-switcher UI should
+  // render nothing at all whenever this has fewer than 2 entries.
+  myFamilies: { id: string; name: string }[];
 
   setMembers: (members: FamilyMember[]) => void;
   setActiveMember: (id: string) => void;
@@ -253,6 +276,21 @@ interface FamilyState {
   // session — pass null/null to clear (sign-out, or switching to a member
   // who doesn't need one).
   setActiveMemberGrant: (memberId: string | null, token: string | null, expiresAt: string | null) => void;
+  // Multi-family membership — switches which family is currently active.
+  // Only meaningful when myFamilies has more than one entry; the UI should
+  // never offer this control otherwise. familyId must be one of
+  // myFamilies' own ids — silently ignored if not (mirrors the server's
+  // own validation in resolve_active_member_id(), belt-and-suspenders
+  // rather than trusting the caller). Triggers a fresh syncFromDB for the
+  // newly active family (members is scoped per-family) after switching.
+  setActiveFamily: (familyId: string) => Promise<void>;
+  // Populates myFamilies — every family this device's real auth.uid() has
+  // a member row in. A separate, lightweight query (not derived from
+  // `members`, which is scoped to just the active family) — see
+  // myFamilies' own comment. Called once at load time and after any
+  // family switch; safe to call anytime, e.g. to refresh after accepting
+  // a new family invite.
+  refreshMyFamilies: () => Promise<void>;
   setFamilyName: (name: string) => void;
   // Persists to families.name (setFamilyName only ever touched local state —
   // there was previously no path back to the DB at all, so a rename made
@@ -449,6 +487,8 @@ function applyActive(members: FamilyMember[], cached: string | null, current: st
 export const useFamilyStore = create<FamilyState>((set, get) => ({
   members: [],
   activeMemberId: null,
+  activeFamilyId: null,
+  myFamilies: [],
   activeMemberGrantToken: null,
   activeMemberGrantExpiresAt: null,
   activeMemberGrantMemberId: null,
@@ -473,6 +513,50 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // are — acceptable since a family's display name changes rarely and
     // isn't time-sensitive the way live status fields are.
     return true;
+  },
+
+  // Multi-family membership — see myFamilies' own comment for the full
+  // rationale, and setActiveMember's caller for the security gating
+  // (real-login-only, never via a PIN-switch grant). Queries `members`
+  // directly rather than `families` — members_select's own RLS
+  // (auth_user_id = auth.uid() OR family_id = current_user_family_id())
+  // already permits exactly this cross-family read with zero policy
+  // changes, and a plain members query avoids needing a second table join
+  // just to get each family's display name.
+  refreshMyFamilies: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { set({ myFamilies: [] }); return; }
+    const { data, error } = await supabase
+      .from('members')
+      .select('family_id, families(name)')
+      .eq('auth_user_id', user.id);
+    if (error || !data) { console.warn('[familyStore] refreshMyFamilies failed', error?.message); return; }
+    const seen = new Set<string>();
+    const families: { id: string; name: string }[] = [];
+    for (const row of data as any[]) {
+      const id = row.family_id ? String(row.family_id) : null;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      families.push({ id, name: row.families?.name ?? 'Family' });
+    }
+    set({ myFamilies: families });
+  },
+
+  // Multi-family membership — see myFamilies/activeFamilyId's own
+  // comments. familyId must be one of THIS member's own families
+  // (validated client-side here as a belt-and-suspenders check —
+  // resolve_active_member_id() independently re-validates server-side on
+  // every request regardless, so a bypass here could never actually
+  // expose another family's data, only send a header that gets ignored).
+  // Triggers a fresh syncFromDB, since `members` itself is scoped to
+  // whichever family is active.
+  setActiveFamily: async (familyId) => {
+    if (!get().myFamilies.some(f => f.id === familyId)) {
+      console.warn('[familyStore] setActiveFamily ignored — not one of this member\'s own families', familyId);
+      return;
+    }
+    set({ activeFamilyId: familyId, members: [], activeMemberId: null, familyLoadStatus: 'loading' });
+    await get().syncFromDB();
   },
 
   setActiveMemberGrant: (memberId, token, expiresAt) => set({
@@ -506,9 +590,37 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         activeMemberGrantToken: keepGrant ? state.activeMemberGrantToken : null,
         activeMemberGrantExpiresAt: keepGrant ? state.activeMemberGrantExpiresAt : null,
         activeMemberGrantMemberId: keepGrant ? state.activeMemberGrantMemberId : null,
+        // Multi-family membership — reset on EVERY switch, unconditionally,
+        // before anything below decides whether to repopulate. Two
+        // different people sharing one device (e.g. two step-parents, each
+        // in their own separate second family alongside the one they
+        // share) must never have person A's last-picked family or family
+        // list linger into person B's session after a PIN-switch — a real
+        // cross-family info leak, not just a stale-UI flash, since
+        // myFamilies literally names OTHER households this member belongs
+        // to. Re-derived just below, gated on real-login-only.
+        activeFamilyId: null,
+        myFamilies: [],
       };
     });
     AsyncStorage.setItem(ACTIVE_KEY, id);
+    // Multi-family membership — reveal OTHER families this member belongs
+    // to ONLY when they were switched into via their own real device auth
+    // session, never via a PIN-switch grant (even a fully legitimate one,
+    // switching to a family member who happens to have their own separate
+    // login elsewhere). Live-flagged risk: if this ran for every switch,
+    // whoever is physically holding a shared device could PIN-switch INTO
+    // a step-parent's profile for the family they share, and — merely by
+    // that profile existing — see a list of that step-parent's OTHER,
+    // unrelated families. Gating on the real auth session (not just "is
+    // this member's own row") means the switcher/family list only ever
+    // appears on the one device that's genuinely THEIRS to begin with.
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      const member = get().members.find(m => m.id === id);
+      if (user && member?.authUserId === user.id) {
+        get().refreshMyFamilies();
+      }
+    }).catch(() => {});
     // Save push token to the newly active member row. saveTokenToMember
     // itself already deletes any OTHER member's member_device_tokens row
     // for this exact device — real dedup, zero tolerance for two members
@@ -976,6 +1088,12 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           loaded: true,
           familyLoadStatus: 'confirmed',
         });
+        // Multi-family membership — same real-login-only gate as
+        // setActiveMember's own (see its comment): only populate the
+        // OTHER-families list when the member this load resolved to is
+        // genuinely this device's own real auth session, never a cached
+        // PIN-switch grant riding along from a previous launch.
+        if (realAuthMemberId && resolvedActiveId === realAuthMemberId) get().refreshMyFamilies();
         // Refresh in background
         get().syncFromDB();
         return;
@@ -1131,6 +1249,6 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       AsyncStorage.removeItem(STORAGE_KEY),
       AsyncStorage.removeItem(ACTIVE_KEY),
     ]);
-    set({ members: [], activeMemberId: null, loaded: false, familyLoadStatus: 'idle', familyName: '' });
+    set({ members: [], activeMemberId: null, loaded: false, familyLoadStatus: 'idle', familyName: '', activeFamilyId: null, myFamilies: [] });
   },
 }));

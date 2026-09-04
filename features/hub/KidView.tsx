@@ -4,6 +4,7 @@ import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
+import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
@@ -208,7 +209,13 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const nextEvent = todayEvents.find(e => hoursUntilEvent(e.date, e.time) > 0 && eventAssignee(e).status !== 'rejected');
   const nextCountdown = useCountdown(nextEvent?.date, nextEvent?.time);
 
-  const myDeclinedRides = myUpcomingEvents.filter(e =>
+  // dedupeRideSeries applied to both — same fix as ParentView/TeenView/
+  // SeniorView's own Hub sections: a recurring ride can otherwise show one
+  // card per future occurrence instead of just the soonest. Each list
+  // deduped independently (not a shared call) since a series could
+  // legitimately have one occurrence rejected and a LATER occurrence
+  // still unassigned — each bucket needs its own soonest representative.
+  const myDeclinedRidesRaw = myUpcomingEvents.filter(e =>
     e.date >= today && eventAssignee(e).status === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
   );
   // A kid can name a preferred helper right when creating the ride request
@@ -218,9 +225,11 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // AND awaitingDriverRide/confirmedRide below at once, rendering two
   // contradictory banners simultaneously (QA Round 7, finding B2). Once an
   // assignee is named, the other filters own communicating status.
-  const myPendingRides  = events.filter(e =>
+  const myPendingRidesRaw = events.filter(e =>
     (e.memberId === active.id || e.memberIds?.includes(active.id)) && e.approvalPending && !eventAssignee(e).name && e.date >= today
   );
+  const [myDeclinedRides] = dedupeRideSeries(myDeclinedRidesRaw);
+  const [myPendingRides] = dedupeRideSeries(myPendingRidesRaw);
 
   const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
 

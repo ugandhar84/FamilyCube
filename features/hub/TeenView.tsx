@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
+import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -173,28 +174,47 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // driverName/driverStatus, so no teen had any visible way to see or claim
   // it. eventAssignee() covers both field pairs, same fix already applied
   // to SeniorView/KidView/EventDetailSheet.
-  const myPendingAssignments = upcomingEvents.filter(e => {
-    const a = eventAssignee(e);
-    // id-based — falls back to name only for an external, non-member
-    // assignee with no id at all.
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
-    return isMine && a.status === 'pending' && !e.approvalPending && e.date >= today;
-  });
-  const openPickups = upcomingEvents.filter(e => {
-    const a = eventAssignee(e);
-    return e.isOpenToTeens && a.status !== 'confirmed' && a.status !== 'rejected' && e.date >= today;
-  });
-  // id-based match — was an exact name compare (itself a fix for an
-  // earlier fuzzy includes()-based match that could show a DIFFERENT
-  // member's confirmed ride as this teen's own when two names shared a
-  // first name); id is stronger still since a.id can't collide at all.
-  // Falls back to name only for an external, non-member assignee with no
-  // id at all.
-  const myPickups = upcomingEvents.filter(e => {
-    const a = eventAssignee(e);
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
-    return isMine && a.status === 'confirmed' && e.date >= today;
-  });
+  // dedupeRideSeries applied to each list below — same fix as ParentView's
+  // Household Backlog (a recurring ride opened to teens, or directly
+  // assigned to one, otherwise shows one card per future occurrence
+  // instead of just the soonest, and inflates openPickupCount below by
+  // the same amount).
+  const [myPendingAssignmentsRaw, openPickupsRaw, myPickupsRaw] = [
+    upcomingEvents.filter(e => {
+      const a = eventAssignee(e);
+      // id-based — falls back to name only for an external, non-member
+      // assignee with no id at all.
+      const isMine = a.id ? a.id === active.id : a.name === active.name;
+      return isMine && a.status === 'pending' && !e.approvalPending && e.date >= today;
+    }),
+    upcomingEvents.filter(e => {
+      const a = eventAssignee(e);
+      return e.isOpenToTeens && a.status !== 'confirmed' && a.status !== 'rejected' && e.date >= today;
+    }),
+    // id-based match — was an exact name compare (itself a fix for an
+    // earlier fuzzy includes()-based match that could show a DIFFERENT
+    // member's confirmed ride as this teen's own when two names shared a
+    // first name); id is stronger still since a.id can't collide at all.
+    // Falls back to name only for an external, non-member assignee with no
+    // id at all.
+    upcomingEvents.filter(e => {
+      const a = eventAssignee(e);
+      const isMine = a.id ? a.id === active.id : a.name === active.name;
+      return isMine && a.status === 'confirmed' && e.date >= today;
+    }),
+  ];
+  // Each list deduped in its OWN call, not one shared call — dedupeRideSeries'
+  // seenSeries set spans every list passed together (by design, for
+  // ParentView's own two lists that never actually share a seriesId in
+  // practice), but these three lists are genuinely status-partitioned
+  // (pending vs open-unconfirmed vs confirmed): different OCCURRENCES of
+  // the SAME series can legitimately land in different lists (this week's
+  // ride already confirmed, next week's still pending) and each such list
+  // still needs its own soonest-occurrence representative, not a global
+  // per-series cap across all three combined.
+  const [myPendingAssignments] = dedupeRideSeries(myPendingAssignmentsRaw);
+  const [openPickups] = dedupeRideSeries(openPickupsRaw);
+  const [myPickups] = dedupeRideSeries(myPickupsRaw);
   // Live QA finding: this used to be pure local React state — a teen's
   // Pass only hid the ride for as long as the screen stayed mounted,
   // forgotten the instant the app was closed/reopened, unlike a

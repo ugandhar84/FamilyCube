@@ -560,7 +560,19 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // bucket feeding THIS section) never got the same treatment — the two
   // buckets look similar but are independently derived, so fixing one
   // silently left the other exposed to the identical bug.
-  const [myHelperEvents, coParentHelperEvents] = dedupeRideSeries(myPending, coParentPending);
+  //
+  // Each list deduped in its OWN call, not a shared one — dedupeRideSeries'
+  // seenSeries set spans every list passed together (fine for two lists
+  // that never actually share a seriesId), but myPending/coParentPending
+  // are partitioned by ASSIGNEE identity (mine vs the co-parent's), not by
+  // occurrence-of-series: the same recurring series could have THIS
+  // parent assigned to one future occurrence and the co-parent assigned
+  // to a different one, and each side still needs its own soonest-
+  // occurrence representative — a shared call would incorrectly let
+  // whichever list is processed first suppress the other's legitimate
+  // occurrence of the same series.
+  const [myHelperEvents] = dedupeRideSeries(myPending);
+  const [coParentHelperEvents] = dedupeRideSeries(coParentPending);
 
   const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
     + coParentHelperEvents.length;

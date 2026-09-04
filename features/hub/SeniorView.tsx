@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
+import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -760,12 +761,29 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     out.forEach(e => shownRideIds.add(e.id));
     return out;
   };
-  const dedupMyPendingAssignments = dedupe(myPendingAssignments);
-  const dedupMyDrivingToday       = dedupe(myDrivingToday);
-  const dedupOpenRequests         = dedupe(openRequests);
-  const dedupVolunteerPool        = dedupe(volunteerPool);
-  const dedupOpenRides            = dedupe(openRides);
-  const dedupMyClaimedRides       = dedupe(upcomingClaimedRides);
+  // Series-collapse FIRST (each list in its OWN dedupeRideSeries call —
+  // these six lists are partitioned by section/status/assignee, not by
+  // occurrence-of-series, so a shared seenSeries set would incorrectly
+  // let one section's occurrence suppress a DIFFERENT section's
+  // legitimate occurrence of the same recurring series), THEN the
+  // existing id-based cross-section dedupe above. Live-reported bug (same
+  // root cause already fixed in ParentView's Household Backlog): a
+  // recurring ride showed one card per future occurrence instead of just
+  // the soonest — reachable here via openRides/upcomingClaimedRides in
+  // particular, since a standing weekly GP commitment is exactly this
+  // shape.
+  const [myPendingAssignmentsDeduped] = dedupeRideSeries(myPendingAssignments);
+  const [myDrivingTodayDeduped] = dedupeRideSeries(myDrivingToday);
+  const [openRequestsDeduped] = dedupeRideSeries(openRequests);
+  const [volunteerPoolDeduped] = dedupeRideSeries(volunteerPool);
+  const [openRidesDeduped] = dedupeRideSeries(openRides);
+  const [upcomingClaimedRidesDeduped] = dedupeRideSeries(upcomingClaimedRides);
+  const dedupMyPendingAssignments = dedupe(myPendingAssignmentsDeduped);
+  const dedupMyDrivingToday       = dedupe(myDrivingTodayDeduped);
+  const dedupOpenRequests         = dedupe(openRequestsDeduped);
+  const dedupVolunteerPool        = dedupe(volunteerPoolDeduped);
+  const dedupOpenRides            = dedupe(openRidesDeduped);
+  const dedupMyClaimedRides       = dedupe(upcomingClaimedRidesDeduped);
 
   // Rides already on GP's plate moved to the Today group, so Help Out counts
   // only what still needs a volunteer.

@@ -23,6 +23,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { eventAssignee } from '@/store/eventStore';
 import { FamilyPhotoFrameCard } from './parent/FamilyPhotoFrameCard';
 
@@ -82,9 +83,16 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
   // classifyEventUrgency instead, which ParentView's actionCount does NOT
   // include — that case would go uncounted anywhere if dropped outright, so
   // this keeps counting only the has-an-assignee subset here.
-  const unattributedApprovalPendingCount = events.filter(
-    e => e.approvalPending && !isWorkEvent(e) && !!eventAssignee(e).name,
-  ).length;
+  // dedupeRideSeries applied here too — addRecurringEvent spreads
+  // approvalPending/driverName/driverStatus onto every future occurrence
+  // of a series, so a single recurring "please confirm driver" request N
+  // occurrences out otherwise inflated this count by N instead of 1 (same
+  // root cause as the Household Backlog card-list bug, just a count here
+  // rather than visible duplicate cards).
+  const [unattributedApprovalPendingEvents] = dedupeRideSeries(
+    events.filter(e => e.approvalPending && !isWorkEvent(e) && !!eventAssignee(e).name),
+  );
+  const unattributedApprovalPendingCount = unattributedApprovalPendingEvents.length;
   const needsAttention = awaitingApprovalCount + unattributedApprovalPendingCount + otherAttentionCount;
   const summaryText = todayEventsCount === 0 && needsAttention === 0
     ? 'All clear ✓'

@@ -526,14 +526,26 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   // changes, and a plain members query avoids needing a second table join
   // just to get each family's display name.
   refreshMyFamilies: async () => {
+    // TOCTOU guard — this function awaits twice (auth.getUser(), then the
+    // members query), and a rapid double-switch (avatar A tapped, then
+    // avatar B tapped before A's checks finish) could otherwise let A's
+    // in-flight result land and overwrite myFamilies AFTER B has already
+    // become active — reopening exactly the cross-person leak
+    // setActiveMember's own atomic reset exists to prevent. Captured
+    // once at entry, re-checked after EVERY await before ever committing
+    // a set() — if the active member changed underneath this call at any
+    // point, it's now stale and must not write anything.
+    const calledForMemberId = get().activeMemberId;
     const { data: { user } } = await supabase.auth.getUser();
+    if (get().activeMemberId !== calledForMemberId) return; // stale — a different member is active now
     if (!user) { set({ myFamilies: [] }); return; }
-    const activeMember = get().members.find(m => m.id === get().activeMemberId);
+    const activeMember = get().members.find(m => m.id === calledForMemberId);
     if (activeMember?.role !== 'senior') { set({ myFamilies: [] }); return; }
     const { data, error } = await supabase
       .from('members')
       .select('family_id, families(name)')
       .eq('auth_user_id', user.id);
+    if (get().activeMemberId !== calledForMemberId) return; // stale — a different member is active now
     if (error || !data) { console.warn('[familyStore] refreshMyFamilies failed', error?.message); return; }
     const seen = new Set<string>();
     const families: { id: string; name: string }[] = [];
@@ -802,6 +814,8 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   removeMember: async (id) => {
     const prev = get().members;
     const prevActiveId = get().activeMemberId;
+    const prevActiveFamilyId = get().activeFamilyId;
+    const prevMyFamilies = get().myFamilies;
 
     // Spec 9.1 — eligibility recompute before removal. chore_tasks.
     // assigned_to_id has ON DELETE SET NULL (Postgres won't block the
@@ -877,7 +891,24 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     const removedMember = prev.find(m => m.id === id);
     const deletedAtIso = new Date().toISOString();
     const next = prev.map(m => m.id === id ? { ...m, deletedAt: deletedAtIso } : m);
-    set({ members: next, activeMemberId: prevActiveId === id ? (next.find(m => !m.deletedAt)?.id ?? next[0]?.id ?? null) : prevActiveId });
+    const activeIdChanging = prevActiveId === id;
+    const nextActiveId = activeIdChanging ? (next.find(m => !m.deletedAt)?.id ?? next[0]?.id ?? null) : prevActiveId;
+    set({
+      members: next,
+      activeMemberId: nextActiveId,
+      // Multi-family membership — this reassigns activeMemberId directly
+      // (a soft-delete forcing a switch away from the removed member),
+      // bypassing setActiveMember's own atomic myFamilies/activeFamilyId
+      // reset entirely. Without this, removing the active member (a
+      // multi-family grandparent whose OTHER households were already
+      // populated into myFamilies) would leave that family list lingering
+      // and attributed to whoever becomes newly active — the exact
+      // cross-person leak setActiveMember's own reset exists to prevent.
+      // Only reset when the active member is actually changing; removing
+      // some OTHER member (the common case) leaves the current person's
+      // own multi-family state untouched.
+      ...(activeIdChanging ? { activeFamilyId: null, myFamilies: [] } : {}),
+    });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 
     const { error } = await supabase.from('members')
@@ -885,7 +916,12 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       .eq('id', id);
     if (error) {
       console.warn('[familyStore] removeMember (soft-delete) failed:', error.message);
-      set({ members: prev, activeMemberId: prevActiveId });
+      // Restore myFamilies/activeFamilyId too, not just members/
+      // activeMemberId — the optimistic reset above (when the removed
+      // member WAS the active one) must fully unwind on failure, or a
+      // multi-family grandparent's own family list stays incorrectly
+      // empty after a removal that never actually happened.
+      set({ members: prev, activeMemberId: prevActiveId, activeFamilyId: prevActiveFamilyId, myFamilies: prevMyFamilies });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prev));
       throw error;
     }
@@ -1160,6 +1196,17 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // ParentReviewDeck.tsx, and familyStore's own loadFromStorage) pulled
       // the caller's own family over and over with no query-level bound.
       const knownFamilyId = get().members.find(m => m.familyId)?.familyId;
+      // Multi-family membership — generation guard. Re-read after the
+      // query resolves (see below) and bail if it changed: setActiveFamily
+      // calls syncFromDB for a NEWLY active family, and a foreground/
+      // realtime-triggered syncFromDB for the family being switched AWAY
+      // FROM could otherwise land its (now-stale) response after the
+      // switch — genuinely the wrong family's roster overwriting the
+      // correct one, not just a redundant refetch. Before this feature,
+      // every syncFromDB call was implicitly for the same one family a
+      // session ever had, so a stale response was harmless; that's no
+      // longer true once a family switch can happen mid-flight.
+      const knownFamilyIdAtStart = knownFamilyId;
       // Cache-empty case (e.g. right after familyStore.reset() on sign-out)
       // falls through to an unscoped select('*') — this is still fully
       // protected by Postgres RLS (which scopes by auth.uid() server-side
@@ -1182,6 +1229,18 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           : supabase.from('members').select('*').order('created_at').order('id'),
       ]);
       if (error || !data) return;
+      // Bail if the family this query was scoped to is no longer the one
+      // in flight — see knownFamilyIdAtStart's own comment. get().members
+      // reflects whatever the MOST RECENT settled call (or a switch)
+      // already committed; if that's now a different family than the one
+      // THIS call queried for, this response is stale and must not
+      // overwrite it. Only checked when the query was actually scoped
+      // (knownFamilyIdAtStart set) — the unscoped select('*') case has no
+      // "wrong family" to detect against.
+      if (knownFamilyIdAtStart) {
+        const currentKnownFamilyId = get().members.find(m => m.familyId)?.familyId;
+        if (currentKnownFamilyId && currentKnownFamilyId !== knownFamilyIdAtStart) return;
+      }
       const members = dedupeMembers(data.map(fromRow));
       // Logged QA gap, fixed: a member's school schedule/homework (local-
       // only AsyncStorage data — schoolStore has no server table at all)

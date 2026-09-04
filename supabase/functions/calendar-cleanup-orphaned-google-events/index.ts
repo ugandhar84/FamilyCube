@@ -16,10 +16,20 @@
 // (the default) to review the exact match list before deleting anything.
 //
 // Run once manually, not deployed to any cron. Delete after use.
+//
+// Each invocation is budgeted to return well before Supabase's 150s idle
+// timeout — a connection with many matching events may need several
+// calls to fully process. The response's `done` flag says whether this
+// pass reached the end; if false, call again with the same body (deletes
+// just keep going — Google's own list naturally shrinks) or, for a
+// dry-run, pass the returned `resumePageToken` back in as `pageToken` to
+// continue listing from where it stopped.
+//
 // Invoke:
 //   curl -X POST .../calendar-cleanup-orphaned-google-events \
 //     -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" \
 //     -d '{"connectionId": "...", "titleFilter": "Drop-off", "from": "2026-09-01", "to": "2028-12-31", "dryRun": true}'
+//   # if done:false, repeat (add "pageToken": "<resumePageToken>" for a dry-run)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -36,8 +46,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { connectionId, connectedAccountEmail, titleFilter, from, to, dryRun = true } = await req.json() as {
-      connectionId?: string; connectedAccountEmail?: string; titleFilter?: string; from?: string; to?: string; dryRun?: boolean;
+    const { connectionId, connectedAccountEmail, titleFilter, from, to, dryRun = true, pageToken: startPageToken } = await req.json() as {
+      connectionId?: string; connectedAccountEmail?: string; titleFilter?: string; from?: string; to?: string; dryRun?: boolean; pageToken?: string;
     };
     if ((!connectionId && !connectedAccountEmail) || !titleFilter || !from || !to) {
       return json({ ok: false, error: 'titleFilter, from, to, and either connectionId or connectedAccountEmail required' }, 400);
@@ -79,13 +89,27 @@ serve(async (req) => {
     const accessToken = await getValidAccessToken(supabase, connection as CalendarConnectionRow);
     const calendarId = connection.external_calendar_id ?? 'primary';
 
-    // List every event in range whose title matches — Google's own `q`
-    // param does a full-text search (title+description+location), which
-    // is a superset of what we want but cheap to filter tighter
-    // client-side afterward on title specifically.
+    // Live-hit: Supabase edge functions hard-kill an invocation after 150s
+    // idle — a connection with enough matching events (many pages to list,
+    // then one DELETE per match) can blow well past that in a single
+    // request. Budgeted to bail out with real partial progress + a
+    // resumePageToken well before the platform's own hard cutoff, instead
+    // of the whole invocation dying with no result at all (which is what
+    // "{"code":"IDLE_TIMEOUT"}" with zero JSON body means — the earlier,
+    // unbudgeted version). Re-invoke with the returned pageToken to
+    // continue exactly where it left off; repeat until done:true.
+    const DEADLINE_MS = 100_000; // leaves ~50s margin under the 150s idle limit
+    const startedAt = Date.now();
+    const timeLeft = () => DEADLINE_MS - (Date.now() - startedAt);
+
+    // List events in range whose title matches — Google's own `q` param
+    // does a full-text search (title+description+location), a superset of
+    // what we want but cheap to filter tighter client-side on title alone.
     const matches: { id: string; summary: string; start: string }[] = [];
-    let pageToken: string | undefined;
+    let pageToken: string | undefined = startPageToken;
+    let listDone = false;
     do {
+      if (timeLeft() < 5000) break; // stop listing, return what we have + resume token
       const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
       url.searchParams.set('timeMin', `${from}T00:00:00Z`);
       url.searchParams.set('timeMax', `${to}T00:00:00Z`);
@@ -104,15 +128,18 @@ serve(async (req) => {
         }
       }
       pageToken = data.nextPageToken;
-    } while (pageToken);
+      if (!pageToken) listDone = true;
+    } while (pageToken && timeLeft() > 5000);
 
     if (dryRun) {
-      return json({ ok: true, dryRun: true, found: matches.length, sample: matches.slice(0, 20) });
+      return json({ ok: true, dryRun: true, found: matches.length, sample: matches.slice(0, 20), listDone, resumePageToken: listDone ? undefined : pageToken });
     }
 
     let deleted = 0;
     const errors: string[] = [];
+    let deletedAllListed = true;
     for (const m of matches) {
+      if (timeLeft() < 3000) { deletedAllListed = false; break; }
       try {
         const res = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${m.id}`,
@@ -127,7 +154,13 @@ serve(async (req) => {
       }
     }
 
-    return json({ ok: true, found: matches.length, deleted, errors });
+    // done:true only once BOTH listing reached the end AND every listed
+    // match in this pass was processed — otherwise there's more to find
+    // and/or more to delete, so the caller should re-invoke (dry-run: pass
+    // resumePageToken back as pageToken; delete: just call again, since
+    // Google's own list will no longer include what was just deleted).
+    const done = listDone && deletedAllListed;
+    return json({ ok: true, found: matches.length, deleted, errors, done, resumePageToken: listDone ? undefined : pageToken });
   } catch (e: any) {
     console.error('[calendar-cleanup-orphaned-google-events]', e?.message ?? e);
     return json({ ok: false, error: e?.message ?? 'cleanup failed' }, 500);

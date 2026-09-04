@@ -292,14 +292,27 @@ function extractDayOfWeek(input: string): number | null {
   return diff;
 }
 
-export interface ExtractedDateTime { date: string | null; time: string | null }
+export interface ExtractedDateTime {
+  date: string | null; time: string | null;
+  // A SECOND time in the same sentence, phrased as the return/pickup half
+  // of a both-ways ride ("...at 4:45pm and pick up at 6:15pm"). Was
+  // silently dropped entirely — the single /\b(\d{1,2})(?::(\d{2}))?\s?
+  // (am|pm)\b/ match (no /g/ flag) only ever captured the FIRST time in the
+  // sentence, so a genuinely both-ways request ("drop off... at 4:45pm and
+  // pick up at 6:15pm") lost the pickup time outright, with no field
+  // anywhere in the composer to add it back in manually either — the "+
+  // Add a return time" affordance only rendered once a pickup/drop-off
+  // LOCATION was filled in, which this exact sentence (a named class, no
+  // street address) never had. Null when the sentence only has one time.
+  returnTime: string | null;
+}
 
 // "today"/"tonight"/"tomorrow"/"day after tomorrow", weekday names (with
 // optional "next"), and clock times like "4pm"/"2:30pm" — only fills a
 // field when it finds an explicit signal, never a guess.
 export function extractDateTime(input: string): ExtractedDateTime {
   const today = new Date();
-  const result: ExtractedDateTime = { date: null, time: null };
+  const result: ExtractedDateTime = { date: null, time: null, returnTime: null };
   let daysAhead: number | null = null;
   // "day after tomorrow" must be checked BEFORE the plain "tomorrow" match
   // below — it contains that same substring, so the bare /tomorrow/ regex
@@ -327,6 +340,30 @@ export function extractDateTime(input: string): ExtractedDateTime {
     if (mer === 'pm' && h < 12) h += 12;
     if (mer === 'am' && h === 12) h = 0;
     result.time = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+  // Return/pickup time — only meaningful once the sentence already named a
+  // real drop-off verb earlier ("drop off"/"drop-off"), so this doesn't
+  // fire on an unrelated later "pick up" in a sentence that was never a
+  // both-ways ride to begin with (e.g. "pick up milk" as a second, separate
+  // errand clause). Scoped to "pick up/collect/return... at TIME" appearing
+  // AFTER the drop-off phrase, which is how this is naturally phrased.
+  if (/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i.test(input)) {
+    const dropIdx = input.search(/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i);
+    const afterDrop = input.slice(dropIdx);
+    const returnMatch = afterDrop.match(/\b(?:pick(?:ing)?\s?up|collect(?:ing)?|return(?:ing)?)\b[^.,;]{0,40}?\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
+    if (returnMatch) {
+      let rh = parseInt(returnMatch[1], 10);
+      const rm = returnMatch[2] ? parseInt(returnMatch[2], 10) : 0;
+      const rmer = returnMatch[3].toLowerCase();
+      if (rmer === 'pm' && rh < 12) rh += 12;
+      if (rmer === 'am' && rh === 12) rh = 0;
+      const candidate = String(rh).padStart(2, '0') + ':' + String(rm).padStart(2, '0');
+      // Only a genuine SECOND time — if the drop-off time regex above
+      // already matched this exact same clock time (nothing else in the
+      // sentence), there's no real return time, just one time mentioned
+      // twice in different phrasing.
+      if (candidate !== result.time) result.returnTime = candidate;
+    }
   }
   return result;
 }

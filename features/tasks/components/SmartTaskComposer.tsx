@@ -184,6 +184,10 @@ export default function SmartTaskComposer({
   const [touchedDrop, setTouchedDrop] = useState(false);
   const [returnTime, setReturnTime] = useState('');
   const [showReturnTime, setShowReturnTime] = useState(false);
+  // Same touched-guard pattern as touchedPickup/touchedDrop — once the user
+  // has manually set/cleared a detected return time, a later re-analysis
+  // (editing the sentence further) must not silently overwrite it.
+  const [touchedReturnTime, setTouchedReturnTime] = useState(false);
   // GP/Teen Welcome — same pool-opening toggles the full Ride form
   // (CategoryFields.tsx's Ride branch) already offers, surfaced here so a
   // parent doesn't have to leave the quick composer to open a ride to the
@@ -204,7 +208,7 @@ export default function SmartTaskComposer({
     setTouchedAlertCall(false); setAlertCall(false); setAlertCallLeadMinutes(10);
     setTitle(''); setForMemberIds([]); setCategory(undefined);
     setCoinsStr('20'); setPhotoRequired(false);
-    setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false);
+    setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false); setTouchedReturnTime(false);
     setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
     setTouchedRecurrence(false); setRecurFreq('once'); setRecurDays([]); setRecurDayOfMonth(undefined);
     setTouchedWhen(false); setWhenDate(null); setShowWhenPicker(false); setShowReturnPicker(false);
@@ -271,6 +275,18 @@ export default function SmartTaskComposer({
     // for "don't overwrite this" — matching every other field in this form.
     if (!touchedPickup) setPickupLocation(d.locations.pickup ?? '');
     if (!touchedDrop) setDropLocation(d.locations.dropoff ?? '');
+    // A sentence naming BOTH a drop-off time and a pickup/return time
+    // ("...at 4:45pm and pick up at 6:15pm") previously lost the second
+    // time entirely (extractDateTime only ever captured the first), and
+    // even after fixing that extraction, this form's return-time section
+    // only rendered once pickupLocation/dropLocation held real text —
+    // never true for a named venue with no street address, exactly this
+    // sentence's shape. A detected returnTime now surfaces the section
+    // directly, regardless of whether a location was ever typed.
+    if (!touchedReturnTime && d.when.returnTime) {
+      setReturnTime(d.when.returnTime);
+      setShowReturnTime(true);
+    }
     if (!touchedHelper && d.driverName) {
       // d.driverId is resolved directly by extractDriver against the same
       // members array — prefer it over re-deriving by name (was fragile:
@@ -346,7 +362,7 @@ export default function SmartTaskComposer({
       category: entry,
       confidence: 90,
       title: task.title,
-      when: task.startAt ? { date: task.startAt.slice(0, 10), time: task.startAt.length > 10 ? task.startAt.slice(11, 16) : null } : { date: null, time: null },
+      when: task.startAt ? { date: task.startAt.slice(0, 10), time: task.startAt.length > 10 ? task.startAt.slice(11, 16) : null, returnTime: null } : { date: null, time: null, returnTime: null },
       locations: { pickup: null, dropoff: null },
       memberNames: names,
       amount: null,
@@ -858,8 +874,16 @@ export default function SmartTaskComposer({
                   )}
                 </View>
 
-                {(pickupLocation || dropLocation) && !showReturnTime && (
-                  <Pressable onPress={() => setShowReturnTime(true)}>
+                {/* Was gated on pickupLocation || dropLocation having real
+                    text — never true for a ride to a named venue with no
+                    street address ("today's class", "practice"), so this
+                    affordance — the ONLY way to add a return/pickup time,
+                    manually or via detection — was completely unreachable
+                    for that whole common phrasing. Any Ride-category task
+                    can have a return leg regardless of whether a location
+                    was ever typed. */}
+                {!showReturnTime && (
+                  <Pressable onPress={() => { setShowReturnTime(true); setTouchedReturnTime(true); }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>+ Add a return time</Text>
                   </Pressable>
                 )}
@@ -886,7 +910,7 @@ export default function SmartTaskComposer({
                             return d;
                           })()}
                           mode="time" display="spinner"
-                          onChange={(_, d) => { if (d) setReturnTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`); }}
+                          onChange={(_, d) => { if (d) { setReturnTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`); setTouchedReturnTime(true); } }}
                           textColor={colors.textPrimary}
                           style={{ height: 180, width: '100%' }}
                         />

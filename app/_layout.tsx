@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
+import RecoveryBackfillBanner from '@/components/RecoveryBackfillBanner';
 import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
@@ -202,6 +203,16 @@ function RootNavigator() {
         if (isFeatureEnabled('gamification')) {
           updateStreak(session.user.id).catch(() => {});
           awardCoins(session.user.id, 'daily_login').catch(() => {});
+        }
+        // Resumable chat-recovery backfill continuation — also kicked off
+        // on cold start, not just subsequent foregrounds (the AppState
+        // 'active' transition this same call is wired into below doesn't
+        // reliably fire for the very first launch on every platform).
+        const familyIdForColdStartBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
+        if (familyIdForColdStartBackfill) {
+          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
+            runChatRecoveryBackfillInBackground(familyIdForColdStartBackfill).catch(() => {});
+          });
         }
       }
       // Hold native splash until auth + profile check finishes. The overlay
@@ -883,6 +894,20 @@ function RootNavigator() {
       // whatever gap is causing the live listener to miss real answers.
       checkLastAnsweredCallOnColdStart();
 
+      // Resumable chat-recovery backfill continuation (lib/deviceRegistry.ts) —
+      // a large family's full message history may take more than one pass
+      // to fully cover with a recovery-key wrap, so this picks up wherever
+      // a previous app session left off. No-ops instantly if no recovery
+      // key is set up, or if everything's already backfilled.
+      {
+        const familyIdForBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
+        if (familyIdForBackfill) {
+          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
+            runChatRecoveryBackfillInBackground(familyIdForBackfill).catch(() => {});
+          });
+        }
+      }
+
       // Track current device timezone silently on foreground (for travel banner).
       // Does NOT change home_timezone or timezone — only current_timezone updates.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1319,6 +1344,7 @@ export default function RootLayout() {
         <AppAlert />
         <AppToast />
         <OfflineBanner />
+        <RecoveryBackfillBanner />
       </ThemeProvider>
     </QueryClientProvider>
   );

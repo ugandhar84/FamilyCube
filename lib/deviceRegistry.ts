@@ -262,8 +262,8 @@ export async function recoverWithFamilyPasscode(
  */
 export async function backfillRecoveryWraps(
   familyId: string, members: { id: string }[],
-): Promise<{ locationMembers: number; recordsBackfilled: boolean; chatMessages: number }> {
-  const result = { locationMembers: 0, recordsBackfilled: false, chatMessages: 0 };
+): Promise<{ locationMembers: number; recordsBackfilled: boolean; chatMessages: number; chatDone: boolean }> {
+  const result = { locationMembers: 0, recordsBackfilled: false, chatMessages: 0, chatDone: true };
   if (!isFeatureEnabled('per_device_e2e')) return result;
 
   const directory = await getFamilyDeviceDirectory(familyId);
@@ -273,7 +273,9 @@ export async function backfillRecoveryWraps(
   // ── Location: only for members this device actually has a cached
   // session key for (peekLocationSessionKey, non-generating) — re-wrapping
   // the SAME long-lived key covers every past AND future location row for
-  // that member in one call, no per-row work needed. ──
+  // that member in one call, no per-row work needed. Small/fixed cost
+  // (one call per family member), so this always runs in full, unlike
+  // chat below. ──
   for (const m of members) {
     try {
       const sessionKey = await peekLocationSessionKey(m.id);
@@ -304,28 +306,56 @@ export async function backfillRecoveryWraps(
   }
 
   // ── Chat: unlike location/records, every message has its OWN fresh
-  // session key — there's no single key to re-wrap once. Walk every
-  // message this device can currently decrypt (has its own
-  // chat_message_keys row for), unwrap that message's session key, and add
-  // a new wrapped-key row for the recovery device. Ciphertext itself is
-  // never touched, only a new wrapped-key copy is added per message. ──
+  // session key, so this can be arbitrarily large for a long-lived family
+  // (thousands of messages) — capped to a first quick batch here so the
+  // caller (DataRecoveryScreen) gets fast visible feedback; whatever's left
+  // is picked up by backfillChatRecoveryWraps's own resumable continuation
+  // (see runChatRecoveryBackfillInBackground below), not done inline here.
+  const chatResult = await backfillChatRecoveryWraps(familyId, recoveryEntry, 300);
+  result.chatMessages = chatResult.wrapped;
+  result.chatDone = chatResult.done;
+
+  return result;
+}
+
+/**
+ * Does one bounded pass of the chat recovery backfill: finds up to `limit`
+ * messages this device can decrypt that don't yet have a recovery-key wrap,
+ * and adds one. Returns `done: true` once nothing was left to do, so a
+ * caller can call this repeatedly (e.g. runChatRecoveryBackfillInBackground)
+ * until the whole family's chat history is covered, without ever holding a
+ * huge batch in memory or blocking the UI for a long-lived family's full
+ * history in one call.
+ */
+async function backfillChatRecoveryWraps(
+  familyId: string, recoveryEntry: { deviceId: string; publicKeyB64: string }[], limit: number,
+): Promise<{ wrapped: number; done: boolean }> {
   try {
     const deviceId = await getDeviceId();
+    // Only rows this device doesn't ALSO have a recovery wrap for yet —
+    // left-anti-join emulated via a NOT IN subquery would be ideal, but
+    // PostgREST doesn't expose that directly; fetch this device's rows,
+    // check which already have a recovery counterpart, keep going until
+    // `limit` new ones are found or there's nothing left to check. Capped
+    // scan window (10x limit) so a family whose messages are ALREADY
+    // mostly backfilled doesn't scan its entire history just to find the
+    // last few stragglers.
+    const SCAN_CAP = limit * 10;
     const { data: myKeyRows, error: keysErr } = await supabase
       .from('chat_message_keys')
       .select('message_id, wrapped_key, chat_messages!inner(sender_id, sender_device_id)')
-      .eq('device_id', deviceId);
+      .eq('device_id', deviceId)
+      .order('message_id', { ascending: true })
+      .limit(SCAN_CAP);
     if (keysErr || !myKeyRows) throw keysErr ?? new Error('no rows');
+    if (myKeyRows.length === 0) return { wrapped: 0, done: true };
 
-    // Recovery might already be wrapped for some of these (e.g. a message
-    // sent AFTER setup, or a previous backfill run) — skip those rather
-    // than redundantly re-wrapping. Chunked (not one .in() with every id at
-    // once) — a long-lived family's message count could otherwise build a
-    // query too large for a single request; 500 is comfortably under any
-    // practical URL/param limit.
-    const CHUNK = 500;
     const allMessageIds = myKeyRows.map((r: any) => r.message_id);
     const alreadyWrapped = new Set<string>();
+    // Chunked — a long-lived family's message count could otherwise build
+    // a query too large for a single request; 500 is comfortably under any
+    // practical URL/param limit.
+    const CHUNK = 500;
     for (let i = 0; i < allMessageIds.length; i += CHUNK) {
       const chunk = allMessageIds.slice(i, i + CHUNK);
       const { data: existingRecoveryRows } = await supabase
@@ -336,11 +366,17 @@ export async function backfillRecoveryWraps(
       for (const r of existingRecoveryRows ?? []) alreadyWrapped.add((r as any).message_id);
     }
 
+    const pending = (myKeyRows as any[]).filter(r => !alreadyWrapped.has(r.message_id)).slice(0, limit);
+    if (pending.length === 0) {
+      // Nothing pending within this scan window — done only if the window
+      // wasn't truncated by SCAN_CAP (otherwise there could be more
+      // straggler rows further along that this pass didn't even look at).
+      return { wrapped: 0, done: myKeyRows.length < SCAN_CAP };
+    }
+
     // Sender device public keys, batched once rather than one query per
     // message — a family's real device count is small, so this is cheap.
-    const senderDeviceIds = [...new Set(
-      myKeyRows.map((r: any) => r.chat_messages?.sender_device_id).filter(Boolean),
-    )];
+    const senderDeviceIds = [...new Set(pending.map((r: any) => r.chat_messages?.sender_device_id).filter(Boolean))];
     const { data: senderDeviceRows } = senderDeviceIds.length > 0
       ? await supabase.from('device_keys').select('device_id, member_id, public_key').in('device_id', senderDeviceIds)
       : { data: [] as any[] };
@@ -348,8 +384,7 @@ export async function backfillRecoveryWraps(
       (senderDeviceRows ?? []).find((d: any) => d.device_id === deviceId2 && d.member_id === memberId)?.public_key as string | undefined;
 
     const newRows: { message_id: string; device_id: string; wrapped_key: string }[] = [];
-    for (const row of myKeyRows as any[]) {
-      if (alreadyWrapped.has(row.message_id)) continue;
+    for (const row of pending) {
       const senderDeviceId = row.chat_messages?.sender_device_id;
       const senderId = row.chat_messages?.sender_id;
       if (!senderDeviceId || !senderId) continue; // legacy pre-per_device_e2e message, nothing to unwrap here
@@ -360,7 +395,7 @@ export async function backfillRecoveryWraps(
         const [wrapped] = await wrapLocationKeyForDevices(sessionKey, recoveryEntry);
         newRows.push({ message_id: row.message_id, device_id: wrapped.deviceId, wrapped_key: wrapped.wrappedKey });
       } catch {
-        // One bad/mismatched row shouldn't abort the whole backfill.
+        // One bad/mismatched row shouldn't abort the whole batch.
       }
     }
 
@@ -368,12 +403,59 @@ export async function backfillRecoveryWraps(
       // insert, not upsert — alreadyWrapped above already excludes any
       // (message_id, RECOVERY_DEVICE_ID) row that exists.
       const { error: insertErr } = await supabase.from('chat_message_keys').insert(newRows);
-      if (!insertErr) result.chatMessages = newRows.length;
-      else console.warn('[deviceRegistry] backfillRecoveryWraps chat insert failed', insertErr.message);
+      if (insertErr) { console.warn('[deviceRegistry] backfillChatRecoveryWraps insert failed', insertErr.message); return { wrapped: 0, done: false }; }
+    }
+    // More work likely remains whenever this pass's scan window was full
+    // (SCAN_CAP) or it found a full `limit` worth of pending rows — either
+    // is a sign there could be more beyond what this pass looked at.
+    const done = myKeyRows.length < SCAN_CAP && pending.length < limit;
+    return { wrapped: newRows.length, done };
+  } catch (e: any) {
+    console.warn('[deviceRegistry] backfillChatRecoveryWraps failed', e?.message ?? e);
+    return { wrapped: 0, done: false };
+  }
+}
+
+// One in-flight continuation per family per app session — calling this
+// again for a family already being backfilled in the background is a
+// harmless no-op rather than doubling up the work.
+const _chatBackfillRunning = new Set<string>();
+
+/**
+ * Resumable continuation of the chat recovery backfill, run in the
+ * background (not blocking any UI) — call on app foreground/session start
+ * (app/_layout.tsx) for the active family whenever a recovery key exists,
+ * so a large family's full chat history eventually gets covered across
+ * several app opens/sessions rather than needing one huge blocking pass
+ * right when the passcode is set up. Keeps calling backfillChatRecoveryWraps
+ * in batches until it reports done, or bails after a generous cap of
+ * batches (20 x 300 = 6000 messages per call) so one runaway session can't
+ * loop indefinitely — a future app open picks up wherever this left off.
+ */
+export async function runChatRecoveryBackfillInBackground(familyId: string): Promise<void> {
+  if (!isFeatureEnabled('per_device_e2e') || _chatBackfillRunning.has(familyId)) return;
+  _chatBackfillRunning.add(familyId);
+  // Lazy import — avoids a store dependency in this crypto/plumbing file
+  // for the (default) case where nothing ever calls this. RecoveryBackfillBanner.tsx
+  // is the one consumer of this progress state.
+  const { useRecoveryBackfillStore } = await import('@/store/recoveryBackfillStore');
+  let announced = false;
+  try {
+    const directory = await getFamilyDeviceDirectory(familyId);
+    if (!directory.some(d => d.deviceId === RECOVERY_DEVICE_ID)) return; // no recovery key set up for this family
+    const recoveryEntry = directory.filter(d => d.deviceId === RECOVERY_DEVICE_ID);
+    for (let i = 0; i < 20; i++) {
+      const { wrapped, done } = await backfillChatRecoveryWraps(familyId, recoveryEntry, 300);
+      if (wrapped > 0) {
+        if (!announced) { useRecoveryBackfillStore.getState().start(); announced = true; }
+        useRecoveryBackfillStore.getState().progress(wrapped);
+      }
+      if (done) break;
     }
   } catch (e: any) {
-    console.warn('[deviceRegistry] backfillRecoveryWraps chat failed', e?.message ?? e);
+    console.warn('[deviceRegistry] runChatRecoveryBackfillInBackground failed', e?.message ?? e);
+  } finally {
+    if (announced) useRecoveryBackfillStore.getState().finish();
+    _chatBackfillRunning.delete(familyId);
   }
-
-  return result;
 }

@@ -209,8 +209,13 @@ export default function DataRecoveryScreen() {
     // location/records this device can already decrypt, from this device,
     // so the family's actual past history becomes recoverable too. Fire-
     // and-forget: best-effort, doesn't block the success flow the user
-    // already sees above.
-    backfillRecoveryWraps(familyId, members).catch(() => {});
+    // already sees above. backfillRecoveryWraps only does a first quick
+    // batch of chat (~300 messages, for fast feedback); if the family has
+    // more history than that, runChatRecoveryBackfillInBackground picks up
+    // the rest with a visible RecoveryBackfillBanner while it works.
+    backfillRecoveryWraps(familyId, members).then(r => {
+      if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
+    }).catch(() => {});
   };
 
   const handleChange = async () => {
@@ -262,8 +267,11 @@ export default function DataRecoveryScreen() {
           // previously-wrapped recovery copy (even from a prior backfill)
           // is now for the OLD key and useless. Re-backfill from this
           // device against the NEW key so reset doesn't silently regress
-          // recovery coverage back to "only future writes."
-          backfillRecoveryWraps(familyId, members).catch(() => {});
+          // recovery coverage back to "only future writes." Same two-tier
+          // quick-batch-then-background-continuation shape as handleSetUp.
+          backfillRecoveryWraps(familyId, members).then(r => {
+            if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
+          }).catch(() => {});
         }},
       ],
     );

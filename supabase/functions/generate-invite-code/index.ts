@@ -112,9 +112,18 @@ serve(async (req) => {
     if (!member || member.family_id?.toString() !== familyId) {
       return json({ error: 'Not a member of this family' }, 403);
     }
-    if (member.auth_user_id !== user.id) {
-      return json({ error: 'Not authorized for this member' }, 403);
-    }
+    // Was: member.auth_user_id !== user.id — required the calling parent
+    // to be on THEIR OWN originally-registered device (auth_user_id
+    // identifies "which device is this member's own device," each device
+    // gets its own distinct anonymous auth session — see
+    // JoinFamilyScreen.tsx). PIN-switching a different member's identity
+    // into the local UI on a device that isn't theirs never changes that
+    // device's real session, so a genuinely legitimate parent PIN-switched
+    // into, say, their spouse's phone was rejected as "Not authorized for
+    // this member" — same live-reported bug already fixed for
+    // generate-recovery-code, same fix here: any parent, from any device,
+    // verified purely by family membership + role, no device-binding
+    // check at all.
     if (!['parent', 'senior'].includes(member.role) && member.role !== 'grandparent') {
       return json({ error: 'Only parents can generate invite codes' }, 403);
     }

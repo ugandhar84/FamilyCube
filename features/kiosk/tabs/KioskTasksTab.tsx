@@ -83,22 +83,22 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
   const memberOf = (id?: string) => members.find(m => m.id === id);
 
-  const handleCardPress = (q: Quest, actions: ReturnType<typeof deriveQuestActions>) => {
-    if (actions.canClaim) { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); return; }
-    if (actions.canSubmit || actions.canResubmit) { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); return; }
-    if (actions.canApprove) { approveQuest(q.id, active.id); showToast('Approved ✓'); return; }
-    if (actions.canEdit) { setEditingQuest(q); return; }
-    // No action available to this viewer for this card (e.g. a kid looking
-    // at a sibling's assigned-but-not-theirs chore) — tapping does nothing,
-    // same as the phone's own cards with zero canX true.
-  };
-
-  const primaryLabel = (actions: ReturnType<typeof deriveQuestActions>): string | null => {
-    if (actions.canClaim) return 'Tap to claim';
-    if (actions.canResubmit) return 'Tap to resubmit';
-    if (actions.canSubmit) return 'Tap to submit';
-    if (actions.canApprove) return 'Tap to approve';
-    if (actions.canEdit) return null; // parent editing is implicit, not called out
+  // Was a small caption line under the title ("Tap to claim") relying on
+  // the WHOLE card being one mystery-meat Pressable — live-reported as
+  // "no buttons at all on the card," and correctly so: the real phone
+  // QuestCard.tsx renders an actual filled button (s.actionBtn, "Claim
+  // Chore") as its own distinct element for each of Claim/Submit/Approve.
+  // A kiosk is used from arm's length on a shared surface, which makes a
+  // real, obvious button MORE necessary than on a phone held inches away,
+  // not less. Returns a {label, accent, action} triple for a real button;
+  // edit stays the card's own tap (parent-only, see below) rather than a
+  // button, matching how mobile treats "tap the card to open/edit" vs.
+  // "tap this specific button to change status."
+  const primaryAction = (q: Quest, actions: ReturnType<typeof deriveQuestActions>): { label: string; accent: string; action: () => void } | null => {
+    if (actions.canClaim) return { label: 'Claim Chore', accent: colors.amber, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
+    if (actions.canResubmit) return { label: 'Resubmit', accent: colors.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
+    if (actions.canSubmit) return { label: 'Submit for Review', accent: colors.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
+    if (actions.canApprove) return { label: 'Approve', accent: colors.teal, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
     return null;
   };
 
@@ -137,14 +137,18 @@ function KioskBoardView({ active, members, colors, isDark }: {
               {col.items.map(q => {
                 const rs = assigneeStyle(memberOf(q.assignedToId), colors, isDark);
                 const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
-                const label = primaryLabel(actions);
-                const canAct = actions.canClaim || actions.canSubmit || actions.canResubmit || actions.canApprove || actions.canEdit;
+                const btn = primaryAction(q, actions);
+                // Parent (or anyone with edit rights) can still tap the card
+                // body itself to open the editor — a real button only
+                // replaces the "tap the whole card" pattern for the
+                // claim/submit/approve actions, which need to be unmissable
+                // from arm's length, not for the parent's own edit flow.
+                const CardShell = actions.canEdit ? Pressable : View;
                 return (
-                  <Pressable
+                  <CardShell
                     key={q.id}
-                    onPress={() => handleCardPress(q, actions)}
-                    disabled={!canAct}
-                    style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, opacity: canAct ? 1 : 0.75 }]}
+                    {...(actions.canEdit ? { onPress: () => setEditingQuest(q) } : {})}
+                    style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot }]}
                   >
                     <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
                     <View style={s.cardMeta}>
@@ -153,10 +157,15 @@ function KioskBoardView({ active, members, colors, isDark }: {
                       </Text>
                       <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
                     </View>
-                    {label && (
-                      <Text style={[s.cardAction, { color: colors.primary }]}>{label}</Text>
+                    {btn && (
+                      <Pressable
+                        onPress={btn.action}
+                        style={[s.cardActionBtn, { backgroundColor: btn.accent }]}
+                      >
+                        <Text style={s.cardActionBtnText}>{btn.label}</Text>
+                      </Pressable>
                     )}
-                  </Pressable>
+                  </CardShell>
                 );
               })}
               {col.items.length === 0 && (
@@ -309,7 +318,8 @@ const s = StyleSheet.create({
   cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   cardSub: { fontSize: 11, fontWeight: '600', flex: 1, marginRight: 8 },
   cardCoin: { fontSize: 11, fontWeight: '800' },
-  cardAction: { fontSize: 10.5, fontWeight: '800', marginTop: 8 },
+  cardActionBtn: { marginTop: 10, borderRadius: 10, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  cardActionBtnText: { color: '#fff', fontSize: TYPO.label, fontWeight: '800' },
   emptyCol: { fontSize: TYPO.caption, fontWeight: '600', textAlign: 'center', paddingTop: 20 },
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   gpCard: { width: 260, borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },

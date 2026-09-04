@@ -9,9 +9,9 @@
  * choreStore's cheerChore action exactly (not reinvented).
  */
 import { useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
-import { Plus, PartyPopper, Check } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { Plus, PartyPopper, Check, Clock3 } from 'lucide-react-native';
+import { TYPO, RADIUS } from '@/constants/theme';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
@@ -19,13 +19,24 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
+import { CATEGORY_META } from '@/features/quests/components/questFormShared';
+import { fmtDateShort } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestComposer } from '../components/KioskQuestComposer';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 
+// Live-reported: a chore a parent sent back for redo (choreAdapter maps
+// the DB's 'redo_requested' status down to Quest status 'declined',
+// isDeclinedCard's own target state) had no column to appear in at all —
+// it silently vanished from the board the moment a parent tapped Redo,
+// with no visibility into "sent back, waiting on the kid" until they
+// resubmitted. Added as its own 4th column rather than folding it into
+// "To Do", since a redo request carries a rejection reason the kid needs
+// to see and act on differently than a fresh unclaimed chore.
 const COLUMN_STATUSES: { key: string; label: string; statuses: string[] }[] = [
   { key: 'todo',     label: 'To Do',       statuses: ['todo'] },
   { key: 'progress', label: 'In Progress', statuses: ['claimed', 'in_progress'] },
+  { key: 'redo',     label: 'Needs Redo',  statuses: ['declined'] },
   { key: 'review',   label: 'In Review',   statuses: ['pending_approval'] },
 ];
 
@@ -56,6 +67,21 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const isParent = active.role === 'parent';
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
+
+  // Live-reported: a single card sat at a fixed narrow width inside a
+  // whole column's worth of empty space ("cute buttons and use the space
+  // properly"). Each column now lays its cards out as a wrapping grid —
+  // 1 card per row on a narrower kiosk, 2 once a column is wide enough to
+  // comfortably fit two ~260px+ cards side by side, so the column's real
+  // width is what's actually used rather than one lonely card floating in
+  // a void.
+  const { width: winWidth } = useWindowDimensions();
+  const RAIL_AND_PADDING = 84 + 40; // nav rail + s.root's own horizontal padding
+  const COLUMN_GAP = 16;
+  const NUM_COLUMNS = COLUMN_STATUSES.length;
+  const boardWidth = winWidth - RAIL_AND_PADDING;
+  const columnWidth = (boardWidth - COLUMN_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+  const cardsPerRow = columnWidth >= 560 ? 2 : 1;
 
   const byColumn = useMemo(
     () => COLUMN_STATUSES.map(col => ({
@@ -131,9 +157,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
 
       <View style={s.columns}>
         {byColumn.map(col => (
-          <View key={col.key} style={s.col}>
+          <View key={col.key} style={[s.col, { width: columnWidth }]}>
             <Text style={[s.colHead, { color: colors.textTertiary }]}>{col.label.toUpperCase()} · {col.items.length}</Text>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 20 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.cardGrid}>
               {col.items.map(q => {
                 const rs = assigneeStyle(memberOf(q.assignedToId), colors, isDark);
                 const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
@@ -151,21 +177,48 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 // figure here read as broken rather than by-design.
                 const assignee = memberOf(q.assignedToId);
                 const isAdultAssignee = q.isAdultTask || assignee?.role === 'parent' || assignee?.role === 'senior';
+                const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: colors.textTertiary };
+                const cardWidth = cardsPerRow === 2 ? (columnWidth - 10) / 2 : columnWidth;
                 return (
                   <CardShell
                     key={q.id}
                     {...(actions.canEdit ? { onPress: () => setEditingQuest(q) } : {})}
-                    style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot }]}
+                    style={[s.card, { width: cardWidth, backgroundColor: colors.card, borderColor: colors.border }]}
                   >
-                    <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-                    <View style={s.cardMeta}>
-                      <Text style={[s.cardSub, { color: q.isPool ? colors.textSecondary : rs.text, fontWeight: q.isPool ? '600' : '800' }]} numberOfLines={1}>
-                        {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
-                      </Text>
+                    <View style={s.cardTopRow}>
+                      <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
+                        <Text style={{ fontSize: 16 }}>{catMeta.emoji}</Text>
+                      </View>
                       {!isAdultAssignee && (
-                        <Text style={[s.cardCoin, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                        <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
+                          <Text style={[s.coinPillText, { color: colors.amber }]}>{q.coins} 🪙</Text>
+                        </View>
                       )}
                     </View>
+
+                    <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
+
+                    {col.key === 'redo' && !!q.declineReason && (
+                      <View style={[s.reasonBanner, { backgroundColor: colors.danger + '14' }]}>
+                        <Text style={[s.reasonText, { color: colors.danger }]} numberOfLines={2}>↩ {q.declineReason}</Text>
+                      </View>
+                    )}
+
+                    <View style={s.cardMeta}>
+                      <View style={[s.assigneeChip, { backgroundColor: q.isPool ? colors.surface : rs.badge, borderColor: q.isPool ? colors.border : rs.dot + '55' }]}>
+                        {!q.isPool && <Text style={{ fontSize: 12 }}>{assignee?.emoji ?? '👤'}</Text>}
+                        <Text style={[s.assigneeChipText, { color: q.isPool ? colors.textSecondary : rs.text }]} numberOfLines={1}>
+                          {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
+                        </Text>
+                      </View>
+                      {!!q.dueDate && (
+                        <View style={s.dueRow}>
+                          <Clock3 size={11} color={colors.textTertiary} />
+                          <Text style={[s.dueText, { color: colors.textTertiary }]}>{fmtDateShort(q.dueDate)}</Text>
+                        </View>
+                      )}
+                    </View>
+
                     {btn && (
                       <Pressable
                         onPress={btn.action}
@@ -178,7 +231,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 );
               })}
               {col.items.length === 0 && (
-                <Text style={[s.emptyCol, { color: colors.textTertiary }]}>Nothing here</Text>
+                <Text style={[s.emptyCol, { color: colors.textTertiary, width: columnWidth }]}>Nothing here</Text>
               )}
             </ScrollView>
           </View>
@@ -253,6 +306,9 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
         )}
         {kidsCheerable.map(q => (
           <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[s.catBadge, { backgroundColor: (CATEGORY_META[q.category]?.color ?? colors.textTertiary) + '18' }]}>
+              <Text style={{ fontSize: 16 }}>{CATEGORY_META[q.category]?.emoji ?? '📋'}</Text>
+            </View>
             <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
             <Text style={[s.cardSub, { color: colors.textSecondary }]}>{memberName(q.assignedToId)} finished this</Text>
             <Pressable
@@ -330,14 +386,30 @@ const s = StyleSheet.create({
   statName: { fontSize: 12, fontWeight: '800' },
   statFrac: { fontSize: 11, fontWeight: '700', opacity: 0.85 },
   columns: { flex: 1, flexDirection: 'row', gap: 16 },
-  col: { flex: 1 },
+  col: { flexShrink: 0 },
   colHead: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 10 },
-  card: { borderRadius: 14, borderWidth: 1, borderLeftWidth: 3, padding: 13 },
-  cardTitle: { fontSize: TYPO.body, fontWeight: '800' },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  cardSub: { fontSize: 11, fontWeight: '600', flex: 1, marginRight: 8 },
-  cardCoin: { fontSize: 11, fontWeight: '800' },
-  cardActionBtn: { marginTop: 10, borderRadius: 10, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  // Cards wrap into a grid (see cardsPerRow above) instead of one per row
+  // stretching a whole narrow column — live-reported: a single card sat
+  // in a huge empty column with nothing else to fill the space.
+  cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20, alignContent: 'flex-start' },
+  card: { borderRadius: RADIUS.lg, borderWidth: 1, padding: 14, gap: 10 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  catBadge: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  coinPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  coinPillText: { fontSize: 11.5, fontWeight: '800' },
+  cardTitle: { fontSize: TYPO.body, fontWeight: '800', lineHeight: 19 },
+  cardSub: { fontSize: 12, fontWeight: '600' },
+  reasonBanner: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  reasonText: { fontSize: 11, fontWeight: '700' },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  assigneeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999,
+    paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, flexShrink: 1,
+  },
+  assigneeChipText: { fontSize: 11, fontWeight: '800' },
+  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  dueText: { fontSize: 10.5, fontWeight: '700' },
+  cardActionBtn: { borderRadius: 11, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   cardActionBtnText: { color: '#fff', fontSize: TYPO.label, fontWeight: '800' },
   emptyCol: { fontSize: TYPO.caption, fontWeight: '600', textAlign: 'center', paddingTop: 20 },
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },

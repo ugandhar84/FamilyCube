@@ -20,6 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
+import { fmtDateTime } from '@/lib/dates';
 import { showAlert } from '@/components/AppAlert';
 import {
   familyHasRecoveryKey, setUpFamilyRecoveryKey,
@@ -133,6 +135,11 @@ export default function DataRecoveryScreen() {
   // sessions — see familyStore.ts). Excludes whichever family is currently
   // active since that one is already fully covered by the cards above.
   const otherFamilies = myFamilies.filter(f => f.id !== (activeFamilyId ?? familyId));
+  // Live-requested: who besides the viewer can manage this passcode —
+  // every parent in the CURRENTLY ACTIVE family (matches this screen's
+  // own !hasKey/hasKey && isParent gates, which permit any parent, not
+  // just whoever set it up originally).
+  const managingParentNames = members.filter(m => m.role === 'parent').map(m => m.name);
 
   const [mode, setMode] = useState<Mode>('loading');
   const [hasKey, setHasKey] = useState(false);
@@ -156,12 +163,26 @@ export default function DataRecoveryScreen() {
   const [resetPasscode, setResetPasscode] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
 
+  // Live-requested: show who set up/last changed the passcode and when —
+  // plain readable metadata, never the passcode itself (see
+  // recovery_key_set_by/recovery_key_set_at's own migration comment).
+  // setByName resolved from `members` (already loaded for this family) by
+  // id — falls back to null gracefully if that member was later removed.
+  const [setByMemberId, setSetByMemberId] = useState<string | null>(null);
+  const [setAt, setSetAt] = useState<string | null>(null);
+  const setByName = members.find(m => m.id === setByMemberId)?.name ?? null;
+
   useEffect(() => {
     if (!familyId) { setMode('setup'); return; }
     familyHasRecoveryKey(familyId).then(exists => {
       setHasKey(exists);
       setMode(exists ? 'change' : 'setup');
     });
+    supabase.from('families').select('recovery_key_set_by, recovery_key_set_at').eq('id', familyId).maybeSingle()
+      .then(({ data }) => {
+        setSetByMemberId(data?.recovery_key_set_by ?? null);
+        setSetAt(data?.recovery_key_set_at ?? null);
+      });
   }, [familyId]);
 
   const s = styles(colors, isDark);
@@ -178,6 +199,8 @@ export default function DataRecoveryScreen() {
     setPasscode(''); setConfirm('');
     setHasKey(true);
     setMode('change');
+    setSetByMemberId(activeMemberId);
+    setSetAt(new Date().toISOString());
     offerToSharePasscode(justSet);
   };
 
@@ -187,11 +210,13 @@ export default function DataRecoveryScreen() {
     if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
     if (!familyId) return;
     setSaving(true);
-    const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode);
+    const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode, activeMemberId ?? undefined);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't change the passcode", result.error); return; }
     const justSet = passcode;
     setCurrentForChange(''); setPasscode(''); setConfirm('');
+    setSetByMemberId(activeMemberId);
+    setSetAt(new Date().toISOString());
     offerToSharePasscode(justSet);
   };
 
@@ -221,6 +246,8 @@ export default function DataRecoveryScreen() {
           if (!result.ok) { showAlert("Couldn't reset", result.error); return; }
           const justSet = resetPasscode;
           setResetPasscode(''); setResetConfirm(''); setResetMode(false);
+          setSetByMemberId(activeMemberId);
+          setSetAt(new Date().toISOString());
           offerToSharePasscode(justSet);
         }},
       ],
@@ -280,6 +307,28 @@ export default function DataRecoveryScreen() {
             <Text style={s.cardSub}>
               Your family has a recovery passcode. Anyone who knows it can recover data on a new device.
             </Text>
+            {/* Live-requested: plain-text metadata (never the passcode
+                itself) showing who set/last changed it and when. Silently
+                omitted when either piece is missing — e.g. a passcode set
+                up before this metadata existed, or the setter was later
+                removed from the family. */}
+            {(setByName || setAt) && (
+              <Text style={[s.cardSub, { color: colors.textTertiary }]}>
+                {setByName ? `Set up by ${setByName}` : 'Set up'}
+                {setAt ? ` on ${fmtDateTime(setAt)}` : ''}
+              </Text>
+            )}
+            {/* Live-requested: who ELSE can manage this — every parent in
+                the family can set up/change/reset the passcode (see
+                DataRecoveryScreen's own !hasKey/hasKey && isParent gates
+                above), not just whoever happens to be viewing this screen
+                right now. Plain informational text, not a permissions
+                editor. */}
+            {managingParentNames.length > 0 && (
+              <Text style={[s.cardSub, { color: colors.textTertiary }]}>
+                Can be managed by: {managingParentNames.join(', ')}
+              </Text>
+            )}
           </View>
         )}
 

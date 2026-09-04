@@ -117,9 +117,15 @@ export async function setUpFamilyRecoveryKey(
     // later when someone actually tried to use it. Real risk introduced
     // by the "Forgot the current passcode?" reset flow, which calls this
     // same function a second time over an existing key.
+    // Live-requested: show who set up/last changed the passcode and when
+    // on Data Recovery — plain readable metadata, never the passcode
+    // itself. setupMemberId is whoever is CALLING this (the setter), not
+    // necessarily the family's original creator.
     const { error: famErr } = await supabase.from('families').update({
       encrypted_recovery_privkey: encryptedPrivateKey,
       recovery_key_salt: saltHex,
+      recovery_key_set_by: setupMemberId,
+      recovery_key_set_at: new Date().toISOString(),
     }).eq('id', familyId);
     if (famErr) return { ok: false, error: famErr.message };
 
@@ -156,7 +162,7 @@ export async function familyHasRecoveryKey(familyId: string): Promise<boolean> {
  * rewrapRecoveryPrivateKey's own doc for why this is safe/sufficient).
  */
 export async function changeFamilyRecoveryPasscode(
-  familyId: string, currentPasscode: string, newPasscode: string,
+  familyId: string, currentPasscode: string, newPasscode: string, changedByMemberId?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const { data, error } = await supabase.from('families')
@@ -170,9 +176,15 @@ export async function changeFamilyRecoveryPasscode(
       currentPasscode, data.encrypted_recovery_privkey, data.recovery_key_salt,
     );
     const { encryptedPrivateKey, saltHex } = await rewrapRecoveryPrivateKey(privateKey, newPasscode);
+    // Live-requested: show who set up/last changed the passcode and when
+    // on Data Recovery — plain readable metadata, never the passcode
+    // itself. changedByMemberId is optional purely for backward
+    // compatibility with any caller that hasn't been updated to pass it;
+    // every current call site does.
     const { error: updateErr } = await supabase.from('families').update({
       encrypted_recovery_privkey: encryptedPrivateKey,
       recovery_key_salt: saltHex,
+      ...(changedByMemberId ? { recovery_key_set_by: changedByMemberId, recovery_key_set_at: new Date().toISOString() } : {}),
     }).eq('id', familyId);
     if (updateErr) return { ok: false, error: updateErr.message };
     return { ok: true };

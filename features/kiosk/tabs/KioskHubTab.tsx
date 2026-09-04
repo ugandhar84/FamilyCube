@@ -62,8 +62,17 @@ export function KioskHubTab({ active, members, colors, isDark }: {
 
   return (
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      {/* Three-zone layout */}
-      <View style={s.grid}>
+      {/* flexGrow wrapper — on a tall kiosk screen with modest dashboard
+          content, the ambient footer below previously ended up wherever
+          the grid's own height happened to stop, reading as floating in
+          the middle of the screen instead of pinned to the bottom (live-
+          reported). This makes the content area fill the ScrollView's
+          full height whenever it's shorter than the screen, pushing the
+          footer down to the actual bottom via marginTop: 'auto' on it —
+          content taller than the screen still scrolls normally either way. */}
+      <View style={{ flex: 1, minHeight: '100%' }}>
+        {/* Three-zone layout */}
+        <View style={s.grid}>
         {/* Column 1 — backlog */}
         <View style={s.col}>
           <SectionLabel text={isSenior ? 'Your Chores' : 'Household Backlog'} color={colors.amber} colors={colors} />
@@ -189,12 +198,15 @@ export function KioskHubTab({ active, members, colors, isDark }: {
         </View>
       </View>
 
-      {/* Ambient footer */}
-      <View style={[s.ambient, { borderTopColor: colors.border }]}>
+      {/* Ambient footer — marginTop: 'auto' pins it to the bottom of the
+          flexGrow wrapper above regardless of how tall the grid content
+          actually is. */}
+      <View style={[s.ambient, { borderTopColor: colors.border, marginTop: 'auto' }]}>
         <Sparkles size={14} color={colors.primary} />
         <Text style={[s.tagline, { color: colors.textTertiary }]}>
           <Text style={{ color: colors.primary, fontWeight: '800' }}>CONNECT.</Text> ORGANIZE. CARE. GROW.
         </Text>
+      </View>
       </View>
     </ScrollView>
   );

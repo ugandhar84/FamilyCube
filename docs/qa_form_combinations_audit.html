@@ -1,0 +1,473 @@
+<title>Create/Edit/Delete Form Combinations QA Audit</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --static:#6B5F52; --static-bg:#EFE9DE;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+      --static:#C9C0B2; --static-bg:#2C2A24;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    --static:#C9C0B2; --static-bg:#2C2A24;
+  }
+  *{box-sizing:border-box;}
+  body{ background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px; }
+  .wrap{max-width:1220px; margin:0 auto; padding:40px 24px 120px;}
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:92ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:32px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.pass{background:var(--ok);} .dot.fail{background:var(--bug);} .dot.static{background:var(--static);} .dot.finding{background:var(--gap);}
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:92ch;}
+  p{margin:8px 0;}
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:9px 11px; text-align:left; vertical-align:top; font-size:12.5px;}
+  th{background:var(--surface-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.step{font-weight:700; background:var(--surface-2); white-space:nowrap; text-align:center;}
+  tr:nth-child(even) td:not(.step){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+  td code{display:inline-block; margin:1px 0;}
+  pre{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border-radius:8px; padding:12px 14px; overflow-x:auto; border:1px solid var(--border);}
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; white-space:nowrap;}
+  .tag.pass{background:var(--ok-bg); color:var(--ok);}
+  .tag.fail{background:var(--bug-bg); color:var(--bug);}
+  .tag.static{background:var(--static-bg); color:var(--static);}
+  .tag.live{background:var(--accent-soft); color:var(--accent);}
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.medium{border-left-color:var(--gap);}
+  .finding.low{border-left-color:var(--static);}
+  .finding h3{margin:0 0 6px; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  .sev{font-size:10px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px;}
+  .sev.critical{background:var(--bug-bg); color:var(--bug);}
+  .sev.high{background:var(--bug-bg); color:var(--bug);}
+  .sev.medium{background:var(--gap-bg); color:var(--gap);}
+  .sev.low{background:var(--static-bg); color:var(--static);}
+  .statbar{display:flex; gap:14px; flex-wrap:wrap; margin:18px 0 24px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:130px;}
+  .stat .n{font-size:26px; font-weight:800; line-height:1;}
+  .stat .l{font-size:11.5px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em; margin-top:4px;}
+  .stat.pass .n{color:var(--ok);}
+  .stat.fail .n{color:var(--bug);}
+  .stat.static .n{color:var(--static);}
+  .note{background:var(--surface-2); border-radius:8px; padding:10px 13px; font-size:12.5px; margin:8px 0; color:var(--text-2);}
+  .note b{color:var(--text);}
+  .limitation{background:var(--static-bg); border:1px dashed color-mix(in srgb, var(--static) 50%, transparent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-2); margin:10px 0 18px;}
+  .limitation b{color:var(--static);}
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Create / Edit / Delete Form Combinations QA Audit</h1>
+  <p class="subtitle">
+    A fourth QA pass on FamilyCubeApp, scoped to UI/form-state logic in the Event and Quest create/edit/delete
+    forms — <code>features/calendar/EventFormModal.tsx</code> (<code>AddEventModal</code> + <code>EditEventModal</code>),
+    <code>features/calendar/components/eventForm/CategoryFields.tsx</code>,
+    <code>features/quests/components/AddQuestModal.tsx</code> + its section files, and
+    <code>features/quests/components/EditQuestModal.tsx</code>. Three prior passes covered reassign/take-over RPCs,
+    chore handoff/bounty/GP-errand RPCs, and Smart Tasker detection quality — this pass deliberately stays in
+    form/component code, hunting for the same bug shape that produced the tutor-picker lock, the teen/GP eligibility
+    gap, and the dropped return-time bug: a condition gated on a frozen prop instead of live state, a candidate-list
+    filter missing an eligibility check present elsewhere in the same file, or a toggle that doesn't clean up
+    dependent state when turned off.
+  </p>
+
+  <div class="warn">
+    <b>Method.</b> Static code read only — every finding below was produced by tracing an exact tap sequence by hand
+    through the real component code (not executed), then confirmed with targeted <code>grep</code> cross-references
+    between AddEventModal/EditEventModal, CategoryFields.tsx, AddQuestModal/AddQuestAssignSection/
+    AddQuestRecurrenceSection, and EditQuestModal. The <code>qa-scratch-family</code> harness was read for context
+    but not invoked — every finding here is reproducible by inspection of state initializers, filter predicates,
+    and toggle handlers, with no ambiguity that would need a live row to resolve.
+  </div>
+
+  <div class="statbar">
+    <div class="stat fail"><div class="n">2</div><div class="l">High-severity bugs</div></div>
+    <div class="stat fail"><div class="n">4</div><div class="l">Medium-severity gaps</div></div>
+    <div class="stat static"><div class="n">3</div><div class="l">Low-severity gaps</div></div>
+    <div class="stat pass"><div class="n">2</div><div class="l">Confirmed correct (called out)</div></div>
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#findings">Findings summary</a></li>
+      <li><a href="#events-matrix">Events — combination matrix</a></li>
+      <li><a href="#quests-matrix">Quests — combination matrix</a></li>
+      <li><a href="#deleteflows">Delete flows — series/linked-leg/handoff cleanup</a></li>
+      <li><a href="#method">Method notes</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot pass"></span>PASS — correct, verified by reading both sides</span>
+    <span><span class="dot fail"></span>FAIL — genuine bug, traced by hand</span>
+    <span><span class="dot static"></span>Gap — no bug in existing behavior, but a real capability/parity hole</span>
+    <span><span class="dot finding"></span>Notable, not a defect</span>
+  </div>
+
+  <section id="findings">
+    <h2>Findings summary</h2>
+    <p class="lede">9 findings from a full read of both event-form files and both quest-form files (2,687 + 520 +
+      1,304 + 753 lines). Two are the exact "frozen prop" bug shape called out in this pass's brief — one is a
+      literal regression of a bug the team just fixed elsewhere in the same file. The rest are missing-eligibility-
+      filter and toggle-doesn't-clean-up gaps in the same family as the GP/Teen Welcome fixes, plus a
+      create/edit field-parity sweep across every CategoryFields.tsx field.</p>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> "Needs pickup too?" on a Study event still gates on the FROZEN <code>helperIsRoleFilled</code> snapshot — the exact bug just fixed one section above it</h3>
+      <p><b>Root cause.</b> <code>EditEventModal</code> declares <code>helperIsRoleFilled</code> at
+        <code>EventFormModal.tsx:1761</code> as <code>ROLE_HELPER_CATEGORIES.includes(event.category) && !!event.helper</code>
+        — computed once from the event PROP at modal-open time and never recalculated from live state. Commit
+        <code>f1bb4139</code> (this session) correctly stopped using it to gate the "Change tutor" picker AND the
+        save-time driver patch, specifically because it goes stale the instant a parent picks a new (or external)
+        tutor mid-session. But the fix left one consumer untouched: the "Needs pickup too?" toggle's visibility gate
+        at <code>EventFormModal.tsx:2424</code> — <code>(helperIsRoleFilled &amp;&amp; event.category === 'Study' &amp;&amp; editRideRequired)</code>
+        — still reads the frozen prop. Tap sequence: open a Study event that was created with NO tutor at all
+        (<code>event.helper</code> empty, so <code>helperIsRoleFilled</code> = false for the whole session).
+        In the now-fixed "Change tutor / helper" section, type an external tutor name — this correctly reveals
+        "Ride Needed?" (gated on live <code>helperId</code>/<code>editRideRequired</code>, not the frozen flag,
+        per the same commit). Toggle "Ride Needed?" on and pick a driver. The parent now has a fully valid
+        transport assignment (tutor + driver) and should see "Needs pickup too?" to add a return leg — but that
+        section's visibility check still ANDs on <code>helperIsRoleFilled</code>, which is permanently false for
+        this event because it was computed from the event prop before any of these edits happened. The toggle
+        never renders, silently, with no error and no visual indication anything is missing — a parent who read
+        the exact scenario the sibling bug's own commit message described ("an event created with NO tutor that
+        then gets an external tutor + a driver assigned in the same edit session") gets the tutor+driver fix but
+        not the pickup-leg fix, because the same frozen variable leaked into a second consumer the fix didn't
+        touch.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:1761 (helperIsRoleFilled declaration, frozen from
+        <code>event.category</code>/<code>event.helper</code> props) — features/calendar/EventFormModal.tsx:2424
+        (stale consumer: <code>(helperIsRoleFilled && event.category === 'Study' && editRideRequired)</code>) vs.
+        features/calendar/EventFormModal.tsx:2327 (the sibling gate on the SAME toggle family, already fixed to use
+        <code>(!helperId || editRideRequired)</code> — live state, not the frozen flag) — the fix should replace line
+        2424's <code>helperIsRoleFilled</code> with the same live check the tutor-picker fix already established
+        (e.g. <code>!!helperName.trim()</code>, mirroring the Medical/Sports branches right above it on lines
+        2422-2423 which correctly key off live <code>event.helper</code> for THEIR gate, not a frozen copy).</p>
+    </div>
+
+    <div class="finding">
+      <h3><span class="sev high">High</span> "Teens Only" chore restriction has no edit-time UI, no patch field, and no assignment-picker eligibility filter at create time</h3>
+      <p><b>Root cause, part 1 (edit gap).</b> <code>AddQuestModal.tsx</code> wires up a real
+        <code>teensOnly</code>/<code>setTeensOnly</code> state (line 200) that flows into
+        <code>isOpenToTeens: teensOnly || undefined</code> on creation (line 613) — this is itself the fix for an
+        earlier bug where the field existed in the DB but nothing in chores ever wrote it. But
+        <code>EditQuestModal.tsx</code> has ZERO trace of this field anywhere: no <code>useState</code> seeded from
+        <code>quest.isOpenToTeens</code>, no toggle UI, and neither <code>save()</code> patch branch (locked or
+        unlocked, lines 155-184 and 187-214) ever includes <code>isOpenToTeens</code> in its outgoing patch — despite
+        <code>store/choreAdapter.ts:419</code>/<code>600</code> and <code>store/choreStore.ts:2019</code> all fully
+        supporting an <code>isOpenToTeens</code> update through the exact same generic patch path every other
+        toggle in this form already uses. A parent who creates a "Teens Only" chore and later needs to open it up
+        to all kids (or vice versa) has no path to do so except deleting and recreating the chore — the toggle is
+        create-only, permanently, for the life of the chore.</p>
+      <p><b>Root cause, part 2 (no eligibility filter, create time).</b> Even where the toggle IS wired
+        (AddQuestModal), the assignment picker it's supposed to gate never enforces it. Compare
+        <code>AddQuestAssignSection.tsx:70</code>'s member filter — <code>m.role === 'senior' ? inviteGrandparent : true</code>
+        — the exact "only show this role once its Welcome toggle is on" pattern EventFormModal's <code>adults</code>
+        list uses for GP/Teen. There is no equivalent <code>m.role === 'kid' ? teensOnly-aware-check : true</code>
+        anywhere in that filter chain (line 70-71): a kid (not teen) is offered as a directly-assignable member
+        in the picker regardless of whether "Teens Only" is on, and toggling "Teens Only" on/off never clears an
+        already-selected kid from <code>assignIds</code> the way turning on "Adult Task" clears kids (line 496)
+        or turning on "Shopping" category clears kid/teen assignees (line 175-179). A parent can tap Teens Only
+        on, then still hand-pick a kid directly in the very same form, producing a chore whose
+        <code>isOpenToTeens</code> flag and actual assignee directly contradict each other with no warning —
+        the exact "toggle doesn't clean up dependent state" bug class this pass's brief calls out, compounded by
+        having no candidate-list filter to begin with (unlike the GP/Teen Welcome picker gaps already fixed in
+        EventFormModal).</p>
+      <p class="path">features/quests/components/EditQuestModal.tsx (no isOpenToTeens state, UI, or patch field
+        anywhere in the file) — features/quests/components/AddQuestAssignSection.tsx:69-71 (member filter has a
+        senior/GP-welcome check but no kid/teens-only check) — features/quests/components/AddQuestRecurrenceSection.tsx:103-117
+        (the Teens Only toggle itself — <code>onPress={() => toggleTeensOnly(!teensOnly)}</code>, no assignIds
+        cleanup, unlike toggleAdultTask right above it in AddQuestModal.tsx:492-504) — store/choreAdapter.ts:419,600
+        and store/choreStore.ts:2019 (the write path already exists and would accept an edit-time patch if one were
+        ever sent)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> 11 CategoryFields.tsx fields are create-only — no editable equivalent anywhere in EditEventModal, several with not even a read-only display</h3>
+      <p><b>Root cause.</b> Grepping every field name CategoryFields.tsx exposes against the full body of
+        EditEventModal (features/calendar/EventFormModal.tsx from line 1546 on) turns up zero matches for:
+        <code>apptType</code> (Medical appointment-type chips), <code>sportType</code> (Sports sport-type chips),
+        <code>kitReminder</code> (Sports "pack gear" switch), <code>isOnline</code>/<code>meetingUrl</code> (Study
+        online-session toggle + Zoom link), <code>venueLocation</code> (Sports venue / Study in-person location),
+        <code>clinicLocation</code> (Medical clinic), <code>generalLocation</code> (Event/Birthday/Errand/Other
+        location), and the entire <code>linkGroceries</code>/grocery-run attachment flow (Errand). Three of these —
+        <code>doctorName</code>, <code>coachName</code>, <code>subject</code> — do at least get a READ-ONLY
+        <code>&lt;Text&gt;</code> pill in the edit sheet's fixed detail-pills row (lines 2129-2143), so a parent can
+        see but never correct them; the other 8 have no representation at all, not even for viewing. A parent who
+        picks the wrong appointment type, forgets to mark a Study session online, or needs to fix a typo'd venue
+        after creating the event has exactly one recovery path for any of these 11 fields: delete the event and
+        recreate it from scratch. This confirms and substantially widens the prior Smart Tasker audit's
+        "Doctor/Coach/Tutor/Clinic/Venue/Subject/Appointment-type/Sport-type are permanently un-editable" finding —
+        Online/Meeting-link, Kit reminder, general Location, and the whole grocery-run attachment were not
+        previously enumerated and are equally unreachable.</p>
+      <p class="path">features/calendar/components/eventForm/CategoryFields.tsx:84-517 (every field listed above,
+        create-form only) — features/calendar/EventFormModal.tsx:1546-2686 (EditEventModal's full body — confirmed
+        via grep, zero matches for apptType/sportType/kitReminder/isOnline/meetingUrl/venueLocation/clinicLocation/
+        generalLocation/linkGroceries anywhere) — features/calendar/EventFormModal.tsx:2129-2143 (the 3 read-only
+        display pills: doctorName, subject, coachName — view-only, no edit path)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> EditQuestModal's category chip row never merges in family custom categories — an existing custom-category chore can't be re-selected to its own category on edit</h3>
+      <p><b>Root cause.</b> <code>AddQuestModal.tsx</code> builds its category row from
+        <code>[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key))]</code>
+        (line 873) — the family's own custom categories (fetched via <code>fetchCustomCategories</code>, same
+        mechanism EventFormModal uses) are merged in so a previously-typed custom category shows as a real,
+        tappable chip. <code>EditQuestModal.tsx</code> never imports or calls <code>fetchCustomCategories</code> at
+        all, and its category row (line 357-368) maps only <code>ALL_CATEGORIES</code> — the fixed 20-entry list
+        from questFormShared.ts. A chore created under a family-specific custom category (something typed under
+        "Other" that <code>recordCustomSuggestion</code> then promoted into a real category the family can reuse)
+        opens in Edit with <code>category</code> state correctly seeded to that custom key, but no chip in the row
+        ever highlights as active — the row silently shows nothing selected, and the only way to "keep" the
+        original category is to close without touching the category row at all (since <code>setCategory</code> is
+        never called unless a chip is tapped). Tapping any visible chip permanently replaces the custom category
+        with a generic one, with no way back to the original short of retyping it in Add and hoping the family
+        suggestion table still has it.</p>
+      <p class="path">features/quests/components/EditQuestModal.tsx:355-368 (category row, ALL_CATEGORIES only,
+        no customCategories fetch or merge) — features/quests/components/AddQuestModal.tsx:294-297,873
+        (fetchCustomCategories + merge, the pattern EditQuestModal is missing)</p>
+    </div>
+
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> A locked (claimed/in-progress) chore's "Adult-Only Task" toggle can still be flipped on, silently reassigning coins/visibility on an active chore with no confirmation</h3>
+      <p><b>Root cause.</b> <code>EditQuestModal.tsx:591-614</code> renders the Adult-Only Task toggle
+        unconditionally — "always visible so locked (Adjust) mode still shows the flags," per its own comment —
+        with an onPress handler that unconditionally clears <code>assignIds</code>/<code>isPool</code>/
+        <code>inviteGrandparent</code> the instant it's flipped on (line 597), even when <code>editMode === 'restricted'</code>
+        (a chore already claimed or in-progress by a kid). The locked <code>save()</code> patch branch (lines
+        155-184) does include <code>isAdultTask</code>/<code>assignedToId</code>/<code>assignedToIds</code> in its
+        outgoing patch unconditionally — there's no extra confirmation step or warning distinct from the ordinary
+        Alert.prompt that only fires on Delete. A parent editing a locked, in-progress kid chore for an unrelated
+        reason (e.g. just extending the due date, though due date itself is excluded from the locked patch per
+        the file's own comment) can accidentally tap this toggle, instantly wiping the kid's claim from
+        <code>assignIds</code> in local state — the same "reassignment happens as a side effect of an unrelated
+        edit" shape the EventFormModal helper-seeding bug (fixed via <code>helperTouched</code>) was designed to
+        prevent, but with no analogous touched-flag guard here. This is speculative in severity (no live report
+        cited), downgraded from High because the toggle requires a deliberate tap, not an automatic stale-diff —
+        but the UI gives no distinct warning that flipping it mid-chore silently un-assigns an active kid.</p>
+      <p class="path">features/quests/components/EditQuestModal.tsx:590-614 (Adult-Only toggle, unconditional
+        assignIds/isPool/inviteGrandparent clear on press, rendered even when editMode==='restricted') —
+        features/quests/components/EditQuestModal.tsx:145-184 (locked save() patch — sends the cleared assignment
+        state with no distinct confirmation)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> A Ride event created with no assignee via the "Change tutor / helper" section shows an inconsistent driver-role label for Sports vs. Medical vs. Study — cosmetic, traced for completeness</h3>
+      <p>Not a functional bug — the section header/label logic at <code>EventFormModal.tsx:2280-2291</code>
+        correctly branches per category (Medical → "Reassign escort"/"Accompanied by", Study → "Change tutor /
+        helper"/"Tutored by", Sports → "Reassign drop-off"/"Drop-off by", Ride → "Reassign driver"/"Driven by").
+        Verified this now stays correctly reachable for every category after the tutor-picker fix (the
+        <code>!restricted && isParent && !['Work','Event'].includes(event.category)</code> gate has no
+        per-category frozen-snapshot issue) — flagged here only because it's the section immediately adjacent to
+        the two bugs above, and reads clean.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:2277-2308</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> AddEventModal's Ride/Sports/Medical GP-Teen toggle cleanup is thorough and consistent — called out as a genuine PASS against this audit's own premise</h3>
+      <p>Both <code>AddEventModal</code> (lines 1322-1324, 1365-1367) and <code>EditEventModal</code> (lines
+        2498-2500, 2534-2536) correctly clear <code>helperId</code>/<code>helperName</code> when Grandparents
+        Welcome or Teens Welcome is turned back off AND the currently-selected helper is of that exact role — the
+        fix already shipped in commit <code>dfd5efcf</code>. Checked both forms independently since the sibling
+        Smart Tasker audit only verified the create form; the edit form's copy of the same logic is symmetric and
+        correct, including using <code>members.find(m => m.id === helperId)?.role</code> (a live lookup) rather
+        than any frozen snapshot.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:1322-1324, 1365-1367 (Add) — 2498-2500, 2534-2536 (Edit)</p>
+    </div>
+
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> CategoryFields' Study "Return pickup" fields silently double as the AddEventModal's own driver-patch inputs, but the kid-visibility gate is correctly scoped — verified, not a bug</h3>
+      <p>Verified by reading the guard comment and code together: the Drive Assignment + Return pickup block inside
+        Study's in-person branch (CategoryFields.tsx:229-272) is correctly gated <code>!isKid</code> — a kid
+        creating their own Study request never sees an orphaned driver-assignment UI they have no authority over,
+        matching the stated intent ("a kid can't pick who drives them"). Cross-checked against
+        <code>helperId</code>'s scope (parent/senior only reach this branch given AddEventModal's own
+        <code>isKid ? ['Sports','Study','Event','Birthday','Other'] : ...</code> category allowlist) — no path for
+        a kid to reach a driver picker exists. Included to document a clean pass in the exact area this audit was
+        asked to scrutinize most closely.</p>
+      <p class="path">features/calendar/components/eventForm/CategoryFields.tsx:218-272</p>
+    </div>
+  </section>
+
+  <section id="events-matrix">
+    <h2>Events — combination matrix</h2>
+    <p class="lede">8 categories × relevant actions × role. "Gap" = a real capability hole (create-only field,
+      missing edit path) rather than a wrong-behavior bug. Only rows with a note deviate from a clean pass — an
+      unlisted combination behaved as expected on inspection.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Category</th><th>Action</th><th>Role</th><th>Result</th><th>Note</th></tr>
+      <tr><td>Medical</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>apptType/doctorName/clinicLocation all save correctly to eventInput.</td></tr>
+      <tr><td>Medical</td><td>Edit — change doctor/clinic/apptType</td><td>Parent</td><td><span class="tag fail">GAP</span></td><td>No field anywhere in EditEventModal — doctorName is read-only display, clinicLocation/apptType have no representation at all.</td></tr>
+      <tr><td>Medical</td><td>Edit — reassign escort</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>"Reassign escort" section reachable regardless of prior assignee (not frozen-gated).</td></tr>
+      <tr><td>Medical</td><td>Edit</td><td>Senior (own event)</td><td><span class="tag pass">PASS</span></td><td>isOwnEventBySenior correctly scopes to notes/date/time/alertCall subset, not full reassignment surface.</td></tr>
+      <tr><td>Sports</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>sportType/coachName/venueLocation/kitReminder/pickupLocation all save.</td></tr>
+      <tr><td>Sports</td><td>Edit — change sport/coach/venue/kit reminder</td><td>Parent</td><td><span class="tag fail">GAP</span></td><td>sportType and kitReminder have zero edit-mode representation; coachName is read-only display only; venueLocation has no edit field.</td></tr>
+      <tr><td>Sports</td><td>Edit — "Needs pickup too?"</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Gated on live <code>event.helper</code> (line 2423), correctly NOT frozen — contrast with Study below.</td></tr>
+      <tr><td>Study</td><td>Create — tutor + driver same session</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Both save correctly (AddEventModal has no frozen-snapshot issue — it only ever reads live state, this bug class is edit-only).</td></tr>
+      <tr><td>Study</td><td>Edit — change tutor after any tutor set</td><td>Parent</td><td><span class="tag pass">PASS (fixed this session)</span></td><td>Commit f1bb4139 — picker no longer gated on frozen helperIsRoleFilled.</td></tr>
+      <tr><td>Study</td><td>Edit — assign tutor+driver in one session, then "Needs pickup too?"</td><td>Parent</td><td><span class="tag fail">FAIL — High</span></td><td>Finding #1 above — "Needs pickup too?" visibility still gated on the frozen helperIsRoleFilled, never appears for an event created with no tutor.</td></tr>
+      <tr><td>Study</td><td>Edit — toggle Online session</td><td>Parent</td><td><span class="tag fail">GAP</span></td><td>isOnline/meetingUrl have no edit-mode field at all.</td></tr>
+      <tr><td>Ride</td><td>Create — GP/Teen Welcome then off</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>helperId/helperName correctly cleared when toggle flips off and current helper matches that role (dfd5efcf).</td></tr>
+      <tr><td>Ride</td><td>Edit — same toggle-off cleanup</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Symmetric fix verified present in EditEventModal (lines 2498-2500, 2534-2536).</td></tr>
+      <tr><td>Ride</td><td>Edit — pickup/drop-off location</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>editPickupLocation/editDropLocation both present and save (previously a known gap, now fixed per code comment).</td></tr>
+      <tr><td>Ride</td><td>Delete — with linked pickup leg</td><td>Parent</td><td><span class="tag static">See §deleteflows</span></td><td>—</td></tr>
+      <tr><td>Event/Birthday</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>generalLocation, RSVP toggle (parent only) both save.</td></tr>
+      <tr><td>Event/Birthday</td><td>Edit — change location</td><td>Parent</td><td><span class="tag fail">GAP</span></td><td>generalLocation has no edit-mode field.</td></tr>
+      <tr><td>Errand</td><td>Create — link groceries</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Grocery run creation flow works end to end on create.</td></tr>
+      <tr><td>Errand</td><td>Edit — add/change grocery link</td><td>Parent</td><td><span class="tag fail">GAP</span></td><td>Entire linkGroceries/GroceryLinkSection flow absent from EditEventModal.</td></tr>
+      <tr><td>Other</td><td>Create/Edit</td><td>Parent/Kid</td><td><span class="tag pass">PASS</span></td><td>Only generalLocation is category-specific here; same edit gap as Event/Birthday, otherwise unremarkable.</td></tr>
+      <tr><td>Any</td><td>Create</td><td>Kid</td><td><span class="tag pass">PASS</span></td><td>Category allowlist (Sports/Study/Event/Birthday/Other), KidRideSection, approvalPending all correctly scoped.</td></tr>
+      <tr><td>Any</td><td>Edit own pending</td><td>Kid/Teen</td><td><span class="tag pass">PASS</span></td><td>isOwnPending correctly includes teen (fixed regression noted in code comment), notes-only patch.</td></tr>
+      <tr><td>Any</td><td>Edit sibling's event</td><td>Teen</td><td><span class="tag pass">PASS</span></td><td>isForeignToTeen correctly forces restricted/read-only (fixed regression per code comment).</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="quests-matrix">
+    <h2>Quests — combination matrix</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Chore type</th><th>Action</th><th>Role</th><th>Result</th><th>Note</th></tr>
+      <tr><td>Regular (kid pool)</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>—</td></tr>
+      <tr><td>Regular</td><td>Create — Teens Only</td><td>Parent</td><td><span class="tag fail">FAIL — High</span></td><td>Finding #2 — no eligibility filter excludes kids from the assign picker; toggling off doesn't clear a kid already picked.</td></tr>
+      <tr><td>Regular</td><td>Edit — toggle Teens Only</td><td>Parent</td><td><span class="tag fail">FAIL — High</span></td><td>Field doesn't exist anywhere in EditQuestModal — cannot be set, seen, or cleared after creation.</td></tr>
+      <tr><td>Regular</td><td>Create — custom category</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>customCategories merge + recordCustomSuggestion both work on create.</td></tr>
+      <tr><td>Regular</td><td>Edit — re-open custom-category chore</td><td>Parent</td><td><span class="tag fail">GAP — Medium</span></td><td>Finding #4 — category row never merges custom categories; no chip shows active.</td></tr>
+      <tr><td>Bounty (single-slot)</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>isPool + maxClaimants=1 correctly encode "first come, first served."</td></tr>
+      <tr><td>Bounty (multi-slot)</td><td>Create</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>maxClaimants 2/3/∞ options all wire through updateQuest post-create.</td></tr>
+      <tr><td>Bounty</td><td>Edit — reassign from open pool to direct</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Tapping a member avatar in Edit correctly sets isPool false + assignIds.</td></tr>
+      <tr><td>Grandparent quest</td><td>Create — Invite Grandparents</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Coins correctly zeroed (toggleGPInvite), assign picker correctly reveals seniors only once toggle is on.</td></tr>
+      <tr><td>Grandparent quest</td><td>Edit — toggle Invite Grandparents on an existing paid chore</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>coinsDisabled correctly forces coins:0/bonusCoins:0 in the outgoing patch even if stale nonzero values remain in local state (line 162-163 comment documents this explicitly) — a genuine "was a live bug, now fixed" pass worth noting.</td></tr>
+      <tr><td>Adult task</td><td>Create — direct assign to co-parent</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Routes through addParentQuest/PENDING negotiation, not a raw assignedToId write.</td></tr>
+      <tr><td>Adult task</td><td>Edit — reassign to different co-parent</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>reassigningAdultTask correctly detected and routed the same way.</td></tr>
+      <tr><td>Adult task</td><td>Edit — toggle ON while chore is locked (claimed/in-progress)</td><td>Parent</td><td><span class="tag fail">Speculative — Medium</span></td><td>Finding #5 — silently clears assignIds/isPool/inviteGrandparent with no distinct confirmation on an active chore.</td></tr>
+      <tr><td>Recurring (any type)</td><td>Create — weekly, no day picked</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Defaults sensibly, same fallback pattern as EventFormModal's own Repeats.</td></tr>
+      <tr><td>Recurring</td><td>Edit — change frequency</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Correct messaging distinguishes "only future occurrences affected."</td></tr>
+      <tr><td>Any</td><td>Create — self-quest</td><td>Teen</td><td><span class="tag pass">PASS</span></td><td>hideAdultToggles correctly hides Parent Only/GP Welcome for a teen creator (Scenario 1.5).</td></tr>
+      <tr><td>Any</td><td>Delete — pending</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Simple confirm, no note required.</td></tr>
+      <tr><td>Any</td><td>Delete — claimed/in-progress (locked)</td><td>Parent</td><td><span class="tag pass">PASS</span></td><td>Alert.prompt requires a non-empty note before deleting an active chore — correctly blocks empty-note submission.</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="deleteflows">
+    <h2>Delete flows — series / linked-leg / handoff cleanup</h2>
+    <p class="lede">Traced every <code>handleDelete</code>/<code>onDelete</code> path in both EventFormModal and the
+      quest form files for scope-prompt correctness and cross-entity cleanup.</p>
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> Recurring event delete correctly offers this/following/all everywhere it should — verified, no gap found</h3>
+      <p><code>EditEventModal.handleDelete</code> (EventFormModal.tsx:2057-2083) correctly branches on
+        <code>event.seriesId</code> before offering the withdraw/delete-single Alert, and passes the caller
+        (<code>CalendarScreen</code>) a <code>scope</code> of <code>'this' | 'following' | 'all'</code> exactly as
+        documented in the modal's own prop comment — the actual <code>deleteEvent</code>/<code>deleteEventScoped</code>
+        call and its own <code>notifyDeleteIfAssigned</code> live in the caller, which this pass did not re-audit
+        (out of scope — the RPC/store layer was reassign-audit-pass territory, not this form-state pass). No
+        UI-side gap found in the prompt itself.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:2057-2083</p>
+    </div>
+    <div class="finding medium">
+      <h3><span class="sev medium">Medium</span> Deleting one leg of a linked drop-off/pickup pair has no cleanup of the OTHER leg anywhere in the form layer — the orphan is a real, reachable gap</h3>
+      <p><b>Root cause.</b> <code>handleDelete</code> has no awareness of <code>event.linkedLegId</code> at all —
+        it branches only on <code>event.seriesId</code> (recurring) vs. not, then hands off to the caller's
+        <code>onDelete</code>. Deleting a drop-off leg that has a linked pickup leg (created via
+        <code>forkRideLegs</code> either at creation or via "Needs pickup too?") leaves the sibling pickup event
+        fully intact but now pointing at a <code>linkedLegId</code> that resolves to nothing — no confirmation
+        dialog anywhere in this file asks "this ride also has a linked pickup, delete that too?" the way the
+        recurring-series prompt asks about scope. This is a form-layer gap, not confirmed here as a live orphan in
+        the underlying <code>deleteEvent</code>/<code>deleteEventScoped</code> store calls (out of this pass's
+        file scope) — but nothing in EventFormModal itself surfaces the linked-leg relationship at delete time for
+        a user to even make an informed choice, unlike the otherwise-thorough recurring-series prompt right next to
+        it in the same function.</p>
+      <p class="path">features/calendar/EventFormModal.tsx:2057-2083 (handleDelete — no linkedLegId branch or
+        prompt) — features/calendar/EventFormModal.tsx:1723 (comment acknowledging linkedLegId exists and is used
+        to SUPPRESS offering a second "Needs pickup too?" fork, but the same field is never consulted on delete)</p>
+    </div>
+    <div class="finding low">
+      <h3><span class="sev low">Low</span> Quest delete on a locked chore correctly requires a note; no equivalent "pending handoff" cleanup prompt exists, but this is out of this pass's form-layer scope</h3>
+      <p><code>EditQuestModal.tsx:707-736</code>'s delete button correctly branches on <code>locked</code>
+        (editMode==='restricted') to require a non-empty note via <code>Alert.prompt</code> before calling
+        <code>onDelete</code>, and blocks the delete entirely if the note is empty (line 719) — a real, working
+        guard. Whether a pending chore-handoff offer or GP-errand invite tied to this quest gets cleaned up
+        server-side on delete is a <code>choreStore</code>/RPC-layer question the second QA pass
+        (chore-handoff/bounty audit) already covers — no additional form-layer gap found here; the form itself
+        has no separate "this has a pending handoff, are you sure?" branch, but nothing in this file's own state
+        suggests one should exist beyond the note requirement already present.</p>
+      <p class="path">features/quests/components/EditQuestModal.tsx:707-736</p>
+    </div>
+  </section>
+
+  <section id="method">
+    <h2>Method notes</h2>
+    <ul>
+      <li>All 9 findings above are static-code-read conclusions from the actual current source of
+        <code>features/calendar/EventFormModal.tsx</code> (2,687 lines, read in full),
+        <code>features/calendar/components/eventForm/CategoryFields.tsx</code> (520 lines, read in full),
+        <code>features/quests/components/AddQuestModal.tsx</code> (1,304 lines, read in full) plus its
+        <code>AddQuestAssignSection.tsx</code> and <code>AddQuestRecurrenceSection.tsx</code> section files, and
+        <code>features/quests/components/EditQuestModal.tsx</code> (753 lines, read in full) — not inferred from
+        summaries or partial greps.</li>
+      <li>Every "no field anywhere" claim was verified by grepping the target field name/state variable across the
+        entire opposing file (e.g. every CategoryFields.tsx field name grepped against EditEventModal's full body,
+        confirmed zero matches) rather than asserted from a single read-through.</li>
+      <li>The <code>qa-scratch-family</code> harness (<code>supabase/functions/qa-scratch-family/index.ts</code>)
+        was read for context per this pass's instructions but not invoked — every finding here is resolvable by
+        inspection of state-initializer lines and toggle handlers with no live-row ambiguity, unlike the prior
+        RPC-focused passes which needed real writes to confirm server-side field-clearing behavior.</li>
+      <li>Commits <code>f1bb4139</code>, <code>dfd5efcf</code>, and <code>64022f5f</code> (this session, referenced
+        throughout) were read via <code>git show</code> to establish the exact bug shape this pass was asked to
+        hunt for, then used as a template to find further instances — Finding #1 is a direct, confirmed instance of
+        the same root cause <code>f1bb4139</code> fixed elsewhere in the identical function.</li>
+      <li>No application source code was modified. No other QA pass's report file was touched.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Form-state findings from a full static read of the Event and Quest create/edit/delete form files — no RPC
+    execution, no live DB writes. No application source code was modified.
+    <div class="backtotop"><a href="#top">&uarr; back to top</a></div>
+  </footer>
+</div>

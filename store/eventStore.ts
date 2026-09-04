@@ -843,7 +843,7 @@ async function applySeriesConfirmation(updated: FamilyEvent, wasDriverField: boo
 
   const patch = wasDriverField
     ? { driver_name: updated.driverName ?? null, driver_id: updated.driverId ?? null, driver_status: 'confirmed', ride_required: true }
-    : { helper: updated.helper ?? null, helper_id: updated.helperId ?? null, helper_status: 'confirmed' };
+    : { helper_name: updated.helper ?? null, helper_id: updated.helperId ?? null, helper_status: 'confirmed' };
   const { error: updateErr } = await supabase.from('calendar_events').update(patch).in('id', targetIds);
   if (updateErr) { console.warn('[eventStore] applySeriesConfirmation bulk update failed:', updateErr.message); return; }
 

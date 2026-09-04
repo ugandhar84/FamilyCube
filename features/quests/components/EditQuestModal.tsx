@@ -17,6 +17,7 @@ import { TYPO } from '@/constants/theme';
 import { localDateStr, parseLocalDate, parseTimeInput, fmtDate, fmtTime } from '@/lib/dates';
 import { I } from './icons';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, fmtDateLabel, fmtTimeLabel } from './questFormShared';
+import { fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategories';
 import { aq } from './AddQuestModal';
 // Shared with AddQuestModal / AddEventModal — this file used to hand-
 // duplicate both of these blocks inline.
@@ -108,6 +109,17 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const siblings = members.map(m => m.name);
   const locked = editMode === 'restricted';
   const familyId = members.find(m => m.id === activeMemberId)?.familyId ?? '';
+
+  // Live QA finding (docs/qa_form_combinations_audit.html, Medium):
+  // AddQuestModal merges the family's own custom categories into its chip
+  // row (ALL_CATEGORIES + customCategories) — this edit form only ever
+  // rendered ALL_CATEGORIES, so a chore already saved under a custom
+  // category reopened with NO chip showing as active at all.
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  React.useEffect(() => {
+    if (!familyId) return;
+    fetchCustomCategories(familyId, 'quest').then(setCustomCategories);
+  }, [familyId]);
 
   // Responsibility Engine — optional subcategory refinement + live
   // assignment preview. Unlike AddQuestModal, this quest already has a real
@@ -369,7 +381,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
               <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {ALL_CATEGORIES.map(c => (
+                  {[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key as QuestCategory)).map(cc => cc.key as QuestCategory)].map(c => (
                     <TouchableOpacity key={c}
                       style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
                         category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}

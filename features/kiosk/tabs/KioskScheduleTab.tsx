@@ -72,7 +72,7 @@ export function KioskScheduleTab({ members, colors, isDark }: { members: FamilyM
             {days[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {days[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </Text>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
           <Pressable onPress={() => setFilterMemberId(null)}
             style={[s.filterChip, { backgroundColor: !filterMemberId ? colors.primary : colors.surface, borderColor: !filterMemberId ? colors.primary : colors.border }]}>
             <Text style={[s.filterText, { color: !filterMemberId ? '#fff' : colors.textSecondary }]}>Everyone</Text>
@@ -153,6 +153,10 @@ const s = StyleSheet.create({
   header: { marginBottom: 16, gap: 10 },
   title: { fontSize: 24, fontWeight: '800' },
   range: { fontSize: TYPO.caption, fontWeight: '700', marginTop: 2 },
+  // Same fix as KioskTasksTab's stat strip — a horizontal ScrollView with
+  // no explicit height of its own can stretch vertically in some layout
+  // contexts; flexGrow:0 pins it to its pill content's real height.
+  filterRowOuter: { flexGrow: 0 },
   filterRow: { flexDirection: 'row', gap: 8 },
   filterChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5 },
   filterText: { fontSize: 12, fontWeight: '800' },

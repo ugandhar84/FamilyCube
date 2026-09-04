@@ -115,7 +115,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
       </View>
 
       {isParent && kidStats.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.statStrip}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.statStripOuter} contentContainerStyle={s.statStrip}>
           {kidStats.map(({ member, open, total }) => {
             const rs = assigneeStyle(member, colors, isDark);
             return (
@@ -306,7 +306,15 @@ const s = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
   addBtnText: { color: '#fff', fontSize: TYPO.label, fontWeight: '800' },
-  statStrip: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  // Was: no explicit height on the ScrollView itself (only on its
+  // contentContainerStyle) — in a plain flex column, a horizontal
+  // ScrollView with an unbounded cross-axis can stretch to fill whatever
+  // vertical space its sibling below doesn't claim, instead of hugging its
+  // own pill content. Live-reported: "the tasks filter pills height should
+  // be fixed, it is stretching now too much." flexGrow:0 pins it to
+  // exactly its content's height.
+  statStripOuter: { flexGrow: 0, marginBottom: 16 },
+  statStrip: { flexDirection: 'row', gap: 8 },
   statPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
   statName: { fontSize: 12, fontWeight: '800' },
   statFrac: { fontSize: 11, fontWeight: '700', opacity: 0.85 },

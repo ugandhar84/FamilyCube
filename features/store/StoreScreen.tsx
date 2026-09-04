@@ -322,7 +322,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
   const [cost,  setCost]  = useState('50');
   const [emoji, setEmoji] = useState('🎁');
   const [cat,   setCat]   = useState('Special');
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   useEffect(() => {
     if (visible) {
@@ -347,7 +347,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: keyboardAwareMaxHeight ?? '90%', backgroundColor: colors.card,
+            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
 
@@ -924,22 +924,49 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
               )}
             </View>
           ) : (
-            <View style={s.grid}>
-              {rewards.map((r, i) => (
-                <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins} myMaxAffordable={myMaxAffordable}
-                  isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
-                  onRedeem={handleRedeem}
-                  onEdit={r => { setEditing(r); setShowCreate(true); }}
-                  onOpenDetail={r => setDetailPerk(r)}
-                  isGoal={isKid && activeMember?.goalRewardId === r.id}
-                  onToggleGoal={isKid ? (target) => {
-                    if (!activeMember) return;
-                    const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
-                    useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId })
-                      .catch(e => console.warn('[StoreScreen] toggle goal failed', e));
-                  } : undefined}
-                />
-              ))}
+            // Live-reported: "i could see right side padding with panel for
+            // the cards are it high" — cards in the same row should match
+            // height, but flexWrap:'wrap' doesn't group wrapped items into
+            // per-row flex containers the way CSS Grid would, so React
+            // Native's own cross-axis stretch never applied between two
+            // side-by-side cards — a card with a "My Goal" line (extra
+            // content) just rendered taller than its shorter neighbor,
+            // leaving uneven space in the row instead of both stretching to
+            // match. Pairing rewards into explicit two-up rows (each a real
+            // flexDirection:'row' + alignItems:'stretch' container) fixes
+            // this the way flexWrap fundamentally can't.
+            <View style={{ gap: 10 }}>
+              {Array.from({ length: Math.ceil(rewards.length / 2) }, (_, rowIdx) => {
+                const pair = rewards.slice(rowIdx * 2, rowIdx * 2 + 2);
+                return (
+                  <View key={rowIdx} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
+                    {pair.map((r, colIdx) => {
+                      const i = rowIdx * 2 + colIdx;
+                      return (
+                        <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins} myMaxAffordable={myMaxAffordable}
+                          isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
+                          onRedeem={handleRedeem}
+                          onEdit={r => { setEditing(r); setShowCreate(true); }}
+                          onOpenDetail={r => setDetailPerk(r)}
+                          isGoal={isKid && activeMember?.goalRewardId === r.id}
+                          onToggleGoal={isKid ? (target) => {
+                            if (!activeMember) return;
+                            const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
+                            useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId })
+                              .catch(e => console.warn('[StoreScreen] toggle goal failed', e));
+                          } : undefined}
+                        />
+                      );
+                    })}
+                    {/* Odd count on the final row — a lone card is now
+                        flex:1 (see s.perkCard), so without a same-flex
+                        sibling it would stretch to fill the whole row
+                        width instead of staying at its normal single-column
+                        share. */}
+                    {pair.length === 1 && <View style={{ flex: 1 }} />}
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -1084,7 +1111,7 @@ const s = StyleSheet.create({
                paddingVertical: 7, paddingHorizontal: 12 },
   coinBadge: { borderRadius: 99, paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1 },
   grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  perkCard:  { width: '47.5%', borderRadius: 20, borderWidth: 1, padding: 14,
+  perkCard:  { flex: 1, borderRadius: 20, borderWidth: 1, padding: 14,
                shadowColor: '#000', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 },
                shadowRadius: 6, elevation: 3 },
   redeemBtn: { borderRadius: 12, paddingVertical: 8, alignItems: 'center' },

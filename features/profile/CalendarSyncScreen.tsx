@@ -59,6 +59,8 @@ export default function CalendarSyncScreen() {
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<`${CalendarProvider}:${CalendarPurpose}` | null>(null);
+  const [cleaningConnectionId, setCleaningConnectionId] = useState<string | null>(null);
+  const [appleCleaning, setAppleCleaning] = useState(false);
   const [appleToggling, setAppleToggling] = useState(false);
   // TestFlight/production has no Metro console — every Apple sync failure
   // previously went to console.warn only, making "still not synced, no
@@ -212,6 +214,63 @@ export default function CalendarSyncScreen() {
     );
   };
 
+  // Live-requested: "keep in app but delete in external calenders" — a
+  // manual cleanup that removes every event this connection ever pushed
+  // OUT to Google/Outlook, without touching the local FamilyCube event at
+  // all. Distinct from Disconnect (which stops future syncing but
+  // deliberately leaves already-pushed events on the external calendar per
+  // its own confirmation copy above) — this is the opposite: keep syncing,
+  // just clear out what's already there.
+  const handleCleanupExternal = (connection: ConnectionRow) => {
+    showAlert(
+      `Remove synced events from ${PROVIDER_LABEL[connection.provider]}?`,
+      'Events already added to this calendar from FamilyCube will be deleted there. Nothing in FamilyCube itself changes, and anything you edit afterward will sync back out again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            if (!activeMemberId) return;
+            setCleaningConnectionId(connection.id);
+            try {
+              const { data, error } = await supabase.functions.invoke('calendar-sync-cleanup-external', {
+                body: { connectionId: connection.id, memberId: activeMemberId },
+              });
+              if (error || !data?.ok) { showAlert('Could not remove events', data?.error ?? error?.message ?? 'Please try again.'); return; }
+              showToast(data.deleted > 0 ? `Removed ${data.deleted} synced event${data.deleted === 1 ? '' : 's'}` : 'Nothing to remove');
+            } finally {
+              setCleaningConnectionId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCleanupApple = () => {
+    showAlert(
+      'Remove synced events from Apple Calendar?',
+      'Events FamilyCube added to the "FamilyCube" calendar on this device will be deleted there. Nothing in FamilyCube itself changes, and anything you edit afterward will sync back out again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            if (!activeMemberId) return;
+            setAppleCleaning(true);
+            try {
+              const { clearAppleSyncedEvents } = await import('@/lib/calendarSync2Way');
+              const { deleted } = await clearAppleSyncedEvents(activeMemberId);
+              showToast(deleted > 0 ? `Removed ${deleted} synced event${deleted === 1 ? '' : 's'}` : 'Nothing to remove');
+            } catch (e: any) {
+              showAlert('Could not remove events', e?.message ?? 'Please try again.');
+            } finally {
+              setAppleCleaning(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const s = makeStyles(colors);
 
   const renderProviderRow = (provider: CalendarProvider, purpose: CalendarPurpose) => {
@@ -264,6 +323,21 @@ export default function CalendarSyncScreen() {
             </Text>
           )}
         </TouchableOpacity>
+        {/* Work connections never push event content (FreeBusy-only, see
+            the screen's own header comment), so this only ever makes sense
+            for a personal, 2-way-synced connection. */}
+        {connection && connection.status !== 'error' && purpose === 'personal' && (
+          <TouchableOpacity
+            onPress={() => handleCleanupExternal(connection)}
+            disabled={cleaningConnectionId === connection.id}
+            style={s.cleanupBtn}>
+            {cleaningConnectionId === connection.id ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <Text style={s.cleanupBtnText}>Remove synced events from {PROVIDER_LABEL[provider]}</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -339,6 +413,15 @@ export default function CalendarSyncScreen() {
                 </Text>
               </View>
             )}
+            {activeMember?.appleCalendarSyncEnabled && (
+              <TouchableOpacity onPress={handleCleanupApple} disabled={appleCleaning} style={s.cleanupBtn}>
+                {appleCleaning ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Text style={s.cleanupBtnText}>Remove synced events from Apple Calendar</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       )}
@@ -361,5 +444,7 @@ function makeStyles(colors: any) {
     connectBtn: { backgroundColor: colors.primary },
     disconnectBtn: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger },
     actionBtnText: { fontSize: TYPO.body, fontWeight: '800' },
+    cleanupBtn: { borderRadius: RADIUS.md, paddingVertical: 9, alignItems: 'center' },
+    cleanupBtnText: { fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, textDecorationLine: 'underline' },
   });
 }

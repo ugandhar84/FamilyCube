@@ -151,6 +151,37 @@ async function ensureSyncCalendarId(): Promise<string | null> {
   }
 }
 
+// Live-requested: "keep in app but delete in external calendars" — a
+// manual cleanup the member can trigger to remove every event this device
+// has ever pushed OUT to Apple Calendar, without touching any FamilyCube
+// data. Every pushed event lives in the dedicated FamilyCube calendar (see
+// ensureSyncCalendarId above), never mixed into the member's own personal
+// calendar, so this only ever needs to clear that one calendar's events —
+// no per-event id bookkeeping required, and nothing else on the device is
+// touched. The local familyEventId -> deviceCalendarEventId map is cleared
+// too so a later re-enable of sync starts fresh instead of pointing at
+// device event ids that no longer exist.
+export async function clearAppleSyncedEvents(memberId: string): Promise<{ deleted: number }> {
+  if (!(await ensurePermission())) return { deleted: 0 };
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const syncCal = calendars.find(c => c.title === SYNC_CALENDAR_NAME);
+  let deleted = 0;
+  if (syncCal) {
+    // A 10-year window comfortably covers anything this feature could ever
+    // have pushed (RECURRENCE_WINDOW_DAYS caps series materialization at
+    // 12 weeks out, and nothing pushes events from the past) — wide enough
+    // to not miss a stray row, cheap enough for a one-off cleanup action.
+    const windowStart = new Date(); windowStart.setFullYear(windowStart.getFullYear() - 1);
+    const windowEnd = new Date(); windowEnd.setFullYear(windowEnd.getFullYear() + 10);
+    const deviceEvents = await Calendar.getEventsAsync([syncCal.id], windowStart, windowEnd);
+    for (const ev of deviceEvents) {
+      try { await Calendar.deleteEventAsync(ev.id); deleted++; } catch { /* already gone — fine */ }
+    }
+  }
+  await saveMap(memberId, {});
+  return { deleted };
+}
+
 // expo-calendar's createEventAsync/updateEventAsync take startDate/endDate
 // — this previously built start/end instead, a field-name mismatch that
 // meant the native EventKit bridge never received a start date at all,

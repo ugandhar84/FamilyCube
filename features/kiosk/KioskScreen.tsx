@@ -31,6 +31,7 @@ import {
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useKioskNavStore } from '@/store/kioskNavStore';
 import { Lock } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 import { KioskHeader } from './KioskHeader';
@@ -73,6 +74,20 @@ export default function KioskScreen() {
   const [tab, setTab] = useState<KioskTab>('hub');
   const [askCubeOpen, setAskCubeOpen] = useState(false);
   const { locked, registerActivity, lockNow, unlock } = useKioskIdleLock();
+  const pendingKioskTab = useKioskNavStore(s => s.pendingTab);
+  const consumePendingKioskTab = useKioskNavStore(s => s.consumePendingTab);
+
+  // A notification tap (app/_layout.tsx's addNotificationResponseListener)
+  // sets this before pushing to '/(tabs)' when the device is a kiosk, since
+  // every OTHER tab route renders a bare phone screen with no kiosk gate.
+  // Consume-and-clear once, so it doesn't keep forcing the tab back after
+  // the person has since navigated elsewhere on the kiosk themselves.
+  useEffect(() => {
+    if (pendingKioskTab) {
+      setTab(pendingKioskTab);
+      consumePendingKioskTab();
+    }
+  }, [pendingKioskTab, consumePendingKioskTab]);
 
   // AskCubeChat renders via a real native Modal, which always sits above
   // regular views in its own native layer regardless of z-index — the

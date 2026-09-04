@@ -2,7 +2,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { showAlert } from '@/components/AppAlert';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
-import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpacity, SafeAreaView, Image, Platform } from 'react-native';
+import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpacity, SafeAreaView, Image, Platform, Dimensions } from 'react-native';
 import FamilyCubeSplashScreen from '@/components/FamilyCubeSplashScreen';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
@@ -24,7 +24,7 @@ import { reloadBlockedWords } from '@/lib/profanityFilter';
 import { isBiometricEnabled, isBiometricAvailable, saveBiometricSession } from '@/lib/biometrics';
 import { applyScreenshotProtection } from '@/lib/screenshotProtection';
 import { dbg, dbgWarn, dbgError } from '@/lib/debug';
-import { useDeviceClass } from '@/lib/useDeviceClass';
+import { useDeviceClass, deviceClassFor } from '@/lib/useDeviceClass';
 import { initRevenueCat } from '@/lib/subscription';
 import { prefetchFeatureFlags } from '@/lib/featureFlags';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
@@ -40,6 +40,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
+import { useKioskNavStore, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
@@ -81,12 +82,51 @@ LogBox.ignoreLogs([
 
 const TAG = 'RootLayout';
 
+// Phone tab route -> kiosk rail tab. Live-reported bug: every notification
+// destination (routeForNotification) is a hardcoded phone path like
+// '/(tabs)/tasks' — correct on a phone, but on a kiosk device only the Hub
+// route ('/(tabs)') actually renders the kiosk rail (HubScreen swaps to
+// KioskScreen there when deviceClass === 'kitchenHub'); every OTHER tab
+// route (tasks.tsx, calendar.tsx, chat.tsx, store.tsx, gps.tsx, etc.)
+// renders its own plain phone screen unconditionally, no kiosk gate at all.
+// A handful of phone destinations (grocery, meals, family-health, school,
+// profile-settings) have no kiosk-native equivalent yet — those fall back
+// to Hub rather than a route that would strand the kiosk on a bare phone
+// screen with no way back except the notification bell.
+const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
+  '/(tabs)': 'hub',
+  '/(tabs)/tasks': 'tasks',
+  '/(tabs)/quests': 'tasks',
+  '/(tabs)/chat': 'chat',
+  '/(tabs)/store': 'store',
+  '/(tabs)/gps': 'findfam',
+  '/(tabs)/memories': 'memories',
+};
+
+/** Navigates to a notification's destination, kiosk-safe: on a kiosk
+ * device, routes to '/(tabs)' (the only route KioskScreen actually lives
+ * on) and sets the matching internal kiosk tab instead of pushing into a
+ * bare phone-only route. `dest` may carry route params (the chat
+ * channelId deep-link) — those are only meaningful on the phone path,
+ * since kiosk's Chat tab has no per-channel deep-link support yet. */
+function navigateFromNotification(dest: string | { pathname: string; params?: Record<string, any> }, isKiosk: boolean) {
+  const pathname = typeof dest === 'string' ? dest : dest.pathname;
+  if (isKiosk) {
+    const kioskTab = PHONE_ROUTE_TO_KIOSK_TAB[pathname] ?? 'hub';
+    useKioskNavStore.getState().setPendingTab(kioskTab);
+    router.push('/(tabs)' as any);
+    return;
+  }
+  router.push(dest as any);
+}
+
 function RootNavigator() {
   useWidgetSync();
   // Phones stay portrait (app.config.js); tablet-class devices — including a
   // wall-mounted "kitchen hub" iPad/Android tablet — get landscape unlocked
   // here at runtime, since Android has no static per-idiom orientation split.
-  useDeviceClass();
+  const { deviceClass } = useDeviceClass();
+  const isKioskDevice = deviceClass === 'kitchenHub';
   const { isDark, colors } = useTheme();
   const { setSession } = useAuthStore();
   const [checked, setChecked] = useState(false);
@@ -593,16 +633,20 @@ function RootNavigator() {
         return;
       }
 
+      const { width: winW, height: winH } = Dimensions.get('window');
+      const isKioskDevice = deviceClassFor(winW, winH) === 'kitchenHub';
+
       if (data?.type === 'chat_message' || data?.type === 'chat_mention') {
         // Both carry data.channelId (family-notifier's chat_message/
         // chat_mention cases) — deep-link straight into that channel/DM
         // instead of always landing on the tab's default "all" channel
         // (live-reported: tapping a chat push should open the actual
-        // conversation, not just the Chat tab root).
-        if (data?.channelId) {
-          router.push({ pathname: '/(tabs)/chat' as any, params: { channelId: data.channelId } });
+        // conversation, not just the Chat tab root). Kiosk has no
+        // per-channel deep-link yet, so it just lands on the Chat tab.
+        if (data?.channelId && !isKioskDevice) {
+          navigateFromNotification({ pathname: '/(tabs)/chat', params: { channelId: data.channelId } }, isKioskDevice);
         } else {
-          router.push('/(tabs)/chat' as any);
+          navigateFromNotification('/(tabs)/chat', isKioskDevice);
         }
       } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
         // Family Cube grocery notifications (notify-shopping-trip-started
@@ -610,13 +654,14 @@ function RootNavigator() {
         // used to fall through to the generic default case below with no
         // case of its own, landing on /(tabs)/notifications instead of the
         // actual grocery list (live-reported: "it is going to somewhere").
-        // Grocery has its own dedicated route.
-        router.push('/(tabs)/grocery' as any);
+        // Grocery has its own dedicated route. No kiosk Grocery tab yet —
+        // falls back to Hub there via navigateFromNotification.
+        navigateFromNotification('/(tabs)/grocery', isKioskDevice);
       } else if (data?.type === 'schedule_conflict') {
         // schedule-conflict-sweep's server-side double-booking push —
         // lands on the merged Tasks tab, which defaults to its Schedule
         // segment (see features/tasks/TasksScreen.tsx).
-        router.push('/(tabs)/tasks' as any);
+        navigateFromNotification('/(tabs)/tasks', isKioskDevice);
       } else {
         // Was: router.push('/(tabs)/notifications') — that page
         // (NotificationsScreen.tsx, via the all-notifications/notifications
@@ -635,7 +680,7 @@ function RootNavigator() {
         const dest = data?.type ? routeForNotification(data.type, data) : null;
         if (dest) {
           console.log('[Notification] Routing to', dest, 'for type:', data?.type);
-          router.push(dest as any);
+          navigateFromNotification(dest, isKioskDevice);
         } else {
           console.log('[Notification] Opening notification panel for type:', data?.type);
           setNotifPanelOpen(true);
@@ -1082,7 +1127,7 @@ function RootNavigator() {
                 dismissInAppToast();
                 const dest = inAppNotif.type ? routeForNotification(inAppNotif.type, inAppNotif.data) : null;
                 if (dest) {
-                  router.push(dest as any);
+                  navigateFromNotification(dest, isKioskDevice);
                 } else {
                   setNotifPanelOpen(true);
                 }

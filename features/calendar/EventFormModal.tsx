@@ -28,7 +28,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFamilyStore } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
+import { useEventStore, fromRow, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
@@ -1846,71 +1846,121 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (newTimeStr !== event.time) patch.time = newTimeStr;
       if (editAllDay !== (event.allDay ?? false)) patch.allDay = editAllDay;
     }
-    if (Object.keys(patch).length > 0) {
-      // A recurring occurrence's edit needs to know whether it applies to
-      // just this one, this-and-future, or the whole series — a plain
-      // updateEvent() would only ever touch the single row being viewed.
-      // Ask only when the patch could plausibly matter to siblings in the
-      // series (i.e. anything beyond a one-off note); a notes-only tweak on
-      // a single occurrence is common enough (kid's after-school request
-      // this Wednesday only) that always prompting would be more friction
-      // than the feature is worth for that case.
-      const notesOnly = Object.keys(patch).length === 1 && 'notes' in patch;
-      if (event.seriesId && !notesOnly) {
-        Alert.alert(
-          'Repeating Event',
-          'Apply this change to just this event, or the whole series?',
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => setSaving(false) },
-            { text: 'Just this one', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'this'); setSaving(false); showToast('Event updated'); onClose(); } },
-            { text: 'This and following', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'following'); setSaving(false); showToast('Event updated'); onClose(); } },
-            { text: 'All events', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'all'); setSaving(false); showToast('Event updated'); onClose(); } },
-          ],
-        );
-        return;
-      }
-      updateEvent(event.id, patch);
-      showToast('Event updated');
-    }
+    // "Needs pickup too?" was toggled on here — fork using the MERGED event
+    // (existing row + whatever else this save changed, e.g. a driver
+    // reassignment done in the same edit) as the drop-off leg's actual
+    // current state. Excluded only for an event that already has a linked
+    // leg (a second fork would create a stray third event).
+    const merged: FamilyEvent = { ...event, ...patch };
+    const usesDriverField = merged.category === 'Study';
+    const transportSet = usesDriverField ? !!merged.driverName : !!merged.helper;
+    const validCategory = merged.category === 'Ride' || merged.category === 'Medical' || merged.category === 'Sports' || merged.category === 'Study';
+    const wantsPickupFork = !event.linkedLegId && needsPickup && !!editPickupTime && transportSet && validCategory;
 
-    // "Needs pickup too?" was toggled on here — fork now, using the
-    // MERGED event (existing row + whatever else this save just changed,
-    // e.g. a driver reassignment done in the same edit) as the drop-off
-    // leg's actual current state. Independent of the `patch` non-empty
-    // check above — a parent toggling ONLY this (nothing else edited)
-    // must still fork. Excluded for a recurring series and for an event
-    // that already has a linked leg, same reasoning as AddEventModal's
-    // own gate (see its own comment).
-    if (!event.seriesId && !event.linkedLegId && needsPickup && editPickupTime) {
-      const merged: FamilyEvent = { ...event, ...patch };
-      // Same per-category transport-field split as everywhere else in this
-      // file: Study alone uses the separate driverName; Ride/Medical/Sports
-      // use helper (their escort/drop-off adult IS the transport).
-      const usesDriverField = merged.category === 'Study';
-      const transportSet = usesDriverField ? !!merged.driverName : !!merged.helper;
-      if (transportSet && (merged.category === 'Ride' || merged.category === 'Medical' || merged.category === 'Sports' || merged.category === 'Study')) {
+    const forkOne = async (ev: FamilyEvent) => {
+      const assignedId = usesDriverField ? ev.driverId : ev.helperId;
+      await forkRideLegs({
+        ev,
+        selfDrive: !!(assignedId && assignedId === activeMemberId),
+        assigneePatch: () => (
+          usesDriverField
+            ? { driverName: ev.driverName, driverStatus: ev.driverStatus, rideRequired: true }
+            : { helper: ev.helper, helperId: ev.helperId, helperStatus: ev.helperStatus }
+        ),
+        updateEvent, addEvent, tryAutoDispatch: () => {},
+        pickupTimeOverride: fmtTime(editPickupTime!),
+      });
+    };
+
+    // For 'following'/'all', forks a matching pickup leg for every sibling
+    // occurrence in range that doesn't already have a linked leg — each
+    // sibling forks with its OWN transport assignee when it has one (may
+    // legitimately differ per-occurrence, e.g. a co-parent covering one
+    // date), falling back to the assignee just set on THIS occurrence when
+    // the sibling has none of its own yet, so this also fills in pickup
+    // legs for occurrences that were never individually assigned at all.
+    const forkSiblings = async (scope: 'following' | 'all') => {
+      const { data: rows, error } = await supabase.from('calendar_events')
+        .select('*').eq('series_id', event.seriesId!).is('deleted_at', null);
+      if (error || !rows) {
+        console.warn('[EventFormModal] pickup-fork series lookup failed', error?.message);
+        showToast("Couldn't add pickup events — please try again", 'error');
+        return 0;
+      }
+      const siblings = (scope === 'all' ? rows : rows.filter((r: any) => r.date >= event.date))
+        .map(fromRow)
+        .filter((r: FamilyEvent) => !r.linkedLegId && r.id !== event.id);
+      for (const sib of siblings) {
+        const sibHasTransport = usesDriverField ? !!sib.driverName : !!sib.helper;
+        await forkOne(sibHasTransport ? sib : { ...sib, ...(usesDriverField
+          ? { driverName: merged.driverName, driverId: merged.driverId, driverStatus: merged.driverStatus, rideRequired: true }
+          : { helper: merged.helper, helperId: merged.helperId, helperStatus: merged.helperStatus }) });
+      }
+      return siblings.length;
+    };
+
+    // A recurring occurrence's edit needs to know whether it applies to
+    // just this one, this-and-future, or the whole series — a plain
+    // updateEvent() would only ever touch the single row being viewed.
+    // Ask only when something could plausibly matter to siblings in the
+    // series (a field patch beyond a one-off note, or adding a pickup
+    // leg); a notes-only tweak on a single occurrence is common enough
+    // (kid's after-school request this Wednesday only) that always
+    // prompting would be more friction than the feature is worth for
+    // that case.
+    //
+    // Both concerns share ONE prompt/scope rather than two independent
+    // ones — was two separate `if` blocks, so a field edit's Alert
+    // returned early and skipped the pickup fork entirely whenever both
+    // were done in the same save, and a parent choosing "This and
+    // following" for their edit had no way to also apply that same scope
+    // to the pickup leg (live-reported: forking was silently excluded
+    // for any series event at all, "not storing it in DB").
+    const notesOnly = Object.keys(patch).length === 1 && 'notes' in patch && !wantsPickupFork;
+    const needsScopePrompt = event.seriesId && (wantsPickupFork || (Object.keys(patch).length > 0 && !notesOnly));
+
+    const applyScope = async (scope: 'this' | 'following' | 'all') => {
+      if (Object.keys(patch).length > 0) {
+        if (scope === 'this') updateEvent(event.id, patch);
+        else useEventStore.getState().updateEventScoped(event.id, patch, scope);
+      }
+      if (wantsPickupFork) {
         try {
-          const assignedId = usesDriverField ? merged.driverId : merged.helperId;
-          await forkRideLegs({
-            ev: merged,
-            selfDrive: !!(assignedId && assignedId === activeMemberId),
-            assigneePatch: () => (
-              usesDriverField
-                ? { driverName: merged.driverName, driverStatus: merged.driverStatus, rideRequired: true }
-                : { helper: merged.helper, helperId: merged.helperId, helperStatus: merged.helperStatus }
-            ),
-            updateEvent, addEvent, tryAutoDispatch: () => {},
-            pickupTimeOverride: fmtTime(editPickupTime),
-          });
-          showToast('Pickup event added ✓');
+          await forkOne(merged);
+          if (scope === 'this') {
+            showToast(Object.keys(patch).length > 0 ? 'Event updated' : 'Pickup event added ✓');
+          } else {
+            const n = await forkSiblings(scope);
+            showToast(`Pickup events added — ${n + 1} occurrences ✓`);
+          }
         } catch (e: any) {
           console.warn('[EventFormModal] forkRideLegs (edit-added pickup leg) failed:', e?.message);
+          showToast("Couldn't add pickup events — please try again", 'error');
         }
+      } else if (Object.keys(patch).length > 0) {
+        showToast('Event updated');
       }
+      setSaving(false);
+      onClose();
+    };
+
+    if (needsScopePrompt) {
+      Alert.alert(
+        'Repeating Event',
+        wantsPickupFork
+          ? 'Apply this to just this event, or every occurrence?'
+          : 'Apply this change to just this event, or the whole series?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => setSaving(false) },
+          { text: 'Just this one', onPress: () => { applyScope('this'); } },
+          { text: 'This and following', onPress: () => { applyScope('following'); } },
+          { text: 'All events', onPress: () => { applyScope('all'); } },
+        ],
+      );
+      return;
     }
 
-    setSaving(false);
-    onClose();
+    await applyScope('this');
   };
 
   const handleDelete = () => {
@@ -2285,7 +2335,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         🔁 Needs pickup too?
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: needsPickup ? BRAND.teal : colors.textSecondary }}>
-                        {needsPickup ? 'Adds a linked pickup event when you save' : 'Off · just this drop-off'}
+                        {needsPickup
+                          ? (event.seriesId ? 'Adds a linked pickup event when you save — you\'ll choose just this one or the whole series' : 'Adds a linked pickup event when you save')
+                          : 'Off · just this drop-off'}
                       </Text>
                     </View>
                     <View style={{ width: 40, height: 24, borderRadius: 12,

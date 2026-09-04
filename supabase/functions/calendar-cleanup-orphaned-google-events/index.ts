@@ -36,11 +36,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { connectionId, titleFilter, from, to, dryRun = true } = await req.json() as {
-      connectionId?: string; titleFilter?: string; from?: string; to?: string; dryRun?: boolean;
+    const { connectionId, connectedAccountEmail, titleFilter, from, to, dryRun = true } = await req.json() as {
+      connectionId?: string; connectedAccountEmail?: string; titleFilter?: string; from?: string; to?: string; dryRun?: boolean;
     };
-    if (!connectionId || !titleFilter || !from || !to) {
-      return json({ ok: false, error: 'connectionId, titleFilter, from, to required' }, 400);
+    if ((!connectionId && !connectedAccountEmail) || !titleFilter || !from || !to) {
+      return json({ ok: false, error: 'titleFilter, from, to, and either connectionId or connectedAccountEmail required' }, 400);
     }
 
     const supabase = createClient(
@@ -48,8 +48,31 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // Lookup-by-email convenience — this is a one-off manual admin tool
+    // (invoked directly with the service-role key, not from the app), and
+    // asking for the connection's real UUID is an unnecessary extra lookup
+    // step when the account email shown in the app's own Calendar Sync
+    // screen already uniquely identifies which connection to clean.
+    let resolvedConnectionId = connectionId;
+    if (!resolvedConnectionId && connectedAccountEmail) {
+      const { data: match } = await supabase.from('calendar_connections')
+        .select('id').eq('provider', 'google').eq('purpose', 'personal')
+        .eq('connected_account_email', connectedAccountEmail).maybeSingle();
+      if (!match) {
+        // Diagnostic fallback — list what's actually there (id/email/status
+        // only, no tokens) instead of a bare 404, since an exact-match
+        // lookup failing when the app itself shows this same email
+        // connected points to a real mismatch (case, whitespace, a
+        // different row's purpose/provider) worth seeing directly.
+        const { data: allGoogle } = await supabase.from('calendar_connections')
+          .select('id, purpose, status, connected_account_email').eq('provider', 'google');
+        return json({ ok: false, error: `no exact match for ${connectedAccountEmail}`, existingGoogleConnections: allGoogle ?? [] }, 404);
+      }
+      resolvedConnectionId = match.id;
+    }
+
     const { data: connection, error: connErr } = await supabase
-      .from('calendar_connections').select('*').eq('id', connectionId).maybeSingle();
+      .from('calendar_connections').select('*').eq('id', resolvedConnectionId).maybeSingle();
     if (connErr || !connection) return json({ ok: false, error: 'connection not found' }, 404);
     if (connection.provider !== 'google') return json({ ok: false, error: 'this cleanup is Google-only' }, 400);
 

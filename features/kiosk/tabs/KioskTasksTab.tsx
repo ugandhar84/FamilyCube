@@ -197,6 +197,8 @@ function KioskBoardView({ active, members, colors, isDark }: {
           />
           <KioskQuestEditor
             quest={editingQuest}
+            active={active}
+            isActiveApprover={isActiveApprover}
             onClose={() => setEditingQuest(null)}
             members={members}
             colors={colors}

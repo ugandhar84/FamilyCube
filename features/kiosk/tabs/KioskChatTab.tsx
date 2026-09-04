@@ -48,7 +48,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         renderItem={({ item }) => {
           const mine = item.senderId === active.id;
           return (
-            <View style={[s.row, mine && { flexDirection: 'row-reverse' }]}>
+            <View style={[s.row, s.rowCap, mine && { flexDirection: 'row-reverse' }]}>
               <Text style={s.avatar}>{memberEmoji(item.senderId)}</Text>
               <View style={[s.bubble, { backgroundColor: mine ? colors.primary : colors.card, borderColor: colors.border }]}>
                 {!mine && <Text style={[s.sender, { color: colors.teal }]}>{memberName(item.senderId)}</Text>}
@@ -87,7 +87,12 @@ const s = StyleSheet.create({
   root: { flex: 1, padding: 20 },
   title: { fontSize: 24, fontWeight: '800', marginBottom: 12 },
   list: { gap: 12, paddingBottom: 12, flexGrow: 1 },
+  // '70%' alone stretched a short message to ~1400px on a wide kiosk
+  // landscape display — an absolute cap on top keeps a bubble readable
+  // regardless of screen width (percentage still applies on a narrower
+  // kiosk, where 70% is well under the cap anyway).
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '70%' },
+  rowCap: { maxWidth: 560 },
   avatar: { fontSize: 22 },
   bubble: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, maxWidth: '100%' },
   sender: { fontSize: 11, fontWeight: '800', marginBottom: 3 },

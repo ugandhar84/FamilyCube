@@ -277,8 +277,9 @@ const HEADER_OFFSET = 10 + 40 + 10 + 6;
 // ── Main export ─────────────────────────────────────────────────────────────
 export default function PersonaSwitcherDropdown({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, setActiveMember } = useFamilyStore();
+  const { members, activeMemberId, setActiveMember, myFamilies, activeFamilyId, setActiveFamily } = useFamilyStore();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+  const [switchingFamily, setSwitchingFamily] = useState(false);
   const { height: windowHeight } = useWindowDimensions();
   // Was a flat maxHeight:380 regardless of screen size — clipped the list
   // (a 6th+ member cut off mid-row) even on tall phones with plenty of
@@ -319,6 +320,22 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
     onClose();
   };
 
+  // Multi-family membership — only ever rendered when myFamilies has more
+  // than one entry (see familyStore's own comment on why this is empty
+  // for the overwhelming majority of accounts, and why it's deliberately
+  // scoped to a real-login session only, never a PIN-switch). Switching
+  // families always re-lands on the Hub, same as switching profiles does
+  // — whatever tab/screen was open belongs to the PREVIOUS family's
+  // context and rarely makes sense to keep showing.
+  const handleSelectFamily = async (familyId: string) => {
+    if (familyId === activeFamilyId || switchingFamily) return;
+    setSwitchingFamily(true);
+    await setActiveFamily(familyId);
+    setSwitchingFamily(false);
+    onClose();
+    router.replace('/(tabs)');
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} activeOpacity={1} onPress={handleClose}>
@@ -329,6 +346,42 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
               backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
               shadowColor: '#000', shadowOpacity: isDark ? 0.4 : 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 16,
             }}>
+              {/* Multi-family membership — only renders at all when
+                  myFamilies has more than one entry, which itself only
+                  happens for a member switched-in via their own real
+                  device auth session (see familyStore's own comment).
+                  Hidden entirely for the overwhelming majority of
+                  accounts, exactly as requested — no switcher, no hint
+                  one could ever exist, when there's nothing to switch. */}
+              {!pinTarget && myFamilies.length > 1 && (
+                <View style={{
+                  paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
+                  borderBottomWidth: 1, borderBottomColor: colors.border, gap: 8,
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
+                    Family
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {myFamilies.map(f => {
+                      const isCurrent = (activeFamilyId ?? members[0]?.familyId) === f.id;
+                      return (
+                        <TouchableOpacity key={f.id} onPress={() => handleSelectFamily(f.id)} disabled={switchingFamily}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12,
+                            borderWidth: 1.5, borderColor: isCurrent ? colors.primary : colors.border,
+                            backgroundColor: isCurrent ? colors.primary + '18' : 'transparent',
+                            opacity: switchingFamily ? 0.6 : 1,
+                          }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: isCurrent ? colors.primary : colors.textSecondary }}>
+                            {f.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
               {!pinTarget && (
                 <View style={{
                   paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,

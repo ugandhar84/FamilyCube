@@ -23,15 +23,21 @@
  */
 import { useEffect, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, Alert, Platform, KeyboardAvoidingView, Switch, StyleSheet } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { X, Trash2, Clock, Lock } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { fmtTime } from '@/lib/dates';
+import { fmtTime, localDateStr, parseLocalDate } from '@/lib/dates';
+import { fmtDisplay } from '@/features/calendar/components/eventForm/types';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { deriveEventEditPermission } from '@/features/tasks/lib/deriveCardActions';
+// Same picker mobile's own AddEventModal/EditEventModal use (PickerOverlay
+// wraps @react-native-community/datetimepicker in a proper "Done"-headed
+// bottom sheet, spinner display) — was previously a bare DateTimePicker
+// with no header/Done affordance, a genuine functional gap vs. mobile's
+// real form UI, not just a visual difference.
+import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 
 function timeStrToDate(t: string | undefined): Date | null {
   if (!t) return null;
@@ -48,7 +54,9 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   const updateEvent = useEventStore(s => s.updateEvent);
   const deleteEvent = useEventStore(s => s.deleteEvent);
   const [title, setTitle] = useState('');
+  const [dateValue, setDateValue] = useState<Date>(new Date());
   const [timeValue, setTimeValue] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
@@ -58,10 +66,12 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   useEffect(() => {
     if (event) {
       setTitle(event.title);
+      setDateValue(event.date ? parseLocalDate(event.date) : new Date());
       setTimeValue(timeStrToDate(event.time));
       setLocation(event.location ?? '');
       setNotes(event.notes ?? '');
       setAlertCall(event.alertCall ?? false);
+      setShowDatePicker(false);
       setShowTimePicker(false);
     }
   }, [event?.id]);
@@ -80,6 +90,7 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       : undefined;
     updateEvent(event.id, {
       title: title.trim(),
+      date: localDateStr(dateValue),
       time,
       allDay: !time,
       location: location.trim() || undefined,
@@ -155,25 +166,38 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                   onChangeText={setTitle}
                   style={[s.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
                 />
-                <Text style={[s.label, { color: colors.textSecondary }]}>Time</Text>
-                <Pressable
-                  onPress={() => setShowTimePicker(p => !p)}
-                  style={[s.input, s.timeBtn, { backgroundColor: showTimePicker ? colors.primaryLight : colors.surface, borderColor: showTimePicker ? colors.primary : colors.border }]}
-                >
-                  <Clock size={16} color={timeValue ? colors.primary : colors.textTertiary} />
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: timeValue ? colors.textPrimary : colors.textTertiary }}>
-                    {timeValue ? fmtTime(`${String(timeValue.getHours()).padStart(2, '0')}:${String(timeValue.getMinutes()).padStart(2, '0')}`) : 'All day'}
-                  </Text>
-                </Pressable>
-                {showTimePicker && (
-                  <DateTimePicker
-                    value={timeValue ?? new Date()}
-                    mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(_, d) => { if (d) setTimeValue(d); if (Platform.OS === 'android') setShowTimePicker(false); }}
-                    textColor={colors.textPrimary}
-                  />
-                )}
+                <Text style={[s.label, { color: colors.textSecondary }]}>Date &amp; Time</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable
+                    onPress={() => { setShowDatePicker(true); setShowTimePicker(false); }}
+                    style={[s.input, s.timeBtn, { flex: 3, backgroundColor: showDatePicker ? colors.primaryLight : colors.surface, borderColor: showDatePicker ? colors.primary : colors.border }]}
+                  >
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                      {fmtDisplay(dateValue)}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { setShowTimePicker(true); setShowDatePicker(false); }}
+                    style={[s.input, s.timeBtn, { flex: 2, backgroundColor: showTimePicker ? colors.primaryLight : colors.surface, borderColor: showTimePicker ? colors.primary : colors.border }]}
+                  >
+                    <Clock size={16} color={timeValue ? colors.primary : colors.textTertiary} />
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: timeValue ? colors.textPrimary : colors.textTertiary }}>
+                      {timeValue ? fmtTime(`${String(timeValue.getHours()).padStart(2, '0')}:${String(timeValue.getMinutes()).padStart(2, '0')}`) : 'All day'}
+                    </Text>
+                  </Pressable>
+                </View>
+                {/* Same shared PickerOverlay every mobile event form uses —
+                    one overlay, toggled by which button was tapped, not two
+                    separate bare pickers. */}
+                <PickerOverlay
+                  showDate={showDatePicker} showTime={showTimePicker}
+                  value={showDatePicker ? dateValue : (timeValue ?? new Date())}
+                  onChangeDate={setDateValue}
+                  onChangeTime={setTimeValue}
+                  onDone={() => { setShowDatePicker(false); setShowTimePicker(false); }}
+                  accentColor={colors.primary} colors={colors}
+                  dateLabel="📅 Event Date" timeLabel="🕐 Event Time"
+                />
                 <Text style={[s.label, { color: colors.textSecondary }]}>Location</Text>
                 <TextInput
                   value={location}

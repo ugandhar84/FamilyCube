@@ -12,12 +12,15 @@
  */
 import { useEffect, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { X, Clock } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
 import { fmtTime } from '@/lib/dates';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+// Same picker mobile's own AddEventModal uses — see KioskEventEditor.tsx's
+// own comment for why a bare DateTimePicker (no header/Done affordance)
+// was a real functional gap, not just cosmetic.
+import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 
 export function KioskEventComposer({ date, onClose, colors, isDark }: {
   date: string | null; onClose: () => void; colors: any; isDark: boolean;
@@ -81,12 +84,14 @@ export function KioskEventComposer({ date, onClose, colors, isDark }: {
               </Text>
             </Pressable>
             {showTimePicker && (
-              <DateTimePicker
+              <PickerOverlay
+                showDate={false} showTime={true}
                 value={timeValue ?? new Date()}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, d) => { if (d) setTimeValue(d); if (Platform.OS === 'android') setShowTimePicker(false); }}
-                textColor={colors.textPrimary}
+                onChangeDate={() => {}}
+                onChangeTime={setTimeValue}
+                onDone={() => setShowTimePicker(false)}
+                accentColor={colors.primary} colors={colors}
+                timeLabel="🕐 Event Time"
               />
             )}
             <Text style={[s.label, { color: colors.textSecondary }]}>Location (optional)</Text>

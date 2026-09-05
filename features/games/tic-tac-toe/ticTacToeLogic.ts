@@ -12,7 +12,7 @@
 export type Cell = 'X' | 'O' | null;
 export type Board = Cell[]; // length 9, index 0-8, row-major
 
-const LINES: [number, number, number][] = [
+export const LINES: [number, number, number][] = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
   [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
   [0, 4, 8], [2, 4, 6],            // diagonals
@@ -22,6 +22,18 @@ export function checkWinner(board: Board): 'X' | 'O' | null {
   for (const [a, b, c] of LINES) {
     if (board[a] && board[a] === board[b] && board[b] === board[c]) {
       return board[a];
+    }
+  }
+  return null;
+}
+
+// Returns the specific winning line (for drawing the win-line overlay),
+// or null if there is no winner yet.
+export function checkWinningLine(board: Board): [number, number, number] | null {
+  for (const line of LINES) {
+    const [a, b, c] = line;
+    if (board[a] && board[a] === board[b] && board[b] === board[c]) {
+      return line;
     }
   }
   return null;

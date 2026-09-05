@@ -645,8 +645,13 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </TouchableOpacity>
               )}
 
-              {/* Invite Grandparents toggle — always visible when adult task is on */}
-              {isAdultTask && (
+              {/* Invite Grandparents toggle — visible when adult task is on,
+                  AND only for a family that actually has a registered
+                  grandparent/senior member. Live-reported: "GP Welcome is
+                  there but there are no GPs registered in that family at
+                  all" — same fix as DelegateSheet.tsx/
+                  AddQuestRecurrenceSection.tsx's own hasGrandparents. */}
+              {isAdultTask && members.some(m => m.role === 'senior') && (
                 <TouchableOpacity
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 10,

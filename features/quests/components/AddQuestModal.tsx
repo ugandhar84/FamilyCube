@@ -1178,6 +1178,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
               teensOnly={teensOnly} toggleTeensOnly={toggleTeensOnly}
               hideAdultToggles={creatorIsTeen}
+              hasGrandparents={members.some(m => m.role === 'senior')}
               routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
               recurrenceDays={recurrenceDays} setRecurrenceDays={setRecurrenceDays}
               recurrenceDayOfMonth={recurrenceDayOfMonth} setRecurrenceDayOfMonth={setRecurrenceDayOfMonth}

@@ -31,6 +31,7 @@ export function AddQuestRecurrenceSection({
   shoppingItemsOpen, setShoppingItemsOpen,
   shoppingLines, updateShoppingLine, removeShoppingLine, addShoppingLine,
   hideAdultToggles,
+  hasGrandparents,
 }: {
   colors: any; isDark: boolean;
   isAdultTask: boolean; toggleAdultTask: (val: boolean) => void;
@@ -44,6 +45,12 @@ export function AddQuestRecurrenceSection({
   // stay permanently false for a Teen creator since these are simply never
   // shown for them to turn on.
   hideAdultToggles?: boolean;
+  // Live-reported: "GP Welcome is there but there are no GPs registered
+  // in that family at all" — this toggle rendered unconditionally,
+  // offering "Let GP claim it" for a family with zero senior-role members
+  // to ever claim anything. Dead UI for any family without a registered
+  // grandparent — same fix as DelegateSheet.tsx's own hasGrandparents.
+  hasGrandparents: boolean;
   routineFreq: RoutineFreq; setRoutineFreq: React.Dispatch<React.SetStateAction<RoutineFreq>>;
   isRoutine: boolean; setIsRoutine: React.Dispatch<React.SetStateAction<boolean>>;
   routineType: RoutineType; setRoutineType: (v: RoutineType) => void;
@@ -85,20 +92,22 @@ export function AddQuestRecurrenceSection({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
-            backgroundColor: inviteGrandparent ? colors.amberLight : colors.surface,
-            borderWidth: 1.5, borderColor: inviteGrandparent ? colors.amber : colors.border }}
-          onPress={() => toggleGPInvite(!inviteGrandparent)}
-          activeOpacity={0.8}
-        >
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: inviteGrandparent ? colors.amber : colors.textPrimary }}>
-            👴 GP Welcome
-          </Text>
-          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
-            {inviteGrandparent ? 'Can claim it' : 'Let GP claim it'}
-          </Text>
-        </TouchableOpacity>
+        {hasGrandparents && (
+          <TouchableOpacity
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
+              backgroundColor: inviteGrandparent ? colors.amberLight : colors.surface,
+              borderWidth: 1.5, borderColor: inviteGrandparent ? colors.amber : colors.border }}
+            onPress={() => toggleGPInvite(!inviteGrandparent)}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: inviteGrandparent ? colors.amber : colors.textPrimary }}>
+              👴 GP Welcome
+            </Text>
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
+              {inviteGrandparent ? 'Can claim it' : 'Let GP claim it'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,

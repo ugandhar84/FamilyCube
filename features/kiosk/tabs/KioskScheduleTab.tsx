@@ -17,8 +17,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
-import { useEventStore } from '@/store/eventStore';
+import { ChevronLeft, ChevronRight, Plus, CalendarDays as CalendarIcon } from 'lucide-react-native';
+import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { localDateStr, fmtTime } from '@/lib/dates';
@@ -36,7 +36,19 @@ import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridVi
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
-type ViewMode = 'month' | 'week' | 'day';
+/**
+ * Four modes, per the updated reference mockup. `agenda` is new and is the
+ * DEFAULT: a flat chronological list is the right opening state for a
+ * kitchen display, because the question a kiosk actually answers as you
+ * walk past is "what's next", not "what does this month look like". A grid
+ * is for planning; a list is for glancing.
+ */
+type ViewMode = 'agenda' | 'day' | 'week' | 'month';
+const VIEW_MODES: ViewMode[] = ['agenda', 'day', 'week', 'month'];
+
+/** How far forward Agenda looks. Two weeks is enough to cover "what's
+ *  coming up" without turning the list into a scroll marathon. */
+const AGENDA_DAYS = 14;
 
 function startOfWeek(d: Date): Date {
   const r = new Date(d);
@@ -51,7 +63,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const loadRange = useEventStore(s => s.loadRange);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
   const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [viewMode, setViewMode] = useState<ViewMode>('agenda');
   const [cursor, setCursor] = useState(() => new Date());
   // Live-reported: "in kiosk monthly view is not use right as per current
   // design we are not showing anything if we click on date taking us to day
@@ -137,6 +149,10 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     } else if (viewMode === 'week') {
       const ws = startOfWeek(cursor);
       loadRange(toDateStr(ws), toDateStr(addDays(ws, 6)));
+    } else if (viewMode === 'agenda') {
+      // Agenda looks FORWARD from the cursor rather than around it — its
+      // job is "what's coming", so days already past carry no information.
+      loadRange(toDateStr(cursor), toDateStr(addDays(cursor, AGENDA_DAYS)));
     } else {
       loadRange(toDateStr(cursor), toDateStr(cursor));
     }
@@ -162,7 +178,11 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
 
   const shiftCursor = (dir: 1 | -1) => {
     if (viewMode === 'month') setCursor(c => new Date(c.getFullYear(), c.getMonth() + dir, 1));
+    // Agenda pages by its own window length, so Next/Prev step to the next
+    // and previous fortnight rather than nudging one day at a time through
+    // a two-week list.
     else if (viewMode === 'week') setCursor(c => addDays(c, dir * 7));
+    else if (viewMode === 'agenda') setCursor(c => addDays(c, dir * AGENDA_DAYS));
     else setCursor(c => addDays(c, dir));
   };
 
@@ -173,6 +193,14 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         const ws = startOfWeek(cursor);
         const we = addDays(ws, 6);
         return `${ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${we.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      })()
+    : viewMode === 'agenda'
+    ? (() => {
+        const ae = addDays(cursor, AGENDA_DAYS);
+        const from = toDateStr(cursor) === todayStr
+          ? 'Today'
+          : cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `${from} – ${ae.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
       })()
     : cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
@@ -200,14 +228,14 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           </View>
 
           <View style={[s.modeSwitch, { backgroundColor: colors.surface }]}>
-            {(['month', 'week', 'day'] as ViewMode[]).map(mode => {
+            {VIEW_MODES.map(mode => {
               const on = viewMode === mode;
               return (
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
                   style={[s.modeBtn, on && { backgroundColor: colors.primary }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
                   accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
-                  <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]}>
+                  <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>
                     {mode[0].toUpperCase() + mode.slice(1)}
                   </Text>
                 </Pressable>
@@ -292,6 +320,14 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           involvedFor={involvedFor} onEventPress={setEditingEvent}
           onAdd={canCreate ? openCreator : undefined} />
       )}
+      {viewMode === 'agenda' && (
+        <AgendaView
+          cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr}
+          colors={colors} isDark={isDark} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={setEditingEvent}
+          onAdd={canCreate ? openCreator : undefined}
+        />
+      )}
 
       <KioskEventEditor event={editingEvent} active={active} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
 
@@ -360,6 +396,225 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         />
       )}
     </View>
+  );
+}
+
+// ── Agenda ───────────────────────────────────────────────────────────────
+/**
+ * A flat chronological list of what's coming, grouped by day — the updated
+ * mockup's new default view, and the right opening state for a kitchen
+ * display: as you walk past, the question is "what's next", not "what does
+ * this month look like."
+ *
+ * Two things the mockup's version couldn't do, added here because the real
+ * data supports them:
+ *
+ *  · REAL RIDE STATE. The mockup models a ride as two hand-written linked
+ *    rows ("Drop-off" / "Pickup" legs with a `driver` string that may read
+ *    "Awaiting Claim"). This app already represents exactly that for real:
+ *    eventStore pairs a ride with its pickup leg (linkedEventId /
+ *    pickup-leg pairing, see its own recent fixes), and driver state is a
+ *    real (driverId, driverName, driverStatus) triple read through the
+ *    shared eventAssignee() helper. So the "Claim Ride" button is wired to
+ *    claimHelperSlot — a race-safe compare-and-set, NOT a plain
+ *    updateEvent. That distinction matters precisely here: two parents can
+ *    tap Claim on two devices in the same second, and the loser has to be
+ *    told rather than silently overwriting the winner. Routing through the
+ *    store action is also what keeps this view from regressing the recent
+ *    ride-assignment fixes, since they live inside it.
+ *
+ *  · SENSITIVITY. A kiosk agenda is legible from across a room. An event
+ *    the app itself marks sensitive renders as a neutral busy block for a
+ *    viewer who isn't entitled to its detail, using the SAME shared
+ *    predicate every other calendar surface calls (canViewSensitiveEventDetail)
+ *    rather than a kiosk-local reimplementation of the rule.
+ */
+function AgendaView({
+  cursor, eventsByDate, todayStr, colors, isDark, members, active, involvedFor, onEventPress, onAdd,
+}: {
+  cursor: Date;
+  eventsByDate: Record<string, FamilyEvent[]>;
+  todayStr: string;
+  colors: any; isDark: boolean;
+  members: FamilyMember[];
+  active: FamilyMember;
+  involvedFor: (ev: FamilyEvent) => FamilyMember[];
+  onEventPress: (ev: FamilyEvent) => void;
+  onAdd?: () => void;
+}) {
+  const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
+  const [claimNote, setClaimNote] = useState<Record<string, string>>({});
+
+  // Only days that actually have something, forward from the cursor. A
+  // fourteen-row list of "No events" is noise, not a calendar.
+  const days = useMemo(() => {
+    const out: { dateStr: string; events: FamilyEvent[] }[] = [];
+    for (let i = 0; i <= AGENDA_DAYS; i++) {
+      const dateStr = toDateStr(addDays(cursor, i));
+      const evs = eventsByDate[dateStr];
+      if (evs?.length) out.push({ dateStr, events: evs });
+    }
+    return out;
+  }, [cursor, eventsByDate]);
+
+  // Claiming writes, so it follows the same rule every other writing action
+  // on this shared device does: parents only. A kiosk stays on an active
+  // profile for the whole idle window, and anyone walking past the counter
+  // would otherwise be able to assign a family driver.
+  const canClaim = active.role === 'parent';
+
+  if (days.length === 0) {
+    return (
+      <ScrollView contentContainerStyle={s.agendaEmptyWrap} showsVerticalScrollIndicator={false}>
+        <CalendarIcon size={30} color={colors.textTertiary} />
+        <Text style={[s.agendaEmptyText, { color: colors.textTertiary }]} numberOfLines={2}>
+          Nothing scheduled in the next two weeks.
+        </Text>
+        {onAdd && (
+          <Pressable
+            onPress={onAdd}
+            style={[s.monthAddBtn, { backgroundColor: colors.primary, alignSelf: 'center' }]}
+            accessibilityRole="button" accessibilityLabel="Add an event"
+          >
+            <Plus size={22} color="#fff" />
+            <Text style={s.monthAddBtnText}>Add an event</Text>
+          </Pressable>
+        )}
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={s.agendaScroll} showsVerticalScrollIndicator={false}>
+      {days.map(({ dateStr, events }) => {
+        const d = parseDate(dateStr);
+        const isToday = dateStr === todayStr;
+        return (
+          <View key={dateStr} style={s.agendaGroup}>
+            <View style={s.agendaDayHead}>
+              <View style={[s.agendaDayBar, { backgroundColor: isToday ? colors.primary : colors.border }]} />
+              <Text style={[s.agendaDayLabel, { color: isToday ? colors.primary : colors.textPrimary }]} numberOfLines={1}>
+                {isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'long' })}
+              </Text>
+              <Text style={[s.agendaDayDate, { color: colors.textTertiary }]} numberOfLines={1}>
+                {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+            </View>
+
+            {events.map(ev => {
+              // The shared visibility predicate, not a local copy — see the
+              // component header. 'busy-block' means "show that the slot is
+              // taken, without the detail"; 'hidden' means omit entirely.
+              const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
+              if (vis === 'hidden') return null;
+              const redacted = vis === 'busy-block';
+
+              const assignee = eventAssignee(ev);
+              const primary = involvedFor(ev)[0];
+              const rs = assigneeStyle(primary, colors, isDark);
+              const isRide = !!assignee.name || /pick ?up|drop ?off|ride/i.test(ev.title);
+              const needsDriver = isRide && !assignee.name;
+              const note = claimNote[ev.id];
+
+              return (
+                <Pressable
+                  key={ev.id}
+                  onPress={() => !redacted && onEventPress(ev)}
+                  disabled={redacted}
+                  style={({ pressed }) => [
+                    s.agendaRow,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                      borderLeftColor: needsDriver ? colors.primary : rs.dot,
+                    },
+                    pressed && !redacted && { opacity: 0.75 },
+                  ]}
+                  accessibilityRole={redacted ? 'text' : 'button'}
+                  accessibilityLabel={
+                    redacted
+                      ? `${ev.time ? fmtTime(ev.time) : 'All day'}, busy`
+                      : `${ev.time ? fmtTime(ev.time) : 'All day'}, ${ev.title}` +
+                        (assignee.name ? `, ${assignee.name}` : needsDriver ? ', needs a driver' : '')
+                  }
+                  accessibilityHint={redacted ? undefined : 'Open this event'}
+                >
+                  <View style={[s.agendaTime, { backgroundColor: colors.amberLight }]}>
+                    <Text style={[s.agendaTimeText, { color: colors.amber }]} numberOfLines={1}>
+                      {ev.time ? fmtTime(ev.time) : 'All day'}
+                    </Text>
+                  </View>
+
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.agendaTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {redacted ? 'Busy' : ev.title}
+                    </Text>
+                    {!redacted && (
+                      <Text style={[s.agendaMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {[
+                          ev.category || null,
+                          primary ? primary.name.split(' ')[0] : null,
+                          assignee.name
+                            ? `Driver: ${assignee.name.split(' ')[0]}${assignee.status === 'confirmed' ? ' ✓' : ''}`
+                            : needsDriver ? 'No driver yet' : null,
+                        ].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
+                    {!!note && (
+                      <Text style={[s.agendaNote, { color: colors.textSecondary }]} numberOfLines={2} accessibilityLiveRegion="polite">
+                        {note}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* The mockup's "Claim Ride" — wired to the real race-safe
+                      claim, and only offered when there is genuinely an open
+                      slot to claim. */}
+                  {!redacted && needsDriver && canClaim ? (
+                    <Pressable
+                      onPress={() => {
+                        claimHelperSlot(
+                          ev.id, 'driver', active.name, undefined,
+                          () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
+                          (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
+                        );
+                      }}
+                      style={[s.agendaClaim, { backgroundColor: colors.primary }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Claim the ride for ${ev.title}`}
+                      accessibilityHint="Assigns this ride to you"
+                    >
+                      <Text style={s.agendaClaimText} numberOfLines={1}>Claim ride</Text>
+                    </Pressable>
+                  ) : !redacted && assignee.status ? (
+                    <View style={[s.agendaStatus, {
+                      backgroundColor: assignee.status === 'confirmed' ? colors.tealLight : colors.amberLight,
+                    }]}>
+                      <Text style={[s.agendaStatusText, {
+                        color: assignee.status === 'confirmed' ? colors.teal : colors.amber,
+                      }]} numberOfLines={1}>
+                        {assignee.status === 'confirmed' ? 'Confirmed' : assignee.status === 'rejected' ? "Can't do" : 'Pending'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        );
+      })}
+
+      {onAdd && (
+        <Pressable
+          onPress={onAdd}
+          style={[s.monthAddBtn, { backgroundColor: colors.primary }]}
+          accessibilityRole="button" accessibilityLabel="Add an event"
+        >
+          <Plus size={22} color="#fff" />
+          <Text style={s.monthAddBtnText}>Add an event</Text>
+        </Pressable>
+      )}
+    </ScrollView>
   );
 }
 
@@ -598,10 +853,19 @@ const s = StyleSheet.create({
   todayBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', textAlign: 'center' },
   range: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 2, textAlign: 'center' },
-  modeSwitch: { flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3 },
+  // Four modes now, not three (Agenda was added). Horizontal padding
+  // tightened from KIOSK_SPACE.lg and the group allowed to shrink, so the
+  // switcher fits a narrow/portrait content pane instead of pushing the
+  // Add button off the row — the same "let it reflow rather than compute a
+  // width" principle the prior pass applied after the Hub clipping bug.
+  modeSwitch: {
+    flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3,
+    flexShrink: 1, minWidth: 0,
+  },
   modeBtn: {
-    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
     justifyContent: 'center', borderRadius: KIOSK_RADIUS.sm,
+    flexShrink: 1, minWidth: 0,
   },
   modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   // Horizontal ScrollView needs flexGrow:0 on the ScrollView itself or it
@@ -681,4 +945,42 @@ const s = StyleSheet.create({
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary,
   },
   monthAddBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+
+  // ── Agenda ─────────────────────────────────────────────────────────────
+  agendaScroll: { paddingHorizontal: 4, paddingBottom: 40, gap: KIOSK_SPACE.lg },
+  agendaEmptyWrap: {
+    flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+    gap: KIOSK_SPACE.md, padding: KIOSK_SPACE.xl,
+  },
+  agendaEmptyText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '600', textAlign: 'center' },
+  agendaGroup: { gap: KIOSK_SPACE.sm },
+  agendaDayHead: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  // A bar rather than a dot: at kiosk distance a dot disappears while a bar
+  // still reads as structure. Same device the zone headers use.
+  agendaDayBar: { width: 4, height: 18, borderRadius: 2 },
+  agendaDayLabel: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.3 },
+  agendaDayDate: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  agendaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 4,
+    padding: KIOSK_SPACE.md, minHeight: KIOSK_HIT.primary,
+  },
+  agendaTime: {
+    minWidth: 82, alignItems: 'center',
+    borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+  },
+  agendaTimeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  agendaTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  agendaMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },
+  agendaNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 4 },
+  agendaClaim: {
+    borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.control,
+    paddingHorizontal: KIOSK_SPACE.md, alignItems: 'center', justifyContent: 'center',
+  },
+  agendaClaimText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  agendaStatus: {
+    borderRadius: KIOSK_RADIUS.full,
+    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs,
+  },
+  agendaStatusText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 });

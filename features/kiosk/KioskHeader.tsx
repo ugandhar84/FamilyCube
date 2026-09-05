@@ -34,6 +34,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors, kioskRoleAccent } from './kioskPalette';
+import { useKioskLockSuspended } from './KioskActivityContext';
 
 export function KioskHeader({
   familyName, members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
@@ -69,6 +70,18 @@ export function KioskHeader({
     if (m?.pinEnabled && m.pin) setPinTarget(m);
     else onSwitch(id);
   };
+
+  // AUDIT GAP CLOSED: PinEntryModal renders into its own native window, so
+  // every digit typed into it is invisible to KioskScreen's root
+  // onTouchStart — meaning entering a PIN registered as total inactivity
+  // and the idle lock could fire on someone mid-entry, which is both a
+  // data-loss annoyance and, worse, confusing (you get bounced to the lock
+  // screen while proving who you are). Exactly the class of bug the
+  // KioskActivityContext pass fixed for the editors; the header's own PIN
+  // modal was simply never covered by it. PinEntryModal is a shared phone
+  // component whose root can't be wrapped without changing its layout, so
+  // the hook form is the right tool here.
+  useKioskLockSuspended(pinTarget !== null);
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {

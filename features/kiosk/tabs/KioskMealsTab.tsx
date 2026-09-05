@@ -159,31 +159,33 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                         {day === today ? 'TONIGHT' : day.toUpperCase()}
                       </Text>
                     </View>
-                    <View style={{ flex: 1, minWidth: 0, gap: KIOSK_SPACE.xs }}>
-                      {dayMeals.map(m => (
-                        <Pressable
-                          key={m.id}
-                          onPress={() => setOpenMeal(m)}
-                          style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${m.title} recipe`}
-                          accessibilityHint="See ingredients and prep steps"
-                        >
-                          <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>
-                              {m.title}
-                            </Text>
-                            <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={1}>
-                              {[
-                                m.type ? cap(m.type) : null,
-                                m.start_time || null,
-                                m.prep_minutes ? `${m.prep_minutes} min` : null,
-                                chefName(m.chef_id, members),
-                              ].filter(Boolean).join(' · ') || 'No details yet'}
-                            </Text>
-                          </View>
-                        </Pressable>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      {dayMeals.map((m, i) => (
+                        <View key={m.id}>
+                          {i > 0 && <View style={[s.mealDivider, { backgroundColor: k.cardBorder }]} />}
+                          <Pressable
+                            onPress={() => setOpenMeal(m)}
+                            style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${m.title} recipe`}
+                            accessibilityHint="See ingredients and prep steps"
+                          >
+                            <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>
+                                {m.title}
+                              </Text>
+                              <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={1}>
+                                {[
+                                  m.type ? cap(m.type) : null,
+                                  m.start_time || null,
+                                  m.prep_minutes ? `${m.prep_minutes} min` : null,
+                                  chefName(m.chef_id, members),
+                                ].filter(Boolean).join(' · ') || 'No details yet'}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        </View>
                       ))}
                     </View>
                   </Well>
@@ -334,7 +336,8 @@ const s = StyleSheet.create({
   dayRow: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },
   dayLabelCol: { width: 74 },
   dayLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1, paddingTop: 3 },
-  mealLine: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
+  mealLine: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs },
+  mealDivider: { height: StyleSheet.hairlineWidth },
   mealEmoji: { fontSize: 24 },
   mealTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   mealMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },

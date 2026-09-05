@@ -648,14 +648,21 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             ]}
           >
             <View style={[s.threadOuter, { backgroundColor: k.card }]}>
-              {/* Manual keyboardHeight tracking (see its own comment above)
-                  stays as a belt-and-suspenders measure even inside the
-                  Modal — harmless if KeyboardAvoidingView's own adjustment
-                  is already correct here, and it's tested working code
-                  either way. */}
+              {/* KeyboardAvoidingView's 'height' behavior shrinks ITSELF to
+                  make room for the keyboard — but this drawer's outer box
+                  (threadRight) is now absolutely positioned with a fixed
+                  height taken from the measured content-area rect, so
+                  there's no longer any ancestor free to shrink into. Live-
+                  reported: the keyboard covered the input again once the
+                  drawer became a fixed-size measured rect. iOS's 'padding'
+                  behavior still works (it pads bottom space directly,
+                  independent of ancestor sizing), but Android needs the
+                  manual keyboardHeight measurement applied directly to the
+                  input row below instead of relying on KeyboardAvoidingView
+                  at all. */}
               <KeyboardAvoidingView
-                style={[s.thread, Platform.OS === 'android' && { marginBottom: keyboardHeight }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={s.thread}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               >
               <View style={s.threadHead}>
                 <Pressable
@@ -855,7 +862,11 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
-            <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+            <View style={[
+              s.inputRow,
+              { backgroundColor: k.card, borderColor: k.cardBorder },
+              Platform.OS === 'android' && keyboardHeight > 0 && { marginBottom: keyboardHeight },
+            ]}>
               <Pressable onPress={() => setShowAttachMenu(v => !v)} style={s.iconBtn} hitSlop={8}
                 accessibilityRole="button" accessibilityLabel="Attach a photo, video, document or location"
                 accessibilityState={{ expanded: showAttachMenu }}>

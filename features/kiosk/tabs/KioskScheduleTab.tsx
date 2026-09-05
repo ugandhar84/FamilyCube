@@ -665,7 +665,15 @@ function kioskCatAccent(cat: string, k: KioskColors): { fg: string; soft: string
     case 'Holiday': return { fg: k.gold, soft: k.goldSoft, edge: k.goldEdge };
     case 'School':
     case 'Study':   return { fg: k.blue, soft: k.blueSoft, edge: k.blueEdge };
-    case 'Ride':    return { fg: k.primary, soft: k.primarySoft, edge: k.primaryEdge };
+    // Live-reported: with Ride mapped to k.primary here, a schedule that's
+    // mostly ride/pickup events (the common case) read as almost entirely
+    // one reddish color, card after card — worse, k.primary is also the
+    // app's main brand/primary-ACTION color, so a Ride card's accent was
+    // ambiguous with "this needs attention" rather than reading as its own
+    // category. The phone's own CAT_COLOR map (EventCard.tsx) has no
+    // 'Ride' entry at all — it falls through to the same default green
+    // every uncategorized event gets — so this now matches that exactly
+    // instead of inventing a kiosk-only special case.
     default:        return { fg: k.sage, soft: k.sageSoft, edge: k.sageEdge };
   }
 }
@@ -745,7 +753,16 @@ function KioskEventCard({
         {
           backgroundColor: pressed ? k.cardHover : k.card,
           borderColor: isConf ? k.goldEdge : k.cardBorder,
-          borderLeftColor: needsDriver ? k.primary : accent,
+          // Was `needsDriver ? k.primary : accent` — a kiosk-only override
+          // with no phone equivalent (EventCardTimeline's own accent is
+          // always cs.dot, category only, regardless of driver status).
+          // Combined with Ride's own since-removed k.primary mapping above,
+          // a schedule that's mostly driverless rides — the common real
+          // case — read as almost every card sharing one reddish accent.
+          // The "no driver yet" state is still communicated, just via the
+          // existing text label (needsDriver && !isPast below) rather than
+          // overriding the card's own category color.
+          borderLeftColor: accent,
         },
         isPast && { opacity: 0.55 },
       ]}
@@ -1608,9 +1625,15 @@ const s = StyleSheet.create({
   // Solid-filled, not the phone card's frosted glass — see KioskEventCard's
   // own header for why. The 5px left edge is the accent carrier, matching
   // every other kiosk card on this branch.
+  // Live-reported: on a wide landscape kiosk, this card had no width cap
+  // at all and stretched edge-to-edge — a lot of bare card background
+  // either side of what's usually just a time chip, a title and a couple
+  // of badges. Capped, not removed: a card still fills a narrower/portrait
+  // width naturally (maxWidth only bites once the scroll container is
+  // wider than this), so this doesn't regress the narrow-width layout.
   card: {
     borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 5,
-    minHeight: KIOSK_HIT.primary,
+    minHeight: KIOSK_HIT.primary, width: '100%', maxWidth: 720, alignSelf: 'center',
   },
   cardBody: { padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },

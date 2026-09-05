@@ -22,17 +22,26 @@ export function ArcadePrimaryButton({ label, onPress, disabled }: { label: strin
         onPressIn={pressIn}
         onPressOut={pressOut}
         onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); onPress(); }}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !!disabled }}
         style={{
-          height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+          minHeight: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+          paddingHorizontal: 20, paddingVertical: 10,
           backgroundColor: ARCADE.primary,
           shadowColor: ARCADE.primaryGlow, shadowOpacity: 1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
           elevation: 8,
         }}
       >
-        <Text style={{
-          fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: 17, letterSpacing: 0.8,
-          color: ARCADE.bgTop, textTransform: 'uppercase',
-        }}>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+          style={{
+            fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: 17, letterSpacing: 0.8,
+            color: ARCADE.bgTop, textTransform: 'uppercase', textAlign: 'center',
+          }}
+        >
           {label}
         </Text>
       </Pressable>

@@ -29,6 +29,7 @@ import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
+import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
@@ -669,6 +670,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
       <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
         onAddTask={() => setShowTaskComposer(true)} />
+
+      <FamilyGamesSection colors={colors} isDark={isDark} />
 
       <TodayView
         colors={colors}

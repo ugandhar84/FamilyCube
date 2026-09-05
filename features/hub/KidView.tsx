@@ -36,6 +36,7 @@ import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { KidChoreProposalModal } from './kid/KidChoreProposalModal';
+import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
 export function KidView({ active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer }: {
@@ -495,6 +496,8 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
         cheerBadge={siblingCheerable.length}
         colors={colors} isDark={isDark}
       />
+
+      <FamilyGamesSection colors={colors} isDark={isDark} />
 
       {/* 6. Leaderboard + Cheer Squad — same components as before, now
           reachable one tap away from the More row instead of permanently

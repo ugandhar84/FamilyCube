@@ -26,6 +26,7 @@ import { GroupBand } from './senior/seniorTheme';
 import { EmergencySosCard } from './senior/EmergencySosCard';
 import { YourRidesSection } from './senior/YourRidesSection';
 import { MedicationsCard } from './senior/MedicationsCard';
+import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { LendAHandCard } from './senior/LendAHandCard';
 import { CheerSquadSection } from './senior/CheerSquadSection';
@@ -896,6 +897,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
+
+      <FamilyGamesSection colors={colors} isDark={isDark} />
 
       {/* A parent (or this GP themselves) directly assigned a task via
           addParentQuest — same Accept/Respond, Nudge-back, and locked-item

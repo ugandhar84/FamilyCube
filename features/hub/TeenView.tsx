@@ -41,6 +41,7 @@ import { TeenCarDispatchSection } from './teen/TeenCarDispatchSection';
 import { TeenGasLogSection } from './teen/TeenGasLogSection';
 import { TeenTutorSection } from './teen/TeenTutorSection';
 import { TeenCashOutSection } from './teen/TeenCashOutSection';
+import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import SmartTaskComposer from '../tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -494,6 +495,8 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
       ))}
 
       <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+
+      <FamilyGamesSection colors={colors} isDark={isDark} />
 
       {/* Needs You — chore-approval celebration + dismissible feed (approved
           chores, cheers, request replies). Rides already have their own

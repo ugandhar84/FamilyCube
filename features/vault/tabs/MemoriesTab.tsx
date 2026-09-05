@@ -165,7 +165,17 @@ function sealColor(name: string): string {
 
 interface ComposedMedia { uri: string; type: 'photo' | 'video'; }
 
-function ComposeMemoryModal({ visible, onClose, onPost, members, myId, colors, isDark }: {
+/**
+ * Exported (it was module-private) so the kiosk Memories tab can mount the
+ * SAME composer rather than growing a second one. Kiosk previously reached
+ * it indirectly, by flipping useUIStore's openMemoryComposerRequested flag
+ * and letting an embedded MemoriesTab react — but kiosk no longer embeds
+ * MemoriesTab (it renders its own 2-column KioskMemoryFeed), so there is no
+ * longer anything on that side listening for the flag. Exporting is purely
+ * additive: nothing about this component changes, and MemoriesTab still
+ * renders it exactly as before.
+ */
+export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, colors, isDark }: {
   visible: boolean; onClose: () => void;
   onPost: (media: ComposedMedia[], caption: string, captionOverlay: boolean, taggedMemberIds: string[], tag: string | null) => Promise<void>;
   members: FamilyMember[]; myId: string;

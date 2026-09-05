@@ -19,16 +19,16 @@
  * drop the leading "Ask …", because on the Overview these render as tiles
  * beneath an "ASK A PARENT" sub-header that already says it:
  *
- *   key          label              phone label       destination modal
+ *   key          label              destination drawer        replaces (phone)
  *   ─────────────────────────────────────────────────────────────────────
- *   ride         A Ride             Ask for a Ride    KidRequestModal
- *   permission   Permission         Ask Permission    AskModal 'permission'
- *   question     A Question         Ask a Question    AskModal 'question'
- *   medication   Medication Alert   (same)            AskModal 'medication'
- *   grocery      Request Grocery    (same)            GroceryModal
- *   supplies     School Supplies    (same)            SuppliesModal
- *   quest        Suggest a Chore    (same)            QuestProposalModal
- *   chore        Propose a Chore    (same)            KidChoreProposalModal
+ *   ride         A Ride             KioskRideRequestSheet     KidRequestModal
+ *   permission   Permission         KioskAskSheet 'permission' AskModal
+ *   question     A Question         KioskAskSheet 'question'   AskModal
+ *   medication   Medication Alert   KioskAskSheet 'medication' AskModal
+ *   grocery      Request Grocery    KioskGroceryRequestSheet  GroceryModal
+ *   supplies     School Supplies    KioskSuppliesRequestSheet SuppliesModal
+ *   quest        Suggest a Chore    KioskQuestProposalSheet   QuestProposalModal
+ *   chore        Propose a Chore    KioskChoreProposalSheet   KidChoreProposalModal
  *
  * Only the tile captions differ; the phone's own AskParentSheet picker
  * (still used by KioskTasksTab) renders its own labels unchanged.
@@ -61,54 +61,54 @@
  * likes.
  *
  * ── Idle lock ───────────────────────────────────────────────────────────
- * useKioskLockSuspended below covers all seven pieces of state — the
- * optional picker plus the six destination states. These are all shared
- * phone components rendered into their own native Modal, so their touches
- * never reach KioskScreen's root onTouchStart; without this the idle lock
- * can fire mid-form and throw the draft away.
+ * Two layers, both preserved from the phone-modal era:
+ *
+ *   • useKioskLockSuspended below still covers all seven pieces of state —
+ *     the optional picker plus the six destination states.
+ *   • each destination drawer additionally wraps itself in KioskModalHost
+ *     (via KioskFormDrawer), so touches inside its native Modal window
+ *     register as real kiosk activity rather than merely holding the lock.
+ *
+ * Both matter: a native Modal's touches never reach KioskScreen's root
+ * onTouchStart, so without this a kid filling in a grocery list reads to
+ * the idle timer as total inactivity and the lock throws the draft away.
  *
  * `colors`/`isDark` come from useTheme() here rather than being threaded in
- * as props: the destination modals are SHARED PHONE components that take
- * the app palette, and useTheme() is the same single source KioskScreen
- * itself reads before threading `colors` down. Taking them as props would
- * have forced callers with no `colors` prop (KioskOverviewTab) to grow one.
+ * as props: the one remaining shared phone component (AskParentSheet, the
+ * optional picker) takes the app palette, and useTheme() is the same single
+ * source KioskScreen itself reads before threading `colors` down. Taking
+ * them as props would have forced callers with no `colors` prop
+ * (KioskOverviewTab) to grow one. The six destinations no longer need them
+ * — they are kiosk-native and read useKioskColors() themselves.
  *
- * ── KNOWN LIMITATION: these six render full-bleed on a wide kiosk ────────
- * The kiosk's own drawers (KioskAskFamDrawer, and KioskSheet in
- * KioskKidQuickActions.tsx) are narrow right-anchored panels — 480/520px
- * against a dismissible scrim. The six destination modals below are NOT:
- * on a wide kiosk canvas each one stretches its bottom sheet edge to edge,
- * which reads wrong next to those drawers. This is a known, deliberate gap,
- * not an oversight, and it CANNOT be fixed from this file. Recording why,
- * so nobody re-derives it:
+ * ── The six destinations are kiosk-native (resolved limitation) ──────────
+ * This file used to mount six shared PHONE modals — GroceryModal,
+ * SuppliesModal, AskModal, QuestProposalModal (features/hub/KidModals.tsx),
+ * KidChoreProposalModal, and KidRequestModal. Each is a phone bottom sheet
+ * (`Modal > KeyboardAvoidingView > backdrop(justifyContent:'flex-end') >
+ * sheet`, the sheet carrying no width of its own), so on a wide kiosk
+ * canvas every one of them stretched edge to edge — visually wrong next to
+ * kiosk's own narrow right-anchored drawers (KioskAskFamDrawer at 480,
+ * KioskSheet at 520).
  *
- * Each of the six is `Modal > KeyboardAvoidingView(flex:1) > backdrop
- * View(flex:1, justifyContent:'flex-end') > spacer + sheet`, where the
- * sheet carries no width of its own and simply stretches to the backdrop.
- * The backdrop's width comes from React Native's own Modal container —
- * `styles.container` in RN's Modal.js is `{[side]: 0, top: 0, flex: 1}`
- * inside a native RCTModalHostView, which is sized by the native modal
- * WINDOW, not by anything above <Modal> in the React tree. So wrapping
- * <GroceryModal /> below in a fixed-width or max-width View does nothing
- * whatsoever to the pixels that actually render: the constraint has to be
- * applied INSIDE the modal's own subtree.
+ * That could not be fixed from here, and the investigation is worth keeping
+ * so nobody re-derives it: a Modal's backdrop width comes from React
+ * Native's own container — `{[side]: 0, top: 0, flex: 1}` inside a native
+ * RCTModalHostView — which is sized by the native modal WINDOW, not by
+ * anything above <Modal> in the React tree. Wrapping a phone modal in a
+ * fixed-width View here changes nothing about the pixels that render; the
+ * constraint has to be applied INSIDE the modal's own subtree, and the
+ * shared phone files are explicitly off-limits to kiosk work, additively
+ * included.
  *
- * That is exactly what components/AppBottomSheet.tsx already does for
- * itself — `useWindowDimensions()`, `isWide = width >= 560`, and a
- * `Math.min(560, width - 48)` cap applied to its own panel, added for this
- * same live-reported complaint about wide/landscape screens. The six below
- * predate that sheet and were never migrated onto it.
- *
- * The fix therefore belongs in the shared components, and the owner has
- * explicitly ruled out changing them as part of the kiosk work — including
- * additively. Two clean options for whoever picks this up on the phone
- * side, both of which change nothing for existing phone callers:
- *   1. Migrate these six onto AppBottomSheet, inheriting its width cap.
- *   2. Give each the same three lines AppBottomSheet uses, so the sheet
- *      self-caps on any wide viewport — phone portrait (<560) unaffected.
- * Do NOT attempt to work around it kiosk-side with a wrapper View; per the
- * above it cannot work, and a wrapper that looks like it should would just
- * mislead the next reader.
+ * So the six were replaced with real kiosk-native forms, all sharing
+ * KioskFormDrawer's narrow drawer shell. Each performs the SAME store
+ * write as its phone counterpart — same store, same action, same payload
+ * encoding, same validation, same approval-pending semantics — so a
+ * request made at the kiosk is indistinguishable from a phone one in the
+ * parent's queue. See each sheet's own header for the line-by-line parity
+ * notes. The phone components are untouched and still serve every phone
+ * caller.
  */
 import { useCallback, useState, type ReactNode } from 'react';
 import {
@@ -118,9 +118,12 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useTheme } from '@/lib/ThemeContext';
 import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
-import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
-import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
-import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { KioskGroceryRequestSheet } from './KioskGroceryRequestSheet';
+import { KioskSuppliesRequestSheet } from './KioskSuppliesRequestSheet';
+import { KioskAskSheet } from './KioskAskSheet';
+import { KioskQuestProposalSheet } from './KioskQuestProposalSheet';
+import { KioskChoreProposalSheet } from './KioskChoreProposalSheet';
+import { KioskRideRequestSheet } from './KioskRideRequestSheet';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import type { KioskColors } from '../kioskPalette';
 
@@ -209,15 +212,32 @@ export function useKioskAskParent({
           }}
         />
       )}
-      <GroceryModal visible={groceryModal} onClose={() => setGroceryModal(false)} active={active} />
-      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
-      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
-      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
-      <KidChoreProposalModal
-        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
-        active={active} members={members} familyId={active.familyId ?? ''}
-      />
-      <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
+      {/* The six kiosk-native destinations. Each is mounted only while
+          visible — unlike the phone modals these replaced, they hold real
+          draft state, and keeping an invisible instance alive would leak a
+          half-typed grocery list across profile switches on a shared
+          device. */}
+      {groceryModal && (
+        <KioskGroceryRequestSheet visible onClose={() => setGroceryModal(false)} active={active} />
+      )}
+      {suppliesModal && (
+        <KioskSuppliesRequestSheet visible onClose={() => setSuppliesModal(false)} active={active} />
+      )}
+      {askModal && (
+        <KioskAskSheet visible onClose={() => setAskModal(null)} type={askModal} active={active} />
+      )}
+      {questProposalModal && (
+        <KioskQuestProposalSheet visible onClose={() => setQuestProposalModal(false)} active={active} />
+      )}
+      {choreProposalModal && (
+        <KioskChoreProposalSheet
+          visible onClose={() => setChoreProposalModal(false)}
+          active={active} members={members} familyId={active.familyId ?? ''}
+        />
+      )}
+      {rideRequestModal && (
+        <KioskRideRequestSheet visible onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
+      )}
     </>
   );
 

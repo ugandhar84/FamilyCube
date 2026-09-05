@@ -82,7 +82,8 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme'
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
-import { KioskDayMealsDrawer } from '../components/KioskDayMealsDrawer';
+import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
+import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
@@ -156,18 +157,14 @@ export function KioskOverviewTab({
   const groceryItems = useGroceryStore(s => s.items);
   const { meals } = useKioskMeals();
 
-  // ── Tonight's meal (real family_meals row) ───────────────────────────
+  // ── Today's meals (real family_meals rows) ───────────────────────────
+  // Was a single "Tonight's dinner" summary that, once fixed to be
+  // tappable at all, opened a day-overview popup. The owner then asked
+  // for breakfast/lunch/dinner as their own three cards right on the
+  // hero, each opening its own recipe directly — see the hero render
+  // below and KioskRecipeDrawer.
   const todayMeals = useMemo(() => meals.filter(m => m.day === todayMealDay()), [meals]);
-  const tonight = useMemo(
-    () => todayMeals.find(m => (m.type ?? '').toLowerCase() === 'dinner') ?? todayMeals[0] ?? null,
-    [todayMeals],
-  );
-  // Live-reported: tapping the "What's for dinner" card did nothing once a
-  // real meal was showing — the hero's meal card only had an onPress in
-  // its EMPTY state. Opens KioskDayMealsDrawer over ALL of today's meals
-  // (breakfast/lunch/dinner/snack can all exist for one day), not just the
-  // dinner recipe, per the owner's own widening of the request.
-  const [showDayMeals, setShowDayMeals] = useState(false);
+  const [openMeal, setOpenMeal] = useState<Meal | null>(null);
 
   // ── Rides needing attention ──────────────────────────────────────────
   // The mockup's "Co-Parent Pending Rides" card. A ride needs attention if
@@ -263,33 +260,18 @@ export function KioskOverviewTab({
           </View>
         </WidgetCard>
 
-        {/* Tonight's dinner — the mockup's photo-frame slot, given instead
-            to the one piece of information a kitchen display should lead
-            with. The photo frame itself now lives in the widget deck below
-            (KioskMemorySlideshow), so both are on the screen rather than
-            one displacing the other. */}
+        {/* Today's Meals — was a single "Tonight's dinner" card (the
+            mockup's photo-frame slot); the owner asked for the day's three
+            meal types as their own scrollable cards, each opening its real
+            recipe directly, rather than one dinner summary that opened a
+            day-overview popup. The photo frame itself lives in the widget
+            deck below (KioskMemorySlideshow), unaffected by this. */}
         <WidgetCard k={k} isDark={isDark} style={s.heroSide}>
           <WidgetHeader
-            Icon={ChefHat} eyebrow="Tonight" title="What's for dinner"
+            Icon={ChefHat} eyebrow="Today" title="Today's Meals"
             accent={k.gold} k={k} isDark={isDark}
           />
-          {tonight ? (
-            <Pressable
-              onPress={() => setShowDayMeals(true)}
-              style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.85 }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Tonight's dinner: ${tonight.title}`}
-              accessibilityHint="See today's full meal plan"
-            >
-              <Well k={k} accent={k.gold} style={{ flex: 1, justifyContent: 'center' }}>
-                <Text style={s.mealEmoji}>{tonight.emoji ?? '🍽️'}</Text>
-                <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>{tonight.title}</Text>
-                <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={2}>
-                  {mealMeta(tonight.prep_minutes, tonight.chef_id, members, tonight.start_time)}
-                </Text>
-              </Well>
-            </Pressable>
-          ) : (
+          {todayMeals.length === 0 ? (
             <Pressable
               onPress={() => onNavigate('meals')}
               style={({ pressed }) => [
@@ -297,15 +279,60 @@ export function KioskOverviewTab({
                 { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="No dinner planned for tonight"
+              accessibilityLabel="No meals planned for today"
               accessibilityHint="Open the meal planner"
             >
               <UtensilsCrossed size={26} color={k.textFaint} />
-              <EmptyNote text="No dinner planned for tonight — tap to plan the week." k={k} style={{ textAlign: 'center' }} />
+              <EmptyNote text="No meals planned for today — tap to plan the week." k={k} style={{ textAlign: 'center' }} />
             </Pressable>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.mealTypeRow}
+              style={{ flex: 1 }}
+            >
+              {(['breakfast', 'lunch', 'dinner'] as const).map(type => {
+                const meal = todayMeals.find(m => (m.type ?? '').toLowerCase() === type);
+                const accent = type === 'breakfast' ? k.gold : type === 'lunch' ? k.sage : k.purple;
+                return (
+                  <Pressable
+                    key={type}
+                    onPress={() => meal ? setOpenMeal(meal) : onNavigate('meals')}
+                    style={({ pressed }) => [
+                      s.mealTypeCard,
+                      { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={meal ? `${type}: ${meal.title}` : `No ${type} planned`}
+                    accessibilityHint={meal ? 'See the recipe' : 'Open the meal planner'}
+                  >
+                    <Text style={[s.mealTypeLabel, { color: accent }]} numberOfLines={1}>
+                      {type[0].toUpperCase()}{type.slice(1)}
+                    </Text>
+                    {meal ? (
+                      <>
+                        <Text style={s.mealTypeEmoji}>{meal.emoji ?? '🍽️'}</Text>
+                        <Text style={[s.mealTypeTitle, { color: k.text }]} numberOfLines={2}>{meal.title}</Text>
+                      </>
+                    ) : (
+                      <Text style={[s.mealTypeEmpty, { color: k.textFaint }]} numberOfLines={2}>Not planned</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           )}
         </WidgetCard>
       </View>
+
+      <KioskRecipeDrawer
+        visible={!!openMeal}
+        onClose={() => setOpenMeal(null)}
+        meal={openMeal}
+        members={members}
+        k={k}
+      />
 
       {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
           The kid's own actions, as one labeled full-width card directly
@@ -469,16 +496,6 @@ export function KioskOverviewTab({
         onOpen={() => onNavigate('findfam')}
       />
     </ScrollView>
-
-    <KioskDayMealsDrawer
-      visible={showDayMeals}
-      onClose={() => setShowDayMeals(false)}
-      dayLabel="Today"
-      meals={todayMeals}
-      members={members}
-      k={k}
-      isDark={isDark}
-    />
     </>
   );
 }
@@ -494,20 +511,6 @@ function summarize(events: number, chores: number, unclaimedRides: number): stri
   return parts.join(' · ');
 }
 
-function mealMeta(
-  prep: number | null | undefined,
-  chefId: string | null | undefined,
-  members: FamilyMember[],
-  startTime: string | null | undefined,
-): string {
-  const chef = members.find(m => m.id === chefId)?.name?.trim().split(' ')[0];
-  const bits = [
-    startTime || null,
-    prep ? `${prep} min prep` : null,
-    chef ? `Chef: ${chef}` : null,
-  ].filter(Boolean);
-  return bits.length ? bits.join(' · ') : 'Tap Meals to add details';
-}
 
 // ── Quick action tile ───────────────────────────────────────────────────
 function QuickAction({
@@ -792,13 +795,23 @@ const s = StyleSheet.create({
   },
   quickBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900' },
 
-  mealEmoji: { fontSize: 34 },
-  mealTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', marginTop: KIOSK_SPACE.xs, letterSpacing: -0.3 },
-  mealMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 4 },
   mealEmpty: {
     flex: 1, minHeight: 130, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.sm, padding: KIOSK_SPACE.md,
   },
+
+  // Breakfast/Lunch/Dinner — three scrollable cards, one per type, each
+  // opening its own recipe (KioskRecipeDrawer) instead of one dinner
+  // summary that opened a day-overview popup.
+  mealTypeRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, paddingRight: KIOSK_SPACE.xs },
+  mealTypeCard: {
+    width: 132, minHeight: 130, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 4, padding: KIOSK_SPACE.sm,
+  },
+  mealTypeLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.4, textTransform: 'uppercase' },
+  mealTypeEmoji: { fontSize: 28, marginTop: 2 },
+  mealTypeTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', textAlign: 'center', marginTop: 2 },
+  mealTypeEmpty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center', marginTop: 4 },
 
   // Widget deck.
   deck: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },

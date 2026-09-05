@@ -41,13 +41,28 @@
  * existing low-battery badge already mirrors GpsTab's own <=20% styling
  * threshold, reading the same battery_level column any tracking phone
  * already writes.
+ *
+ * ── Hub-OS migration ────────────────────────────────────────────────────
+ * Restyled onto the kiosk palette + KioskOS primitives. Every piece of
+ * logic in this file is deliberately untouched: the member_id ordering and
+ * the debounced realtime reload (both native-crash guards for
+ * react-native-maps' Fabric interop layer), the Number.isFinite pin filter,
+ * decryptLocationText, the share_location_enabled gate, and the
+ * haversine "meaningful move" camera guard all survive verbatim. This is a
+ * styling pass over a screen whose behavior was already audited.
+ *
+ * The map and the roster are now each a WidgetCard, so the tab reads as two
+ * zones rather than a bare map above a loose grid, and the roster rows use
+ * the Well treatment every other migrated tab uses for a list row.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import { KioskZoneHeader } from '../components/KioskSurface';
+import { useKioskColors, kioskRoleAccent } from '../kioskPalette';
+import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
+import { useKioskActivity } from '../KioskActivityContext';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import type { FamilyMember } from '@/store/familyStore';
@@ -105,9 +120,11 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function KioskFindFamTab({ active, members, colors, isDark }: {
-  active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
+export function KioskFindFamTab({ active, members }: {
+  active: FamilyMember; members: FamilyMember[];
 }) {
+  const { k, isDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
   const [locations, setLocations] = useState<MemberLocation[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -184,9 +201,12 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
 
   const locFor = (id: string) => locations.find(l => l.member_id === id);
 
-  // Same role-color mapping GpsTab.tsx's own roleColor uses (GpsTab.tsx:292-293).
-  const roleColor = (role: string) =>
-    role === 'parent' ? colors.accent : role === 'senior' ? colors.info : colors.success;
+  // Role -> accent now goes through the palette's own kioskRoleAccent, the
+  // same helper every other kiosk surface uses, rather than a local ternary
+  // over the app palette. Same semantic mapping (parent / senior / kid each
+  // keep their own hue), now in kiosk's tuned values so a pin ring reads
+  // against the map in both light and dark.
+  const roleColor = (role: string) => kioskRoleAccent(k, role);
 
   // Same "who has a live pin" filter and bounding-box region math GpsTab.tsx
   // uses (GpsTab.tsx:461, 464-480) — centers/zooms to fit everyone sharing,
@@ -242,21 +262,38 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
     mapRef.current?.animateToRegion(initialRegion, 650);
   }, [initialRegion, pinned.length]);
 
+  const sharingCount = pinned.length;
+
   return (
     <View style={s.root}>
-      <View style={s.headerRow}>
-        <Text style={[s.title, { color: colors.textPrimary }]}>Find Family</Text>
-      </View>
-
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+        <ActivityIndicator style={{ marginTop: 40 }} color={k.primary} />
       ) : (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        onScrollBeginDrag={registerActivity}
+      >
+        <TabTitle
+          title="Find Family"
+          subtitle="Where everyone is right now, from their own phones"
+          k={k}
+          right={
+            <Chip
+              label={`${sharingCount}/${members.length} sharing`}
+              accent={sharingCount > 0 ? k.sage : k.textFaint}
+              isDark={isDark}
+              k={k}
+            />
+          }
+        />
+
         {/* Real map — same MapView/Marker/avatar-pin rendering GpsTab.tsx
             uses, just laid out full-width above the roster instead of
             behind a draggable sheet, since kiosk has room to show both at
             once rather than trading one for the other. */}
-        <View style={[s.mapWrap, { height: mapHeight, borderColor: colors.border }]}>
+        <WidgetCard k={k} isDark={isDark} padded={false} style={s.mapCard}>
+        <View style={[s.mapWrap, { height: mapHeight }]}>
           <MapView
             ref={mapRef}
             provider={PROVIDER_DEFAULT}
@@ -285,15 +322,24 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
           </MapView>
           {pinned.length === 0 && (
             <View pointerEvents="none" style={s.mapEmptyOverlay}>
-              <MapPin size={28} color="#fff" />
-              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#fff', marginTop: 6, textAlign: 'center' }}>
+              <MapPin size={28} color="#F7F2EE" />
+              {/* Fixed light-on-scrim rather than a palette token: this
+                  plate sits over map tiles, so its contrast has to come
+                  from the scrim beneath it, not from the theme. */}
+              <Text style={s.mapEmptyText} numberOfLines={2}>
                 No one is sharing their location yet
               </Text>
             </View>
           )}
         </View>
+        </WidgetCard>
 
-        <KioskZoneHeader title="Family" count={members.length} accent={colors.teal} colors={colors} />
+        <WidgetCard k={k} isDark={isDark}>
+          <WidgetHeader
+            Icon={MapPin} eyebrow="Roster" title="Family"
+            accent={k.sage} k={k} isDark={isDark}
+            right={<Chip label={`${members.length}`} accent={k.sage} isDark={isDark} k={k} />}
+          />
         <View style={s.grid}>
         {members.map(m => {
           const rawLoc = locFor(m.id);
@@ -307,47 +353,59 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
           const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
           const isLive = !!(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng));
           return (
-            <View key={m.id} style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[s.avatar, { backgroundColor: colors.primaryLight }]}>
+            <Well
+              key={m.id}
+              k={k}
+              accent={isLive ? roleColor(m.role ?? 'kid') : undefined}
+              style={s.card}
+            >
+              <View style={[s.avatar, { backgroundColor: roleColor(m.role ?? 'kid') + (isDark ? '24' : '1A') }]}>
                 <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.name, { color: colors.textPrimary }]} numberOfLines={1}>{m.name}</Text>
+                <Text style={[s.name, { color: k.text }]} numberOfLines={1}>{m.name}</Text>
                 {loc ? (
                   <>
                     <View style={s.metaRow}>
-                      <MapPin size={14} color={colors.teal} />
-                      <Text style={[s.status, { color: colors.teal }]} numberOfLines={1}>
+                      <MapPin size={14} color={k.sage} />
+                      <Text style={[s.status, { color: k.sage }]} numberOfLines={1}>
                         {loc.status_text || STATUS_LABEL[loc.status] || 'Unknown'}
                       </Text>
                     </View>
                     {!!loc.neighborhood && (
-                      <Text style={[s.addr, { color: colors.textSecondary }]} numberOfLines={1}>{loc.neighborhood}</Text>
+                      <Text style={[s.addr, { color: k.textMuted }]} numberOfLines={1}>{loc.neighborhood}</Text>
                     )}
                     {loc.battery_level != null && loc.battery_level <= 20 && (
                       <View style={s.metaRow}>
-                        <BatteryLow size={14} color={colors.danger} />
-                        <Text style={[s.lowBattery, { color: colors.danger }]}>{loc.battery_level}%</Text>
+                        <BatteryLow size={14} color={k.danger} />
+                        <Text style={[s.lowBattery, { color: k.danger }]} numberOfLines={1}>
+                          {loc.battery_level}%
+                        </Text>
                       </View>
                     )}
                   </>
                 ) : (
-                  <Text style={[s.addr, { color: colors.textTertiary }]}>Location not shared</Text>
+                  <Text style={[s.addr, { color: k.textFaint }]} numberOfLines={1}>Location not shared</Text>
                 )}
               </View>
               {isLive && (
-                <TouchableOpacity onPress={() => openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name)}
+                <TouchableOpacity
+                  onPress={() => { registerActivity(); openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name); }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
                   accessibilityLabel={`Get directions to ${m.name}`}
-                  style={[s.navBtn, { backgroundColor: colors.tealLight ?? colors.teal + '18' }]}>
-                  <Navigation size={20} color={colors.teal} />
+                  style={[s.navBtn, { backgroundColor: k.sageSoft, borderColor: k.sageEdge }]}>
+                  <Navigation size={20} color={k.sage} />
                 </TouchableOpacity>
               )}
-            </View>
+            </Well>
           );
         })}
         </View>
+        {members.length === 0 && (
+          <EmptyNote text="No family members yet." k={k} />
+        )}
+        </WidgetCard>
       </ScrollView>
       )}
     </View>
@@ -360,11 +418,18 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
 // gains maxWidth:'100%' so a narrow portrait pane reflows instead of
 // clipping (the grid already wraps).
 const s = StyleSheet.create({
-  root: { flex: 1, padding: KIOSK_SPACE.lg },
-  headerRow: { marginBottom: KIOSK_SPACE.md },
-  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
-  mapWrap: { borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, overflow: 'hidden', marginBottom: KIOSK_SPACE.lg },
+  root: { flex: 1 },
+  scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
+  mapCard: { overflow: 'hidden', marginBottom: KIOSK_SPACE.md },
+  // The map fills its WidgetCard edge to edge (the card is padded={false}),
+  // so the card's own radius does the rounding and this only owns height.
+  mapWrap: { overflow: 'hidden' },
   mapPinWrap: { alignItems: 'center' },
+  // The pin plate, its shadow and the empty-state scrim below are the one
+  // place in this file that stays fixed rather than theme-derived: they sit
+  // on MAP TILES, which are the same in light and dark mode, so their
+  // contrast has to come from the pin itself. A dark-mode card color here
+  // would make pins vanish against the map. Matches GpsTab.tsx's own pins.
   mapPinAvatar: {
     borderRadius: 22, borderWidth: 3, backgroundColor: '#fff', padding: 2,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
@@ -376,13 +441,17 @@ const s = StyleSheet.create({
   },
   mapEmptyOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(10,8,7,0.45)', padding: KIOSK_SPACE.lg,
+  },
+  mapEmptyText: {
+    fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#F7F2EE',
+    marginTop: KIOSK_SPACE.xs, textAlign: 'center',
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     width: 300, maxWidth: '100%', minHeight: 76,
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.md,
   },
   avatar: {
     width: 44, height: 44, borderRadius: 22,
@@ -396,6 +465,6 @@ const s = StyleSheet.create({
   lowBattery: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   navBtn: {
     width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2,
-    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 });

@@ -31,24 +31,38 @@
  * ComposeMemoryModal — no new business logic, just a different trigger for
  * the same flag mobile already reads.
  *
- * ── Hub-OS migration ────────────────────────────────────────────────────
- * The header is now a TabTitle with an ActionButton, and the feed sits in a
- * WidgetCard — same chrome as every other migrated tab. Above it sits the
- * ambient slideshow (KioskMemorySlideshow), which is the genuinely
- * kiosk-native part of this screen: a countertop display glanced at from
- * across a room wants a large, slowly-advancing photo, not a scroll feed.
- * The feed stays below it, unchanged, for anyone actually standing at the
- * device. The embedded MemoriesTab is a shared phone component styled from
- * the app's `colors`; see KioskSchoolTab's header for why that's threaded
+ * ── Hub-OS migration, and the tab's three layers ────────────────────────
+ * Restyled onto the kiosk palette + KioskOS primitives. The tab now has
+ * three layers, in deliberate priority order:
+ *
+ *   1. THE GRID (primary, owner-specified). Photos two per row, sized by a
+ *      real measured-container calculation so 2-up holds in portrait and
+ *      landscape without stretching. This is the default layout.
+ *   2. THE FEED. The real MemoriesTab, unchanged, below the grid — it
+ *      still owns hearting, deleting, posting and the media lightbox.
+ *      Tapping a grid card scrolls the feed to that memory through the
+ *      focusMemoryId prop MemoriesTab already exposes for notification
+ *      deep links, so the grid is a visual index into the real feed and
+ *      not a second implementation of it.
+ *   3. AMBIENT MODE (opt-in, the deferred stretch item). A toggle swaps
+ *      the grid for the auto-advancing slideshow, for a countertop display
+ *      glanced at across a room. It is an alternative to the grid, never a
+ *      replacement for it — the grid is what the tab opens on.
+ *
+ * The embedded MemoriesTab is a shared phone component styled from the
+ * app's `colors`; see KioskSchoolTab's header for why that's threaded
  * through rather than forked.
  */
+import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Plus, Images } from 'lucide-react-native';
+import { Plus, Images, LayoutGrid, Play } from 'lucide-react-native';
 import { KIOSK_SPACE } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, TabTitle, ActionButton } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, TabTitle, ActionButton, EmptyNote } from '../components/KioskOS';
 import { useKioskActivity } from '../KioskActivityContext';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
+import { KioskMemoryGrid } from '../components/KioskMemoryGrid';
+import { useKioskPhotos } from '../useKioskPhotos';
 import { useUIStore } from '@/store/uiStore';
 import MemoriesTab from '@/features/vault/tabs/MemoriesTab';
 
@@ -57,10 +71,20 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
+  const { photos, loading } = useKioskPhotos();
+
+  const [ambient, setAmbient] = useState(false);
+  const [focusMemoryId, setFocusMemoryId] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  // MemoriesTab reports the focused card's measured Y offset relative to
+  // its own content; the host ScrollView owns the scrolling, which is
+  // exactly the split the prop pair was designed for on the phone.
+  const feedTopRef = useRef(0);
 
   return (
     <View style={s.root}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.scroll}
         onScrollBeginDrag={registerActivity}
@@ -69,31 +93,80 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
           title="Family Memories"
           subtitle="The album, and what the household has been up to"
           k={k}
-          right={!readOnly ? (
-            <ActionButton
-              label="Add Memory"
-              Icon={Plus}
-              accent={k.primary}
-              k={k}
-              isDark={kioskDark}
-              variant="solid"
-              accessibilityHint="Opens the memory composer"
-              onPress={() => {
-                registerActivity();
-                useUIStore.getState().setOpenMemoryComposerRequested(true);
-              }}
-            />
-          ) : undefined}
+          right={
+            <View style={s.titleActions}>
+              <ActionButton
+                label={ambient ? 'Grid' : 'Slideshow'}
+                Icon={ambient ? LayoutGrid : Play}
+                accent={k.purple}
+                k={k}
+                isDark={kioskDark}
+                accessibilityHint={ambient
+                  ? 'Show the photo grid'
+                  : 'Play photos full-width, advancing on their own'}
+                onPress={() => { registerActivity(); setAmbient(v => !v); }}
+              />
+              {!readOnly && (
+                <ActionButton
+                  label="Add Memory"
+                  Icon={Plus}
+                  accent={k.primary}
+                  k={k}
+                  isDark={kioskDark}
+                  variant="solid"
+                  accessibilityHint="Opens the memory composer"
+                  onPress={() => {
+                    registerActivity();
+                    useUIStore.getState().setOpenMemoryComposerRequested(true);
+                  }}
+                />
+              )}
+            </View>
+          }
         />
 
-        <KioskMemorySlideshow style={s.slideshow} />
+        {ambient ? (
+          <KioskMemorySlideshow style={s.block} />
+        ) : (
+          <WidgetCard k={k} isDark={kioskDark} style={s.block}>
+            <WidgetHeader
+              Icon={Images} eyebrow="Album" title="Photos"
+              accent={k.purple} k={k} isDark={kioskDark}
+            />
+            {loading ? null : photos.length === 0 ? (
+              <EmptyNote
+                text="No family photos yet. Add one and it'll show up here."
+                k={k}
+              />
+            ) : (
+              <KioskMemoryGrid
+                photos={photos}
+                onSelect={id => { registerActivity(); setFocusMemoryId(id); }}
+              />
+            )}
+          </WidgetCard>
+        )}
 
-        <WidgetCard k={k} isDark={kioskDark}>
+        <WidgetCard
+          k={k}
+          isDark={kioskDark}
+          onLayout={e => { feedTopRef.current = e.nativeEvent.layout.y; }}
+        >
           <WidgetHeader
-            Icon={Images} eyebrow="Album" title="All memories"
-            accent={k.purple} k={k} isDark={kioskDark}
+            Icon={Images} eyebrow="Feed" title="All memories"
+            accent={k.blue} k={k} isDark={kioskDark}
           />
-          <MemoriesTab colors={colors} isDark={isDark} readOnly={readOnly} />
+          <MemoriesTab
+            colors={colors}
+            isDark={isDark}
+            readOnly={readOnly}
+            focusMemoryId={focusMemoryId}
+            onFocusMemoryLayout={y => {
+              // y is relative to MemoriesTab's own content, so add where
+              // the feed card itself starts in this ScrollView.
+              scrollRef.current?.scrollTo({ y: Math.max(0, feedTopRef.current + y - KIOSK_SPACE.lg), animated: true });
+            }}
+          />
         </WidgetCard>
       </ScrollView>
     </View>
@@ -103,5 +176,6 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
 const s = StyleSheet.create({
   root: { flex: 1 },
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-  slideshow: { marginBottom: KIOSK_SPACE.md },
+  titleActions: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexShrink: 1 },
+  block: { marginBottom: KIOSK_SPACE.md },
 });

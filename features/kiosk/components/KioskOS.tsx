@@ -25,7 +25,7 @@
  * surfaces use these; the older tabs are migrated incrementally.
  */
 import type { ReactNode } from 'react';
-import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle, type TextStyle } from 'react-native';
+import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle, type TextStyle, type ViewProps } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT, kioskElevation } from '../kioskTheme';
 import { kioskTint, kioskOnAccent, type KioskColors } from '../kioskPalette';
@@ -41,7 +41,7 @@ import { kioskTint, kioskOnAccent, type KioskColors } from '../kioskPalette';
  * ground is either invisible or reads as mud.
  */
 export function WidgetCard({
-  children, k, isDark, accent, style, padded = true,
+  children, k, isDark, accent, style, padded = true, onLayout,
 }: {
   children: ReactNode;
   k: KioskColors;
@@ -51,9 +51,12 @@ export function WidgetCard({
   style?: StyleProp<ViewStyle>;
   /** Set false for a card that manages its own inner padding (e.g. a list). */
   padded?: boolean;
+  /** For a caller that needs the tile's position/size (e.g. scroll-to). */
+  onLayout?: ViewProps['onLayout'];
 }) {
   return (
     <View
+      onLayout={onLayout}
       style={[
         s.card,
         padded && { padding: KIOSK_SPACE.md },

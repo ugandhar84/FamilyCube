@@ -477,18 +477,46 @@ function KidCheckinSheet({ active, k, isDark, onClose }: {
 
 // ── Shared kiosk sheet frame ────────────────────────────────────────────
 /**
- * A right-anchored, full-height drawer — the SAME shape as
- * KioskAskFamDrawer, deliberately. This was a centred 620px dialog with
- * `animationType="fade"` and no keyboard handling at all; the owner asked
- * for these to "open narrower, similar to the AskFam AI", so the frame now
- * matches that drawer point for point: slide-in from the right, a fixed
- * narrow width, a dismissible scrim behind it, and the whole panel inside a
- * KeyboardAvoidingView.
+ * A CENTERED, content-sized dialog: 520px wide, as tall as its content, and
+ * capped at 85% of the screen after which the body scrolls.
  *
- * Width is 520 rather than AskFam's 480 for one concrete reason: the
+ * ── History, because this has moved twice ───────────────────────────────
+ * It began as a centred 620px dialog with `animationType="fade"` and no
+ * keyboard handling. The owner then asked for these to "open narrower,
+ * similar to the AskFam AI", and it became a right-anchored FULL-HEIGHT
+ * drawer to match KioskAskFamDrawer point for point. That over-corrected:
+ * seeing the drawers live on a tablet, the owner's reaction to a short
+ * form in a full-height panel was "so we really need this much bottom
+ * sheet?? we can fit that centered sheet right?".
+ *
+ * So it is centered again — but this is NOT a revert to the original. The
+ * original was a fixed-size dialog with no keyboard handling; this keeps
+ * every correctness fix the drawer era brought (the dismissible scrim, the
+ * KeyboardAvoidingView, KioskModalHost, the 520 width) and changes only
+ * how the panel's HEIGHT is decided: content-driven with a maxHeight,
+ * rather than always 100%.
+ *
+ * ── Why all four of these are dialogs ───────────────────────────────────
+ * None of the four sheets on this frame has open-ended content:
+ *   • check-in  — three fixed buttons on one row. Tiny.
+ *   • cheer     — an empty note, or a short list of cheerable wins.
+ *   • piggy bank— a balance well, two stat tiles, and at most EIGHT
+ *                 transaction rows (hard `.slice(0, 8)`).
+ *   • requests  — the member's own asks over a fixed 7-day window.
+ * The two list-bearing ones are bounded and usually short, and in the rare
+ * full case the 85% maxHeight catches them and the body scrolls — which is
+ * strictly better than every one of them always claiming the full screen
+ * height to show four rows.
+ *
+ * Width stays 520 rather than AskFam's 480 for one concrete reason: the
  * check-in sheet's three buttons are `flexBasis: 150` + horizontal padding,
  * and below ~500px of panel they wrap from one row of three to two rows.
- * 520 keeps that row intact while staying in the same narrow-drawer family.
+ * 520 keeps that row intact.
+ *
+ * Keyboard: with justifyContent 'center', KeyboardAvoidingView 'padding'
+ * shrinks the available box and the card re-centers in what remains, so it
+ * lifts clear of the keyboard; maxHeight being a percentage of that same
+ * box means a tall sheet also shortens rather than being clipped.
  *
  * None of the four sheets that use this frame (piggy bank, cheer squad,
  * requests, check-in) contains a TextInput TODAY, so the
@@ -507,7 +535,7 @@ function KioskSheet({
   k: KioskColors; isDark: boolean; onClose: () => void; children: React.ReactNode;
 }) {
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <KioskModalHost style={s.overlay}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -517,11 +545,11 @@ function KioskSheet({
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={s.right}
+          style={s.center}
           pointerEvents="box-none"
         >
           <View
-            style={[s.sheet, { backgroundColor: k.card, borderLeftColor: k.cardBorder }]}
+            style={[s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}
             accessibilityViewIsModal
             accessibilityLabel={title}
           >
@@ -861,13 +889,19 @@ const s = StyleSheet.create({
   checkinLabel: { fontSize: KIOSK_TYPO.body, fontWeight: '900', textAlign: 'center' },
   checkinSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center' },
 
-  // Sheet frame — a right-anchored drawer, mirroring KioskAskFamDrawer's
-  // host/right/panel trio. See the KioskSheet doc comment for the width.
+  // Sheet frame — a centered, content-sized dialog. See the KioskSheet doc
+  // comment for the width and for why this is centered rather than
+  // right-anchored full-height.
   overlay: { flex: 1 },
-  right: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
+  center: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: KIOSK_SPACE.xl,
+  },
+  // No `height` — the card is as tall as its header + body, and stops
+  // growing at maxHeight, after which the ScrollView body scrolls.
   sheet: {
-    width: 520, maxWidth: '100%', height: '100%',
-    borderLeftWidth: 1, overflow: 'hidden',
+    width: 520, maxWidth: '100%', maxHeight: '85%',
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden',
   },
   sheetHeader: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,

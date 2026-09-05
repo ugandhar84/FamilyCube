@@ -19,6 +19,17 @@
  * the drawer is open. Without it, a conversation here reads to the idle
  * timer as total inactivity — the exact bug KioskActivityContext exists to
  * fix.
+ *
+ * ── Shape: full-height drawer (reviewed, deliberately unchanged) ────────
+ * Checked in the dialog/drawer resize pass that moved most kiosk forms to
+ * centered content-sized dialogs. This one keeps its full-height panel and
+ * is the reference case for what earns that shape: the body is an ONGOING
+ * CONVERSATION that grows with every exchange and is pinned to the bottom
+ * by a composer. Chat-shaped content has no natural content height to size
+ * to — it is unbounded by definition — and a composer wants a stable
+ * bottom edge, not one that moves up the screen as the transcript grows.
+ * That is the opposite of the short fixed forms that motivated the change,
+ * so nothing here was altered.
  */
 import { useCallback, useRef, useState } from 'react';
 import {

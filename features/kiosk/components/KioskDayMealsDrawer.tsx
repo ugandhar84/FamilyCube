@@ -18,6 +18,21 @@
  * and — the part that actually matters here — KioskModalHost, so opening
  * it counts as kiosk activity and doesn't get silently timed out by the
  * idle lock the way a bare custom Modal would.
+ *
+ * ── Shape: 'drawer' (deliberately NOT shrunk) ───────────────────────────
+ * Reviewed in the dialog/drawer resize pass and kept full-height. This is
+ * the clearest legitimate variable-content case in kiosk: a day can hold
+ * anywhere from zero meals to four, and each meal card can carry a full
+ * ingredient list and a numbered prep-step list. The empty state is one
+ * line and the full state is several screens, so there is no content
+ * height a dialog could be sized to. It also renders WITHOUT a footer (no
+ * onSubmit), which means a dialog variant would have nothing anchoring its
+ * bottom edge.
+ *
+ * NOTE (as of this pass): the Overview hero no longer opens this component
+ * — it was replaced there by a per-meal KioskRecipeDrawer. The file is
+ * left intact and correctly classified rather than deleted, since removing
+ * it is a separate call from the sizing review.
  */
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { ChefHat, Clock3, UserRound, Sparkles } from 'lucide-react-native';
@@ -63,6 +78,7 @@ export function KioskDayMealsDrawer({
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="drawer"
       onClose={onClose}
       title={`${dayLabel}'s Meals`}
       subtitle={meals.length > 0 ? `${meals.length} planned` : 'Nothing planned yet'}

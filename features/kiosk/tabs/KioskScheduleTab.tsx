@@ -28,10 +28,28 @@
  * correct (AskParentSheet, never the adult composer), and edit/delete was
  * already gated by the shared deriveEventEditPermission inside
  * KioskEventEditor — so no over-permissioning existed there to close.
+ *
+ * EVENT-CARD PARITY. The tab's Agenda and Day views each rendered their own
+ * simplified event row while the phone's Calendar mounts the full
+ * EventCardTimeline (features/calendar/components/EventCard.tsx:499) in its
+ * Day timeline (CalendarScreen.tsx:1642). Both now render one shared
+ * KioskEventCard carrying every field that card does — category badge,
+ * conflict banner, sync-source badge, multi-assignee avatar row (and a
+ * parent's assign picker on an unassigned event), driver avatar,
+ * Doctor/Subject/Coach, tappable pickup/drop locations, notes, and a real
+ * "Approve & Assign" for a kid's pending request. Week and Month stay
+ * compact BY DESIGN, matching the phone (its Week uses the compact
+ * EventCardRow, its Month a dot grid), and gained only the sensitivity
+ * redaction they were missing.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import { ChevronLeft, ChevronRight, Plus, CalendarDays as CalendarIcon } from 'lucide-react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Platform, Linking } from 'react-native';
+import {
+  ChevronLeft, ChevronRight, Plus, CalendarDays as CalendarIcon,
+  MapPin, AlertTriangle, Stethoscope, BookOpen, Trophy, StickyNote,
+  Check, Lock, RefreshCw, Car,
+} from 'lucide-react-native';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -50,6 +68,7 @@ import { isEventPast } from '@/features/calendar/components/calendarDateHelpers'
 import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { useKioskColors, type KioskColors } from '../kioskPalette';
 
 /**
  * Four modes, per the updated reference mockup. `agenda` is new and is the
@@ -364,14 +383,27 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       {viewMode === 'month' && (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
           <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
+            active={active}
             involvedFor={involvedFor}
             onDayPress={setSelectedDate} />
           <View style={{ paddingHorizontal: 4, paddingTop: 14, gap: 10 }}>
             <DayEventsSummaryCard
               dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              events={eventsByDate[selectedDate] ?? []}
+              // Month's summary card is the phone's own DayEventsSummaryCard,
+              // reused verbatim — it takes an already-filtered list (on the
+              // phone CalendarScreen filters before passing) and applies no
+              // sensitivity rule of its own, so kiosk must not hand it a raw
+              // list. Only 'full' events go in: a busy-block placeholder
+              // can't be expressed through this component's props without
+              // forking it, and this is a secondary summary beneath the
+              // grid, not the surface a viewer relies on to spot a taken
+              // slot — Agenda and Day both render the real busy block.
+              events={(eventsByDate[selectedDate] ?? []).filter(
+                ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) === 'full',
+              )}
               members={members}
               colors={colors} isDark={isDark}
+              isViewerParent={active.role === 'parent'}
               onSelectEvent={routeEventPress}
             />
             {/* DayEventsSummaryCard is a pure display component (mobile's
@@ -392,11 +424,13 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
       {viewMode === 'week' && (
         <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
+          active={active}
           involvedFor={involvedFor} onEventPress={routeEventPress}
           onAddDay={canCreate ? openCreator : undefined} />
       )}
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
+          members={members} active={active}
           involvedFor={involvedFor} onEventPress={routeEventPress}
           onAdd={canCreate ? openCreator : undefined} />
       )}
@@ -404,7 +438,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         <AgendaView
           cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr}
           colors={colors} isDark={isDark} members={members} active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress}
+          onEventPress={routeEventPress}
           onAdd={canCreate ? openCreator : undefined}
         />
       )}
@@ -492,6 +526,485 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   );
 }
 
+// ── The rich event card ──────────────────────────────────────────────────
+/**
+ * KioskEventCard — kiosk's equivalent of the phone's EventCardTimeline
+ * (features/calendar/components/EventCard.tsx:499-702), the full "detail
+ * density" card CalendarScreen.tsx mounts in its Day timeline
+ * (CalendarScreen.tsx:1642-1660).
+ *
+ * Kiosk's Schedule tab previously rendered a much simpler row: a time chip,
+ * the title, and ONE meta line joining category/assignee/driver as plain
+ * text. Every detail-bearing element of the phone card was missing. This
+ * closes each of them, translated to kiosk's own tokens rather than copied
+ * at phone scale:
+ *
+ *   phone EventCard.tsx:538   category badge          → catBadge below
+ *   phone EventCard.tsx:571   conflict banner (isConf)→ conflictRow
+ *   phone EventCard.tsx:554   "Synced from …" badge   → syncRow
+ *   phone EventCard.tsx:579   For/patient avatar row +
+ *                             parent's assign picker  → forRow / picker
+ *   phone EventCard.tsx:617   driver/helper avatar    → helperRow
+ *   phone EventCard.tsx:634   Doctor/Subject/Coach    → catFields
+ *   phone EventCard.tsx:649   pickup/drop LocationLink→ KioskLocationLink
+ *   phone EventCard.tsx:667   notes banner            → notesRow
+ *   phone EventCard.tsx:674   Approve & Assign        → approvalRow
+ *   phone EventCard.tsx:686   kid "awaiting approval" → kidPendingRow
+ *
+ * Deliberately NOT ported from the phone card:
+ *   · The frosted BlurView/LinearGradient glass shell. Kiosk's design layer
+ *     (kioskPalette's fill-based elevation, see its header) carries depth
+ *     with solid fills and borders precisely because blur/shadow reads as
+ *     mud on the kiosk's warm near-black dark ground. Every other kiosk
+ *     card on this branch is solid-filled; a glass one here would be the
+ *     odd one out.
+ *   · The "Hold to edit · Swipe ← to delete" hint line, because kiosk has
+ *     no long-press or swipe affordance (see AgendaView's own note on
+ *     SwipeableEventCard) — a hint for gestures that don't exist is worse
+ *     than none.
+ *
+ * The card keeps kiosk's OWN existing ride-claim button and status pill,
+ * which the phone card has no equivalent of (the phone claims a ride from
+ * its detail sheet, not the card) — those are additions kiosk already had
+ * and are not regressed here.
+ */
+
+// ── LocationLink, kiosk-scaled ───────────────────────────────────────────
+// Same behavior as the phone's LocationLink (EventCard.tsx:122-137) — a
+// tappable address that opens the platform maps app. Not imported from
+// there because that component hardcodes phone-scale type (13px) and an
+// icon puck sized for it; at kiosk distance both are illegible and the tap
+// target is under KIOSK_HIT. The URL/shortening logic is reproduced
+// exactly so the two can't drift on behavior, only on scale.
+function shortAddress(addr: string, maxLen = 26): string {
+  if (addr.length <= maxLen) return addr;
+  const parts = addr.split(',');
+  const short = parts.length > 1 ? `${parts[0].trim()}, ${parts[1].trim()}` : addr;
+  return short.length <= maxLen + 6 ? short : addr.slice(0, maxLen).trimEnd() + '…';
+}
+function KioskLocationLink({ addr, k, label }: { addr: string; k: KioskColors; label?: string }) {
+  return (
+    <Pressable
+      onPress={() => {
+        const encoded = encodeURIComponent(addr);
+        const url = Platform.OS === 'ios'
+          ? `https://maps.apple.com/?q=${encoded}`
+          : `https://maps.google.com/?q=${encoded}`;
+        Linking.openURL(url).catch(() => Linking.openURL(`https://maps.google.com/?q=${encoded}`));
+      }}
+      hitSlop={8}
+      style={s.locLink}
+      accessibilityRole="link"
+      accessibilityLabel={`${label ? `${label}: ` : ''}${addr}`}
+      accessibilityHint="Opens this address in Maps"
+    >
+      <View style={[s.locPuck, { backgroundColor: k.blue }]}>
+        <MapPin size={13} color={k.onAccent} />
+      </View>
+      <Text style={[s.locText, { color: k.blue }]} numberOfLines={1}>{shortAddress(addr)}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * KioskBusyBlock — kiosk's BusyBlockCard (EventCard.tsx:715-731). Same
+ * structural guarantee as the phone's: it can only ever render the time,
+ * because the time is the only thing it is given. Kiosk previously showed
+ * the redacted state as an ordinary event row whose title read "Busy",
+ * which meant a redacted event looked identical to a real event actually
+ * titled "Busy" and still carried the row's own accent border and time
+ * chip colouring derived from the (hidden) assignee.
+ */
+function KioskBusyBlock({ time, endTime, k }: { time?: string; endTime?: string; k: KioskColors }) {
+  const label = `Busy${time ? ` · ${fmtTime(time)}${endTime ? `–${fmtTime(endTime)}` : ''}` : ''}`;
+  return (
+    <View
+      style={[s.busyBlock, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+      accessibilityRole="text"
+      accessibilityLabel={label}
+    >
+      <Lock size={18} color={k.textFaint} />
+      <Text style={[s.busyText, { color: k.textMuted }]} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
+/** Context-aware "for" label, verbatim from CalendarScreen.tsx:1564-1570. */
+function forLabelFor(cat: string): string | null {
+  return cat === 'Medical' ? 'Patient'
+    : cat === 'Sports' ? 'Player'
+    : cat === 'Study' ? 'Student'
+    : cat === 'Ride' ? 'Passenger'
+    : cat === 'Work' ? null // no "for" row on own tasks
+    : 'For';
+}
+/** Context-aware helper label, from CalendarScreen.tsx:1573-1578, minus the
+ *  emoji prefixes — kiosk puts a real icon beside the row instead. */
+function helperLabelFor(cat: string): string {
+  return cat === 'Medical' ? 'Accompanied by'
+    : cat === 'Study' ? 'Tutored by'
+    : cat === 'Sports' ? 'Drop-off by'
+    : cat === 'Ride' ? 'Driven by'
+    : 'Organised by';
+}
+
+/**
+ * Category accent, mapped onto the kiosk palette rather than the phone's
+ * raw CAT_COLOR hexes (EventCard.tsx:166-176). Those are fixed Tailwind
+ * values chosen against the phone's light ground; several of them (the
+ * #3B82F6 School blue, the #10B981 default green) fail contrast on kiosk's
+ * warm near-black. Each category is mapped to the nearest kiosk accent,
+ * which is contrast-verified in both modes by kioskPalette.
+ */
+function kioskCatAccent(cat: string, k: KioskColors): { fg: string; soft: string; edge: string } {
+  switch (cat) {
+    case 'Medical': return { fg: k.danger, soft: k.dangerSoft, edge: k.dangerEdge };
+    case 'Work':    return { fg: k.purple, soft: k.purpleSoft, edge: k.purpleEdge };
+    case 'Sports':
+    case 'Birthday':
+    case 'Holiday': return { fg: k.gold, soft: k.goldSoft, edge: k.goldEdge };
+    case 'School':
+    case 'Study':   return { fg: k.blue, soft: k.blueSoft, edge: k.blueEdge };
+    case 'Ride':    return { fg: k.primary, soft: k.primarySoft, edge: k.primaryEdge };
+    default:        return { fg: k.sage, soft: k.sageSoft, edge: k.sageEdge };
+  }
+}
+
+interface KioskEventCardProps {
+  ev: FamilyEvent;
+  members: FamilyMember[];
+  active: FamilyMember;
+  colors: any; isDark: boolean;
+  k: KioskColors;
+  /** 'agenda' shows the leading time chip; 'day' omits it because the Day
+   *  view's own hour gutter already states the hour and the card carries
+   *  its own start–end line. */
+  density: 'agenda' | 'day';
+  onPress: () => void;
+  claimNote?: string;
+  onClaim?: () => void;
+}
+
+function KioskEventCard({
+  ev, members, active, colors, isDark, k, density, onPress, claimNote, onClaim,
+}: KioskEventCardProps) {
+  const updateEvent = useEventStore(st => st.updateEvent);
+
+  const cat = ev.category ?? 'Event';
+  const cs = kioskCatAccent(cat, k);
+  const isParent = active.role === 'parent';
+  const isKid = active.role === 'kid' || active.role === 'teen';
+  const isPast = isEventPast(ev.date, ev.time);
+  // Read straight off the persisted `conflict` column, exactly as the phone
+  // card's caller does (CalendarScreen.tsx:1559 `const isConf = ev.conflict`).
+  // The phone's detectRealConflicts (CalendarScreen.tsx:258) is what WRITES
+  // that flag via its own AI-panel scan — pure local overlap math, not a
+  // model call, but it belongs to the phone's scan-and-resolve panel (Apply
+  // Swap, Dismiss), which kiosk has no equivalent of and shouldn't grow
+  // here. Kiosk therefore DISPLAYS the conflict the phone detected rather
+  // than running its own scan — the flag is a real DB column
+  // (eventStore.ts:79, hydrated at :656), so the badge is real data.
+  const isConf = !!ev.conflict;
+  const accent = isConf ? k.gold : cs.fg;
+
+  const assignee = members.find(m => m.id === ev.memberId);
+  const allAssignees = ev.memberIds?.length
+    ? members.filter(m => ev.memberIds!.includes(m.id))
+    : assignee ? [assignee] : [];
+  const forLabel = forLabelFor(cat);
+
+  // Same id-first, name-fallback resolution the phone card uses
+  // (EventCard.tsx:512-516).
+  const helperAssignee = eventAssignee(ev);
+  const helperName = helperAssignee.name;
+  const helperMember = helperAssignee.id
+    ? members.find(m => m.id === helperAssignee.id)
+    : (helperName ? members.find(m => m.name === helperName || m.name.split(' ')[0] === helperName) : undefined);
+
+  // Which members the parent's assign-picker offers, from
+  // CalendarScreen.tsx:1587-1589.
+  const pickerMembers = cat === 'Work'
+    ? members.filter(m => m.role === 'parent' || m.role === 'senior')
+    : members.filter(m => m.role === 'kid');
+  const canApproveRequest = !isPast && isParent && !!ev.approvalPending;
+
+  const needsDriver = (!!ev.rideRequired || cat === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title)) && !helperName;
+  const rs = assigneeStyle(allAssignees[0], colors, isDark);
+  const siblingNames = members.map(m => m.name);
+
+  const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
+  const showSync = !!badgeProvider && badgeProvider !== 'app';
+  const providerLabel = badgeProvider === 'google' ? 'Google Calendar'
+    : badgeProvider === 'apple' ? 'Apple Calendar' : 'Outlook';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.card,
+        {
+          backgroundColor: pressed ? k.cardHover : k.card,
+          borderColor: isConf ? k.goldEdge : k.cardBorder,
+          borderLeftColor: needsDriver ? k.primary : accent,
+        },
+        isPast && { opacity: 0.55 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={
+        `${ev.time ? fmtTime(ev.time) : 'All day'}, ${ev.title}, ${cat}` +
+        (isConf ? ', scheduling conflict' : '') +
+        (allAssignees.length ? `, for ${allAssignees.map(m => m.name.split(' ')[0]).join(', ')}` : '') +
+        (helperName ? `, ${helperLabelFor(cat).toLowerCase()} ${helperName}` : needsDriver ? ', needs a driver' : '')
+      }
+      accessibilityHint="Opens this event"
+    >
+      <View style={s.cardBody}>
+        {/* Header — time chip (agenda only), category badge, conflict flag,
+            title. Phone: EventCard.tsx:536-546. */}
+        <View style={s.cardHead}>
+          {density === 'agenda' && (
+            <View style={[s.timeChip, { backgroundColor: cs.soft, borderColor: cs.edge }]}>
+              <Text style={[s.timeChipText, { color: cs.fg }]} numberOfLines={1}>
+                {ev.time ? fmtTime(ev.time) : 'All day'}
+              </Text>
+            </View>
+          )}
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <View style={s.badgeRow}>
+              <View style={[s.catBadge, { backgroundColor: cs.soft, borderColor: cs.edge }]}>
+                <Text style={[s.catBadgeText, { color: cs.fg }]} numberOfLines={1}>{cat.toUpperCase()}</Text>
+              </View>
+              {isConf && <AlertTriangle size={16} color={k.gold} />}
+              {showSync && (
+                <View
+                  style={[s.syncBadge, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+                  accessibilityRole="text"
+                  accessibilityLabel={`Synced from ${ev.lastExternalSyncAccount ?? providerLabel}`}
+                >
+                  <RefreshCw size={12} color={k.textFaint} />
+                  <Text style={[s.syncText, { color: k.textFaint }]} numberOfLines={1}>
+                    {ev.lastExternalSyncAccount ?? providerLabel}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{ev.title}</Text>
+            {density === 'day' && !!ev.time && (
+              <Text style={[s.cardTime, { color: k.textMuted }]} numberOfLines={1}>
+                {fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}
+              </Text>
+            )}
+          </View>
+
+          {/* Kiosk's own ride-claim / helper-status affordance. Pre-existing
+              behavior, kept as-is and still routed through the race-safe
+              claimHelperSlot — see AgendaView's header note. */}
+          {onClaim ? (
+            <Pressable
+              onPress={onClaim}
+              style={({ pressed }) => [s.claimBtn, { backgroundColor: pressed ? k.primaryPress : k.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Claim the ride for ${ev.title}`}
+              accessibilityHint="Assigns this ride to you"
+            >
+              <Car size={16} color={k.onPrimary} />
+              <Text style={[s.claimBtnText, { color: k.onPrimary }]} numberOfLines={1}>Claim ride</Text>
+            </Pressable>
+          ) : helperAssignee.status ? (
+            <View style={[s.statusPill, {
+              backgroundColor: helperAssignee.status === 'confirmed' ? k.sageSoft
+                : helperAssignee.status === 'rejected' ? k.dangerSoft : k.goldSoft,
+            }]}
+              accessibilityRole="text"
+              accessibilityLabel={
+                helperAssignee.status === 'confirmed' ? 'Driver confirmed'
+                  : helperAssignee.status === 'rejected' ? 'Driver declined' : 'Driver pending'
+              }
+            >
+              <Text style={[s.statusPillText, {
+                color: helperAssignee.status === 'confirmed' ? k.sage
+                  : helperAssignee.status === 'rejected' ? k.danger : k.gold,
+              }]} numberOfLines={1}>
+                {helperAssignee.status === 'confirmed' ? 'Confirmed' : helperAssignee.status === 'rejected' ? "Can't do" : 'Pending'}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Scheduling conflict banner. Phone: EventCard.tsx:571-576. */}
+        {isConf && (
+          <View
+            style={[s.conflictRow, { backgroundColor: k.goldSoft, borderColor: k.goldEdge }]}
+            accessibilityRole="alert"
+            accessibilityLabel="Scheduling conflict detected"
+          >
+            <AlertTriangle size={15} color={k.gold} />
+            <Text style={[s.conflictText, { color: k.gold }]} numberOfLines={2}>Scheduling conflict detected</Text>
+          </View>
+        )}
+
+        {/* For / patient row — real avatars for everyone assigned, or a
+            parent's tappable assign picker on an unassigned event. Phone:
+            EventCard.tsx:579-613. */}
+        {forLabel && (
+          <View style={s.forRow}>
+            {allAssignees.length > 0 ? (
+              <View style={s.forCluster}>
+                <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}:</Text>
+                {allAssignees.map(m => (
+                  <View key={m.id} style={s.avatarWithName}>
+                    <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
+                      siblings={siblingNames} size={30} ringColor={rs.dot} ringWidth={2} />
+                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : !isPast && isParent && pickerMembers.length > 0 ? (
+              <View style={s.forCluster}>
+                <Text style={[s.metaLabel, { color: k.textMuted }]} numberOfLines={1}>{forLabel}:</Text>
+                {pickerMembers.map(m => {
+                  const on = ev.memberId === m.id;
+                  return (
+                    <Pressable
+                      key={m.id}
+                      // Same store write the phone's picker makes
+                      // (CalendarScreen.tsx:1657 → updateEvent(id,{memberId})).
+                      onPress={() => updateEvent(ev.id, { memberId: m.id })}
+                      hitSlop={6}
+                      style={s.pickerCell}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Assign this event to ${m.name.split(' ')[0]}`}
+                      accessibilityState={{ selected: on }}
+                    >
+                      <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
+                        siblings={pickerMembers.map(x => x.name)} size={36}
+                        ringColor={on ? k.primary : k.cardBorderStrong} ringWidth={on ? 3 : 1.5} />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}: —</Text>
+            )}
+            {!!ev.location && <KioskLocationLink addr={ev.location} k={k} label="Location" />}
+          </View>
+        )}
+
+        {/* Driver / accompanying adult, with a real avatar. Phone:
+            EventCard.tsx:617-631. */}
+        {!!helperName && (
+          <View style={s.helperRow}>
+            <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{helperLabelFor(cat)}:</Text>
+            {helperMember ? (
+              <View style={s.avatarWithName}>
+                <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
+                  siblings={siblingNames} size={30} ringColor={k.blue} ringWidth={2} />
+                <Text style={[s.avatarName, { color: k.text }]} numberOfLines={1}>{helperMember.name.split(' ')[0]}</Text>
+              </View>
+            ) : (
+              // A genuinely external non-member (a coach, a neighbour) has
+              // no avatar to draw — same fallback the phone card takes.
+              <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
+            )}
+          </View>
+        )}
+        {needsDriver && !isPast && (
+          <Text style={[s.needsDriver, { color: k.primary }]} numberOfLines={1}>No driver yet</Text>
+        )}
+        {helperAssignee.status === 'rejected' && !!ev.declineReason && (
+          <Text style={[s.declineReason, { color: k.danger }]} numberOfLines={2}>"{ev.declineReason}"</Text>
+        )}
+
+        {/* Category-specific fields. Phone: EventCard.tsx:634-664. */}
+        {cat === 'Medical' && !!ev.doctorName && (
+          <View style={s.fieldRow}>
+            <Stethoscope size={15} color={k.textMuted} />
+            <Text style={[s.fieldLabel, { color: k.textMuted }]} numberOfLines={1}>Doctor:</Text>
+            <Text style={[s.fieldValue, { color: k.text }]} numberOfLines={1}>{ev.doctorName}</Text>
+          </View>
+        )}
+        {cat === 'Study' && !!ev.subject && (
+          <View style={s.fieldRow}>
+            <BookOpen size={15} color={k.textMuted} />
+            <Text style={[s.fieldLabel, { color: k.textMuted }]} numberOfLines={1}>Subject:</Text>
+            <Text style={[s.fieldValue, { color: k.text }]} numberOfLines={1}>{ev.subject}</Text>
+          </View>
+        )}
+        {cat === 'Sports' && !!ev.coachName && (
+          <View style={s.fieldRow}>
+            <Trophy size={15} color={k.textMuted} />
+            <Text style={[s.fieldLabel, { color: k.textMuted }]} numberOfLines={1}>Coached by:</Text>
+            <Text style={[s.fieldValue, { color: k.text }]} numberOfLines={1}>{ev.coachName}</Text>
+          </View>
+        )}
+        {(cat === 'Ride' || cat === 'Sports') && (!!ev.pickupLocation || !!ev.dropLocation) && (
+          <View style={s.legRow}>
+            {!!ev.pickupLocation && (
+              <View style={s.legCell}>
+                <Text style={[s.fieldLabel, { color: k.textMuted }]} numberOfLines={1}>From</Text>
+                <KioskLocationLink addr={ev.pickupLocation} k={k} label="Pickup" />
+              </View>
+            )}
+            {!!ev.dropLocation && (
+              <View style={s.legCell}>
+                <Text style={[s.fieldLabel, { color: k.textMuted }]} numberOfLines={1}>To</Text>
+                <KioskLocationLink addr={ev.dropLocation} k={k} label="Drop-off" />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Notes banner. Phone: EventCard.tsx:667-671. */}
+        {!!ev.notes && (
+          <View style={[s.notesRow, { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }]}>
+            <StickyNote size={15} color={k.primary} />
+            <Text style={[s.notesText, { color: k.primary }]} numberOfLines={3}>"{ev.notes}"</Text>
+          </View>
+        )}
+
+        {/* Kid request awaiting a parent's approval — the parent's side.
+            Phone: EventCard.tsx:674-684, whose onApprove is wired at
+            CalendarScreen.tsx:1658 to exactly this updateEvent call. This is
+            a DIFFERENT flow from kiosk's existing ride-CLAIMING (which
+            assigns a driver to an already-approved event); a kid's own
+            request had no approval path on the kiosk at all. */}
+        {canApproveRequest && (
+          <View style={[s.approvalRow, { borderTopColor: k.cardBorder }]}>
+            <View style={s.approvalLabel}>
+              <AlertTriangle size={15} color={k.gold} />
+              <Text style={[s.approvalText, { color: k.gold }]} numberOfLines={1}>Request pending</Text>
+            </View>
+            <Pressable
+              onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
+              style={({ pressed }) => [s.approveBtn, { backgroundColor: pressed ? k.primaryPress : k.sage }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Approve and assign ${ev.title}`}
+              accessibilityHint="Approves this request and puts it on the schedule"
+            >
+              <Check size={16} color={k.onAccent} />
+              <Text style={[s.approveBtnText, { color: k.onAccent }]} numberOfLines={1}>Approve &amp; Assign</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* The kid's own side of the same state. Phone: EventCard.tsx:686-691. */}
+        {!isPast && isKid && !!ev.approvalPending && (
+          <View style={[s.approvalRow, { borderTopColor: k.cardBorder, justifyContent: 'flex-start' }]}>
+            <AlertTriangle size={15} color={k.gold} />
+            <Text style={[s.approvalText, { color: k.gold }]} numberOfLines={2}>Awaiting parent approval…</Text>
+          </View>
+        )}
+
+        {!!claimNote && (
+          <Text style={[s.claimNote, { color: k.textMuted }]} numberOfLines={2} accessibilityLiveRegion="polite">
+            {claimNote}
+          </Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 // ── Agenda ───────────────────────────────────────────────────────────────
 /**
  * A flat chronological list of what's coming, grouped by day — the updated
@@ -523,7 +1036,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
  *    rather than a kiosk-local reimplementation of the rule.
  */
 function AgendaView({
-  cursor, eventsByDate, todayStr, colors, isDark, members, active, involvedFor, onEventPress, onAdd,
+  cursor, eventsByDate, todayStr, colors, isDark, members, active, onEventPress, onAdd,
 }: {
   cursor: Date;
   eventsByDate: Record<string, FamilyEvent[]>;
@@ -531,11 +1044,11 @@ function AgendaView({
   colors: any; isDark: boolean;
   members: FamilyMember[];
   active: FamilyMember;
-  involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onEventPress: (ev: FamilyEvent) => void;
   onAdd?: () => void;
 }) {
-  const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
+  const { k } = useKioskColors();
+  const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
   const [claimNote, setClaimNote] = useState<Record<string, string>>({});
   const isKidViewer = active.role === 'kid' || active.role === 'teen';
 
@@ -608,97 +1121,43 @@ function AgendaView({
               // taken, without the detail"; 'hidden' means omit entirely.
               const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
               if (vis === 'hidden') return null;
-              const redacted = vis === 'busy-block';
+              // Redacted rows go through KioskBusyBlock, which — like the
+              // phone's BusyBlockCard (EventCard.tsx:715) — structurally
+              // cannot leak a detail because the time is all it receives.
+              // Previously this rendered the ordinary row with its title
+              // swapped to "Busy", which still exposed the (assignee-
+              // derived) accent colour and looked identical to a real event
+              // genuinely titled "Busy".
+              if (vis === 'busy-block') {
+                return <KioskBusyBlock key={ev.id} time={ev.time} endTime={ev.endTime} k={k} />;
+              }
 
               const assignee = eventAssignee(ev);
-              const primary = involvedFor(ev)[0];
-              const rs = assigneeStyle(primary, colors, isDark);
-              const isRide = !!assignee.name || /pick ?up|drop ?off|ride/i.test(ev.title);
+              const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
               const needsDriver = isRide && !assignee.name;
-              const note = claimNote[ev.id];
 
               return (
-                <Pressable
+                <KioskEventCard
                   key={ev.id}
-                  onPress={() => !redacted && onEventPress(ev)}
-                  disabled={redacted}
-                  style={({ pressed }) => [
-                    s.agendaRow,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: colors.border,
-                      borderLeftColor: needsDriver ? colors.primary : rs.dot,
-                    },
-                    pressed && !redacted && { opacity: 0.75 },
-                  ]}
-                  accessibilityRole={redacted ? 'text' : 'button'}
-                  accessibilityLabel={
-                    redacted
-                      ? `${ev.time ? fmtTime(ev.time) : 'All day'}, busy`
-                      : `${ev.time ? fmtTime(ev.time) : 'All day'}, ${ev.title}` +
-                        (assignee.name ? `, ${assignee.name}` : needsDriver ? ', needs a driver' : '')
-                  }
-                  accessibilityHint={redacted ? undefined : 'Open this event'}
-                >
-                  <View style={[s.agendaTime, { backgroundColor: colors.amberLight }]}>
-                    <Text style={[s.agendaTimeText, { color: colors.amber }]} numberOfLines={1}>
-                      {ev.time ? fmtTime(ev.time) : 'All day'}
-                    </Text>
-                  </View>
-
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[s.agendaTitle, { color: colors.textPrimary }]} numberOfLines={2}>
-                      {redacted ? 'Busy' : ev.title}
-                    </Text>
-                    {!redacted && (
-                      <Text style={[s.agendaMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {[
-                          ev.category || null,
-                          primary ? primary.name.split(' ')[0] : null,
-                          assignee.name
-                            ? `Driver: ${assignee.name.split(' ')[0]}${assignee.status === 'confirmed' ? ' ✓' : ''}`
-                            : needsDriver ? 'No driver yet' : null,
-                        ].filter(Boolean).join(' · ')}
-                      </Text>
-                    )}
-                    {!!note && (
-                      <Text style={[s.agendaNote, { color: colors.textSecondary }]} numberOfLines={2} accessibilityLiveRegion="polite">
-                        {note}
-                      </Text>
-                    )}
-                  </View>
-
-                  {/* The mockup's "Claim Ride" — wired to the real race-safe
-                      claim, and only offered when there is genuinely an open
-                      slot to claim. */}
-                  {!redacted && needsDriver && canClaim ? (
-                    <Pressable
-                      onPress={() => {
-                        claimHelperSlot(
-                          ev.id, 'driver', active.name, undefined,
-                          () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
-                          (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
-                        );
-                      }}
-                      style={[s.agendaClaim, { backgroundColor: colors.primary }]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Claim the ride for ${ev.title}`}
-                      accessibilityHint="Assigns this ride to you"
-                    >
-                      <Text style={s.agendaClaimText} numberOfLines={1}>Claim ride</Text>
-                    </Pressable>
-                  ) : !redacted && assignee.status ? (
-                    <View style={[s.agendaStatus, {
-                      backgroundColor: assignee.status === 'confirmed' ? colors.tealLight : colors.amberLight,
-                    }]}>
-                      <Text style={[s.agendaStatusText, {
-                        color: assignee.status === 'confirmed' ? colors.teal : colors.amber,
-                      }]} numberOfLines={1}>
-                        {assignee.status === 'confirmed' ? 'Confirmed' : assignee.status === 'rejected' ? "Can't do" : 'Pending'}
-                      </Text>
-                    </View>
-                  ) : null}
-                </Pressable>
+                  ev={ev}
+                  members={members}
+                  active={active}
+                  colors={colors} isDark={isDark}
+                  k={k}
+                  density="agenda"
+                  onPress={() => onEventPress(ev)}
+                  claimNote={claimNote[ev.id]}
+                  // The mockup's "Claim Ride" — wired to the real race-safe
+                  // claim, and only offered when there is genuinely an open
+                  // slot to claim.
+                  onClaim={needsDriver && canClaim ? () => {
+                    claimHelperSlot(
+                      ev.id, 'driver', active.name, undefined,
+                      () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
+                      (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
+                    );
+                  } : undefined}
+                />
               );
             })}
           </View>
@@ -721,11 +1180,19 @@ function AgendaView({
 }
 
 // ── Month grid ───────────────────────────────────────────────────────────
-function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, involvedFor, onDayPress }: {
+// Month stays a GRID of dots by design — the phone's own Month view is a
+// grid too (MonthGridView), and a rich card inside a 7-across day cell
+// would be unreadable. The only parity work it needs is the sensitivity
+// rule: a 'hidden' event must not contribute a dot (that leaks that
+// something exists), while a 'busy-block' one must (its whole purpose is
+// signalling the slot is taken).
+function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, active, involvedFor, onDayPress }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; selected: string; colors: any; isDark: boolean;
+  active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onDayPress: (dateStr: string) => void;
 }) {
+  const { k } = useKioskColors();
   const cells = useMemo(() => buildMonthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
   const weeks = useMemo(() => {
     const rows: string[][] = [];
@@ -746,7 +1213,9 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, i
             {week.map((dateStr, di) => {
               if (!dateStr) return <View key={di} style={s.monthCell} />;
               const isToday = dateStr === todayStr;
-              const dayEvents = eventsByDate[dateStr] ?? [];
+              const dayEvents = (eventsByDate[dateStr] ?? []).filter(
+                ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'hidden',
+              );
               const dayNum = parseDate(dateStr).getDate();
               return (
                 <Pressable key={dateStr} onPress={() => onDayPress(dateStr)}
@@ -762,9 +1231,14 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, i
                   <Text style={[s.monthDayNum, { color: isToday ? colors.primary : colors.textPrimary }]}>{dayNum}</Text>
                   <View style={s.monthDots}>
                     {dayEvents.slice(0, 4).map(ev => {
+                      // A busy-block event still gets a dot (the slot IS
+                      // taken) but a NEUTRAL one — its assignee-derived
+                      // colour would identify who the hidden event belongs
+                      // to, which is exactly the detail redaction withholds.
+                      const redacted = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'full';
                       const primary = involvedFor(ev)[0];
                       const rs = assigneeStyle(primary, colors, isDark);
-                      return <View key={ev.id} style={[s.monthDot, { backgroundColor: rs.dot }]} />;
+                      return <View key={ev.id} style={[s.monthDot, { backgroundColor: redacted ? k.textFaint : rs.dot }]} />;
                     })}
                     {dayEvents.length > 4 && (
                       <Text style={[s.monthMore, { color: colors.textTertiary }]}>+{dayEvents.length - 4}</Text>
@@ -781,11 +1255,13 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, i
 }
 
 // ── Week strip (original design, extracted) ─────────────────────────────
-function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor, onEventPress, onAddDay }: {
+function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, involvedFor, onEventPress, onAddDay }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; colors: any; isDark: boolean;
+  active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onEventPress: (ev: FamilyEvent) => void; onAddDay?: () => void;
 }) {
+  const { k } = useKioskColors();
   const days = useMemo(() => {
     const ws = startOfWeek(cursor);
     return Array.from({ length: 7 }, (_, i) => addDays(ws, i));
@@ -805,6 +1281,23 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
             </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
               {dayEvents.map(ev => {
+                // Week stays deliberately COMPACT — a seven-column strip is
+                // a glance surface, and the phone's own Week view uses the
+                // compact EventCardRow (EventCard.tsx:208), never the rich
+                // EventCardTimeline. It does, however, need the same
+                // sensitivity redaction Agenda/Day apply; it previously had
+                // none, so a sensitive title leaked here.
+                const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
+                if (vis === 'hidden') return null;
+                if (vis === 'busy-block') {
+                  return (
+                    <View key={ev.id} style={[s.evChip, { backgroundColor: k.well, borderColor: k.cardBorder, borderLeftColor: k.cardBorderStrong }]}
+                      accessibilityRole="text" accessibilityLabel={`Busy${ev.time ? `, ${fmtTime(ev.time)}` : ''}`}>
+                      <Text style={[s.evTitle, { color: k.textMuted }]} numberOfLines={1}>🔒 Busy</Text>
+                      {!!ev.time && <Text style={[s.evTime, { color: k.textFaint }]} numberOfLines={1}>{fmtTime(ev.time)}</Text>}
+                    </View>
+                  );
+                }
                 const involved = involvedFor(ev);
                 const primary = involved[0];
                 const rs = assigneeStyle(primary, colors, isDark);
@@ -813,6 +1306,7 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
                   <Pressable key={ev.id} onPress={() => onEventPress(ev)}
                     accessibilityRole="button"
                     accessibilityLabel={`${ev.title}${ev.time ? `, ${fmtTime(ev.time)}` : ', all day'}`}
+                    accessibilityHint="Opens this event"
                     style={[s.evChip, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
                     {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
                     <Text style={[s.evTitle, { color: colors.textPrimary }]} numberOfLines={2}>{ev.title}</Text>
@@ -850,11 +1344,16 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
 const DAY_START_HOUR = 6;
 const DAY_END_HOUR = 22;
 
-function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPress, onAdd }: {
+function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress, onAdd }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
+  members: FamilyMember[]; active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onEventPress: (ev: FamilyEvent) => void; onAdd?: () => void;
 }) {
+  const { k } = useKioskColors();
+  const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
+  const [claimNote, setClaimNote] = useState<Record<string, string>>({});
+  const canClaim = active.role === 'parent';
   const dateStr = toDateStr(cursor);
   const dayEvents = useMemo(
     () => (eventsByDate[dateStr] ?? []).slice().sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
@@ -874,12 +1373,28 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
       {allDay.length > 0 && (
         <View style={s.dayAllDayRow}>
           {allDay.map(ev => {
+            // Day view previously applied NO sensitivity redaction at all —
+            // only Agenda did — so a sensitive event a viewer isn't
+            // entitled to read leaked its full title here. Same shared
+            // predicate, same three states.
+            const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
+            if (vis === 'hidden') return null;
+            if (vis === 'busy-block') {
+              return (
+                <View key={ev.id} style={[s.dayAllDayChip, { backgroundColor: k.well, borderColor: k.cardBorder, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }]}
+                  accessibilityRole="text" accessibilityLabel="Busy, all day">
+                  <Lock size={15} color={k.textFaint} />
+                  <Text style={[s.dayAllDayText, { color: k.textMuted }]} numberOfLines={1}>Busy</Text>
+                </View>
+              );
+            }
             const involved = involvedFor(ev);
             const rs = assigneeStyle(involved[0], colors, isDark);
             return (
               <Pressable key={ev.id} onPress={() => onEventPress(ev)}
                 accessibilityRole="button"
                 accessibilityLabel={`${ev.title}, all day`}
+                accessibilityHint="Opens this event"
                 style={[s.dayAllDayChip, { backgroundColor: rs.badge, borderColor: rs.dot + '55' }]}>
                 <Text style={[s.dayAllDayText, { color: rs.text }]} numberOfLines={1}>{ev.title}</Text>
               </Pressable>
@@ -895,23 +1410,38 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
             <Text style={[s.dayHourLabel, { color: colors.textTertiary }]}>{label}</Text>
             <View style={s.dayHourEvents}>
               {hourEvents.map(ev => {
-                const involved = involvedFor(ev);
-                const rs = assigneeStyle(involved[0], colors, isDark);
-                const multiColors = involved.length > 1 ? involved.map(m => assigneeStyle(m, colors, isDark).dot) : null;
+                const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
+                if (vis === 'hidden') return null;
+                if (vis === 'busy-block') {
+                  return <KioskBusyBlock key={ev.id} time={ev.time} endTime={ev.endTime} k={k} />;
+                }
+                const assignee = eventAssignee(ev);
+                const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
+                const needsDriver = isRide && !assignee.name;
                 return (
-                  <Pressable key={ev.id} onPress={() => onEventPress(ev)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${ev.title}, ${fmtTime(ev.time)}`}
-                    style={[s.dayEventCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
-                    {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
-                    <Text style={[s.dayEventTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
-                    <Text style={[s.dayEventTime, { color: colors.textSecondary }]}>{fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}</Text>
-                    {involved.length > 0 && (
-                      <Text style={[s.evWho, { color: rs.dot }]} numberOfLines={1}>
-                        {involved.map(m => m.name.split(' ')[0]).join(', ')}
-                      </Text>
-                    )}
-                  </Pressable>
+                  // Day is the phone's own "detail density" — CalendarScreen
+                  // .tsx mounts the full EventCardTimeline in exactly this
+                  // view (:1642) — so it gets the same rich card Agenda now
+                  // does, minus the leading time chip (the hour gutter to
+                  // the left already states the hour).
+                  <KioskEventCard
+                    key={ev.id}
+                    ev={ev}
+                    members={members}
+                    active={active}
+                    colors={colors} isDark={isDark}
+                    k={k}
+                    density="day"
+                    onPress={() => onEventPress(ev)}
+                    claimNote={claimNote[ev.id]}
+                    onClaim={needsDriver && canClaim ? () => {
+                      claimHelperSlot(
+                        ev.id, 'driver', active.name, undefined,
+                        () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
+                        (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
+                      );
+                    } : undefined}
+                  />
                 );
               })}
             </View>
@@ -1031,12 +1561,8 @@ const s = StyleSheet.create({
   },
   dayHourLabel: { width: 76, fontSize: KIOSK_TYPO.caption, fontWeight: '700', paddingTop: 2 },
   dayHourEvents: { flex: 1, gap: KIOSK_SPACE.xs, minWidth: 0 },
-  dayEventCard: {
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 5,
-    padding: KIOSK_SPACE.md, position: 'relative', minHeight: KIOSK_HIT.control,
-  },
-  dayEventTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  dayEventTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 4 },
+  // Day's own per-hour event card is gone — that view now renders the
+  // shared KioskEventCard (`card`/`cardBody` below) at 'day' density.
   dayAddBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary, marginTop: KIOSK_SPACE.lg,
@@ -1062,27 +1588,104 @@ const s = StyleSheet.create({
   agendaDayBar: { width: 4, height: 18, borderRadius: 2 },
   agendaDayLabel: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.3 },
   agendaDayDate: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  agendaRow: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 4,
-    padding: KIOSK_SPACE.md, minHeight: KIOSK_HIT.primary,
+  // Agenda's own simplified row (time chip + title + one joined meta line)
+  // is gone — it now renders the shared KioskEventCard below at 'agenda'
+  // density, which carries every field the phone's EventCardTimeline does.
+
+  // ── The rich event card (Agenda + Day) ─────────────────────────────────
+  // Solid-filled, not the phone card's frosted glass — see KioskEventCard's
+  // own header for why. The 5px left edge is the accent carrier, matching
+  // every other kiosk card on this branch.
+  card: {
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 5,
+    minHeight: KIOSK_HIT.primary,
   },
-  agendaTime: {
-    minWidth: 82, alignItems: 'center',
-    borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+  cardBody: { padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },
+  timeChip: {
+    minWidth: 86, alignItems: 'center', justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
   },
-  agendaTimeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  agendaTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  agendaMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },
-  agendaNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 4 },
-  agendaClaim: {
+  timeChipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexWrap: 'wrap' },
+  catBadge: {
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 2,
+  },
+  catBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.6 },
+  syncBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 2, maxWidth: 180,
+  },
+  syncText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', flexShrink: 1 },
+  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', letterSpacing: -0.2 },
+  cardTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  claimBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.control,
-    paddingHorizontal: KIOSK_SPACE.md, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: KIOSK_SPACE.md, flexShrink: 0,
   },
-  agendaClaimText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  agendaStatus: {
-    borderRadius: KIOSK_RADIUS.full,
+  claimBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  statusPill: {
+    borderRadius: KIOSK_RADIUS.full, flexShrink: 0,
     paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs,
   },
-  agendaStatusText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  conflictRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+  },
+  conflictText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  forRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
+  },
+  forCluster: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap', flexShrink: 1 },
+  avatarWithName: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  avatarName: { fontSize: KIOSK_TYPO.label, fontWeight: '800', maxWidth: 110 },
+  // The picker's own cells are the tap target, so they carry the padding
+  // that brings a 36px avatar up to a kiosk-legal hit area.
+  pickerCell: { padding: 6, borderRadius: KIOSK_RADIUS.full },
+  metaLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  helperRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
+  helperName: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  needsDriver: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  declineReason: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontStyle: 'italic' },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexWrap: 'wrap' },
+  fieldLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  fieldValue: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  legRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
+  legCell: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexShrink: 1 },
+  locLink: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32, flexShrink: 1 },
+  locPuck: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  locText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  notesRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,
+  },
+  notesText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontStyle: 'italic', flexShrink: 1 },
+  approvalRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
+    borderTopWidth: 1, paddingTop: KIOSK_SPACE.sm, marginTop: 2,
+  },
+  approvalLabel: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexShrink: 1 },
+  approvalText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  approveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.control,
+    paddingHorizontal: KIOSK_SPACE.md, flexShrink: 0,
+  },
+  approveBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '900' },
+  claimNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  busyBlock: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.control,
+  },
+  busyText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', flexShrink: 1 },
 });

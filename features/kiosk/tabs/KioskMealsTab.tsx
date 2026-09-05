@@ -51,6 +51,16 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   const { k, isDark } = useKioskColors();
   const { meals, loading, week } = useKioskMeals();
   const { registerActivity } = useKioskActivity();
+  // The full household grocery list is hidden from kids on kiosk
+  // specifically (live-reported: "remove groceries for kids" — a kiosk-
+  // only scope decision, the phone's own GroceryScreen still shows kids
+  // the whole list with reduced permissions). A kid still sees and can
+  // check off whatever THEY themselves added, per the follow-up ("his own
+  // approved groceries can show") — there's no separate approval flag on
+  // a grocery item (unlike quests/chores), so "his own" is simply
+  // addedBy === this kid, same identity GroceryScreen's own kid-request
+  // grouping already keys off.
+  const isKid = active.role === 'kid';
   // Meal lines were read-only — tapping one now opens its full recipe in
   // the same side drawer the Overview hero's Breakfast/Lunch/Dinner cards
   // already use (KioskRecipeDrawer), so the two surfaces that both show a
@@ -61,6 +71,11 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   const load = useGroceryStore(s => s.load);
   const addItem = useGroceryStore(s => s.addItem);
   const buyItem = useGroceryStore(s => s.buyItem);
+
+  const visibleItems = useMemo(
+    () => isKid ? items.filter(it => it.addedBy === active.id) : items,
+    [items, isKid, active.id],
+  );
 
   const familyId = (members[0] as any)?.familyId as string | undefined;
 
@@ -200,56 +215,68 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
           <WidgetCard k={k} isDark={isDark} padded={false} style={s.panel}>
             <View style={s.panelPad}>
               <WidgetHeader
-                Icon={ShoppingCart} eyebrow="Household" title="Grocery list"
+                Icon={ShoppingCart} eyebrow={isKid ? 'My requests' : 'Household'}
+                title={isKid ? 'My grocery items' : 'Grocery list'}
                 accent={k.sage} k={k} isDark={isDark}
-                right={items.length > 0
-                  ? <Chip label={`${items.length}`} accent={k.sage} isDark={isDark} k={k} />
+                right={visibleItems.length > 0
+                  ? <Chip label={`${visibleItems.length}`} accent={k.sage} isDark={isDark} k={k} />
                   : undefined}
               />
 
               {/* Add. Deliberately the first thing under the header: the
                   overwhelmingly common kitchen interaction is "we just ran
                   out of X", and it should be one tap plus typing, never a
-                  navigation. */}
-              <View style={s.addRow}>
-                <TextInput
-                  value={draft}
-                  onChangeText={setDraft}
-                  onSubmitEditing={submitItem}
-                  onFocus={registerActivity}
-                  placeholder="Add an item…"
-                  placeholderTextColor={k.textFaint}
-                  style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
-                  returnKeyType="done"
-                  editable={!!familyId}
-                  accessibilityLabel="New grocery item"
-                />
-                <Pressable
-                  onPress={submitItem}
-                  disabled={!draft.trim() || adding || !familyId}
-                  style={({ pressed }) => [
-                    s.addBtn,
-                    { backgroundColor: k.sage },
-                    (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add to grocery list"
-                  accessibilityState={{ disabled: !draft.trim() || adding }}
-                >
-                  {adding
-                    ? <ActivityIndicator size="small" color={k.onAccent} />
-                    : <Plus size={22} color={k.onAccent} />}
-                </Pressable>
-              </View>
+                  navigation. Hidden for kids — this box writes straight to
+                  groceryStore, bypassing the real kid→parent approval flow
+                  (kidRequestStore + KioskGroceryRequestSheet) a kid's
+                  request normally goes through; a kid asks via that flow
+                  instead, from the header's Ask Fam/Ask Parent affordance. */}
+              {!isKid && (
+                <View style={s.addRow}>
+                  <TextInput
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={submitItem}
+                    onFocus={registerActivity}
+                    placeholder="Add an item…"
+                    placeholderTextColor={k.textFaint}
+                    style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
+                    returnKeyType="done"
+                    editable={!!familyId}
+                    accessibilityLabel="New grocery item"
+                  />
+                  <Pressable
+                    onPress={submitItem}
+                    disabled={!draft.trim() || adding || !familyId}
+                    style={({ pressed }) => [
+                      s.addBtn,
+                      { backgroundColor: k.sage },
+                      (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add to grocery list"
+                    accessibilityState={{ disabled: !draft.trim() || adding }}
+                  >
+                    {adding
+                      ? <ActivityIndicator size="small" color={k.onAccent} />
+                      : <Plus size={22} color={k.onAccent} />}
+                  </Pressable>
+                </View>
+              )}
             </View>
 
-            {items.length === 0 ? (
+            {visibleItems.length === 0 ? (
               <View style={s.panelPad}>
-                <EmptyNote text="Nothing on the list. Add something above." k={k} />
+                <EmptyNote
+                  text={isKid
+                    ? "None of your grocery requests have been approved yet."
+                    : "Nothing on the list. Add something above."}
+                  k={k}
+                />
               </View>
             ) : (
               <View style={[s.panelPad, { paddingTop: 0, gap: KIOSK_SPACE.xs }]}>
-                {items.map(it => (
+                {visibleItems.map(it => (
                   <GroceryRow
                     key={it.id}
                     name={it.name}
@@ -257,7 +284,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     category={it.category}
                     k={k}
                     isDark={isDark}
-                    onBuy={() => buyItem(it.id, active.id)}
+                    // Once approved, a kid's own request is read-only on
+                    // kiosk — they can see it landed on the list, not check
+                    // it off themselves.
+                    onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
                   />
                 ))}
               </View>
@@ -284,28 +314,36 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
  * every device via the store's own realtime subscription, including the
  * phone of whoever is standing in the aisle. The mockup's checkbox was a
  * plain unbacked <input>.
+ *
+ * onBuy is optional: a kid's own already-approved request renders read-only
+ * (no checkbox, no press) — they can see it made the list, not check it off
+ * themselves.
  */
 function GroceryRow({ name, quantity, category, k, isDark, onBuy }: {
   name: string; quantity?: string; category?: string;
-  k: KioskColors; isDark: boolean; onBuy: () => void;
+  k: KioskColors; isDark: boolean; onBuy?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const readOnly = !onBuy;
   return (
     <Pressable
-      onPress={async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
+      onPress={readOnly ? undefined : async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
+      disabled={readOnly}
       style={({ pressed }) => [
         s.groceryRow,
-        { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+        { backgroundColor: pressed && !readOnly ? k.cardHover : k.well, borderColor: k.cardBorder },
         busy && { opacity: 0.5 },
       ]}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: false, disabled: busy }}
+      accessibilityRole={readOnly ? undefined : 'checkbox'}
+      accessibilityState={readOnly ? undefined : { checked: false, disabled: busy }}
       accessibilityLabel={quantity ? `${name}, ${quantity}` : name}
-      accessibilityHint="Mark as bought and remove from the list"
+      accessibilityHint={readOnly ? undefined : 'Mark as bought and remove from the list'}
     >
-      <View style={[s.checkbox, { borderColor: k.sage }]}>
-        {busy ? <Check size={16} color={k.sage} /> : <Circle size={0} color="transparent" />}
-      </View>
+      {!readOnly && (
+        <View style={[s.checkbox, { borderColor: k.sage }]}>
+          {busy ? <Check size={16} color={k.sage} /> : <Circle size={0} color="transparent" />}
+        </View>
+      )}
       <Text style={[s.groceryName, { color: k.text }]} numberOfLines={2}>{name}</Text>
       {!!quantity && (
         <Text style={[s.groceryQty, { color: k.textMuted }]} numberOfLines={1}>{quantity}</Text>

@@ -6,14 +6,14 @@
  * surface doesn't have to hardcode magic numbers inline to differentiate
  * itself.
  *
- * The critical DIFFERENCE from gameTheme: Games deliberately abandons the
- * app palette (it's meant to feel like a different world, dark in both
- * light and dark mode). Kiosk must NOT — a kitchen dashboard is the same
- * calm Kinfolk household surface, just seen from six feet away instead of
- * six inches. So this file carries NO colors at all; every kiosk color
- * still comes from useTheme()'s colors.* exactly as CLAUDE.md requires.
- * What changes at kiosk scale is *size, weight and spacing*, which is
- * precisely what lives here.
+ * This file carries NO colors — it is the SIZE half of the kiosk design
+ * layer (type scale, touch targets, spacing, radii, elevation recipe).
+ * Kiosk's colors live in the sibling features/kiosk/kioskPalette.ts, which
+ * exposes a light and a dark variant resolved off the same useTheme()
+ * isDark the rest of the app uses (see that file's header for why kiosk is
+ * NOT dark-only, unlike the Games arcade). The split is deliberate: what
+ * changes at kiosk scale is size, weight and spacing, and that is
+ * orthogonal to which appearance the household has chosen.
  *
  * Why a separate scale rather than reusing constants/theme.ts's TYPO:
  * TYPO is calibrated for a phone held ~30cm from the eye. A wall-mounted

@@ -15,10 +15,13 @@
  * and the phone's per-viewer visibility rules) — that reasoning is not
  * repeated here, only the rules themselves.
  */
+import type { LucideIcon } from 'lucide-react-native';
+import { Clock, CheckCircle2, Zap, Coins, ClipboardList, RotateCcw, Ban } from 'lucide-react-native';
 import type { Quest } from '@/store/questStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { isAssignedTo } from '@/features/tasks/lib/deriveCardActions';
-import { fmtDateTime } from '@/lib/dates';
+import { isAssignedTo, isDoneCard, isDeclinedCard } from '@/features/tasks/lib/deriveCardActions';
+import { fmtDateTime, parseLocalDate } from '@/lib/dates';
+import type { KioskColors } from './kioskPalette';
 
 /**
  * The kanban's status vocabulary. Exported so any surface summarising
@@ -80,6 +83,89 @@ export function questTimeline(q: Quest): string {
   if (q.submittedAt) parts.push(`Submitted ${fmtDateTime(q.submittedAt)}`);
   if (q.approvedAt) parts.push(`Approved ${fmtDateTime(q.approvedAt)}`);
   return parts.join(' → ');
+}
+
+/**
+ * Per-chore status meta — icon, uppercase pill label, kiosk accent.
+ *
+ * This is features/hub/kid/KidQuestCard.tsx's `questStatusMeta` (its lines
+ * 23-38) translated to kiosk tokens. The MAPPING is the phone's, not a
+ * kiosk invention:
+ *
+ *   phone BRAND.teal   (in_progress / claimed)  → k.sage
+ *   phone BRAND.amber  (pending_approval)       → k.gold
+ *   phone BRAND.amber  (declined / needs redo)  → k.gold
+ *   phone BRAND.purple (todo)                   → k.purple
+ *   phone MONEY_GREEN  (pool bounty, approved)  → k.sage
+ *   phone colors.danger(cancelled)              → k.danger
+ *
+ * Note the phone deliberately does NOT use red for "declined": its own
+ * comment records that cancelled (nothing to do) and declined (a redo IS
+ * required) read as the same red pill with only a tiny label telling them
+ * apart, so declined was moved to amber's "still active, needs attention"
+ * tone.
+ *
+ * Lived privately inside components/KioskKidWidgets.tsx (the Hub "My
+ * Chores" widget) until the Chores board needed the identical pill in its
+ * own card header. Moved here rather than copied, for exactly the reason
+ * this module's header gives — a second copy is how the two surfaces end
+ * up disagreeing about what a given status looks like. The 'cancelled'
+ * branch was absent from the widget's copy (its buckets never contain a
+ * cancelled chore) and is restored here from the phone original, since the
+ * board's own lanes CAN surface one.
+ */
+export function kioskQuestMeta(q: Quest, k: KioskColors): { Icon: LucideIcon; label: string; accent: string } {
+  if (q.isPool && q.status === 'todo') return { Icon: Coins, label: 'BOUNTY', accent: k.sage };
+  if (q.status === 'pending_approval') return { Icon: Clock, label: 'IN REVIEW', accent: k.gold };
+  if (q.status === 'approved' || q.status === 'done') return { Icon: CheckCircle2, label: 'APPROVED', accent: k.sage };
+  if (q.status === 'cancelled') return { Icon: Ban, label: 'CANCELLED', accent: k.danger };
+  if (q.status === 'declined') return { Icon: RotateCcw, label: 'NEEDS ANOTHER TRY', accent: k.gold };
+  if (q.status === 'in_progress') return { Icon: Zap, label: 'IN PROGRESS', accent: k.sage };
+  if (q.status === 'claimed') return { Icon: Zap, label: 'CLAIMED', accent: k.sage };
+  return { Icon: ClipboardList, label: 'TO DO', accent: k.purple };
+}
+
+/**
+ * Is this chore past its due date and still owed?
+ *
+ * KidQuestCard.tsx:97-100 verbatim (which is itself QuestCard.tsx's own
+ * isOverdue, deliberately kept identical there so the Hub card and the
+ * Chores-tab card can't flag the same chore differently): a DATE-ONLY
+ * compare against the start of today — not `Date.now()`, so a chore due
+ * today is never overdue at 4pm — excluded once the chore is done or has
+ * been sent back for a redo (a declined chore's own banner is the message
+ * that matters, not a stale due date).
+ *
+ * Shared from here rather than written inline in one tab so the Hub widget
+ * can adopt the identical rule without re-deriving it.
+ */
+export function isQuestOverdue(q: Quest): boolean {
+  if (!q.dueDate) return false;
+  if (isDoneCard(q) || isDeclinedCard(q)) return false;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  return parseLocalDate(q.dueDate).getTime() < todayStart.getTime();
+}
+
+/**
+ * A multi-slot bounty shares ONE due date across every claimant, so naming
+ * that date on an individual's card misrepresents it as personal — the
+ * phone shows a generic "Chore overdue" instead (KidQuestCard.tsx:103, and
+ * QuestCard.tsx's identical isMultiSlot note).
+ */
+export function isMultiSlotQuest(q: Quest): boolean {
+  return (q.maxClaimants ?? 1) > 1;
+}
+
+/**
+ * The other kids a team/multi-slot bounty was offered to alongside this
+ * one. Each earns the FULL coins independently — nobody's payout depends on
+ * the others finishing — which is what the card's banner has to say.
+ * KidQuestCard.tsx:90 verbatim.
+ */
+export function teamMatesOf(q: Quest, allQuests: Quest[]): Quest[] {
+  if (!q.teamGroupId) return [];
+  return allQuests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id);
 }
 
 // ── Filter semantics, ported from the phone's QuestFilters/QuestsScreen ──

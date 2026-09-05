@@ -28,7 +28,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
-  CalendarClock, CheckSquare, Sparkles, Clock, Zap, RotateCcw, ClipboardList,
+  CalendarClock, CheckSquare, Sparkles, RotateCcw,
   Coins, CheckCircle2, Camera, type LucideIcon,
 } from 'lucide-react-native';
 
@@ -44,7 +44,7 @@ import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline } from '../kidQuestLanes';
+import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline, kioskQuestMeta } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
 import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
@@ -201,38 +201,15 @@ export function KidTodayWidget({ active, k, isDark, onOpenSchedule, style }: {
 // My Chores — status breakdown + up-for-grabs bounties
 // ════════════════════════════════════════════════════════════════════════
 
-/**
- * Per-chore status meta — icon, uppercase pill label, accent.
- *
- * This is features/hub/kid/KidQuestCard.tsx's `questStatusMeta` (its
- * lines 23-38), the card the owner pointed at, translated to kiosk tokens.
- * The MAPPING is the phone's, not a kiosk invention — parity with the
- * phone's visual language is the whole point of this treatment:
- *
- *   phone BRAND.teal   (in_progress / claimed)  → k.sage
- *   phone BRAND.amber  (pending_approval)       → k.gold
- *   phone BRAND.amber  (declined / needs redo)  → k.gold
- *   phone BRAND.purple (todo)                   → k.purple
- *   phone MONEY_GREEN  (pool bounty, approved)  → k.sage
- *   phone colors.danger(cancelled)              → k.danger
- *
- * Note the phone deliberately does NOT use red for "declined": its own
- * comment records that cancelled (nothing to do) and declined (a redo IS
- * required) read as the same red pill with only a tiny label telling them
- * apart, so declined was moved to amber's "still active, needs attention"
- * tone. Kiosk's `accentFor` had drifted from all of this — progress was
- * blue and redo was danger-red — so both are corrected below to match.
- */
-function kioskQuestMeta(q: Quest, k: KioskColors): { Icon: LucideIcon; label: string; accent: string } {
-  if (q.isPool && q.status === 'todo') return { Icon: Coins, label: 'BOUNTY', accent: k.sage };
-  if (q.status === 'pending_approval') return { Icon: Clock, label: 'IN REVIEW', accent: k.gold };
-  if (q.status === 'approved' || q.status === 'done') return { Icon: CheckCircle2, label: 'APPROVED', accent: k.sage };
-  if (q.status === 'declined') return { Icon: RotateCcw, label: 'NEEDS ANOTHER TRY', accent: k.gold };
-  if (q.status === 'in_progress') return { Icon: Zap, label: 'IN PROGRESS', accent: k.sage };
-  if (q.status === 'claimed') return { Icon: Zap, label: 'CLAIMED', accent: k.sage };
-  return { Icon: ClipboardList, label: 'TO DO', accent: k.purple };
-}
-
+// kioskQuestMeta (the icon + uppercase pill label + accent per status,
+// itself a translation of KidQuestCard.tsx's questStatusMeta) moved to
+// ../kidQuestLanes when the Chores board needed the IDENTICAL pill in its
+// own card header — a second copy is exactly how the two kiosk surfaces
+// would end up disagreeing about what a given status looks like. See that
+// file for the full phone→kiosk color mapping and why declined is gold
+// rather than red. `accentFor` below still derives its lane tints from the
+// same convention.
+//
 // questTimeline (the claimed → submitted → approved line) moved to
 // ../kidQuestLanes when the Chores board needed the identical line inside
 // its own card body — see that file for the formatter's provenance. Nothing

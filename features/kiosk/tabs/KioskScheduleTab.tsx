@@ -1347,31 +1347,71 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                 ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'hidden',
               );
               const dayNum = parseDate(dateStr).getDate();
+              // Live-reported: tapping a non-today date updated the summary
+              // card below the grid (setSelectedDate genuinely fires), but
+              // the cell itself gave no visual feedback that a different
+              // day was now the one being shown — only `isToday` had a
+              // highlight style; `selected` was tracked only in
+              // accessibilityState, never rendered. Today and Selected are
+              // now two distinct, stackable treatments (a day can be both
+              // at once, e.g. right after "Today" is tapped) that must not
+              // look alike — styling Selected in the SAME primary/
+              // terracotta hue as Today's own highlight would make the two
+              // indistinguishable on any OTHER day that's merely selected.
+              // Selected gets k.blue (a color no other cell state uses) as
+              // a ring; Today keeps sole claim to the terracotta fill/
+              // border.
+              const isSelected = dateStr === selected;
               return (
                 <Pressable key={dateStr} onPress={() => onDayPress(dateStr)}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: dateStr === selected }}
+                  accessibilityState={{ selected: isSelected }}
                   accessibilityLabel={
                     `${parseDate(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}` +
                     (isToday ? ', today' : '') +
                     (dayEvents.length ? `, ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}` : ', no events')
                   }
                   style={[s.monthCell, s.monthCellFilled, { borderColor: colors.border },
-                    isToday && { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}>
+                    isToday && { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+                    isSelected && { borderColor: k.blue, borderWidth: 2 }]}>
                   <Text style={[s.monthDayNum, { color: isToday ? colors.primary : colors.textPrimary }]}>{dayNum}</Text>
-                  <View style={s.monthDots}>
-                    {dayEvents.slice(0, 4).map(ev => {
-                      // A busy-block event still gets a dot (the slot IS
-                      // taken) but a NEUTRAL one — its assignee-derived
-                      // colour would identify who the hidden event belongs
-                      // to, which is exactly the detail redaction withholds.
+                  {/* Live-requested: match the reference mockup's month
+                      cells — small truncated title badges, category-
+                      colored, not plain dots. A dot told you a day had
+                      "N things" but never what any of them were; a kiosk
+                      glanced at from across the room should be able to
+                      read "Dance class" without tapping in. Capped to 3
+                      badges (mockup shows however many fit; 3 plus a +N
+                      overflow line reads cleanly at this cell height)
+                      before falling back to a count. */}
+                  <View style={s.monthBadges}>
+                    {dayEvents.slice(0, 3).map(ev => {
+                      // A busy-block event still shows a badge (the slot IS
+                      // taken) but with NEUTRAL text/color and no title —
+                      // its category/assignee-derived color or title would
+                      // identify what the hidden event is, exactly what the
+                      // detail redaction withholds.
                       const redacted = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'full';
-                      const primary = involvedFor(ev)[0];
-                      const rs = assigneeStyle(primary, colors, isDark);
-                      return <View key={ev.id} style={[s.monthDot, { backgroundColor: redacted ? k.textFaint : rs.dot }]} />;
+                      const cs = kioskCatAccent(ev.category ?? 'Event', k);
+                      return (
+                        <View
+                          key={ev.id}
+                          style={[
+                            s.monthBadge,
+                            { backgroundColor: redacted ? k.well : cs.soft, borderColor: redacted ? k.cardBorder : cs.edge },
+                          ]}
+                        >
+                          <Text
+                            style={[s.monthBadgeText, { color: redacted ? k.textFaint : cs.fg }]}
+                            numberOfLines={1}
+                          >
+                            {redacted ? 'Busy' : ev.title}
+                          </Text>
+                        </View>
+                      );
                     })}
-                    {dayEvents.length > 4 && (
-                      <Text style={[s.monthMore, { color: colors.textTertiary }]}>+{dayEvents.length - 4}</Text>
+                    {dayEvents.length > 3 && (
+                      <Text style={[s.monthMore, { color: colors.textTertiary }]}>+{dayEvents.length - 3} more</Text>
                     )}
                   </View>
                 </Pressable>
@@ -1689,11 +1729,17 @@ const s = StyleSheet.create({
   monthCell: { flex: 1, minWidth: 0 },
   // minHeight so a 6-row month keeps genuinely tappable day cells rather
   // than six thin bands — this is the primary control in Month view.
-  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 88 },
+  // Grown from 88 — a cell now stacks up to 3 title badges under the day
+  // number instead of a single row of dots, so it needs real height.
+  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 130 },
   monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  monthDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: KIOSK_SPACE.xs },
-  monthDot: { width: 11, height: 11, borderRadius: 6 },
-  monthMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  monthBadges: { gap: 3, marginTop: KIOSK_SPACE.xs },
+  monthBadge: {
+    borderRadius: 4, borderWidth: 1,
+    paddingHorizontal: 5, paddingVertical: 2,
+  },
+  monthBadgeText: { fontSize: 10, fontWeight: '800' },
+  monthMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 1 },
 
   // Day
   dayRoot: { flex: 1 },

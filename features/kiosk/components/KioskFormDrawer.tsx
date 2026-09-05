@@ -70,9 +70,10 @@
  */
 import type { ReactNode } from 'react';
 import {
-  Modal, View, Text, Pressable, ScrollView,
+  Modal, View, Text, Pressable,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { X } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { KioskModalHost } from '../KioskActivityContext';
@@ -204,12 +205,28 @@ export function KioskFormDrawer({
               a two-field form produces a short card, and only once the
               content (fields + button) exceeds maxHeight does the body cap
               out and start scrolling.
+
+              KeyboardAwareScrollView (not a plain ScrollView) on top of the
+              outer KeyboardAvoidingView above: the two solve DIFFERENT
+              problems and are not redundant. The outer view shrinks/re-
+              centers the whole panel so the keyboard doesn't cover it. This
+              inner one then auto-scrolls whichever field is actually
+              focused up above the keyboard within that already-shrunk
+              space — without it, a field lower in a long form (e.g. the
+              third item row in the grocery/supplies drawers) could still
+              end up hidden behind the keyboard even though the panel
+              itself fit, requiring a kid to manually scroll to see what
+              they were typing.
             */}
-            <ScrollView
+            <KeyboardAwareScrollView
               style={isDialog ? s.bodyDialog : s.body}
               contentContainerStyle={s.bodyContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="always"
+              enableOnAndroid
+              enableAutomaticScroll
+              extraScrollHeight={KIOSK_SPACE.lg}
+              keyboardOpeningTime={0}
             >
               {children}
 
@@ -247,7 +264,7 @@ export function KioskFormDrawer({
                   )}
                 </View>
               )}
-            </ScrollView>
+            </KeyboardAwareScrollView>
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>

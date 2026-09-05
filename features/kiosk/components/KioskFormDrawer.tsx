@@ -186,12 +186,24 @@ export function KioskFormDrawer({
 
             {/* ── Body ── */}
             {/*
-              In a drawer the body takes all the leftover height (flex:1) so
-              the footer pins to the bottom of a full-height panel. In a
-              dialog it must instead shrink-wrap its content — flexGrow:0 +
-              flexShrink:1 — so a two-field form produces a short card, and
-              only once the content exceeds the panel's maxHeight does the
-              body cap out and start scrolling.
+              The submit button used to be a separate sticky footer View
+              OUTSIDE this ScrollView, fixed to the bottom of the panel.
+              Live-reported: with the keyboard open, that fixed button
+              ended up floating at whatever height the keyboard's top edge
+              left available — sometimes overlapping the very field it was
+              meant to submit, instead of sitting naturally right after the
+              form's last field. Moved inside the ScrollView as the last
+              item in its content instead: it now scrolls WITH the form and
+              always appears immediately below wherever the fields end, and
+              the keyboard simply pushes the whole scrollable column up
+              rather than fighting a fixed element for space.
+
+              In a drawer the body still takes all the leftover height
+              (flex:1) so a short form's button sits high with room below;
+              in a dialog it shrink-wraps — flexGrow:0 + flexShrink:1 — so
+              a two-field form produces a short card, and only once the
+              content (fields + button) exceeds maxHeight does the body cap
+              out and start scrolling.
             */}
             <ScrollView
               style={isDialog ? s.bodyDialog : s.body}
@@ -200,43 +212,42 @@ export function KioskFormDrawer({
               keyboardShouldPersistTaps="always"
             >
               {children}
-            </ScrollView>
 
-            {/* ── Sticky footer ── */}
-            {!!onSubmit && (
-              <View style={[s.foot, { borderTopColor: k.cardBorder, backgroundColor: k.card }]}>
-                {!!error && (
-                  <Text style={[s.error, { color: k.danger }]} numberOfLines={3}>{error}</Text>
-                )}
-                <Pressable
-                  onPress={onSubmit}
-                  disabled={!enabled}
-                  style={({ pressed }) => [
-                    s.submit,
-                    { backgroundColor: enabled ? accent : k.well, borderColor: enabled ? accent : k.cardBorder },
-                    pressed && enabled && { opacity: 0.85 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={submitLabel ?? 'Send to parent'}
-                  accessibilityState={{ disabled: !enabled, busy: submitting }}
-                  accessibilityHint="Sends this request to a parent for approval"
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color={k.onAccent} />
-                  ) : (
-                    <Text
-                      style={[s.submitText, { color: enabled ? k.onAccent : k.textFaint }]}
-                      numberOfLines={1}
-                    >
-                      {submitLabel ?? 'Send to Parent'}
-                    </Text>
+              {!!onSubmit && (
+                <View style={s.foot}>
+                  {!!error && (
+                    <Text style={[s.error, { color: k.danger }]} numberOfLines={3}>{error}</Text>
                   )}
-                </Pressable>
-                {!!footerNote && (
-                  <Text style={[s.footNote, { color: k.textFaint }]} numberOfLines={2}>{footerNote}</Text>
-                )}
-              </View>
-            )}
+                  <Pressable
+                    onPress={onSubmit}
+                    disabled={!enabled}
+                    style={({ pressed }) => [
+                      s.submit,
+                      { backgroundColor: enabled ? accent : k.well, borderColor: enabled ? accent : k.cardBorder },
+                      pressed && enabled && { opacity: 0.85 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={submitLabel ?? 'Send to parent'}
+                    accessibilityState={{ disabled: !enabled, busy: submitting }}
+                    accessibilityHint="Sends this request to a parent for approval"
+                  >
+                    {submitting ? (
+                      <ActivityIndicator size="small" color={k.onAccent} />
+                    ) : (
+                      <Text
+                        style={[s.submitText, { color: enabled ? k.onAccent : k.textFaint }]}
+                        numberOfLines={1}
+                      >
+                        {submitLabel ?? 'Send to Parent'}
+                      </Text>
+                    )}
+                  </Pressable>
+                  {!!footerNote && (
+                    <Text style={[s.footNote, { color: k.textFaint }]} numberOfLines={2}>{footerNote}</Text>
+                  )}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
@@ -334,9 +345,11 @@ const s = StyleSheet.create({
   body: { flex: 1 },
   bodyDialog: { flexGrow: 0, flexShrink: 1 },
   bodyContent: { padding: KIOSK_SPACE.lg, gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl },
+  // No longer a bordered/backgrounded sticky bar — it's the last item in
+  // the scrolling body now, so a plain top margin (matching the body's own
+  // `gap`) is all it needs to read as the next section, not a fixed panel.
   foot: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    padding: KIOSK_SPACE.lg, gap: KIOSK_SPACE.sm,
+    marginTop: KIOSK_SPACE.xs, gap: KIOSK_SPACE.sm,
   },
   error: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   submit: {

@@ -27,7 +27,10 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
-import { CalendarClock, CheckSquare, Sparkles } from 'lucide-react-native';
+import {
+  CalendarClock, CheckSquare, Sparkles, Clock, Zap, RotateCcw, ClipboardList,
+  Coins, CheckCircle2, Camera, type LucideIcon,
+} from 'lucide-react-native';
 
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
@@ -36,13 +39,14 @@ import type { Quest } from '@/store/questStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
-import { fmtTime } from '@/lib/dates';
+import { fmtTime, fmtDateTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { kioskOnAccent, type KioskColors } from '../kioskPalette';
+import { kioskOnAccent, kioskTint, type KioskColors } from '../kioskPalette';
 import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
+import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
 
 // ════════════════════════════════════════════════════════════════════════
 // My Schedule — today, resting on "now"
@@ -196,6 +200,53 @@ export function KidTodayWidget({ active, k, isDark, onOpenSchedule, style }: {
 // My Chores — status breakdown + up-for-grabs bounties
 // ════════════════════════════════════════════════════════════════════════
 
+/**
+ * Per-chore status meta — icon, uppercase pill label, accent.
+ *
+ * This is features/hub/kid/KidQuestCard.tsx's `questStatusMeta` (its
+ * lines 23-38), the card the owner pointed at, translated to kiosk tokens.
+ * The MAPPING is the phone's, not a kiosk invention — parity with the
+ * phone's visual language is the whole point of this treatment:
+ *
+ *   phone BRAND.teal   (in_progress / claimed)  → k.sage
+ *   phone BRAND.amber  (pending_approval)       → k.gold
+ *   phone BRAND.amber  (declined / needs redo)  → k.gold
+ *   phone BRAND.purple (todo)                   → k.purple
+ *   phone MONEY_GREEN  (pool bounty, approved)  → k.sage
+ *   phone colors.danger(cancelled)              → k.danger
+ *
+ * Note the phone deliberately does NOT use red for "declined": its own
+ * comment records that cancelled (nothing to do) and declined (a redo IS
+ * required) read as the same red pill with only a tiny label telling them
+ * apart, so declined was moved to amber's "still active, needs attention"
+ * tone. Kiosk's `accentFor` had drifted from all of this — progress was
+ * blue and redo was danger-red — so both are corrected below to match.
+ */
+function kioskQuestMeta(q: Quest, k: KioskColors): { Icon: LucideIcon; label: string; accent: string } {
+  if (q.isPool && q.status === 'todo') return { Icon: Coins, label: 'BOUNTY', accent: k.sage };
+  if (q.status === 'pending_approval') return { Icon: Clock, label: 'IN REVIEW', accent: k.gold };
+  if (q.status === 'approved' || q.status === 'done') return { Icon: CheckCircle2, label: 'APPROVED', accent: k.sage };
+  if (q.status === 'declined') return { Icon: RotateCcw, label: 'NEEDS ANOTHER TRY', accent: k.gold };
+  if (q.status === 'in_progress') return { Icon: Zap, label: 'IN PROGRESS', accent: k.sage };
+  if (q.status === 'claimed') return { Icon: Zap, label: 'CLAIMED', accent: k.sage };
+  return { Icon: ClipboardList, label: 'TO DO', accent: k.purple };
+}
+
+/**
+ * The phone card's claimed → submitted → approved timeline line
+ * (KidQuestCard.tsx:147-155), same fields, same `fmtDateTime` formatter,
+ * same arrow separators — so the two surfaces can't render a chore's
+ * history in two different shapes. Returns '' when the chore has no
+ * timestamps yet (an unclaimed To Do), and the caller renders nothing.
+ */
+function questTimeline(q: Quest): string {
+  const parts: string[] = [];
+  if (q.claimedAt) parts.push(`Claimed ${fmtDateTime(q.claimedAt)}`);
+  if (q.submittedAt) parts.push(`Submitted ${fmtDateTime(q.submittedAt)}`);
+  if (q.approvedAt) parts.push(`Approved ${fmtDateTime(q.approvedAt)}`);
+  return parts.join(' → ');
+}
+
 export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -242,25 +293,91 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
     }));
   }, [visible, poolIds, active.id]);
 
+  /**
+   * Lane accent. Was: todo=gold, progress=BLUE, redo=DANGER-RED, review=sage
+   * — a kiosk-invented mapping that disagreed with the phone card on three
+   * of four lanes (see kioskQuestMeta's comment for the phone's real map).
+   * Now derived from the same convention: progress is sage (the phone's
+   * teal "in progress"), redo is gold (the phone deliberately does NOT use
+   * red there), review is gold, todo is purple.
+   */
   const accentFor = (key: string) =>
-    key === 'todo' ? k.gold
-      : key === 'progress' ? k.blue
-      : key === 'redo' ? k.danger
-      : k.sage;
+    key === 'todo' ? k.purple
+      : key === 'progress' ? k.sage
+      : key === 'redo' ? k.gold
+      : k.gold;
 
   // The exact same per-status action the Chores board offers — same
   // deriveQuestActions gate, same store calls, same toast copy — so a kid
   // can act on a chore right here instead of this widget being read-only
   // and the board being the only place with buttons. See
   // KioskTasksTab.tsx's own primaryAction for the source this mirrors.
-  const primaryAction = (q: Quest): { label: string; accent: string; action: () => void } | null => {
+  //
+  // The LABELS now match the phone card's wording rather than kiosk's own
+  // terse verbs, since matching that card is the point: its submit button
+  // reads "Mark Done → Get Paid" (or "Take Photo to Get Paid" when the
+  // chore requires proof), and its redo button "Revise & Resubmit"
+  // (KidQuestCard.tsx:263-306). Kiosk drops the phone's own leading glyph
+  // (✓/↩) on both — each button already renders a real Icon component
+  // right next to the label, so a second, textual checkmark/arrow read as
+  // a duplicate. The ACTIONS are unchanged — the same claimQuest /
+  // submitQuest / approveQuest from choreAdapter this widget already
+  // wired.
+  //
+  // Photo-required chores are the one place kiosk can't match the phone:
+  // the phone opens SubmitProofSheet (a camera capture) before paying out.
+  // Kiosk has no capture flow, so rather than silently submitting without
+  // the proof the chore demands, the button routes to the Chores tab.
+  const primaryAction = (
+    q: Quest,
+  ): { label: string; accent: string; Icon: LucideIcon; action: () => void } | null => {
     const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
-    if (actions.canClaim) return { label: 'Claim', accent: k.gold, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
-    if (actions.canResubmit) return { label: 'Resubmit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
-    if (actions.canSubmit) return { label: 'Submit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
-    if (actions.canApprove) return { label: 'Approve', accent: k.sage, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
+    if (actions.canClaim) {
+      return {
+        label: 'Claim', accent: k.purple, Icon: Coins,
+        action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); },
+      };
+    }
+    if (actions.canResubmit) {
+      return {
+        label: 'Revise & Resubmit', accent: k.gold, Icon: RotateCcw,
+        action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); },
+      };
+    }
+    if (actions.canSubmit) {
+      if (q.photoRequired) {
+        return {
+          label: 'Take Photo to Get Paid', accent: k.sage, Icon: Camera,
+          action: () => { onOpenTasks(); },
+        };
+      }
+      return {
+        label: 'Mark Done → Get Paid', accent: k.sage, Icon: CheckCircle2,
+        action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); },
+      };
+    }
+    if (actions.canApprove) {
+      return {
+        label: 'Approve', accent: k.sage, Icon: CheckCircle2,
+        action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); },
+      };
+    }
     return null;
   };
+
+  /**
+   * Whether this chore offers the phone card's second, outlined "Can't do
+   * this" button beside the primary one. Same gate the phone uses —
+   * deriveQuestActions' canKidDecline, which is what KidQuestCard.tsx's own
+   * `canDeclinePlain` reads (its line 87) — not a kiosk re-derivation.
+   */
+  const canDecline = (q: Quest) =>
+    deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover }).canKidDecline;
+
+  // Target for the "Can't do this" reason dialog. Held as {id,title} rather
+  // than the Quest itself so a store update mid-flow can't leave a stale
+  // object pinned open — the dialog re-looks-up the live chore on submit.
+  const [declineTarget, setDeclineTarget] = useState<{ id: string; title: string } | null>(null);
 
   const totalMine = buckets.reduce((n, b) => n + b.items.length, 0);
 
@@ -348,37 +465,17 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
           <EmptyNote text={`Nothing in ${selected.label} right now.`} k={k} style={{ marginBottom: KIOSK_SPACE.sm }} />
         ) : (
           <View style={{ gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm }}>
-            {selected.items.slice(0, 3).map(q => {
-              const btn = primaryAction(q);
-              return (
-                <Well key={q.id} k={k} accent={accentFor(selected.key)} style={s.bucketRow}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[s.bucketTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
-                    {q.coins > 0 && (
-                      <Text style={[s.poolCoins, { color: k.gold }]} numberOfLines={1}>
-                        {q.coins}
-                        <Text style={[s.poolCoinsUnit, { color: k.textMuted }]}> coins</Text>
-                      </Text>
-                    )}
-                  </View>
-                  {btn && (
-                    <Pressable
-                      onPress={btn.action}
-                      style={({ pressed }) => [
-                        s.poolClaimBtn,
-                        { backgroundColor: btn.accent, opacity: pressed ? 0.75 : 1 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${btn.label} ${q.title}`}
-                    >
-                      <Text style={[s.poolClaimText, { color: kioskOnAccent(k, btn.accent) }]} numberOfLines={1}>
-                        {btn.label}
-                      </Text>
-                    </Pressable>
-                  )}
-                </Well>
-              );
-            })}
+            {selected.items.slice(0, 3).map(q => (
+              <ChoreCardRow
+                key={q.id}
+                q={q}
+                k={k}
+                isDark={isDark}
+                btn={primaryAction(q)}
+                showDecline={canDecline(q)}
+                onDecline={() => setDeclineTarget({ id: q.id, title: q.title })}
+              />
+            ))}
             {selected.items.length > 3 && (
               <Pressable onPress={onOpenTasks} accessibilityRole="button" accessibilityLabel={`See ${selected.items.length - 3} more in ${selected.label}`}>
                 <Text style={[s.poolMore, { color: accentFor(selected.key) }]} numberOfLines={1}>
@@ -461,7 +558,144 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
         style={{ marginTop: KIOSK_SPACE.sm }}
         accessibilityHint="Open the chores board"
       />
+
+      {/* "Can't do this" reason picker. Built on KioskFormDrawer, so it
+          participates in idle-lock via KioskModalHost the same way every
+          other kiosk sheet does — see KioskCantDoThisDialog's header for
+          why this is a one-step kiosk dialog rather than a port of the
+          phone's three-step CantMakeItSheet. It still reaches the same
+          declineChoreAssignment store action the phone does. */}
+      {declineTarget && (
+        <KioskCantDoThisDialog
+          visible
+          choreId={declineTarget.id}
+          choreTitle={declineTarget.title}
+          byMemberId={active.id}
+          k={k}
+          onClose={() => setDeclineTarget(null)}
+        />
+      )}
     </WidgetCard>
+  );
+}
+
+/**
+ * One chore, rendered as the phone's own kid card
+ * (features/hub/kid/KidQuestCard.tsx) rather than kiosk's old
+ * title + coins + one-small-button row.
+ *
+ * Brought over from that card, in its order: the status-tinted left edge
+ * and background wash, the title as a real heading, a coin badge, an
+ * icon + uppercase status pill, the claimed → submitted timeline line, the
+ * "waiting on a parent" helper for in-review, and — for an actionable
+ * chore — a prominent solid primary button beside an outlined "Can't do
+ * this".
+ *
+ * Sizes are kiosk's, not the phone's: KIOSK_TYPO/SPACE/RADIUS/HIT
+ * throughout, every color a k.* token so both appearances resolve.
+ *
+ * This is a ROW-APPEARANCE change only. The list this sits in is still the
+ * deliberate non-scrolling 3-row cap (a nested-scroll gesture conflict with
+ * the Overview's outer ScrollView) under the tab strip — see the render
+ * site's own comment. The card is taller than the old row, which is why
+ * the cap matters more, not less.
+ */
+function ChoreCardRow({
+  q, k, isDark, btn, showDecline, onDecline,
+}: {
+  q: Quest;
+  k: KioskColors;
+  isDark: boolean;
+  btn: { label: string; accent: string; Icon: LucideIcon; action: () => void } | null;
+  showDecline: boolean;
+  onDecline: () => void;
+}) {
+  const meta = kioskQuestMeta(q, k);
+  const tint = kioskTint(meta.accent, isDark);
+  const timeline = questTimeline(q);
+  const inReview = q.status === 'pending_approval';
+
+  return (
+    <View
+      style={[
+        s.choreCard,
+        { backgroundColor: tint.backgroundColor, borderColor: tint.borderColor, borderLeftColor: meta.accent },
+      ]}
+      accessible={false}
+    >
+      <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+
+      <View style={s.choreBadgeRow}>
+        {q.coins > 0 && (
+          <View
+            style={[s.coinBadge, { backgroundColor: k.card, borderColor: k.goldEdge }]}
+            accessibilityLabel={`Worth ${q.coins} coins`}
+          >
+            <Coins size={13} color={k.gold} />
+            <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+          </View>
+        )}
+        <View
+          style={[s.statusPill, { backgroundColor: k.card, borderColor: meta.accent }]}
+          accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
+        >
+          <meta.Icon size={12} color={meta.accent} />
+          <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+        </View>
+      </View>
+
+      {!!timeline && (
+        <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={2}>{timeline}</Text>
+      )}
+
+      {inReview && (
+        <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={2}>
+          Waiting on a parent to review this chore.
+        </Text>
+      )}
+
+      {btn && (
+        <View style={s.choreActions}>
+          <Pressable
+            onPress={btn.action}
+            style={({ pressed }) => [
+              s.choreBtn, s.choreBtnPrimary,
+              { backgroundColor: btn.accent, borderColor: btn.accent },
+              pressed && { opacity: 0.75 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${btn.label}: ${q.title}`}
+            accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
+          >
+            <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
+            <Text
+              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
+              numberOfLines={1}
+            >
+              {btn.label}
+            </Text>
+          </Pressable>
+
+          {showDecline && (
+            <Pressable
+              onPress={onDecline}
+              style={({ pressed }) => [
+                s.choreBtn, s.choreBtnGhost,
+                { borderColor: k.dangerEdge, backgroundColor: k.card },
+                pressed && { opacity: 0.75 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Can't do this: ${q.title}`}
+              accessibilityHint="Give a reason and put this chore back up for grabs"
+            >
+              <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
+                Can't do this
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -487,19 +721,58 @@ const s = StyleSheet.create({
   },
   statusCount: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900', fontVariant: ['tabular-nums'] },
   statusLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
-  // Selected-tab chore list — non-scrolling, capped to 3 rows (see the
-  // render-site comment for why this doesn't scroll internally).
-  bucketScroll: { maxHeight: 168, marginBottom: KIOSK_SPACE.sm },
-  bucketRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.xs, minHeight: 44,
+  // ── Rich chore card (ChoreCardRow) ────────────────────────────────────
+  // (The old bucketScroll/bucketRow/bucketTitle styles are gone: the
+  // selected-tab list now renders ChoreCardRow, whose title gets a full
+  // row instead of sharing one with a button, so the caption-size
+  // truncation workaround those carried is no longer needed. The list
+  // itself is still the same non-scrolling 3-row cap.)
+  // The phone kid card's shape at kiosk scale. Note this is NOT built on
+  // <Well>: Well paints a fixed `k.well` background, and this card's whole
+  // point is a per-STATUS background wash, so it draws its own surface from
+  // kioskTint(accent) and keeps Well's 4px left accent edge by hand.
+  choreCard: {
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 4,
+    padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs,
   },
-  // caption, not body — at body size the title + a Claim/Submit/Approve
-  // button crowded a single-line title into truncating on any chore with
-  // a real name. Shrinking the label text and the button (below) is what
-  // actually buys back the room; numberOfLines={1} alone can't fix a title
-  // that's simply too wide for the space its neighbor button is leaving it.
-  bucketTitle: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // The title is a real heading here, unlike the old caption-size row
+  // label — the card now gives its buttons a full row of their own, so the
+  // title no longer competes with a button for the same horizontal space.
+  choreTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  choreBadgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  // Badges/pills sit on `k.card`, not on a tint of their own accent: they
+  // are already inside a status-tinted card, and a tint on a tint muddies
+  // both. A solid card-colored chip reads as lifted off the wash.
+  coinBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  },
+  coinBadgeText: { fontSize: KIOSK_TYPO.label, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: KIOSK_SPACE.xs + 2, paddingVertical: 3,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  },
+  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.3 },
+  choreTimeline: { fontSize: KIOSK_TYPO.micro, fontWeight: '600' },
+  choreHelper: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Side-by-side, primary weighted 2:1 over the outlined decline — the same
+  // flex ratio the phone card uses for this exact pair. Shrunk from
+  // KIOSK_TYPO.label/gap.sm padding: at that size, "Mark Done → Get Paid"
+  // plus its icon read as oversized/crowded in this widget's own narrower
+  // column (this card sits in the Overview's widget deck, not the full-
+  // width Chores board the phone screenshot's card lives in), and the
+  // 16px icon was competing with an already-tight label for room.
+  choreActions: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginTop: 2 },
+  choreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 4,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
+  },
+  choreBtnPrimary: { flex: 2 },
+  choreBtnGhost: { flex: 1 },
+  choreBtnText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
 
   poolHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
@@ -514,8 +787,8 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min + 8, paddingVertical: KIOSK_SPACE.xs,
   },
-  // Same caption-size rationale as bucketTitle above — this row carries a
-  // Claim button too.
+  // Caption, not body: this row carries a Claim button on the same line,
+  // and at body size a real chore name truncates against it.
   poolTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   poolCoins: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
   poolCoinsUnit: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },

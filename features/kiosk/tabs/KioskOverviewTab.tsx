@@ -43,12 +43,16 @@
  * with nothing of their own anywhere on the screen. `isKid` below turns
  * that into a real composition instead. Top to bottom, a kid now sees:
  *
- *   1. the hero (greeting + today's summary + quick actions, minus the
- *      Grocery tile) and tonight's dinner — unchanged, and still the
- *      right lead for anyone standing in the kitchen
- *   2. their own six quick actions — Piggy Bank / Rewards / Leaderboard /
- *      Cheer Squad / My Requests / Full Calendar, the kid Hub's own row
- *      (features/hub/kid/KidMoreRow.tsx) ported in KioskKidQuickActions
+ *   1. the hero — greeting + today's summary, then a single non-wrapping
+ *      quick-action strip: Intercom (everyone) plus, for kid, Check In /
+ *      Piggy Bank / Cheer Squad / My Requests — the "glance at my own
+ *      state, tap once" actions, promoted to the same prominence as the
+ *      household's own Intercom button
+ *   2. "Your stuff" — the eight-way Ask-a-Parent menu (Ride / Permission /
+ *      Question / Medication Alert / Grocery / Supplies / Suggest a Chore /
+ *      Propose a Chore), each its own directly-tappable tile with no
+ *      picker step, kept as its own labeled card because a browse-then-
+ *      pick menu is a different shape from the hero row's five
  *   3. My schedule — today's events that are theirs, resting on now
  *      (replaces Ride & pickup in that slot)
  *   4. My chores — their status breakdown in the Chores board's own
@@ -79,7 +83,7 @@ import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
-import { KioskKidQuickActions, KioskKidCheckInTile } from '../components/KioskKidQuickActions';
+import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import type { KioskTabKey } from '../kioskTabs';
 
@@ -224,23 +228,29 @@ export function KioskOverviewTab({
               second entry point here was redundant, not just extra taps.
               Intercom has no rail equivalent, so it stays.
 
-              This row is deliberately kept SHORT. The kid's own actions
-              (Piggy Bank, Cheer Squad, My Requests, and the eight
-              Ask-a-Parent destinations) are a labeled "Your stuff" card
-              directly below the hero instead — a dozen tiles up here would
-              have made the top of the screen an undifferentiated wall and
-              defeated the point of the separate section. The one
-              exception promoted back up is Check In: everything in "Your
-              stuff" is something a kid browses to, while a check-in is
-              what someone taps once on the way past the tablet, in a
-              hurry, and it deserves to be reachable without reading. */}
+              For kid, four of their own tiles join Intercom here — Check
+              In, Piggy Bank, Cheer Squad, My Requests — the "glance at my
+              own state, tap once" actions, promoted to hero prominence.
+              The eight-way Ask-a-Parent MENU stays in its own labeled
+              "Your stuff" card below instead: it's a browse-then-pick list,
+              a different shape from these five, and mixing all thirteen
+              into one row would defeat the point of a separate section.
+              The row is nowrap (see s.quickRow) so all five fit one single
+              strip rather than wrapping to a second line. */}
           <View style={s.quickRow}>
             <QuickAction
               Icon={Megaphone} label="Intercom" accent={k.primary} k={k} isDark={isDark}
               onPress={onIntercom}
               hint="Broadcast an announcement to every family phone"
             />
-            {isKid && <KioskKidCheckInTile active={active} />}
+            {isKid && (
+              <>
+                <KioskKidCheckInTile active={active} />
+                <KioskKidMineTile kind="piggy" active={active} members={members} />
+                <KioskKidMineTile kind="cheer" active={active} members={members} />
+                <KioskKidMineTile kind="requests" active={active} members={members} />
+              </>
+            )}
           </View>
         </WidgetCard>
 
@@ -493,7 +503,7 @@ function QuickAction({
       accessibilityLabel={badge ? `${label}, ${badge} items` : label}
       accessibilityHint={hint}
     >
-      <Icon size={22} color={accent} />
+      <Icon size={18} color={accent} />
       <Text style={[s.quickLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
       {badge !== undefined && (
         <View style={[s.quickBadge, { backgroundColor: accent }]}>
@@ -733,17 +743,24 @@ const s = StyleSheet.create({
   heroTitle: { fontSize: KIOSK_TYPO.hero, fontWeight: '800', letterSpacing: -0.8, marginTop: KIOSK_SPACE.md },
   heroSub: { fontSize: KIOSK_TYPO.body, fontWeight: '600', marginTop: 4 },
 
-  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.lg },
+  // nowrap, not wrap: with Check In / Piggy Bank / Cheer Squad / My
+  // Requests all promoted alongside Intercom, this row can hold 5 tiles —
+  // it should read as one single strip, shrinking each tile rather than
+  // wrapping to a second row.
+  quickRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: KIOSK_SPACE.xs, marginTop: KIOSK_SPACE.lg },
+  // Shrunk to fit alongside 4 kid tiles in one non-wrapping strip
+  // (quickRow above) — flexShrink lets 5 tiles compress evenly rather than
+  // wrap, flexBasis is a starting point, not a floor.
   quick: {
-    flexGrow: 1, flexBasis: 110, minWidth: 0,
-    minHeight: 76, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.sm,
+    flexGrow: 1, flexShrink: 1, flexBasis: 76, minWidth: 0,
+    minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingHorizontal: 6, paddingVertical: 6,
   },
-  quickLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  quickLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
   quickBadge: {
-    position: 'absolute', top: 6, right: 8, minWidth: 20, height: 20, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+    position: 'absolute', top: 4, right: 6, minWidth: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
   quickBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900' },
 

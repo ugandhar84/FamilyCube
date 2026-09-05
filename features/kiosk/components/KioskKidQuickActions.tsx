@@ -7,35 +7,35 @@
  * unlike the phone's cramped 5-tab bar, kiosk's nav rail already has Store
  * and Schedule as persistent, always-visible destinations one tap away
  * (and Tasks carries the leaderboard/pool content), so a second entry
- * point to the same screens here would be redundant. What remains are the
- * kid actions with NO rail equivalent — eleven of them now, as ONE labeled
- * "Your stuff" card, in two sub-groups inside that single card:
+ * point to the same screens here would be redundant.
  *
- *   Piggy Bank · Cheer Squad · My Requests
- *       the kid's own state, each opening a kiosk-scaled sheet below
+ * What remains splits across two spots, per the owner's own layout calls:
  *
- *   ASK A PARENT — the eight destinations from AskParentSheet.tsx, each as
- *       its OWN tile: Ask for a Ride · Ask Permission · Ask a Question ·
- *       Medication Alert · Request Grocery · School Supplies · Suggest a
- *       Chore · Propose a Chore. Tapping one opens its real destination
- *       modal directly — there is deliberately NO picker step here. The
- *       "ASK A PARENT" text is a sub-label, not a control. State and modals
- *       come from useKioskAskParent, shared with KioskTasksTab (which keeps
- *       its single button + the phone picker, driving the same eight).
+ *   Hero row (KioskOverviewTab's quickRow, alongside Intercom) —
+ *   Piggy Bank · Cheer Squad · My Requests · Check In. Each is its own
+ *   exported tile component (KioskKidMineTile below covers the first
+ *   three; KioskKidCheckInTile the fourth) sized to that row's `heroQuick`
+ *   shape, not the wider grid tile the "Your stuff" card below uses — the
+ *   owner's rationale: these four are things a kid taps often/urgently
+ *   enough to deserve hero-row prominence, same tier as Intercom, rather
+ *   than being one card lower down the kid has to scroll to.
  *
- * Check In is NOT in this card: it is exported separately as
- * KioskKidCheckInTile and promoted into KioskOverviewTab's hero quick row
- * next to Intercom — everything here is something a kid browses to, while a
- * check-in is tapped once on the way past, in a hurry.
+ *   "Your stuff" card (this component's own return, directly under the
+ *   hero) — now JUST the eight Ask-Parent destinations: A Ride ·
+ *   Permission · A Question · Medication Alert · Request Grocery · School
+ *   Supplies · Suggest a Chore · Propose a Chore. Tapping one opens its
+ *   real destination modal directly — there is deliberately NO picker step
+ *   here. State and modals come from useKioskAskParent, shared with
+ *   KioskTasksTab (which keeps its single button + the phone picker,
+ *   driving the same eight).
  *
- * ── Why this is a labeled section, not tiles in the hero row ────────────
- * These briefly rendered inline in the hero's quick-action strip alongside
- * Intercom. At three tiles that was fine; at eleven it would be an
- * undifferentiated wall mixing one household action (Intercom, which every
- * role gets) with a dozen personal to the kid standing there. So the widget
- * card is back, with the header it originally had — "Just for you / Your
- * stuff" — sitting directly under the hero rather than down in the widget
- * deck, so it keeps the prominence the inline version had.
+ * ── Layout history, briefly ──────────────────────────────────────────────
+ * These tiles have moved twice in one session as the set grew: inline in
+ * the hero row (fine at 3 tiles) → one "Your stuff" card holding all 11
+ * (fine as a label, but visually one dense block) → today's split, where
+ * the kid's personal STATE (balance/cheers/requests) plus the one urgent
+ * action (check-in) sit at hero prominence, and the eight-way ask-a-parent
+ * MENU — inherently a browse-then-pick list — keeps its own labeled card.
  *
  * Each tile reads the SAME store the phone does — no second source, no
  * reinvented scoring:
@@ -101,7 +101,7 @@ function withinLast24h(iso?: string | null): boolean {
   return Number.isFinite(t) && Date.now() - t <= 24 * 60 * 60 * 1000;
 }
 
-// ── The "Your stuff" card ───────────────────────────────────────────────
+// ── The "Your stuff" card — now just the eight Ask-Parent tiles ─────────
 export function KioskKidQuickActions({
   active, members, style,
 }: {
@@ -112,7 +112,6 @@ export function KioskKidQuickActions({
 }) {
   const { k, isDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
-  const [sheet, setSheet] = useState<SheetKey | null>(null);
 
   // The eight Ask-Parent destinations. `open(key)` goes STRAIGHT to one —
   // there is deliberately no picker step here, each option is its own tile
@@ -121,12 +120,116 @@ export function KioskKidQuickActions({
   // hook with its picker enabled).
   const { open: openAsk, node: askNode } = useKioskAskParent({ active, members });
 
-  // Hold the idle lock for as long as any of these sheets is open — they
-  // are native Modals, so their touches never reach the kiosk root.
-  // (useKioskAskParent suspends the lock for its own seven states.)
-  useKioskLockSuspended(sheet !== null);
+  return (
+    <>
+      {/* "Your stuff" — the eight-way ask-a-parent menu, grouped and
+          labeled rather than mixed into the hero's household quick-action
+          strip. Sits directly under the hero (see KioskOverviewTab).
+          Piggy Bank / Cheer Squad / My Requests / Check In now render as
+          their own hero-row tiles (KioskKidMineTile / KioskKidCheckInTile
+          below) instead of living in this card — this menu is inherently a
+          browse-then-pick list, which is a different shape from those
+          four's "glance at my own state, tap once" pattern. */}
+      <WidgetCard k={k} isDark={isDark} style={style}>
+        <WidgetHeader
+          Icon={Trophy} eyebrow="Ask a grown-up" title="Ask a parent"
+          accent={k.primary} k={k} isDark={isDark}
+        />
+        <View style={s.row}>
+          {ASK_PARENT_OPTIONS.map(({ key, label, desc, Icon, accent }) => (
+            <QuickTile
+              key={key}
+              Icon={Icon}
+              label={label}
+              accent={accent(k)}
+              hint={desc}
+              onPress={() => { registerActivity(); openAsk(key); }}
+              k={k}
+              isDark={isDark}
+            />
+          ))}
+        </View>
+      </WidgetCard>
 
-  // choreAdapter's useQuestStore is a plain hook (no selector arg).
+      {/* The eight destination modals — the SAME six components, and the
+          same state, the Tasks tab's own "Ask Parent" button drives. */}
+      {askNode}
+    </>
+  );
+}
+
+/**
+ * One tile in the "Ask a parent" grid — icon chip on top, small label
+ * underneath (two rows), not the horizontal icon-left/label-right chip
+ * used elsewhere. This is now the only caller of QuickTile: Piggy Bank /
+ * Cheer Squad / My Requests moved to their own hero-row tiles below, so
+ * this shape only ever needs to serve the eight ask-a-parent options.
+ */
+function QuickTile({ Icon, label, accent, onPress, badge, hint, k, isDark }: {
+  Icon: LucideIcon; label: string; accent: string; onPress: () => void;
+  badge?: number; hint: string; k: KioskColors; isDark: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.tile,
+        {
+          backgroundColor: accent + (isDark ? '1F' : '14'),
+          borderColor: accent + (isDark ? '45' : '38'),
+        },
+        pressed && { opacity: 0.72 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={badge ? `${label}, ${badge} waiting` : label}
+      accessibilityHint={hint}
+    >
+      <View style={[s.tileChip, { backgroundColor: accent }]}>
+        <Icon size={20} color={kioskOnAccent(k, accent)} />
+        {badge !== undefined && (
+          <View style={[s.tileBadge, { backgroundColor: accent, borderColor: k.card }]}>
+            <Text style={[s.tileBadgeText, { color: kioskOnAccent(k, accent) }]} numberOfLines={1}>
+              {badge > 99 ? '99+' : badge}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={[s.tileLabel, { color: accent }]} numberOfLines={2}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Piggy Bank / Cheer Squad / My Requests — promoted to the Overview hero
+// row alongside Check In and Intercom
+// ════════════════════════════════════════════════════════════════════════
+/**
+ * One of the kid's own three "glance at my state, tap once" tiles, sized
+ * to the hero row's `heroQuick` shape (same as KioskKidCheckInTile) rather
+ * than the "Ask a parent" grid's tile — these moved out of that shared
+ * card once the ask-a-parent menu grew to eight tiles of its own; mixing
+ * an eleven-tile wall together made both purposes harder to scan. Each
+ * instance is self-contained (owns its own sheet-open state and derives
+ * its own badge count) so KioskOverviewTab can mount three of these
+ * independently in its quickRow, the same way it already mounts one
+ * KioskKidCheckInTile.
+ */
+export function KioskKidMineTile({ kind, active, members }: {
+  kind: 'piggy' | 'cheer' | 'requests';
+  active: FamilyMember;
+  members: FamilyMember[];
+}) {
+  const { k, isDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
+  const [open, setOpen] = useState(false);
+
+  // The sheet is a native Modal — its touches never reach the kiosk root,
+  // so the idle lock has to be held explicitly while it's up.
+  useKioskLockSuspended(open);
+
+  // choreAdapter's useQuestStore is a plain hook (no selector arg). Only
+  // the 'cheer' instance needs quests, but the hook is cheap and this
+  // keeps every instance's shape identical.
   const { quests } = useQuestStore();
 
   const siblingKids = useMemo(
@@ -148,121 +251,62 @@ export function KioskKidQuickActions({
     s => s.requests.filter(r => r.fromMemberId === active.id && r.status === 'pending').length,
   );
 
-  const open = (key: SheetKey) => { registerActivity(); setSheet(key); };
-
-  // "Mine" — the three things that show the kid their OWN state. Check In
-  // is deliberately absent: it's promoted into the Overview hero row
-  // (KioskKidCheckInTile below), being the one action someone walks up to
-  // the tablet specifically to do, in a hurry.
-  const mineTiles: {
-    Icon: LucideIcon; label: string; accent: string; onPress: () => void;
-    badge?: number; hint: string;
-  }[] = [
-    { Icon: PiggyBank, label: 'Piggy Bank', accent: k.gold, onPress: () => open('piggy'),
+  const meta: Record<typeof kind, { Icon: LucideIcon; label: string; accent: string; badge?: number; hint: string }> = {
+    piggy: { Icon: PiggyBank, label: 'Piggy Bank', accent: k.gold,
       hint: 'See your coin balance and recent activity' },
-    { Icon: PartyPopper, label: 'Cheer Squad', accent: k.sage, onPress: () => open('cheer'),
+    cheer: { Icon: PartyPopper, label: 'Cheer Squad', accent: k.sage,
       badge: cheerable.length || undefined,
       hint: 'High-five what your brothers and sisters finished' },
-    { Icon: ClipboardList, label: 'My Requests', accent: k.blue, onPress: () => open('requests'),
+    requests: { Icon: ClipboardList, label: 'My Requests', accent: k.blue,
       badge: myPendingRequests || undefined,
       hint: 'See what you asked a grown-up for and what they said' },
-  ];
+  };
+  const { Icon, label, accent, badge, hint } = meta[kind];
 
   return (
     <>
-      {/* "Your stuff" — the kid's own actions, grouped and labeled rather
-          than mixed into the hero's household quick-action strip. Sits
-          directly under the hero (see KioskOverviewTab), so it keeps the
-          prominence an inline row had, without pretending Intercom and
-          Piggy Bank are the same kind of thing.
-          Two sub-groups inside the ONE card: the kid's own state first,
-          then the eight asks under a plain inline sub-label. The sub-label
-          is a label, NOT a tap — every one of the eight opens its real
-          destination directly, with no picker screen in between. */}
-      <WidgetCard k={k} isDark={isDark} style={style}>
-        <WidgetHeader
-          Icon={Trophy} eyebrow="Just for you" title="Your stuff"
-          accent={k.primary} k={k} isDark={isDark}
-        />
-        <View style={s.row}>
-          {mineTiles.map(t => (
-            <QuickTile key={t.label} {...t} k={k} isDark={isDark} />
-          ))}
+      <Pressable
+        onPress={() => { registerActivity(); setOpen(true); }}
+        style={({ pressed }) => [
+          s.heroQuick,
+          {
+            backgroundColor: accent + (isDark ? '1F' : '14'),
+            borderColor: accent + (isDark ? '45' : '38'),
+          },
+          pressed && { opacity: 0.72 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={badge ? `${label}, ${badge} waiting` : label}
+        accessibilityHint={hint}
+      >
+        <View style={{ position: 'relative' }}>
+          <Icon size={18} color={accent} />
+          {badge !== undefined && (
+            <View style={[s.heroQuickBadge, { backgroundColor: accent, borderColor: k.card }]}>
+              <Text style={[s.tileBadgeText, { color: kioskOnAccent(k, accent) }]} numberOfLines={1}>
+                {badge > 99 ? '99+' : badge}
+              </Text>
+            </View>
+          )}
         </View>
+        <Text style={[s.heroQuickLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
+      </Pressable>
 
-        <Text style={[s.groupLabel, { color: k.textFaint }]} numberOfLines={1}>
-          ASK A PARENT
-        </Text>
-        <View style={s.row}>
-          {ASK_PARENT_OPTIONS.map(({ key, label, desc, Icon, accent }) => (
-            <QuickTile
-              key={key}
-              Icon={Icon}
-              label={label}
-              accent={accent(k)}
-              hint={desc}
-              onPress={() => { registerActivity(); openAsk(key); }}
-              k={k}
-              isDark={isDark}
-            />
-          ))}
-        </View>
-      </WidgetCard>
-
-      {/* The eight destination modals — the SAME six components, and the
-          same state, the Tasks tab's own "Ask Parent" button drives. */}
-      {askNode}
-
-      {sheet === 'piggy' && (
-        <KidPiggyBankSheet active={active} k={k} isDark={isDark} onClose={() => setSheet(null)} />
+      {open && kind === 'piggy' && (
+        <KidPiggyBankSheet active={active} k={k} isDark={isDark} onClose={() => setOpen(false)} />
       )}
-      {sheet === 'cheer' && (
+      {open && kind === 'cheer' && (
         <KidCheerSheet
           active={active} siblingKids={siblingKids} cheerable={cheerable}
-          k={k} isDark={isDark} onClose={() => setSheet(null)}
+          k={k} isDark={isDark} onClose={() => setOpen(false)}
         />
       )}
-      {sheet === 'requests' && (
+      {open && kind === 'requests' && (
         <KidRequestsSheet
-          active={active} members={members} k={k} isDark={isDark} onClose={() => setSheet(null)}
+          active={active} members={members} k={k} isDark={isDark} onClose={() => setOpen(false)}
         />
       )}
     </>
-  );
-}
-
-/** One tile in the "Your stuff" grid. */
-function QuickTile({ Icon, label, accent, onPress, badge, hint, k, isDark }: {
-  Icon: LucideIcon; label: string; accent: string; onPress: () => void;
-  badge?: number; hint: string; k: KioskColors; isDark: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        s.tile,
-        {
-          backgroundColor: accent + (isDark ? '1F' : '14'),
-          borderColor: accent + (isDark ? '45' : '38'),
-        },
-        pressed && { opacity: 0.72 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={badge ? `${label}, ${badge} waiting` : label}
-      accessibilityHint={hint}
-    >
-      <View style={[s.tileChip, { backgroundColor: accent }]}>
-        <Icon size={16} color={kioskOnAccent(k, accent)} />
-      </View>
-      <Text style={[s.tileLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
-      {badge !== undefined && (
-        <View style={[s.tileBadge, { backgroundColor: accent }]}>
-          <Text style={[s.tileBadgeText, { color: kioskOnAccent(k, accent) }]} numberOfLines={1}>
-            {badge > 99 ? '99+' : badge}
-          </Text>
-        </View>
-      )}
-    </Pressable>
   );
 }
 
@@ -306,7 +350,7 @@ export function KioskKidCheckInTile({ active }: { active: FamilyMember }) {
         accessibilityLabel="Check In"
         accessibilityHint="Tell the family you are home, ready for pickup, or running late"
       >
-        <Hand size={22} color={accent} />
+        <Hand size={18} color={accent} />
         <Text style={[s.heroQuickLabel, { color: accent }]} numberOfLines={1}>Check In</Text>
       </Pressable>
 
@@ -719,23 +763,27 @@ const s = StyleSheet.create({
   // the same reflow-by-construction approach the Overview hero uses, so it
   // never needs a measured breakpoint.
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
-  // Shrunk from a 130-wide/tall vertical card to a compact horizontal chip
-  // (icon left, label right, single line) — at ~12 tiles in one card, the
-  // taller vertical shape read as a crowded wall of icons rather than a
-  // tidy strip. Still meets KIOSK_HIT.min for the tap target as a whole.
+  // Two rows: icon chip on top, small label underneath. Compact rather
+  // than the earlier 130-tall card (this card now holds only the eight
+  // ask-a-parent options, not eleven mixed tiles, so density pressure is
+  // lower) — a modest chip and a caption-sized two-line label keep the
+  // grid feeling tidy instead of a wall of icons.
   tile: {
-    flexGrow: 1, flexBasis: 148, minWidth: 0,
-    minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+    flexGrow: 1, flexBasis: 108, minWidth: 0,
+    minHeight: KIOSK_HIT.min + 14, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: KIOSK_SPACE.sm,
   },
-  tileChip: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  tileLabel: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  tileChip: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
+  },
+  tileLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
   tileBadge: {
-    minWidth: 20, height: 20, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+    position: 'absolute', top: -4, right: -6, minWidth: 18, height: 18, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2,
   },
-  tileBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900' },
+  tileBadgeText: { fontSize: 9, fontWeight: '900' },
 
   // Sub-group label inside the one card. A LABEL, not a control — every
   // tile under it opens its destination directly, with no picker step.
@@ -745,15 +793,21 @@ const s = StyleSheet.create({
   },
 
   // Hero-row tile. Mirrors KioskOverviewTab's own `quick`/`quickLabel`
-  // exactly, because KioskKidCheckInTile renders inside that hero strip
-  // next to Intercom and has to be the same shape as its sibling.
+  // exactly, because these tiles render inside that same hero strip next
+  // to Intercom and have to be the same shape as their sibling. Shrunk (and
+  // given flexShrink) so all 5 hero-row tiles fit one non-wrapping strip
+  // rather than wrapping to a second row.
   heroQuick: {
-    flexGrow: 1, flexBasis: 110, minWidth: 0,
-    minHeight: 76, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.sm,
+    flexGrow: 1, flexShrink: 1, flexBasis: 76, minWidth: 0,
+    minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingHorizontal: 6, paddingVertical: 6,
   },
-  heroQuickLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  heroQuickLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
+  heroQuickBadge: {
+    position: 'absolute', top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2,
+  },
 
   // Check-in sheet — three big targets, one row, wrapping on a narrow panel.
   checkinRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },

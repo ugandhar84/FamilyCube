@@ -39,12 +39,12 @@ import type { Quest } from '@/store/questStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
-import { fmtTime, fmtDateTime } from '@/lib/dates';
+import { fmtTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
+import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
 import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
@@ -233,20 +233,10 @@ function kioskQuestMeta(q: Quest, k: KioskColors): { Icon: LucideIcon; label: st
   return { Icon: ClipboardList, label: 'TO DO', accent: k.purple };
 }
 
-/**
- * The phone card's claimed → submitted → approved timeline line
- * (KidQuestCard.tsx:147-155), same fields, same `fmtDateTime` formatter,
- * same arrow separators — so the two surfaces can't render a chore's
- * history in two different shapes. Returns '' when the chore has no
- * timestamps yet (an unclaimed To Do), and the caller renders nothing.
- */
-function questTimeline(q: Quest): string {
-  const parts: string[] = [];
-  if (q.claimedAt) parts.push(`Claimed ${fmtDateTime(q.claimedAt)}`);
-  if (q.submittedAt) parts.push(`Submitted ${fmtDateTime(q.submittedAt)}`);
-  if (q.approvedAt) parts.push(`Approved ${fmtDateTime(q.approvedAt)}`);
-  return parts.join(' → ');
-}
+// questTimeline (the claimed → submitted → approved line) moved to
+// ../kidQuestLanes when the Chores board needed the identical line inside
+// its own card body — see that file for the formatter's provenance. Nothing
+// about the string it produces changed; this file is a pure import site now.
 
 export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style }: {
   active: FamilyMember;

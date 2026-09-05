@@ -22,6 +22,26 @@
  * pipeline — none of that logic is reimplemented here, only re-rendered
  * at kiosk scale (bigger touch targets, wider input bar, no need to fit a
  * phone-width screen).
+ *
+ * ── Hub-OS migration ────────────────────────────────────────────────────
+ * This tab's own CHROME — the channel/DM sidebar, the thread header, the
+ * moderation/edit/reply/attachment banners, the attach menu, the input bar
+ * and the reaction picker — is restyled onto the kiosk palette. The two-
+ * pane structure and every chat behavior are unchanged.
+ *
+ * The MESSAGE BUBBLES deliberately stay on the app palette. MessageBubble,
+ * MessageActionSheet and the voice components are shared phone components
+ * that paint themselves from `colors`; restyling them would mean forking
+ * three non-trivial components whose reuse is the whole point of this tab
+ * (see the parity note above). So `colors` is still a prop, and
+ * accentColor() stays app-palette too — see its own comment for why a
+ * kiosk-tuned sender tint on an app-palette bubble would be worse than
+ * consistent.
+ *
+ * Idle lock: the reaction picker is a native Modal, so it now also mounts
+ * KioskModalHost — the existing useKioskLockSuspended holds the lock off,
+ * but touches inside a Modal never reach KioskScreen's root onTouchStart,
+ * so without the host each tap failed to restart the idle timer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -54,8 +74,10 @@ import { GroceryModal } from '@/features/chat/components/GroceryModal';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore } from '@/store/groceryStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useKioskLockSuspended } from '../KioskActivityContext';
-import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { useKioskActivity, useKioskLockSuspended, KioskModalHost } from '../KioskActivityContext';
+import { useKioskColors } from '../kioskPalette';
+import { Chip } from '../components/KioskOS';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 
 interface ChannelEntry {
   id: string;
@@ -70,6 +92,8 @@ type DayGroup = { type: 'day'; label: string } | { type: 'msg'; msg: ChatMessage
 export function KioskChatTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  const { k, isDark: kioskDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
   const channels = useChatStore(s => s.channels);
   const unreadCounts = useChatStore(s => s.unreadCounts);
   const readReceipts = useChatStore(s => s.readReceipts);
@@ -92,6 +116,13 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     () => Object.fromEntries(members.filter(m => !(m as any).deletedAt).map(m => [m.id, m])),
     [members],
   );
+  // Stays on the APP palette rather than the kiosk one, deliberately: this
+  // value is only ever passed to MessageBubble as senderColor/replyToColor,
+  // and MessageBubble is a shared phone component that paints its bubbles
+  // and quote rails from `colors`. Feeding it a kiosk-tuned accent while
+  // everything around it inside the bubble is app-palette would make the
+  // sender tint disagree with the bubble it tints. The kiosk palette owns
+  // this tab's CHROME (sidebar, banners, input); the bubbles stay app.
   const accentColor = useCallback((memberId: string) => {
     const m = memberMap[memberId];
     if (!m) return colors.primary;
@@ -449,9 +480,9 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
   return (
     <View style={s.root}>
-      {/* ── Channel/DM sidebar — unchanged from the prior redesign ── */}
-      <View style={[s.sidebar, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
-        <Text style={[s.sidebarTitle, { color: colors.textSecondary }]}>CHANNELS</Text>
+      {/* ── Channel/DM sidebar ── */}
+      <View style={[s.sidebar, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
+        <Text style={[s.sidebarTitle, { color: k.textFaint }]}>CHANNELS</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.sidebarList}>
           {entries.filter(e => !e.isDM).map(e => {
             const on = e.id === activeChannel;
@@ -460,14 +491,19 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               <Pressable key={e.id} onPress={() => switchChannel(e.id)}
                 accessibilityRole="button" accessibilityState={{ selected: on }}
                 accessibilityLabel={`${e.label} channel${unread > 0 ? `, ${unread} unread` : ''}`}
-                style={[s.channelRow, on && { backgroundColor: colors.primaryLight }]}>
-                {e.lock && <Lock size={15} color={on ? colors.primary : colors.textTertiary} />}
-                <Text style={[s.channelLabel, { color: on ? colors.primary : colors.textPrimary, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
+                style={({ pressed }) => [
+                  s.channelRow,
+                  on
+                    ? { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }
+                    : { backgroundColor: pressed ? k.cardHover : 'transparent', borderColor: 'transparent' },
+                ]}>
+                {e.lock && <Lock size={15} color={on ? k.primary : k.textFaint} />}
+                <Text style={[s.channelLabel, { color: on ? k.primary : k.text, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
                   {e.label}
                 </Text>
                 {unread > 0 && (
-                  <View style={[s.unreadDot, { backgroundColor: colors.danger }]}>
-                    <Text style={s.unreadDotText}>{unread > 9 ? '9+' : unread}</Text>
+                  <View style={[s.unreadDot, { backgroundColor: k.danger }]}>
+                    <Text style={[s.unreadDotText, { color: k.onAccent }]}>{unread > 9 ? '9+' : unread}</Text>
                   </View>
                 )}
               </Pressable>
@@ -475,7 +511,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           })}
 
           {entries.some(e => e.isDM) && (
-            <Text style={[s.sidebarTitle, { color: colors.textSecondary, marginTop: 18 }]}>DIRECT MESSAGES</Text>
+            <Text style={[s.sidebarTitle, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
           )}
           {entries.filter(e => e.isDM).map(e => {
             const on = e.id === activeChannel;
@@ -484,14 +520,19 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               <Pressable key={e.id} onPress={() => switchChannel(e.id)}
                 accessibilityRole="button" accessibilityState={{ selected: on }}
                 accessibilityLabel={`Direct message with ${e.label}${unread > 0 ? `, ${unread} unread` : ''}`}
-                style={[s.channelRow, on && { backgroundColor: colors.primaryLight }]}>
+                style={({ pressed }) => [
+                  s.channelRow,
+                  on
+                    ? { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }
+                    : { backgroundColor: pressed ? k.cardHover : 'transparent', borderColor: 'transparent' },
+                ]}>
                 <Text style={s.dmEmoji}>{e.otherMember?.emoji ?? '👤'}</Text>
-                <Text style={[s.channelLabel, { color: on ? colors.primary : colors.textPrimary, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
+                <Text style={[s.channelLabel, { color: on ? k.primary : k.text, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
                   {e.label}
                 </Text>
                 {unread > 0 && (
-                  <View style={[s.unreadDot, { backgroundColor: colors.danger }]}>
-                    <Text style={s.unreadDotText}>{unread > 9 ? '9+' : unread}</Text>
+                  <View style={[s.unreadDot, { backgroundColor: k.danger }]}>
+                    <Text style={[s.unreadDotText, { color: k.onAccent }]}>{unread > 9 ? '9+' : unread}</Text>
                   </View>
                 )}
               </Pressable>
@@ -509,9 +550,14 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             shrinking to make room. Scoped to just the thread column (not
             the whole root View) so the channel sidebar never shifts. */}
         <KeyboardAvoidingView style={s.thread} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <Text style={[s.title, { color: colors.textPrimary }]} numberOfLines={1}>
-            {currentEntry?.label ?? 'Chat'}
-          </Text>
+          <View style={s.threadHead}>
+            <Text style={[s.title, { color: k.text }]} numberOfLines={1}>
+              {currentEntry?.label ?? 'Chat'}
+            </Text>
+            {currentEntry?.lock && (
+              <Chip label="Private" accent={k.purple} isDark={kioskDark} k={k} />
+            )}
+          </View>
 
           <View style={{ flex: 1 }}>
             <FlatList
@@ -528,9 +574,9 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 if (item.type === 'day') {
                   return (
                     <View style={s.dayRow}>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
-                      <Text style={[s.dayLabel, { color: colors.textTertiary }]}>{item.label}</Text>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
+                      <View style={[s.dayLine, { backgroundColor: k.cardBorder }]} />
+                      <Text style={[s.dayLabel, { color: k.textFaint }]} numberOfLines={1}>{item.label}</Text>
+                      <View style={[s.dayLine, { backgroundColor: k.cardBorder }]} />
                     </View>
                   );
                 }
@@ -572,41 +618,49 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 );
               }}
               ListEmptyComponent={
-                <Text style={[s.empty, { color: colors.textTertiary }]}>No messages yet — say hi 👋</Text>
+                <Text style={[s.empty, { color: k.textFaint }]} numberOfLines={2}>No messages yet — say hi 👋</Text>
               }
             />
           </View>
 
           {/* ── Moderation warning ── */}
           {moderationWarning && (
-            <View style={[s.banner, { backgroundColor: colors.danger + '14', borderTopColor: colors.danger }]}>
+            <View style={[s.banner, { backgroundColor: k.dangerSoft, borderTopColor: k.danger }]}>
               <Text style={{ fontSize: 16 }}>🙏</Text>
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Let's keep it kind — that message wasn't sent.</Text>
-              <Pressable onPress={() => setModerationWarning(false)}><X size={18} color={colors.danger} /></Pressable>
+              <Text style={[s.bannerText, { color: k.danger }]} numberOfLines={2}>
+                Let's keep it kind — that message wasn't sent.
+              </Text>
+              <Pressable onPress={() => setModerationWarning(false)} hitSlop={10}
+                accessibilityRole="button" accessibilityLabel="Dismiss warning">
+                <X size={18} color={k.danger} />
+              </Pressable>
             </View>
           )}
 
           {/* ── Edit banner — same amber "Editing: ..." bar ChatScreen.tsx
               shows (ChatScreen.tsx:1146-1153) ── */}
           {editingMsg && (
-            <View style={[s.banner, { backgroundColor: colors.amberLight, borderTopColor: colors.amber }]}>
-              <Pencil size={16} color={colors.amber} />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.textSecondary }} numberOfLines={1}>
+            <View style={[s.banner, { backgroundColor: k.goldSoft, borderTopColor: k.gold }]}>
+              <Pencil size={16} color={k.gold} />
+              <Text style={[s.bannerText, { color: k.textMuted, fontWeight: '600' }]} numberOfLines={1}>
                 Editing: {editingMsg.text}
               </Text>
-              <Pressable onPress={() => { setEditingMsg(null); setText(''); }}><X size={18} color={colors.textTertiary} /></Pressable>
+              <Pressable onPress={() => { setEditingMsg(null); setText(''); }} hitSlop={10}
+                accessibilityRole="button" accessibilityLabel="Cancel editing">
+                <X size={18} color={k.textFaint} />
+              </Pressable>
             </View>
           )}
 
           {/* ── Reply banner — quote preview above the input ── */}
           {replyingTo && (
-            <View style={[s.banner, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-              <CornerUpLeft size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.primary }}>
+            <View style={[s.banner, { backgroundColor: k.well, borderTopColor: k.cardBorder }]}>
+              <CornerUpLeft size={18} color={k.primary} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.bannerText, { color: k.primary }]} numberOfLines={1}>
                   Reply to {memberMap[replyingTo.senderId]?.name?.split(' ')[0]}
                 </Text>
-                <Text style={{ fontSize: TYPO.body, color: colors.textSecondary }} numberOfLines={1}>
+                <Text style={{ fontSize: TYPO.body, color: k.textMuted }} numberOfLines={1}>
                   {replyingTo.text ||
                     (replyingTo.voiceUri ? REPLY_KIND_LABEL.voice
                       : replyingTo.mediaType === 'video' ? REPLY_KIND_LABEL.video
@@ -616,13 +670,16 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                       : '')}
                 </Text>
               </View>
-              <Pressable onPress={() => setReplyingTo(null)}><X size={20} color={colors.textTertiary} /></Pressable>
+              <Pressable onPress={() => setReplyingTo(null)} hitSlop={10}
+                accessibilityRole="button" accessibilityLabel="Cancel reply">
+                <X size={20} color={k.textFaint} />
+              </Pressable>
             </View>
           )}
 
           {/* ── Attachment preview ── */}
           {attachUri && (
-            <View style={[s.banner, { borderTopColor: colors.border }]}>
+            <View style={[s.banner, { backgroundColor: k.well, borderTopColor: k.cardBorder }]}>
               <View style={{ position: 'relative' }}>
                 <Image source={{ uri: attachUri }} style={{ width: 64, height: 64, borderRadius: 12 }} resizeMode="cover" />
                 {attachType === 'video' && (
@@ -632,12 +689,13 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: k.text }} numberOfLines={1}>
                   {attachType === 'video' ? '🎥 Video clip (≤10s)' : '🖼️ Image'}
                 </Text>
               </View>
-              <Pressable onPress={() => setAttachUri(null)} style={{ padding: 6 }}>
-                <XCircle size={22} color={colors.textTertiary} />
+              <Pressable onPress={() => setAttachUri(null)} style={{ padding: 6 }} hitSlop={10}
+                accessibilityRole="button" accessibilityLabel="Remove attachment">
+                <XCircle size={22} color={k.textFaint} />
               </Pressable>
             </View>
           )}
@@ -655,19 +713,25 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
           {/* ── Attach menu popup ── */}
           {showAttachMenu && (
-            <View style={[s.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[s.attachMenu, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)]}>
               {([
-                { Icon: Camera, label: 'Camera', color: colors.accent, onPress: () => { setShowAttachMenu(false); pickCamera(); } },
-                { Icon: ImageIcon, label: 'Photo', color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
-                { Icon: Video, label: 'Video', color: colors.danger, onPress: () => { setShowAttachMenu(false); recordVideo(); } },
-                { Icon: FileText, label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
-                { Icon: MapPin, label: 'Location', color: colors.info, onPress: () => { setShowAttachMenu(false); sendLocation(); } },
+                { Icon: Camera, label: 'Camera', color: k.purple, onPress: () => { setShowAttachMenu(false); pickCamera(); } },
+                { Icon: ImageIcon, label: 'Photo', color: k.sage, onPress: () => { setShowAttachMenu(false); pickImage(); } },
+                { Icon: Video, label: 'Video', color: k.danger, onPress: () => { setShowAttachMenu(false); recordVideo(); } },
+                { Icon: FileText, label: 'Document', color: k.gold, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
+                { Icon: MapPin, label: 'Location', color: k.blue, onPress: () => { setShowAttachMenu(false); sendLocation(); } },
               ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
-                <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
-                  <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
+                <Pressable
+                  key={item.label}
+                  onPress={item.onPress}
+                  style={({ pressed }) => [s.attachItem, pressed && { opacity: 0.7 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                >
+                  <View style={[s.attachIcon, { backgroundColor: item.color + (kioskDark ? '24' : '1A') }]}>
                     <item.Icon size={24} color={item.color} />
                   </View>
-                  <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
+                  <Text style={[s.attachLabel, { color: k.textMuted }]} numberOfLines={1}>{item.label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -675,32 +739,36 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
-            <View style={[s.inputRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
               <Pressable onPress={() => setShowAttachMenu(v => !v)} style={s.iconBtn} hitSlop={8}
-                accessibilityRole="button" accessibilityLabel="Attach a photo, video, document or location">
-                <Paperclip size={22} color={colors.textSecondary} />
+                accessibilityRole="button" accessibilityLabel="Attach a photo, video, document or location"
+                accessibilityState={{ expanded: showAttachMenu }}>
+                <Paperclip size={22} color={k.textMuted} />
               </Pressable>
               <TextInput
                 ref={inputRef}
                 value={text}
                 onChangeText={val => { setText(val); if (moderationWarning) setModerationWarning(false); }}
                 placeholder={currentEntry?.isDM ? `Message ${currentEntry.label}…` : 'Message the family…'}
-                placeholderTextColor={colors.textTertiary}
-                style={[s.input, { color: colors.textPrimary }]}
+                placeholderTextColor={k.textFaint}
+                style={[s.input, { color: k.text }]}
+                onFocus={registerActivity}
                 onSubmitEditing={send}
                 returnKeyType="send"
                 multiline
                 maxLength={1000}
               />
               {canSend ? (
-                <Pressable onPress={send} style={[s.sendBtn, { backgroundColor: colors.primary }]}
+                <Pressable
+                  onPress={send}
+                  style={({ pressed }) => [s.sendBtn, { backgroundColor: k.primary }, pressed && { opacity: 0.75 }]}
                   accessibilityRole="button" accessibilityLabel="Send message">
-                  <Send size={20} color="#fff" />
+                  <Send size={20} color={k.onPrimary} />
                 </Pressable>
               ) : (
                 <Pressable onPress={startRecording} style={s.iconBtn} hitSlop={8}
                   accessibilityRole="button" accessibilityLabel="Record a voice note">
-                  <Mic size={24} color={colors.textSecondary} />
+                  <Mic size={24} color={k.textMuted} />
                 </Pressable>
               )}
             </View>
@@ -710,18 +778,36 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
       {/* ── Quick emoji (double-tap) ── */}
       <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
-        <Pressable style={s.modalOverlay} onPress={() => setQuickEmojiFor(null)}>
-          <View style={[s.emojiPicker, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {QUICK_REACTIONS.map(e => (
-              <Pressable key={e} onPress={() => {
-                if (quickEmojiFor) addReaction(activeChannel, quickEmojiFor.id, e, active.id);
-                setQuickEmojiFor(null);
-              }} style={{ padding: 8 }}>
-                <Text style={{ fontSize: 32 }}>{e}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
+        {/* KioskModalHost, not just the useKioskLockSuspended above: a
+            native Modal renders in its own window, so touches inside it
+            never reach KioskScreen's root onTouchStart. The suspension
+            holds the lock off; this makes each tap count as real activity
+            so the idle timer restarts properly on dismiss. */}
+        <KioskModalHost>
+          <Pressable
+            style={[s.modalOverlay, { backgroundColor: k.scrim }]}
+            onPress={() => setQuickEmojiFor(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss reaction picker"
+          >
+            <View style={[s.emojiPicker, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)]}>
+              {QUICK_REACTIONS.map(e => (
+                <Pressable
+                  key={e}
+                  onPress={() => {
+                    if (quickEmojiFor) addReaction(activeChannel, quickEmojiFor.id, e, active.id);
+                    setQuickEmojiFor(null);
+                  }}
+                  style={({ pressed }) => [s.emojiBtn, pressed && { opacity: 0.6 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React with ${e}`}
+                >
+                  <Text style={{ fontSize: 32 }}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </KioskModalHost>
       </Modal>
 
       {/* ── Long-press action sheet — reply / copy / edit / delete / react ── */}
@@ -770,7 +856,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           {lightboxUri && (
             <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
           )}
-          <Pressable onPress={() => setLightboxUri(null)} style={s.lightboxClose}>
+          <Pressable onPress={() => setLightboxUri(null)} style={s.lightboxClose}
+            accessibilityRole="button" accessibilityLabel="Close image">
             <X size={24} color="#fff" />
           </Pressable>
         </Pressable>
@@ -816,11 +903,14 @@ const s = StyleSheet.create({
   channelRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min,
+    // Border is always present (transparent when unselected) so selecting a
+    // row can't shift the others by a pixel.
+    borderWidth: 1,
   },
   channelLabel: { flex: 1, fontSize: KIOSK_TYPO.body },
   dmEmoji: { fontSize: 18 },
   unreadDot: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', color: '#fff' },
+  unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 
   // Centers a max-width column inside whatever space is left after the
   // sidebar — the thread never stretches past THREAD_MAX_WIDTH regardless
@@ -828,14 +918,19 @@ const s = StyleSheet.create({
   threadOuter: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
   thread: { flex: 1, width: '100%', maxWidth: THREAD_MAX_WIDTH, paddingTop: 20 },
 
-  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6, marginBottom: KIOSK_SPACE.sm },
+  threadHead: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    marginBottom: KIOSK_SPACE.sm,
+  },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6, flexShrink: 1 },
   list: { paddingBottom: 12, flexGrow: 1 },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 10, marginHorizontal: 20 },
   dayLine: { flex: 1, height: StyleSheet.hairlineWidth },
   dayLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', paddingHorizontal: KIOSK_SPACE.xs },
   empty: { textAlign: 'center', marginTop: KIOSK_SPACE.xxl, fontSize: KIOSK_TYPO.subheading, fontWeight: '600' },
 
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  bannerText: { flex: 1, minWidth: 0, fontSize: TYPO.caption, fontWeight: '700' },
 
   attachMenu: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.lg, marginBottom: 4 },
   attachItem: { alignItems: 'center', gap: 8, flex: 1 },
@@ -847,8 +942,14 @@ const s = StyleSheet.create({
   input: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '600', maxHeight: 160, paddingVertical: KIOSK_SPACE.sm },
   sendBtn: { width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_HIT.control / 2, alignItems: 'center', justifyContent: 'center' },
 
-  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emojiPicker: { flexDirection: 'row', borderRadius: RADIUS.xl, padding: 16, gap: 12, borderWidth: 1 },
+  // Was 8px of padding around a glyph — under the kiosk touch floor for
+  // what is one of the most-tapped controls in chat.
+  emojiBtn: {
+    minWidth: KIOSK_HIT.min, minHeight: KIOSK_HIT.min,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   videoLightbox: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },

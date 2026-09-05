@@ -324,7 +324,7 @@ export default function KioskScreen() {
             {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab active={active} members={members} colors={colors} isDark={isDark} />}
             {effectiveTab === 'chat' && <KioskChatTab active={active} members={members} colors={colors} isDark={isDark} />}
             {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab active={active} members={members} colors={colors} isDark={isDark} />}
-            {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} />}
             {effectiveTab === 'memories' && <KioskMemoriesTab colors={colors} isDark={isDark} readOnly={isSenior} />}
             {effectiveTab === 'school' && !isSenior && !isTeen && <KioskSchoolTab isKid={isKidRole} colors={colors} isDark={isDark} />}
             {effectiveTab === 'health' && !isSenior && !isTeen && <KioskHealthTab isKid={isKidRole} colors={colors} isDark={isDark} />}

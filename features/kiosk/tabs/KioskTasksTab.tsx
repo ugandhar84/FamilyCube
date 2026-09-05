@@ -7,6 +7,22 @@
  * else's quest. See KioskGpTasksView below for that branch, mirroring
  * SeniorView.tsx's own kidsCheerable/mySponsoredQuests filters and
  * choreStore's cheerChore action exactly (not reinvented).
+ *
+ * ── Hub-OS migration ────────────────────────────────────────────────────
+ * The board's own chrome — masthead, zone headers, pool tiles, roster
+ * chips, lane heads, empty state — is restyled onto the kiosk palette and
+ * the KioskOS primitives (TabTitle / WidgetCard / WidgetHeader / Well /
+ * Chip / ActionButton). None of the role or status logic moved: the
+ * deriveQuestActions per-viewer gating, the pool lane's own filter and the
+ * poolIds de-duplication against the status lanes, the senior branch, and
+ * every useKioskLockSuspended declaration are all unchanged.
+ *
+ * `colors` is still a prop and still threaded down, because this tab hosts
+ * a dozen SHARED PHONE components (SmartTaskComposer, AddQuestModal,
+ * AddEventModal, AskParentSheet, the Kid* modals, CollapsibleQuestCard,
+ * assigneeStyle) that take the app palette and cannot be restyled without
+ * forking them. Both palettes resolve off the same useTheme() isDark, so a
+ * kiosk frame around app-palette content is consistent within a mode.
  */
 import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
@@ -23,7 +39,7 @@ import { fmtDateShort } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
-import { KioskCard, KioskZoneHeader } from '../components/KioskSurface';
+import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote } from '../components/KioskOS';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -31,8 +47,9 @@ import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
-import { useKioskLockSuspended } from '../KioskActivityContext';
+import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
+import { useKioskColors } from '../kioskPalette';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
 // the DB's 'redo_requested' status down to Quest status 'declined',
@@ -71,6 +88,8 @@ export function KioskTasksTab({ active, members, colors, isDark }: {
 function KioskBoardView({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  const { k, isDark: kioskDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
   const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const isParent = active.role === 'parent';
@@ -253,10 +272,10 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // button, matching how mobile treats "tap the card to open/edit" vs.
   // "tap this specific button to change status."
   const primaryAction = (q: Quest, actions: ReturnType<typeof deriveQuestActions>): { label: string; accent: string; action: () => void } | null => {
-    if (actions.canClaim) return { label: 'Claim Chore', accent: colors.amber, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
-    if (actions.canResubmit) return { label: 'Resubmit', accent: colors.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
-    if (actions.canSubmit) return { label: 'Submit for Review', accent: colors.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
-    if (actions.canApprove) return { label: 'Approve', accent: colors.teal, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
+    if (actions.canClaim) return { label: 'Claim Chore', accent: k.gold, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
+    if (actions.canResubmit) return { label: 'Resubmit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
+    if (actions.canSubmit) return { label: 'Submit for Review', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
+    if (actions.canApprove) return { label: 'Approve', accent: k.sage, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
     return null;
   };
 
@@ -271,44 +290,42 @@ function KioskBoardView({ active, members, colors, isDark }: {
     // assigned to a parent/senior has no payout concept on the phone
     // either, so a stray coin figure here read as broken, not by-design.
     const isAdultAssignee = q.isAdultTask || assignee?.role === 'parent' || assignee?.role === 'senior';
-    const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: colors.textTertiary };
+    const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: k.textFaint };
     return (
       <CollapsibleQuestCard
         accentColor={catMeta.color}
-        cardBg={colors.card}
-        cardBord={colors.border}
+        cardBg={k.card}
+        cardBord={k.cardBorder}
         onDoubleTap={actions.canEdit ? () => setEditingQuest(q) : undefined}
         header={
           <View style={s.cardTopRow}>
             <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
               <Text style={{ fontSize: 17 }}>{catMeta.emoji}</Text>
             </View>
-            <Text style={[s.cardTitle, { color: colors.textPrimary, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
+            <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
             {!isAdultAssignee && (
-              <View style={[s.coinPill, { backgroundColor: colors.amberLight }]}>
-                <Text style={[s.coinPillText, { color: colors.amber }]}>{q.coins} 🪙</Text>
-              </View>
+              <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
             )}
           </View>
         }
       >
         {!!opts?.showDeclineReason && !!q.declineReason && (
-          <View style={[s.reasonBanner, { backgroundColor: colors.danger + '14' }]}>
-            <Text style={[s.reasonText, { color: colors.danger }]} numberOfLines={2}>↩ {q.declineReason}</Text>
+          <View style={[s.reasonBanner, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
+            <Text style={[s.reasonText, { color: k.danger }]} numberOfLines={3}>↩ {q.declineReason}</Text>
           </View>
         )}
 
         <View style={s.cardMeta}>
-          <View style={[s.assigneeChip, { backgroundColor: q.isPool ? colors.surface : rs.badge, borderColor: q.isPool ? colors.border : rs.dot + '55' }]}>
+          <View style={[s.assigneeChip, { backgroundColor: q.isPool ? k.well : rs.badge, borderColor: q.isPool ? k.cardBorder : rs.dot + '55' }]}>
             {!q.isPool && <Text style={{ fontSize: 14 }}>{assignee?.emoji ?? '👤'}</Text>}
-            <Text style={[s.assigneeChipText, { color: q.isPool ? colors.textSecondary : rs.text }]} numberOfLines={1}>
+            <Text style={[s.assigneeChipText, { color: q.isPool ? k.textMuted : rs.text }]} numberOfLines={1}>
               {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
             </Text>
           </View>
           {!!q.dueDate && (
             <View style={s.dueRow}>
-              <Clock3 size={13} color={colors.textTertiary} />
-              <Text style={[s.dueText, { color: colors.textTertiary }]}>{fmtDateShort(q.dueDate)}</Text>
+              <Clock3 size={13} color={k.textFaint} />
+              <Text style={[s.dueText, { color: k.textFaint }]} numberOfLines={1}>{fmtDateShort(q.dueDate)}</Text>
             </View>
           )}
         </View>
@@ -320,54 +337,59 @@ function KioskBoardView({ active, members, colors, isDark }: {
             accessibilityRole="button"
             accessibilityLabel={`Edit details for ${q.title}`}
           >
-            <Text style={[s.editLinkText, { color: colors.primary }]}>Edit details</Text>
+            <Text style={[s.editLinkText, { color: k.primary }]}>Edit details</Text>
           </Pressable>
         )}
 
         {btn && (
-          <Pressable
-            onPress={btn.action}
-            style={[s.cardActionBtn, { backgroundColor: btn.accent }]}
-            accessibilityRole="button"
-            accessibilityLabel={`${btn.label}: ${q.title}`}
-          >
-            <Text style={s.cardActionBtnText} numberOfLines={1}>{btn.label}</Text>
-          </Pressable>
+          <ActionButton
+            label={btn.label}
+            accent={btn.accent}
+            k={k}
+            isDark={kioskDark}
+            variant="solid"
+            style={s.cardActionBtn}
+            accessibilityHint={q.title}
+            onPress={() => { registerActivity(); btn.action(); }}
+          />
         )}
       </CollapsibleQuestCard>
     );
   };
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={s.rootContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={s.root}
+      contentContainerStyle={s.rootContent}
+      showsVerticalScrollIndicator={false}
+      onScrollBeginDrag={registerActivity}
+    >
       {/* ── Masthead ──────────────────────────────────────────────────
-          Not a phone screen title. A kiosk screen announces itself: an
-          oversized display title with a one-line subtitle stating what
-          this board currently means for whoever is standing at it, so
-          the surface is self-explanatory to a family member who walked
-          up without navigating here deliberately. */}
-      <View style={s.masthead}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[s.title, { color: colors.textPrimary }]} numberOfLines={1}>Chores</Text>
-          <Text style={[s.mastheadSub, { color: colors.textSecondary }]} numberOfLines={1}>
-            {isParent
-              ? `${byColumn[3].items.length} waiting on you · ${poolQuests.length} up for grabs`
-              : `${poolQuests.length} up for grabs · ${byColumn[0].items.length + byColumn[1].items.length} on your plate`}
-          </Text>
-        </View>
-        {(isParent || isKidCreator) && (
-          <Pressable
-            onPress={openCreator}
-            style={[s.addBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
-            accessibilityRole="button"
-            accessibilityLabel={isParent ? 'New chore' : 'Ask a parent'}
+          A kiosk screen announces itself: the shared TabTitle, with a
+          subtitle stating what this board currently means for whoever is
+          standing at it, so the surface is self-explanatory to a family
+          member who walked up without navigating here deliberately. The
+          creation button's role gate is unchanged (parent, or a kid via
+          the Kid-safe AskParentSheet). */}
+      <TabTitle
+        title="Chores"
+        k={k}
+        subtitle={isParent
+          ? `${byColumn[3].items.length} waiting on you · ${poolQuests.length} up for grabs`
+          : `${poolQuests.length} up for grabs · ${byColumn[0].items.length + byColumn[1].items.length} on your plate`}
+        right={(isParent || isKidCreator) ? (
+          <ActionButton
+            label={isParent ? 'New Chore' : 'Ask Parent'}
+            Icon={Plus}
+            accent={k.primary}
+            k={k}
+            isDark={kioskDark}
+            variant="solid"
             accessibilityHint={isParent ? 'Opens the chore composer' : 'Send a request to a parent'}
-          >
-            <Plus size={20} color="#fff" />
-            <Text style={s.addBtnText}>{isParent ? 'New Chore' : 'Ask Parent'}</Text>
-          </Pressable>
-        )}
-      </View>
+            onPress={() => { registerActivity(); openCreator(); }}
+          />
+        ) : undefined}
+      />
 
       {/* ── Zone 1: Up for grabs ──────────────────────────────────────
           The pool lane leads the board rather than being buried inside
@@ -375,29 +397,24 @@ function KioskBoardView({ active, members, colors, isDark }: {
           is addressed to the ROOM rather than to an individual, so it
           gets hero treatment: full width, tinted tiles, big cards. */}
       {poolQuests.length > 0 && (
-        <View style={s.zone}>
-          <KioskZoneHeader
+        <WidgetCard k={k} isDark={kioskDark} accent={k.gold} style={s.zone}>
+          <WidgetHeader
+            Icon={Sparkles}
+            eyebrow="Anyone can claim these"
             title="Up for grabs"
-            count={poolQuests.length}
-            accent={colors.amber}
-            colors={colors}
-            right={
-              <View style={s.zoneHint}>
-                <Sparkles size={18} color={colors.amber} />
-                <Text style={[s.zoneHintText, { color: colors.textTertiary }]} numberOfLines={1}>
-                  Anyone can claim these
-                </Text>
-              </View>
-            }
+            accent={k.gold}
+            k={k}
+            isDark={kioskDark}
+            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
           />
           <View style={s.poolGrid}>
             {poolQuests.map(q => (
-              <KioskCard key={q.id} colors={colors} isDark={isDark} tone={colors.amber} style={s.poolCard}>
+              <Well key={q.id} k={k} accent={k.gold} style={s.poolCard}>
                 {renderQuestCard(q)}
-              </KioskCard>
+              </Well>
             ))}
           </View>
-        </View>
+        </WidgetCard>
       )}
 
       {/* ── Zone 2: Who has what ──────────────────────────────────────
@@ -410,8 +427,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
           shouldn't get a sibling-comparison leaderboard front and center
           (same reasoning the old stat strip already applied). */}
       {isParent && kidStats.length > 0 && (
-        <View style={s.zone}>
-          <KioskZoneHeader title="Who has what" accent={colors.teal} colors={colors} />
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <WidgetHeader
+            Icon={Check} eyebrow="Roster" title="Who has what"
+            accent={k.sage} k={k} isDark={kioskDark}
+          />
           {/* Compact roster CHIPS, not a card per person. Live-reported:
               full-size member cards held very little information (avatar,
               name, a fraction, a bar) while occupying a whole tile each,
@@ -429,7 +449,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
               return (
                 <View
                   key={member.id}
-                  style={[s.rosterChip, { backgroundColor: colors.card, borderColor: colors.border, ...kioskElevation(rs.dot, isDark) }]}
+                  style={[s.rosterChip, { backgroundColor: k.well, borderColor: k.cardBorder, ...kioskElevation(rs.dot, kioskDark) }]}
                   accessibilityLabel={`${member.name.split(' ')[0]}: ${done} of ${total} chores done`}
                 >
                   <View style={[s.rosterAvatar, { backgroundColor: rs.badge, borderColor: rs.dot }]}>
@@ -437,24 +457,24 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   </View>
                   <View style={s.rosterBody}>
                     <View style={s.rosterTopLine}>
-                      <Text style={[s.rosterName, { color: colors.textPrimary }]} numberOfLines={1}>
+                      <Text style={[s.rosterName, { color: k.text }]} numberOfLines={1}>
                         {member.name.split(' ')[0]}
                       </Text>
-                      <Text style={[s.rosterFrac, { color: clear ? colors.success : rs.dot }]}>
+                      <Text style={[s.rosterFrac, { color: clear ? k.sage : rs.dot }]} numberOfLines={1}>
                         {clear ? 'done' : `${done}/${total}`}
                       </Text>
                     </View>
                     {/* A slim rule, not a chunky bar — it's a supporting
                         indicator, not the headline. */}
-                    <View style={[s.rosterTrack, { backgroundColor: colors.surface }]}>
-                      <View style={[s.rosterFill, { backgroundColor: clear ? colors.success : rs.dot, width: `${Math.round(pct * 100)}%` }]} />
+                    <View style={[s.rosterTrack, { backgroundColor: k.cardBorder }]}>
+                      <View style={[s.rosterFill, { backgroundColor: clear ? k.sage : rs.dot, width: `${Math.round(pct * 100)}%` }]} />
                     </View>
                   </View>
                 </View>
               );
             })}
           </View>
-        </View>
+        </WidgetCard>
       )}
 
       {/* ── Zone 3: Status lanes ──────────────────────────────────────
@@ -465,17 +485,20 @@ function KioskBoardView({ active, members, colors, isDark }: {
           themselves keep the even flex grid (see the COLUMN_GAP comment
           above for the alignment fix). */}
       {byColumn.some(c => c.items.length > 0) && (
-        <View style={s.zone}>
-          <KioskZoneHeader title="In flight" accent={colors.primary} colors={colors} />
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <WidgetHeader
+            Icon={Clock3} eyebrow="By status" title="In flight"
+            accent={k.primary} k={k} isDark={kioskDark}
+          />
           <View style={s.columns}>
             {byColumn.filter(c => c.items.length > 0).map(col => (
               <View key={col.key} style={s.col}>
                 <View style={s.colHeadRow}>
-                  <Text style={[s.colHead, { color: colors.textSecondary }]} numberOfLines={1}>
+                  <Text style={[s.colHead, { color: k.textMuted }]} numberOfLines={1}>
                     {col.label.toUpperCase()}
                   </Text>
-                  <View style={[s.colCount, { backgroundColor: colors.surface }]}>
-                    <Text style={[s.colCountText, { color: colors.textSecondary }]}>{col.items.length}</Text>
+                  <View style={[s.colCount, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+                    <Text style={[s.colCountText, { color: k.textMuted }]}>{col.items.length}</Text>
                   </View>
                 </View>
                 <View style={s.cardGrid}>
@@ -488,7 +511,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
               </View>
             ))}
           </View>
-        </View>
+        </WidgetCard>
       )}
 
       {/* Whole-board empty state — one calm, centered message rather
@@ -499,9 +522,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
         // backwards for a state that by definition has nothing to show.
         // An empty state should reassure and get out of the way, so this
         // is one tidy inline row rather than a hero panel.
-        <View style={[s.boardEmpty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[s.boardEmpty, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
           <Text style={{ fontSize: 20 }}>🎉</Text>
-          <Text style={[s.boardEmptyText, { color: colors.textSecondary }]} numberOfLines={1}>
+          <Text style={[s.boardEmptyText, { color: k.textMuted }]} numberOfLines={2}>
             All clear — every chore is done or approved.
           </Text>
         </View>
@@ -597,6 +620,8 @@ function KioskBoardView({ active, members, colors, isDark }: {
 function KioskGpTasksView({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  const { k, isDark: kioskDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
   const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
   const cheerChore = useChoreStore(s => s.cheerChore);
 
@@ -620,89 +645,109 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
 
-  return (
-    <ScrollView style={s.root} contentContainerStyle={{ gap: 24, padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-      <Text style={[s.title, { color: colors.textPrimary }]}>Cheer Your Grandkids</Text>
-
-      <View style={s.gpGrid}>
-        {kidsCheerable.length === 0 && (
-          <Text style={[s.emptyCol, { color: colors.textTertiary }]}>Nothing finished yet today 🌱</Text>
-        )}
-        {kidsCheerable.map(q => (
-          <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[s.catBadge, { backgroundColor: (CATEGORY_META[q.category]?.color ?? colors.textTertiary) + '18' }]}>
-              <Text style={{ fontSize: 18 }}>{CATEGORY_META[q.category]?.emoji ?? '📋'}</Text>
-            </View>
-            <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-            <Text style={[s.cardSub, { color: colors.textSecondary }]}>{memberName(q.assignedToId)} finished this</Text>
-            <Pressable
-              onPress={() => cheerChore(q.id, active.id)}
-              style={[s.cheerBtn, { backgroundColor: colors.teal }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Send a cheer for ${q.title}`}
-            >
-              <PartyPopper size={18} color="#fff" />
-              <Text style={s.cheerBtnText}>Send a Cheer</Text>
-            </Pressable>
-          </View>
-        ))}
+  /**
+   * One GP card. The three lanes below (cheer / approve / sponsored) all
+   * rendered a near-identical card with a different button, so they share
+   * one renderer now rather than repeating the markup four times — that
+   * repetition is exactly how the four copies drifted apart on padding and
+   * numberOfLines in the first place.
+   */
+  const gpCard = (
+    q: typeof quests[number],
+    opts: { sub?: string; label: string; Icon?: typeof Check; accent: string; onPress: () => void; hint: string },
+  ) => (
+    <Well key={q.id} k={k} accent={opts.accent} style={s.gpCard}>
+      <View style={[s.catBadge, { backgroundColor: (CATEGORY_META[q.category]?.color ?? k.textFaint) + '18' }]}>
+        <Text style={{ fontSize: 18 }}>{CATEGORY_META[q.category]?.emoji ?? '📋'}</Text>
       </View>
+      <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+      {!!opts.sub && (
+        <Text style={[s.cardSub, { color: k.textMuted }]} numberOfLines={1}>{opts.sub}</Text>
+      )}
+      <ActionButton
+        label={opts.label}
+        Icon={opts.Icon}
+        accent={opts.accent}
+        k={k}
+        isDark={kioskDark}
+        variant="solid"
+        style={s.gpBtn}
+        accessibilityHint={opts.hint}
+        onPress={() => { registerActivity(); opts.onPress(); }}
+      />
+    </Well>
+  );
+
+  return (
+    <ScrollView
+      style={s.root}
+      contentContainerStyle={s.rootContent}
+      showsVerticalScrollIndicator={false}
+      onScrollBeginDrag={registerActivity}
+    >
+      <TabTitle
+        title="Cheer Your Grandkids"
+        subtitle="High-five what they finished, and pitch in on your own chores"
+        k={k}
+      />
+
+      <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+        <WidgetHeader
+          Icon={PartyPopper} eyebrow="Last finished" title="Ready to cheer"
+          accent={k.sage} k={k} isDark={kioskDark}
+          right={kidsCheerable.length > 0
+            ? <Chip label={`${kidsCheerable.length}`} accent={k.sage} isDark={kioskDark} k={k} />
+            : undefined}
+        />
+        {kidsCheerable.length === 0 ? (
+          <EmptyNote text="Nothing finished yet today 🌱" k={k} />
+        ) : (
+          <View style={s.gpGrid}>
+            {kidsCheerable.map(q => gpCard(q, {
+              sub: `${memberName(q.assignedToId)} finished this`,
+              label: 'Send a Cheer', Icon: PartyPopper, accent: k.sage,
+              hint: q.title,
+              onPress: () => cheerChore(q.id, active.id),
+            }))}
+          </View>
+        )}
+      </WidgetCard>
 
       {pendingReview.length > 0 && (
-        <>
-          <Text style={[s.title, { color: colors.textPrimary, fontSize: KIOSK_TYPO.heading }]}>Waiting on Approval</Text>
+        <WidgetCard k={k} isDark={kioskDark} accent={k.primary} style={s.zone}>
+          <WidgetHeader
+            Icon={Check} eyebrow="Needs a grown-up" title="Waiting on approval"
+            accent={k.primary} k={k} isDark={kioskDark}
+            right={<Chip label={`${pendingReview.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
+          />
           <View style={s.gpGrid}>
-            {pendingReview.map(q => (
-              <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-                <Text style={[s.cardSub, { color: colors.textSecondary }]}>{memberName(q.assignedToId) ?? 'Unassigned'}</Text>
-                <Pressable
-                  onPress={() => approveQuest(q.id, active.id)}
-                  style={[s.cheerBtn, { backgroundColor: colors.primary }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Approve ${q.title}`}
-                >
-                  <Check size={18} color="#fff" />
-                  <Text style={s.cheerBtnText}>Approve</Text>
-                </Pressable>
-              </View>
-            ))}
+            {pendingReview.map(q => gpCard(q, {
+              sub: memberName(q.assignedToId) ?? 'Unassigned',
+              label: 'Approve', Icon: Check, accent: k.primary,
+              hint: q.title,
+              onPress: () => approveQuest(q.id, active.id),
+            }))}
           </View>
-        </>
+        </WidgetCard>
       )}
 
       {(myGpQuestsOpen.length > 0 || myGpQuestsAssigned.length > 0) && (
-        <>
-          <Text style={[s.title, { color: colors.textPrimary, fontSize: KIOSK_TYPO.heading }]}>Your Sponsored Chores</Text>
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <WidgetHeader
+            Icon={Sparkles} eyebrow="Yours" title="Your sponsored chores"
+            accent={k.gold} k={k} isDark={kioskDark}
+          />
           <View style={s.gpGrid}>
-            {myGpQuestsOpen.map(q => (
-              <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-                <Pressable
-                  onPress={() => claimQuest(q.id, active.id)}
-                  style={[s.cheerBtn, { backgroundColor: colors.primary }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Claim ${q.title}`}
-                >
-                  <Text style={s.cheerBtnText}>Claim</Text>
-                </Pressable>
-              </View>
-            ))}
-            {myGpQuestsAssigned.map(q => (
-              <View key={q.id} style={[s.gpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
-                <Pressable
-                  onPress={() => submitQuest(q.id, undefined, active.id)}
-                  style={[s.cheerBtn, { backgroundColor: colors.amber }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Submit ${q.title} for review`}
-                >
-                  <Text style={s.cheerBtnText}>Submit</Text>
-                </Pressable>
-              </View>
-            ))}
+            {myGpQuestsOpen.map(q => gpCard(q, {
+              label: 'Claim', accent: k.primary, hint: q.title,
+              onPress: () => claimQuest(q.id, active.id),
+            }))}
+            {myGpQuestsAssigned.map(q => gpCard(q, {
+              label: 'Submit', accent: k.gold, hint: q.title,
+              onPress: () => submitQuest(q.id, undefined, active.id),
+            }))}
           </View>
-        </>
+        </WidgetCard>
       )}
     </ScrollView>
   );
@@ -715,35 +760,12 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 const s = StyleSheet.create({
   root: { flex: 1 },
   rootContent: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: KIOSK_SPACE.lg, gap: KIOSK_SPACE.sm },
-  // Masthead: display-scale title + a live subtitle stating what the board
-  // means right now, so someone who walked up without navigating here
-  // understands the surface without reading any card.
-  masthead: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.md, marginBottom: KIOSK_SPACE.lg,
-  },
-  // `title` is one of the few things that earns hero scale on this screen.
-  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
-  mastheadSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },
-  // Reachable without being dominant: the hit target is KIOSK_HIT.primary
-  // (56), but the type stays at body scale and the shadow is soft rather
-  // than heavy — being easy to tap and being visually loud are different
-  // concerns, and conflating them is what made this button overbearing.
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.primary, borderRadius: KIOSK_RADIUS.full,
-    justifyContent: 'center',
-    shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 3,
-  },
-  addBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-
   // Zones — the ambient rhythm. Large gaps BETWEEN zones and tight
   // grouping WITHIN them, so the screen resolves as three confident
   // blocks at a glance rather than one uniform field of cards.
-  zone: { marginBottom: KIOSK_SPACE.xl },
-  zoneHint: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexShrink: 1 },
-  zoneHintText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Each zone is a WidgetCard now, so the gap between them is a plain
+  // margin rather than the old bare-View rhythm.
+  zone: { marginBottom: KIOSK_SPACE.md },
 
   // Pool lane — the hero zone. Wide tiles, generous minimums.
   poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
@@ -771,7 +793,7 @@ const s = StyleSheet.create({
 
   // Lane column heads — a label plus a count chip, not a run-on string.
   colHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
-  colCount: { minWidth: 32, paddingHorizontal: 8, paddingVertical: 2, borderRadius: KIOSK_RADIUS.full, alignItems: 'center' },
+  colCount: { minWidth: 32, paddingHorizontal: 8, paddingVertical: 2, borderRadius: KIOSK_RADIUS.full, borderWidth: 1, alignItems: 'center' },
   colCountText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', fontVariant: ['tabular-nums'] },
   laneCard: { width: '100%' },
 
@@ -815,11 +837,9 @@ const s = StyleSheet.create({
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.lg, alignContent: 'flex-start' },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   catBadge: { width: 32, height: 32, borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  coinPill: { borderRadius: KIOSK_RADIUS.full, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5 },
-  coinPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   cardTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800', lineHeight: KIOSK_TYPO.body * 1.3 },
   cardSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
-  reasonBanner: { borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.xs },
+  reasonBanner: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.xs },
   reasonText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
   // Was a bare text link with no padding — a ~14px-tall tap target on a
@@ -836,19 +856,12 @@ const s = StyleSheet.create({
   assigneeChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   dueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dueText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  cardActionBtn: {
-    borderRadius: KIOSK_RADIUS.sm, minHeight: KIOSK_HIT.control,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: KIOSK_SPACE.sm,
-  },
-  cardActionBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  emptyCol: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center', paddingTop: KIOSK_SPACE.lg, width: '100%' },
+  // ActionButton owns this control's chrome (fill, radius, hit height);
+  // the tab only says how it sits in the card.
+  cardActionBtn: { alignSelf: 'stretch' },
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   // maxWidth so a fixed-width card can never exceed a narrow portrait
   // pane and clip — same guard applied to every fixed-width card in kiosk.
-  gpCard: { width: 320, maxWidth: '100%', borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
-  cheerBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-    borderRadius: KIOSK_RADIUS.sm, minHeight: KIOSK_HIT.control, paddingHorizontal: KIOSK_SPACE.sm,
-  },
-  cheerBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  gpCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  gpBtn: { alignSelf: 'stretch' },
 });

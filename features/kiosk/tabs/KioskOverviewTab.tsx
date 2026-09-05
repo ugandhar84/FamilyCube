@@ -35,6 +35,30 @@
  * room anyone can walk into, so the coin-jar widget (other people's
  * balances) and the ride actions (which write) are parent-only, matching
  * how the phone already gates the same capabilities.
+ *
+ * ── The kid Overview ────────────────────────────────────────────────────
+ * Role scoping used to mean only SUBTRACTION — a kid got the parent's
+ * dashboard with the parent-only pieces missing, which left them looking
+ * at rides they can't drive and a grocery list they aren't shopping for,
+ * with nothing of their own anywhere on the screen. `isKid` below turns
+ * that into a real composition instead. Top to bottom, a kid now sees:
+ *
+ *   1. the hero (greeting + today's summary + quick actions, minus the
+ *      Grocery tile) and tonight's dinner — unchanged, and still the
+ *      right lead for anyone standing in the kitchen
+ *   2. their own six quick actions — Piggy Bank / Rewards / Leaderboard /
+ *      Cheer Squad / My Requests / Full Calendar, the kid Hub's own row
+ *      (features/hub/kid/KidMoreRow.tsx) ported in KioskKidQuickActions
+ *   3. My schedule — today's events that are theirs, resting on now
+ *      (replaces Ride & pickup in that slot)
+ *   4. My chores — their status breakdown in the Chores board's own
+ *      vocabulary plus the up-for-grabs pool (replaces Grocery list)
+ *   5. the photo frame and the FindFam strip — unchanged, shared family
+ *      content that reads the same to everyone
+ *
+ * Teen, senior and parent are deliberately untouched by all of it; the
+ * owner's ask was specifically about kids, and inventing a narrower
+ * teen/senior variant nobody asked for is how role gating drifts.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
@@ -55,6 +79,8 @@ import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
+import { KioskKidQuickActions } from '../components/KioskKidQuickActions';
+import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import type { KioskTabKey } from '../kioskTabs';
 
 interface RadarRow {
@@ -87,6 +113,25 @@ export function KioskOverviewTab({
 }) {
   const { k, isDark } = useKioskColors();
   const isParent = active.role === 'parent';
+  // Kid role gets a genuinely different Overview, not the parent's with
+  // pieces missing. Three swaps, all scoped to `kid` alone — teen, senior
+  // and parent are untouched:
+  //
+  //   parent/others          kid                     why
+  //   ───────────────────────────────────────────────────────────────────
+  //   Grocery quick tile     — dropped —             a shopping errand
+  //   Ride & pickup widget   My schedule             ride coordination is
+  //                          (KidTodayWidget)        a co-parent job; the
+  //                                                  actions were already
+  //                                                  parent-gated, so the
+  //                                                  widget was read-only
+  //                                                  noise for a kid
+  //   Grocery snapshot       My chores               a kid's own board +
+  //                          (KidChoresWidget)       the up-for-grabs pool
+  //
+  // plus one addition: the kid Hub's own six quick actions
+  // (KioskKidQuickActions), which had no kiosk equivalent at all.
+  const isKid = active.role === 'kid';
 
   const dayEvents = useEventStore(s => s.dayEvents);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
@@ -172,12 +217,15 @@ export function KioskOverviewTab({
               onPress={() => onNavigate('schedule')}
               hint="Open the family schedule"
             />
-            <QuickAction
-              Icon={ShoppingCart} label="Grocery" accent={k.sage} k={k} isDark={isDark}
-              onPress={() => onNavigate('meals')}
-              badge={groceryItems.length || undefined}
-              hint="Open meals and the grocery list"
-            />
+            {/* Grocery is a shopping errand — parent/teen/senior only. */}
+            {!isKid && (
+              <QuickAction
+                Icon={ShoppingCart} label="Grocery" accent={k.sage} k={k} isDark={isDark}
+                onPress={() => onNavigate('meals')}
+                badge={groceryItems.length || undefined}
+                hint="Open meals and the grocery list"
+              />
+            )}
             <QuickAction
               Icon={UtensilsCrossed} label="Meals" accent={k.gold} k={k} isDark={isDark}
               onPress={() => onNavigate('meals')}
@@ -227,32 +275,57 @@ export function KioskOverviewTab({
         </WidgetCard>
       </View>
 
+      {/* ══ KID QUICK ACTIONS ══════════════════════════════════════════
+          The kid Hub's own six tiles (KidMoreRow.tsx), kiosk-scaled. Sits
+          directly under the hero — the same position the mockup's quick
+          actions occupy — because for a kid these ARE the primary actions
+          on this screen, and burying them under the widget deck would make
+          the kid Overview read as a parent's dashboard with a kid strip
+          bolted on at the end. */}
+      {isKid && (
+        <KioskKidQuickActions
+          active={active} members={members}
+          onNavigate={tab => onNavigate(tab)}
+        />
+      )}
+
       {/* ══ WIDGET DECK ════════════════════════════════════════════════ */}
       <View style={s.deck}>
-        {/* ── Ride & pickup radar ── */}
-        <WidgetCard k={k} isDark={isDark} style={s.widget}>
-          <WidgetHeader
-            Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
-            accent={k.sage} k={k} isDark={isDark}
-            right={rides.length > 0
-              ? <Chip label={`${rides.length}`} accent={k.gold} isDark={isDark} k={k} />
-              : undefined}
+        {/* ── Ride & pickup radar (kid: their own day instead) ──
+            A kid can neither remind nor take over a ride — both actions
+            were already parent-gated — so for them this slot was a
+            read-only household-logistics feed with nothing to do about it.
+            Same slot, their own schedule. */}
+        {isKid ? (
+          <KidTodayWidget
+            active={active} k={k} isDark={isDark} style={s.widget}
+            onOpenSchedule={() => onNavigate('schedule')}
           />
-          {rides.length === 0 ? (
-            <EmptyNote text="Every ride today has a confirmed driver." k={k} />
-          ) : (
-            <View style={{ gap: KIOSK_SPACE.sm }}>
-              {rides.map(ev => (
-                <RideRow
-                  key={ev.id} ev={ev} k={k} isDark={isDark} members={members}
-                  canAct={isParent} actorId={active.id} actorName={active.name}
-                  onRemind={remindEventAssignee}
-                  onClaim={claimHelperSlot}
-                />
-              ))}
-            </View>
-          )}
-        </WidgetCard>
+        ) : (
+          <WidgetCard k={k} isDark={isDark} style={s.widget}>
+            <WidgetHeader
+              Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
+              accent={k.sage} k={k} isDark={isDark}
+              right={rides.length > 0
+                ? <Chip label={`${rides.length}`} accent={k.gold} isDark={isDark} k={k} />
+                : undefined}
+            />
+            {rides.length === 0 ? (
+              <EmptyNote text="Every ride today has a confirmed driver." k={k} />
+            ) : (
+              <View style={{ gap: KIOSK_SPACE.sm }}>
+                {rides.map(ev => (
+                  <RideRow
+                    key={ev.id} ev={ev} k={k} isDark={isDark} members={members}
+                    canAct={isParent} actorId={active.id} actorName={active.name}
+                    onRemind={remindEventAssignee}
+                    onClaim={claimHelperSlot}
+                  />
+                ))}
+              </View>
+            )}
+          </WidgetCard>
+        )}
 
         {/* ── Kids' coin jars ──
             Parent-only: a kiosk sits where anyone can see it, and one
@@ -302,7 +375,17 @@ export function KioskOverviewTab({
           </WidgetCard>
         )}
 
-        {/* ── Grocery snapshot ── */}
+        {/* ── Grocery snapshot (kid: their own chore board instead) ──
+            The household grocery list is a shopping concern. In its slot a
+            kid gets the thing a shared kitchen surface is actually best
+            at: their chore status at a glance plus the pool bounties
+            anyone can claim. */}
+        {isKid ? (
+          <KidChoresWidget
+            active={active} members={members} k={k} isDark={isDark} style={s.widget}
+            onOpenTasks={() => onNavigate('tasks')}
+          />
+        ) : (
         <WidgetCard k={k} isDark={isDark} style={s.widget}>
           <WidgetHeader
             Icon={ShoppingCart} eyebrow="Kitchen" title="Grocery list"
@@ -338,6 +421,7 @@ export function KioskOverviewTab({
             accessibilityHint="Open the meals and grocery screen"
           />
         </WidgetCard>
+        )}
 
         {/* ── Kept: the photo frame ──
             The mockup's photo-frame widget, deferred by the prior pass and

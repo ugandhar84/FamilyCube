@@ -32,7 +32,8 @@ import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
-import { deriveQuestActions, isAssignedTo } from '@/features/tasks/lib/deriveCardActions';
+import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
+import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort } from '@/lib/dates';
@@ -59,12 +60,11 @@ import { useKioskColors } from '../kioskPalette';
 // resubmitted. Added as its own 4th column rather than folding it into
 // "To Do", since a redo request carries a rejection reason the kid needs
 // to see and act on differently than a fresh unclaimed chore.
-const COLUMN_STATUSES: { key: string; label: string; statuses: string[] }[] = [
-  { key: 'todo',     label: 'To Do',       statuses: ['todo'] },
-  { key: 'progress', label: 'In Progress', statuses: ['claimed', 'in_progress'] },
-  { key: 'redo',     label: 'Needs Redo',  statuses: ['declined'] },
-  { key: 'review',   label: 'In Review',   statuses: ['pending_approval'] },
-];
+//
+// COLUMN_STATUSES, and the visibility/pool filters this view derives from
+// it, now live in ../kidQuestLanes so the kid Overview's "My Chores"
+// widget answers those questions from the same source rather than a
+// second copy that could drift. Nothing about the rules changed.
 
 export function KioskTasksTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -196,20 +196,10 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // a safety-review-pending chore offered up before a parent has vetted
   // it. Same rules as the phone, applied at the source list so every lane
   // below inherits them.
-  const visibleQuests = useMemo(() => {
-    const adultMemberIds = new Set(
-      members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id),
-    );
-    const isKidOrTeen = active.role === 'kid' || active.role === 'teen';
-    if (!isKidOrTeen) return quests;
-    return quests.filter(q => {
-      if (q.isAdultTask) return false;
-      if ((q as any).awaitingParentApproval) return false;
-      if (q.assignedToId && adultMemberIds.has(q.assignedToId)) return false;
-      if (q.isPool) return !q.inviteGrandparents;
-      return isAssignedTo(q, active.id);
-    });
-  }, [quests, members, active.role, active.id]);
+  const visibleQuests = useMemo(
+    () => visibleQuestsFor(quests, members, { id: active.id, role: active.role }),
+    [quests, members, active.role, active.id],
+  );
 
   // ── Pool / "Up for grabs" lane [GAP] ──────────────────────────────────
   // Pool chores previously had no lane of their own — they fell into
@@ -223,13 +213,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // least. Eligibility matches QuestsScreen.tsx:596's Bounty filter
   // exactly, including the !assignedToId check that makes a sibling's
   // just-claimed bounty disappear immediately rather than lingering.
-  const poolQuests = useMemo(
-    () => visibleQuests.filter(q =>
-      q.isPool && q.status === 'todo' && !q.isAdultTask &&
-      !q.assignedToId && !q.inviteGrandparents,
-    ),
-    [visibleQuests],
-  );
+  const poolQuests = useMemo(() => poolQuestsIn(visibleQuests), [visibleQuests]);
 
   // Status lanes exclude anything already surfaced in the pool lane, so a
   // bounty isn't rendered twice on the same board.

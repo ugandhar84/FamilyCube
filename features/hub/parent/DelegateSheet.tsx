@@ -35,6 +35,12 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
   const liveChore = useChoreStore(s => s.chores.find(c => c.id === target?.choreId));
   const isGPOpen = !!liveChore?.inviteGrandparents;
   const [note, setNote] = useState('');
+  // Live-reported: "GP Welcome is there but there are no GPs registered
+  // in that family at all" — the toggle rendered unconditionally,
+  // offering "Grandparents can see and claim this task" for a family with
+  // zero senior-role members to ever see or claim anything. Dead UI for
+  // any family without a registered grandparent.
+  const hasGrandparents = members.some(m => m.role === 'senior');
 
   return (
     <AppBottomSheet
@@ -69,7 +75,15 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
               addParentQuest's direct-assign path server-side (only the pool
               -claim paths, claimGPErrand/startGrandparentQuest, read it) —
               this is a UI-only restriction, doesn't change any write logic. */}
-          {members.filter(m => m.role === 'parent' || (m.role === 'senior' && isGPOpen)).map(m => (
+          {/* Live-reported: "if Praveena is reassigning/delegating a chore
+              to someone then why is she also in the list to pick
+              herself?" — delegating IS the act of passing it to someone
+              ELSE; the acting parent showing up as a tappable target in
+              their own delegate sheet is a contradiction in terms
+              (tapping it wouldn't even be wrong exactly, just a confusing
+              no-op that mimics "delegate to no one"). Excluded via
+              m.id !== active.id. */}
+          {members.filter(m => m.id !== active.id && (m.role === 'parent' || (m.role === 'senior' && isGPOpen))).map(m => (
             <Pressable key={m.id} onPress={() => {
               if (!target) return;
               // A task mid-negotiation (locked/pending) that gets
@@ -135,32 +149,34 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
           ))}
         </View>
 
-        <Pressable
-          onPress={() => {
-            if (!target) return;
-            useChoreStore.getState().updateChore(target.choreId, { inviteGrandparents: !isGPOpen } as any);
-          }}
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
-            marginTop: 6,
-            borderRadius: 16, borderWidth: 1.5,
-            borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
-            backgroundColor: isGPOpen ? `${GP_VIOLET}20` : (isDark ? colors.surface : '#F8FAFC'),
-          }}>
-          <View style={{
-            width: 44, height: 44, borderRadius: 22,
-            borderWidth: 2,
-            borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
-            backgroundColor: isGPOpen ? GP_VIOLET : 'transparent',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            {isGPOpen ? <Check size={20} color="#fff" /> : <HeartHandshake size={20} color={isDark ? '#64748B' : '#94A3B8'} />}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Grandparents can see and claim this task</Text>
-          </View>
-        </Pressable>
+        {hasGrandparents && (
+          <Pressable
+            onPress={() => {
+              if (!target) return;
+              useChoreStore.getState().updateChore(target.choreId, { inviteGrandparents: !isGPOpen } as any);
+            }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
+              marginTop: 6,
+              borderRadius: 16, borderWidth: 1.5,
+              borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
+              backgroundColor: isGPOpen ? `${GP_VIOLET}20` : (isDark ? colors.surface : '#F8FAFC'),
+            }}>
+            <View style={{
+              width: 44, height: 44, borderRadius: 22,
+              borderWidth: 2,
+              borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
+              backgroundColor: isGPOpen ? GP_VIOLET : 'transparent',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              {isGPOpen ? <Check size={20} color="#fff" /> : <HeartHandshake size={20} color={isDark ? '#64748B' : '#94A3B8'} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Grandparents can see and claim this task</Text>
+            </View>
+          </Pressable>
+        )}
       </View>
     </AppBottomSheet>
   );

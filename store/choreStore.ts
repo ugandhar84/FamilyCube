@@ -4981,7 +4981,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // getActiveAssignmentChoreIds() exclude this chore starting from the
     // very same render, with no window where it looks bare-unassigned.
     if (clearStaleAssignedToId) {
-      get().updateChore(choreId, { assignedToId: undefined, isPool: chore.isPool ?? false } as any);
+      // Live-reported dead-end bug: this used to keep the chore's PRIOR
+      // isPool value (false for a chore that was directly assigned at
+      // creation, e.g. GroceryScreen's handleCreateReturn) — fine while
+      // the fresh PENDING parent_quest_assignments row stays live, since
+      // getActiveAssignmentChoreIds() excludes it from the pool anyway.
+      // But once that assignment row later resolves to a TERMINAL status
+      // (COMPLETED, from either a normal accept/decline OR — the actual
+      // live case — claim_pool_quest failing on a subsequent "Take It" and
+      // rolling the assignment back to COMPLETED), the chore stops being
+      // "actively negotiating" and falls back to being read by its own
+      // assignedToId/isPool fields alone. With assignedToId now cleared
+      // AND isPool still false, it rendered as a claimable "Take It" card
+      // (assignedToId-based pool logic doesn't check isPool) that could
+      // NEVER actually be claimed (claim_pool_quest's own is_pool=true
+      // requirement always failed) — a permanent, unfixable-by-the-user
+      // "Someone else already took that" dead end. isPool must become
+      // true here: an assignee being cleared for delegation IS this chore
+      // becoming pool-eligible again, not staying whatever it was before.
+      get().updateChore(choreId, { assignedToId: undefined, isPool: true } as any);
     }
 
     // The Household Backlog pool/mine/theirs split is computed from the chore's

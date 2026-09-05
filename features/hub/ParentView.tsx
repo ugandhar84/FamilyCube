@@ -488,7 +488,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;  // directly assigned to adult (parent/GP)
     return false;
   });
-
   // A chore/quest can carry a stale System-B assignedToId while a NEWER
   // System-A delegation (parent_quest_assignments row) is actually live and
   // pending on someone else — DelegateSheet's reassign flow creates a fresh
@@ -510,7 +509,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // Split adult quests: mine (assigned to me), others' (assigned to someone else), unassigned (pool)
   const myAdultQuests       = adultQuestsNoLiveAssignment.filter(q => q.assignedToId === active.id);
   const othersAdultQuests   = adultQuestsNoLiveAssignment.filter(q => q.assignedToId && q.assignedToId !== active.id);
-  const unassignedAdultQ    = adultQuestsNoLiveAssignment.filter(q => !q.assignedToId);
+  // Live-reported dead-end bug: a chore whose assignedToId got cleared for
+  // delegation (choreStore.ts's addParentQuest, clearStaleAssignedToId)
+  // used to keep isPool at whatever it was before — false for a chore
+  // that was directly assigned at creation — leaving assignedToId===null
+  // but isPool===false once the fresh delegation's own
+  // parent_quest_assignments row resolved to a terminal status (that fix
+  // now forces isPool:true there too, but this filter shouldn't ALSO rely
+  // solely on assignedToId being the single source of truth for "is this
+  // really poolable" — claim_pool_quest's own server-side check requires
+  // is_pool=true, so a card that can render but never successfully claim
+  // is exactly the "Someone else already took that" dead end this
+  // matches against directly instead of re-deriving it from assignedToId
+  // alone).
+  const unassignedAdultQ    = adultQuestsNoLiveAssignment.filter(q => !q.assignedToId && (q as any).isPool !== false);
 
   const choreIds         = new Set(chorePool.map(c => c.id));
   // Pool = unassigned adult quests + chore-based pool (no duplicates)

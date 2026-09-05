@@ -34,6 +34,26 @@ function getActiveMemberId(): string | null {
   } catch { return null; }
 }
 
+// First name of a given member — used to name the ACTOR in every game
+// notification ("Alex challenged you to Tic-Tac-Toe!"). Every other
+// notification type in family-notifier's own buildMessage() (quest_claimed,
+// geofence_arrive, chat_mention, ...) is written server-side around a
+// senderName/kidName/memberName field the CALLER resolves and includes —
+// none of the 7 game notification types followed that pattern, so
+// family-notifier had no name to put in the message and fell through to
+// its generic default (title: "FamilyCube", body: "") for every single
+// one. This closes that gap at the source instead of guessing names
+// server-side from a bare member id.
+function nameOf(memberId: string | null | undefined): string {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const s = useFamilyStore.getState();
+    return s.members.find((m: any) => m.id === memberId)?.name?.split(' ')[0] ?? 'Someone';
+  } catch { return 'Someone'; }
+}
+
+const GAME_LABEL: Record<string, string> = { tic_tac_toe: 'Tic-Tac-Toe', memory: 'Memory', uno: 'Uno' };
+
 function notifyGameEvent(
   type: 'game_challenge_received' | 'game_challenge_accepted' | 'game_challenge_declined' | 'game_move_made' | 'game_completed' | 'uno_game_invite' | 'uno_your_turn',
   memberIds: string[],
@@ -43,8 +63,10 @@ function notifyGameEvent(
   const familyId = getFamilyId();
   const recipients = memberIds.filter(id => id && id !== excludeMemberId);
   if (!familyId || !recipients.length) return;
+  const actorName = nameOf(excludeMemberId);
+  const gameLabel = GAME_LABEL[payload.gameType as string] ?? 'a game';
   supabase.functions.invoke('family-notifier', {
-    body: { type, familyId, memberIds: recipients, payload, persist: true, excludeMemberId: excludeMemberId ?? undefined },
+    body: { type, familyId, memberIds: recipients, payload: { ...payload, actorName, gameLabel }, persist: true, excludeMemberId: excludeMemberId ?? undefined },
   }).catch(e => console.warn('[gameStore] notify failed:', e?.message));
 }
 
@@ -466,17 +488,33 @@ export const useGameStore = create<GameState>((set, get) => ({
   loadLeaderboard: async (gameType, difficulty) => {
     const familyId = getFamilyId();
     if (!familyId) return;
+    // A leaderboard is a ranking of PEOPLE, not a log of every round
+    // played — fetching a wide window and reducing to one row per member
+    // (their own best) avoids one person's own repeated attempts filling
+    // every visible slot and burying everyone else's (and their own most
+    // recent, different) scores. PostgREST has no DISTINCT ON, so this
+    // reduction happens client-side; the underlying table is already
+    // capped at 20 rows per family+game+difficulty by its own DB trigger,
+    // so "wide window" here is still a small, bounded fetch.
     const { data, error } = await supabase
       .from('game_scores')
       .select('*')
       .eq('family_id', familyId)
       .eq('game_type', gameType)
       .eq('difficulty', difficulty)
+      // Tiebreak by most recent first — with only score as the sort key,
+      // two equal scores fell back to whatever order Postgres happened to
+      // return them in (not guaranteed to be insertion order), so the same
+      // tie could silently re-rank itself between one load and the next.
       .order('score', { ascending: false })
-      .limit(20);
+      .order('created_at', { ascending: false });
     if (error || !data) { console.warn('[gameStore] loadLeaderboard failed', error?.message); return; }
+    const bestPerMember = new Map<string, typeof data[number]>();
+    for (const row of data) {
+      if (!bestPerMember.has(row.member_id)) bestPerMember.set(row.member_id, row);
+    }
     const key = `${gameType}:${difficulty}`;
-    set(s => ({ leaderboard: { ...s.leaderboard, [key]: data.map(fromScoreRow) } }));
+    set(s => ({ leaderboard: { ...s.leaderboard, [key]: Array.from(bestPerMember.values()).slice(0, 20).map(fromScoreRow) } }));
   },
 
   // Solo-vs-AI Tic-Tac-Toe/Memory have no game_sessions row at all (local
@@ -661,7 +699,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const game = fromUnoGameRow(data);
     set({ activeUnoGame: game });
     const invitees = humanMemberIds.filter(id => id !== activeMemberId);
-    notifyGameEvent('uno_game_invite', invitees, activeMemberId, { gameId: game.id });
+    notifyGameEvent('uno_game_invite', invitees, activeMemberId, { gameId: game.id, gameType: 'uno' });
     return game;
   },
 
@@ -690,7 +728,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       notifyGameEvent('game_completed', others, activeMemberId, { gameType: 'uno', gameId, winnerId: game.winnerId });
     } else {
       const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
-      if (nextPlayer?.memberId) notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId });
+      if (nextPlayer?.memberId) notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
     }
     return game;
   },
@@ -707,7 +745,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     await get().loadUnoGame(gameId);
     const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
     if (nextPlayer?.memberId && nextPlayer.memberId !== activeMemberId) {
-      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId });
+      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
     }
     return game;
   },
@@ -752,7 +790,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const activeMemberId = getActiveMemberId();
     const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
     if (nextPlayer?.memberId && nextPlayer.memberId !== activeMemberId) {
-      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId });
+      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
     }
     return game;
   },

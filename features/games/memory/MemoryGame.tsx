@@ -37,7 +37,7 @@ import { playSfx } from '../theme/gameAudio';
 import { speakEvent } from '../theme/gameVoice';
 import {
   MemoryCard, MemoryDifficulty, PAIR_COUNT, GRID_COLUMNS, TIME_LIMIT_SECONDS,
-  faceFor, generateDeck, isDeckComplete, computeMemoryScore,
+  faceFor, generateDeck, isDeckComplete, computeMemoryScoreBreakdown,
 } from './memoryLogic';
 import { pickAiMemoryTurn, recordSeen, type SeenMap } from './memoryAI';
 import { useGameStore } from '@/store/gameStore';
@@ -128,32 +128,45 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
   const [turnToken, setTurnToken] = useState(0);
   const [thinking, setThinking] = useState(false);
   const [busy, setBusy] = useState(false); // locks input during mismatch preview
-  const [moveCount, setMoveCount] = useState(0);
+  // Tracked per-player, not as one shared counter — the score formula
+  // (and the leaderboard submission) must only reflect the HUMAN's own
+  // moves. A shared counter previously meant every AI turn silently
+  // counted against the human's own move-penalty, so "your score" was
+  // partly determined by how many turns the AI happened to take.
+  const [moveCount, setMoveCount] = useState({ human: 0, ai: 0 });
   const [pairs, setPairs] = useState({ human: 0, ai: 0 });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
+  // Without a real "not started" gate, the timer and score both began
+  // counting the instant this screen mounted — before the player had
+  // flipped a single card. On a timed difficulty that meant the round
+  // could silently time out (0 pairs found) while the player was still
+  // looking at the board, and briefly rendered a nonsensical state (a
+  // score computed from a stale/zero clock) before any real play began.
+  const [started, setStarted] = useState(false);
   const seenRef = useRef<SeenMap>(new Map());
-  const startedRef = useRef(Date.now());
+  const startedRef = useRef<number | null>(null);
 
   const totalPairs = PAIR_COUNT[difficulty];
   const timeLimit = TIME_LIMIT_SECONDS[difficulty];
   const gameOver = isDeckComplete(cards);
-  const timeUp = timeLimit !== null && elapsedSeconds >= timeLimit;
+  const timeUp = started && timeLimit !== null && elapsedSeconds >= timeLimit;
   const roundOver = gameOver || timeUp;
 
   useEffect(() => { onGameOverChange(roundOver); }, [roundOver]);
 
   useEffect(() => {
-    if (roundOver) return;
-    const interval = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedRef.current) / 1000)), 1000);
+    if (!started || roundOver || startedRef.current === null) return;
+    const startedAt = startedRef.current;
+    const interval = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
     return () => clearInterval(interval);
-  }, [roundOver]);
+  }, [started, roundOver]);
 
   useEffect(() => {
     if (roundOver && !scoreSubmitted) {
       setScoreSubmitted(true);
-      const score = computeMemoryScore({ difficulty, moveCount, timeElapsedSeconds: elapsedSeconds });
-      submitScore({ gameType: 'memory', difficulty, score, memoryMoves: moveCount, memoryTimeSeconds: elapsedSeconds });
+      const score = computeMemoryScoreBreakdown({ difficulty, moveCount: moveCount.human, timeElapsedSeconds: elapsedSeconds, pairsWon: pairs.human, totalPairs }).total;
+      submitScore({ gameType: 'memory', difficulty, score, memoryMoves: moveCount.human, memoryTimeSeconds: elapsedSeconds });
       submitSoloResult('memory', pairs.human > pairs.ai ? 'win' : pairs.human < pairs.ai ? 'loss' : 'draw');
       if (pairs.human > pairs.ai) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -171,7 +184,7 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
   };
 
   const resolveTurn = (firstId: number, secondId: number, player: 'human' | 'ai') => {
-    setMoveCount(m => m + 1);
+    setMoveCount(m => ({ ...m, [player]: m[player] + 1 }));
     const first = cards.find(c => c.id === firstId)!;
     const second = cards.find(c => c.id === secondId)!;
     const isMatch = first.pairId === second.pairId;
@@ -204,6 +217,15 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
     if (!isHumanTurn || busy || roundOver) return;
     const card = cards.find(c => c.id === id);
     if (!card || card.faceUp || card.matchedBy) return;
+
+    // The very first flip of the round is what actually starts the clock
+    // — not the screen mounting. startedRef feeds the timer effect above;
+    // `started` itself gates timeUp so a timed round can never expire
+    // before the player has done anything.
+    if (!started) {
+      startedRef.current = Date.now();
+      setStarted(true);
+    }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     playSfx('cardFlip');
@@ -250,12 +272,13 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
     setIsHumanTurn(true);
     setThinking(false);
     setBusy(false);
-    setMoveCount(0);
+    setMoveCount({ human: 0, ai: 0 });
     setPairs({ human: 0, ai: 0 });
     setElapsedSeconds(0);
     setScoreSubmitted(false);
     seenRef.current = new Map();
-    startedRef.current = Date.now();
+    startedRef.current = null;
+    setStarted(false);
   };
 
   const timeRemaining = timeLimit !== null ? Math.max(0, timeLimit - elapsedSeconds) : null;
@@ -267,6 +290,13 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
     ? (pairs.human > pairs.ai ? ARCADE.memory : pairs.human < pairs.ai ? ARCADE.ticTacToeO : ARCADE.textPrimary)
     : ARCADE.textPrimary;
 
+  // Same formula as the leaderboard submission, recomputed live off the
+  // exact same moveCount.human/elapsedSeconds state — the number on screen
+  // while playing is never a different figure from what actually gets
+  // submitted. Only the HUMAN's own moves count against the move penalty —
+  // the AI taking a turn (even a mismatch) never costs the human anything.
+  const scoreBreakdown = computeMemoryScoreBreakdown({ difficulty, moveCount: moveCount.human, timeElapsedSeconds: elapsedSeconds, pairsWon: pairs.human, totalPairs });
+
   return (
     <MemoryBoardShell
       cards={cards} gridWidth={gridWidth} cardSize={cardSize} statusText={statusText} statusColor={statusColor}
@@ -274,6 +304,8 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
       leftLabel="YOU" rightLabel="AI" leftCount={pairs.human} rightCount={pairs.ai} totalPairs={totalPairs}
       leftTurn={isHumanTurn && !roundOver} rightTurn={!isHumanTurn && !roundOver}
       onCardPress={handleCardPress} cardsDisabled={!isHumanTurn || busy || roundOver}
+      score={started ? scoreBreakdown.total : undefined}
+      scoreBreakdown={roundOver ? scoreBreakdown : undefined}
       footer={roundOver && <ArcadePrimaryButton label="Play Again" onPress={handleRestart} />}
     />
   );
@@ -282,12 +314,20 @@ function SoloMemory({ difficulty, onGameOverChange }: { difficulty: MemoryDiffic
 function MemoryBoardShell({
   cards, gridWidth, cardSize, statusText, statusColor, timeRemaining,
   leftLabel, rightLabel, leftCount, rightCount, totalPairs, leftTurn, rightTurn,
-  onCardPress, cardsDisabled, footer,
+  onCardPress, cardsDisabled, footer, score, scoreBreakdown,
 }: {
   cards: MemoryCard[]; gridWidth: number; cardSize: number; statusText: string; statusColor: string;
   timeRemaining: number | null; leftLabel: string; rightLabel: string; leftCount: number; rightCount: number;
   totalPairs: number; leftTurn: boolean; rightTurn: boolean;
   onCardPress: (id: number) => void; cardsDisabled: boolean; footer: React.ReactNode;
+  // Solo-only — multiplayer has no scoring concept (it's win/loss, per the
+  // plan), so both are omitted there. `score` updates live during play,
+  // recomputed from the same formula the leaderboard submission uses, so
+  // the number on screen while playing is never a different figure from
+  // what actually gets submitted. `scoreBreakdown` is only shown once the
+  // round ends — a plain-language readout of how that number was reached.
+  score?: number;
+  scoreBreakdown?: { base: number; movePenalty: number; timePenalty: number; difficultyBonus: number };
 }) {
   // No cards dealt yet (session still 'pending', waiting on accept) — a
   // "0/0" score reads as broken rather than "not started", and an empty
@@ -340,6 +380,24 @@ function MemoryBoardShell({
         {statusText}
       </Text>
 
+      {score !== undefined && !isPending && (
+        <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: ARCADE_TYPO.body, color: ARCADE.memory, marginTop: -8, fontVariant: ['tabular-nums'] }}>
+          Your score: {score}
+        </Text>
+      )}
+
+      {scoreBreakdown && (
+        <View style={{
+          borderRadius: 14, borderWidth: 1, borderColor: ARCADE.line, backgroundColor: ARCADE.surface,
+          paddingVertical: 10, paddingHorizontal: 14, gap: 3, width: gridWidth,
+        }}>
+          <BreakdownRow label="Base" value={`+${scoreBreakdown.base}`} />
+          {scoreBreakdown.movePenalty > 0 && <BreakdownRow label="Extra moves" value={`-${scoreBreakdown.movePenalty}`} negative />}
+          {scoreBreakdown.timePenalty > 0 && <BreakdownRow label="Time taken" value={`-${scoreBreakdown.timePenalty}`} negative />}
+          {scoreBreakdown.difficultyBonus > 0 && <BreakdownRow label="Difficulty bonus" value={`+${scoreBreakdown.difficultyBonus}`} />}
+        </View>
+      )}
+
       {!isPending && (
         <View style={{ width: gridWidth, flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP }}>
           {cards.map(card => (
@@ -353,6 +411,20 @@ function MemoryBoardShell({
       )}
 
       {footer}
+    </View>
+  );
+}
+
+function BreakdownRow({ label, value, negative }: { label: string; value: string; negative?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      <Text style={{ fontSize: ARCADE_TYPO.label, color: ARCADE.textSecondary }}>{label}</Text>
+      <Text style={{
+        fontSize: ARCADE_TYPO.label, fontWeight: '800', fontVariant: ['tabular-nums'],
+        color: negative ? ARCADE.ticTacToeO : ARCADE.memory,
+      }}>
+        {value}
+      </Text>
     </View>
   );
 }

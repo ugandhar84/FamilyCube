@@ -25,6 +25,15 @@ const RECORD_GAME_TYPES: { key: 'tic_tac_toe' | 'memory' | 'uno'; label: string;
 ];
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 const MEDALS = ['🥇', '🥈', '🥉'];
+// A single stable reference for "no leaderboard loaded yet" — returning a
+// fresh `[] ` literal from inside a Zustand selector allocates a NEW array
+// on every render whenever the lookup key is absent, which useSyncExternalStore
+// sees as "the snapshot changed" on every single render (a fresh array is
+// never === the previous one) and enters an infinite render loop (React's
+// own "The result of getSnapshot should be cached" warning is the tell).
+// A module-level constant is always the same reference, so the selector
+// only "changes" when the store's own leaderboard state actually does.
+const EMPTY_LEADERBOARD: never[] = [];
 
 function ScoresTab() {
   const [gameType, setGameType] = useState<'snake' | 'memory'>('snake');
@@ -32,7 +41,7 @@ function ScoresTab() {
   const [loading, setLoading] = useState(true);
   const members = useFamilyStore(s => s.members);
   const loadLeaderboard = useGameStore(s => s.loadLeaderboard);
-  const leaderboard = useGameStore(s => s.leaderboard[`${gameType}:${difficulty}`] ?? []);
+  const leaderboard = useGameStore(s => s.leaderboard[`${gameType}:${difficulty}`] ?? EMPTY_LEADERBOARD);
   const activeAccent = SCORE_GAME_TYPES.find(g => g.key === gameType)!.accent;
 
   useEffect(() => {
@@ -146,10 +155,14 @@ function RecordsTab() {
     loadFamilyWinTallies(familyId, gameType).then(setTallies).finally(() => setLoading(false));
   }, [familyId, gameType]);
 
-  // Ranked by wins desc, ties broken by fewer losses — a family member with
-  // zero recorded games simply never appears here (there's no row to show
-  // "0-0-0" from) rather than padding the list with everyone in the family.
-  const ranked = [...tallies].sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+  // Ranked by wins desc, ties broken by fewer losses. A row with zero
+  // wins/losses/draws carries no real information (every genuine write to
+  // this table always increments exactly one of the three) — filtered out
+  // defensively so a family member never sees a meaningless "0-0-0" entry
+  // regardless of how such a row came to exist.
+  const ranked = tallies
+    .filter(t => t.wins > 0 || t.losses > 0 || t.draws > 0)
+    .sort((a, b) => b.wins - a.wins || a.losses - b.losses);
 
   return (
     <View style={{ flex: 1, gap: 14 }}>

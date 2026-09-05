@@ -287,6 +287,21 @@ type NotifType =
   // the near proximity of the grocery stores then they should get notify"
   // (the OTHER parent, not just the one who's there).
   | 'store_proximity_arrived'
+  // Family Games (Tic-Tac-Toe/Memory/Uno multiplayer) — gameStore.ts's own
+  // notifyGameEvent had been sending these 7 types for the whole games
+  // feature's lifetime with no matching case here, so every single game
+  // notification fell through to the generic default (title: "FamilyCube",
+  // body: "") — a real user-reported blank notification is what surfaced
+  // this. actorName/gameLabel are resolved client-side (gameStore.ts) and
+  // included in the payload, same pattern chat_mention/geofence_arrive/
+  // quest_claimed already use for their own senderName/memberName/kidName.
+  | 'game_challenge_received'
+  | 'game_challenge_accepted'
+  | 'game_challenge_declined'
+  | 'game_move_made'
+  | 'game_completed'
+  | 'uno_game_invite'
+  | 'uno_your_turn'
   | 'custom';
 
 // Category a member's notification_prefs toggles by — coarser than
@@ -1217,6 +1232,59 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Vault', tab: 'Meals', mealId: p.mealId },
       };
     }
+
+    case 'game_challenge_received':
+      return {
+        title: '🎮 Game Challenge!',
+        body: `${p.actorName ?? 'Someone'} challenged you to ${p.gameLabel ?? 'a game'}${p.difficulty ? ` (${p.difficulty})` : ''} — open Family Games to accept.`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: p.gameType, sessionId: p.sessionId },
+      };
+    case 'game_challenge_accepted':
+      return {
+        title: `🎮 ${p.actorName ?? 'Someone'} accepted!`,
+        body: `${p.actorName ?? 'Someone'} accepted your ${p.gameLabel ?? 'game'} challenge — your turn!`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: p.gameType, sessionId: p.sessionId },
+      };
+    case 'game_challenge_declined':
+      return {
+        title: '🎮 Challenge Declined',
+        body: `${p.actorName ?? 'Someone'} declined your ${p.gameLabel ?? 'game'} challenge.`,
+        data: { screen: 'Hub', gameType: p.gameType, sessionId: p.sessionId },
+      };
+    case 'game_move_made':
+      return {
+        title: `🎮 ${p.gameLabel ?? 'Game'} — your turn`,
+        body: `${p.actorName ?? 'Someone'} made their move — it's your turn now.`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: p.gameType, sessionId: p.sessionId },
+      };
+    case 'game_completed':
+      // The payload carries winnerId but not the RECIPIENT's own member id
+      // (family-notifier fans one payload out to a list of recipients), so
+      // it can't say "you won"/"you lost" without risking getting it
+      // backwards — phrased neutrally, same as a real scoreboard update.
+      return {
+        title: '🎮 Game Over',
+        body: `Your ${p.gameLabel ?? 'game'} against ${p.actorName ?? 'them'} just finished — open Family Games to see the result.`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: p.gameType, sessionId: p.sessionId ?? p.gameId },
+      };
+    case 'uno_game_invite':
+      return {
+        title: '🎴 Uno Table Invite',
+        body: `${p.actorName ?? 'Someone'} started an Uno table and added you — open Family Games to join in.`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: 'uno', gameId: p.gameId },
+      };
+    case 'uno_your_turn':
+      return {
+        title: '🎴 Your Turn in Uno!',
+        body: `It's your turn at the Uno table — don't keep everyone waiting.`,
+        sound: 'default',
+        data: { screen: 'Hub', gameType: 'uno', gameId: p.gameId },
+      };
 
     case 'custom':
     default:

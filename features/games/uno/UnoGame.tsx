@@ -77,6 +77,13 @@ export default function UnoGame() {
   const aiTurnInFlightRef = useRef<string | null>(null);
   const flightKeyRef = useRef(0);
   const prevHandLenRef = useRef<number | null>(null);
+  // Whether the seat that just acted (before the CURRENT current_turn_seat)
+  // was itself an AI — used to give AI-to-AI turn chains a longer pause
+  // than AI-after-a-human. Consecutive AI moves with only the usual
+  // "thinking" delay between them read as a rapid, hard-to-follow blur —
+  // there's no human action in between to anchor on, so the gap has to
+  // come from the pacing itself instead.
+  const lastActorWasAiRef = useRef(false);
   // True while MY OWN play's sting has already been fired from
   // handleCardPress — outlives the (shorter) flight animation itself, so
   // the discard-change detector below can't double-sound a play whose RPC
@@ -97,12 +104,25 @@ export default function UnoGame() {
   const isMyTurn = !!game && !!me && game.status === 'active' && game.currentTurnSeat === me.seat;
   const currentSeatPlayer = players.find(p => p.seat === game?.currentTurnSeat);
 
+  // Tracks whether the seat now acting is human — the AI-turn driver below
+  // reads lastActorWasAiRef to decide its own delay, so this only needs to
+  // clear the flag on a human's turn; the AI driver sets it back to true
+  // itself right before it actually acts.
+  useEffect(() => {
+    if (currentSeatPlayer && !currentSeatPlayer.isAi) lastActorWasAiRef.current = false;
+  }, [currentSeatPlayer?.id]);
+
   // AI turn driver — see file header comment on why racing clients are safe.
   useEffect(() => {
     if (!game || game.status !== 'active' || !currentSeatPlayer?.isAi || !topCard) return;
     const turnKey = `${game.id}:${game.currentTurnSeat}:${game.updatedAt}`;
     if (aiTurnInFlightRef.current === turnKey) return;
     aiTurnInFlightRef.current = turnKey;
+
+    // AI-after-AI gets a longer pause than AI-after-a-human: with no human
+    // action in between to anchor on, back-to-back AI moves at the normal
+    // "thinking" pace blur together and it's hard to tell who just played.
+    const delay = lastActorWasAiRef.current ? ARCADE_AI_THINK_MS + 1100 : ARCADE_AI_THINK_MS + 300;
 
     const timer = setTimeout(async () => {
       // Re-check: another client may have already advanced this turn
@@ -114,6 +134,7 @@ export default function UnoGame() {
       const aiPlayer = freshPlayers.find(p => p.seat === freshGame.currentTurnSeat && p.isAi);
       if (!aiPlayer) return;
 
+      lastActorWasAiRef.current = true;
       // No client can ever see an AI seat's hand (uno_players_public
       // redacts every hand but the caller's own, and an AI seat has no
       // member_id to match against) — the move decision happens entirely
@@ -121,7 +142,7 @@ export default function UnoGame() {
       // hand. This call is safe to race across multiple clients: the RPC
       // re-validates it's genuinely this seat's turn before doing anything.
       await playUnoAiTurn(gameId);
-    }, ARCADE_AI_THINK_MS + 300);
+    }, delay);
     return () => clearTimeout(timer);
   }, [game?.id, game?.currentTurnSeat, game?.updatedAt, currentSeatPlayer?.isAi]);
 
@@ -338,16 +359,17 @@ export default function UnoGame() {
       {/* ── Felt table backdrop ──────────────────────────────────────────
           A deep emerald felt, distinct from the violet arcade shell the
           other three games sit on, with an ARCADE.uno-tinted rim so the
-          table still carries Uno's own accent identity. The SAME gradient
-          now also paints ArcadeScreen's own header strip (via
-          backgroundColors) — a violet header over a green table read as
-          broken chrome rather than two intentional zones. */}
+          table still carries Uno's own accent identity. ArcadeScreen's own
+          `backgroundColors` already paints this same gradient continuously
+          across the WHOLE screen (header included) — no separate base
+          gradient is repainted here, since a second gradient restarting at
+          this View's own top (rather than continuing the screen's) is
+          exactly what created a visible seam/darker band right at the
+          header boundary. Only the vignette (a purely decorative darkening
+          of the table's far edges, not a base color) is layered on here,
+          and it now fades in from a few px down rather than starting flush
+          against the header so it can't read as "the header is darker". */}
       <View style={{ flex: 1 }}>
-        <LinearGradient
-          colors={['#123A2C', '#0C2A20', '#071A14']}
-          locations={[0, 0.55, 1]}
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-        />
         {/* Table-edge vignette: an inset rim + darkened corners so the felt
             reads as a surface with edges rather than a flat fill. */}
         <View
@@ -361,8 +383,8 @@ export default function UnoGame() {
         />
         <LinearGradient
           pointerEvents="none"
-          colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.5)']}
-          locations={[0, 0.45, 1]}
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.4)']}
+          locations={[0, 0.5, 1]}
           style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
         />
 

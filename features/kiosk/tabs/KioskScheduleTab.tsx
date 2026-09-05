@@ -20,8 +20,10 @@
  * behaviors CalendarScreen.tsx applies did not carry over. Now mirrored,
  * each against its phone source: the "My Schedule" title (CalendarScreen
  * .tsx:1070), the default-to-own-events scope (its scheduleFilter 'mine'
- * default, :549) expressed through this tab's existing member-filter pills,
- * the always-on hideForSibling withholding of a sibling's Medical/Ride rows
+ * default, :549), the "My Schedule"/"All" scope toggle itself (:1211) alongside the separate
+ * per-member filter row (:1145) — kiosk carries the phone's two controls as
+ * two, no longer collapsed into one row of member pills — the always-on
+ * hideForSibling withholding of a sibling's Medical/Ride rows
  * (:835-839), the "ask, don't schedule" empty-state framing (:1432), and
  * routing a kid's own still-pending request to KidRequestModal's edit mode
  * (:569-577, :1709-1713) so they can withdraw it. Creation was already
@@ -96,21 +98,39 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
-  // Mirrors CalendarScreen.tsx's own kid/teen scoping. On the phone that
-  // screen defaults scheduleFilter to 'mine' for anyone who isn't a parent
-  // (CalendarScreen.tsx:549) and additionally hides a SIBLING's Medical/Ride
-  // rows outright from a kid/teen (its hideForSibling, CalendarScreen.tsx:
-  // 835-839). Kiosk already has its own member-filter pills, so the cleanest
-  // structural equivalent of "My Schedule by default" is to pre-select the
-  // kid's own pill instead of Everyone — same effect, kiosk's existing UI
-  // pattern, and the kid can still tap Everyone the way phone's "All" tab
-  // lets them. The hideForSibling half is NOT expressible via a pill (it's
-  // an always-on rule that survives switching to All), so it's applied
-  // separately in eventsByDate below.
+  // TWO SEPARATE CONTROLS, matching CalendarScreen.tsx exactly. A previous
+  // pass collapsed the phone's two into kiosk's single row of member pills
+  // (pre-selecting the kid's own pill, relabeled "Mine", as a stand-in for
+  // the phone's 'mine' scope). That was a deliberate simplification and it
+  // is now undone: kiosk carries the same pair the phone does.
+  //
+  //  1. scheduleScope — the "My Schedule" / "All" toggle
+  //     (CalendarScreen.tsx:1211), backed by its scheduleFilter state,
+  //     which defaults to 'mine' for anyone who isn't a parent and 'all'
+  //     for a parent (CalendarScreen.tsx:549). Non-parents only: the phone
+  //     never renders this for a parent, and its own scope gate
+  //     short-circuits on `isParent ||` regardless (:926, :986).
+  //  2. filterMemberId — the independent per-member row
+  //     (CalendarScreen.tsx:1145): "All Family" first, then every member by
+  //     their real name, NO self-relabeling. Parent/senior only on the
+  //     phone (its isParentOrSenior gate), so likewise here.
+  //
+  // Both combine in eventsByDate below exactly the way the phone combines
+  // them. hideForSibling (CalendarScreen.tsx:835-839) is neither of these —
+  // it's an always-on privacy rule that survives every scope/member
+  // selection, and is applied on its own in eventsByDate.
   const isKidViewer = active.role === 'kid' || active.role === 'teen';
-  const [filterMemberId, setFilterMemberId] = useState<string | null>(
-    isKidViewer ? active.id : null,
+  const isParentViewer = active.role === 'parent';
+  const isSeniorViewer = active.role === 'senior';
+  // Phone: member pills are isParentOrSenior only (CalendarScreen.tsx:1143).
+  const canFilterByMember = isParentViewer || isSeniorViewer;
+  // Phone: the scope toggle renders only for a non-parent
+  // (CalendarScreen.tsx:1207's `&& !isParent`).
+  const canScopeSchedule = !isParentViewer;
+  const [scheduleScope, setScheduleScope] = useState<'mine' | 'all'>(
+    isParentViewer ? 'all' : 'mine',
   );
+  const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('agenda');
   const [cursor, setCursor] = useState(() => new Date());
   // Live-reported: "in kiosk monthly view is not use right as per current
@@ -232,33 +252,65 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     }
   }, [viewMode, cursor, loadRange]);
 
+  // Resolved once, not per-event: the phone's matchesMemberFilter also
+  // matches on the filtered member's NAME appearing in the free-text
+  // helper/driverName fields, so a member pending as helper/driver on
+  // someone else's event still surfaces under their own pill
+  // (CalendarScreen.tsx:801, 811-814).
+  const filterMemberName = filterMemberId
+    ? members.find(m => m.id === filterMemberId)?.name
+    : undefined;
+
   const eventsByDate = useMemo(() => {
     const map: Record<string, FamilyEvent[]> = {};
+    const filterFirstName = filterMemberName?.split(' ')[0];
     for (const ev of rangeEvents) {
       // hideForSibling, ported from CalendarScreen.tsx:835-839. Always-on for
-      // a kid/teen regardless of which filter pill is selected — a sibling's
-      // Medical appointment or Ride request is withheld even when the kid
-      // taps "Everyone", exactly as the phone withholds it even on the "All"
-      // tab. This is a privacy rule, not a filter, so it can't live in the
-      // pill state above.
+      // a kid/teen regardless of the scope toggle OR the member pills — a
+      // sibling's Medical appointment or Ride request is withheld even when
+      // the kid switches to "All", exactly as the phone withholds it even
+      // on its own "All" tab. This is a privacy rule, not a filter, so it
+      // sits above both controls and neither can relax it.
       if (isKidViewer) {
         const isOwn = !ev.memberId || ev.memberId === active.id
           || !!ev.memberIds?.includes(active.id);
         if (!isOwn && (ev.category === 'Medical' || ev.category === 'Ride')) continue;
       }
+
+      // 1. My Schedule / All scope. Phone's rule, verbatim from
+      //    CalendarScreen.tsx:926 and the identical gate at :986 — a parent
+      //    always passes, 'all' always passes, and otherwise the event must
+      //    be FOR the viewer, list them among its assignees, or name them as
+      //    helper/driver, or carry no assignee at all (family-wide).
+      const scopeMatches = isParentViewer || scheduleScope === 'all'
+        || ev.memberId === active.id
+        || !!ev.memberIds?.includes(active.id)
+        || (!!ev.helper && ev.helper === active.name)
+        || (!!ev.driverName && ev.driverName === active.name)
+        || (!ev.memberId && !ev.memberIds?.length);
+      if (!scopeMatches) continue;
+
+      // 2. Per-member filter, independent of the scope above — the phone
+      //    ANDs the two the same way (matchesMemberFilter is a separate
+      //    conjunct alongside the scope gate at :926/:986), so a parent can
+      //    hold scope=All and still narrow to one member.
       if (filterMemberId) {
         const involved = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
         // Family-wide events (no assignee at all) always show, matching
-        // CalendarScreen's matchesMemberFilter (CalendarScreen.tsx:804) —
-        // otherwise a kid defaulted to their own pill would lose every
-        // household-wide event (school closure, family dinner) from view.
-        if (involved.length > 0 && !involved.includes(filterMemberId)) continue;
+        // CalendarScreen's matchesMemberFilter (CalendarScreen.tsx:804).
+        if (involved.length > 0 && !involved.includes(filterMemberId)) {
+          const namedOnEvent = !!filterMemberName && (
+            (!!ev.helper && (ev.helper.includes(filterMemberName) || (!!filterFirstName && ev.helper.includes(filterFirstName))))
+            || (!!ev.driverName && (ev.driverName.includes(filterMemberName) || (!!filterFirstName && ev.driverName.includes(filterFirstName))))
+          );
+          if (!namedOnEvent) continue;
+        }
       }
       if (!map[ev.date]) map[ev.date] = [];
       map[ev.date].push(ev);
     }
     return map;
-  }, [rangeEvents, filterMemberId, isKidViewer, active.id]);
+  }, [rangeEvents, filterMemberId, filterMemberName, scheduleScope, isKidViewer, isParentViewer, active.id, active.name]);
 
   const involvedFor = (ev: FamilyEvent) => {
     const ids = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
@@ -320,6 +372,26 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               accessibilityRole="button" accessibilityLabel="Jump to today">
               <Text style={[s.todayBtnText, { color: colors.textSecondary }]}>Today</Text>
             </Pressable>
+            {/* Creation lives HERE, beside Today, rather than at the foot of
+                a populated list — on a kitchen tablet the action a passer-by
+                reaches for shouldn't require scrolling a fortnight of agenda
+                rows to find. The end-of-list copies in Agenda/Week/Day were
+                removed when this landed; the EMPTY-state button stays, since
+                that one is a first-action prompt inside an otherwise blank
+                view, not a persistent control. */}
+            {canCreate && (
+              <Pressable onPress={openCreator} style={[s.headerAddBtn, { backgroundColor: colors.primary }]}
+                accessibilityRole="button"
+                accessibilityLabel={isKidCreator ? 'Ask a parent' : 'Add an event'}
+                accessibilityHint={isKidCreator
+                  ? 'Sends a request to a parent to add something to the schedule'
+                  : 'Opens the composer to add a new event'}>
+                <Plus size={22} color="#fff" />
+                <Text style={s.headerAddBtnText} numberOfLines={1}>
+                  {isKidCreator ? 'Ask a parent' : 'Add an event'}
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           <View style={[s.modeSwitch, { backgroundColor: colors.surface }]}>
@@ -339,32 +411,75 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           </View>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
-          <Pressable onPress={() => setFilterMemberId(null)}
-            accessibilityRole="button" accessibilityLabel="Show everyone's events"
-            accessibilityState={{ selected: !filterMemberId }}
-            style={[s.filterChip, { backgroundColor: !filterMemberId ? colors.primary : colors.surface, borderColor: !filterMemberId ? colors.primary : colors.border }]}>
-            <Text style={[s.filterText, { color: !filterMemberId ? '#fff' : colors.textSecondary }]}>Everyone</Text>
-          </Pressable>
-          {members.map(m => {
-            const rs = assigneeStyle(m, colors, isDark);
-            const on = filterMemberId === m.id;
-            // The kid's own pill is the one pre-selected for them, so it
-            // reads "Mine" rather than their own first name — the same
-            // wording as the phone's "My Schedule" tab it stands in for.
-            const label = isKidViewer && m.id === active.id ? 'Mine' : m.name.split(' ')[0];
-            return (
-              <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
-                accessibilityRole="button"
-                accessibilityLabel={isKidViewer && m.id === active.id ? 'Show only my events' : `Filter to ${m.name.split(' ')[0]}`}
-                accessibilityState={{ selected: on }}
-                style={[s.filterChip, { backgroundColor: on ? rs.dot : colors.surface, borderColor: on ? rs.dot : colors.border }]}>
-                <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
-                <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]}>{label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* ROW 1 — "My Schedule" / "All" scope, the phone's own toggle
+            (CalendarScreen.tsx:1211). Rendered as a segmented control
+            rather than a third pill style, reusing the exact visual
+            treatment of the Month/Week/Day/Agenda switcher directly above
+            (s.modeSwitch / s.modeBtn) so this file keeps one segmented
+            language. Non-parents only, matching the phone's `&& !isParent`
+            gate — a parent's scope is permanently 'all' there and here. */}
+        {canScopeSchedule && (
+          <View style={[s.scopeSwitch, { backgroundColor: colors.surface }]}
+            accessibilityRole="tablist">
+            {([{ key: 'mine' as const, label: 'My Schedule' }, { key: 'all' as const, label: 'All' }]).map(t => {
+              const on = scheduleScope === t.key;
+              return (
+                <Pressable key={t.key}
+                  onPress={() => {
+                    setScheduleScope(t.key);
+                    // Phone clears the member filter when you drop back to
+                    // 'mine' (CalendarScreen.tsx:1213) — the two would
+                    // otherwise contradict each other on screen.
+                    if (t.key === 'mine') setFilterMemberId(null);
+                  }}
+                  style={[s.scopeBtn, on && { backgroundColor: colors.primary }]}
+                  accessibilityRole="tab" accessibilityState={{ selected: on }}
+                  accessibilityLabel={t.label}
+                  accessibilityHint={t.key === 'mine'
+                    ? 'Shows only events you are part of'
+                    : 'Shows the whole family’s events'}>
+                  <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ROW 2 — the per-member filter, a SEPARATE and independent control
+            from the scope toggle above, exactly as on the phone
+            (CalendarScreen.tsx:1145): "All Family" first, then every member
+            under their real name. No self-relabeling to "Mine" here — the
+            scope toggle owns that concept now. Parent/senior only, matching
+            the phone's isParentOrSenior gate on the same row. */}
+        {canFilterByMember && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
+            <Pressable onPress={() => setFilterMemberId(null)}
+              accessibilityRole="button" accessibilityLabel="All Family"
+              accessibilityHint="Clears the member filter"
+              accessibilityState={{ selected: !filterMemberId }}
+              style={[s.filterChip, { backgroundColor: !filterMemberId ? colors.primary : colors.surface, borderColor: !filterMemberId ? colors.primary : colors.border }]}>
+              <Text style={[s.filterText, { color: !filterMemberId ? '#fff' : colors.textSecondary }]} numberOfLines={1}>All Family</Text>
+            </Pressable>
+            {members.map(m => {
+              const rs = assigneeStyle(m, colors, isDark);
+              const on = filterMemberId === m.id;
+              const label = m.name.split(' ')[0];
+              return (
+                <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Filter to ${label}`}
+                  accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
+                  accessibilityState={{ selected: on }}
+                  style={[s.filterChip, { backgroundColor: on ? rs.dot : colors.surface, borderColor: on ? rs.dot : colors.border }]}>
+                  <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
+                  <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       {rangeLoading && eventsByDate && Object.keys(eventsByDate).length === 0 && (
@@ -406,33 +521,24 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               isViewerParent={active.role === 'parent'}
               onSelectEvent={routeEventPress}
             />
-            {/* DayEventsSummaryCard is a pure display component (mobile's
-                own Month view has no card-embedded "+" either — creation
-                there goes through the screen's own FAB) — Week/Day views in
-                this tab both expose their own onAddDay/onAdd "+" already,
-                so Month gets the same reachable entry point rather than
-                being the one mode with no way to open the composer at all. */}
-            {canCreate && (
-              <Pressable onPress={openCreator} style={[s.monthAddBtn, { backgroundColor: colors.primary }]}
-                accessibilityRole="button" accessibilityLabel="Add for this day">
-                <Plus size={24} color="#fff" />
-                <Text style={s.monthAddBtnText}>Add for this day</Text>
-              </Pressable>
-            )}
+            {/* This used to carry an "Add for this day" button, justified by
+                Month otherwise being the one mode with no route to the
+                composer. That's no longer true — the header's own
+                Add/Ask button is present in every mode — so it went with
+                the other below-the-fold duplicates. Mobile's Month has no
+                card-embedded "+" either; creation there is the screen FAB. */}
           </View>
         </ScrollView>
       )}
       {viewMode === 'week' && (
         <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
           active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress}
-          onAddDay={canCreate ? openCreator : undefined} />
+          involvedFor={involvedFor} onEventPress={routeEventPress} />
       )}
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
           members={members} active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress}
-          onAdd={canCreate ? openCreator : undefined} />
+          involvedFor={involvedFor} onEventPress={routeEventPress} />
       )}
       {viewMode === 'agenda' && (
         <AgendaView
@@ -1193,17 +1299,12 @@ function AgendaView({
         );
       })}
 
-      {onAdd && (
-        <Pressable
-          onPress={onAdd}
-          style={[s.monthAddBtn, { backgroundColor: colors.primary }]}
-          accessibilityRole="button"
-          accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
-        >
-          <Plus size={22} color="#fff" />
-          <Text style={s.monthAddBtnText}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
-        </Pressable>
-      )}
+      {/* No end-of-list "Ask a parent"/"Add an event" here any more — the
+          header now carries that action permanently (see s.headerAddBtn),
+          so a populated fortnight no longer has to be scrolled to its
+          bottom to reach it. The EMPTY-state copy above keeps its own
+          button on purpose: there, it's the first-action prompt filling an
+          otherwise blank view, not a duplicate of a nav control. */}
     </ScrollView>
   );
 }
@@ -1284,11 +1385,11 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
 }
 
 // ── Week strip (original design, extracted) ─────────────────────────────
-function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, involvedFor, onEventPress, onAddDay }: {
+function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, involvedFor, onEventPress }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; colors: any; isDark: boolean;
   active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  onEventPress: (ev: FamilyEvent) => void; onAddDay?: () => void;
+  onEventPress: (ev: FamilyEvent) => void;
 }) {
   const { k } = useKioskColors();
   const days = useMemo(() => {
@@ -1354,13 +1455,11 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, invo
                 );
               })}
             </ScrollView>
-            {onAddDay && (
-              <Pressable onPress={onAddDay} style={[s.addDay, { borderColor: colors.border }]}
-                accessibilityRole="button"
-                accessibilityLabel={`Add something on ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}>
-                <Plus size={22} color={colors.textTertiary} />
-              </Pressable>
-            )}
+            {/* The per-column "+" is gone: creation now lives once, in the
+                header. It was never a per-day add in practice — openCreator
+                routes to SmartTaskComposer/AskParentSheet, neither of which
+                accepts a date prefill — so seven of these only repeated the
+                one action the header already offers. */}
           </View>
         );
       })}
@@ -1373,11 +1472,11 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, invo
 const DAY_START_HOUR = 6;
 const DAY_END_HOUR = 22;
 
-function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress, onAdd }: {
+function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
   members: FamilyMember[]; active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  onEventPress: (ev: FamilyEvent) => void; onAdd?: () => void;
+  onEventPress: (ev: FamilyEvent) => void;
 }) {
   const { k } = useKioskColors();
   const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
@@ -1477,13 +1576,7 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
           </View>
         );
       })}
-      {onAdd && (
-        <Pressable onPress={onAdd} style={[s.dayAddBtn, { backgroundColor: colors.primary }]}
-          accessibilityRole="button" accessibilityLabel="Add event">
-          <Plus size={24} color="#fff" />
-          <Text style={s.dayAddBtnText}>Add Event</Text>
-        </Pressable>
-      )}
+      {/* End-of-list add button removed — the header carries it now. */}
     </ScrollView>
   );
 }
@@ -1502,7 +1595,13 @@ const s = StyleSheet.create({
   loadingText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   header: { marginBottom: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
-  navRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  // flexShrink/minWidth so the Add button joining this cluster reflows
+  // instead of pushing the mode switcher off a narrow portrait pane — the
+  // same "let it reflow rather than compute a width" rule modeSwitch uses.
+  navRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    flexShrink: 1, minWidth: 0, flexWrap: 'wrap',
+  },
   navBtn: {
     width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
@@ -1529,6 +1628,30 @@ const s = StyleSheet.create({
     flexShrink: 1, minWidth: 0,
   },
   modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  // "My Schedule" / All — deliberately the SAME segmented treatment as
+  // modeSwitch/modeBtn above (same radius, padding, active fill, text
+  // style) so the header reads as one control language rather than a third
+  // invented pill shape. Only difference: it's a two-option row of its own,
+  // sized to its content rather than sharing the headerTop line.
+  scopeSwitch: {
+    flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3,
+    alignSelf: 'flex-start', maxWidth: '100%',
+  },
+  scopeBtn: {
+    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    justifyContent: 'center', alignItems: 'center', borderRadius: KIOSK_RADIUS.sm,
+    flexShrink: 1, minWidth: 0,
+  },
+  // Header creation button — sits beside Today in the nav cluster. Shares
+  // monthAddBtn's fill/label weight but is sized for an inline header slot
+  // rather than a full-width end-of-list block.
+  headerAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: KIOSK_SPACE.xs, paddingHorizontal: KIOSK_SPACE.md,
+    minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.sm,
+    flexShrink: 1, minWidth: 0,
+  },
+  headerAddBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', color: '#fff' },
   // Horizontal ScrollView needs flexGrow:0 on the ScrollView itself or it
   // stretches to fill leftover vertical space instead of hugging its pills.
   filterRowOuter: { flexGrow: 0 },
@@ -1556,10 +1679,6 @@ const s = StyleSheet.create({
   evTitle: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   evTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 3 },
   evWho: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 4 },
-  addDay: {
-    marginTop: KIOSK_SPACE.xs, borderWidth: 1.5, borderStyle: 'dashed',
-    borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center', minHeight: KIOSK_HIT.min,
-  },
 
   // Month
   monthRoot: { flex: 1 },
@@ -1592,11 +1711,6 @@ const s = StyleSheet.create({
   dayHourEvents: { flex: 1, gap: KIOSK_SPACE.xs, minWidth: 0 },
   // Day's own per-hour event card is gone — that view now renders the
   // shared KioskEventCard (`card`/`cardBody` below) at 'day' density.
-  dayAddBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-    borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary, marginTop: KIOSK_SPACE.lg,
-  },
-  dayAddBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   monthAddBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary,

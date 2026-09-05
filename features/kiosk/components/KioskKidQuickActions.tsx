@@ -188,7 +188,7 @@ function QuickTile({ Icon, label, accent, onPress, badge, hint, k, isDark }: {
       accessibilityHint={hint}
     >
       <View style={[s.tileChip, { backgroundColor: accent }]}>
-        <Icon size={20} color={kioskOnAccent(k, accent)} />
+        <Icon size={18} color={kioskOnAccent(k, accent)} />
         {badge !== undefined && (
           <View style={[s.tileBadge, { backgroundColor: accent, borderColor: k.card }]}>
             <Text style={[s.tileBadgeText, { color: kioskOnAccent(k, accent) }]} numberOfLines={1}>
@@ -803,19 +803,20 @@ const s = StyleSheet.create({
   // the same reflow-by-construction approach the Overview hero uses, so it
   // never needs a measured breakpoint.
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
-  // Two rows: icon chip on top, small label underneath. Compact rather
-  // than the earlier 130-tall card (this card now holds only the eight
-  // ask-a-parent options, not eleven mixed tiles, so density pressure is
-  // lower) — a modest chip and a caption-sized two-line label keep the
-  // grid feeling tidy instead of a wall of icons.
+  // Two rows: icon chip on top, small label underneath. Shrunk again — at
+  // eight tiles this card was still taking up more vertical space on the
+  // kid Overview than a menu of "things to browse, not glance at" should.
+  // minHeight stays exactly KIOSK_HIT.min (the real floor, not min+14) and
+  // padding is tighter; the chip and label sizes are unchanged so this is
+  // a height cut, not a legibility cut.
   tile: {
-    flexGrow: 1, flexBasis: 108, minWidth: 0,
-    minHeight: KIOSK_HIT.min + 14, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: KIOSK_SPACE.sm,
+    flexGrow: 1, flexBasis: 100, minWidth: 0,
+    minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: KIOSK_SPACE.xs,
   },
   tileChip: {
-    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
     position: 'relative',
   },
   tileLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },

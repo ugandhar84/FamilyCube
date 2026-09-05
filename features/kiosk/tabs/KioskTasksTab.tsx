@@ -24,7 +24,7 @@
  * forking them. Both palettes resolve off the same useTheme() isDark, so a
  * kiosk frame around app-palette content is consistent within a mode.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Plus, PartyPopper, Check, Clock3, Sparkles } from 'lucide-react-native';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -66,6 +66,32 @@ import { useKioskColors } from '../kioskPalette';
 export function KioskTasksTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  // Live-reported: an approved chore (e.g. a "Suggest a Chore" proposal a
+  // parent just approved into a real pool chore) didn't show up on kiosk
+  // until the tablet was manually reopened — but showed immediately on
+  // phone. Root cause: every phone screen that renders chores
+  // (TasksScreen, QuestsScreen, HubScreen, ChildChoreBoard) calls
+  // syncFromDB()/loadFromStorage() on its own mount; this tab never did,
+  // so it relied entirely on choreStore's realtime channel already being
+  // alive. That channel is only force-recovered by app/_layout.tsx's
+  // AppState foreground listener (useChoreStore.getState().syncFromDB(true)
+  // on every foreground) — a wall-mounted kiosk that's always foregrounded
+  // never re-triggers that recovery path, so a socket that silently died
+  // (a known, documented failure mode — see that listener's own comment)
+  // stayed dead indefinitely with nothing to notice or fix it. Lives here,
+  // above the role branch, so it runs once regardless of which of the two
+  // views below actually renders — not duplicated in each. A plain
+  // interval, not just a mount-time sync, because this tab can sit open on
+  // a countertop for hours without ever remounting — the same duration a
+  // phone user would cover by backgrounding/foregrounding or navigating
+  // away and back, neither of which happens here.
+  useEffect(() => {
+    const sync = () => { useChoreStore.getState().syncFromDB(true).catch(() => {}); };
+    sync();
+    const id = setInterval(sync, 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }

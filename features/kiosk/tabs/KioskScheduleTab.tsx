@@ -14,6 +14,20 @@
  * fetches its own range per view; this tab read rangeEvents directly with
  * nothing guaranteeing that range had ever been populated for a kiosk
  * session that never mounted the phone's own calendar screen.
+ *
+ * KID PARITY. Sensitivity redaction already ran through the shared
+ * canViewSensitiveEventDetail predicate, but the other kid-specific
+ * behaviors CalendarScreen.tsx applies did not carry over. Now mirrored,
+ * each against its phone source: the "My Schedule" title (CalendarScreen
+ * .tsx:1070), the default-to-own-events scope (its scheduleFilter 'mine'
+ * default, :549) expressed through this tab's existing member-filter pills,
+ * the always-on hideForSibling withholding of a sibling's Medical/Ride rows
+ * (:835-839), the "ask, don't schedule" empty-state framing (:1432), and
+ * routing a kid's own still-pending request to KidRequestModal's edit mode
+ * (:569-577, :1709-1713) so they can withdraw it. Creation was already
+ * correct (AskParentSheet, never the adult composer), and edit/delete was
+ * already gated by the shared deriveEventEditPermission inside
+ * KioskEventEditor — so no over-permissioning existed there to close.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
@@ -32,6 +46,7 @@ import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { isEventPast } from '@/features/calendar/components/calendarDateHelpers';
 import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
@@ -62,7 +77,21 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
-  const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
+  // Mirrors CalendarScreen.tsx's own kid/teen scoping. On the phone that
+  // screen defaults scheduleFilter to 'mine' for anyone who isn't a parent
+  // (CalendarScreen.tsx:549) and additionally hides a SIBLING's Medical/Ride
+  // rows outright from a kid/teen (its hideForSibling, CalendarScreen.tsx:
+  // 835-839). Kiosk already has its own member-filter pills, so the cleanest
+  // structural equivalent of "My Schedule by default" is to pre-select the
+  // kid's own pill instead of Everyone — same effect, kiosk's existing UI
+  // pattern, and the kid can still tap Everyone the way phone's "All" tab
+  // lets them. The hideForSibling half is NOT expressible via a pill (it's
+  // an always-on rule that survives switching to All), so it's applied
+  // separately in eventsByDate below.
+  const isKidViewer = active.role === 'kid' || active.role === 'teen';
+  const [filterMemberId, setFilterMemberId] = useState<string | null>(
+    isKidViewer ? active.id : null,
+  );
   const [viewMode, setViewMode] = useState<ViewMode>('agenda');
   const [cursor, setCursor] = useState(() => new Date());
   // Live-reported: "in kiosk monthly view is not use right as per current
@@ -125,6 +154,31 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
+  // A kid/teen editing their OWN still-pending request goes through
+  // KidRequestModal in edit mode — the same split CalendarScreen.tsx keeps
+  // between setEditEv and setKidEditEv (CalendarScreen.tsx:559, 1709-1713).
+  // That modal is also the ONLY place a kid gets a delete: its "Withdraw
+  // this request" button (KidRequestModal.tsx:581-587). KioskEventEditor
+  // deliberately offers a kid no delete at all — deriveEventEditPermission
+  // gives them canEditRestricted (notes only), never canEditFull, so its
+  // Trash button never renders for them. Kiosk previously routed a kid to
+  // that notes-only editor for their own pending request too, which meant a
+  // kid could not retract a request from the kiosk the way they can on
+  // their phone. Anything else a kid taps — an approved event of their own,
+  // any sibling's event, anything already past — still falls through to
+  // KioskEventEditor, which renders it read-only for them.
+  const [kidEditEvent, setKidEditEvent] = useState<FamilyEvent | null>(null);
+  const routeEventPress = (ev: FamilyEvent) => {
+    if (isKidViewer
+      && ev.memberId === active.id
+      && ev.approvalPending
+      && !isEventPast(ev.date, ev.time)) {
+      setKidEditEvent(ev);
+      return;
+    }
+    setEditingEvent(ev);
+  };
+
   // Same idle-lock hold as KioskTasksTab — these creation sheets all
   // render into their own native Modal, so their touches never reach
   // KioskScreen's root onTouchStart and the lock would otherwise fire
@@ -132,7 +186,8 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   useKioskLockSuspended(
     showComposer || showManualQuest || showManualEvent || showAskParentSheet ||
     groceryModal || suppliesModal || !!askModal || questProposalModal ||
-    choreProposalModal || rideRequestModal || editingEvent !== null,
+    choreProposalModal || rideRequestModal || editingEvent !== null ||
+    kidEditEvent !== null,
   );
 
   const todayStr = localDateStr(new Date());
@@ -161,15 +216,30 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const eventsByDate = useMemo(() => {
     const map: Record<string, FamilyEvent[]> = {};
     for (const ev of rangeEvents) {
+      // hideForSibling, ported from CalendarScreen.tsx:835-839. Always-on for
+      // a kid/teen regardless of which filter pill is selected — a sibling's
+      // Medical appointment or Ride request is withheld even when the kid
+      // taps "Everyone", exactly as the phone withholds it even on the "All"
+      // tab. This is a privacy rule, not a filter, so it can't live in the
+      // pill state above.
+      if (isKidViewer) {
+        const isOwn = !ev.memberId || ev.memberId === active.id
+          || !!ev.memberIds?.includes(active.id);
+        if (!isOwn && (ev.category === 'Medical' || ev.category === 'Ride')) continue;
+      }
       if (filterMemberId) {
         const involved = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
-        if (!involved.includes(filterMemberId)) continue;
+        // Family-wide events (no assignee at all) always show, matching
+        // CalendarScreen's matchesMemberFilter (CalendarScreen.tsx:804) —
+        // otherwise a kid defaulted to their own pill would lose every
+        // household-wide event (school closure, family dinner) from view.
+        if (involved.length > 0 && !involved.includes(filterMemberId)) continue;
       }
       if (!map[ev.date]) map[ev.date] = [];
       map[ev.date].push(ev);
     }
     return map;
-  }, [rangeEvents, filterMemberId]);
+  }, [rangeEvents, filterMemberId, isKidViewer, active.id]);
 
   const involvedFor = (ev: FamilyEvent) => {
     const ids = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
@@ -214,7 +284,13 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               <ChevronLeft size={26} color={colors.textSecondary} />
             </Pressable>
             <View>
-              <Text style={[s.title, { color: colors.textPrimary }]}>Schedule</Text>
+              {/* "My Schedule" for a kid, matching CalendarScreen.tsx:1070's
+                  own isKid title swap — the kiosk's default view is now
+                  scoped to them, so a "Family Schedule"-style label would
+                  misdescribe what's actually on screen. */}
+              <Text style={[s.title, { color: colors.textPrimary }]}>
+                {active.role === 'kid' ? 'My Schedule' : 'Schedule'}
+              </Text>
               <Text style={[s.range, { color: colors.textSecondary }]}>{headerLabel}</Text>
             </View>
             <Pressable onPress={() => shiftCursor(1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}
@@ -254,14 +330,18 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           {members.map(m => {
             const rs = assigneeStyle(m, colors, isDark);
             const on = filterMemberId === m.id;
+            // The kid's own pill is the one pre-selected for them, so it
+            // reads "Mine" rather than their own first name — the same
+            // wording as the phone's "My Schedule" tab it stands in for.
+            const label = isKidViewer && m.id === active.id ? 'Mine' : m.name.split(' ')[0];
             return (
               <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
                 accessibilityRole="button"
-                accessibilityLabel={`Filter to ${m.name.split(' ')[0]}`}
+                accessibilityLabel={isKidViewer && m.id === active.id ? 'Show only my events' : `Filter to ${m.name.split(' ')[0]}`}
                 accessibilityState={{ selected: on }}
                 style={[s.filterChip, { backgroundColor: on ? rs.dot : colors.surface, borderColor: on ? rs.dot : colors.border }]}>
                 <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
-                <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+                <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]}>{label}</Text>
               </Pressable>
             );
           })}
@@ -292,7 +372,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               events={eventsByDate[selectedDate] ?? []}
               members={members}
               colors={colors} isDark={isDark}
-              onSelectEvent={setEditingEvent}
+              onSelectEvent={routeEventPress}
             />
             {/* DayEventsSummaryCard is a pure display component (mobile's
                 own Month view has no card-embedded "+" either — creation
@@ -312,24 +392,37 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
       {viewMode === 'week' && (
         <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
-          involvedFor={involvedFor} onEventPress={setEditingEvent}
+          involvedFor={involvedFor} onEventPress={routeEventPress}
           onAddDay={canCreate ? openCreator : undefined} />
       )}
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
-          involvedFor={involvedFor} onEventPress={setEditingEvent}
+          involvedFor={involvedFor} onEventPress={routeEventPress}
           onAdd={canCreate ? openCreator : undefined} />
       )}
       {viewMode === 'agenda' && (
         <AgendaView
           cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr}
           colors={colors} isDark={isDark} members={members} active={active}
-          involvedFor={involvedFor} onEventPress={setEditingEvent}
+          involvedFor={involvedFor} onEventPress={routeEventPress}
           onAdd={canCreate ? openCreator : undefined}
         />
       )}
 
       <KioskEventEditor event={editingEvent} active={active} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
+
+      {/* A kid/teen's own still-pending request, in the same KidRequestModal
+          edit mode CalendarScreen.tsx:1709-1713 uses — carries the
+          "Withdraw this request" action, the only delete a kid ever gets.
+          Routed here by routeEventPress; see its comment for the gating. */}
+      {kidEditEvent && (
+        <KidRequestModal
+          visible
+          onClose={() => setKidEditEvent(null)}
+          activeMemberId={active.id}
+          editEvent={kidEditEvent}
+        />
+      )}
 
       {/* Real creation flow, ported from TasksScreen.tsx lines ~474-540 —
           see this file's top-of-function comment for the full mapping. */}
@@ -444,6 +537,7 @@ function AgendaView({
 }) {
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
   const [claimNote, setClaimNote] = useState<Record<string, string>>({});
+  const isKidViewer = active.role === 'kid' || active.role === 'teen';
 
   // Only days that actually have something, forward from the cursor. A
   // fourteen-row list of "No events" is noise, not a calendar.
@@ -467,17 +561,24 @@ function AgendaView({
     return (
       <ScrollView contentContainerStyle={s.agendaEmptyWrap} showsVerticalScrollIndicator={false}>
         <CalendarIcon size={30} color={colors.textTertiary} />
-        <Text style={[s.agendaEmptyText, { color: colors.textTertiary }]} numberOfLines={2}>
-          Nothing scheduled in the next two weeks.
+        {/* Kid-specific framing, ported from CalendarScreen.tsx:1432 — a kid
+            doesn't schedule, they ASK, and the button below opens
+            AskParentSheet rather than an event form, so generic "Add an
+            event" copy would promise authority they don't have. */}
+        <Text style={[s.agendaEmptyText, { color: colors.textTertiary }]} numberOfLines={3}>
+          {isKidViewer
+            ? 'Nothing on your schedule for the next two weeks. Tap below to ask for a ride or anything else.'
+            : 'Nothing scheduled in the next two weeks.'}
         </Text>
         {onAdd && (
           <Pressable
             onPress={onAdd}
             style={[s.monthAddBtn, { backgroundColor: colors.primary, alignSelf: 'center' }]}
-            accessibilityRole="button" accessibilityLabel="Add an event"
+            accessibilityRole="button"
+            accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
           >
             <Plus size={22} color="#fff" />
-            <Text style={s.monthAddBtnText}>Add an event</Text>
+            <Text style={s.monthAddBtnText}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -608,10 +709,11 @@ function AgendaView({
         <Pressable
           onPress={onAdd}
           style={[s.monthAddBtn, { backgroundColor: colors.primary }]}
-          accessibilityRole="button" accessibilityLabel="Add an event"
+          accessibilityRole="button"
+          accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
         >
           <Plus size={22} color="#fff" />
-          <Text style={s.monthAddBtnText}>Add an event</Text>
+          <Text style={s.monthAddBtnText}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
         </Pressable>
       )}
     </ScrollView>

@@ -200,16 +200,21 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // A Modal always renders full-screen, above KioskHeader and the nav rail —
   // there is no style that confines it to a sub-rectangle of the screen.
   // "Same size as the grid" (live-reported) means the drawer's content must
-  // sit exactly where this tab's own root View sits today: same top/left/
-  // width/height as measured in the normal (non-Modal) layout tree, not a
-  // hardcoded rail-width/header-height guess that would drift the moment
-  // either one changes. rootRef + onLayout gives the real screen-space
-  // rectangle; the Modal's content is absolutely positioned to match it.
-  const rootRef = useRef<View>(null);
-  const [rootRect, setRootRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const measureRoot = useCallback(() => {
-    rootRef.current?.measureInWindow((x, y, width, height) => {
-      setRootRect({ x, y, width, height });
+  // sit exactly where this tab's own content area sits today: same top/
+  // left/width/height as measured in the normal (non-Modal) layout tree,
+  // not a hardcoded rail-width/header-height guess that would drift the
+  // moment either one changes.
+  // Measures the blank area to the right of the sidebar specifically (a
+  // permanently-mounted placeholder View there, see the render site) — NOT
+  // the tab's whole root. Live-reported: an earlier version measured the
+  // full root and the drawer ended up overlaying the still-visible sidebar
+  // too; the sidebar must stay uncovered, only the empty content area next
+  // to it should get the drawer.
+  const contentAreaRef = useRef<View>(null);
+  const [contentRect, setContentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const measureContentArea = useCallback(() => {
+    contentAreaRef.current?.measureInWindow((x, y, width, height) => {
+      setContentRect({ x, y, width, height });
     });
   }, []);
 
@@ -301,7 +306,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // ChatScreen.tsx's switchChannel: an in-flight reply/attachment/draft must
   // never leak into whichever channel is opened next.
   const switchChannel = (id: string) => {
-    measureRoot();
+    measureContentArea();
     setActiveChannel(id);
     setThreadOpen(true);
     setReplyingTo(null);
@@ -544,7 +549,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   );
 
   return (
-    <View ref={rootRef} style={s.root} onLayout={measureRoot}>
+    <View style={s.root}>
       {/* ── Channel/DM sidebar ── */}
       <View style={[s.sidebar, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
         <Text style={[s.sidebarTitle, { color: k.textFaint }]}>CHANNELS</Text>
@@ -606,6 +611,14 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         </ScrollView>
       </View>
 
+      {/* Always-mounted, empty placeholder occupying exactly the blank
+          content area to the right of the sidebar — the same rectangle the
+          thread pane used to fill inline. Measured (not styled directly)
+          because the Modal drawer below needs this rect in screen
+          coordinates to position itself over just this area, leaving the
+          sidebar visibly uncovered. */}
+      <View ref={contentAreaRef} style={s.contentArea} onLayout={measureContentArea} />
+
       {/* ── Message thread — now a Modal drawer, not an inline pane ──
           Live-reported: even with the manual keyboardHeight tracking below,
           the thread's keyboard handling still didn't work reliably inline —
@@ -615,11 +628,12 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           inside a real Modal, so the thread now opens the same way. But a
           Modal always paints full-screen, above KioskHeader and the nav
           rail — there's no style that confines it to a sub-rectangle. So
-          rather than guess at a rail-width/header-height offset, `rootRect`
-          (measured off this tab's own root View, in normal in-flow layout,
-          right before the Modal opens) gives the real screen-space
-          rectangle this tab's content occupies today, and the Modal's
-          content is absolutely positioned to match it exactly — same
+          rather than guess at a rail-width/header-height offset,
+          `contentRect` (measured off the placeholder View just above, in
+          normal in-flow layout, right before the Modal opens) gives the
+          real screen-space rectangle of the blank area beside the sidebar,
+          and the Modal's content is absolutely positioned to match it
+          exactly, leaving the sidebar itself uncovered — same
           top/left/width/height as the sidebar+grid a moment ago, no scrim,
           no side gap, so switching to a conversation reads as this tab's
           own content changing, not a new layer appearing over it. */}
@@ -628,8 +642,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           <View
             style={[
               s.threadRight,
-              rootRect
-                ? { position: 'absolute', top: rootRect.y, left: rootRect.x, width: rootRect.width, height: rootRect.height }
+              contentRect
+                ? { position: 'absolute', top: contentRect.y, left: contentRect.x, width: contentRect.width, height: contentRect.height }
                 : StyleSheet.absoluteFill,
             ]}
           >
@@ -1016,18 +1030,27 @@ const s = StyleSheet.create({
   unreadDot: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 
+  // The blank area beside the sidebar — an always-mounted, invisible
+  // placeholder (no background/border of its own) that exists solely to be
+  // measured, so the Modal drawer knows the exact rect to occupy without
+  // covering the sidebar.
+  contentArea: { flex: 1 },
+
   // The thread is now a Modal drawer (see the render-site comment), not an
   // inline pane beside the sidebar. threadHost fills the Modal's own
-  // full-screen window (so the rootRect coordinates measured off the real,
-  // in-flow tab root line up against it 1:1); threadRight's actual
+  // full-screen window (so the contentRect coordinates measured off the
+  // placeholder above line up against it 1:1); threadRight's actual
   // position/size is then set inline per-render from that measured rect —
   // this base style is only the pre-measurement fallback.
   // Live-reported: a narrow right-anchored panel (the KioskAskFamDrawer
   // shape) left a visible dimmed scrim gap on the left, reading as a popup
   // ON TOP of the tab. Full-bleed across the whole screen was rejected too
-  // ("not a big page it should be narrowed") — the target is neither, but
-  // specifically the tab's own existing content rectangle (right of the nav
-  // rail, below the header), which only a measured rect can match exactly.
+  // ("not a big page it should be narrowed"), and even the full tab
+  // rectangle overlaid the still-visible sidebar underneath it
+  // ("match the blank space only not on top of the channel grid") — the
+  // target is specifically the blank content area right of the sidebar,
+  // which only a measured rect (not a hardcoded rail-width guess) can match
+  // exactly while leaving the sidebar uncovered.
   threadHost: { flex: 1 },
   threadRight: {},
   threadOuter: { flex: 1, width: '100%', paddingHorizontal: 20 },

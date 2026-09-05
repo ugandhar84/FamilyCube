@@ -72,6 +72,43 @@
  * the app palette, and useTheme() is the same single source KioskScreen
  * itself reads before threading `colors` down. Taking them as props would
  * have forced callers with no `colors` prop (KioskOverviewTab) to grow one.
+ *
+ * ── KNOWN LIMITATION: these six render full-bleed on a wide kiosk ────────
+ * The kiosk's own drawers (KioskAskFamDrawer, and KioskSheet in
+ * KioskKidQuickActions.tsx) are narrow right-anchored panels — 480/520px
+ * against a dismissible scrim. The six destination modals below are NOT:
+ * on a wide kiosk canvas each one stretches its bottom sheet edge to edge,
+ * which reads wrong next to those drawers. This is a known, deliberate gap,
+ * not an oversight, and it CANNOT be fixed from this file. Recording why,
+ * so nobody re-derives it:
+ *
+ * Each of the six is `Modal > KeyboardAvoidingView(flex:1) > backdrop
+ * View(flex:1, justifyContent:'flex-end') > spacer + sheet`, where the
+ * sheet carries no width of its own and simply stretches to the backdrop.
+ * The backdrop's width comes from React Native's own Modal container —
+ * `styles.container` in RN's Modal.js is `{[side]: 0, top: 0, flex: 1}`
+ * inside a native RCTModalHostView, which is sized by the native modal
+ * WINDOW, not by anything above <Modal> in the React tree. So wrapping
+ * <GroceryModal /> below in a fixed-width or max-width View does nothing
+ * whatsoever to the pixels that actually render: the constraint has to be
+ * applied INSIDE the modal's own subtree.
+ *
+ * That is exactly what components/AppBottomSheet.tsx already does for
+ * itself — `useWindowDimensions()`, `isWide = width >= 560`, and a
+ * `Math.min(560, width - 48)` cap applied to its own panel, added for this
+ * same live-reported complaint about wide/landscape screens. The six below
+ * predate that sheet and were never migrated onto it.
+ *
+ * The fix therefore belongs in the shared components, and the owner has
+ * explicitly ruled out changing them as part of the kiosk work — including
+ * additively. Two clean options for whoever picks this up on the phone
+ * side, both of which change nothing for existing phone callers:
+ *   1. Migrate these six onto AppBottomSheet, inheriting its width cap.
+ *   2. Give each the same three lines AppBottomSheet uses, so the sheet
+ *      self-caps on any wide viewport — phone portrait (<560) unaffected.
+ * Do NOT attempt to work around it kiosk-side with a wrapper View; per the
+ * above it cannot work, and a wrapper that looks like it should would just
+ * mislead the next reader.
  */
 import { useCallback, useState, type ReactNode } from 'react';
 import {

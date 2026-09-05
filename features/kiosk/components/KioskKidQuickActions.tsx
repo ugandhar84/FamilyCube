@@ -69,7 +69,10 @@
  * fire on a kid mid-read and throw them back to the lock screen.
  */
 import { useMemo, useState } from 'react';
-import { Modal, View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import {
+  Modal, View, Text, ScrollView, Pressable, StyleSheet,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
 import {
   PiggyBank, ClipboardList, PartyPopper, X, Receipt, Trophy,
   Flame, CheckCircle2, Clock3, XCircle,
@@ -473,6 +476,30 @@ function KidCheckinSheet({ active, k, isDark, onClose }: {
 }
 
 // ── Shared kiosk sheet frame ────────────────────────────────────────────
+/**
+ * A right-anchored, full-height drawer — the SAME shape as
+ * KioskAskFamDrawer, deliberately. This was a centred 620px dialog with
+ * `animationType="fade"` and no keyboard handling at all; the owner asked
+ * for these to "open narrower, similar to the AskFam AI", so the frame now
+ * matches that drawer point for point: slide-in from the right, a fixed
+ * narrow width, a dismissible scrim behind it, and the whole panel inside a
+ * KeyboardAvoidingView.
+ *
+ * Width is 520 rather than AskFam's 480 for one concrete reason: the
+ * check-in sheet's three buttons are `flexBasis: 150` + horizontal padding,
+ * and below ~500px of panel they wrap from one row of three to two rows.
+ * 520 keeps that row intact while staying in the same narrow-drawer family.
+ *
+ * None of the four sheets that use this frame (piggy bank, cheer squad,
+ * requests, check-in) contains a TextInput TODAY, so the
+ * KeyboardAvoidingView is currently inert. It is here anyway so that the
+ * frame is correct for whatever gets added to these sheets later, and so
+ * every kiosk drawer handles the keyboard the same way rather than one of
+ * them being a latent bug waiting on the first input someone drops in.
+ *
+ * KioskModalHost still wraps the whole thing — idle-lock participation is
+ * unchanged. See this file's header for why that matters.
+ */
 function KioskSheet({
   title, subtitle, accent, Icon, k, isDark, onClose, children,
 }: {
@@ -480,37 +507,50 @@ function KioskSheet({
   k: KioskColors; isDark: boolean; onClose: () => void; children: React.ReactNode;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <KioskModalHost style={[s.overlay, { backgroundColor: k.scrim }]}>
-        <View
-          style={[s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}
-          accessibilityViewIsModal
-          accessibilityLabel={title}
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KioskModalHost style={s.overlay}>
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={`Close ${title}`}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.right}
+          pointerEvents="box-none"
         >
-          <View style={s.sheetHeader}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <WidgetHeader
-                Icon={Icon} eyebrow={subtitle ?? 'Just for you'} title={title}
-                accent={accent} k={k} isDark={isDark}
-              />
-            </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={16}
-              style={[s.closeBtn, { backgroundColor: k.well }]}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <X size={22} color={k.textMuted} />
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={s.sheetBody}
-            showsVerticalScrollIndicator={false}
+          <View
+            style={[s.sheet, { backgroundColor: k.card, borderLeftColor: k.cardBorder }]}
+            accessibilityViewIsModal
+            accessibilityLabel={title}
           >
-            {children}
-          </ScrollView>
-        </View>
+            <View style={s.sheetHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <WidgetHeader
+                  Icon={Icon} eyebrow={subtitle ?? 'Just for you'} title={title}
+                  accent={accent} k={k} isDark={isDark}
+                />
+              </View>
+              <Pressable
+                onPress={onClose}
+                hitSlop={16}
+                style={[s.closeBtn, { backgroundColor: k.well }]}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <X size={22} color={k.textMuted} />
+              </Pressable>
+            </View>
+            <ScrollView
+              contentContainerStyle={s.sheetBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {children}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </KioskModalHost>
     </Modal>
   );
@@ -820,11 +860,13 @@ const s = StyleSheet.create({
   checkinLabel: { fontSize: KIOSK_TYPO.body, fontWeight: '900', textAlign: 'center' },
   checkinSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center' },
 
-  // Sheet frame.
-  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: KIOSK_SPACE.lg },
+  // Sheet frame — a right-anchored drawer, mirroring KioskAskFamDrawer's
+  // host/right/panel trio. See the KioskSheet doc comment for the width.
+  overlay: { flex: 1 },
+  right: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
   sheet: {
-    width: 620, maxWidth: '94%', maxHeight: '88%',
-    borderRadius: KIOSK_RADIUS.xl, borderWidth: 1, overflow: 'hidden',
+    width: 520, maxWidth: '100%', height: '100%',
+    borderLeftWidth: 1, overflow: 'hidden',
   },
   sheetHeader: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,

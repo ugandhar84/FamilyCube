@@ -20,6 +20,16 @@
  * The phone's per-row mic (useVoiceDictation) is deliberately not ported —
  * see KioskGroceryRequestSheet's header for the reasoning. Quick picks are
  * the same static SUPPLIES_SUGGESTIONS table.
+ *
+ * ── Shape: 'drawer' (deliberately NOT shrunk) ───────────────────────────
+ * Reviewed in the dialog/drawer resize pass and kept full-height. Unlike
+ * the Ask/proposal forms, this one's body GROWS without bound: "Add item"
+ * appends another row, each row carrying a name field, a qty field, a
+ * remove button and its own wrapped strip of quick-pick suggestions. A kid
+ * listing a term's worth of supplies produces a genuinely long form, and
+ * the sticky footer is what keeps Send reachable through it. A centered
+ * dialog would spend most of a real session pinned at maxHeight with an
+ * internally-scrolling body, which is a worse version of the same thing.
  */
 import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
@@ -136,6 +146,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="drawer"
       title="School Supplies"
       subtitle="Parent approves and picks these up for you"
       accent={accent}

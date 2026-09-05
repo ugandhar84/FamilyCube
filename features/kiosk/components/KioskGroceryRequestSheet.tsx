@@ -42,6 +42,15 @@
  * category-tagged copy of the same names below. The store quick-pick row IS
  * data-driven: it reads groceryStore.pastStores merged with
  * DEFAULT_GROCERY_STORES, exactly as the phone does.
+ *
+ * ── Shape: 'drawer' (deliberately NOT shrunk) ───────────────────────────
+ * Reviewed in the dialog/drawer resize pass and kept full-height — this is
+ * the heaviest of the non-wizard forms. Above the item list alone there is
+ * a full wrapped CATEGORY pill row; each item row then carries name + qty
+ * + remove plus its own suggestion strip, and "Add item" grows the list
+ * without limit. This is the case the shared shell's sticky footer was
+ * built for. A centered dialog here would sit at maxHeight from the second
+ * item onward, so the drawer is the honest shape.
  */
 import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
@@ -207,6 +216,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="drawer"
       title="Request Groceries"
       subtitle={canSubmit
         ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one`

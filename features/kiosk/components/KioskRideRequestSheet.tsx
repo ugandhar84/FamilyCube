@@ -8,6 +8,17 @@
  * only re-shelled into kiosk's narrow right-anchored drawer with kiosk
  * sizing and palette.
  *
+ * ── Shape: 'drawer' (deliberately NOT shrunk) ───────────────────────────
+ * Reviewed in the dialog/drawer resize pass and kept full-height. Its
+ * content varies more than any other kiosk form: step 1 is a card GRID of
+ * every ride category, step 2 stacks four field groups (what / when /
+ * where / siblings), step 3 is another card pick, and the pickup-time
+ * sub-screen adds a day picker plus a time picker. A centered dialog would
+ * resize on every step transition — the card visibly jumping and
+ * re-centering between steps — which is exactly the jitter a fixed-height
+ * panel avoids. Steady chrome across a multi-step flow is worth the height
+ * here, so this one keeps the drawer.
+ *
  * ── Submission parity with KidRequestModal (verified line by line) ──────
  * addEvent(eventInput) on useEventStore, with the same fields:
  *   title (trimmed) · date localDateStr(eventDate) · time fmtTime(eventDate)
@@ -236,6 +247,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="drawer"
       title={headerTitle}
       subtitle={headerSub}
       accent={accent}

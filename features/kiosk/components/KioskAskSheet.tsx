@@ -19,6 +19,15 @@
  * body; kiosk uses a plain large TextInput — same value, same trim, same
  * submit. See KioskGroceryRequestSheet's header for why dictation is not
  * ported to a shared wall-mounted device.
+ *
+ * ── Shape: 'dialog' ─────────────────────────────────────────────────────
+ * This is the sheet that triggered the whole resize pass. Its ENTIRE body
+ * is one label plus one 160px textarea — about 300px of content — and it
+ * was shipping as a full-height right-anchored drawer, which on a real
+ * tablet read as a mostly-empty column of card. The content is fixed: it
+ * cannot grow, no matter what the kid types (the textarea is a fixed
+ * minHeight and scrolls internally). That is the exact definition of a
+ * content-sized centered dialog, so it is one.
  */
 import { useState } from 'react';
 import { View, TextInput, StyleSheet, Alert } from 'react-native';
@@ -94,6 +103,7 @@ export function KioskAskSheet({ visible, onClose, type, active }: {
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="dialog"
       title={meta.label}
       subtitle="Sent directly to your parent"
       accent={accent}

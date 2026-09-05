@@ -21,6 +21,14 @@
  * as "Me"), same default target (self), same submitting-disabled/error
  * handling, same success alert. A kiosk proposal is therefore the same row
  * KidProposedChoreCard reviews.
+ *
+ * ── Shape: 'dialog' ─────────────────────────────────────────────────────
+ * Two fields — a 110px title textarea and a one-row recipient picker. The
+ * picker is technically data-driven (one pill per kid/teen) but a family's
+ * kid count is small and single-digit, so the pills wrap to at most two
+ * short rows; that is not the open-ended growth that earns a full-height
+ * panel. Content-sized centered dialog, and it caps at maxHeight anyway in
+ * the pathological case.
  */
 import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
@@ -85,6 +93,7 @@ export function KioskChoreProposalSheet({ visible, onClose, active, members, fam
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="dialog"
       title="Propose a Chore"
       subtitle="A parent reviews it and sets the reward"
       accent={accent}

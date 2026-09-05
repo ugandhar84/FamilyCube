@@ -16,6 +16,12 @@
  *
  * Distinct from KioskChoreProposalSheet, which targets a sibling and never
  * carries a coin amount — same distinction the two phone modals draw.
+ *
+ * ── Shape: 'dialog' ─────────────────────────────────────────────────────
+ * Two fields total — an 88px title textarea, and a coin amount (five fixed
+ * pills on one wrapped row plus a narrow number input). Nothing here is
+ * repeatable or list-shaped: COIN_PICKS is a hardcoded five, so the body
+ * is the same height on every open. Content-sized centered dialog.
  */
 import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
@@ -69,6 +75,7 @@ export function KioskQuestProposalSheet({ visible, onClose, active }: {
   return (
     <KioskFormDrawer
       visible={visible}
+      variant="dialog"
       title="Suggest a Chore"
       subtitle="Sent to a parent to review"
       accent={accent}

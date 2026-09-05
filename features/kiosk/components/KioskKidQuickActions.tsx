@@ -544,7 +544,7 @@ function KioskSheet({
           accessibilityLabel={`Close ${title}`}
         />
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={s.center}
           pointerEvents="box-none"
         >

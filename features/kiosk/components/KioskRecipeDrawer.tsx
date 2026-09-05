@@ -63,7 +63,7 @@ export function KioskRecipeDrawer({
           accessibilityLabel="Close recipe"
         />
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={s.right}
           pointerEvents="box-none"
         >

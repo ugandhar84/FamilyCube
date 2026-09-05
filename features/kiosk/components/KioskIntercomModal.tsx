@@ -55,7 +55,7 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
           accessibilityRole="button"
           accessibilityLabel="Close intercom"
         />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.center} pointerEvents="box-none">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.center} pointerEvents="box-none">
           <View style={[s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
             <View style={s.head}>
               <View style={[s.headIcon, { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }]}>

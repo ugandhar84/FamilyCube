@@ -75,7 +75,7 @@ export function KioskAskFamDrawer({ visible, onClose }: { visible: boolean; onCl
           accessibilityLabel="Close Ask Fam"
         />
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={s.right}
           pointerEvents="box-none"
         >

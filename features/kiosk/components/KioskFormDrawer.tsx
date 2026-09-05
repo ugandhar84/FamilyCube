@@ -130,8 +130,17 @@ export function KioskFormDrawer({
           accessibilityRole="button"
           accessibilityLabel={`Close ${title}`}
         />
+        {/* Live-reported on Android: with behavior=undefined (the previous
+            value here), KeyboardAvoidingView does NOTHING on that platform
+            — the keyboard simply overlapped the input and the sticky
+            footer sat wherever the keyboard's top edge happened to land,
+            rather than lifting above it. 'height' is RN's own documented
+            Android equivalent of iOS's 'padding' for this exact shell
+            shape (a Modal that already renders above everything else, so
+            resizing the KeyboardAvoidingView's box — not the whole window
+            — is what's needed on both platforms). */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={isDialog ? s.center : s.right}
           pointerEvents="box-none"
         >

@@ -198,18 +198,13 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const [text, setText] = useState('');
 
   // A Modal always renders full-screen, above KioskHeader and the nav rail —
-  // there is no style that confines it to a sub-rectangle of the screen.
-  // "Same size as the grid" (live-reported) means the drawer's content must
-  // sit exactly where this tab's own content area sits today: same top/
-  // left/width/height as measured in the normal (non-Modal) layout tree,
-  // not a hardcoded rail-width/header-height guess that would drift the
-  // moment either one changes.
-  // Measures the blank area to the right of the sidebar specifically (a
-  // permanently-mounted placeholder View there, see the render site) — NOT
-  // the tab's whole root. Live-reported: an earlier version measured the
-  // full root and the drawer ended up overlaying the still-visible sidebar
-  // too; the sidebar must stay uncovered, only the empty content area next
-  // to it should get the drawer.
+  // there is no style that confines it to a sub-rectangle of the screen. So
+  // this tab's own root View (the grid) is measured in its normal in-flow
+  // layout (measureInWindow, re-measured on every card tap) and the Modal's
+  // content is absolutely positioned to match that exact rect — the sheet
+  // opens directly over the grid at the grid's own size, the same "tap a
+  // card, its full conversation opens as a sheet" pattern as Ask Fam/Ask
+  // Cube, rather than a hardcoded rail-width/header-height guess.
   const contentAreaRef = useRef<View>(null);
   const [contentRect, setContentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const measureContentArea = useCallback(() => {
@@ -293,6 +288,23 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     if (entries.length === 0) return;
     loadUnreadCounts(entries.map(e => e.id), active.id);
   }, [entries, active.id, loadUnreadCounts]);
+
+  // Grid redesign: every card shows a real preview of its last few
+  // messages, not just an unread count — so every entry's channel needs
+  // loading up front rather than lazily on open (the store's usual
+  // strategy, see chatStore.ts's own lastActivity comment). This does mean
+  // one loadChannel() + one realtime subscription per visible channel/DM
+  // the moment this tab mounts, which is more than the phone ever does at
+  // once — accepted deliberately for kiosk's "glance at the grid" design,
+  // since a family's channel/DM count is small enough (a handful) that
+  // this is a one-time, one-screen cost, not a per-navigation one.
+  useEffect(() => {
+    entries.forEach(e => loadChannel(e.id));
+    // Deliberately NOT re-run when `entries` identity changes on every
+    // render (it's a useMemo, so this is really keyed on its own deps) —
+    // only care about actual entry-list membership changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries.map(e => e.id).join(','), loadChannel]);
 
   useEffect(() => {
     if (!activeChannel) return;
@@ -549,94 +561,64 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   );
 
   return (
-    <View style={s.root}>
-      {/* ── Channel/DM sidebar ── */}
-      <View style={[s.sidebar, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
-        <Text style={[s.sidebarTitle, { color: k.textFaint }]}>CHANNELS</Text>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.sidebarList}>
-          {entries.filter(e => !e.isDM).map(e => {
-            const on = e.id === activeChannel;
-            const unread = unreadCounts[e.id] ?? 0;
-            return (
-              <Pressable key={e.id} onPress={() => switchChannel(e.id)}
-                accessibilityRole="button" accessibilityState={{ selected: on }}
-                accessibilityLabel={`${e.label} channel${unread > 0 ? `, ${unread} unread` : ''}`}
-                style={({ pressed }) => [
-                  s.channelRow,
-                  on
-                    ? { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }
-                    : { backgroundColor: pressed ? k.cardHover : 'transparent', borderColor: 'transparent' },
-                ]}>
-                {e.lock && <Lock size={15} color={on ? k.primary : k.textFaint} />}
-                <Text style={[s.channelLabel, { color: on ? k.primary : k.text, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
-                  {e.label}
-                </Text>
-                {unread > 0 && (
-                  <View style={[s.unreadDot, { backgroundColor: k.danger }]}>
-                    <Text style={[s.unreadDotText, { color: k.onAccent }]}>{unread > 9 ? '9+' : unread}</Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
+    <View ref={contentAreaRef} style={s.root} onLayout={measureContentArea}>
+      {/* ── Channel/DM grid — replaces the old sidebar list. Each card is a
+          preview: name, lock/unread badges, and up to 5 most recent
+          messages (sender + truncated text), so a glance at the grid tells
+          you what's being discussed without opening anything. Tapping a
+          card opens the full conversation as an overlay sheet, same
+          pattern as Ask Fam/Ask Cube. */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
+        <Text style={[s.gridSectionLabel, { color: k.textFaint }]}>CHANNELS</Text>
+        <View style={s.gridRow}>
+          {entries.filter(e => !e.isDM).map(e => (
+            <ChatPreviewCard
+              key={e.id}
+              entry={e}
+              unread={unreadCounts[e.id] ?? 0}
+              messages={channels[e.id]?.messages ?? []}
+              memberMap={memberMap}
+              selfId={active.id}
+              k={k}
+              onPress={() => switchChannel(e.id)}
+            />
+          ))}
+        </View>
 
-          {entries.some(e => e.isDM) && (
-            <Text style={[s.sidebarTitle, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
-          )}
-          {entries.filter(e => e.isDM).map(e => {
-            const on = e.id === activeChannel;
-            const unread = unreadCounts[e.id] ?? 0;
-            return (
-              <Pressable key={e.id} onPress={() => switchChannel(e.id)}
-                accessibilityRole="button" accessibilityState={{ selected: on }}
-                accessibilityLabel={`Direct message with ${e.label}${unread > 0 ? `, ${unread} unread` : ''}`}
-                style={({ pressed }) => [
-                  s.channelRow,
-                  on
-                    ? { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }
-                    : { backgroundColor: pressed ? k.cardHover : 'transparent', borderColor: 'transparent' },
-                ]}>
-                <Text style={s.dmEmoji}>{e.otherMember?.emoji ?? '👤'}</Text>
-                <Text style={[s.channelLabel, { color: on ? k.primary : k.text, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
-                  {e.label}
-                </Text>
-                {unread > 0 && (
-                  <View style={[s.unreadDot, { backgroundColor: k.danger }]}>
-                    <Text style={[s.unreadDotText, { color: k.onAccent }]}>{unread > 9 ? '9+' : unread}</Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+        {entries.some(e => e.isDM) && (
+          <Text style={[s.gridSectionLabel, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
+        )}
+        <View style={s.gridRow}>
+          {entries.filter(e => e.isDM).map(e => (
+            <ChatPreviewCard
+              key={e.id}
+              entry={e}
+              unread={unreadCounts[e.id] ?? 0}
+              messages={channels[e.id]?.messages ?? []}
+              memberMap={memberMap}
+              selfId={active.id}
+              k={k}
+              onPress={() => switchChannel(e.id)}
+            />
+          ))}
+        </View>
+      </ScrollView>
 
-      {/* Always-mounted, empty placeholder occupying exactly the blank
-          content area to the right of the sidebar — the same rectangle the
-          thread pane used to fill inline. Measured (not styled directly)
-          because the Modal drawer below needs this rect in screen
-          coordinates to position itself over just this area, leaving the
-          sidebar visibly uncovered. */}
-      <View ref={contentAreaRef} style={s.contentArea} onLayout={measureContentArea} />
-
-      {/* ── Message thread — now a Modal drawer, not an inline pane ──
-          Live-reported: even with the manual keyboardHeight tracking below,
-          the thread's keyboard handling still didn't work reliably inline —
-          this deep in a non-Modal tree (behind KioskHeader, beside the nav
-          rail), Android's keyboard-resize participation is inconsistent.
-          KioskAskFamDrawer's own composer works correctly because it lives
-          inside a real Modal, so the thread now opens the same way. But a
-          Modal always paints full-screen, above KioskHeader and the nav
-          rail — there's no style that confines it to a sub-rectangle. So
-          rather than guess at a rail-width/header-height offset,
-          `contentRect` (measured off the placeholder View just above, in
-          normal in-flow layout, right before the Modal opens) gives the
-          real screen-space rectangle of the blank area beside the sidebar,
+      {/* ── Message thread — opens as a Modal sheet over the grid, same
+          pattern as Ask Fam/Ask Cube: tap a card, its full conversation
+          opens on top. A Modal always paints full-screen, above KioskHeader
+          and the nav rail, so `contentRect` (measured off this tab's own
+          root/grid View, in normal in-flow layout, right before the Modal
+          opens) gives the real screen-space rectangle the grid occupies,
           and the Modal's content is absolutely positioned to match it
-          exactly, leaving the sidebar itself uncovered — same
-          top/left/width/height as the sidebar+grid a moment ago, no scrim,
-          no side gap, so switching to a conversation reads as this tab's
-          own content changing, not a new layer appearing over it. */}
+          exactly — same size as the grid, no scrim, so opening a
+          conversation reads as this tab's own content changing, not an
+          unrelated popup appearing over it.
+          Also fixes the Android keyboard-covering-input bug: this deep in a
+          non-Modal tree (behind KioskHeader, beside the nav rail), Android's
+          keyboard-resize participation was unreliable; KioskAskFamDrawer's
+          own composer works correctly because it lives inside a real Modal,
+          so the thread does too now. */}
       <Modal visible={threadOpen} transparent animationType="fade" onRequestClose={() => setThreadOpen(false)}>
         <KioskModalHost style={s.threadHost}>
           <View
@@ -1020,48 +1002,102 @@ function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => vo
   );
 }
 
-const SIDEBAR_WIDTH = 260;
+// A card's preview line for one message — same non-text labels
+// REPLY_KIND_LABEL already gives the reply-quote banner, so a photo/voice/
+// document/location message previews consistently everywhere in this tab
+// rather than showing raw empty text.
+function messagePreviewText(msg: ChatMessage): string {
+  if (msg.systemEvent) return '📎 Shared card';
+  if (msg.imageUri) return REPLY_KIND_LABEL[msg.mediaType === 'video' ? 'video' : 'image'];
+  if (msg.voiceUri) return REPLY_KIND_LABEL.voice;
+  if (msg.documentUri) return REPLY_KIND_LABEL.document;
+  if (msg.locationPin) return REPLY_KIND_LABEL.location;
+  return msg.text || '';
+}
+
+const PREVIEW_COUNT = 5;
+
+function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPress }: {
+  entry: ChannelEntry;
+  unread: number;
+  messages: ChatMessage[];
+  memberMap: Record<string, FamilyMember>;
+  selfId: string;
+  k: any;
+  onPress: () => void;
+}) {
+  const recent = useMemo(() => messages.slice(-PREVIEW_COUNT).reverse(), [messages]);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.card,
+        { backgroundColor: pressed ? k.cardHover : k.card, borderColor: k.cardBorder },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${entry.isDM ? 'Direct message with ' : ''}${entry.label}${unread > 0 ? `, ${unread} unread` : ''}`}
+    >
+      <View style={s.cardHeadRow}>
+        {entry.isDM
+          ? <Text style={s.dmEmoji}>{entry.otherMember?.emoji ?? '👤'}</Text>
+          : entry.lock && <Lock size={15} color={k.textFaint} />}
+        <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={1}>{entry.label}</Text>
+        {unread > 0 && (
+          <View style={[s.unreadDot, { backgroundColor: k.danger }]}>
+            <Text style={[s.unreadDotText, { color: k.onAccent }]}>{unread > 9 ? '9+' : unread}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={s.cardPreviewList}>
+        {recent.length === 0 ? (
+          <Text style={[s.cardEmpty, { color: k.textFaint }]}>No messages yet</Text>
+        ) : (
+          recent.map(msg => {
+            const sender = memberMap[msg.senderId];
+            const senderLabel = msg.senderId === selfId ? 'You' : (sender?.name.split(' ')[0] ?? '?');
+            return (
+              <View key={msg.id} style={s.cardPreviewRow}>
+                <Text style={[s.cardPreviewSender, { color: k.textMuted }]} numberOfLines={1}>{senderLabel}:</Text>
+                <Text style={[s.cardPreviewText, { color: k.textMuted }]} numberOfLines={1}>{messagePreviewText(msg)}</Text>
+              </View>
+            );
+          })
+        )}
+      </View>
+    </Pressable>
+  );
+}
 
 const s = StyleSheet.create({
-  root: { flex: 1, flexDirection: 'row' },
-  sidebar: { width: SIDEBAR_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, paddingTop: KIOSK_SPACE.lg, paddingHorizontal: KIOSK_SPACE.sm },
-  sidebarTitle: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 6 },
-  sidebarList: { gap: 4, paddingBottom: 20 },
-  // Channel rows are the primary navigation on this tab — sized to the
-  // kiosk touch floor rather than a phone list row.
-  channelRow: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
-    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min,
-    // Border is always present (transparent when unselected) so selecting a
-    // row can't shift the others by a pixel.
-    borderWidth: 1,
+  root: { flex: 1 },
+  grid: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm },
+  gridSectionLabel: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 4 },
+  gridRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
+  // Cards are the primary navigation on this tab now — sized well above the
+  // kiosk touch floor since each one carries a preview, not just a label.
+  card: {
+    width: 280, minHeight: 176, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
+    padding: KIOSK_SPACE.sm, gap: 6,
   },
-  channelLabel: { flex: 1, fontSize: KIOSK_TYPO.body },
+  cardHeadRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardTitle: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   dmEmoji: { fontSize: 18 },
-  unreadDot: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  unreadDot: { minWidth: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  cardPreviewList: { gap: 3 },
+  cardPreviewRow: { flexDirection: 'row', gap: 4 },
+  cardPreviewSender: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  cardPreviewText: { flex: 1, fontSize: KIOSK_TYPO.micro },
+  cardEmpty: { fontSize: KIOSK_TYPO.micro, fontStyle: 'italic' },
 
-  // The blank area beside the sidebar — an always-mounted, invisible
-  // placeholder (no background/border of its own) that exists solely to be
-  // measured, so the Modal drawer knows the exact rect to occupy without
-  // covering the sidebar.
-  contentArea: { flex: 1 },
-
-  // The thread is now a Modal drawer (see the render-site comment), not an
-  // inline pane beside the sidebar. threadHost fills the Modal's own
-  // full-screen window (so the contentRect coordinates measured off the
-  // placeholder above line up against it 1:1); threadRight's actual
-  // position/size is then set inline per-render from that measured rect —
-  // this base style is only the pre-measurement fallback.
-  // Live-reported: a narrow right-anchored panel (the KioskAskFamDrawer
-  // shape) left a visible dimmed scrim gap on the left, reading as a popup
-  // ON TOP of the tab. Full-bleed across the whole screen was rejected too
-  // ("not a big page it should be narrowed"), and even the full tab
-  // rectangle overlaid the still-visible sidebar underneath it
-  // ("match the blank space only not on top of the channel grid") — the
-  // target is specifically the blank content area right of the sidebar,
-  // which only a measured rect (not a hardcoded rail-width guess) can match
-  // exactly while leaving the sidebar uncovered.
+  // The thread now opens as a Modal sheet over the grid (see the render-
+  // site comment), not an inline pane beside a sidebar. threadHost fills
+  // the Modal's own full-screen window (so the contentRect coordinates
+  // measured off this tab's own root/grid line up against it 1:1);
+  // threadRight's actual position/size is then set inline per-render from
+  // that measured rect — this base style is only the pre-measurement
+  // fallback.
   threadHost: { flex: 1 },
   threadRight: {},
   threadOuter: { flex: 1, width: '100%', paddingHorizontal: 20 },

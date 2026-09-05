@@ -30,48 +30,78 @@
  * existing effect (MemoriesTab.tsx:814-819) opens its own real
  * ComposeMemoryModal — no new business logic, just a different trigger for
  * the same flag mobile already reads.
+ *
+ * ── Hub-OS migration ────────────────────────────────────────────────────
+ * The header is now a TabTitle with an ActionButton, and the feed sits in a
+ * WidgetCard — same chrome as every other migrated tab. Above it sits the
+ * ambient slideshow (KioskMemorySlideshow), which is the genuinely
+ * kiosk-native part of this screen: a countertop display glanced at from
+ * across a room wants a large, slowly-advancing photo, not a scroll feed.
+ * The feed stays below it, unchanged, for anyone actually standing at the
+ * device. The embedded MemoriesTab is a shared phone component styled from
+ * the app's `colors`; see KioskSchoolTab's header for why that's threaded
+ * through rather than forked.
  */
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Plus } from 'lucide-react-native';
-import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Plus, Images } from 'lucide-react-native';
+import { KIOSK_SPACE } from '../kioskTheme';
+import { useKioskColors } from '../kioskPalette';
+import { WidgetCard, WidgetHeader, TabTitle, ActionButton } from '../components/KioskOS';
+import { useKioskActivity } from '../KioskActivityContext';
+import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useUIStore } from '@/store/uiStore';
 import MemoriesTab from '@/features/vault/tabs/MemoriesTab';
 
-export function KioskMemoriesTab({ colors, isDark, readOnly = false }: { colors: any; isDark: boolean; readOnly?: boolean }) {
+export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
+  colors: any; isDark: boolean; readOnly?: boolean;
+}) {
+  const { k, isDark: kioskDark } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
+
   return (
     <View style={s.root}>
-      <View style={s.header}>
-        <Text style={[s.title, { color: colors.textPrimary }]}>Family Memories</Text>
-        {!readOnly && (
-          <Pressable
-            onPress={() => useUIStore.getState().setOpenMemoryComposerRequested(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Add a memory"
-            style={[s.addBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
-            <Plus size={20} color="#fff" />
-            <Text style={s.addBtnText}>Add Memory</Text>
-          </Pressable>
-        )}
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
-        <MemoriesTab colors={colors} isDark={isDark} readOnly={readOnly} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        onScrollBeginDrag={registerActivity}
+      >
+        <TabTitle
+          title="Family Memories"
+          subtitle="The album, and what the household has been up to"
+          k={k}
+          right={!readOnly ? (
+            <ActionButton
+              label="Add Memory"
+              Icon={Plus}
+              accent={k.primary}
+              k={k}
+              isDark={kioskDark}
+              variant="solid"
+              accessibilityHint="Opens the memory composer"
+              onPress={() => {
+                registerActivity();
+                useUIStore.getState().setOpenMemoryComposerRequested(true);
+              }}
+            />
+          ) : undefined}
+        />
+
+        <KioskMemorySlideshow style={s.slideshow} />
+
+        <WidgetCard k={k} isDark={kioskDark}>
+          <WidgetHeader
+            Icon={Images} eyebrow="Album" title="All memories"
+            accent={k.purple} k={k} isDark={kioskDark}
+          />
+          <MemoriesTab colors={colors} isDark={isDark} readOnly={readOnly} />
+        </WidgetCard>
       </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: KIOSK_SPACE.lg },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: KIOSK_SPACE.lg, gap: KIOSK_SPACE.sm,
-  },
-  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.full,
-    minHeight: KIOSK_HIT.primary, paddingHorizontal: KIOSK_SPACE.lg, justifyContent: 'center',
-    shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 6,
-  },
-  addBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', color: '#fff' },
-  scrollContent: { paddingBottom: KIOSK_SPACE.xxl },
+  root: { flex: 1 },
+  scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
+  slideshow: { marginBottom: KIOSK_SPACE.md },
 });

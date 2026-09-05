@@ -181,68 +181,32 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   }, [members, active, isParent, isSenior]);
 
   const [activeChannel, setActiveChannel] = useState<string>(entries[0]?.id ?? 'all');
-  // Live-reported: even after manually tracking real keyboard height (see
-  // keyboardHeight below), the thread's own KeyboardAvoidingView still
-  // wasn't reliably shifting things on Android — the sidebar+inline-thread
-  // layout puts the thread deep in a non-Modal tree (behind KioskHeader,
-  // beside the nav rail), where Android's keyboard participation is
-  // inconsistent. KioskAskFamDrawer's own composer, by contrast, works
-  // correctly because it lives inside a real Modal. So the thread now
-  // opens as a Modal too: the sidebar stays exactly as it was (a plain
-  // list, no inline thread pane next to it); tapping a channel/DM opens
-  // its conversation in a right-anchored Modal drawer, the same shell
-  // KioskAskFamDrawer already uses successfully.
+  // Tapping a card in the grid opens its conversation in a right-anchored
+  // Modal drawer — the exact same shell KioskAskFamDrawer already uses
+  // successfully, scrim included. Live-reported: earlier attempts either
+  // kept the thread inline (deep in a non-Modal tree behind KioskHeader,
+  // beside the nav rail, where Android's KeyboardAvoidingView participation
+  // is unreliable) or sized the Modal's content to a measured, fixed-pixel
+  // rect (which broke KeyboardAvoidingView's 'height' behavior — it shrinks
+  // ITSELF to make room for the keyboard, and a fixed-height box has no
+  // room to shrink into). Matching KioskAskFamDrawer's shape exactly — a
+  // scrim, a fixed-width right-anchored panel at height:'100%' inside its
+  // own KeyboardAvoidingView — sidesteps both problems at once, since
+  // that's the one confirmed-working pattern in this codebase.
   const [threadOpen, setThreadOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
 
-  // A Modal always renders full-screen, above KioskHeader and the nav rail —
-  // there is no style that confines it to a sub-rectangle of the screen. So
-  // this tab's own root View (the grid) is measured in its normal in-flow
-  // layout (measureInWindow, re-measured on every card tap) and the Modal's
-  // content is absolutely positioned to match that exact rect — the sheet
-  // opens directly over the grid at the grid's own size, the same "tap a
-  // card, its full conversation opens as a sheet" pattern as Ask Fam/Ask
-  // Cube, rather than a hardcoded rail-width/header-height guess.
-  const contentAreaRef = useRef<View>(null);
-  const [contentRect, setContentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const measureContentArea = useCallback(() => {
-    contentAreaRef.current?.measureInWindow((x, y, width, height) => {
-      setContentRect({ x, y, width, height });
-    });
-  }, []);
-
-  // Live-reported on Android: the keyboard opened and just covered the
-  // input bar and the last messages — nothing shifted at all, despite the
-  // KeyboardAvoidingView already wrapping this thread column with the
-  // correct 'height' behavior on Android. That component's height-shrink
-  // approach depends on this subtree actually being the one Android
-  // resizes, which is unreliable once nested this deep behind KioskHeader
-  // and beside the nav rail in a non-Modal tree (KioskAskFamDrawer's own
-  // KeyboardAvoidingView, by contrast, sits directly inside a real Modal —
-  // Android's keyboard-resize participation is far more consistent there).
-  // Rather than change the app's global Android keyboard config (a much
-  // bigger, harder-to-verify change), track the real keyboard height
-  // directly via the same technique lib/useKeyboardAwareMaxHeight.ts
-  // already uses elsewhere in this app, and apply it as bottom padding on
-  // the input bar so the input box is PUSHED UP above the keyboard the
-  // moment it opens/focuses, independent of whether the surrounding tree
-  // resizes.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Keyboard opening can leave the latest message behind it until the list
+  // re-settles at its own end — same "scroll after layout, not during
+  // render" pattern used elsewhere in this file.
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvt, e => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      // Once the input bar is pushed up by the keyboard, the latest
-      // message can end up hidden behind it unless the list re-settles at
-      // its own end — same "scroll after layout, not during render"
-      // pattern already used elsewhere in this file/branch.
+    const show = Keyboard.addListener(showEvt, () => {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     });
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
+    return () => show.remove();
   }, []);
   const [moderationWarning, setModerationWarning] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -318,7 +282,6 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // ChatScreen.tsx's switchChannel: an in-flight reply/attachment/draft must
   // never leak into whichever channel is opened next.
   const switchChannel = (id: string) => {
-    measureContentArea();
     setActiveChannel(id);
     setThreadOpen(true);
     setReplyingTo(null);
@@ -561,7 +524,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   );
 
   return (
-    <View ref={contentAreaRef} style={s.root} onLayout={measureContentArea}>
+    <View style={s.root}>
       {/* ── Channel/DM grid — replaces the old sidebar list. Each card is a
           preview: name, lock/unread badges, and up to 5 most recent
           messages (sender + truncated text), so a glance at the grid tells
@@ -604,48 +567,32 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         </View>
       </ScrollView>
 
-      {/* ── Message thread — opens as a Modal sheet over the grid, same
-          pattern as Ask Fam/Ask Cube: tap a card, its full conversation
-          opens on top. A Modal always paints full-screen, above KioskHeader
-          and the nav rail, so `contentRect` (measured off this tab's own
-          root/grid View, in normal in-flow layout, right before the Modal
-          opens) gives the real screen-space rectangle the grid occupies,
-          and the Modal's content is absolutely positioned to match it
-          exactly — same size as the grid, no scrim, so opening a
-          conversation reads as this tab's own content changing, not an
-          unrelated popup appearing over it.
-          Also fixes the Android keyboard-covering-input bug: this deep in a
-          non-Modal tree (behind KioskHeader, beside the nav rail), Android's
-          keyboard-resize participation was unreliable; KioskAskFamDrawer's
-          own composer works correctly because it lives inside a real Modal,
-          so the thread does too now. */}
-      <Modal visible={threadOpen} transparent animationType="fade" onRequestClose={() => setThreadOpen(false)}>
+      {/* ── Message thread — opens as a narrow right-anchored Modal drawer,
+          the exact same shell KioskAskFamDrawer already uses successfully:
+          a dimming scrim over the grid, a fixed-width panel pinned to the
+          right edge, full height. Tap a card in the grid, its conversation
+          slides in from the right, same as tapping the header's Ask Fam
+          button. This also carries over that drawer's Android keyboard fix
+          for free — KeyboardAvoidingView's 'height' behavior can shrink the
+          panel because it's height:'100% of the KeyboardAvoidingView', not
+          a fixed pixel box computed from a pre-keyboard measurement (an
+          earlier version tried sizing this drawer to the grid's own
+          measured rect, which left no room for the panel to shrink into
+          and broke the keyboard fix again). */}
+      <Modal visible={threadOpen} transparent animationType="slide" onRequestClose={() => setThreadOpen(false)}>
         <KioskModalHost style={s.threadHost}>
-          <View
-            style={[
-              s.threadRight,
-              contentRect
-                ? { position: 'absolute', top: contentRect.y, left: contentRect.x, width: contentRect.width, height: contentRect.height }
-                : StyleSheet.absoluteFill,
-            ]}
+          <Pressable
+            style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
+            onPress={() => setThreadOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Close chat"
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={s.threadRight}
+            pointerEvents="box-none"
           >
-            <View style={[s.threadOuter, { backgroundColor: k.card }]}>
-              {/* KeyboardAvoidingView's 'height' behavior shrinks ITSELF to
-                  make room for the keyboard — but this drawer's outer box
-                  (threadRight) is now absolutely positioned with a fixed
-                  height taken from the measured content-area rect, so
-                  there's no longer any ancestor free to shrink into. Live-
-                  reported: the keyboard covered the input again once the
-                  drawer became a fixed-size measured rect. iOS's 'padding'
-                  behavior still works (it pads bottom space directly,
-                  independent of ancestor sizing), but Android needs the
-                  manual keyboardHeight measurement applied directly to the
-                  input row below instead of relying on KeyboardAvoidingView
-                  at all. */}
-              <KeyboardAvoidingView
-                style={s.thread}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              >
+            <View style={[s.threadPanel, { backgroundColor: k.card, borderLeftColor: k.cardBorder }]}>
               <View style={s.threadHead}>
                 <Pressable
                   onPress={() => setThreadOpen(false)}
@@ -844,11 +791,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
-            <View style={[
-              s.inputRow,
-              { backgroundColor: k.card, borderColor: k.cardBorder },
-              Platform.OS === 'android' && keyboardHeight > 0 && { marginBottom: keyboardHeight },
-            ]}>
+            <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
               <Pressable onPress={() => setShowAttachMenu(v => !v)} style={s.iconBtn} hitSlop={8}
                 accessibilityRole="button" accessibilityLabel="Attach a photo, video, document or location"
                 accessibilityState={{ expanded: showAttachMenu }}>
@@ -882,9 +825,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               )}
             </View>
           )}
-              </KeyboardAvoidingView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </KioskModalHost>
       </Modal>
 
@@ -1091,17 +1033,13 @@ const s = StyleSheet.create({
   cardPreviewText: { flex: 1, fontSize: KIOSK_TYPO.micro },
   cardEmpty: { fontSize: KIOSK_TYPO.micro, fontStyle: 'italic' },
 
-  // The thread now opens as a Modal sheet over the grid (see the render-
-  // site comment), not an inline pane beside a sidebar. threadHost fills
-  // the Modal's own full-screen window (so the contentRect coordinates
-  // measured off this tab's own root/grid line up against it 1:1);
-  // threadRight's actual position/size is then set inline per-render from
-  // that measured rect — this base style is only the pre-measurement
-  // fallback.
+  // The thread opens as a narrow right-anchored Modal drawer — the exact
+  // host/right/panel shape KioskAskFamDrawer already uses successfully
+  // (scrim behind, fixed-width panel pinned right, full height inside its
+  // own KeyboardAvoidingView).
   threadHost: { flex: 1 },
-  threadRight: {},
-  threadOuter: { flex: 1, width: '100%', paddingHorizontal: 20 },
-  thread: { flex: 1, width: '100%', paddingTop: 20 },
+  threadRight: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
+  threadPanel: { width: 480, maxWidth: '100%', height: '100%', borderLeftWidth: 1, paddingHorizontal: 20, paddingTop: 20 },
 
   threadHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,

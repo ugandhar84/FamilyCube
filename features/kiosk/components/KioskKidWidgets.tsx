@@ -32,7 +32,10 @@ import { CalendarClock, CheckSquare, Sparkles } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import type { Quest } from '@/store/questStore';
 import { useChoreStore } from '@/store/choreStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 
@@ -201,7 +204,8 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   onOpenTasks: () => void;
   style?: any;
 }) {
-  const { quests, claimQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
+  const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
 
   // Same staleness bug as KioskTasksTab.tsx (see its own top-of-component
   // comment for the full root cause: a wall-mounted kiosk never re-triggers
@@ -243,6 +247,20 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
       : key === 'progress' ? k.blue
       : key === 'redo' ? k.danger
       : k.sage;
+
+  // The exact same per-status action the Chores board offers — same
+  // deriveQuestActions gate, same store calls, same toast copy — so a kid
+  // can act on a chore right here instead of this widget being read-only
+  // and the board being the only place with buttons. See
+  // KioskTasksTab.tsx's own primaryAction for the source this mirrors.
+  const primaryAction = (q: Quest): { label: string; accent: string; action: () => void } | null => {
+    const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
+    if (actions.canClaim) return { label: 'Claim', accent: k.gold, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
+    if (actions.canResubmit) return { label: 'Resubmit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
+    if (actions.canSubmit) return { label: 'Submit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
+    if (actions.canApprove) return { label: 'Approve', accent: k.sage, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
+    return null;
+  };
 
   const totalMine = buckets.reduce((n, b) => n + b.items.length, 0);
 
@@ -309,30 +327,66 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
         })}
       </View>
 
-      {/* The selected tab's chores — scrollable, capped so this stays a
-          widget and not a second copy of the full board. */}
+      {/* The selected tab's chores. Live-reported: an inner ScrollView here
+          (and, on retry, a FlatList with nestedScrollEnabled) didn't
+          reliably claim the scroll gesture from the Overview's own outer
+          ScrollView (KioskOverviewTab.tsx) — scrolling here scrolled the
+          whole Hub instead. Nested vertical scroll-in-scroll is unreliable
+          on RN regardless of which list component or Android-only prop is
+          used, so this sidesteps it entirely: a flat, non-scrolling list
+          capped to 3 rows (matching "Up for grabs" below, which already
+          uses the same cap-and-link pattern for its own overflow), with a
+          "See N more" link into the real Tasks tab — which has its own,
+          legitimately scrollable, non-nested board — instead of trying to
+          scroll inside this card at all. Each visible row still gets the
+          SAME primary action button the Chores board shows (Claim /
+          Submit / Resubmit / Approve, via the same deriveQuestActions gate
+          just above) — this was previously read-only title+coins with no
+          way to act without switching tabs. */}
       {selected && (
         selected.items.length === 0 ? (
           <EmptyNote text={`Nothing in ${selected.label} right now.`} k={k} style={{ marginBottom: KIOSK_SPACE.sm }} />
         ) : (
-          <ScrollView
-            style={s.bucketScroll}
-            contentContainerStyle={{ gap: KIOSK_SPACE.xs }}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            {selected.items.map(q => (
-              <Well key={q.id} k={k} accent={accentFor(selected.key)} style={s.bucketRow}>
-                <Text style={[s.bucketTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
-                {q.coins > 0 && (
-                  <Text style={[s.poolCoins, { color: k.gold }]} numberOfLines={1}>
-                    {q.coins}
-                    <Text style={[s.poolCoinsUnit, { color: k.textMuted }]}> coins</Text>
-                  </Text>
-                )}
-              </Well>
-            ))}
-          </ScrollView>
+          <View style={{ gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm }}>
+            {selected.items.slice(0, 3).map(q => {
+              const btn = primaryAction(q);
+              return (
+                <Well key={q.id} k={k} accent={accentFor(selected.key)} style={s.bucketRow}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.bucketTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
+                    {q.coins > 0 && (
+                      <Text style={[s.poolCoins, { color: k.gold }]} numberOfLines={1}>
+                        {q.coins}
+                        <Text style={[s.poolCoinsUnit, { color: k.textMuted }]}> coins</Text>
+                      </Text>
+                    )}
+                  </View>
+                  {btn && (
+                    <Pressable
+                      onPress={btn.action}
+                      style={({ pressed }) => [
+                        s.poolClaimBtn,
+                        { backgroundColor: btn.accent, opacity: pressed ? 0.75 : 1 },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${btn.label} ${q.title}`}
+                    >
+                      <Text style={[s.poolClaimText, { color: kioskOnAccent(k, btn.accent) }]} numberOfLines={1}>
+                        {btn.label}
+                      </Text>
+                    </Pressable>
+                  )}
+                </Well>
+              );
+            })}
+            {selected.items.length > 3 && (
+              <Pressable onPress={onOpenTasks} accessibilityRole="button" accessibilityLabel={`See ${selected.items.length - 3} more in ${selected.label}`}>
+                <Text style={[s.poolMore, { color: accentFor(selected.key) }]} numberOfLines={1}>
+                  See {selected.items.length - 3} more in {selected.label} →
+                </Text>
+              </Pressable>
+            )}
+          </View>
         )
       )}
 
@@ -433,14 +487,19 @@ const s = StyleSheet.create({
   },
   statusCount: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900', fontVariant: ['tabular-nums'] },
   statusLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
-  // Selected-tab chore list — capped height, own scroll, so a bucket with
-  // many items doesn't grow the whole widget card open-endedly.
+  // Selected-tab chore list — non-scrolling, capped to 3 rows (see the
+  // render-site comment for why this doesn't scroll internally).
   bucketScroll: { maxHeight: 168, marginBottom: KIOSK_SPACE.sm },
   bucketRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.sm, minHeight: 44,
+    gap: KIOSK_SPACE.xs, minHeight: 44,
   },
-  bucketTitle: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  // caption, not body — at body size the title + a Claim/Submit/Approve
+  // button crowded a single-line title into truncating on any chore with
+  // a real name. Shrinking the label text and the button (below) is what
+  // actually buys back the room; numberOfLines={1} alone can't fix a title
+  // that's simply too wide for the space its neighbor button is leaving it.
+  bucketTitle: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
   poolHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
@@ -452,16 +511,22 @@ const s = StyleSheet.create({
   // once content wraps to two lines (title stacked over coins), so this
   // uses vertical padding instead of just a floor.
   poolRow: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min + 8, paddingVertical: KIOSK_SPACE.xs,
   },
-  poolTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
-  poolCoins: { fontSize: KIOSK_TYPO.body, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
+  // Same caption-size rationale as bucketTitle above — this row carries a
+  // Claim button too.
+  poolTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  poolCoins: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
   poolCoinsUnit: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   poolMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  // Shrunk from KIOSK_SPACE.md horizontal padding + KIOSK_TYPO.label text:
+  // that combination alone was wide enough to push a chore's title into
+  // truncating on the same row. minWidth (not padding alone) is what keeps
+  // this a real touch target at the new, tighter padding.
   poolClaimBtn: {
-    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.md,
+    minHeight: KIOSK_HIT.min, minWidth: 64, paddingHorizontal: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.sm,
     alignItems: 'center', justifyContent: 'center',
   },
-  poolClaimText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  poolClaimText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 });

@@ -82,6 +82,7 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme'
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
+import { KioskDayMealsDrawer } from '../components/KioskDayMealsDrawer';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
@@ -156,10 +157,17 @@ export function KioskOverviewTab({
   const { meals } = useKioskMeals();
 
   // ── Tonight's meal (real family_meals row) ───────────────────────────
-  const tonight = useMemo(() => {
-    const today = meals.filter(m => m.day === todayMealDay());
-    return today.find(m => (m.type ?? '').toLowerCase() === 'dinner') ?? today[0] ?? null;
-  }, [meals]);
+  const todayMeals = useMemo(() => meals.filter(m => m.day === todayMealDay()), [meals]);
+  const tonight = useMemo(
+    () => todayMeals.find(m => (m.type ?? '').toLowerCase() === 'dinner') ?? todayMeals[0] ?? null,
+    [todayMeals],
+  );
+  // Live-reported: tapping the "What's for dinner" card did nothing once a
+  // real meal was showing — the hero's meal card only had an onPress in
+  // its EMPTY state. Opens KioskDayMealsDrawer over ALL of today's meals
+  // (breakfast/lunch/dinner/snack can all exist for one day), not just the
+  // dinner recipe, per the owner's own widening of the request.
+  const [showDayMeals, setShowDayMeals] = useState(false);
 
   // ── Rides needing attention ──────────────────────────────────────────
   // The mockup's "Co-Parent Pending Rides" card. A ride needs attention if
@@ -204,6 +212,7 @@ export function KioskOverviewTab({
   }, []);
 
   return (
+    <>
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
       {/* ══ HERO ROW ═══════════════════════════════════════════════════ */}
       <View style={s.heroRow}>
@@ -265,13 +274,21 @@ export function KioskOverviewTab({
             accent={k.gold} k={k} isDark={isDark}
           />
           {tonight ? (
-            <Well k={k} accent={k.gold} style={{ flex: 1, justifyContent: 'center' }}>
-              <Text style={s.mealEmoji}>{tonight.emoji ?? '🍽️'}</Text>
-              <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>{tonight.title}</Text>
-              <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={2}>
-                {mealMeta(tonight.prep_minutes, tonight.chef_id, members, tonight.start_time)}
-              </Text>
-            </Well>
+            <Pressable
+              onPress={() => setShowDayMeals(true)}
+              style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.85 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Tonight's dinner: ${tonight.title}`}
+              accessibilityHint="See today's full meal plan"
+            >
+              <Well k={k} accent={k.gold} style={{ flex: 1, justifyContent: 'center' }}>
+                <Text style={s.mealEmoji}>{tonight.emoji ?? '🍽️'}</Text>
+                <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>{tonight.title}</Text>
+                <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={2}>
+                  {mealMeta(tonight.prep_minutes, tonight.chef_id, members, tonight.start_time)}
+                </Text>
+              </Well>
+            </Pressable>
           ) : (
             <Pressable
               onPress={() => onNavigate('meals')}
@@ -452,6 +469,17 @@ export function KioskOverviewTab({
         onOpen={() => onNavigate('findfam')}
       />
     </ScrollView>
+
+    <KioskDayMealsDrawer
+      visible={showDayMeals}
+      onClose={() => setShowDayMeals(false)}
+      dayLabel="Today"
+      meals={todayMeals}
+      members={members}
+      k={k}
+      isDark={isDark}
+    />
+    </>
   );
 }
 

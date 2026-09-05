@@ -46,7 +46,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet,
-  Modal, Image, Alert, Clipboard, KeyboardAvoidingView, Platform,
+  Modal, Image, Alert, Clipboard, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import {
   Send, Lock, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
@@ -184,6 +184,38 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
+
+  // Live-reported on Android: the keyboard opened and just covered the
+  // input bar and the last messages — nothing shifted at all, despite the
+  // KeyboardAvoidingView already wrapping this thread column with the
+  // correct 'height' behavior on Android. That component's height-shrink
+  // approach depends on this subtree actually being the one Android
+  // resizes, which is unreliable once nested this deep behind KioskHeader
+  // and beside the nav rail in a non-Modal tree (KioskAskFamDrawer's own
+  // KeyboardAvoidingView, by contrast, sits directly inside a real Modal —
+  // Android's keyboard-resize participation is far more consistent there).
+  // Rather than change the app's global Android keyboard config (a much
+  // bigger, harder-to-verify change), track the real keyboard height
+  // directly via the same technique lib/useKeyboardAwareMaxHeight.ts
+  // already uses elsewhere in this app, and apply it as bottom padding on
+  // the input bar so the input box is PUSHED UP above the keyboard the
+  // moment it opens/focuses, independent of whether the surrounding tree
+  // resizes.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, e => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      // Once the input bar is pushed up by the keyboard, the latest
+      // message can end up hidden behind it unless the list re-settles at
+      // its own end — same "scroll after layout, not during render"
+      // pattern already used elsewhere in this file/branch.
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const [moderationWarning, setModerationWarning] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
@@ -548,8 +580,22 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             iPad-class kiosk, which does show one) simply overlapped the
             input bar/messages with no adjustment instead of the screen
             shrinking to make room. Scoped to just the thread column (not
-            the whole root View) so the channel sidebar never shifts. */}
-        <KeyboardAvoidingView style={s.thread} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            the whole root View) so the channel sidebar never shifts.
+
+            Android still gets an explicit marginBottom of the real,
+            tracked keyboardHeight ON TOP of this — see keyboardHeight's own
+            comment above: this KeyboardAvoidingView's 'height' behavior
+            depends on Android actually resizing THIS subtree, which proved
+            unreliable this deep in a non-Modal tree (live-reported: the
+            keyboard still just covered the input with no shift at all). The
+            manual margin pushes the whole thread column — header, message
+            list AND input bar together — up by the keyboard's real height
+            regardless of whether the surrounding tree resizes, so it works
+            even if KeyboardAvoidingView's own adjustment ends up being 0. */}
+        <KeyboardAvoidingView
+          style={[s.thread, Platform.OS === 'android' && { marginBottom: keyboardHeight }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={s.threadHead}>
             <Text style={[s.title, { color: k.text }]} numberOfLines={1}>
               {currentEntry?.label ?? 'Chat'}

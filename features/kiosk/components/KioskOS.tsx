@@ -20,9 +20,17 @@
  * have a real light and a real dark appearance — the structure is what
  * makes a kiosk screen look like a kiosk screen, not a fixed dark ground.
  *
- * These live alongside (not instead of) KioskSurface.tsx's KioskCard/
- * KioskZoneHeader, which the pre-existing tabs still use. New Hub-OS
- * surfaces use these; the older tabs are migrated incrementally.
+ * These have now REPLACED KioskSurface.tsx's KioskCard/KioskZoneHeader on
+ * every tab KioskScreen actually renders — Overview, Schedule, Meals,
+ * Tasks, Chat, Store, Find Family, Memories, School and Health all build
+ * from the primitives in this file.
+ *
+ * KioskSurface.tsx still exists because KioskHubTab.tsx still imports it,
+ * but that tab is no longer reachable: nothing imports KioskHubTab, and
+ * KioskScreen renders KioskOverviewTab in its place. Both files look like
+ * dead code as a result. They were left in place rather than deleted here
+ * because removing them is a cleanup decision beyond a styling pass — but
+ * a future pass should confirm and drop them rather than migrate them.
  */
 import type { ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle, type TextStyle, type ViewProps } from 'react-native';

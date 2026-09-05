@@ -843,23 +843,54 @@ function KioskEventCard({
           </View>
         )}
 
-        {/* For / patient row — real avatars for everyone assigned, or a
-            parent's tappable assign picker on an unassigned event. Phone:
-            EventCard.tsx:579-613. */}
-        {forLabel && (
-          <View style={s.forRow}>
-            {allAssignees.length > 0 ? (
+        {/* For/passenger + driver on ONE row when both are the simple case
+            (real assignees, not the parent's assign picker, which still
+            gets its own row below — a row of tappable avatar targets reads
+            better with room to breathe). Live-reported: each of these used
+            to be its own full-width row with a lot of empty space either
+            side of one small avatar+name cluster, on a card that already
+            has plenty of horizontal room — wasteful, not glanceable.
+            Phone: EventCard.tsx:579-613 (for/patient), :617-631 (driver). */}
+        {(forLabel && allAssignees.length > 0) || !!helperName ? (
+          <View style={s.metaCombinedRow}>
+            {forLabel && allAssignees.length > 0 && (
               <View style={s.forCluster}>
                 <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}:</Text>
                 {allAssignees.map(m => (
                   <View key={m.id} style={s.avatarWithName}>
                     <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
-                      siblings={siblingNames} size={30} ringColor={rs.dot} ringWidth={2} />
+                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
                     <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
                   </View>
                 ))}
               </View>
-            ) : !isPast && isParent && pickerMembers.length > 0 ? (
+            )}
+            {!!helperName && (
+              <View style={s.forCluster}>
+                <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{helperLabelFor(cat)}:</Text>
+                {helperMember ? (
+                  <View style={s.avatarWithName}>
+                    <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
+                      siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
+                    <Text style={[s.avatarName, { color: k.text }]} numberOfLines={1}>{helperMember.name.split(' ')[0]}</Text>
+                  </View>
+                ) : (
+                  // A genuinely external non-member (a coach, a neighbour) has
+                  // no avatar to draw — same fallback the phone card takes.
+                  <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
+                )}
+              </View>
+            )}
+            {!!ev.location && <KioskLocationLink addr={ev.location} k={k} label="Location" />}
+          </View>
+        ) : null}
+
+        {/* Unassigned event: either a parent's assign picker (its own row —
+            a row of tappable targets needs its own room) or a plain dash.
+            Phone: EventCard.tsx:592-607. */}
+        {forLabel && allAssignees.length === 0 && (
+          <View style={s.forRow}>
+            {!isPast && isParent && pickerMembers.length > 0 ? (
               <View style={s.forCluster}>
                 <Text style={[s.metaLabel, { color: k.textMuted }]} numberOfLines={1}>{forLabel}:</Text>
                 {pickerMembers.map(m => {
@@ -887,25 +918,6 @@ function KioskEventCard({
               <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}: —</Text>
             )}
             {!!ev.location && <KioskLocationLink addr={ev.location} k={k} label="Location" />}
-          </View>
-        )}
-
-        {/* Driver / accompanying adult, with a real avatar. Phone:
-            EventCard.tsx:617-631. */}
-        {!!helperName && (
-          <View style={s.helperRow}>
-            <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{helperLabelFor(cat)}:</Text>
-            {helperMember ? (
-              <View style={s.avatarWithName}>
-                <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
-                  siblings={siblingNames} size={30} ringColor={k.blue} ringWidth={2} />
-                <Text style={[s.avatarName, { color: k.text }]} numberOfLines={1}>{helperMember.name.split(' ')[0]}</Text>
-              </View>
-            ) : (
-              // A genuinely external non-member (a coach, a neighbour) has
-              // no avatar to draw — same fallback the phone card takes.
-              <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
-            )}
           </View>
         )}
         {needsDriver && !isPast && (
@@ -1642,6 +1654,13 @@ const s = StyleSheet.create({
   forRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
+  },
+  // Passenger + driver clusters share this one row (with a wider gap
+  // between the two clusters than within one), instead of each getting
+  // its own full-width row — see the render-site comment for why.
+  metaCombinedRow: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+    columnGap: KIOSK_SPACE.lg, rowGap: KIOSK_SPACE.xs,
   },
   forCluster: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap', flexShrink: 1 },
   avatarWithName: { flexDirection: 'row', alignItems: 'center', gap: 5 },

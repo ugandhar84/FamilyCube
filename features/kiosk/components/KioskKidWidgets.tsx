@@ -606,23 +606,33 @@ function ChoreCardRow({
       cardBg={k.card}
       cardBord={k.cardBorder}
       header={
+        // Two explicit rows, not one flex-wrapping row — a title long
+        // enough to wrap used to push the coin badge and status pill to
+        // unpredictable positions (sometimes both trailing the title's
+        // second line, sometimes split across two lines themselves)
+        // depending on exact pixel widths. Row 1 is the title alone, at
+        // its own full width; row 2 is always coins + status together,
+        // so the header reads as a fixed, predictable 2-line shape no
+        // matter how long a chore's name is.
         <View style={s.choreCardHeader}>
-          <Text style={[s.choreTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
-          {q.coins > 0 && (
+          <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+          <View style={s.choreCardBadgeRow}>
+            {q.coins > 0 && (
+              <View
+                style={[s.coinBadge, { backgroundColor: k.well, borderColor: k.goldEdge }]}
+                accessibilityLabel={`Worth ${q.coins} coins`}
+              >
+                <Coins size={13} color={k.gold} />
+                <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+              </View>
+            )}
             <View
-              style={[s.coinBadge, { backgroundColor: k.well, borderColor: k.goldEdge }]}
-              accessibilityLabel={`Worth ${q.coins} coins`}
+              style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
+              accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
             >
-              <Coins size={13} color={k.gold} />
-              <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+              <meta.Icon size={12} color={meta.accent} />
+              <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
             </View>
-          )}
-          <View
-            style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
-            accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
-          >
-            <meta.Icon size={12} color={meta.accent} />
-            <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
           </View>
         </View>
       }
@@ -713,12 +723,18 @@ const s = StyleSheet.create({
   // CollapsibleQuestCard supplies the card's own frame now (glass/blur
   // wash, left accent glow, border, header/body split, the tap-to-expand
   // chevron) — see this file's own header comment above ChoreCardRow. This
-  // header row is just the always-visible content INSIDE that frame.
-  choreCardHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  // header is just the always-visible content INSIDE that frame: title on
+  // its own row, coins + status pill together on the row below — a fixed
+  // 2-row shape regardless of title length (see ChoreCardRow's own comment
+  // for why this replaced a single flex-wrapping row).
+  choreCardHeader: { gap: 6 },
+  choreCardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   // The title is a real heading here, unlike the old caption-size row
   // label — the card now gives its buttons a full row of their own, so the
   // title no longer competes with a button for the same horizontal space.
-  choreTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  // Shrunk from subheading — at that size, in this widget's own narrower
+  // column, the title read oversized next to the rest of the card.
+  choreTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   // Badges/pills sit on `k.card`, not on a tint of their own accent: they
   // are already inside a status-tinted card, and a tint on a tint muddies
   // both. A solid card-colored chip reads as lifted off the wash.
@@ -727,7 +743,7 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
     borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
   },
-  coinBadgeText: { fontSize: KIOSK_TYPO.label, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  coinBadgeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
   statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: KIOSK_SPACE.xs + 2, paddingVertical: 3,

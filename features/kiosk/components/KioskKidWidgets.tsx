@@ -43,10 +43,11 @@ import { fmtTime, fmtDateTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { kioskOnAccent, kioskTint, type KioskColors } from '../kioskPalette';
+import { kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
+import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
 
 // ════════════════════════════════════════════════════════════════════════
 // My Schedule — today, resting on "now"
@@ -600,6 +601,24 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
  * site's own comment. The card is taller than the old row, which is why
  * the cap matters more, not less.
  */
+/**
+ * Live-reported: this card matched the phone's rich per-status content
+ * (coin badge, status pill, timeline, "waiting on a parent" helper, action
+ * buttons) but not the phone's own COLLAPSE behavior — on phone this is
+ * CollapsibleQuestCard (features/quests/components/CollapsibleQuestCard.tsx,
+ * already used one file over in KioskTasksTab.tsx's own renderQuestCard):
+ * header always visible, everything else — timeline, helper text, action
+ * buttons — hidden behind a chevron until tapped. Kiosk was showing all of
+ * that unconditionally instead, which also fights the widget's own
+ * non-scrolling 3-row cap (see this file's other comments on that): a
+ * collapsed card is shorter, so more of them fit in the same capped space,
+ * and only the one a kid actually taps into grows to show its full detail.
+ *
+ * Header here mirrors KioskTasksTab.tsx's own renderQuestCard header shape
+ * (title + coin badge, that file's own status/category badge swapped for
+ * this widget's status pill instead, since My Chores' whole point is
+ * surfacing status at a glance) rather than inventing a different split.
+ */
 function ChoreCardRow({
   q, k, isDark, btn, showDecline, onDecline,
 }: {
@@ -611,39 +630,36 @@ function ChoreCardRow({
   onDecline: () => void;
 }) {
   const meta = kioskQuestMeta(q, k);
-  const tint = kioskTint(meta.accent, isDark);
   const timeline = questTimeline(q);
   const inReview = q.status === 'pending_approval';
 
   return (
-    <View
-      style={[
-        s.choreCard,
-        { backgroundColor: tint.backgroundColor, borderColor: tint.borderColor, borderLeftColor: meta.accent },
-      ]}
-      accessible={false}
-    >
-      <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
-
-      <View style={s.choreBadgeRow}>
-        {q.coins > 0 && (
+    <CollapsibleQuestCard
+      accentColor={meta.accent}
+      cardBg={k.card}
+      cardBord={k.cardBorder}
+      header={
+        <View style={s.choreCardHeader}>
+          <Text style={[s.choreTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
+          {q.coins > 0 && (
+            <View
+              style={[s.coinBadge, { backgroundColor: k.well, borderColor: k.goldEdge }]}
+              accessibilityLabel={`Worth ${q.coins} coins`}
+            >
+              <Coins size={13} color={k.gold} />
+              <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+            </View>
+          )}
           <View
-            style={[s.coinBadge, { backgroundColor: k.card, borderColor: k.goldEdge }]}
-            accessibilityLabel={`Worth ${q.coins} coins`}
+            style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
+            accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
           >
-            <Coins size={13} color={k.gold} />
-            <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+            <meta.Icon size={12} color={meta.accent} />
+            <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
           </View>
-        )}
-        <View
-          style={[s.statusPill, { backgroundColor: k.card, borderColor: meta.accent }]}
-          accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
-        >
-          <meta.Icon size={12} color={meta.accent} />
-          <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
         </View>
-      </View>
-
+      }
+    >
       {!!timeline && (
         <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={2}>{timeline}</Text>
       )}
@@ -695,7 +711,7 @@ function ChoreCardRow({
           )}
         </View>
       )}
-    </View>
+    </CollapsibleQuestCard>
   );
 }
 
@@ -727,19 +743,15 @@ const s = StyleSheet.create({
   // row instead of sharing one with a button, so the caption-size
   // truncation workaround those carried is no longer needed. The list
   // itself is still the same non-scrolling 3-row cap.)
-  // The phone kid card's shape at kiosk scale. Note this is NOT built on
-  // <Well>: Well paints a fixed `k.well` background, and this card's whole
-  // point is a per-STATUS background wash, so it draws its own surface from
-  // kioskTint(accent) and keeps Well's 4px left accent edge by hand.
-  choreCard: {
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 4,
-    padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs,
-  },
+  // CollapsibleQuestCard supplies the card's own frame now (glass/blur
+  // wash, left accent glow, border, header/body split, the tap-to-expand
+  // chevron) — see this file's own header comment above ChoreCardRow. This
+  // header row is just the always-visible content INSIDE that frame.
+  choreCardHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
   // The title is a real heading here, unlike the old caption-size row
   // label — the card now gives its buttons a full row of their own, so the
   // title no longer competes with a button for the same horizontal space.
   choreTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  choreBadgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
   // Badges/pills sit on `k.card`, not on a tint of their own accent: they
   // are already inside a status-tinted card, and a tint on a tint muddies
   // both. A solid card-colored chip reads as lifted off the wash.

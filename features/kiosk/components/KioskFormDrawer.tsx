@@ -34,6 +34,39 @@
  * open: touches inside a native Modal window never reach KioskScreen's root
  * onTouchStart, so without it a kid filling in a grocery list reads to the
  * idle timer as total inactivity and the lock throws the draft away.
+ *
+ * ── Two variants: 'drawer' and 'dialog' ─────────────────────────────────
+ * Shipping all six forms as full-height right-anchored drawers was wrong
+ * for the short ones. Live on a tablet, "Medication Alert" was one label,
+ * one textarea and one button — roughly 300px of content — inside a panel
+ * spanning the entire screen height, which is what prompted "so we really
+ * need this much bottom sheet?".
+ *
+ * So the shell now has two shapes off the same chrome:
+ *
+ *   'dialog' (default) — CENTERED card, width capped the same 520, but
+ *     HEIGHT DRIVEN BY CONTENT up to maxHeight 85%. Radius and border on
+ *     all four sides. This is right for any form whose content is a fixed,
+ *     known, short set of fields.
+ *
+ *   'drawer' — the original right-anchored panel, height:'100%'. Reserved
+ *     for content that can genuinely run long or is inherently a "panel"
+ *     experience: growable item lists, multi-step wizards, a day's meal
+ *     plan.
+ *
+ * Everything else — scrim, KioskModalHost, KeyboardAvoidingView, the head,
+ * the sticky footer — is shared verbatim between the two, so a variant flip
+ * is purely a layout decision and can never change behaviour.
+ *
+ * Keyboard: a drawer is full-height, so KeyboardAvoidingView 'padding'
+ * shrinks it from the bottom and the sticky footer rides up. A centered
+ * dialog is NOT full-height, so bottom padding alone would push it up only
+ * if it were bottom-anchored — with justifyContent:'center' the padding
+ * reduces the available box and re-centers the card in what's left, which
+ * lifts it above the keyboard correctly. The maxHeight is a PERCENTAGE of
+ * that same shrinking box, so a tall dialog also gets shorter (and its body
+ * scrolls) rather than being clipped. Both cases are handled by the one
+ * KeyboardAvoidingView below; no per-variant keyboard branch is needed.
  */
 import type { ReactNode } from 'react';
 import {
@@ -49,7 +82,7 @@ import type { KioskColors } from '../kioskPalette';
 export function KioskFormDrawer({
   visible, title, subtitle, accent, Icon, k, onClose, children,
   submitLabel, onSubmit, canSubmit, submitting = false, error,
-  footerNote, headerRight,
+  footerNote, headerRight, variant = 'dialog',
 }: {
   visible: boolean;
   title: string;
@@ -70,11 +103,26 @@ export function KioskFormDrawer({
   footerNote?: string;
   /** Optional control beside the close button (progress dots, a mic, …). */
   headerRight?: ReactNode;
+  /**
+   * 'dialog' (default) — centered card, height driven by its content up to
+   * 85% of the screen. Right for short, fixed-length forms.
+   * 'drawer' — full-height right-anchored panel. Right for growable lists,
+   * wizards, and long display content. See this file's header.
+   */
+  variant?: 'drawer' | 'dialog';
 }) {
   const enabled = !!canSubmit && !submitting;
+  const isDialog = variant === 'dialog';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      // A drawer slides in from the edge it's anchored to; a centered card
+      // has no edge to slide from, so it fades like a dialog should.
+      animationType={isDialog ? 'fade' : 'slide'}
+      onRequestClose={onClose}
+    >
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -84,11 +132,17 @@ export function KioskFormDrawer({
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={s.right}
+          style={isDialog ? s.center : s.right}
           pointerEvents="box-none"
         >
           <View
-            style={[s.panel, { backgroundColor: k.card, borderLeftColor: k.cardBorder }]}
+            style={[
+              s.panelBase,
+              isDialog
+                ? [s.panelDialog, { borderColor: k.cardBorder }]
+                : [s.panelDrawer, { borderLeftColor: k.cardBorder }],
+              { backgroundColor: k.card },
+            ]}
             accessibilityViewIsModal
             accessibilityLabel={title}
           >
@@ -122,8 +176,16 @@ export function KioskFormDrawer({
             </View>
 
             {/* ── Body ── */}
+            {/*
+              In a drawer the body takes all the leftover height (flex:1) so
+              the footer pins to the bottom of a full-height panel. In a
+              dialog it must instead shrink-wrap its content — flexGrow:0 +
+              flexShrink:1 — so a two-field form produces a short card, and
+              only once the content exceeds the panel's maxHeight does the
+              body cap out and start scrolling.
+            */}
             <ScrollView
-              style={s.body}
+              style={isDialog ? s.bodyDialog : s.body}
               contentContainerStyle={s.bodyContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="always"
@@ -231,9 +293,21 @@ export function KioskPill({
 const s = StyleSheet.create({
   host: { flex: 1 },
   right: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
+  center: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: KIOSK_SPACE.xl,
+  },
   // Same 520 KioskSheet uses — these forms carry more per row (name + qty +
   // remove) than KioskAskFamDrawer's 480 chat column comfortably fits.
-  panel: { width: 520, maxWidth: '100%', height: '100%', borderLeftWidth: 1, overflow: 'hidden' },
+  panelBase: { width: 520, maxWidth: '100%', overflow: 'hidden' },
+  panelDrawer: { height: '100%', borderLeftWidth: 1 },
+  // No fixed height: the card is as tall as head + body + footer, and only
+  // stops growing at maxHeight, after which the body scrolls. maxHeight is
+  // a percentage of the KeyboardAvoidingView's box, so it shrinks with the
+  // keyboard too.
+  panelDialog: {
+    maxHeight: '85%', borderWidth: 1, borderRadius: KIOSK_RADIUS.lg,
+  },
   head: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,
     padding: KIOSK_SPACE.lg, borderBottomWidth: StyleSheet.hairlineWidth,
@@ -249,6 +323,7 @@ const s = StyleSheet.create({
     borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   body: { flex: 1 },
+  bodyDialog: { flexGrow: 0, flexShrink: 1 },
   bodyContent: { padding: KIOSK_SPACE.lg, gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl },
   foot: {
     borderTopWidth: StyleSheet.hairlineWidth,

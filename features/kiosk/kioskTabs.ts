@@ -79,13 +79,15 @@ export const RAIL_DEFAULT: KioskRailItem[] = [
 ];
 
 /**
- * Teen: same, minus School/Health — those two pills are parent/kid-only on
- * the phone (AppsQuickAccessPills.tsx's PILLS roles array), and inventing a
- * wider kiosk-only availability would be a real (if small) privacy change
- * nobody asked for.
+ * Teen: same, minus School — School stays parent/kid-only on the phone
+ * (AppsQuickAccessPills.tsx's PILLS roles array). Health and Memories are
+ * both teen-accessible on the phone (health covers a teen's own medications;
+ * memories was widened to include teen at the owner's explicit request), so
+ * kiosk keeps both for teen too — inventing a narrower kiosk-only exclusion
+ * would be a real (if small) product regression nobody asked for.
  */
 export const RAIL_TEEN: KioskRailItem[] = RAIL_DEFAULT.filter(
-  r => r.key !== 'school' && r.key !== 'health',
+  r => r.key !== 'school',
 );
 
 /**

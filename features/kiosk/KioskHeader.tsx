@@ -1,61 +1,63 @@
 /**
- * KioskHeader — the one persistent header row every kiosk screen shares:
- * family name + live clock/date on the left, member avatar strip + Ask Fam
- * on the right. Previously each tab (KioskHubTab, etc.) built its own
- * clock, and the member switcher lived crammed into the bottom of the nav
- * rail next to the icons — live-reported as reading like "two sidebars."
- * One header, rendered once above the active screen, replaces both: the
- * rail goes back to being icons only, and every screen (not just Hub) gets
- * the same family/time context and one-tap profile switching.
+ * KioskHeader — the one persistent status bar every kiosk screen shares,
+ * rebuilt to the reference mockup's top bar.
  *
- * Sized for a few-feet-away kitchen glance, not phone-close reading — the
- * clock (the one thing genuinely useful at a distance) leads as the
- * dominant element with the family name as a small eyebrow above it,
- * rather than the two competing for the same visual weight on one
- * baseline-aligned row. Avatar labels are sized up for the same reason.
+ * Left  · a live "Kitchen Hub" status dot + the family name, then the
+ *         profile switcher (avatar strip)
+ * Mid   · the clock and date — the single most load-bearing glanceable
+ *         element on an always-on display, and what the device shows for
+ *         the ~99% of the day nobody is touching it
+ * Right · Intercom, Standby, Ask Fam (parent), Lock
  *
- * Switching matches the phone app's own PersonaSwitcherSheet rule exactly
- * (live-requested fix — this used to be unconditionally PIN-free, which
- * was flagged as a real gap: a wall-mounted shared tablet is still used by
- * whoever's standing in front of it, but a member who deliberately set a
- * PIN on their profile expects that PIN to matter everywhere, not just on
- * phones): a member with no PIN set switches to instantly, exactly as
- * before; a member with `pinEnabled && pin` requires it, via the same
- * PinEntryModal the phone app uses.
+ * Deliberately NOT in the mockup's version of this bar: the weather pill.
+ * The mockup hardcodes "72°F". This codebase has no weather provider and no
+ * key for one, so any temperature here would be a fabricated reading
+ * presented on a surface a household would reasonably trust for exactly
+ * that. Omitted cleanly rather than stubbed — see the report.
+ *
+ * Profile switching matches the phone's own PersonaSwitcherSheet rule
+ * exactly: a member with no PIN switches instantly; a member with
+ * `pinEnabled && pin` must enter it, via the same PinEntryModal the phone
+ * uses. A wall-mounted shared tablet is still used by whoever is standing
+ * in front of it, but someone who deliberately set a PIN expects it to
+ * matter everywhere, not only on phones.
+ *
+ * The switchable list filters soft-deleted and still-pending members, the
+ * same way KioskLockScreen filters. Switching INTO a soft-deleted member is
+ * the real hazard the filter prevents: it sets them active, and every
+ * subsequent write goes out under a member id the backend considers gone.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Sparkles, Lock } from 'lucide-react-native';
+import { Sparkles, Lock, Megaphone, Moon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
+import { useKioskColors, kioskRoleAccent } from './kioskPalette';
 
 export function KioskHeader({
-  familyName, members, activeId, onSwitch, isParent, onAskFam, onLock, colors,
+  familyName, members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
 }: {
   familyName: string;
   members: FamilyMember[];
   activeId: string;
   onSwitch: (id: string) => void;
   isParent: boolean;
+  /** Opens the real AI assistant (AskCubeChat). Parent-only. */
   onAskFam: () => void;
-  /** Manual "lock and go" — live-requested, separate from the idle-timeout
-   * auto-lock (useKioskIdleLock). Available to anyone, not parent-gated —
-   * locking is a privacy courtesy, not a permission. */
+  /** Opens the house intercom broadcast modal. */
+  onIntercom: () => void;
+  /** Enters the ambient standby display immediately, rather than waiting
+   *  out the idle timer — the mockup's sparkle button. */
+  onStandby: () => void;
+  /** Manual "lock and go", separate from the idle-timeout auto-lock.
+   *  Available to anyone, not parent-gated — locking is a courtesy, not a
+   *  permission. */
   onLock: () => void;
-  colors: any;
 }) {
+  const { k, isDark } = useKioskColors();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
 
-  // AUDIT FIX: was `members.slice(0, 6)` over the raw list — so a
-  // soft-deleted member, or one whose invite is still pending (i.e. has
-  // never actually joined), rendered as a tappable profile in the switcher.
-  // KioskLockScreen already filters exactly this way (its own
-  // visibleMembers, `!m.deletedAt && m.inviteStatus !== 'pending'`); the
-  // header simply never got the same filter, so the two profile pickers on
-  // the same device disagreed about who exists. Switching INTO a
-  // soft-deleted member is the real problem: it sets them active, and every
-  // subsequent write goes out under a member id the backend considers gone.
   const switchable = useMemo(
     () => members.filter(m => !m.deletedAt && m.inviteStatus !== 'pending'),
     [members],
@@ -64,11 +66,8 @@ export function KioskHeader({
   const handleSwitch = (id: string) => {
     if (id === activeId) return;
     const m = members.find(x => x.id === id);
-    if (m?.pinEnabled && m.pin) {
-      setPinTarget(m);
-    } else {
-      onSwitch(id);
-    }
+    if (m?.pinEnabled && m.pin) setPinTarget(m);
+    else onSwitch(id);
   };
 
   const [now, setNow] = useState(new Date());
@@ -81,31 +80,20 @@ export function KioskHeader({
   const date = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <View style={[s.root, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-      {/* ── Time block ────────────────────────────────────────────────
-          On an always-on ambient display the clock is the single most
-          load-bearing glanceable element — it is what the device shows
-          for the ~99% of the day nobody is touching it, and it is what
-          anchors the visual hierarchy of every screen underneath. It was
-          previously 26px utility text sharing a baseline with the date.
-          Now it leads at display scale in a light weight (large + light
-          reads as "ambient clock"; large + heavy reads as "alert"), with
-          the family name as a tracked eyebrow above and the date stacked
-          beneath rather than competing on the same line. */}
+    <View style={[s.root, { backgroundColor: k.card, borderBottomColor: k.cardBorder }]}>
+      {/* ── Left: status + family, then profiles ─────────────────────── */}
       <View style={s.left}>
-        <Text style={[s.eyebrow, { color: colors.textTertiary }]} numberOfLines={1}>{familyName.toUpperCase()}</Text>
-        <Text style={[s.clock, { color: colors.textPrimary }]} numberOfLines={1}>{clock}</Text>
-        <Text style={[s.date, { color: colors.textSecondary }]} numberOfLines={1}>{date}</Text>
-      </View>
+        <View style={s.brand}>
+          <View style={[s.liveDot, { backgroundColor: k.sage }]} />
+          <Text style={[s.brandText, { color: k.textFaint }]} numberOfLines={1}>
+            {familyName.toUpperCase()}
+          </Text>
+        </View>
 
-      <View style={s.right}>
-        {/* AUDIT FIX: was a fixed `members.slice(0, 6)` row — a family with
-            more than six members simply could not switch to the seventh
-            onwards from the header at all, with no indication any were
-            missing. A horizontal ScrollView shows every switchable member
-            and scrolls when they don't fit. flexShrink on the wrapper lets
-            it give way to the Ask Fam / Lock buttons rather than pushing
-            them off-screen. */}
+        {/* Horizontal scroll rather than a fixed slice: a family with more
+            members than fit must still be able to reach the last one. A
+            hardcoded slice(0, 6) previously made the seventh profile
+            unreachable with no sign any were missing. */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -114,14 +102,14 @@ export function KioskHeader({
         >
           {switchable.map(m => {
             const isActive = m.id === activeId;
-            const tint = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
+            const tint = kioskRoleAccent(k, m.role);
             const needsPin = !!m.pinEnabled && !!m.pin;
             const firstName = m.name?.trim().split(' ')[0] || 'Family member';
             return (
               <Pressable
                 key={m.id}
                 onPress={() => handleSwitch(m.id)}
-                style={s.avatarItem}
+                style={({ pressed }) => [s.avatarItem, pressed && { opacity: 0.7 }]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={firstName}
@@ -131,19 +119,25 @@ export function KioskHeader({
                     : 'Switch to this profile'
                 }
               >
-                <View style={[s.avatarRing, { backgroundColor: colors.surface, borderColor: isActive ? tint : colors.border }]}>
+                <View
+                  style={[
+                    s.avatarRing,
+                    {
+                      backgroundColor: isActive ? tint + (isDark ? '2E' : '1F') : k.well,
+                      borderColor: isActive ? tint : k.cardBorder,
+                    },
+                  ]}
+                >
                   <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
                   {needsPin && (
-                    <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Lock size={9} color={colors.textSecondary} />
+                    <View style={[s.pinBadge, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+                      <Lock size={9} color={k.textMuted} />
                     </View>
                   )}
                 </View>
                 <Text
-                  style={[s.avatarName, { color: isActive ? colors.textPrimary : colors.textTertiary }]}
+                  style={[s.avatarName, { color: isActive ? k.text : k.textFaint }]}
                   numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
                 >
                   {firstName}
                 </Text>
@@ -151,31 +145,44 @@ export function KioskHeader({
             );
           })}
         </ScrollView>
+      </View>
 
-        <View style={[s.divider, { backgroundColor: colors.border }]} />
+      {/* ── Middle: clock ────────────────────────────────────────────
+          Display-scale and LIGHT-weight, deliberately: at this size a heavy
+          weight reads as an alarm clock, a light one as an ambient wall
+          clock — and this is the element the device shows for most of its
+          life. */}
+      <View style={s.clockBlock} accessible accessibilityRole="text" accessibilityLabel={`${clock}, ${date}`}>
+        <Text style={[s.clock, { color: k.text }]} numberOfLines={1}>{clock}</Text>
+        <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>{date}</Text>
+      </View>
 
+      {/* ── Right: actions ───────────────────────────────────────────── */}
+      <View style={s.right}>
+        <HeaderButton
+          Icon={Megaphone} label="Intercom" accent={k.primary} k={k} isDark={isDark}
+          onPress={onIntercom}
+          hint="Broadcast an announcement to every family phone"
+          wide
+        />
+        <HeaderButton
+          Icon={Moon} label="Standby" accent={k.gold} k={k} isDark={isDark}
+          onPress={onStandby}
+          hint="Show the ambient clock display now"
+        />
         {isParent && (
-          <Pressable
+          <HeaderButton
+            Icon={Sparkles} label="Assistant" accent={k.purple} k={k} isDark={isDark}
             onPress={onAskFam}
-            style={[s.askFam, { backgroundColor: colors.pink }]}
-            accessibilityRole="button"
-            accessibilityLabel="Ask Fam"
-            accessibilityHint="Open the family assistant"
-          >
-            <Sparkles size={22} color="#fff" />
-          </Pressable>
+            hint="Open the family AI assistant"
+          />
         )}
-
-        <Pressable
+        <HeaderButton
+          Icon={Lock} label="Lock" accent={k.textMuted} k={k} isDark={isDark}
           onPress={onLock}
-          style={[s.lockBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Lock kiosk"
-          accessibilityHint="Hides the current profile until someone signs back in"
-        >
-          <Lock size={20} color={colors.textSecondary} />
-        </Pressable>
+          hint="Hide the current profile until someone signs back in"
+          neutral
+        />
       </View>
 
       <PinEntryModal
@@ -188,36 +195,67 @@ export function KioskHeader({
   );
 }
 
-// Scaled to the kiosk ladder throughout. The clock leads at KIOSK_TYPO.title
-// (32) rather than the old 26 — it's the element most often read from a
-// distance — and every tappable control here now meets KIOSK_HIT.control.
+/**
+ * A header action. Shows its label beside the icon when there's room
+ * (`wide`), icon-only otherwise — but always carries the label as its
+ * accessibility name, so an icon-only control is never unlabeled to a
+ * screen reader. Every one meets KIOSK_HIT.min.
+ */
+function HeaderButton({
+  Icon, label, accent, k, isDark, onPress, hint, wide, neutral,
+}: {
+  Icon: typeof Lock;
+  label: string;
+  accent: string;
+  k: ReturnType<typeof useKioskColors>['k'];
+  isDark: boolean;
+  onPress: () => void;
+  hint: string;
+  wide?: boolean;
+  /** A quiet, un-tinted variant for a secondary action (Lock). */
+  neutral?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => [
+        s.headerBtn,
+        wide && s.headerBtnWide,
+        neutral
+          ? { backgroundColor: k.well, borderColor: k.cardBorder }
+          : { backgroundColor: accent + (isDark ? '1F' : '14'), borderColor: accent + (isDark ? '45' : '38') },
+        pressed && { opacity: 0.7 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+    >
+      <Icon size={20} color={neutral ? k.textMuted : accent} />
+      {wide && (
+        <Text style={[s.headerBtnText, { color: neutral ? k.textMuted : accent }]} numberOfLines={1}>
+          {label}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
 const s = StyleSheet.create({
   root: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    // Deeper vertical padding than a phone header: this is a masthead on
-    // a piece of furniture, and the air around the clock is what makes it
-    // read as ambient rather than as a cramped app chrome bar.
-    paddingHorizontal: KIOSK_SPACE.lg, paddingVertical: KIOSK_SPACE.sm,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
     borderBottomWidth: StyleSheet.hairlineWidth, gap: KIOSK_SPACE.md,
   },
-  left: { flexShrink: 1 },
-  eyebrow: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
-  // Display-scale and LIGHT-weight, deliberately: at this size a heavy
-  // weight reads as an alarm clock, a light one as an ambient wall clock.
-  // The clock is one of the few elements that genuinely earns display
-  // scale — it's what the device shows for most of its life. Light weight
-  // at this size reads as an ambient wall clock; heavy reads as an alarm.
-  clock: {
-    fontSize: KIOSK_TYPO.hero, fontWeight: '200', letterSpacing: -1,
-    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.hero * 1.05,
-  },
-  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
-  right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexShrink: 1 },
+  left: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, flexShrink: 1, minWidth: 0 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
   avatarScroll: { flexGrow: 0, flexShrink: 1 },
-  avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, alignItems: 'center' },
-  avatarItem: { alignItems: 'center', gap: 3, width: 60 },
+  avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
+  avatarItem: { alignItems: 'center', gap: 3, width: 58 },
   avatarRing: {
-    width: 44, height: 44, borderRadius: 22, borderWidth: 2.5,
+    width: 42, height: 42, borderRadius: 21, borderWidth: 2.5,
     alignItems: 'center', justifyContent: 'center',
   },
   avatarEmoji: { fontSize: 19 },
@@ -226,14 +264,22 @@ const s = StyleSheet.create({
     borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
   avatarName: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  divider: { width: StyleSheet.hairlineWidth, height: 32 },
-  askFam: {
-    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
-    alignItems: 'center', justifyContent: 'center',
-    shadowOpacity: 0.2, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+
+  clockBlock: { alignItems: 'center', flexShrink: 0, paddingHorizontal: KIOSK_SPACE.sm },
+  clock: {
+    fontSize: KIOSK_TYPO.hero, fontWeight: '200', letterSpacing: -1,
+    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.hero * 1.05,
   },
-  lockBtn: {
-    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
+
+  right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginLeft: 'auto' },
+  headerBtn: {
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
+  headerBtnWide: {
+    width: undefined, flexDirection: 'row', gap: KIOSK_SPACE.xs,
+    paddingHorizontal: KIOSK_SPACE.md,
+  },
+  headerBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
 });

@@ -1,59 +1,92 @@
 /**
- * KioskAmbientOverlay — the calm "nobody's touching it" state that sits
- * between an actively-used kiosk and a locked one.
+ * KioskAmbientOverlay — the fullscreen ambient "standby" display: the calm
+ * state between an actively-used kiosk and a locked one.
  *
  * A wall-mounted tablet spends the overwhelming majority of its life
- * untouched. Before this, that majority state was simply "whatever screen
- * the last person left open, at full brightness and full detail, forever"
- * — which reads as an app someone abandoned mid-task rather than a
- * deliberate ambient display, and burns a static UI into the panel of a
- * device that is by definition always on.
+ * untouched. Before the prior pass, that majority state was "whatever
+ * screen the last person left open, at full brightness, forever" — which
+ * reads as an abandoned app rather than a deliberate display, and burns a
+ * static UI into a panel that is by definition always on.
  *
- * So kiosk now has three states, not two (see kioskTheme's own note):
+ * Kiosk therefore has three states, not two (see kioskTheme's note):
  *   active → (90s untouched) → ambient → (idle timeout) → locked
  *
- * Ambient is explicitly NOT a privacy boundary — any touch dismisses it
- * instantly with no authentication, and it deliberately shows only what's
- * safe to display to a room: the time, the date, and a count of what's
- * on today. The lock screen remains the actual privacy boundary and still
- * fires on its own separate, longer timer underneath this.
+ * ── This pass ───────────────────────────────────────────────────────────
+ * Rebuilt to the reference mockup's standby screen: a giant floating clock
+ * that drifts slowly, and a glass status panel along the bottom carrying
+ * what's next. Two deliberate departures from that mockup:
  *
- * Rendered as a plain absolutely-positioned View, NOT a Modal — the
- * opposite of KioskLockScreen's deliberate choice, and for the opposite
- * reason. The lock screen must cover any open sheet, so it needs the
- * native modal layer. This must NOT: if someone leaves the event editor
- * open and walks away, the ambient veil should settle over the dashboard
- * *behind* that sheet rather than covering the sheet itself, which would
- * both hide their work and make a dismissable-on-touch overlay eat the
- * first tap they aimed at the form.
+ *   · NO WEATHER. The mockup shows "72°F Sunny in Celina · High 84° / Low
+ *     65°". There is no weather API anywhere in this codebase and no key to
+ *     call one with, so any temperature rendered here would be a fabricated
+ *     number presented as a live reading, on a screen a family would
+ *     reasonably trust for exactly that. The slot is given to the next
+ *     event instead, which is real. If weather is wanted later it needs a
+ *     provider decision and a key, not a placeholder.
+ *
+ *   · TITLES ARE SHOWN, DELIBERATELY, WITH A CAVEAT. The previous version
+ *     showed counts only ("3 events today") on the grounds that a room may
+ *     contain guests. That was over-cautious to the point of uselessness:
+ *     "1 event today" tells the household nothing, and the mockup's whole
+ *     value is the next-event card. The compromise: the next event's title
+ *     and time are shown, because that is the single most useful thing a
+ *     kitchen display can say — but anything the app itself marks sensitive
+ *     (isEventSensitive: medical, therapy, etc.) is reduced to "Something
+ *     scheduled" instead. Ambient is still NOT the privacy boundary; the
+ *     lock screen is, and it still fires on its own longer timer beneath
+ *     this.
+ *
+ * Still a plain absolutely-positioned View, NOT a Modal — the deliberate
+ * opposite of KioskLockScreen's choice, for the opposite reason. The lock
+ * screen must cover an open sheet; this must not. If someone leaves the
+ * event editor open and walks away, the veil should settle over the
+ * dashboard BEHIND that sheet rather than hiding their work and eating the
+ * first tap they aim at the form.
  *
  * pointerEvents="none" throughout: the veil never intercepts a touch. The
- * root SafeAreaView's own onTouchStart is what clears it, so the very
- * first tap both dismisses the ambient state AND lands on whatever the
- * person was actually aiming at — no wasted "wake up" tap, which matters
- * on a device you walk up to and use in one motion.
+ * root SafeAreaView's own onTouchStart clears it, so the first tap both
+ * dismisses ambient AND lands on what the person was aiming at — no wasted
+ * wake-up tap, which matters on a device you walk up to and use in one
+ * motion.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Easing } from 'react-native';
-import { CalendarDays, ClipboardCheck } from 'lucide-react-native';
+import { CalendarDays, ClipboardCheck, Moon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_AMBIENT_FADE_MS } from './kioskTheme';
+import { useKioskColors } from './kioskPalette';
+
+export interface AmbientNextUp {
+  /** Display time, already formatted ("4:45 PM") or undefined for all-day. */
+  time?: string;
+  /** Event title — or a redacted stand-in when the event is sensitive. */
+  title: string;
+  /** Who it involves, first name only. Omitted for a redacted event. */
+  who?: string;
+}
 
 export function KioskAmbientOverlay({
-  visible, familyName, eventCount, choreCount, colors,
+  visible, familyName, eventCount, choreCount, nextUp,
 }: {
   visible: boolean;
   familyName: string;
-  /** Events remaining today — a count only, never titles: this is visible
-   *  to anyone in the room, including guests. */
+  /** Events remaining today. */
   eventCount: number;
-  /** Chores still open — same "count, never content" rule. */
+  /** Chores still open. */
   choreCount: number;
-  colors: any;
+  /** The next thing on the calendar, already redacted by the caller if the
+   *  event is sensitive. Omit when there's nothing left today. */
+  nextUp?: AmbientNextUp;
 }) {
+  const { k } = useKioskColors();
   const fade = useRef(new Animated.Value(0)).current;
-  // Kept mounted through the fade-OUT so the exit animation can actually
-  // play; unmounted once it finishes so an invisible full-screen view
-  // isn't left in the tree indefinitely.
+  // A slow vertical drift, the mockup's `animate-float`. This is not
+  // decoration on an always-on panel — a clock that never moves a pixel for
+  // sixteen hours a day is exactly how OLED/LCD burn-in happens, so the
+  // drift is doing real work as well as looking calm.
+  const drift = useRef(new Animated.Value(0)).current;
+
+  // Kept mounted through the fade-OUT so the exit can play; unmounted once
+  // finished so an invisible fullscreen view isn't left in the tree.
   const [mounted, setMounted] = useState(visible);
 
   useEffect(() => {
@@ -68,14 +101,31 @@ export function KioskAmbientOverlay({
     return () => anim.stop();
   }, [visible, fade]);
 
+  useEffect(() => {
+    if (!mounted) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(drift, { toValue: 1, duration: 8000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(drift, { toValue: 0, duration: 8000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => { loop.stop(); };
+  }, [mounted, drift]);
+
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!mounted) return;
-    // Only ticks while actually on screen — no background interval on a
-    // device that spends all day in this component's "off" state.
+    // Only ticks while on screen — no background interval on a device that
+    // spends most of the day in this component's "off" state.
     const t = setInterval(() => setNow(new Date()), 20_000);
     return () => clearInterval(t);
   }, [mounted]);
+
+  const translateY = useMemo(
+    () => drift.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }),
+    [drift],
+  );
 
   if (!mounted) return null;
 
@@ -85,68 +135,120 @@ export function KioskAmbientOverlay({
   return (
     <Animated.View
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, s.root, { backgroundColor: colors.background, opacity: fade }]}
+      // Standby uses its own ground (k.standby) in BOTH light and dark mode,
+      // and that is on purpose — see kioskPalette's note on the token. An
+      // always-on panel showing a full-brightness white field across a dark
+      // kitchen at 2am is a lamp. This is the one place the two appearances
+      // deliberately converge; every other kiosk surface differs by mode.
+      style={[StyleSheet.absoluteFill, s.root, { backgroundColor: k.standby, opacity: fade }]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <View style={s.inner}>
-        <Text style={[s.eyebrow, { color: colors.textTertiary }]} numberOfLines={1}>
+      {/* ── Corner label ── */}
+      <View style={s.corner}>
+        <Moon size={16} color={k.gold} />
+        <Text style={[s.cornerText, { color: k.gold }]} numberOfLines={1}>
           {familyName.toUpperCase()}
         </Text>
+      </View>
+
+      {/* ── The clock ── */}
+      <Animated.View style={[s.center, { transform: [{ translateY }] }]}>
         <Text
-          style={[s.clock, { color: colors.textPrimary }]}
+          style={[s.clock, { color: k.standbyText }]}
           numberOfLines={1}
           adjustsFontSizeToFit
         >
           {clock}
         </Text>
-        <Text style={[s.date, { color: colors.textSecondary }]} numberOfLines={1} adjustsFontSizeToFit>
+        <Text
+          style={[s.date, { color: k.standbyTextMuted }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
           {date}
         </Text>
+      </Animated.View>
 
-        {(eventCount > 0 || choreCount > 0) && (
-          <View style={s.pillRow}>
+      {/* ── Glass status panel ── */}
+      {(nextUp || eventCount > 0 || choreCount > 0) && (
+        <View style={[s.glass, { backgroundColor: k.glass, borderColor: k.glassEdge }]}>
+          {nextUp ? (
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[s.glassLabel, { color: k.gold }]} numberOfLines={1}>
+                NEXT UP{nextUp.time ? ` · ${nextUp.time}` : ''}
+              </Text>
+              <Text style={[s.glassTitle, { color: k.standbyText }]} numberOfLines={1}>
+                {nextUp.title}
+              </Text>
+              {!!nextUp.who && (
+                <Text style={[s.glassMeta, { color: k.standbyTextMuted }]} numberOfLines={1}>
+                  {nextUp.who}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <Text style={[s.glassTitle, { color: k.standbyText, flex: 1 }]} numberOfLines={1}>
+              Nothing left on today's calendar
+            </Text>
+          )}
+
+          <View style={s.glassCounts}>
             {eventCount > 0 && (
-              <View style={[s.pill, { backgroundColor: colors.primaryLight }]}>
-                <CalendarDays size={17} color={colors.primary} />
-                <Text style={[s.pillText, { color: colors.primary }]} numberOfLines={1}>
-                  {eventCount} {eventCount === 1 ? 'event' : 'events'} today
+              <View style={s.glassCount}>
+                <CalendarDays size={16} color={k.standbyTextMuted} />
+                <Text style={[s.glassCountText, { color: k.standbyTextMuted }]} numberOfLines={1}>
+                  {eventCount} {eventCount === 1 ? 'event' : 'events'}
                 </Text>
               </View>
             )}
             {choreCount > 0 && (
-              <View style={[s.pill, { backgroundColor: colors.amberLight }]}>
-                <ClipboardCheck size={17} color={colors.amber} />
-                <Text style={[s.pillText, { color: colors.amber }]} numberOfLines={1}>
-                  {choreCount} {choreCount === 1 ? 'chore' : 'chores'} open
+              <View style={s.glassCount}>
+                <ClipboardCheck size={16} color={k.standbyTextMuted} />
+                <Text style={[s.glassCountText, { color: k.standbyTextMuted }]} numberOfLines={1}>
+                  {choreCount} {choreCount === 1 ? 'chore' : 'chores'}
                 </Text>
               </View>
             )}
           </View>
-        )}
+        </View>
+      )}
 
-        <Text style={[s.hint, { color: colors.textTertiary }]} numberOfLines={1}>
-          Touch anywhere to continue
-        </Text>
-      </View>
+      <Text style={[s.hint, { color: k.standbyTextMuted }]} numberOfLines={1}>
+        Touch anywhere to continue
+      </Text>
     </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { alignItems: 'center', justifyContent: 'center' },
-  inner: { alignItems: 'center', paddingHorizontal: KIOSK_SPACE.xxl, maxWidth: '100%' },
-  eyebrow: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 2.5, marginBottom: KIOSK_SPACE.md },
-  clock: {
-    fontSize: KIOSK_TYPO.clock, fontWeight: '200', letterSpacing: -2,
-    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.clock * 1.05,
-  },
-  date: { fontSize: KIOSK_TYPO.subheading, fontWeight: '500', marginTop: KIOSK_SPACE.xs },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xl },
-  pill: {
+  root: { alignItems: 'center', justifyContent: 'center', padding: KIOSK_SPACE.xxl },
+  corner: {
+    position: 'absolute', top: KIOSK_SPACE.xxl, left: KIOSK_SPACE.xxl,
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    borderRadius: KIOSK_RADIUS.full, paddingHorizontal: KIOSK_SPACE.lg, paddingVertical: KIOSK_SPACE.sm,
   },
-  pillText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
-  hint: { fontSize: KIOSK_TYPO.label, fontWeight: '600', marginTop: KIOSK_SPACE.xl, letterSpacing: 0.5 },
+  cornerText: { fontSize: KIOSK_TYPO.label, fontWeight: '900', letterSpacing: 2.4 },
+  center: { alignItems: 'center', maxWidth: '100%' },
+  clock: {
+    fontSize: KIOSK_TYPO.clock, fontWeight: '200', letterSpacing: -3,
+    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.clock * 1.04,
+  },
+  date: { fontSize: KIOSK_TYPO.title, fontWeight: '400', marginTop: KIOSK_SPACE.xs },
+  glass: {
+    position: 'absolute', bottom: KIOSK_SPACE.xxl + 28,
+    left: KIOSK_SPACE.xxl, right: KIOSK_SPACE.xxl,
+    maxWidth: 760, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.lg,
+    borderRadius: KIOSK_RADIUS.xl, borderWidth: 1, padding: KIOSK_SPACE.lg,
+  },
+  glassLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6 },
+  glassTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '700', marginTop: 3, letterSpacing: -0.3 },
+  glassMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  glassCounts: { gap: KIOSK_SPACE.xs, alignItems: 'flex-end' },
+  glassCount: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  glassCountText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  hint: {
+    position: 'absolute', bottom: KIOSK_SPACE.xxl - 8,
+    fontSize: KIOSK_TYPO.label, fontWeight: '600', letterSpacing: 0.6, opacity: 0.75,
+  },
 });

@@ -1,48 +1,61 @@
 /**
- * KioskScreen — always-on kitchen-hub dashboard for a wall-mounted tablet.
+ * KioskScreen — the always-on kitchen "Hub OS" shell for a wall-mounted
+ * tablet.
  *
- * Entirely new/additive: reads the same stores every other screen already
- * reads (useFamilyStore, useQuestStore, useEventStore, useChatStore), but
- * owns its own layout and never touches ParentView/KidView/TeenView/
- * SeniorView or any existing tab screen. The ONLY existing file this
- * feature touches is HubScreen.tsx (single early-return guard) and the
- * shared tab layout (hides the phone's own bottom tab bar while this is
- * showing — see app/(tabs)/_layout.tsx's own comment on that fix).
+ * Reads the same stores every other screen reads (familyStore, questStore,
+ * eventStore, chatStore, rewardStore, groceryStore, family_meals) but owns
+ * its own layout and never touches ParentView/KidView/TeenView/SeniorView
+ * or any phone tab screen. The only existing files this feature touches are
+ * HubScreen.tsx (a single early-return guard) and the shared tab layout
+ * (hides the phone's bottom tab bar while kiosk is showing).
  *
- * Layout: one persistent KioskHeader (family name/clock/avatars/Ask Fam)
- * above an icon-only nav rail + active screen — previously the rail itself
- * carried a second, separate avatar switcher stacked under the icons,
- * which read as "two sidebars" (live-reported). One header now owns
- * profile switching for every screen, not just Hub.
+ * ── Shell, per the reference mockup ─────────────────────────────────────
+ *   ┌─ KioskHeader ────────────────────────────────────────────────────┐
+ *   │ status · profile switcher · clock/date · intercom · standby      │
+ *   ├──────────┬───────────────────────────────────────────────────────┤
+ *   │ nav rail │ active tab                                            │
+ *   │ (labelled│                                                       │
+ *   │  entries)│                                                       │
+ *   │  ────    │                                                       │
+ *   │ Ask Fam  │                                                       │
+ *   └──────────┴───────────────────────────────────────────────────────┘
+ * plus three overlays: the ambient standby veil, the Ask Fam drawer, and
+ * the intercom modal.
  *
- * Rail tabs mirror the same per-role split the real bottom tab bar already
- * uses (features/app/(tabs)/_layout.tsx's TABS_DEFAULT vs TABS_SENIOR):
- * default roles get Hub/Tasks/Schedule/Chat/FindFam/Store, a senior/
- * grandparent profile gets Hub/Tasks/Chat/Memories instead (no Store/
- * FindFam) — this file re-derives that same split rather than importing
- * from the tab layout, keeping this feature fully decoupled from it.
+ * ── Idle-lock participation is not optional for any of them ─────────────
+ * Everything rendered into a native <Modal> sits in its own native window
+ * and its touches never reach this component's root onTouchStart. Every
+ * such surface here therefore either wraps itself in KioskModalHost
+ * (KioskIntercomModal, KioskAskFamDrawer — both do, internally) or is
+ * declared to the lock via useKioskLockSuspended (AskCubeChat, below).
+ * Skipping that is the bug KioskActivityContext exists to fix: the busiest
+ * moments on the device would register as total inactivity and the lock
+ * would fire mid-sentence. Any NEW modal added to kiosk must do one of the
+ * two — there is no third correct option.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Home, CheckSquare, Calendar as CalendarIcon, MessageCircle, MapPin, Gift, Images,
-  BookOpen, Heart, UserCircle2,
-} from 'lucide-react-native';
-import { useTheme } from '@/lib/ThemeContext';
+import { Sparkles } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, eventAssignee, isEventSensitive } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { fmtTime } from '@/lib/dates';
 import AskCubeChat from '@/components/AskCubeChat';
 import { KioskHeader } from './KioskHeader';
 import { KioskLockScreen } from './KioskLockScreen';
-import { KioskAmbientOverlay } from './KioskAmbientOverlay';
+import { KioskAmbientOverlay, type AmbientNextUp } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
+import { KioskIntercomModal } from './components/KioskIntercomModal';
+import { KioskAskFamDrawer } from './components/KioskAskFamDrawer';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
+import { useKioskColors } from './kioskPalette';
+import { railForRole, type KioskTabKey } from './kioskTabs';
 import { useKioskIdleLock } from './useKioskIdleLock';
-import { KioskHubTab } from './tabs/KioskHubTab';
+import { KioskOverviewTab } from './tabs/KioskOverviewTab';
+import { KioskMealsTab } from './tabs/KioskMealsTab';
 import { KioskTasksTab } from './tabs/KioskTasksTab';
 import { KioskScheduleTab } from './tabs/KioskScheduleTab';
 import { KioskChatTab } from './tabs/KioskChatTab';
@@ -52,96 +65,84 @@ import { KioskMemoriesTab } from './tabs/KioskMemoriesTab';
 import { KioskSchoolTab } from './tabs/KioskSchoolTab';
 import { KioskHealthTab } from './tabs/KioskHealthTab';
 import { KioskProfileTab } from './tabs/KioskProfileTab';
-
-type KioskTab = 'hub' | 'tasks' | 'schedule' | 'chat' | 'findfam' | 'store' | 'memories' | 'school' | 'health' | 'profile';
-
-interface RailItem {
-  key: KioskTab;
-  label: string;
-  Icon: typeof Home;
-}
-
-// School/Health/Profile added per live request: "add all the pills for the
-// pages which is on the mobile hub screen [to] the kiosk side bar" — these
-// three are the Hub's own AppsQuickAccessPills entries with no kiosk-native
-// tab until now (Memories was already covered, for seniors, below).
-// 'health' isn't offered to a teen/senior role on the phone's own pill
-// list (AppsQuickAccessPills.tsx's PILLS roles array: parent/kid only) —
-// matched here too rather than inventing a new kiosk-only availability.
-const RAIL_DEFAULT: RailItem[] = [
-  { key: 'hub',      label: 'Hub',      Icon: Home },
-  { key: 'tasks',    label: 'Tasks',    Icon: CheckSquare },
-  { key: 'schedule', label: 'Plan',     Icon: CalendarIcon },
-  { key: 'chat',     label: 'Chat',     Icon: MessageCircle },
-  { key: 'findfam',  label: 'Find',     Icon: MapPin },
-  { key: 'store',    label: 'Store',    Icon: Gift },
-  { key: 'school',   label: 'School',   Icon: BookOpen },
-  { key: 'health',   label: 'Health',   Icon: Heart },
-  { key: 'profile',  label: 'Profile',  Icon: UserCircle2 },
-];
-const RAIL_SENIOR: RailItem[] = [
-  { key: 'hub',       label: 'Hub',      Icon: Home },
-  { key: 'tasks',     label: 'Tasks',    Icon: CheckSquare },
-  { key: 'chat',      label: 'Chat',     Icon: MessageCircle },
-  { key: 'memories',  label: 'Memories', Icon: Images },
-  { key: 'profile',   label: 'Profile',  Icon: UserCircle2 },
-];
+import { useTheme } from '@/lib/ThemeContext';
 
 export default function KioskScreen() {
-  const { colors, isDark } = useTheme();
+  const { k, isDark } = useKioskColors();
+  // The pre-existing tabs (Tasks/Schedule/Chat/FindFam/Store/Memories/
+  // School/Health) still take the app's own `colors`/`isDark` props and are
+  // migrated to the kiosk palette incrementally — see the report. Both
+  // objects resolve off the SAME useTheme() isDark, so a screen mixing them
+  // is consistent within a mode; it is never light chrome around dark
+  // content or vice versa.
+  const { colors } = useTheme();
+
   const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
-  const [tab, setTab] = useState<KioskTab>('hub');
+  const [tab, setTab] = useState<KioskTabKey>('overview');
   const [askCubeOpen, setAskCubeOpen] = useState(false);
+  const [askFamOpen, setAskFamOpen] = useState(false);
+  const [intercomOpen, setIntercomOpen] = useState(false);
+  const [standbyPinned, setStandbyPinned] = useState(false);
+
   const { locked, ambient, registerActivity, lockNow, unlock, suspendLock, resumeLock } = useKioskIdleLock();
 
   // One stable object for the whole subtree — a fresh literal each render
   // would re-run every KioskModalHost's suspend/resume effect on every
-  // parent render, which for a lock-suspension refcount means unbalanced
+  // parent render, which for a refcounted lock suspension means unbalanced
   // increments and a lock that never re-arms.
   const activityApi = useMemo(
     () => ({ registerActivity, suspendLock, resumeLock }),
     [registerActivity, suspendLock, resumeLock],
   );
+
   const pendingKioskTab = useKioskNavStore(s => s.pendingTab);
   const consumePendingKioskTab = useKioskNavStore(s => s.consumePendingTab);
 
-  // A notification tap (app/_layout.tsx's addNotificationResponseListener)
-  // sets this before pushing to '/(tabs)' when the device is a kiosk, since
-  // every OTHER tab route renders a bare phone screen with no kiosk gate.
-  // Consume-and-clear once, so it doesn't keep forcing the tab back after
-  // the person has since navigated elsewhere on the kiosk themselves.
+  // A notification tap (app/_layout.tsx's response listener) sets this
+  // before pushing to '/(tabs)' on a kiosk device, since every other tab
+  // route renders a bare phone screen with no kiosk gate. Consume-and-clear
+  // once, so it doesn't keep forcing the tab back after the person has
+  // since navigated elsewhere themselves.
   useEffect(() => {
-    if (pendingKioskTab) {
-      setTab(pendingKioskTab);
-      consumePendingKioskTab();
-    }
+    if (!pendingKioskTab) return;
+    // The nav store predates this rail and still speaks the old 'hub' key;
+    // map it rather than widening the store's own type, which other callers
+    // share.
+    const mapped = (pendingKioskTab === 'hub' ? 'overview' : pendingKioskTab) as KioskTabKey;
+    setTab(mapped);
+    consumePendingKioskTab();
   }, [pendingKioskTab, consumePendingKioskTab]);
 
   // AskCubeChat renders via a real native Modal, which always sits above
-  // regular views in its own native layer regardless of z-index — the
-  // lock screen below (a plain View) would otherwise render BEHIND a
-  // still-open Ask Fam conversation, leaving someone's private AI chat
-  // visible through/under "locked." Force it closed the moment the kiosk
-  // locks, same privacy intent as the lock itself.
-  useEffect(() => { if (locked) setAskCubeOpen(false); }, [locked]);
+  // regular views in its own native layer regardless of z-index — the lock
+  // screen would otherwise render BEHIND a still-open Ask Fam conversation,
+  // leaving a private AI chat visible under "locked". Same for the new
+  // drawer and intercom. Force all three closed the moment kiosk locks,
+  // same privacy intent as the lock itself.
+  useEffect(() => {
+    if (!locked) return;
+    setAskCubeOpen(false);
+    setAskFamOpen(false);
+    setIntercomOpen(false);
+  }, [locked]);
+
+  // Manually-entered standby is dismissed by the same touch that dismisses
+  // the idle-driven one, so the person doesn't have to find a close button
+  // on a screen whose whole affordance is "touch anywhere".
+  useEffect(() => { if (!ambient && standbyPinned) setStandbyPinned(false); }, [ambient, standbyPinned]);
 
   const active: FamilyMember | undefined = members.find(m => m.id === activeMemberId) ?? members[0];
 
-  // Was: this fallback to members[0] only ever resolved `active` LOCALLY,
-  // for what the UI shows — useFamilyStore's own activeMemberId (the field
-  // lib/supabase.ts's getActiveMemberIdHeader() actually reads to send the
-  // x-active-member-id request header) stayed genuinely unset whenever a
-  // kiosk session booted straight into this fallback without ever calling
-  // setActiveMember. Every write's RLS/trigger identity check
-  // (resolve_active_member_id(), e.g. calendar_events_update_guard) then
-  // had no member to resolve at all, silently misidentifying (or outright
-  // rejecting) the caller — live-reported: editing a Study event's tutor
-  // name (not a "sensitive" field) saved fine, but assigning the student
-  // (member_id — one of the guarded fields) failed with a generic
-  // "couldn't save," even while KioskHeader visibly showed the parent as
-  // active. Writing the resolved id back to the store the moment it's
-  // implicit makes every subsequent request's header actually match what's
-  // on screen.
+  // This fallback to members[0] previously only resolved `active` LOCALLY,
+  // for what the UI shows — familyStore's own activeMemberId (the field
+  // lib/supabase.ts's getActiveMemberIdHeader() reads to send the
+  // x-active-member-id header) stayed genuinely unset whenever a kiosk
+  // session booted straight into the fallback without calling
+  // setActiveMember. Every write's RLS/trigger identity check then had no
+  // member to resolve, silently misidentifying or rejecting the caller —
+  // live-reported as a Study event's guarded field failing to save while
+  // the header visibly showed the parent as active. Writing the resolved id
+  // back the moment it's implicit keeps the header matching the screen.
   useEffect(() => {
     if (!activeMemberId && active) setActiveMember(active.id);
   }, [activeMemberId, active, setActiveMember]);
@@ -150,155 +151,223 @@ export default function KioskScreen() {
   const isParent = active?.role === 'parent';
   const isTeen = active?.role === 'teen';
   const isKidRole = active?.role === 'kid';
-  // School/Health pills are parent/kid-only on the phone (Hub's
-  // AppsQuickAccessPills.tsx PILLS array) — matched here rather than
-  // inventing a wider kiosk-only availability. Teen gets neither.
-  const rail = isSenior ? RAIL_SENIOR : isTeen ? RAIL_DEFAULT.filter(r => r.key !== 'school' && r.key !== 'health') : RAIL_DEFAULT;
+  const rail = railForRole(active?.role);
 
-  // A senior profile has no Schedule/FindFam/Store tabs — if the previously
-  // active profile had one of those open and the kiosk switches to a senior
-  // profile (family member picker on this shared device), fall back to Hub
-  // rather than rendering a blank/invalid tab.
-  const effectiveTab: KioskTab = rail.some(r => r.key === tab) ? tab : 'hub';
+  // A role without a given tab (a senior has no Store/FindFam/Schedule) must
+  // never render it: if the previously-active profile had one open and the
+  // kiosk switches to a senior profile, fall back to Overview rather than
+  // rendering a blank or — worse — a screen that role isn't meant to see.
+  const effectiveTab: KioskTabKey = rail.some(r => r.key === tab) ? tab : 'overview';
 
-  // Ambient-overlay glance counts. Deliberately COUNTS ONLY, never titles
-  // — the ambient state is what the whole room (guests included) sees, so
-  // "3 events today" is fine where "Dentist 4pm — Maya" would not be.
-  // These hooks sit above the `!active` early return below: a hook called
-  // after a conditional return is a hook-order violation the moment that
-  // condition ever flips (here: the one render before members load).
-  const dayEvents = useEventStore(s2 => s2.dayEvents);
+  // ── Ambient / standby data ───────────────────────────────────────────
+  // These hooks sit ABOVE the `!active` early return: a hook called after a
+  // conditional return is a hook-order violation the moment that condition
+  // flips (here, the one render before members load).
+  const dayEvents = useEventStore(s => s.dayEvents);
   const { quests } = useQuestStore();
-  const ambientEventCount = dayEvents.length;
   const ambientChoreCount = useMemo(
     () => quests.filter(q => q.status === 'todo' || q.status === 'in_progress' || q.status === 'claimed').length,
     [quests],
   );
 
+  /**
+   * The next thing on today's calendar, for the standby panel.
+   *
+   * Redaction: standby is visible to the whole room, guests included. An
+   * event the app itself classifies as sensitive (isEventSensitive — the
+   * shared predicate every calendar surface uses for medical/therapy/etc.)
+   * is reduced to a neutral stand-in rather than having its title displayed
+   * across the kitchen. Non-sensitive events show normally, because a
+   * standby screen that can only say "1 event" is not worth the panel.
+   */
+  const nextUp: AmbientNextUp | undefined = useMemo(() => {
+    const hhmm = new Date().toTimeString().slice(0, 5);
+    const upcoming = dayEvents.find(e => !!e.time && e.time >= hhmm) ?? dayEvents.find(e => !e.time);
+    if (!upcoming) return undefined;
+    if (isEventSensitive(upcoming)) {
+      return { time: upcoming.time ? fmtTime(upcoming.time) : undefined, title: 'Something scheduled' };
+    }
+    const who = eventAssignee(upcoming).name?.trim().split(' ')[0]
+      ?? members.find(m => m.id === upcoming.memberId)?.name?.trim().split(' ')[0];
+    return {
+      time: upcoming.time ? fmtTime(upcoming.time) : undefined,
+      title: upcoming.title,
+      who: who ? `with ${who}` : undefined,
+    };
+  }, [dayEvents, members]);
+
   // AskCubeChat is a shared phone component rendered straight into its own
   // Modal — it can't be wrapped in KioskModalHost without changing its
-  // layout, so it holds the lock off via the hook form instead. Without
-  // this, a long Ask Fam conversation counts as total inactivity (every
-  // tap lands in the modal layer, invisible to the root onTouchStart) and
-  // the idle lock fires mid-conversation.
+  // layout, so it holds the lock off via the hook form instead.
   useKioskLockSuspended(askCubeOpen);
 
   if (!active) return null;
 
+  const showStandby = (ambient || standbyPinned) && !locked;
+
   return (
     <KioskActivityProvider value={activityApi}>
-    <SafeAreaView
-      style={[s.root, { backgroundColor: colors.background }]}
-      edges={['top', 'bottom']}
-      onTouchStart={registerActivity}
-    >
-      {locked && (
-        <KioskLockScreen
+      <SafeAreaView
+        style={[s.root, { backgroundColor: k.bg }]}
+        edges={['top', 'bottom']}
+        onTouchStart={registerActivity}
+      >
+        {locked && (
+          <KioskLockScreen
+            familyName={familyName || 'Our Family'}
+            members={members}
+            onUnlock={(memberId) => { setActiveMember(memberId); unlock(); }}
+            colors={colors}
+          />
+        )}
+
+        <KioskHeader
           familyName={familyName || 'Our Family'}
           members={members}
-          onUnlock={(memberId) => { setActiveMember(memberId); unlock(); }}
-          colors={colors}
+          activeId={active.id}
+          onSwitch={setActiveMember}
+          isParent={isParent}
+          onAskFam={() => setAskCubeOpen(true)}
+          onIntercom={() => setIntercomOpen(true)}
+          onStandby={() => setStandbyPinned(true)}
+          onLock={lockNow}
         />
-      )}
 
-      <KioskHeader
-        familyName={familyName || 'Our Family'}
-        members={members}
-        activeId={active.id}
-        onSwitch={setActiveMember}
-        isParent={isParent}
-        onAskFam={() => setAskCubeOpen(true)}
-        onLock={lockNow}
-        colors={colors}
-      />
-
-      <View style={s.row}>
-        {/* ── Nav rail — icon-only; profile switching lives in KioskHeader
-            above, not duplicated here. ── */}
-        <View style={[s.rail, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
-          <View style={s.railGroup}>
-            {rail.map(({ key, label, Icon }) => {
-              const on = effectiveTab === key;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => setTab(key)}
-                  style={s.railBtnWrap}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={label}
-                  accessibilityHint={`Show the ${label} screen`}
-                >
-                  {/* Active state is a filled, elevated pill rather than a
-                      tint plus a hairline bar. On a countertop display the
-                      current location has to be unmistakable from across
-                      the room — a 3px indicator stripe simply isn't. */}
-                  <View
-                    style={[
+        <View style={s.row}>
+          {/* ══ NAV RAIL ══════════════════════════════════════════════
+              Labelled, not icon-only. The mockup's rail carries a word next
+              to every icon, and that is the right call for a device a
+              grandparent walks up to cold — an unfamiliar glyph set is a
+              guessing game. Scrolls when the full eleven-entry rail is
+              taller than a short landscape screen; the Ask Fam card is
+              pinned below it rather than scrolling away. */}
+          <View style={[s.rail, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
+            <ScrollView
+              contentContainerStyle={s.railGroup}
+              showsVerticalScrollIndicator={false}
+            >
+              {rail.map(({ key, label, Icon }) => {
+                const on = effectiveTab === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setTab(key)}
+                    style={({ pressed }) => [
                       s.railBtn,
-                      on && {
-                        backgroundColor: colors.primary,
-                        shadowColor: colors.primary,
-                        shadowOpacity: isDark ? 0 : 0.22,
-                        shadowRadius: 8,
-                        shadowOffset: { width: 0, height: 2 },
-                        elevation: isDark ? 0 : 3,
-                      },
+                      on
+                        ? {
+                            backgroundColor: k.primary,
+                            // Elevation is mode-dependent by design: a cast
+                            // shadow on a near-black ground reads as mud, so
+                            // dark mode carries the active state entirely in
+                            // the fill.
+                            shadowColor: k.primary,
+                            shadowOpacity: isDark ? 0 : 0.24,
+                            shadowRadius: 8,
+                            shadowOffset: { width: 0, height: 2 },
+                            elevation: isDark ? 0 : 3,
+                          }
+                        : { backgroundColor: pressed ? k.cardHover : 'transparent' },
                     ]}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={label}
+                    accessibilityHint={`Show ${label}`}
                   >
-                    <Icon size={24} color={on ? '#fff' : colors.textTertiary} />
+                    <Icon size={22} color={on ? k.onPrimary : k.textMuted} />
                     <Text
-                      style={[s.railLabel, { color: on ? '#fff' : colors.textTertiary }]}
+                      style={[s.railLabel, { color: on ? k.onPrimary : k.textMuted }]}
                       numberOfLines={1}
                     >
                       {label}
                     </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Ask Fam — the mockup's bottom-of-rail assistant card. Open to
+                every role, unlike the header's AskCubeChat (parent-only,
+                because that one is a real model with real spend behind it);
+                this drawer is a local lookup over the family's own data, so
+                there's nothing to gate. */}
+            <Pressable
+              onPress={() => setAskFamOpen(true)}
+              style={({ pressed }) => [
+                s.askFamCard,
+                {
+                  backgroundColor: pressed ? k.cardHover : k.purpleSoft,
+                  borderColor: k.purpleEdge,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Ask Fam"
+              accessibilityHint="Look up your family's schedule, chores and meals"
+            >
+              <Sparkles size={20} color={k.purple} />
+              <Text style={[s.askFamText, { color: k.purple }]} numberOfLines={1}>Ask Fam</Text>
+            </Pressable>
+          </View>
+
+          {/* ══ ACTIVE TAB ═══════════════════════════════════════════ */}
+          <View style={s.content}>
+            {effectiveTab === 'overview' && (
+              <KioskOverviewTab
+                active={active}
+                members={members}
+                onNavigate={setTab}
+                onIntercom={() => setIntercomOpen(true)}
+              />
+            )}
+            {effectiveTab === 'meals' && <KioskMealsTab active={active} members={members} />}
+            {effectiveTab === 'tasks' && <KioskTasksTab active={active} members={members} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab active={active} members={members} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'chat' && <KioskChatTab active={active} members={members} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab active={active} members={members} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'memories' && <KioskMemoriesTab colors={colors} isDark={isDark} readOnly={isSenior} />}
+            {effectiveTab === 'school' && !isSenior && !isTeen && <KioskSchoolTab isKid={isKidRole} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'health' && !isSenior && !isTeen && <KioskHealthTab isKid={isKidRole} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'profile' && <KioskProfileTab />}
           </View>
         </View>
 
-        {/* ── Active screen ── */}
-        <View style={s.content}>
-          {effectiveTab === 'hub' && <KioskHubTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'tasks' && <KioskTasksTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'chat' && <KioskChatTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab active={active} members={members} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'memories' && isSenior && <KioskMemoriesTab colors={colors} isDark={isDark} readOnly={active.role === 'senior'} />}
-          {effectiveTab === 'school' && !isSenior && !isTeen && <KioskSchoolTab isKid={isKidRole} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'health' && !isSenior && !isTeen && <KioskHealthTab isKid={isKidRole} colors={colors} isDark={isDark} />}
-          {effectiveTab === 'profile' && <KioskProfileTab />}
-        </View>
-      </View>
+        {/* ── Overlays ──────────────────────────────────────────────── */}
 
-      {isParent && (
-        <AskCubeChat
-          visible={askCubeOpen}
-          onClose={() => setAskCubeOpen(false)}
-          activeMember={active}
-          members={members}
-          variant="kiosk"
+        {/* The app's real AI surface, parent-only and unchanged. Distinct
+            from the Ask Fam drawer — see that component's header. */}
+        {isParent && (
+          <AskCubeChat
+            visible={askCubeOpen}
+            onClose={() => setAskCubeOpen(false)}
+            activeMember={active}
+            members={members}
+            variant="kiosk"
+          />
+        )}
+
+        <KioskAskFamDrawer visible={askFamOpen} onClose={() => setAskFamOpen(false)} />
+
+        <KioskIntercomModal
+          visible={intercomOpen}
+          onClose={() => setIntercomOpen(false)}
+          fromMemberId={active.id}
         />
-      )}
 
-      {/* Ambient veil — LAST sibling inside the SafeAreaView, so it paints
-          over the dashboard but (being a plain View, not a Modal) still
-          sits below any open native sheet. See KioskAmbientOverlay's own
-          header for why that's the deliberate opposite of the lock
-          screen's Modal choice. Suppressed while locked: the lock screen
-          is its own full surface and already shows the time. */}
-      <KioskAmbientOverlay
-        visible={ambient && !locked}
-        familyName={familyName || 'Our Family'}
-        eventCount={ambientEventCount}
-        choreCount={ambientChoreCount}
-        colors={colors}
-      />
-    </SafeAreaView>
+        {/* Ambient veil — LAST sibling inside the SafeAreaView so it paints
+            over the dashboard, but (being a plain View, not a Modal) it
+            still sits BELOW any open native sheet. See the overlay's own
+            header for why that's the deliberate opposite of the lock
+            screen's Modal choice. Suppressed while locked: the lock screen
+            is its own full surface and already shows the time. */}
+        <KioskAmbientOverlay
+          visible={showStandby}
+          familyName={familyName || 'Our Family'}
+          eventCount={dayEvents.length}
+          choreCount={ambientChoreCount}
+          nextUp={nextUp}
+        />
+      </SafeAreaView>
     </KioskActivityProvider>
   );
 }
@@ -306,21 +375,26 @@ export default function KioskScreen() {
 const s = StyleSheet.create({
   root: { flex: 1 },
   row: { flex: 1, flexDirection: 'row' },
-  // Rail widened 84 -> 108 and its buttons 60 -> KIOSK_HIT.control (64),
-  // with the label up from a 10px micro-caption to KIOSK_TYPO.micro (14).
-  // A 10px label on a wall-mounted tablet is decorative, not readable —
-  // which made the rail effectively icon-only guesswork for anyone who
-  // didn't already know the icon set.
   rail: {
-    width: KIOSK_RAIL_WIDTH, borderRightWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center', paddingVertical: KIOSK_SPACE.md,
+    width: KIOSK_RAIL_WIDTH,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    paddingVertical: KIOSK_SPACE.sm,
+    paddingHorizontal: KIOSK_SPACE.xs,
+    justifyContent: 'space-between',
   },
-  railGroup: { alignItems: 'center', gap: KIOSK_SPACE.xs },
-  railBtnWrap: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
+  railGroup: { gap: 3, paddingBottom: KIOSK_SPACE.sm },
   railBtn: {
-    width: 78, height: KIOSK_HIT.rail, borderRadius: KIOSK_RADIUS.md,
-    alignItems: 'center', justifyContent: 'center', gap: 4,
+    height: KIOSK_HIT.rail, borderRadius: KIOSK_RADIUS.md,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingHorizontal: 2,
   },
   railLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  askFamCard: {
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    minHeight: KIOSK_HIT.rail,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingHorizontal: 2,
+  },
+  askFamText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   content: { flex: 1, minWidth: 0 },
 });

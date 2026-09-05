@@ -677,7 +677,21 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // patching this one pair of days.
   const dayTokenAlternation = Object.keys(DAY_TOKEN_MAP).sort((a, b) => b.length - a.length).join('|');
   const weeklyDayRe = new RegExp(`\\bevery\\s+(${dayTokenAlternation})s?\\b`);
-  if (/\bdaily\b|\bevery day\b/.test(input)) {
+  // Live-requested: "identify every weekday" — "every weekday"/"weekdays"
+  // is Mon-Fri recurrence, a genuinely different rule from "every day"
+  // (7/7) that this detector never recognized as recurring at all before
+  // (no keyword here matched "weekday" — daily's own regex only matches
+  // the literal word "day", and weeklyDayRe's day-name alternation has no
+  // "weekday" entry either, so "school drop-off every weekday" fell
+  // through to a one-time detection). Checked BEFORE the plain daily
+  // check below, since "weekday" contains "day" as a substring and would
+  // otherwise need to avoid a false daily match too — matching first
+  // instead is simpler and avoids that ordering trap entirely.
+  const weekdayRe = /\bevery\s+weekday|\bweekdays?\b(?!\s*and\s*weekend)/i;
+  if (weekdayRe.test(input)) {
+    recurrence = 'weekly';
+    recurrenceDays.push(1, 2, 3, 4, 5);
+  } else if (/\bdaily\b|\bevery day\b/.test(input)) {
     recurrence = 'daily';
   } else if (/\bmonthly\b|\bevery month\b/.test(input)) {
     recurrence = 'monthly';

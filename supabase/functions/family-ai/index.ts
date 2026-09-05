@@ -548,10 +548,14 @@ Return JSON: {
       array if nobody specific was named or implied.)
     recurrenceFrequency: "once" | "daily" | "weekly" | "monthly" — "once" unless the
       input names a repeating pattern ("every Wednesday", "every day", "daily", "weekly",
-      "every week", "monthly"). "Pick up Maya from soccer every Wednesday" -> "weekly".
+      "every week", "monthly", "every weekday", "weekdays"). "Pick up Maya from soccer
+      every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct from
+      "every day" which is all 7) is ALSO "weekly", not "daily" — "School drop-off every
+      weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
     recurrenceDays: number[] — weekly recurrence only, which weekdays it repeats on,
-      0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4]).
-      Empty array unless recurrenceFrequency is "weekly".
+      0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4],
+      "every weekday"/"weekdays" -> [1,2,3,4,5]). Empty array unless recurrenceFrequency
+      is "weekly".
     urgent: boolean — true if the input signals time pressure ("urgent", "asap",
       "right away", "immediately", "emergency", "now"). false otherwise.
     alertCall: boolean — true only if the input explicitly asks for a call-based

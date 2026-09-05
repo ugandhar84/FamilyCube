@@ -317,11 +317,11 @@ const TOOLS = [
           },
           recurrenceFrequency: {
             type: 'string', enum: ['daily', 'weekly', 'monthly'],
-            description: 'Set this whenever the request describes something REPEATING, not a one-off — "every evening", "every Thursday", "daily", "each week" all mean this must be set. Omit entirely for a genuinely one-time chore.',
+            description: 'Set this whenever the request describes something REPEATING, not a one-off — "every evening", "every Thursday", "every weekday", "daily", "each week" all mean this must be set. "every weekday" (Mon-Fri) is "weekly", not "daily" — "daily" is genuinely every day of the week. Omit entirely for a genuinely one-time chore.',
           },
           recurrenceDays: {
             type: 'array', items: { type: 'number' },
-            description: 'weekly recurrence only — which weekdays it repeats on, 0=Sunday..6=Saturday. Required if recurrenceFrequency is "weekly".',
+            description: 'weekly recurrence only — which weekdays it repeats on, 0=Sunday..6=Saturday (e.g. "every weekday" -> [1,2,3,4,5]). Required if recurrenceFrequency is "weekly".',
           },
         },
         required: ['title'],

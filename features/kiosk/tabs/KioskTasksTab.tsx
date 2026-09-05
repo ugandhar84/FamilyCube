@@ -26,16 +26,20 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
-import { Plus, PartyPopper, Check, Clock3, Sparkles } from 'lucide-react-native';
+import {
+  Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
+  CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion,
+} from 'lucide-react-native';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
-import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
+import { deriveQuestActions, isAssignedTo } from '@/features/tasks/lib/deriveCardActions';
 import {
   COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline,
   KIOSK_STATUS_TABS, kioskFilterAvailability, applyKidFilter, applyTabStatus,
+  kioskQuestMeta, isQuestOverdue, isMultiSlotQuest, teamMatesOf,
   type KioskTabStatus,
 } from '../kidQuestLanes';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
@@ -50,6 +54,8 @@ import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { KioskKidCheerList } from '../components/KioskKidQuickActions';
+import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
+import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
@@ -174,6 +180,26 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const isKidCreator = active.role === 'kid';
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
 
+  // ── Card-level chore actions the board previously had no path to ──────
+  // The phone kid card reaches three choreStore actions directly that this
+  // board's `primaryAction` (claim/submit/approve via choreAdapter) never
+  // covered — a pending terms change has to be accepted or rejected, and a
+  // redo request can be disputed instead of resubmitted. Selected
+  // individually rather than destructured off the whole store for the
+  // reason KidQuestCard.tsx:51-57 records at length: Zustand actions are
+  // stable references, so this subscribes to nothing and can't re-render
+  // the board on unrelated chore updates.
+  const acceptTermsChange = useChoreStore(s => s.acceptTermsChange);
+  const rejectTermsChange = useChoreStore(s => s.rejectTermsChange);
+  const disputeRedo = useChoreStore(s => s.disputeRedo);
+
+  // Per-card History sheet target, and the "Can't do this" reason dialog's.
+  // Both held as {id,title} rather than the Quest itself so a store update
+  // mid-flow can't leave a stale object pinned open — same convention
+  // KioskKidWidgets' own declineTarget uses.
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; title: string } | null>(null);
+  const [declineTarget, setDeclineTarget] = useState<{ id: string; title: string } | null>(null);
+
   // Creation flow — ported verbatim from TasksScreen.tsx's own wiring
   // (features/tasks/TasksScreen.tsx lines ~213-234, ~474-540): a parent
   // gets the real free-text SmartTaskComposer (classifies Event vs Quest
@@ -220,6 +246,12 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // The Ask-Parent side of that suspension moved with the flow:
   // KioskAskParentFlow makes its own useKioskLockSuspended call covering
   // showAskParentSheet (passed to it as `visible`) plus its own six.
+  // historyTarget/declineTarget are NOT listed here: both render through
+  // KioskFormDrawer, which wraps KioskModalHost and already suspends the
+  // lock for its own lifetime — the same reason KioskAskParentFlow's six
+  // sheets aren't listed either. Only the shared PHONE modals above, which
+  // render into their own native Modal and never reach KioskScreen's root
+  // onTouchStart, need declaring by hand.
   useKioskLockSuspended(
     showComposer || showManualQuest || showManualEvent || editingQuest !== null,
   );
@@ -422,16 +454,106 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // edit stays the card's own tap (parent-only, see below) rather than a
   // button, matching how mobile treats "tap the card to open/edit" vs.
   // "tap this specific button to change status."
-  const primaryAction = (q: Quest, actions: ReturnType<typeof deriveQuestActions>): { label: string; accent: string; action: () => void } | null => {
-    if (actions.canClaim) return { label: 'Claim Chore', accent: k.gold, action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); } };
-    if (actions.canResubmit) return { label: 'Resubmit', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); } };
-    if (actions.canSubmit) return { label: 'Submit for Review', accent: k.primary, action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); } };
-    if (actions.canApprove) return { label: 'Approve', accent: k.sage, action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); } };
+  // ── Card labels/icons now mirror the phone kid card [GAP] ─────────────
+  // The phone card (KidQuestCard.tsx:230-307) does NOT render one generic
+  // verb per state — each branch has its own copy and its own icon, and the
+  // labels are part of what the owner is comparing against:
+  //
+  //   pool/bounty        → "Claim (+N 🪙)"      Trophy   (phone: BRAND.purple)
+  //   claimed            → "Start Chore"        Zap      (phone: BRAND.teal)
+  //   todo/in_progress   → "Mark Done → Get Paid" / "Take Photo to Get Paid"
+  //   declined           → "Revise & Resubmit"  RotateCcw
+  //
+  // The CLAIMED branch is a real intermediate state on the phone, not a
+  // cosmetic label: a kid who just claimed a bounty sees "Start Chore"
+  // before they ever see a submit button. Traced through its caller
+  // (features/hub/KidView.tsx:481) that `onStart` resolves to
+  // `submitQuest(id, undefined, active.id)` — the SAME choreAdapter action
+  // as submit, because choreAdapter maps a claimed chore's advance and a
+  // submission onto one status transition. So this is one action wearing
+  // two labels by state, which is exactly what's replicated here rather
+  // than inventing a kiosk-only "start" store call that doesn't exist.
+  //
+  // Photo-required chores are the one place kiosk can't match the phone:
+  // the phone opens SubmitProofSheet (a camera capture) before payout, and
+  // kiosk has no capture flow — so rather than silently submitting without
+  // the proof the chore demands, the label states the requirement and the
+  // press is a no-op toast telling the kid to finish it on a phone. Same
+  // call KioskKidWidgets' own primaryAction already makes for this case.
+  const primaryAction = (q: Quest, actions: ReturnType<typeof deriveQuestActions>): {
+    label: string; accent: string; Icon: typeof Check; action: () => void;
+  } | null => {
+    if (actions.canClaim) {
+      return {
+        label: `Claim (+${q.coins} 🪙)`, accent: k.purple, Icon: Trophy,
+        action: () => { claimQuest(q.id, active.id); showToast(`Claimed "${q.title}" ✓`); },
+      };
+    }
+    if (actions.canResubmit) {
+      return {
+        label: 'Revise & Resubmit', accent: k.gold, Icon: RotateCcw,
+        action: () => { submitQuest(q.id, undefined, active.id); showToast('Resubmitted for review ✓'); },
+      };
+    }
+    if (actions.canSubmit) {
+      // The phone's own distinct "claimed" step — see the note above.
+      if (q.status === 'claimed') {
+        return {
+          label: 'Start Chore', accent: k.sage, Icon: Zap,
+          action: () => { submitQuest(q.id, undefined, active.id); showToast(`Started "${q.title}" ✓`); },
+        };
+      }
+      if (q.photoRequired) {
+        return {
+          label: 'Take Photo to Get Paid', accent: k.sage, Icon: Camera,
+          action: () => { showToast('This chore needs a photo — finish it on your phone 📷'); },
+        };
+      }
+      return {
+        label: 'Mark Done → Get Paid', accent: k.sage, Icon: CheckCircle2,
+        action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); },
+      };
+    }
+    if (actions.canApprove) {
+      return {
+        label: 'Approve', accent: k.sage, Icon: Check,
+        action: () => { approveQuest(q.id, active.id); showToast('Approved ✓'); },
+      };
+    }
     return null;
   };
 
   // One shared card renderer, used by both the pool lane and the status
   // lanes so a chore looks identical wherever it appears.
+  //
+  // ── Parity pass vs. the phone kid card ────────────────────────────────
+  // Live-reported: "kiosk chores cards still not matching with the chores
+  // cards of mobile app." The reference is features/hub/kid/KidQuestCard.tsx
+  // (a kid's real chore card on the phone Hub). What this card was missing,
+  // and where each piece now comes from:
+  //
+  //   · status pill in the ALWAYS-VISIBLE header (phone:117-120) — the
+  //     shared kioskQuestMeta from ../kidQuestLanes, so this card and the
+  //     Overview's My-Chores widget render an identical pill per status
+  //   · overdue badge (phone:121-127) — shared isQuestOverdue/
+  //     isMultiSlotQuest, the phone's date-only rule, not a re-derivation
+  //   · reward-pending-review badge + body copy (phone:128-133, 169-173)
+  //   · the description, in italics (phone:159-161)
+  //   · the "terms changed" card with its old→new diff AND its two real
+  //     buttons, which REPLACE the normal action row entirely while
+  //     pendingTerms is live (phone:179-214)
+  //   · the team/multi-slot "Also offered to…" banner (phone:194-201)
+  //   · the kid-disputed-redo waiting message (phone:276-281)
+  //   · "I did do it" beside "Revise & Resubmit" on a declined chore
+  //     (phone:282-297)
+  //   · "Can't do this" beside the primary action (phone:254-259, 271-274),
+  //     gated on the same deriveQuestActions.canKidDecline
+  //   · a real History affordance opening the full activity log, not just
+  //     the inline three-stamp line (phone:137-139, 310-312)
+  //
+  // Everything visual is translated to kiosk tokens (KIOSK_TYPO/SPACE/
+  // RADIUS/HIT, k.* colors) rather than copied at phone scale, and every
+  // button calls the SAME store action the phone button calls.
   const renderQuestCard = (q: Quest, opts?: { showDeclineReason?: boolean }) => {
     const assignee = memberOf(q.assignedToId);
     const rs = assigneeStyle(assignee, colors, isDark);
@@ -443,6 +565,15 @@ function KioskBoardView({ active, members, colors, isDark }: {
     const isAdultAssignee = q.isAdultTask || assignee?.role === 'parent' || assignee?.role === 'senior';
     const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: k.textFaint };
     const timeline = questTimeline(q);
+    const meta = kioskQuestMeta(q, k);
+    const overdue = isQuestOverdue(q);
+    const mates = teamMatesOf(q, quests);
+    // Phone gate, verbatim: the terms-change prompt is the kid's own
+    // decision on their own chore, so it only appears for the assignee.
+    // A parent glancing at the same card sees the diff (below) but no
+    // accept/reject buttons — those are not theirs to press.
+    const showTermsPrompt = !!q.pendingTerms && isAssignedTo(q, active.id) &&
+      (active.role === 'kid' || active.role === 'teen');
     return (
       <CollapsibleQuestCard
         accentColor={catMeta.color}
@@ -450,14 +581,93 @@ function KioskBoardView({ active, members, colors, isDark }: {
         cardBord={k.cardBorder}
         onDoubleTap={actions.canEdit ? () => setEditingQuest(q) : undefined}
         header={
-          <View style={s.cardTopRow}>
-            <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
-              <Text style={{ fontSize: 17 }}>{catMeta.emoji}</Text>
+          <View style={s.cardHeader}>
+            <View style={s.cardTopRow}>
+              <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
+                <Text style={{ fontSize: 17 }}>{catMeta.emoji}</Text>
+              </View>
+              <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
+              {!isAdultAssignee && (
+                <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+              )}
             </View>
-            <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
-            {!isAdultAssignee && (
-              <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
-            )}
+
+            {/* ── Summary badge row [GAP] ──────────────────────────────
+                The phone puts status, overdue and reward-pending in the
+                ALWAYS-VISIBLE summary beside the coin badge (KidQuestCard
+                .tsx:117-133), which is the whole point of them: a kid
+                scanning a lane must see "in review" or "overdue" without
+                expanding anything. Kiosk showed none of it collapsed —
+                status was inferable only from which lane the card sat in,
+                and a card in the pool zone or the Overview widget carried
+                no status cue at all. Its own row rather than crammed
+                beside the title, so a two-line title can't squeeze the
+                pills off the card at kiosk scale. */}
+            <View style={s.badgeRow}>
+              <View
+                style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
+                accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
+              >
+                <meta.Icon size={12} color={meta.accent} />
+                <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+              </View>
+
+              {overdue && (
+                <View
+                  style={[s.statusPill, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}
+                  accessibilityLabel={isMultiSlotQuest(q)
+                    ? 'This chore is overdue'
+                    : `Overdue — was due ${fmtDateShort(q.dueDate)}`}
+                >
+                  <TriangleAlert size={12} color={k.danger} />
+                  <Text style={[s.statusPillText, { color: k.danger }]} numberOfLines={1}>
+                    {/* A multi-slot bounty shares ONE due date across every
+                        claimant, so naming that date on an individual's
+                        card misrepresents it as personal — the phone shows
+                        a generic label instead (KidQuestCard.tsx:124). */}
+                    {isMultiSlotQuest(q) ? 'Chore overdue' : fmtDateShort(q.dueDate)}
+                  </Text>
+                </View>
+              )}
+
+              {q.rewardPendingReview && (
+                <View
+                  style={[s.statusPill, { backgroundColor: k.well, borderColor: k.goldEdge }]}
+                  accessibilityLabel="The reward for this chore is waiting on a parent's approval"
+                >
+                  <Clock3 size={12} color={k.gold} />
+                  <Text style={[s.statusPillText, { color: k.gold }]} numberOfLines={1}>
+                    Reward pending
+                  </Text>
+                </View>
+              )}
+
+              {/* ── History [GAP] ──────────────────────────────────────
+                  The inline timeline below is the three-stamp summary; the
+                  phone ALSO puts a History icon in this same summary row
+                  (KidQuestCard.tsx:137-139) opening the full activity log —
+                  every edit, reassignment, redo and dispute, not just the
+                  three happy-path stamps. Kiosk had no route to that at
+                  all. Opens the kiosk-native sheet, which reads the SAME
+                  fetchActivityLog('chore', id) rows the phone sheet does.
+                  Sits inside CollapsibleQuestCard's own header Pressable,
+                  so it needs a real hitSlop to be reliably hit without
+                  toggling the card instead. */}
+              <Pressable
+                onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
+                hitSlop={12}
+                style={({ pressed }) => [
+                  s.historyBtn,
+                  { backgroundColor: k.well, borderColor: k.cardBorder },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`History for ${q.title}`}
+                accessibilityHint="Shows everything that has happened on this chore"
+              >
+                <History size={13} color={k.textMuted} />
+              </Pressable>
+            </View>
           </View>
         }
       >
@@ -465,6 +675,18 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <View style={[s.reasonBanner, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
             <Text style={[s.reasonText, { color: k.danger }]} numberOfLines={3}>↩ {q.declineReason}</Text>
           </View>
+        )}
+
+        {/* ── Description [GAP] ────────────────────────────────────────
+            The phone shows the chore's own instructions in italic body text
+            at the top of the expanded body (KidQuestCard.tsx:159-161) —
+            "wipe the counters too", the detail that actually tells a kid
+            what finishing means. Kiosk dropped it entirely, so a chore
+            whose whole point was in its description read as a bare title. */}
+        {!!q.description && (
+          <Text style={[s.cardDescription, { color: k.textMuted }]} numberOfLines={4}>
+            "{q.description}"
+          </Text>
         )}
 
         <View style={s.cardMeta}>
@@ -482,23 +704,87 @@ function KioskBoardView({ active, members, colors, isDark }: {
           )}
         </View>
 
-        {/* ── History [GAP] ────────────────────────────────────────────
-            The phone's card carries the chore's own claimed → submitted →
-            approved trail (QuestCard.tsx:293-307), and the kid Hub widget
-            on kiosk got the same line this session — but this board's card
-            body showed only assignee and due date, so "when did this
-            actually happen" was answerable nowhere on the Chores tab. Same
-            `questTimeline` helper both other surfaces use (now shared from
-            ../kidQuestLanes), so the three render one identical string.
-            Renders nothing for an untouched To Do, which has no stamps. */}
+        {/* ── Inline timeline ──────────────────────────────────────────
+            The chore's own claimed → submitted → approved trail
+            (QuestCard.tsx:293-307, KidQuestCard.tsx:147-155). The shared
+            `questTimeline` helper, so this card, the Overview widget and
+            the phone render one identical string. Renders nothing for an
+            untouched To Do, which has no stamps. The full log lives behind
+            the History button in the header above; this is the summary. */}
         {!!timeline && (
           <Text
             style={[s.timelineText, { color: k.textFaint }]}
             numberOfLines={2}
-            accessibilityLabel={`History: ${timeline}`}
+            accessibilityLabel={`Timeline: ${timeline}`}
           >
             {timeline}
           </Text>
+        )}
+
+        {/* ── "Waiting on a grown-up" helper (phone:162-167) ──────────── */}
+        {q.status === 'pending_approval' && (
+          <Text style={[s.cardHelper, { color: k.gold }]} numberOfLines={2}>
+            {q.questType === 'grandparent_quest'
+              ? 'Waiting on a grandparent to review this chore.'
+              : 'Waiting on a parent to review this chore.'}
+          </Text>
+        )}
+
+        {/* ── Reward pending review [GAP] (phone:169-173) ───────────────
+            A kid asked for a reward above the household's auto-approve
+            limit. The chore itself is fine to start — this only says the
+            PAYOUT is being confirmed separately — and without the sentence
+            the header's "Reward pending" badge is alarming and unexplained. */}
+        {q.rewardPendingReview && (
+          <View style={[s.noticeBanner, { backgroundColor: k.goldSoft, borderColor: k.goldEdge }]}>
+            <Text style={[s.noticeText, { color: k.gold }]} numberOfLines={4}>
+              The reward you asked for ({q.coins} 🪙) needs a parent's OK since it's above the
+              household limit — go ahead and start the chore, the reward gets confirmed separately.
+            </Text>
+          </View>
+        )}
+
+        {/* ── Terms changed [GAP] (phone:179-192) ──────────────────────
+            A parent edited the coins or the due date AFTER the kid took the
+            chore on. choreStore holds the change as `pendingTerms` rather
+            than applying it silently, precisely so the kid gets to see the
+            old→new diff and agree — which is impossible if the card never
+            renders it. Shown to everyone who can see the card (a parent
+            checking what they changed); only the assignee gets the buttons. */}
+        {!!q.pendingTerms && (
+          <View style={[s.noticeBanner, { backgroundColor: k.goldSoft, borderColor: k.goldEdge }]}>
+            <Text style={[s.noticeTitle, { color: k.gold }]} numberOfLines={1}>The terms changed</Text>
+            {q.pendingTerms.old.coinsReward !== q.pendingTerms.new.coinsReward && (
+              <Text style={[s.noticeText, { color: k.textMuted }]} numberOfLines={1}>
+                Coins:{' '}
+                <Text style={[s.strike, { color: k.textFaint }]}>{q.pendingTerms.old.coinsReward}</Text>
+                {` → ${q.pendingTerms.new.coinsReward} 🪙`}
+              </Text>
+            )}
+            {q.pendingTerms.old.dueDate !== q.pendingTerms.new.dueDate && (
+              <Text style={[s.noticeText, { color: k.textMuted }]} numberOfLines={1}>
+                Due:{' '}
+                <Text style={[s.strike, { color: k.textFaint }]}>
+                  {q.pendingTerms.old.dueDate ? fmtDateShort(q.pendingTerms.old.dueDate) : 'none'}
+                </Text>
+                {` → ${q.pendingTerms.new.dueDate ? fmtDateShort(q.pendingTerms.new.dueDate) : 'none'}`}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* ── Team / multi-slot bounty [GAP] (phone:194-201) ────────────
+            This bounty was offered to several kids at once. The thing that
+            actually needs saying is that it is NOT a race for one payout —
+            everyone who finishes earns the full amount — which is exactly
+            the misunderstanding a bare "Open to all" chip invites. */}
+        {mates.length > 0 && (
+          <View style={s.teamRow}>
+            <Target size={14} color={k.gold} />
+            <Text style={[s.teamText, { color: k.gold }]} numberOfLines={3}>
+              {`Also offered to ${mates.map(t => memberName(t.assignedToId) ?? 'a sibling').join(' & ')} — everyone who finishes gets the full ${q.coins} 🪙`}
+            </Text>
+          </View>
         )}
 
         {actions.canEdit && (
@@ -512,18 +798,132 @@ function KioskBoardView({ active, members, colors, isDark }: {
           </Pressable>
         )}
 
-        {btn && (
-          <ActionButton
-            label={btn.label}
-            accent={btn.accent}
-            k={k}
-            isDark={kioskDark}
-            variant="solid"
-            style={s.cardActionBtn}
-            accessibilityHint={q.title}
-            onPress={() => { registerActivity(); btn.action(); }}
-          />
-        )}
+        {/* ── Action row ───────────────────────────────────────────────
+            Branch order is the phone's (KidQuestCard.tsx:202-309), and the
+            order is load-bearing:
+
+            1. A live pendingTerms REPLACES the normal action row outright.
+               Offering "Mark Done → Get Paid" beside an unanswered "the
+               coins changed from 20 to 5" would let a kid finish a chore
+               without ever answering the question the store is holding
+               open for them.
+            2. kidDisputedRedo replaces the redo buttons with a waiting
+               message — the dispute is already filed, and a second
+               "Revise & Resubmit" tap would withdraw it by resubmitting.
+            3. A declined chore gets BOTH resubmit and "I did do it".
+            4. Otherwise the primary action, plus "Can't do this" when
+               deriveQuestActions says this viewer may decline. */}
+        {showTermsPrompt ? (
+          <View style={s.actionRow}>
+            <ActionButton
+              label="Still fine by me"
+              Icon={CheckCircle2}
+              accent={k.sage}
+              k={k}
+              isDark={kioskDark}
+              variant="solid"
+              style={s.actionPrimary}
+              accessibilityHint={`Accept the new terms for ${q.title}`}
+              onPress={() => {
+                registerActivity();
+                acceptTermsChange(q.id, active.id);
+                showToast('Terms accepted ✓');
+              }}
+            />
+            <ActionButton
+              label="Hand it back"
+              accent={k.danger}
+              k={k}
+              isDark={kioskDark}
+              variant="soft"
+              style={s.actionSecondary}
+              accessibilityHint={`Turn down the new terms and give ${q.title} back`}
+              onPress={() => {
+                registerActivity();
+                rejectTermsChange(q.id, active.id);
+                showToast('Handed back — a parent will see this');
+              }}
+            />
+          </View>
+        ) : q.kidDisputedRedo && actions.canResubmit ? (
+          // ── Kid-disputed redo [GAP] (phone:276-281) ─────────────────
+          // The kid already said "I did do it" — a second parent has to
+          // weigh in before anything else can happen, so the card states
+          // that instead of offering buttons that would undo the dispute.
+          <Text style={[s.waitingText, { color: k.textFaint }]} numberOfLines={2}>
+            Waiting on a second parent to take a look…
+          </Text>
+        ) : actions.canResubmit ? (
+          // ── Declined: resubmit OR dispute [GAP] (phone:282-297) ─────
+          // Kiosk offered resubmit only, which silently assumes the parent
+          // was right. The phone gives the kid a real second option —
+          // pre-payout dispute — and it is the one that most needs to be
+          // reachable from the shared family screen where the disagreement
+          // is actually happening.
+          <View style={s.actionRow}>
+            {btn && (
+              <ActionButton
+                label={btn.label}
+                Icon={btn.Icon}
+                accent={btn.accent}
+                k={k}
+                isDark={kioskDark}
+                variant="solid"
+                style={s.actionPrimary}
+                accessibilityHint={q.title}
+                onPress={() => { registerActivity(); btn.action(); }}
+              />
+            )}
+            <ActionButton
+              label="I did do it"
+              Icon={ShieldQuestion}
+              accent={k.purple}
+              k={k}
+              isDark={kioskDark}
+              variant="soft"
+              style={s.actionSecondary}
+              accessibilityHint={`Ask a second parent to look at ${q.title} again`}
+              onPress={() => {
+                registerActivity();
+                disputeRedo(q.id, active.id);
+                showToast('Asked a parent to take another look ✓');
+              }}
+            />
+          </View>
+        ) : (btn || actions.canKidDecline) ? (
+          <View style={s.actionRow}>
+            {btn && (
+              <ActionButton
+                label={btn.label}
+                Icon={btn.Icon}
+                accent={btn.accent}
+                k={k}
+                isDark={kioskDark}
+                variant="solid"
+                style={s.actionPrimary}
+                accessibilityHint={q.title}
+                onPress={() => { registerActivity(); btn.action(); }}
+              />
+            )}
+            {/* Same gate the phone reads (its canDeclinePlain, KidQuestCard
+                .tsx:87 = deriveQuestActions.canKidDecline) and the same
+                one-step kiosk reason dialog the Overview widget already
+                uses, which reaches choreStore.declineChoreAssignment via
+                resolveCantMakeIt exactly as the phone sheet does. */}
+            {actions.canKidDecline && (
+              <ActionButton
+                label="Can't do this"
+                accent={k.danger}
+                k={k}
+                isDark={kioskDark}
+                variant="soft"
+                style={s.actionSecondary}
+                accessibilityHint={`Give a reason and put ${q.title} back up for grabs`}
+                onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
+              />
+            )}
+          </View>
+        ) : null}
       </CollapsibleQuestCard>
     );
   };
@@ -910,6 +1310,33 @@ function KioskBoardView({ active, members, colors, isDark }: {
 
       </>}
 
+      {/* Per-card History — the full activity log behind the header's
+          History button. Kiosk-native (KioskFormDrawer 'drawer' variant)
+          rather than the phone's ChoreHistorySheet, but reading the exact
+          same fetchActivityLog('chore', id) rows with the same verb/field
+          formatting; see that component's header for the full reasoning. */}
+      <KioskChoreHistorySheet
+        choreId={historyTarget?.id ?? null}
+        choreTitle={historyTarget?.title}
+        members={members}
+        k={k}
+        onClose={() => setHistoryTarget(null)}
+      />
+
+      {/* "Can't do this" reason picker — the same one-step kiosk dialog the
+          Overview's My-Chores widget uses, so the two surfaces can't offer
+          different decline vocabularies for the same chore. */}
+      {declineTarget && (
+        <KioskCantDoThisDialog
+          visible
+          choreId={declineTarget.id}
+          choreTitle={declineTarget.title}
+          byMemberId={active.id}
+          k={k}
+          onClose={() => setDeclineTarget(null)}
+        />
+      )}
+
       {isParent && (
         <KioskQuestEditor
           quest={editingQuest}
@@ -1238,10 +1665,69 @@ const s = StyleSheet.create({
   // stretching a whole narrow column — live-reported: a single card sat
   // in a huge empty column with nothing else to fill the space.
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.lg, alignContent: 'flex-start' },
+  // The always-visible header is two rows now — title line, then the
+  // status/overdue/reward/history badge row. See renderQuestCard's own note
+  // for why the badges are their own row rather than beside the title.
+  cardHeader: { gap: KIOSK_SPACE.xs },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  // Outlined rather than filled: several of these can appear at once
+  // (status + overdue + reward pending), and three solid color blocks in a
+  // row overwhelm the title they're meant to annotate. The accent lives in
+  // the border and the label, on the neutral `well` ground, which reads the
+  // same way in both appearances.
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 3,
+    flexShrink: 1,
+  },
+  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.3, flexShrink: 1 },
+  // A real bordered control, not a bare icon — this sits inside the card's
+  // own header Pressable, so it needs to read as a separate tappable thing
+  // rather than decoration. hitSlop (at the call site) carries it past the
+  // touch floor without making the chip visually heavy.
+  historyBtn: {
+    width: 30, height: 30, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 'auto',
+  },
   catBadge: { width: 32, height: 32, borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800', lineHeight: KIOSK_TYPO.body * 1.3 },
   cardSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
+  // The chore's own instructions — italic, matching the phone's treatment
+  // of a description as a quoted aside rather than another metadata line.
+  cardDescription: {
+    fontSize: KIOSK_TYPO.caption, fontStyle: 'italic', fontWeight: '600',
+    lineHeight: KIOSK_TYPO.caption * 1.4, marginBottom: KIOSK_SPACE.xs,
+  },
+  cardHelper: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginBottom: KIOSK_SPACE.xs },
+  // Shared shell for the reward-pending and terms-changed notices, so two
+  // amber banners on one card can't drift apart on padding or radius.
+  noticeBanner: {
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, gap: 2,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+    marginBottom: KIOSK_SPACE.xs,
+  },
+  noticeTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  noticeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', lineHeight: KIOSK_TYPO.caption * 1.35 },
+  strike: { textDecorationLine: 'line-through' },
+  teamRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs,
+    marginBottom: KIOSK_SPACE.xs,
+  },
+  teamText: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '700', lineHeight: KIOSK_TYPO.caption * 1.35 },
+  waitingText: {
+    fontSize: KIOSK_TYPO.caption, fontStyle: 'italic', fontWeight: '600',
+    textAlign: 'center', paddingVertical: KIOSK_SPACE.sm,
+  },
+  // Two-up action row. The phone weights these 2:1 (its flex:2 / flex:1) so
+  // the affirmative action clearly leads and the secondary one reads as the
+  // exception — same ratio here. flexWrap so a long primary label ("Take
+  // Photo to Get Paid") drops the secondary button to its own line in a
+  // narrow lane rather than crushing both.
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  actionPrimary: { flexGrow: 2, flexBasis: 140, minWidth: 0 },
+  actionSecondary: { flexGrow: 1, flexBasis: 100, minWidth: 0 },
   reasonBanner: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.xs },
   reasonText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
@@ -1259,9 +1745,8 @@ const s = StyleSheet.create({
   assigneeChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   dueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dueText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  // ActionButton owns this control's chrome (fill, radius, hit height);
-  // the tab only says how it sits in the card.
-  cardActionBtn: { alignSelf: 'stretch' },
+  // (cardActionBtn's full-width single button was replaced by the two-up
+  // actionRow above, which the phone card's own branches all use.)
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   // maxWidth so a fixed-width card can never exceed a narrow portrait
   // pane and clip — same guard applied to every fixed-width card in kiosk.

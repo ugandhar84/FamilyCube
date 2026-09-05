@@ -23,7 +23,6 @@ import { Image as ImageIcon, Heart, Trash2, Camera, ImagePlus, X, Download, Laye
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 import { todayLocal, fmtDateShort } from '@/lib/dates';
-import { supabase, uploadFamilyMemoryPhoto, uploadFamilyMemoryVideo } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { MediaViewer, AutoplayVideo } from '@/components/MediaComponents';
@@ -33,6 +32,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import { EmptyState } from './shared';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useFamilyMemories, canDeleteMemory, type Memory as FamilyMemory } from './useFamilyMemories';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // Fixed cap instead of PostMedia's dynamic source-ratio sizing — a tall
@@ -139,15 +139,10 @@ const MemoryMedia = forwardRef<MemoryMediaHandle, {
   );
 });
 
-interface Memory {
-  id: string; family_id: string; title: string; description: string | null;
-  date: string; photo_url: string | null; photo_urls: string[] | null;
-  caption_overlay: boolean;
-  hearts: number; hearted_by: string[]; created_by: string | null;
-  tagged_member_ids?: string[]; tag?: string | null;
-  media_types?: string[] | null;
-  created_at?: string | null;
-}
+// The row shape (and every query/mutation over it) now lives in the shared
+// useFamilyMemories hook — see that file's header for why it was lifted
+// out of this component.
+type Memory = FamilyMemory;
 
 // ─── Compose sheet — pick up to 2 photos + a caption ───────────────────────────
 
@@ -563,13 +558,10 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
   const [activeSlide, setActiveSlide] = useState(0);
   const mediaRef = useRef<MemoryMediaHandle>(null);
   const hearted = mem.hearted_by?.includes(myId);
-  // Was unconditional — any family member (kid/teen/senior included) could
-  // delete anyone else's posted memory, no matter who posted it (live-
-  // flagged: "if one pasted the memories should other can have delete
-  // option?"). Only the poster or a parent can delete — same rule now
-  // enforced server-side too (family_memories_delete RLS policy).
-  const myRole = allMembers.find(m => m.id === myId)?.role;
-  const canDelete = mem.created_by === myId || myRole === 'parent';
+  // Poster-or-parent only — the identical rule, now shared with the kiosk
+  // card via canDeleteMemory so the two cannot drift. See that helper's own
+  // note for the bug it fixed.
+  const canDelete = canDeleteMemory(mem, myId, allMembers);
   const heartColor = hearted ? colors.danger : colors.textSecondary;
   // Each card picks up the poster's own role color instead of one flat
   // accent tint for every post — parent posts read sage, kid posts read
@@ -797,14 +789,18 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
   // screen can call it from its own scroll handler.
   onLoadMoreReady?: (fn: () => void) => void;
 }) {
-  const { members, activeMemberId } = useFamilyStore();
-  const familyId = (members[0] as any)?.familyId ?? 'family-1';
-  const myId = activeMemberId ?? members[0]?.id ?? '';
+  const { members } = useFamilyStore();
+  // Every piece of family_memories data and mutation this tab used to own
+  // inline now lives in useFamilyMemories, so the kiosk's own 2-column
+  // feed drives the SAME query, realtime subscription, pagination cursor,
+  // heart/post/delete and notification side effects rather than a fork of
+  // them. This component's rendering is unchanged — it still owns its own
+  // composer-open flag, its MediaViewer state, and MemoryPostCard.
+  const {
+    memories, loading, loadingMore, myId, loadMore,
+    postMemory, heartMemory, deleteMemory,
+  } = useFamilyMemories({ focusMemoryId });
 
-  const [memories, setMemories] = useState<Memory[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore]   = useState(true);
   const [showModal, setShowModal] = useState(false);
 
   // Shared FAB's Memories-tab "+" face (app/(tabs)/_layout.tsx) fires this
@@ -825,190 +821,10 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
     }
   }, []));
 
-  // Real keyset pagination, not a single ever-growing fixed-size fetch
-  // (was `.limit(200)` unconditionally on every screen visit — every memory
-  // ever posted loaded at once, no "load more" affordance at all;
-  // live-flagged: "see if we are only fetching few for the pagination like
-  // a [social app] feeds page"). created_at is the cursor (paired with id
-  // as a tiebreak for same-millisecond inserts) rather than `date`, which
-  // is day-granularity and ties for every post made the same day.
-  const PAGE_SIZE = 12;
-  const cursorRef = useRef<{ created_at: string; id: string } | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    cursorRef.current = null;
-    const { data, error } = await supabase.from('family_memories')
-      .select('*').eq('family_id', familyId)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(PAGE_SIZE);
-    if (error) console.error('[MemoriesTab] load failed:', error.message, error);
-    if (data) {
-      setMemories(data as Memory[]);
-      setHasMore(data.length === PAGE_SIZE);
-      const last = data[data.length - 1] as Memory | undefined;
-      cursorRef.current = last ? { created_at: last.created_at!, id: last.id } : null;
-    }
-    setLoading(false);
-  }, [familyId]);
-
-  const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || !cursorRef.current) return;
-    setLoadingMore(true);
-    // Keyset pagination via (created_at, id) composite cursor — a plain
-    // .lt('created_at', cursor) alone would silently skip/duplicate rows
-    // that share the cursor row's exact created_at timestamp; the OR
-    // clause below also catches those via the id tiebreak.
-    const { created_at, id } = cursorRef.current;
-    const { data, error } = await supabase.from('family_memories')
-      .select('*').eq('family_id', familyId)
-      .or(`created_at.lt.${created_at},and(created_at.eq.${created_at},id.lt.${id})`)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(PAGE_SIZE);
-    if (error) { console.error('[MemoriesTab] loadMore failed:', error.message, error); setLoadingMore(false); return; }
-    if (data?.length) {
-      setMemories(prev => {
-        const seen = new Set(prev.map(m => m.id));
-        return [...prev, ...(data as Memory[]).filter(m => !seen.has(m.id))];
-      });
-      const last = data[data.length - 1] as Memory;
-      cursorRef.current = { created_at: last.created_at!, id: last.id };
-    }
-    setHasMore((data?.length ?? 0) === PAGE_SIZE);
-    setLoadingMore(false);
-  }, [familyId, hasMore, loadingMore]);
-
-  useEffect(() => { load(); }, [load]);
+  // The screen owns the ScrollView, so it's the one that can detect "user
+  // scrolled near the bottom" — hand the hook's loadMore up to it, exactly
+  // as before the extraction.
   useEffect(() => { onLoadMoreReady?.(loadMore); }, [onLoadMoreReady, loadMore]);
-
-  // A memory_posted/memory_liked push can deep-link to a memory older than
-  // the first page — fetch it directly and splice it in so the auto-scroll
-  // target (MemoriesScreen's focusMemoryId) always actually exists on
-  // screen instead of silently doing nothing for anything not on page 1.
-  useEffect(() => {
-    if (!focusMemoryId || loading) return;
-    if (memories.some(m => m.id === focusMemoryId)) return;
-    supabase.from('family_memories').select('*').eq('id', focusMemoryId).maybeSingle()
-      .then(({ data }) => {
-        if (data) setMemories(prev => prev.some(m => m.id === data.id) ? prev : [...prev, data as Memory]);
-      });
-  }, [focusMemoryId, loading, memories]);
-
-  // Realtime — new/edited/removed memories from other family members show
-  // up live instead of only appearing after a manual reload. Same
-  // channel/cleanup pattern as choreStore.ts's ensureRealtime (stale-topic
-  // sweep guards against a hot-reload leaving a duplicate subscription).
-  useEffect(() => {
-    if (!familyId) return;
-    const topic = `family_memories:${familyId}`;
-    const stale = supabase.getChannels().filter(c => c.topic === `realtime:${topic}`);
-    stale.forEach(c => supabase.removeChannel(c));
-    const channel = supabase.channel(topic)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_memories', filter: `family_id=eq.${familyId}` },
-        ({ eventType, new: newRow, old: oldRow }) => {
-          if (eventType === 'INSERT') {
-            const row = newRow as Memory;
-            setMemories(prev => prev.some(m => m.id === row.id) ? prev : [row, ...prev]);
-          } else if (eventType === 'UPDATE') {
-            const row = newRow as Memory;
-            setMemories(prev => prev.map(m => m.id === row.id ? row : m));
-          } else if (eventType === 'DELETE') {
-            const row = oldRow as { id: string };
-            setMemories(prev => prev.filter(m => m.id !== row.id));
-          }
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [familyId]);
-
-  const postMemory = async (media: { uri: string; type: 'photo' | 'video' }[], caption: string, captionOverlay: boolean, taggedMemberIds: string[], tag: string | null) => {
-    // Mixed photo/video upload — each slot routes to its own upload
-    // function (uploadFamilyMemoryVideo compresses via react-native-
-    // compressor; uploadFamilyMemoryPhoto compresses via compressImage) but
-    // both land in the same signed-URL shape, so photo_urls/media_types
-    // stay simple parallel arrays regardless of what's in each slot.
-    const urls = await Promise.all(media.map((m, i) =>
-      m.type === 'video'
-        ? uploadFamilyMemoryVideo(familyId, m.uri, media.length > 1 ? i : undefined)
-        : uploadFamilyMemoryPhoto(familyId, m.uri, media.length > 1 ? i : undefined)
-    ));
-    const mediaTypes = media.map(m => m.type);
-    // No title field in the photo-first compose flow — `title` is NOT NULL
-    // at the DB level, so fall back to something reasonable when there's no
-    // caption to reuse. `description` is the actual caption text.
-    const { data, error } = await supabase.from('family_memories').insert({
-      family_id: familyId, created_by: myId,
-      title: caption || 'Family memory', description: caption || null,
-      date: todayLocal(),
-      photo_url: urls[0], photo_urls: urls.length > 1 ? urls : null,
-      media_types: mediaTypes,
-      caption_overlay: captionOverlay,
-      tagged_member_ids: taggedMemberIds, tag,
-      hearts: 0, hearted_by: [],
-    }).select().single();
-    // Previously this discarded `error` and just checked `if (data)` — an
-    // RLS-denied insert returns data:null with no thrown exception, so the
-    // compose sheet closed as if it had succeeded while nothing was ever
-    // saved. Throw so the caller's catch block surfaces the real cause.
-    if (error) {
-      console.error('[MemoriesTab] postMemory insert failed:', error.message, error);
-      throw new Error(error.message);
-    }
-    if (data) setMemories(prev => [data as Memory, ...prev]);
-
-    const posterName = members.find(m => m.id === myId)?.name ?? 'Someone';
-    const recipientIds = members.filter(m => m.id !== myId).map(m => m.id);
-    if (recipientIds.length) {
-      supabase.functions.invoke('family-notifier', {
-        body: {
-          type: 'memory_posted', familyId, memberIds: recipientIds,
-          payload: { posterName, caption: caption || undefined, memoryId: data?.id },
-          persist: true, excludeMemberId: myId,
-        },
-      }).catch(e => console.warn('[MemoriesTab] postMemory notify failed:', e?.message));
-    }
-  };
-
-  const heartMemory = async (mem: Memory) => {
-    const alreadyHearted = mem.hearted_by?.includes(myId);
-    const newHearts = alreadyHearted ? mem.hearts - 1 : mem.hearts + 1;
-    const newHearted = alreadyHearted
-      ? mem.hearted_by.filter(id => id !== myId)
-      : [...(mem.hearted_by ?? []), myId];
-    const { error } = await supabase.from('family_memories')
-      .update({ hearts: newHearts, hearted_by: newHearted }).eq('id', mem.id);
-    if (!error) {
-      setMemories(prev => prev.map(m =>
-        m.id === mem.id ? { ...m, hearts: newHearts, hearted_by: newHearted } : m
-      ));
-
-      // Only the like transition notifies (not unliking), and only the
-      // memory's own poster — not a broadcast to everyone else, unlike
-      // postMemory above.
-      if (!alreadyHearted && mem.created_by && mem.created_by !== myId) {
-        const likerName = members.find(m => m.id === myId)?.name ?? 'Someone';
-        supabase.functions.invoke('family-notifier', {
-          body: {
-            type: 'memory_liked', familyId, memberIds: [mem.created_by],
-            payload: { likerName, caption: mem.description || undefined, memoryId: mem.id },
-            persist: true, excludeMemberId: myId,
-          },
-        }).catch(e => console.warn('[MemoriesTab] heartMemory notify failed:', e?.message));
-      }
-    }
-  };
-
-  const deleteMemory = (id: string) => {
-    Alert.alert('Remove memory', 'Delete this post? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        await supabase.from('family_memories').delete().eq('id', id);
-        setMemories(prev => prev.filter(m => m.id !== id));
-      }},
-    ]);
-  };
 
   const [viewer, setViewer] = useState<{ urls: string[]; types: ('photo' | 'video')[]; index: number } | null>(null);
   const [saving, setSaving] = useState(false);

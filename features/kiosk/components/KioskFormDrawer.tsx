@@ -304,7 +304,19 @@ export function KioskPill({
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      // Live-reported on Android: tapping a pill while a TextInput
+      // elsewhere in the form was focused took two touches — the first
+      // just dismissed the keyboard, the second actually selected the
+      // pill. onPress fires on touch-UP, and on Android the same touch
+      // that blurs a focused input can get consumed by that blur/keyboard-
+      // dismiss handling before the press-release sequence completes,
+      // regardless of keyboardShouldPersistTaps (which only controls
+      // whether the surrounding ScrollView swallows the touch, not
+      // whether TextInput's own blur race eats it). onPressIn fires on
+      // touch-DOWN instead, before that race can happen, so the very
+      // touch that dismisses the keyboard is the same one that selects
+      // the pill.
+      onPressIn={onPress}
       style={({ pressed }) => [
         s.pill,
         {

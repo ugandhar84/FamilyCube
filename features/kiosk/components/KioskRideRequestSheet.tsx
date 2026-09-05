@@ -355,7 +355,11 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                 <KioskFieldLabel k={k}>WHEN?</KioskFieldLabel>
                 <View style={s.row}>
                   <Pressable
-                    onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
+                    // onPressIn, not onPress: this sits right below a
+                    // TextInput on the same screen — see KioskPill's own
+                    // comment in KioskFormDrawer.tsx for why a same-screen
+                    // TextInput blur can eat an onPress here on Android.
+                    onPressIn={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
                     style={[s.dateBtn, {
                       flex: 3,
                       backgroundColor: showDatePick ? accent + '1A' : k.well,
@@ -371,7 +375,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                     </Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
+                    onPressIn={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
                     style={[s.dateBtn, {
                       flex: 2,
                       backgroundColor: showTimePick ? accent + '1A' : k.well,
@@ -451,7 +455,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                 <Pressable
                   key={opt.key}
                   disabled={submitting}
-                  onPress={() => pickRide(opt.key)}
+                  onPressIn={() => pickRide(opt.key)}
                   style={({ pressed }) => [
                     s.rideCard,
                     {
@@ -494,7 +498,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                   <KioskFieldLabel k={k}>WHICH DAY?</KioskFieldLabel>
                   <View style={s.row}>
                     <Pressable
-                      onPress={() => setPickupDate(null)}
+                      onPressIn={() => setPickupDate(null)}
                       style={[s.dayBtn, {
                         backgroundColor: !pickupDate ? accent + '1A' : k.well,
                         borderColor: !pickupDate ? accent : k.cardBorder,
@@ -507,7 +511,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                       <Text style={[s.dayText, { color: k.text }]} numberOfLines={1}>Same day</Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => { if (!pickupDate) setPickupDate(eventDate); setShowPickupDatePick(true); }}
+                      onPressIn={() => { if (!pickupDate) setPickupDate(eventDate); setShowPickupDatePick(true); }}
                       style={[s.dayBtn, {
                         backgroundColor: pickupDate ? accent + '1A' : k.well,
                         borderColor: pickupDate ? accent : k.cardBorder,
@@ -542,7 +546,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
               <View style={s.section}>
                 <KioskFieldLabel k={k}>PICKUP TIME</KioskFieldLabel>
                 <Pressable
-                  onPress={() => setShowPickupTimePick(true)}
+                  onPressIn={() => setShowPickupTimePick(true)}
                   style={[s.dateBtn, { backgroundColor: accent + '1A', borderColor: accent, alignSelf: 'flex-start', paddingHorizontal: KIOSK_SPACE.xl }]}
                   accessibilityRole="button"
                   accessibilityLabel={pickupTime ? `Pickup at ${fmtTimeDisplay(pickupTime)}` : 'Set pickup time'}

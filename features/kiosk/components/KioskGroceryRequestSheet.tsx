@@ -251,7 +251,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
         <View style={s.sectionHead}>
           <KioskFieldLabel k={k}>ITEMS LIST</KioskFieldLabel>
           <Pressable
-            onPress={addLine}
+            onPressIn={addLine}
             style={({ pressed }) => [s.addBtn, { backgroundColor: pressed ? k.cardHover : accent + '1F', borderColor: accent + '3D' }]}
             accessibilityRole="button"
             accessibilityLabel="Add item"
@@ -264,7 +264,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
 
         {lines.length === 0 ? (
           <Pressable
-            onPress={addLine}
+            onPressIn={addLine}
             style={[s.empty, { borderColor: accent + '55' }]}
             accessibilityRole="button"
             accessibilityLabel="Tap to add grocery items"
@@ -296,7 +296,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
                   accessibilityLabel={`Item ${idx + 1} quantity`}
                 />
                 <Pressable
-                  onPress={() => removeLine(idx)}
+                  onPressIn={() => removeLine(idx)}
                   hitSlop={10}
                   style={[s.removeBtn, { borderColor: k.cardBorder }]}
                   accessibilityRole="button"

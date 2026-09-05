@@ -168,7 +168,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
             return (
               <Pressable
                 key={u}
-                onPress={() => setUrgency(u)}
+                onPressIn={() => setUrgency(u)}
                 style={({ pressed }) => [
                   s.urgBtn,
                   {
@@ -194,7 +194,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
         <View style={s.sectionHead}>
           <KioskFieldLabel k={k}>ITEMS NEEDED</KioskFieldLabel>
           <Pressable
-            onPress={addRow}
+            onPressIn={addRow}
             style={({ pressed }) => [s.addBtn, { backgroundColor: pressed ? k.cardHover : accent + '1F', borderColor: accent + '3D' }]}
             accessibilityRole="button"
             accessibilityLabel="Add another item"
@@ -231,7 +231,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
                 />
                 {items.length > 1 && (
                   <Pressable
-                    onPress={() => removeRow(idx)}
+                    onPressIn={() => removeRow(idx)}
                     hitSlop={10}
                     style={[s.removeBtn, { borderColor: k.cardBorder }]}
                     accessibilityRole="button"

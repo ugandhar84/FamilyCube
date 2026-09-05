@@ -877,7 +877,15 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           </View>
         )}
 
-        <View style={{ padding: 12 }}>
+        {/* Live-reported follow-up: "padding to the grid should be same to
+            the frame" — this section used a flat padding:12 while the
+            page's own title row above (s.header) uses paddingHorizontal:
+            16, so the perks grid sat narrower than the rest of the
+            screen's content instead of lining up with it. Matched to 16
+            (vertical padding kept at its own value via paddingVertical
+            instead of the removed padding:12 shorthand, since nothing
+            here needed that value tied to horizontal). */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
           {/* This row (AI Perks/Add Perk) and everything below it is the
               actual perks catalog — previously had no heading at all, so
               the buttons floated with no context for what section they

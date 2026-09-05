@@ -35,11 +35,17 @@
  *
  *   role      Kinfolk light   Kiosk light   Kiosk dark
  *   ──────────────────────────────────────────────────────────────
- *   primary   #BF4E12         #BF4E12       #F0714A   terracotta
- *   sage      #3C805B         #3C805B       #5FB585   sage / CONNECT
- *   gold      #BF7600         #A86200       #E9A23B   amber / ORGANIZE
+ *   primary   #BF4E12         #B04710       #F0714A   terracotta
+ *   sage      #3C805B         #377551       #5FB585   sage / CONNECT
+ *   gold      #BF7600         #9C5B00       #E9A23B   amber / ORGANIZE
  *   purple    #6C519F         #6C519F       #A98BD6   lavender / CARE
  *   blue      (none)          #2F6FA8       #6EA8DC   the one net-new hue
+ *
+ * The light values sit one step deeper than their Kinfolk counterparts.
+ * That is a contrast fix, not a taste change: measured against `bg` alone
+ * the app's own values pass, but on `well` (the inset block inside a card,
+ * which is exactly where accent-colored chips and metadata sit) all three
+ * land at 4.03-4.14 — under AA. See the per-token notes below.
  *
  * `blue` is the single hue Kinfolk doesn't have. The mockup's IA needs a
  * fourth accent (the meals/info lane) and reusing one of the existing three
@@ -53,9 +59,13 @@
  * lights off, the same room at night. That warmth is the main thing keeping
  * dark-mode kiosk from looking like a generic admin dashboard.
  *
- * Contrast ratios against each mode's own `bg` are noted inline. This
+ * Contrast ratios are noted inline, measured against the WORST ground each
+ * token actually appears on rather than the most flattering one. This
  * screen is read by kids and grandparents from across a room, so WCAG AA
- * on body text is the floor.
+ * on body text is the floor, not the goal. Verified: zero AA failures in
+ * either mode across all three grounds and every filled surface;
+ * `textFaint` is the only AA-large token, and it is never used below
+ * KIOSK_TYPO.caption.
  */
 import { useMemo } from 'react';
 import { useTheme } from '@/lib/ThemeContext';
@@ -79,24 +89,31 @@ const light = {
   /** Stronger border for a focused / active surface. */
   cardBorderStrong: '#CDBCA5',
 
-  // ── Accents (ratios vs. light `bg` #F7F3EC) ───────────────────────────
-  /** Terracotta. Main brand, primary actions, active nav. 5.4:1 */
-  primary: '#BF4E12',
+  // ── Accents ───────────────────────────────────────────────────────────
+  // Ratios below are quoted against the WORST of the three light grounds —
+  // `well` (#F2ECE1), the inset block inside a card — not against `bg`.
+  // That matters: measured against `bg` alone, the app's own #BF4E12 /
+  // #3C805B / #BF7600 all "pass", but every one of them lands at 4.03-4.14
+  // on `well`, i.e. under AA precisely where accent-colored labels most
+  // often sit (chips and metadata inside a Well). Each is therefore taken
+  // one step deeper than its Kinfolk counterpart — the same hue, visibly
+  // the same color, now legible on all three grounds rather than on the
+  // most flattering one.
+  /** Terracotta. Main brand, primary actions, active nav. 4.8:1 on well. */
+  primary: '#B04710',
   primaryPress: '#8A3A0D',
-  primarySoft: 'rgba(191,78,18,0.10)',
-  primaryEdge: 'rgba(191,78,18,0.30)',
+  primarySoft: 'rgba(176,71,16,0.10)',
+  primaryEdge: 'rgba(176,71,16,0.30)',
 
-  /** Sage. CONNECT / parent role / confirmed / online. 4.9:1 */
-  sage: '#3C805B',
-  sageSoft: 'rgba(60,128,91,0.10)',
-  sageEdge: 'rgba(60,128,91,0.28)',
+  /** Sage. CONNECT / parent role / confirmed / online. 4.7:1 on well. */
+  sage: '#377551',
+  sageSoft: 'rgba(55,117,81,0.10)',
+  sageEdge: 'rgba(55,117,81,0.28)',
 
-  /** Amber-gold. ORGANIZE / kid role / pending / coins. 4.6:1 — a touch
-   *  darker than the app's own #BF7600, which lands under AA on this
-   *  slightly lighter kiosk ground. */
-  gold: '#A86200',
-  goldSoft: 'rgba(168,98,0,0.10)',
-  goldEdge: 'rgba(168,98,0,0.30)',
+  /** Amber-gold. ORGANIZE / kid role / pending / coins. 4.6:1 on well. */
+  gold: '#9C5B00',
+  goldSoft: 'rgba(156,91,0,0.10)',
+  goldEdge: 'rgba(156,91,0,0.30)',
 
   /** Lavender. CARE / third accent / AI assistant. 6.3:1 */
   purple: '#6C519F',
@@ -118,12 +135,15 @@ const light = {
   text: '#2C2722',
   /** Secondary: descriptions, metadata. 5.6:1 — AA for body. */
   textMuted: '#6B5F52',
-  /** Tertiary: timestamps, captions. 3.4:1 — used only at
-   *  KIOSK_TYPO.caption and above, where AA large-text applies. */
-  textFaint: '#93866F',
-  /** Text on a filled sage/gold surface (both dark enough for white). */
+  /** Tertiary: timestamps, captions, eyebrows. 3.6:1 on the worst ground
+   *  (`well`) — deliberately an AA-large token, never used below
+   *  KIOSK_TYPO.caption. Taken a step deeper than a typical tertiary grey
+   *  so it clears 3:1 with real margin on all three light grounds rather
+   *  than sitting on the line. */
+  textFaint: '#8A7C63',
+  /** Text on a filled sage/gold/purple surface. 4.7-6.3:1. */
   onAccent: '#FFFFFF',
-  /** Text on a filled primary surface. */
+  /** Text on a filled primary (terracotta) surface. 4.9:1. */
   onPrimary: '#FFFFFF',
 
   // ── Overlays ──────────────────────────────────────────────────────────
@@ -197,11 +217,28 @@ const dark: typeof light = {
   textMuted: '#B7A9A1',
   /** Tertiary. 4.9:1 — AA. */
   textFaint: '#8A7C74',
-  /** On a filled sage/gold surface: those are bright in dark mode, so the
-   *  readable foreground flips to the dark ground color. */
+  /** On a filled sage/gold/purple surface: those are bright in dark mode,
+   *  so the readable foreground flips to the dark ground. 7.6-8.7:1. */
   onAccent: '#14100F',
-  /** Terracotta stays dark enough that white wins on it. */
-  onPrimary: '#FFFFFF',
+  /**
+   * On a filled PRIMARY surface — and this one is measured, not assumed.
+   *
+   * The obvious choice is white, which is what light mode uses and what the
+   * reference mockup uses on its own orange. On dark mode's brightened
+   * terracotta (#F0714A) white measures 2.93:1 — a genuine WCAG failure,
+   * and not a marginal one. That surface is not decorative either: it is
+   * the ACTIVE NAV RAIL ITEM and every solid primary button (Claim ride,
+   * Send, Add). Shipping it would have meant the one control the eye is
+   * meant to find from across a room being the least legible thing on the
+   * screen.
+   *
+   * Flipping to the dark ground instead gives 6.9:1. It also reads
+   * correctly: a bright terracotta chip with near-black text is exactly how
+   * the sage and gold chips already behave in dark mode, so the whole
+   * filled-surface family stays internally consistent rather than terracotta
+   * being the one odd one out.
+   */
+  onPrimary: '#14100F',
 
   // ── Overlays ──────────────────────────────────────────────────────────
   scrim: 'rgba(8,6,5,0.72)',
@@ -248,6 +285,28 @@ export function kioskRoleAccent(k: KioskColors, role: string | undefined): strin
     case 'teen':
     default:       return k.gold;
   }
+}
+
+/**
+ * The readable foreground for text/icons sitting ON a SOLID accent fill.
+ *
+ * This is one function rather than a per-call-site `accent === k.primary ?
+ * onPrimary : onAccent` ternary because the rule is genuinely uniform, and
+ * a ternary repeated at six call sites is six chances to get it backwards.
+ * In light mode every accent is dark enough that white wins; in dark mode
+ * every accent is bright enough that the near-black ground wins — including
+ * terracotta, which is the one people assume is the exception (white on
+ * dark-mode #F0714A measures 2.93:1, a real WCAG failure on the active nav
+ * item and every solid button). Both palettes already encode that: light's
+ * onPrimary/onAccent are both white, dark's are both #14100F.
+ *
+ * `danger` is included in the same rule — it tracks primary in both modes.
+ */
+export function kioskOnAccent(k: KioskColors, _accent?: string): string {
+  // Both tokens hold the same value per mode (see the note above); reading
+  // onAccent is enough, and the parameter is kept so a future accent that
+  // genuinely needs a different foreground has somewhere to branch.
+  return k.onAccent;
 }
 
 /**

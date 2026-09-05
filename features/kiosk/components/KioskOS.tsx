@@ -28,7 +28,7 @@ import type { ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle, type TextStyle } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT, kioskElevation } from '../kioskTheme';
-import { kioskTint, type KioskColors } from '../kioskPalette';
+import { kioskTint, kioskOnAccent, type KioskColors } from '../kioskPalette';
 
 /**
  * The base tile. `accent` optionally tints the whole surface toward a hue
@@ -169,7 +169,7 @@ export function Chip({
       ]}
     >
       <Text
-        style={[s.chipText, { color: filled ? (accent === k.primary ? k.onPrimary : k.onAccent) : accent }]}
+        style={[s.chipText, { color: filled ? kioskOnAccent(k, accent) : accent }]}
         numberOfLines={1}
       >
         {label}
@@ -200,7 +200,7 @@ export function ActionButton({
 }) {
   const solid = variant === 'solid';
   const tint = kioskTint(accent, isDark);
-  const fg = solid ? (accent === k.primary ? k.onPrimary : k.onAccent) : accent;
+  const fg = solid ? kioskOnAccent(k, accent) : accent;
   return (
     <Pressable
       onPress={onPress}

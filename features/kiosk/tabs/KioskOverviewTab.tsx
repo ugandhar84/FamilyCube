@@ -50,7 +50,7 @@ import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { useKioskColors, kioskRoleAccent, type KioskColors } from '../kioskPalette';
+import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
@@ -397,7 +397,7 @@ function QuickAction({
       <Text style={[s.quickLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
       {badge !== undefined && (
         <View style={[s.quickBadge, { backgroundColor: accent }]}>
-          <Text style={[s.quickBadgeText, { color: accent === k.primary ? k.onPrimary : k.onAccent }]} numberOfLines={1}>
+          <Text style={[s.quickBadgeText, { color: kioskOnAccent(k, accent) }]} numberOfLines={1}>
             {badge > 99 ? '99+' : badge}
           </Text>
         </View>

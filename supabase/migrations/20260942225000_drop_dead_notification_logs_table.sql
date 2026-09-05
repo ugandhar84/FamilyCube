@@ -1,0 +1,13 @@
+-- notification_logs is confirmed dead — zero real writers app-wide. The
+-- live notification pipeline (family-notifier edge function, notifStore.ts)
+-- writes to and reads from `notifications` instead; this was already
+-- independently documented as dead by earlier comments in
+-- lib/locationTracking.ts, supabase/functions/call-reminder-sweeper, and
+-- store/notifStore.ts before this migration, and reconfirmed here via a
+-- repo-wide search for any actual select/insert/update against it (none
+-- found — only comments referencing its history). Dropping it and its
+-- now-pointless notification_logs_type_check constraint (which was about
+-- to be extended for the Family Games feature before this was noticed —
+-- new game notification types instead go straight to `notifications`,
+-- which has no type CHECK constraint of its own to extend).
+drop table if exists public.notification_logs;

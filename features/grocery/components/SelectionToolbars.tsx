@@ -3,10 +3,15 @@ import { GroceryItem } from '@/store/groceryStore';
 
 // ─── Return mode toolbar ────────────────────────────────────────────────────
 
-export function ReturnModeToolbar({ returnMode, returnIds, members, colors, handleCreateReturn }: {
+export function ReturnModeToolbar({ returnMode, returnIds, colors, onOpenAssigneePicker }: {
   returnMode: boolean; returnIds: Set<string>;
-  members: any[]; colors: any;
-  handleCreateReturn: (assigneeId: string) => void;
+  colors: any;
+  // Live-requested: "instead popup show the bottomsheet with picker one
+  // selection allowed" — this toolbar now just opens
+  // GroceryScreen's AssigneePickerSheet instead of building an
+  // Alert.alert itself (that sheet also owns the kid-filtering fix: "kids
+  // shouldn't be showing there while selecting the person").
+  onOpenAssigneePicker: () => void;
 }) {
   if (!returnMode || returnIds.size === 0) return null;
   return (
@@ -18,16 +23,8 @@ export function ReturnModeToolbar({ returnMode, returnIds, members, colors, hand
       <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: colors.textInverse }}>
         {returnIds.size} item{returnIds.size !== 1 ? 's' : ''} to return
       </Text>
-      <Pressable onPress={() => {
-        Alert.alert(
-          '↩️ Assign Return To',
-          'Who will take these items back to the store?',
-          [
-            ...members.map(m => ({ text: m.name, onPress: () => handleCreateReturn(m.id) })),
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-      }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: colors.warning }}>
+      <Pressable onPress={onOpenAssigneePicker}
+        style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: colors.warning }}>
         <Text style={{ color: colors.textInverse, fontSize: 13, fontWeight: '700' }}>↩️ Create Chore</Text>
       </Pressable>
     </View>

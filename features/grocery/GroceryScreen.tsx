@@ -43,6 +43,7 @@ import { KidRequestsSection } from './components/KidRequestsSection';
 import { GroceryItemsSection } from './components/GroceryItemsSection';
 import { RecentlyBoughtSection } from './components/RecentlyBoughtSection';
 import { ReturnModeToolbar, BulkSelectToolbar } from './components/SelectionToolbars';
+import AssigneePickerSheet from './components/AssigneePickerSheet';
 import { RunsTabBody } from './components/RunsTabBody';
 import { mapBoughtRow } from './components/types';
 import { s } from './components/styles';
@@ -301,6 +302,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   // ── Return mode (multi-select on bought items) ────────────────────────────
   const [returnMode, setReturnMode] = useState(false);
   const [returnIds, setReturnIds] = useState<Set<string>>(new Set());
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
 
   const handleCreateReturn = async (assigneeId: string) => {
     const selectedItems = boughtItems.filter(i => returnIds.has(i.id));
@@ -308,6 +310,15 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
     const itemLabel = selectedItems.length === 1
       ? `"${selectedItems[0].name}"`
       : `${selectedItems.length} items`;
+    // Live-requested: "remove coins for grocery hardcoded" — a store
+    // return isn't a gamified chore for anyone, kid included; no assignee
+    // earns coins/xp for it regardless of role. isAdultTask still flips
+    // for a parent/senior assignee (this app's own "no coin economy
+    // applies" concept for adult-assigned chores elsewhere), so the
+    // assignment surfaces correctly as a plain task rather than a
+    // kid-quest-styled reward-bearing card.
+    const assignee = members.find(m => m.id === assigneeId);
+    const isAdultAssignee = assignee?.role === 'parent' || assignee?.role === 'senior';
     const quest = await useQuestStore.getState().addQuest({
       title: `↩️ Return ${itemLabel} to the store`,
       description: selectedItems.map(i => `• ${i.name}${i.quantity ? ' (' + i.quantity + ')' : ''}`).join('\n'),
@@ -316,14 +327,14 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
       isPool: false,
       category: 'Shopping',
       priority: 'medium',
-      coins: 10,
-      xpReward: 5,
+      coins: 0,
+      xpReward: 0,
       isDaily: false,
       recurrence: 'once',
       status: 'todo',
       dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       photoRequired: false,
-      isAdultTask: false,
+      isAdultTask: isAdultAssignee,
     });
     markReturning(Array.from(returnIds), quest.id);
     setReturnIds(new Set());
@@ -558,9 +569,21 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         <ReturnModeToolbar
           returnMode={returnMode}
           returnIds={returnIds}
-          members={members}
           colors={colors}
-          handleCreateReturn={handleCreateReturn}
+          onOpenAssigneePicker={() => setShowAssigneePicker(true)}
+        />
+
+        <AssigneePickerSheet
+          visible={showAssigneePicker}
+          onClose={() => setShowAssigneePicker(false)}
+          title="Assign Return To"
+          subtitle="Who will take these items back to the store?"
+          // Live-requested: "kids shouldn't be showing there while
+          // selecting the person" — returning items to a store is a
+          // driving-capable task (parent/senior/teen), not something a
+          // young kid does.
+          members={members.filter((m: any) => m.role !== 'kid')}
+          onSelect={(memberId) => { setShowAssigneePicker(false); handleCreateReturn(memberId); }}
         />
 
         <BulkSelectToolbar

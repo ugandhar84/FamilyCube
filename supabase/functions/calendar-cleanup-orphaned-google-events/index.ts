@@ -75,7 +75,7 @@ serve(async (req) => {
         // connected points to a real mismatch (case, whitespace, a
         // different row's purpose/provider) worth seeing directly.
         const { data: allGoogle } = await supabase.from('calendar_connections')
-          .select('id, purpose, status, connected_account_email').eq('provider', 'google');
+          .select('id, purpose, status, connected_account_email, external_calendar_id, created_at, last_synced_at').eq('provider', 'google');
         return json({ ok: false, error: `no exact match for ${connectedAccountEmail}`, existingGoogleConnections: allGoogle ?? [] }, 404);
       }
       resolvedConnectionId = match.id;

@@ -23,7 +23,8 @@
  *   Tonight's dinner           Tonight's dinner           family_meals
  *                              (part of the hero panel)   (useKioskMeals)
  *   FindFam GPS Radar          Family radar strip         member_locations
- *   Kept photo frame           — deferred —               (see report)
+ *   Kept photo frame           Kept (photo frame)         family_memories
+ *                              (widget deck)              (useKioskPhotos)
  *   Weather 72°F Sunny         — omitted —                no weather API
  *                                                          exists; a fake
  *                                                          temperature on a
@@ -52,6 +53,7 @@ import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
+import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
 
@@ -189,9 +191,11 @@ export function KioskOverviewTab({
           </View>
         </WidgetCard>
 
-        {/* Tonight's dinner — the mockup's photo frame slot, given to the
-            one piece of information a kitchen display should lead with.
-            (The photo frame itself is deferred; see the report.) */}
+        {/* Tonight's dinner — the mockup's photo-frame slot, given instead
+            to the one piece of information a kitchen display should lead
+            with. The photo frame itself now lives in the widget deck below
+            (KioskMemorySlideshow), so both are on the screen rather than
+            one displacing the other. */}
         <WidgetCard k={k} isDark={isDark} style={s.heroSide}>
           <WidgetHeader
             Icon={ChefHat} eyebrow="Tonight" title="What's for dinner"
@@ -334,6 +338,17 @@ export function KioskOverviewTab({
             accessibilityHint="Open the meals and grocery screen"
           />
         </WidgetCard>
+
+        {/* ── Kept: the photo frame ──
+            The mockup's photo-frame widget, deferred by the prior pass and
+            picked up here. Every frame is a real `family_memories` row via
+            useKioskPhotos — there is no stock image anywhere in this path,
+            and a household with no photos yet gets a clean empty state
+            rather than a stranger's stock family on its kitchen wall.
+            The compact form: shorter frame, no counter chip. It advances
+            on its own without ever reporting that as kiosk activity, so a
+            rotating frame still lets the idle lock fire. */}
+        <KioskMemorySlideshow compact height={200} style={s.widget} />
       </View>
 
       {/* ══ FINDFAM RADAR STRIP ═══════════════════════════════════════ */}

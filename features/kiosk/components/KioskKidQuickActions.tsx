@@ -104,6 +104,27 @@ function withinLast24h(iso?: string | null): boolean {
   return Number.isFinite(t) && Date.now() - t <= 24 * 60 * 60 * 1000;
 }
 
+/** Real, active kid siblings — excludes me, deleted and not-yet-joined members. */
+function kidSiblingsOf(members: FamilyMember[], myId: string): FamilyMember[] {
+  return members.filter(m =>
+    !m.deletedAt && m.inviteStatus !== 'pending' && m.role === 'kid' && m.id !== myId);
+}
+
+/**
+ * Exactly KidView.tsx's siblingCheerable filter — today's sibling wins that
+ * still need a cheer from me, dropping off once cheered. Shared by the Hub
+ * tile's badge count and by KioskKidCheerList's rows, which previously each
+ * carried their own copy of these four predicates.
+ */
+function kidCheerableQuests(quests: any[], siblingKids: FamilyMember[], myId: string) {
+  return quests.filter(q => {
+    if (!['approved', 'done'].includes(q.status) || q.isAdultTask) return false;
+    if (!q.assignedToId || !siblingKids.some(sib => sib.id === q.assignedToId)) return false;
+    if ((q.cheers ?? []).some((c: any) => c.memberId === myId)) return false;
+    return withinLast24h(q.approvedAt ?? q.completedAt);
+  }).slice(0, 5);
+}
+
 // ── The "Your stuff" card — now just the eight Ask-Parent tiles ─────────
 export function KioskKidQuickActions({
   active, members, style,
@@ -235,20 +256,14 @@ export function KioskKidMineTile({ kind, active, members }: {
   // keeps every instance's shape identical.
   const { quests } = useQuestStore();
 
-  const siblingKids = useMemo(
-    () => members.filter(m =>
-      !m.deletedAt && m.inviteStatus !== 'pending' && m.role === 'kid' && m.id !== active.id),
-    [members, active.id],
+  // Shared with KioskKidCheerList (and, through it, the Chores tab's own
+  // Sibling Cheer filter) so the badge count here can never disagree with
+  // the number of rows the sheet actually shows.
+  const siblingKids = useMemo(() => kidSiblingsOf(members, active.id), [members, active.id]);
+  const cheerable = useMemo(
+    () => kidCheerableQuests(quests, siblingKids, active.id),
+    [quests, siblingKids, active.id],
   );
-
-  // Exactly KidView.tsx's siblingCheerable filter — today's sibling wins
-  // that still need a cheer from me, dropping off once cheered.
-  const cheerable = useMemo(() => quests.filter(q => {
-    if (!['approved', 'done'].includes(q.status) || q.isAdultTask) return false;
-    if (!q.assignedToId || !siblingKids.some(sib => sib.id === q.assignedToId)) return false;
-    if ((q.cheers ?? []).some(c => c.memberId === active.id)) return false;
-    return withinLast24h(q.approvedAt ?? q.completedAt);
-  }).slice(0, 5), [quests, siblingKids, active.id]);
 
   const myPendingRequests = useKidRequestStore(
     s => s.requests.filter(r => r.fromMemberId === active.id && r.status === 'pending').length,
@@ -300,7 +315,7 @@ export function KioskKidMineTile({ kind, active, members }: {
       )}
       {open && kind === 'cheer' && (
         <KidCheerSheet
-          active={active} siblingKids={siblingKids} cheerable={cheerable}
+          active={active} members={members}
           k={k} isDark={isDark} onClose={() => setOpen(false)}
         />
       )}
@@ -705,47 +720,76 @@ function StatTile({ label, value, accent, k, Icon }: {
  * Cheered items drop out of the list because the filter that produced them
  * excludes anything already cheered by this member.
  */
-function KidCheerSheet({ active, siblingKids, cheerable, k, isDark, onClose }: {
-  active: FamilyMember; siblingKids: FamilyMember[];
-  cheerable: { id: string; title: string; assignedToId?: string }[];
+function KidCheerSheet({ active, members, k, isDark, onClose }: {
+  active: FamilyMember; members: FamilyMember[];
   k: KioskColors; isDark: boolean; onClose: () => void;
 }) {
-  const { cheerQuest } = useQuestStore();
-  const { registerActivity } = useKioskActivity();
-
   return (
     <KioskSheet
       title="Cheer Squad" subtitle="Their wins" accent={k.sage} Icon={PartyPopper}
       k={k} isDark={isDark} onClose={onClose}
     >
-      {cheerable.length === 0 ? (
-        <EmptyNote text="Nobody's finished anything new to cheer yet. Check back later 🌱" k={k} />
-      ) : (
-        <View style={{ gap: KIOSK_SPACE.sm }}>
-          {cheerable.map(q => {
-            const sib = siblingKids.find(x => x.id === q.assignedToId);
-            const who = sib?.name?.trim().split(' ')[0] ?? 'They';
-            return (
-              <Well key={q.id} k={k} accent={k.sage} style={s.cheerRow}>
-                <Text style={s.lbEmoji} numberOfLines={1}>{sib?.emoji ?? '🧒'}</Text>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[s.cheerTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
-                  <Text style={[s.cheerSub, { color: k.sage }]} numberOfLines={1}>
-                    {who} finished it!
-                  </Text>
-                </View>
-                <ActionButton
-                  label="Cheer" Icon={PartyPopper} accent={k.sage} k={k} isDark={isDark}
-                  variant="solid"
-                  accessibilityHint={`Send ${who} a cheer for ${q.title}`}
-                  onPress={() => { registerActivity(); cheerQuest(q.id, active.id); }}
-                />
-              </Well>
-            );
-          })}
-        </View>
-      )}
+      <KioskKidCheerList active={active} members={members} k={k} isDark={isDark} />
     </KioskSheet>
+  );
+}
+
+/**
+ * The cheer rows themselves, without the sheet around them.
+ *
+ * Split out of KidCheerSheet when the kiosk Chores tab needed the same
+ * thing inline: the phone swaps its whole quest list for SiblingCheerPanel
+ * when the "Sibling Cheer" filter is picked (QuestsScreen.tsx:957), and
+ * kiosk needs that same view embedded in a WidgetCard rather than in a
+ * modal. Building a kiosk-native SiblingCheerPanel would have been a THIRD
+ * copy of the same cheering UI on top of the Hub tile and this sheet, so
+ * the list is the shared piece and each caller supplies its own container.
+ *
+ * The `cheerable` derivation moved in here with it, which also removes the
+ * former prop-drilled duplicate: KioskKidMineTile computed the same filter
+ * separately to show its badge count and passed the result down. It still
+ * needs that count, so the derivation is exported as `kidCheerableQuests`
+ * below and both read the one function.
+ */
+export function KioskKidCheerList({ active, members, k, isDark }: {
+  active: FamilyMember; members: FamilyMember[]; k: KioskColors; isDark: boolean;
+}) {
+  const { quests, cheerQuest } = useQuestStore();
+  const { registerActivity } = useKioskActivity();
+  const siblingKids = useMemo(() => kidSiblingsOf(members, active.id), [members, active.id]);
+  const cheerable = useMemo(
+    () => kidCheerableQuests(quests, siblingKids, active.id),
+    [quests, siblingKids, active.id],
+  );
+
+  if (cheerable.length === 0) {
+    return <EmptyNote text="Nobody's finished anything new to cheer yet. Check back later 🌱" k={k} />;
+  }
+
+  return (
+    <View style={{ gap: KIOSK_SPACE.sm }}>
+      {cheerable.map(q => {
+        const sib = siblingKids.find(x => x.id === q.assignedToId);
+        const who = sib?.name?.trim().split(' ')[0] ?? 'They';
+        return (
+          <Well key={q.id} k={k} accent={k.sage} style={s.cheerRow}>
+            <Text style={s.lbEmoji} numberOfLines={1}>{sib?.emoji ?? '🧒'}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[s.cheerTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+              <Text style={[s.cheerSub, { color: k.sage }]} numberOfLines={1}>
+                {who} finished it!
+              </Text>
+            </View>
+            <ActionButton
+              label="Cheer" Icon={PartyPopper} accent={k.sage} k={k} isDark={isDark}
+              variant="solid"
+              accessibilityHint={`Send ${who} a cheer for ${q.title}`}
+              onPress={() => { registerActivity(); cheerQuest(q.id, active.id); }}
+            />
+          </Well>
+        );
+      })}
+    </View>
   );
 }
 

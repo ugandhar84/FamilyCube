@@ -33,7 +33,11 @@ import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
-import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
+import {
+  COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline,
+  KIOSK_STATUS_TABS, kioskFilterAvailability, applyKidFilter, applyTabStatus,
+  type KioskTabStatus,
+} from '../kidQuestLanes';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort } from '@/lib/dates';
@@ -45,9 +49,10 @@ import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useKioskAskParent } from '../components/KioskAskParentFlow';
+import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
-import { useKioskColors } from '../kioskPalette';
+import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
 // the DB's 'redo_requested' status down to Quest status 'declined',
@@ -96,6 +101,56 @@ export function KioskTasksTab({ active, members, colors, isDark }: {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
   return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} />;
+}
+
+/**
+ * One filter pill. Shape borrows KioskScheduleTab's own `filterChip` (the
+ * member-filter row established earlier on this branch) rather than
+ * KioskFormDrawer's KioskPill: this is a persistent horizontal filter bar
+ * in exactly the same role on a sibling tab, and the two reading the same
+ * is worth more here than matching a form control's shape.
+ *
+ * Accessibility is the reason this is a component and not inline markup —
+ * every pill needs role/label/hint/selected state, and four call sites
+ * writing that by hand is how one of them ends up without it.
+ */
+function FilterPill({
+  label, emoji, selected, accent, onPress, k, isDark, a11yLabel, hint,
+}: {
+  label: string;
+  emoji?: string;
+  selected: boolean;
+  accent: string;
+  onPress: () => void;
+  k: KioskColors;
+  isDark: boolean;
+  a11yLabel: string;
+  hint: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel}
+      accessibilityHint={hint}
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [
+        s.filterChip,
+        selected
+          ? { backgroundColor: accent, borderColor: accent }
+          : { backgroundColor: k.well, borderColor: k.cardBorder },
+        pressed && { opacity: 0.75 },
+      ]}
+    >
+      {!!emoji && <Text style={{ fontSize: 18 }}>{emoji}</Text>}
+      <Text
+        style={[s.filterChipText, { color: selected ? kioskOnAccent(k, accent) : k.textMuted }]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
 }
 
 // Shared board for parent/kid/teen — one kanban, but every card's
@@ -229,6 +284,59 @@ function KioskBoardView({ active, members, colors, isDark }: {
     [quests, members, active.role, active.id],
   );
 
+  // ── Viewer-chosen filters [GAP] ───────────────────────────────────────
+  // Live-reported: "match with mobile app like cards with expand collapse
+  // and its status and history etc.. also filters." The board had per-
+  // viewer VISIBILITY (above) but no filter the person standing at it could
+  // actually choose — the phone's Chores tab leads with a whole
+  // QuestFilters row (QuestsScreen.tsx:943) and kiosk had nothing.
+  //
+  // Two independent facets, exactly as on the phone:
+  //   · kidFilter  — WHOSE chores ('all' | a member id | 'adults' | 'pool'
+  //                  | 'cheer'), QuestFilters.tsx's own string vocabulary
+  //   · tabStatus  — WHICH STAGE ('all' | 'todo' | 'review' | 'completed'),
+  //                  QuestFilters.tsx:11's exported TabStatus
+  //
+  // Both are applied by kidQuestLanes' applyKidFilter/applyTabStatus, which
+  // are QuestsScreen.tsx:584-619's predicates moved, not re-derived — so a
+  // rule fixed on one surface can't quietly stay broken on the other. They
+  // run STRICTLY AFTER visibleQuestsFor: a filter can only ever narrow what
+  // the role rules already permitted, never widen it, which is what keeps a
+  // kid from selecting their way into an adult task or a GP-only pool chore.
+  //
+  // Which pills exist at all is kioskFilterAvailability(role) — a direct
+  // port of QuestFilters.tsx's own prop-driven conditionals (Adults is
+  // parent-only, Cheer is kid/teen-only, per-member pills are for adults),
+  // rather than kiosk inventing role gating that could diverge from the
+  // already-audited phone rules.
+  const avail = useMemo(() => kioskFilterAvailability(active.role), [active.role]);
+  const [kidFilter, setKidFilter] = useState('all');
+  const [tabStatus, setTabStatus] = useState<KioskTabStatus>('all');
+
+  // Reset the lens when the person at the kiosk changes — QuestsScreen does
+  // the same on persona switch (its prevMemberIdRef effect, line 333). On a
+  // shared counter tablet this matters MORE than on a phone: without it the
+  // next person walks up to a board silently narrowed to someone else's
+  // name, or to a pill their own role isn't even allowed to see.
+  useEffect(() => { setKidFilter('all'); setTabStatus('all'); }, [active.id, active.role]);
+
+  const filteredQuests = useMemo(
+    () => applyTabStatus(applyKidFilter(visibleQuests, kidFilter), kidFilter, tabStatus),
+    [visibleQuests, kidFilter, tabStatus],
+  );
+  const isFiltered = kidFilter !== 'all' || tabStatus !== 'all';
+
+  // Masthead counts, computed off the unfiltered visible set — see the
+  // TabTitle subtitle's own note for why these must not track the filter.
+  const totals = useMemo(() => {
+    const pool = poolQuestsIn(visibleQuests).length;
+    const review = visibleQuests.filter(q => q.status === 'pending_approval').length;
+    const mine = visibleQuests.filter(q =>
+      ['todo', 'claimed', 'in_progress'].includes(q.status) && !q.isPool,
+    ).length;
+    return { pool, review, mine };
+  }, [visibleQuests]);
+
   // ── Pool / "Up for grabs" lane [GAP] ──────────────────────────────────
   // Pool chores previously had no lane of their own — they fell into
   // whichever status column matched (always "To Do") and were
@@ -241,7 +349,12 @@ function KioskBoardView({ active, members, colors, isDark }: {
   // least. Eligibility matches QuestsScreen.tsx:596's Bounty filter
   // exactly, including the !assignedToId check that makes a sibling's
   // just-claimed bounty disappear immediately rather than lingering.
-  const poolQuests = useMemo(() => poolQuestsIn(visibleQuests), [visibleQuests]);
+  // Reads the FILTERED list, not the raw visible one, so the hero pool zone
+  // narrows with everything else — e.g. picking one kid's pill leaves the
+  // unassigned backlog visible (applyKidFilter keeps it, matching
+  // QuestsScreen.tsx:609) while "In Review" empties the pool zone entirely,
+  // since an unclaimed bounty is by definition not in review.
+  const poolQuests = useMemo(() => poolQuestsIn(filteredQuests), [filteredQuests]);
 
   // Status lanes exclude anything already surfaced in the pool lane, so a
   // bounty isn't rendered twice on the same board.
@@ -249,10 +362,36 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const byColumn = useMemo(
     () => COLUMN_STATUSES.map(col => ({
       ...col,
-      items: visibleQuests.filter(q => col.statuses.includes(q.status) && !poolIds.has(q.id)),
+      items: filteredQuests.filter(q => col.statuses.includes(q.status) && !poolIds.has(q.id)),
     })),
-    [visibleQuests, poolIds],
+    [filteredQuests, poolIds],
   );
+
+  // Measured width of the status-lane row (see its onLayout below for why
+  // this is measured rather than read off Dimensions). 0 until first layout,
+  // which falls through to the single-row default — the same thing the grid
+  // did before this existed, so the first frame is unchanged.
+  const [boardWidth, setBoardWidth] = useState(0);
+  const laneBasis = useMemo(() => {
+    const shown = byColumn.filter(c => c.items.length > 0).length;
+    if (shown <= 1 || boardWidth <= 0) return null;
+    // A lane holds one card per row (s.cardGrid), and a kiosk chore card
+    // stops being readable below roughly this width — the same order of
+    // magnitude the pool tiles (s.poolCard, 320) already work from.
+    const MIN_LANE = 260;
+    const gap = KIOSK_SPACE.md;
+    const fit = Math.max(1, Math.floor((boardWidth + gap) / (MIN_LANE + gap)));
+    if (fit >= shown) return null; // everything fits on one row — plain flex:1
+    // Otherwise wrap into `fit` per row. The basis subtracts the real
+    // gutters this row will consume BEFORE dividing — the exact arithmetic
+    // whose absence (a hardcoded gap that didn't match the stylesheet's)
+    // produced the ragged grid documented above. `gap` here reads the same
+    // KIOSK_SPACE.md token s.columns uses, so the two cannot disagree the
+    // way a copied constant did. flexGrow:1 lets a final, short row still
+    // fill the width rather than leaving a hole beside it.
+    const basis = Math.floor((boardWidth - gap * (fit - 1)) / fit);
+    return { flexBasis: basis, maxWidth: basis, flexGrow: 1 };
+  }, [byColumn, boardWidth]);
 
   // Per-kid summary strip — open count + coins earned today, tinted with
   // that kid's own color (same system Calendar/Agenda already use). The
@@ -303,6 +442,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
     // either, so a stray coin figure here read as broken, not by-design.
     const isAdultAssignee = q.isAdultTask || assignee?.role === 'parent' || assignee?.role === 'senior';
     const catMeta = CATEGORY_META[q.category] ?? { emoji: '📋', color: k.textFaint };
+    const timeline = questTimeline(q);
     return (
       <CollapsibleQuestCard
         accentColor={catMeta.color}
@@ -341,6 +481,25 @@ function KioskBoardView({ active, members, colors, isDark }: {
             </View>
           )}
         </View>
+
+        {/* ── History [GAP] ────────────────────────────────────────────
+            The phone's card carries the chore's own claimed → submitted →
+            approved trail (QuestCard.tsx:293-307), and the kid Hub widget
+            on kiosk got the same line this session — but this board's card
+            body showed only assignee and due date, so "when did this
+            actually happen" was answerable nowhere on the Chores tab. Same
+            `questTimeline` helper both other surfaces use (now shared from
+            ../kidQuestLanes), so the three render one identical string.
+            Renders nothing for an untouched To Do, which has no stamps. */}
+        {!!timeline && (
+          <Text
+            style={[s.timelineText, { color: k.textFaint }]}
+            numberOfLines={2}
+            accessibilityLabel={`History: ${timeline}`}
+          >
+            {timeline}
+          </Text>
+        )}
 
         {actions.canEdit && (
           <Pressable
@@ -386,9 +545,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
       <TabTitle
         title="Chores"
         k={k}
+        // Counts deliberately read the UNFILTERED visible set. The
+        // masthead is the board's standing summary — "3 waiting on you" has
+        // to stay true while someone is looking at one kid's pill, or the
+        // number silently drops to 0 and reads as "nothing needs me" when
+        // three chores actually do.
         subtitle={isParent
-          ? `${byColumn[3].items.length} waiting on you · ${poolQuests.length} up for grabs`
-          : `${poolQuests.length} up for grabs · ${byColumn[0].items.length + byColumn[1].items.length} on your plate`}
+          ? `${totals.review} waiting on you · ${totals.pool} up for grabs`
+          : `${totals.pool} up for grabs · ${totals.mine} on your plate`}
         right={(isParent || isKidCreator) ? (
           <ActionButton
             label={isParent ? 'New Chore' : 'Ask Parent'}
@@ -402,6 +566,166 @@ function KioskBoardView({ active, members, colors, isDark }: {
           />
         ) : undefined}
       />
+
+      {/* ── Filter bar ────────────────────────────────────────────────
+          The phone's "Member / Filter Pills + Status Tabs" block
+          (QuestsScreen.tsx:942-954 → QuestFilters.tsx), in kiosk's own
+          visual language. Two rows because they're two independent facets
+          and stacking them is what makes that legible from across a
+          kitchen; the phone stacks them for the same reason.
+
+          Sizing note — this bar must not reintroduce the ragged-column bug
+          documented at length above s.columns. It can't: it's a sibling
+          block ABOVE the lane grid, not inside it, so it takes vertical
+          space only and never enters the columns' horizontal division.
+          The member row is a horizontal ScrollView with flexGrow:0 on the
+          ScrollView itself (s.filterRowOuter) — without that a horizontal
+          ScrollView in a flex column stretches to fill leftover vertical
+          space instead of hugging its pills, the exact bug KioskScheduleTab
+          hit and records in its own stylesheet. The status row wraps
+          instead of scrolling, since it is a fixed three-item set. */}
+      <View style={s.filterBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.filterRowOuter}
+          contentContainerStyle={s.filterRow}
+          onScrollBeginDrag={registerActivity}
+        >
+          <FilterPill
+            label={avail.isKidOrTeen ? 'My Chores' : 'All Family'}
+            emoji={avail.isKidOrTeen ? '🎯' : undefined}
+            selected={kidFilter === 'all'}
+            accent={k.primary}
+            k={k} isDark={kioskDark}
+            a11yLabel={avail.isKidOrTeen ? 'Show my chores' : "Show the whole family's chores"}
+            hint="Filters the board"
+            onPress={() => { registerActivity(); setKidFilter('all'); setTabStatus('all'); }}
+          />
+
+          {/* Per-member pills — adults only, per QuestFilters.tsx:75. A
+              kid/teen has no sibling chores in scope to filter to (see
+              visibleQuestsFor), so the row would be a set of pills that all
+              resolve to an empty board. */}
+          {avail.showPerMember && kids.map(m => {
+            const rs = assigneeStyle(m, colors, isDark);
+            const on = kidFilter === m.id;
+            const first = m.name.split(' ')[0];
+            return (
+              <FilterPill
+                key={m.id}
+                label={first}
+                emoji={m.emoji ?? '👤'}
+                selected={on}
+                accent={rs.dot}
+                k={k} isDark={kioskDark}
+                a11yLabel={`Filter to ${first}'s chores`}
+                hint="Filters the board to one person"
+                onPress={() => { registerActivity(); setKidFilter(on ? 'all' : m.id); setTabStatus('all'); }}
+              />
+            );
+          })}
+
+          {/* Adults — parent-only. QuestFilters.tsx:92 gates this on
+              isParentOrSenior && !isSenior, i.e. a grandparent does NOT
+              get it (their world is their own quests and cheering), and
+              kiosk routes seniors to KioskGpTasksView entirely anyway. */}
+          {avail.showAdults && (
+            <FilterPill
+              label="Adults"
+              emoji="👨‍👩"
+              selected={kidFilter === 'adults'}
+              accent={k.purple}
+              k={k} isDark={kioskDark}
+              a11yLabel="Show adult chores only"
+              hint="Filters the board to grown-up tasks"
+              onPress={() => { registerActivity(); setKidFilter('adults'); setTabStatus('all'); }}
+            />
+          )}
+
+          <FilterPill
+            label="Bounty"
+            emoji="⚡"
+            selected={kidFilter === 'pool'}
+            accent={k.gold}
+            k={k} isDark={kioskDark}
+            a11yLabel="Show up-for-grabs bounty chores only"
+            hint="Filters the board to chores anyone can claim"
+            onPress={() => { registerActivity(); setKidFilter('pool'); setTabStatus('all'); }}
+          />
+
+          {/* Sibling Cheer — kid/teen only (QuestFilters.tsx:119). */}
+          {avail.showCheer && (
+            <FilterPill
+              label="Sibling Cheer"
+              emoji="👏"
+              selected={kidFilter === 'cheer'}
+              accent={k.sage}
+              k={k} isDark={kioskDark}
+              a11yLabel="Cheer on what your brothers and sisters finished"
+              hint="Switches to the cheering view"
+              onPress={() => { registerActivity(); setKidFilter('cheer'); setTabStatus('all'); }}
+            />
+          )}
+        </ScrollView>
+
+        {/* Status segment — hidden under Cheer, exactly as the phone hides
+            it (QuestFilters.tsx:135), because that view isn't a status
+            list at all. */}
+        {kidFilter !== 'cheer' && (
+          <View style={s.statusRow} accessibilityRole="tablist">
+            {KIOSK_STATUS_TABS.map(tab => {
+              const on = tabStatus === tab.key;
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() => { registerActivity(); setTabStatus(tab.key); }}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${tab.label} chores`}
+                  accessibilityHint="Filters the board by stage"
+                  accessibilityState={{ selected: on }}
+                  style={({ pressed }) => [
+                    s.statusTab,
+                    on
+                      ? { backgroundColor: k.primary, borderColor: k.primary }
+                      : { backgroundColor: k.card, borderColor: k.cardBorder },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <Text
+                    style={[s.statusTabText, { color: on ? kioskOnAccent(k, k.primary) : k.textMuted }]}
+                    numberOfLines={1}
+                  >
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* ── Sibling Cheer view ────────────────────────────────────────
+          The phone swaps the whole quest list for SiblingCheerPanel when
+          this filter is on (QuestsScreen.tsx:957). Kiosk does the same,
+          but reuses KioskKidCheerList — the list body already built this
+          session for the Hub's Cheer Squad sheet — rather than becoming a
+          third copy of the same cheering UI. */}
+      {kidFilter === 'cheer' && avail.showCheer && (
+        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
+          <WidgetHeader
+            Icon={PartyPopper}
+            eyebrow="Their wins"
+            title="Sibling Cheer"
+            accent={k.sage}
+            k={k}
+            isDark={kioskDark}
+          />
+          <KioskKidCheerList active={active} members={members} k={k} isDark={kioskDark} />
+        </WidgetCard>
+      )}
+
+      {kidFilter !== 'cheer' && <>
 
       {/* ── Zone 1: Up for grabs ──────────────────────────────────────
           The pool lane leads the board rather than being buried inside
@@ -502,9 +826,30 @@ function KioskBoardView({ active, members, colors, isDark }: {
             Icon={Clock3} eyebrow="By status" title="In flight"
             accent={k.primary} k={k} isDark={kioskDark}
           />
-          <View style={s.columns}>
+          {/* ── Lane grid sizing ────────────────────────────────────────
+              The even-division fix documented above s.columns (flex:1 +
+              flexBasis:0 + minWidth:0) is intact and untouched — it is
+              still what makes the lanes an exact grid with no arithmetic to
+              drift. What it CANNOT do on its own is decide how many lanes
+              belong on one row: dividing a narrow portrait pane four ways
+              gives ~150px lanes, and a chore card with a category badge, a
+              two-line title and a coin chip does not survive that.
+              Live check: 4 lanes need ~260px each to stay readable, so the
+              row splits once the measured pane can't afford that.
+
+              Deliberately measured with onLayout rather than
+              Dimensions.get('window') — this pane sits inside the kiosk nav
+              rail, so window width overstates it by the rail's width, which
+              is exactly the stale-constant mistake the RAIL_AND_PADDING
+              note above records. `laneCols` only ever chooses how many
+              lanes share a row; within a row flexbox still divides exactly,
+              so no fractional width is ever computed or rounded here. */}
+          <View
+            style={s.columns}
+            onLayout={e => setBoardWidth(e.nativeEvent.layout.width)}
+          >
             {byColumn.filter(c => c.items.length > 0).map(col => (
-              <View key={col.key} style={s.col}>
+              <View key={col.key} style={[s.col, laneBasis]}>
                 <View style={s.colHeadRow}>
                   <Text style={[s.colHead, { color: k.textMuted }]} numberOfLines={1}>
                     {col.label.toUpperCase()}
@@ -535,12 +880,35 @@ function KioskBoardView({ active, members, colors, isDark }: {
         // An empty state should reassure and get out of the way, so this
         // is one tidy inline row rather than a hero panel.
         <View style={[s.boardEmpty, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
-          <Text style={{ fontSize: 20 }}>🎉</Text>
+          <Text style={{ fontSize: 20 }}>{isFiltered ? '🔍' : '🎉'}</Text>
           <Text style={[s.boardEmptyText, { color: k.textMuted }]} numberOfLines={2}>
-            All clear — every chore is done or approved.
+            {/* A filtered-empty board is a different message from a truly
+                clear one — "All clear, every chore is done" while a Bounty
+                or In Review pill is silently narrowing the view is simply
+                false, and on a shared surface nobody remembers they left a
+                filter on. Phrasings track QuestsScreen.tsx:977-980's own
+                per-tabStatus empty copy. */}
+            {!isFiltered ? 'All clear — every chore is done or approved.'
+              : tabStatus === 'todo'      ? 'Nothing to do under this filter 🎉'
+              : tabStatus === 'review'    ? 'Nothing is waiting for review right now.'
+              : tabStatus === 'completed' ? 'Nothing finished under this filter yet.'
+              : 'No chores match this filter.'}
           </Text>
+          {isFiltered && (
+            <ActionButton
+              label="Clear filters"
+              accent={k.primary}
+              k={k}
+              isDark={kioskDark}
+              variant="soft"
+              accessibilityHint="Shows the whole board again"
+              onPress={() => { registerActivity(); setKidFilter('all'); setTabStatus('all'); }}
+            />
+          )}
         </View>
       )}
+
+      </>}
 
       {isParent && (
         <KioskQuestEditor
@@ -759,6 +1127,37 @@ const s = StyleSheet.create({
   // margin rather than the old bare-View rhythm.
   zone: { marginBottom: KIOSK_SPACE.md },
 
+  // ── Filter bar ────────────────────────────────────────────────────────
+  filterBar: { gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md },
+  // A horizontal ScrollView in a flex column stretches to fill leftover
+  // vertical space unless flexGrow is pinned on the ScrollView ITSELF (not
+  // its contentContainerStyle) — live-reported on KioskScheduleTab as
+  // "the filter pills height should be fixed, it is stretching now too
+  // much." Same token, same fix, so the two filter rows can't diverge.
+  filterRowOuter: { flexGrow: 0 },
+  filterRow: {
+    flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center',
+    paddingVertical: 2,
+  },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
+    justifyContent: 'center', borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+  },
+  filterChipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', flexShrink: 1 },
+  // Wraps rather than scrolls — a fixed three-item set, and a three-pill
+  // row that scrolls when it doesn't need to reads as broken.
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  statusTab: {
+    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    justifyContent: 'center', alignItems: 'center',
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+  },
+  statusTabText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+
+  // The chore's claimed → submitted → approved trail inside the card body.
+  timelineText: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginBottom: KIOSK_SPACE.xs },
+
   // Pool lane — the hero zone. Wide tiles, generous minimums.
   poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   poolCard: { width: 320, maxWidth: '100%' },
@@ -792,7 +1191,10 @@ const s = StyleSheet.create({
   // One tidy inline row, not a hero panel — an empty state should be the
   // quietest thing on screen, not the largest.
   boardEmpty: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    // flexWrap so the "Clear filters" button (only present in the filtered
+    // variant) drops to its own line on a narrow pane rather than squeezing
+    // the message text — this row is otherwise unchanged.
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
     alignSelf: 'flex-start', maxWidth: '100%',
     borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
     paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md,
@@ -814,7 +1216,16 @@ const s = StyleSheet.create({
   // `gap` here MUST equal the COLUMN_GAP constant the cards-per-row
   // estimate reads — both are KIOSK_SPACE.md; see the block comment on
   // that constant for why a mismatch produced a visibly ragged grid.
-  columns: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'stretch' },
+  // flexWrap added alongside the laneBasis math above: on a wide landscape
+  // kiosk nothing wraps (every lane clears the 260px floor and laneBasis
+  // stays null, so this is the exact single-row grid it always was), while
+  // a narrow portrait pane splits 4 lanes into 2x2 instead of squeezing
+  // four unreadable ~150px columns onto one line. alignItems:'flex-start'
+  // so a short second row doesn't stretch to the tall row's height.
+  columns: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md,
+    alignItems: 'flex-start',
+  },
   // flex:1 + flexBasis:0 + minWidth:0 is what actually makes the four
   // columns an even grid: flexBasis:0 means the free space is divided
   // equally rather than distributed on top of differing content widths

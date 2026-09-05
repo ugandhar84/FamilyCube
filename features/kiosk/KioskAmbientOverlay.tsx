@@ -108,7 +108,7 @@ export function KioskAmbientOverlay({
           <View style={s.pillRow}>
             {eventCount > 0 && (
               <View style={[s.pill, { backgroundColor: colors.primaryLight }]}>
-                <CalendarDays size={22} color={colors.primary} />
+                <CalendarDays size={17} color={colors.primary} />
                 <Text style={[s.pillText, { color: colors.primary }]} numberOfLines={1}>
                   {eventCount} {eventCount === 1 ? 'event' : 'events'} today
                 </Text>
@@ -116,7 +116,7 @@ export function KioskAmbientOverlay({
             )}
             {choreCount > 0 && (
               <View style={[s.pill, { backgroundColor: colors.amberLight }]}>
-                <ClipboardCheck size={22} color={colors.amber} />
+                <ClipboardCheck size={17} color={colors.amber} />
                 <Text style={[s.pillText, { color: colors.amber }]} numberOfLines={1}>
                   {choreCount} {choreCount === 1 ? 'chore' : 'chores'} open
                 </Text>
@@ -141,12 +141,12 @@ const s = StyleSheet.create({
     fontSize: KIOSK_TYPO.clock, fontWeight: '200', letterSpacing: -2,
     fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.clock * 1.05,
   },
-  date: { fontSize: KIOSK_TYPO.heading, fontWeight: '500', marginTop: KIOSK_SPACE.xs },
+  date: { fontSize: KIOSK_TYPO.subheading, fontWeight: '500', marginTop: KIOSK_SPACE.xs },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xl },
   pill: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.full, paddingHorizontal: KIOSK_SPACE.lg, paddingVertical: KIOSK_SPACE.sm,
   },
-  pillText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  hint: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: KIOSK_SPACE.xxl, letterSpacing: 0.5 },
+  pillText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  hint: { fontSize: KIOSK_TYPO.label, fontWeight: '600', marginTop: KIOSK_SPACE.xl, letterSpacing: 0.5 },
 });

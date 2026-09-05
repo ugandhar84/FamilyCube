@@ -95,11 +95,11 @@ export function KioskQuestEditor({ quest, active, isActiveApprover, onClose, mem
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <X size={28} color={colors.textSecondary} />
+                <X size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
             <View style={[s.lockBadge, { backgroundColor: colors.amberLight, marginHorizontal: KIOSK_SPACE.lg }]}>
-              <Lock size={16} color={colors.amber} />
+              <Lock size={13} color={colors.amber} />
               <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: colors.amber }}>Read-only</Text>
             </View>
             <View style={s.body}>
@@ -139,7 +139,7 @@ export function KioskQuestEditor({ quest, active, isActiveApprover, onClose, mem
               accessibilityRole="button"
               accessibilityLabel="Close without saving"
             >
-              <X size={28} color={colors.textSecondary} />
+              <X size={22} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -188,7 +188,7 @@ export function KioskQuestEditor({ quest, active, isActiveApprover, onClose, mem
                 accessibilityRole="button"
                 accessibilityLabel={`Delete chore ${quest.title}`}
               >
-                <Trash2 size={24} color={colors.danger} />
+                <Trash2 size={19} color={colors.danger} />
               </Pressable>
             )}
             <Pressable
@@ -222,14 +222,14 @@ export function KioskQuestEditor({ quest, active, isActiveApprover, onClose, mem
 // rather than for a phone in the hand. TYPO is no longer imported here.
 const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
-  card: { width: 620, maxWidth: '92%', borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden' },
+  card: { width: 540, maxWidth: '92%', borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm,
   },
   headerTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', flexShrink: 1 },
   closeBtn: {
-    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
+    width: 44, height: 44, borderRadius: KIOSK_RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
   },
   lockBadge: {
@@ -245,11 +245,11 @@ const s = StyleSheet.create({
   hint: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: KIOSK_SPACE.xs },
   footer: { flexDirection: 'row', gap: KIOSK_SPACE.sm, padding: KIOSK_SPACE.lg },
   iconBtn: {
-    width: KIOSK_HIT.control, minHeight: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.sm,
+    width: KIOSK_HIT.min, minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.sm,
     borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
   btn: {
-    flex: 1, borderRadius: KIOSK_RADIUS.sm, minHeight: KIOSK_HIT.control,
+    flex: 1, borderRadius: KIOSK_RADIUS.sm, minHeight: KIOSK_HIT.min,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: KIOSK_SPACE.sm,
   },
   btnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },

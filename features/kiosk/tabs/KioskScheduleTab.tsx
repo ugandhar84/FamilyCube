@@ -18,7 +18,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -34,6 +33,8 @@ import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal'
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
+import { useKioskLockSuspended } from '../KioskActivityContext';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -112,6 +113,16 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
+  // Same idle-lock hold as KioskTasksTab — these creation sheets all
+  // render into their own native Modal, so their touches never reach
+  // KioskScreen's root onTouchStart and the lock would otherwise fire
+  // mid-form and discard the draft. See KioskActivityContext.
+  useKioskLockSuspended(
+    showComposer || showManualQuest || showManualEvent || showAskParentSheet ||
+    groceryModal || suppliesModal || !!askModal || questProposalModal ||
+    choreProposalModal || rideRequestModal || editingEvent !== null,
+  );
+
   const todayStr = localDateStr(new Date());
 
   // Fetch exactly the window the active view needs — a month grid spans up
@@ -170,17 +181,20 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       <View style={s.header}>
         <View style={s.headerTop}>
           <View style={s.navRow}>
-            <Pressable onPress={() => shiftCursor(-1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}>
-              <ChevronLeft size={18} color={colors.textSecondary} />
+            <Pressable onPress={() => shiftCursor(-1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}
+              accessibilityRole="button" accessibilityLabel={`Previous ${viewMode}`}>
+              <ChevronLeft size={26} color={colors.textSecondary} />
             </Pressable>
             <View>
               <Text style={[s.title, { color: colors.textPrimary }]}>Schedule</Text>
               <Text style={[s.range, { color: colors.textSecondary }]}>{headerLabel}</Text>
             </View>
-            <Pressable onPress={() => shiftCursor(1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}>
-              <ChevronRight size={18} color={colors.textSecondary} />
+            <Pressable onPress={() => shiftCursor(1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}
+              accessibilityRole="button" accessibilityLabel={`Next ${viewMode}`}>
+              <ChevronRight size={26} color={colors.textSecondary} />
             </Pressable>
-            <Pressable onPress={() => setCursor(new Date())} style={[s.todayBtn, { borderColor: colors.border }]}>
+            <Pressable onPress={() => setCursor(new Date())} style={[s.todayBtn, { borderColor: colors.border }]}
+              accessibilityRole="button" accessibilityLabel="Jump to today">
               <Text style={[s.todayBtnText, { color: colors.textSecondary }]}>Today</Text>
             </Pressable>
           </View>
@@ -190,7 +204,9 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               const on = viewMode === mode;
               return (
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
-                  style={[s.modeBtn, on && { backgroundColor: colors.primary }]}>
+                  style={[s.modeBtn, on && { backgroundColor: colors.primary }]}
+                  accessibilityRole="tab" accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
                   <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]}>
                     {mode[0].toUpperCase() + mode.slice(1)}
                   </Text>
@@ -202,6 +218,8 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
           <Pressable onPress={() => setFilterMemberId(null)}
+            accessibilityRole="button" accessibilityLabel="Show everyone's events"
+            accessibilityState={{ selected: !filterMemberId }}
             style={[s.filterChip, { backgroundColor: !filterMemberId ? colors.primary : colors.surface, borderColor: !filterMemberId ? colors.primary : colors.border }]}>
             <Text style={[s.filterText, { color: !filterMemberId ? '#fff' : colors.textSecondary }]}>Everyone</Text>
           </Pressable>
@@ -210,8 +228,11 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
             const on = filterMemberId === m.id;
             return (
               <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter to ${m.name.split(' ')[0]}`}
+                accessibilityState={{ selected: on }}
                 style={[s.filterChip, { backgroundColor: on ? rs.dot : colors.surface, borderColor: on ? rs.dot : colors.border }]}>
-                <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
+                <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
                 <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
               </Pressable>
             );
@@ -252,8 +273,9 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 so Month gets the same reachable entry point rather than
                 being the one mode with no way to open the composer at all. */}
             {canCreate && (
-              <Pressable onPress={openCreator} style={[s.monthAddBtn, { backgroundColor: colors.primary }]}>
-                <Plus size={16} color="#fff" />
+              <Pressable onPress={openCreator} style={[s.monthAddBtn, { backgroundColor: colors.primary }]}
+                accessibilityRole="button" accessibilityLabel="Add for this day">
+                <Plus size={24} color="#fff" />
                 <Text style={s.monthAddBtnText}>Add for this day</Text>
               </Pressable>
             )}
@@ -371,6 +393,13 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, i
               const dayNum = parseDate(dateStr).getDate();
               return (
                 <Pressable key={dateStr} onPress={() => onDayPress(dateStr)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: dateStr === selected }}
+                  accessibilityLabel={
+                    `${parseDate(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}` +
+                    (isToday ? ', today' : '') +
+                    (dayEvents.length ? `, ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}` : ', no events')
+                  }
                   style={[s.monthCell, s.monthCellFilled, { borderColor: colors.border },
                     isToday && { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}>
                   <Text style={[s.monthDayNum, { color: isToday ? colors.primary : colors.textPrimary }]}>{dayNum}</Text>
@@ -425,6 +454,8 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
                 const multiColors = involved.length > 1 ? involved.map(m => assigneeStyle(m, colors, isDark).dot) : null;
                 return (
                   <Pressable key={ev.id} onPress={() => onEventPress(ev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${ev.title}${ev.time ? `, ${fmtTime(ev.time)}` : ', all day'}`}
                     style={[s.evChip, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
                     {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
                     <Text style={[s.evTitle, { color: colors.textPrimary }]} numberOfLines={2}>{ev.title}</Text>
@@ -444,8 +475,10 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, involvedFor,
               })}
             </ScrollView>
             {onAddDay && (
-              <Pressable onPress={onAddDay} style={[s.addDay, { borderColor: colors.border }]}>
-                <Plus size={14} color={colors.textTertiary} />
+              <Pressable onPress={onAddDay} style={[s.addDay, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Add something on ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}>
+                <Plus size={22} color={colors.textTertiary} />
               </Pressable>
             )}
           </View>
@@ -488,6 +521,8 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
             const rs = assigneeStyle(involved[0], colors, isDark);
             return (
               <Pressable key={ev.id} onPress={() => onEventPress(ev)}
+                accessibilityRole="button"
+                accessibilityLabel={`${ev.title}, all day`}
                 style={[s.dayAllDayChip, { backgroundColor: rs.badge, borderColor: rs.dot + '55' }]}>
                 <Text style={[s.dayAllDayText, { color: rs.text }]} numberOfLines={1}>{ev.title}</Text>
               </Pressable>
@@ -508,6 +543,8 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
                 const multiColors = involved.length > 1 ? involved.map(m => assigneeStyle(m, colors, isDark).dot) : null;
                 return (
                   <Pressable key={ev.id} onPress={() => onEventPress(ev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${ev.title}, ${fmtTime(ev.time)}`}
                     style={[s.dayEventCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
                     {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
                     <Text style={[s.dayEventTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
@@ -525,8 +562,9 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
         );
       })}
       {onAdd && (
-        <Pressable onPress={onAdd} style={[s.dayAddBtn, { backgroundColor: colors.primary }]}>
-          <Plus size={16} color="#fff" />
+        <Pressable onPress={onAdd} style={[s.dayAddBtn, { backgroundColor: colors.primary }]}
+          accessibilityRole="button" accessibilityLabel="Add event">
+          <Plus size={24} color="#fff" />
           <Text style={s.dayAddBtnText}>Add Event</Text>
         </Pressable>
       )}
@@ -534,68 +572,113 @@ function DayView({ cursor, eventsByDate, colors, isDark, involvedFor, onEventPre
   );
 }
 
+// ── Rescaled to the kiosk ladder ────────────────────────────────────────
+// This tab was the most phone-shaped surface in kiosk: the week strip's
+// event chips carried 11px titles, 9.5px times and 9px name lists, and the
+// month grid's day numbers were 13px with 7px dots. That is a phone
+// calendar rendered wide, not a wall display — none of it is legible from
+// where a kitchen tablet is actually read. Every size below moves onto
+// KIOSK_TYPO, every control onto KIOSK_HIT, and the month cells gain a
+// real minimum height so a 6-week grid doesn't collapse into thin bands.
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 20 },
-  loadingStrip: { alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 48 },
-  loadingText: { fontSize: TYPO.body, fontWeight: '700' },
-  header: { marginBottom: 16, gap: 10 },
-  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  navRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  navBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  todayBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
-  todayBtnText: { fontSize: 12, fontWeight: '800' },
-  title: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  range: { fontSize: TYPO.caption, fontWeight: '700', marginTop: 2, textAlign: 'center' },
-  modeSwitch: { flexDirection: 'row', borderRadius: 12, padding: 3, gap: 2 },
-  modeBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9 },
-  modeBtnText: { fontSize: 13, fontWeight: '800' },
-  // Was: no explicit height on the ScrollView itself (only on its
-  // contentContainerStyle) — in a plain flex column, a horizontal
-  // ScrollView with an unbounded cross-axis can stretch to fill leftover
-  // vertical space instead of hugging its own pill content.
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  loadingStrip: { alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xxl },
+  loadingText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  header: { marginBottom: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  navBtn: {
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  todayBtn: {
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
+  },
+  todayBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', textAlign: 'center' },
+  range: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 2, textAlign: 'center' },
+  modeSwitch: { flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3 },
+  modeBtn: {
+    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    justifyContent: 'center', borderRadius: KIOSK_RADIUS.sm,
+  },
+  modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  // Horizontal ScrollView needs flexGrow:0 on the ScrollView itself or it
+  // stretches to fill leftover vertical space instead of hugging its pills.
   filterRowOuter: { flexGrow: 0 },
-  filterRow: { flexDirection: 'row', gap: 8 },
-  filterChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5 },
-  filterText: { fontSize: 12, fontWeight: '800' },
+  filterRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+  },
+  filterText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
 
   // Week
-  week: { flex: 1, flexDirection: 'row', gap: 8 },
-  dayCol: { flex: 1 },
-  dayHead: { alignItems: 'center', paddingBottom: 8, marginBottom: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  dow: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  dnum: { fontSize: 18, fontWeight: '800', marginTop: 2 },
-  evChip: { borderRadius: 10, borderWidth: 1, borderLeftWidth: 3, padding: 8, position: 'relative' },
-  evTitle: { fontSize: 11, fontWeight: '700' },
-  evTime: { fontSize: 9.5, fontWeight: '600', marginTop: 2 },
-  evWho: { fontSize: 9, fontWeight: '800', marginTop: 3 },
-  addDay: { marginTop: 8, borderWidth: 1, borderStyle: 'dashed', borderRadius: 10, alignItems: 'center', paddingVertical: 8 },
+  week: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.xs },
+  dayCol: { flex: 1, minWidth: 0 },
+  dayHead: {
+    alignItems: 'center', paddingBottom: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.xs,
+    borderBottomWidth: 3, borderBottomColor: 'transparent',
+  },
+  dow: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },
+  dnum: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', marginTop: 2 },
+  evChip: {
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, borderLeftWidth: 4,
+    padding: KIOSK_SPACE.sm, position: 'relative', minHeight: 56,
+  },
+  evTitle: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  evTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 3 },
+  evWho: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 4 },
+  addDay: {
+    marginTop: KIOSK_SPACE.xs, borderWidth: 1.5, borderStyle: 'dashed',
+    borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center', minHeight: KIOSK_HIT.min,
+  },
 
   // Month
   monthRoot: { flex: 1 },
-  monthDow: { flexDirection: 'row', marginBottom: 6 },
-  monthDowText: { flex: 1, textAlign: 'center', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.5 },
-  monthGrid: { flex: 1, gap: 6 },
-  monthWeekRow: { flex: 1, flexDirection: 'row', gap: 6 },
-  monthCell: { flex: 1 },
-  monthCellFilled: { borderRadius: 12, borderWidth: 1, padding: 8 },
-  monthDayNum: { fontSize: 13, fontWeight: '800' },
-  monthDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 6 },
-  monthDot: { width: 7, height: 7, borderRadius: 3.5 },
-  monthMore: { fontSize: 9, fontWeight: '800' },
+  monthDow: { flexDirection: 'row', marginBottom: KIOSK_SPACE.xs },
+  monthDowText: { flex: 1, textAlign: 'center', fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 1 },
+  monthGrid: { flex: 1, gap: KIOSK_SPACE.xs },
+  monthWeekRow: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.xs },
+  monthCell: { flex: 1, minWidth: 0 },
+  // minHeight so a 6-row month keeps genuinely tappable day cells rather
+  // than six thin bands — this is the primary control in Month view.
+  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 88 },
+  monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  monthDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: KIOSK_SPACE.xs },
+  monthDot: { width: 11, height: 11, borderRadius: 6 },
+  monthMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 
   // Day
   dayRoot: { flex: 1 },
-  dayAllDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  dayAllDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
-  dayAllDayText: { fontSize: 12, fontWeight: '800' },
-  dayHourRow: { flexDirection: 'row', minHeight: 56, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8, gap: 12 },
-  dayHourLabel: { width: 56, fontSize: 11, fontWeight: '700', paddingTop: 2 },
-  dayHourEvents: { flex: 1, gap: 8 },
-  dayEventCard: { borderRadius: 12, borderWidth: 1, borderLeftWidth: 3, padding: 12, position: 'relative' },
-  dayEventTitle: { fontSize: TYPO.body, fontWeight: '800' },
-  dayEventTime: { fontSize: 11.5, fontWeight: '700', marginTop: 3 },
-  dayAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14, marginTop: 20 },
-  dayAddBtnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
-  monthAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14 },
-  monthAddBtnText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
+  dayAllDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md },
+  dayAllDayChip: {
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+  },
+  dayAllDayText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  dayHourRow: {
+    flexDirection: 'row', minHeight: 72, borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: KIOSK_SPACE.sm, gap: KIOSK_SPACE.md,
+  },
+  dayHourLabel: { width: 76, fontSize: KIOSK_TYPO.caption, fontWeight: '700', paddingTop: 2 },
+  dayHourEvents: { flex: 1, gap: KIOSK_SPACE.xs, minWidth: 0 },
+  dayEventCard: {
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 5,
+    padding: KIOSK_SPACE.md, position: 'relative', minHeight: KIOSK_HIT.control,
+  },
+  dayEventTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  dayEventTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 4 },
+  dayAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary, marginTop: KIOSK_SPACE.lg,
+  },
+  dayAddBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  monthAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary,
+  },
+  monthAddBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
 });

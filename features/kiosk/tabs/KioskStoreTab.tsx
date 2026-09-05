@@ -13,10 +13,11 @@
  */
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert, StyleSheet } from 'react-native';
-import { TYPO } from '@/constants/theme';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useKioskLockSuspended } from '../KioskActivityContext';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
 export function KioskStoreTab({ active, colors, isDark }: {
   active: FamilyMember; colors: any; isDark: boolean;
@@ -87,6 +88,33 @@ export function KioskStoreTab({ active, colors, isDark }: {
   // without switching to their phone.
   const pending = isParent ? redemptions.filter(r => r.status === 'pending') : [];
 
+  useKioskLockSuspended(jarPicker !== null);
+
+  // AUDIT FIX: approve/reject fired instantly on a single tap of a 40px
+  // icon button. On a phone that's defensible — it's your own device in
+  // your hand. On a wall-mounted kiosk it is not: the parent profile stays
+  // active for up to the full 30-minute idle window, during which anyone
+  // walking past the counter can approve their own pending redemption, and
+  // rejecting refunds coins and cannot be undone from this screen. Both
+  // now confirm first, matching how every other irreversible kiosk action
+  // (chore delete, event delete) already behaves.
+  const confirmApproval = (id: string, label: string, who: string, approve: boolean) => {
+    Alert.alert(
+      approve ? 'Approve this reward?' : 'Decline this reward?',
+      approve
+        ? `Mark "${label}" as fulfilled for ${who}?`
+        : `Decline "${label}" for ${who}? Their coins will be refunded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: approve ? 'Approve' : 'Decline',
+          style: approve ? 'default' : 'destructive',
+          onPress: () => approve ? approveRedemption(id, active.id) : rejectRedemption(id, active.id),
+        },
+      ],
+    );
+  };
+
   return (
     <View style={s.root}>
       <View style={s.header}>
@@ -108,23 +136,33 @@ export function KioskStoreTab({ active, colors, isDark }: {
               {pending.map(rd => {
                 const reward = rewards.find(r => r.id === rd.rewardId);
                 const kid = members.find(m => m.id === rd.memberId);
+                const label = reward?.title ?? rd.rewardTitle ?? 'Perk';
+                const who = kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid';
                 return (
                   <View key={rd.id} style={[s.approvalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={{ fontSize: 26 }}>{reward?.emoji ?? '🎁'}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.approvalTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                        {reward?.title ?? rd.rewardTitle ?? 'Perk'}
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.approvalTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                        {label}
                       </Text>
-                      <Text style={[s.approvalMeta, { color: colors.textSecondary }]}>
-                        {kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} coins
+                      <Text style={[s.approvalMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {who} · {rd.deductedCoins} coins
                       </Text>
                     </View>
-                    <Pressable onPress={() => rejectRedemption(rd.id, active.id)}
-                      style={[s.approvalBtn, { backgroundColor: colors.danger + '18' }]}>
+                    <Pressable
+                      onPress={() => confirmApproval(rd.id, label, who, false)}
+                      style={[s.approvalBtn, { backgroundColor: colors.danger + '18' }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Decline ${label} for ${who}`}
+                    >
                       <Text style={{ fontSize: 20, color: colors.danger }}>✕</Text>
                     </Pressable>
-                    <Pressable onPress={() => approveRedemption(rd.id, active.id)}
-                      style={[s.approvalBtn, { backgroundColor: colors.teal + '18' }]}>
+                    <Pressable
+                      onPress={() => confirmApproval(rd.id, label, who, true)}
+                      style={[s.approvalBtn, { backgroundColor: colors.teal + '18' }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Approve ${label} for ${who}`}
+                    >
                       <Text style={{ fontSize: 20, color: colors.teal }}>✓</Text>
                     </Pressable>
                   </View>
@@ -156,7 +194,7 @@ export function KioskStoreTab({ active, colors, isDark }: {
                   return (
                     <View key={rd.id} style={[s.approvalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                       <Text style={{ fontSize: 20 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <Text style={{ flex: 1, fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                      <Text style={{ flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
                         {reward?.title ?? rd.rewardTitle ?? 'Perk'}
                       </Text>
                       <View style={{ backgroundColor: meta.color + '20', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
@@ -180,6 +218,14 @@ export function KioskStoreTab({ active, colors, isDark }: {
                 onPress={() => canRedeemSelf && onRedeem(r)}
                 disabled={!canRedeemSelf}
                 style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, opacity: canRedeemSelf && !affordable ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`${r.title}, ${r.cost} coins`}
+                accessibilityState={{ disabled: !canRedeemSelf }}
+                accessibilityHint={
+                  !canRedeemSelf ? undefined
+                    : affordable ? 'Redeem this reward'
+                    : `Not enough coins yet, ${r.cost - maxAffordable} more needed`
+                }
               >
                 <Text style={s.emoji}>{r.emoji}</Text>
                 <Text style={[s.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>{r.title}</Text>
@@ -187,7 +233,9 @@ export function KioskStoreTab({ active, colors, isDark }: {
                   <Text style={[s.costText, { color: colors.amber }]}>{r.cost} coins</Text>
                 </View>
                 {canRedeemSelf && !affordable && (
-                  <Text style={[s.needMore, { color: colors.textTertiary }]}>Need {r.cost - maxAffordable} more</Text>
+                  <Text style={[s.needMore, { color: colors.textTertiary }]} numberOfLines={1}>
+                    Need {r.cost - maxAffordable} more
+                  </Text>
                 )}
               </Pressable>
             );
@@ -240,23 +288,38 @@ export function KioskStoreTab({ active, colors, isDark }: {
   );
 }
 
+// Scaled to the kiosk ladder. Reward cards in particular go 180 -> 240
+// wide with a much larger emoji: this is the screen kids browse from
+// across the kitchen, and the perk art is the thing they navigate by.
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '800' },
-  coinPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  coinText: { fontSize: TYPO.label, fontWeight: '800' },
-  sectionLabel: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
-  approvalRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: 1, padding: 14 },
-  approvalTitle: { fontSize: TYPO.body, fontWeight: '800' },
-  approvalMeta: { fontSize: 12, marginTop: 2 },
-  approvalBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  card: { width: 180, borderRadius: 18, borderWidth: 1, padding: 16, alignItems: 'center', gap: 8 },
-  emoji: { fontSize: 36 },
-  cardTitle: { fontSize: TYPO.body, fontWeight: '800', textAlign: 'center' },
-  costPill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999 },
-  costText: { fontSize: 12, fontWeight: '800' },
-  needMore: { fontSize: 11, fontWeight: '700' },
-  empty: { fontSize: TYPO.body, fontWeight: '600', textAlign: 'center', width: '100%', marginTop: 40 },
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
+  coinPill: { paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.full },
+  coinText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  sectionLabel: {
+    fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', textTransform: 'uppercase',
+    letterSpacing: 1, marginBottom: KIOSK_SPACE.sm,
+  },
+  approvalRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.md, minHeight: KIOSK_HIT.primary,
+  },
+  approvalTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  approvalMeta: { fontSize: KIOSK_TYPO.caption, marginTop: 2 },
+  approvalBtn: {
+    width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
+  card: {
+    width: 190, maxWidth: '100%', minHeight: 180, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
+    padding: KIOSK_SPACE.lg, alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.sm,
+  },
+  emoji: { fontSize: 40 },
+  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', textAlign: 'center' },
+  costPill: { paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.full },
+  costText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  needMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  empty: { fontSize: KIOSK_TYPO.subheading, fontWeight: '600', textAlign: 'center', width: '100%', marginTop: KIOSK_SPACE.xxl },
 });

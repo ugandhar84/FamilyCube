@@ -46,7 +46,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { KioskZoneHeader } from '../components/KioskSurface';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import type { FamilyMember } from '@/store/familyStore';
@@ -274,7 +275,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
                   <View style={s.mapPinWrap}>
                     <View style={[s.mapPinAvatar, { borderColor: rc }]}>
                       <FamilyAvatar name={m?.name ?? ''} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={34} />
+                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={40} />
                     </View>
                     <View style={[s.mapPinTail, { borderTopColor: rc }]} />
                   </View>
@@ -284,14 +285,15 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
           </MapView>
           {pinned.length === 0 && (
             <View pointerEvents="none" style={s.mapEmptyOverlay}>
-              <MapPin size={20} color="#fff" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginTop: 4, textAlign: 'center' }}>
+              <MapPin size={28} color="#fff" />
+              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#fff', marginTop: 6, textAlign: 'center' }}>
                 No one is sharing their location yet
               </Text>
             </View>
           )}
         </View>
 
+        <KioskZoneHeader title="Family" count={members.length} accent={colors.teal} colors={colors} />
         <View style={s.grid}>
         {members.map(m => {
           const rawLoc = locFor(m.id);
@@ -314,7 +316,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
                 {loc ? (
                   <>
                     <View style={s.metaRow}>
-                      <MapPin size={12} color={colors.teal} />
+                      <MapPin size={14} color={colors.teal} />
                       <Text style={[s.status, { color: colors.teal }]} numberOfLines={1}>
                         {loc.status_text || STATUS_LABEL[loc.status] || 'Unknown'}
                       </Text>
@@ -324,7 +326,7 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
                     )}
                     {loc.battery_level != null && loc.battery_level <= 20 && (
                       <View style={s.metaRow}>
-                        <BatteryLow size={12} color={colors.danger} />
+                        <BatteryLow size={14} color={colors.danger} />
                         <Text style={[s.lowBattery, { color: colors.danger }]}>{loc.battery_level}%</Text>
                       </View>
                     )}
@@ -336,8 +338,10 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
               {isLive && (
                 <TouchableOpacity onPress={() => openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Get directions to ${m.name}`}
                   style={[s.navBtn, { backgroundColor: colors.tealLight ?? colors.teal + '18' }]}>
-                  <Navigation size={16} color={colors.teal} />
+                  <Navigation size={20} color={colors.teal} />
                 </TouchableOpacity>
               )}
             </View>
@@ -350,38 +354,48 @@ export function KioskFindFamTab({ active, members, colors, isDark }: {
   );
 }
 
+// Rescaled to the kiosk ladder. The roster cards carried 11.5-12px meta
+// text — unreadable at the distance this screen is actually consulted
+// from ("is anyone on their way home yet?"). Every fixed-width card also
+// gains maxWidth:'100%' so a narrow portrait pane reflows instead of
+// clipping (the grid already wraps).
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 20 },
-  headerRow: { marginBottom: 14 },
-  title: { fontSize: 24, fontWeight: '800' },
-  // Fixed height rather than flex — a map needs a real, generous glance-
-  // able area on a kiosk (not a cramped strip), but shouldn't consume the
-  // whole screen the way it does on a phone (where it's the only content
-  // before scrolling to the sheet); 380px gives it genuine presence while
-  // leaving the roster grid below fully visible without excess scrolling.
-  mapWrap: { borderRadius: 20, borderWidth: 1, overflow: 'hidden', marginBottom: 20 },
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  headerRow: { marginBottom: KIOSK_SPACE.md },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
+  mapWrap: { borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, overflow: 'hidden', marginBottom: KIOSK_SPACE.lg },
   mapPinWrap: { alignItems: 'center' },
   mapPinAvatar: {
-    borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2,
+    borderRadius: 22, borderWidth: 3, backgroundColor: '#fff', padding: 2,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
   },
   mapPinTail: {
     width: 0, height: 0, marginTop: -2,
-    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+    borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 9,
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
   },
   mapEmptyOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, width: 300, borderRadius: 16, borderWidth: 1, padding: 14 },
-  avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    width: 300, maxWidth: '100%', minHeight: 76,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.md,
+  },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
   avatarEmoji: { fontSize: 22 },
-  name: { fontSize: TYPO.body, fontWeight: '800' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  status: { fontSize: 12, fontWeight: '700' },
-  addr: { fontSize: 11.5, fontWeight: '600', marginTop: 3 },
-  lowBattery: { fontSize: 11, fontWeight: '800' },
-  navBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: 4 },
+  status: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  addr: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 4 },
+  lowBattery: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  navBtn: {
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

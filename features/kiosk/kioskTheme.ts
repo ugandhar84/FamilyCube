@@ -31,70 +31,156 @@
  * Glanceable type ladder. Same keys as constants/theme.ts's TYPO so the
  * two are drop-in swappable; every value is larger, and the floor is 14
  * (TYPO's floor is 11 — genuinely illegible at kiosk viewing distance).
+ *
+ * ── Calibration note (live-reported: "components are too big... too much
+ * zoomed in") ──────────────────────────────────────────────────────────
+ * The first cut of this scale was applied uniformly, which produced a
+ * blown-up phone screen rather than a dashboard: chrome grew 1:1 with
+ * content, so containers got large without carrying more information.
+ *
+ * The ladder is deliberately NON-UNIFORM as a result. The top of it
+ * (clock/hero) stays genuinely large, because those are the few elements
+ * that must resolve from across a room. The middle and bottom are only
+ * modestly above phone sizes, because their job is to be readable at
+ * arm's length while staying dense enough that a screen holds real
+ * content. The ratio between hero and body is what creates glanceable
+ * hierarchy — not the absolute size of body text.
+ *
+ * Rule of thumb when using this: ask "must this resolve from six feet, or
+ * only from arm's length?" Almost everything is the latter. Reach for
+ * `hero`/`title` sparingly — one or two per screen.
  */
 export const KIOSK_TYPO = {
-  /** Lock-screen clock, the single largest thing on any kiosk screen. */
-  clock:      88,
-  /** Big dashboard stat numerals ("7 chores open"). */
-  hero:       44,
+  /** Lock/ambient-screen clock — the one genuinely room-scale element. */
+  clock:      80,
+  /** THE headline number on a screen. One per zone, at most. */
+  hero:       34,
   /** Screen titles ("Chores", "Reward Store"). */
-  title:      32,
-  /** Card titles, column heads, section titles. */
-  heading:    24,
-  /** Sub-section headers, large body, list-row titles. */
-  subheading: 20,
+  title:      26,
+  /** Zone titles, card titles, column heads. */
+  heading:    20,
+  /** Sub-section headers, list-row titles. */
+  subheading: 17,
   /** Primary body text, buttons, inputs. */
-  body:       18,
+  body:       15,
   /** Secondary info, timestamps, descriptions. */
-  caption:    16,
+  caption:    13.5,
   /** Chips, badges, assignee pills. */
-  label:      15,
+  label:      12.5,
   /** Absolute floor — fine print only. Never go below this on a kiosk. */
-  micro:      14,
+  micro:      12,
   /** Uppercase tracked section header ("TODAY'S TIMELINE"). */
-  sectionLabel: 15,
+  sectionLabel: 12.5,
 } as const;
 
 /**
- * Touch targets. Apple's HIG minimum is 44pt for a phone held in the hand;
- * a kiosk is tapped standing, often at an angle, frequently by a child or
- * someone with reduced dexterity, and always without the fine aim a
- * hand-held device allows. 56 is the floor here, and primary actions get
- * more.
+ * Touch targets — the size a finger needs, which is NOT the same thing as
+ * the size an element should LOOK.
+ *
+ * This distinction is the main lesson of the "everything is too big /
+ * too zoomed in" calibration pass. Reachability is a hit-area property;
+ * visual weight is a type-and-padding property. Conflating them is what
+ * made kiosk read as a zoomed phone: a button was given a 72px height so
+ * it would be easy to tap, which also made it visually dominate a screen
+ * it had no business dominating.
+ *
+ * So: use these for `minHeight`/`hitSlop` on things that are genuinely
+ * tapped, and let type and padding decide how large the thing READS. A
+ * 52px pill with 15px text is comfortably tappable and visually quiet; a
+ * 72px pill with 18px text is neither necessary nor calm.
+ *
+ * Apple's HIG floor is 44pt for a hand-held device. A kiosk is tapped
+ * standing, at an angle, often by a child or someone with reduced
+ * dexterity — so 48 is the floor here, with a little more for primary
+ * actions. A modest, deliberate increase over the phone; not a
+ * wholesale scale-up.
  */
 export const KIOSK_HIT = {
-  /** Absolute minimum for ANY tappable element in kiosk mode. */
-  min:     56,
-  /** Standard control — icon buttons, nav rail entries, segment buttons. */
-  control: 64,
-  /** Primary action — "Claim Chore", "Approve", the send button. */
-  primary: 72,
-  /** Avatar / profile tiles on the lock screen and header switcher. */
-  avatar:  96,
+  /** Absolute minimum tappable extent for ANY control in kiosk mode. */
+  min:     48,
+  /** Standard control — icon buttons, segment buttons, list rows. */
+  control: 52,
+  /** Primary action — "Claim Chore", "Approve", "New Chore". */
+  primary: 56,
+  /** Nav rail entries — tapped constantly, so a little more generous. */
+  rail:    64,
+  /** Profile tiles on the LOCK screen only, where they are the sole
+   *  content and are aimed at from across a room. Not inline avatars. */
+  avatar:  84,
 } as const;
 
 /**
- * Spacing. Kiosk content sits further from the eye, so the gaps that
- * separate groups have to grow with the type or the layout reads as one
- * undifferentiated wall of content.
+ * Spacing. Ambient layouts want air BETWEEN groups and tightness WITHIN
+ * them — that contrast is what makes a screen parse as a few zones at a
+ * glance. Uniformly inflating every gap (the first cut of this file) does
+ * the opposite: containers become big and sparse without the structure
+ * becoming any clearer, and whitespace reads as leftover rather than
+ * deliberate. So the small end stays close to phone values (intra-
+ * component padding) while only the large end is genuinely generous
+ * (separating zones).
  */
 export const KIOSK_SPACE = {
-  xs:  8,
-  sm:  12,
-  md:  18,
-  lg:  26,
-  xl:  36,
-  xxl: 48,
+  /** Intra-component: gap between an icon and its label. */
+  xs:  6,
+  /** Intra-component: card padding, gaps between sibling chips. */
+  sm:  10,
+  /** Between related items — cards in a grid, rows in a list. */
+  md:  14,
+  /** Container padding on larger surfaces; screen edge padding. */
+  lg:  20,
+  /** Between distinct zones. */
+  xl:  28,
+  /** Major section breaks. Use sparingly. */
+  xxl: 40,
 } as const;
 
-/** Corner radii, scaled to match the larger cards kiosk uses. */
+/**
+ * Width of KioskScreen's persistent left nav rail. Exported because tabs
+ * that lay out a fixed-width board (KioskTasksTab's kanban columns) have
+ * to subtract it to know their real available width — that value was
+ * previously a hardcoded copy in the tab, which silently went stale the
+ * moment the rail was resized and pushed the board off the screen edge.
+ */
+export const KIOSK_RAIL_WIDTH = 96;
+
+/**
+ * Corner radii. Generous-but-not-cartoonish rounding is a big part of the
+ * "soft countertop object" feel — but it has to stay CONSISTENT to read as
+ * craft rather than noise, so every kiosk surface picks from this ladder
+ * rather than inventing its own value.
+ */
 export const KIOSK_RADIUS = {
-  sm:  12,
-  md:  18,
-  lg:  24,
-  xl:  32,
+  sm:  10,
+  md:  14,
+  lg:  20,
+  xl:  26,
   full: 999,
 } as const;
+
+/**
+ * One shared soft-elevation recipe, so every raised surface in kiosk
+ * casts the SAME shadow rather than each screen inventing its own — that
+ * consistency is most of what separates "crafted" from "styled".
+ *
+ * Warm rather than neutral (tinted by the caller's accent, defaulting to
+ * the brand terracotta) because a countertop display sits in room light,
+ * and diffuse rather than tight because the object is being looked at
+ * from a distance, not held. Dark mode returns no shadow at all: a cast
+ * shadow on a near-black ground reads as mud, so elevation there is
+ * carried by the border and fill instead.
+ */
+export function kioskElevation(tint: string, isDark: boolean, level: 1 | 2 = 1) {
+  if (isDark) return { shadowOpacity: 0, elevation: 0 } as const;
+  return level === 1
+    ? {
+        shadowColor: tint, shadowOpacity: 0.07, shadowRadius: 12,
+        shadowOffset: { width: 0, height: 3 }, elevation: 2,
+      } as const
+    : {
+        shadowColor: tint, shadowOpacity: 0.12, shadowRadius: 20,
+        shadowOffset: { width: 0, height: 6 }, elevation: 4,
+      } as const;
+}
 
 /**
  * Idle/ambient timing. Kiosk has THREE states, not two:

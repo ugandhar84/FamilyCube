@@ -33,7 +33,7 @@
  */
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useUIStore } from '@/store/uiStore';
 import MemoriesTab from '@/features/vault/tabs/MemoriesTab';
 
@@ -45,8 +45,10 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: { colors:
         {!readOnly && (
           <Pressable
             onPress={() => useUIStore.getState().setOpenMemoryComposerRequested(true)}
-            style={[s.addBtn, { backgroundColor: colors.primary }]}>
-            <Plus size={18} color="#fff" />
+            accessibilityRole="button"
+            accessibilityLabel="Add a memory"
+            style={[s.addBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
+            <Plus size={20} color="#fff" />
             <Text style={s.addBtnText}>Add Memory</Text>
           </Pressable>
         )}
@@ -59,10 +61,17 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: { colors:
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '800' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 16 },
-  addBtnText: { fontSize: TYPO.body, fontWeight: '800', color: '#fff' },
-  scrollContent: { paddingBottom: 40 },
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: KIOSK_SPACE.lg, gap: KIOSK_SPACE.sm,
+  },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
+  addBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.full,
+    minHeight: KIOSK_HIT.primary, paddingHorizontal: KIOSK_SPACE.lg, justifyContent: 'center',
+    shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 6,
+  },
+  addBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', color: '#fff' },
+  scrollContent: { paddingBottom: KIOSK_SPACE.xxl },
 });

@@ -40,7 +40,7 @@ import { KioskHeader } from './KioskHeader';
 import { KioskLockScreen } from './KioskLockScreen';
 import { KioskAmbientOverlay } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
-import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskIdleLock } from './useKioskIdleLock';
 import { KioskHubTab } from './tabs/KioskHubTab';
 import { KioskTasksTab } from './tabs/KioskTasksTab';
@@ -229,11 +229,26 @@ export default function KioskScreen() {
                   accessibilityLabel={label}
                   accessibilityHint={`Show the ${label} screen`}
                 >
-                  {on && <View style={[s.railIndicator, { backgroundColor: colors.primary }]} />}
-                  <View style={[s.railBtn, on && { backgroundColor: colors.primaryLight }]}>
-                    <Icon size={30} color={on ? colors.primary : colors.textTertiary} />
+                  {/* Active state is a filled, elevated pill rather than a
+                      tint plus a hairline bar. On a countertop display the
+                      current location has to be unmistakable from across
+                      the room — a 3px indicator stripe simply isn't. */}
+                  <View
+                    style={[
+                      s.railBtn,
+                      on && {
+                        backgroundColor: colors.primary,
+                        shadowColor: colors.primary,
+                        shadowOpacity: isDark ? 0 : 0.22,
+                        shadowRadius: 8,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: isDark ? 0 : 3,
+                      },
+                    ]}
+                  >
+                    <Icon size={24} color={on ? '#fff' : colors.textTertiary} />
                     <Text
-                      style={[s.railLabel, { color: on ? colors.primary : colors.textTertiary }]}
+                      style={[s.railLabel, { color: on ? '#fff' : colors.textTertiary }]}
                       numberOfLines={1}
                     >
                       {label}
@@ -297,14 +312,13 @@ const s = StyleSheet.create({
   // which made the rail effectively icon-only guesswork for anyone who
   // didn't already know the icon set.
   rail: {
-    width: 108, borderRightWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center', paddingVertical: KIOSK_SPACE.lg,
+    width: KIOSK_RAIL_WIDTH, borderRightWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center', paddingVertical: KIOSK_SPACE.md,
   },
   railGroup: { alignItems: 'center', gap: KIOSK_SPACE.xs },
   railBtnWrap: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
-  railIndicator: { position: 'absolute', left: 0, width: 4, height: 36, borderRadius: 2 },
   railBtn: {
-    width: 84, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
+    width: 78, height: KIOSK_HIT.rail, borderRadius: KIOSK_RADIUS.md,
     alignItems: 'center', justifyContent: 'center', gap: 4,
   },
   railLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },

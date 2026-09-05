@@ -13,6 +13,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { BookOpen } from 'lucide-react-native';
 import SchoolTabComp from '@/features/vault/tabs/SchoolTab';
+import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
 export function KioskSchoolTab({ isKid, colors, isDark }: {
   isKid: boolean; colors: any; isDark: boolean;
@@ -33,9 +34,9 @@ export function KioskSchoolTab({ isKid, colors, isDark }: {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  iconBadge: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.3 },
-  body: { paddingBottom: 40 },
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.lg },
+  iconBadge: { width: 46, height: 46, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
+  body: { paddingBottom: KIOSK_SPACE.xxl },
 });

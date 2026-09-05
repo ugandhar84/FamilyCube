@@ -54,6 +54,8 @@ import { GroceryModal } from '@/features/chat/components/GroceryModal';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore } from '@/store/groceryStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useKioskLockSuspended } from '../KioskActivityContext';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
 interface ChannelEntry {
   id: string;
@@ -434,6 +436,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
   const canSend = text.trim().length > 0 || attachUri !== null;
 
+  // Hold the idle lock while any chat modal is open, and while a voice
+  // note is actually being recorded or reviewed. Recording is the sharpest
+  // case: it involves no touches at all by definition, so a long note
+  // could previously run straight into the idle timeout. Every one of
+  // these renders into its own native Modal (or, for recording, involves
+  // no touch), so none of them reach KioskScreen's root onTouchStart.
+  useKioskLockSuspended(
+    !!quickEmojiFor || !!actionMsg || !!lightboxUri || !!videoLightboxUri ||
+    !!groceryMsg || !!sharedCardPayload || recording || reviewing,
+  );
+
   return (
     <View style={s.root}>
       {/* ── Channel/DM sidebar — unchanged from the prior redesign ── */}
@@ -445,8 +458,10 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             const unread = unreadCounts[e.id] ?? 0;
             return (
               <Pressable key={e.id} onPress={() => switchChannel(e.id)}
+                accessibilityRole="button" accessibilityState={{ selected: on }}
+                accessibilityLabel={`${e.label} channel${unread > 0 ? `, ${unread} unread` : ''}`}
                 style={[s.channelRow, on && { backgroundColor: colors.primaryLight }]}>
-                {e.lock && <Lock size={13} color={on ? colors.primary : colors.textTertiary} />}
+                {e.lock && <Lock size={15} color={on ? colors.primary : colors.textTertiary} />}
                 <Text style={[s.channelLabel, { color: on ? colors.primary : colors.textPrimary, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
                   {e.label}
                 </Text>
@@ -467,6 +482,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             const unread = unreadCounts[e.id] ?? 0;
             return (
               <Pressable key={e.id} onPress={() => switchChannel(e.id)}
+                accessibilityRole="button" accessibilityState={{ selected: on }}
+                accessibilityLabel={`Direct message with ${e.label}${unread > 0 ? `, ${unread} unread` : ''}`}
                 style={[s.channelRow, on && { backgroundColor: colors.primaryLight }]}>
                 <Text style={s.dmEmoji}>{e.otherMember?.emoji ?? '👤'}</Text>
                 <Text style={[s.channelLabel, { color: on ? colors.primary : colors.textPrimary, fontWeight: on ? '800' : '600' }]} numberOfLines={1}>
@@ -648,7 +665,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
                 <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
                   <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
-                    <item.Icon size={28} color={item.color} />
+                    <item.Icon size={24} color={item.color} />
                   </View>
                   <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
                 </Pressable>
@@ -659,7 +676,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
             <View style={[s.inputRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Pressable onPress={() => setShowAttachMenu(v => !v)} style={s.iconBtn} hitSlop={8}>
+              <Pressable onPress={() => setShowAttachMenu(v => !v)} style={s.iconBtn} hitSlop={8}
+                accessibilityRole="button" accessibilityLabel="Attach a photo, video, document or location">
                 <Paperclip size={22} color={colors.textSecondary} />
               </Pressable>
               <TextInput
@@ -675,11 +693,13 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 maxLength={1000}
               />
               {canSend ? (
-                <Pressable onPress={send} style={[s.sendBtn, { backgroundColor: colors.primary }]}>
+                <Pressable onPress={send} style={[s.sendBtn, { backgroundColor: colors.primary }]}
+                  accessibilityRole="button" accessibilityLabel="Send message">
                   <Send size={20} color="#fff" />
                 </Pressable>
               ) : (
-                <Pressable onPress={startRecording} style={s.iconBtn} hitSlop={8}>
+                <Pressable onPress={startRecording} style={s.iconBtn} hitSlop={8}
+                  accessibilityRole="button" accessibilityLabel="Record a voice note">
                   <Mic size={24} color={colors.textSecondary} />
                 </Pressable>
               )}
@@ -788,14 +808,19 @@ const THREAD_MAX_WIDTH = 760;
 
 const s = StyleSheet.create({
   root: { flex: 1, flexDirection: 'row' },
-  sidebar: { width: SIDEBAR_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, paddingTop: 20, paddingHorizontal: 14 },
-  sidebarTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 8, marginLeft: 6 },
+  sidebar: { width: SIDEBAR_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, paddingTop: KIOSK_SPACE.lg, paddingHorizontal: KIOSK_SPACE.sm },
+  sidebarTitle: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 6 },
   sidebarList: { gap: 4, paddingBottom: 20 },
-  channelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 11 },
-  channelLabel: { flex: 1, fontSize: TYPO.body },
-  dmEmoji: { fontSize: 17 },
-  unreadDot: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  unreadDotText: { fontSize: 10.5, fontWeight: '800', color: '#fff' },
+  // Channel rows are the primary navigation on this tab — sized to the
+  // kiosk touch floor rather than a phone list row.
+  channelRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min,
+  },
+  channelLabel: { flex: 1, fontSize: KIOSK_TYPO.body },
+  dmEmoji: { fontSize: 18 },
+  unreadDot: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', color: '#fff' },
 
   // Centers a max-width column inside whatever space is left after the
   // sidebar — the thread never stretches past THREAD_MAX_WIDTH regardless
@@ -803,24 +828,24 @@ const s = StyleSheet.create({
   threadOuter: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
   thread: { flex: 1, width: '100%', maxWidth: THREAD_MAX_WIDTH, paddingTop: 20 },
 
-  title: { fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6, marginBottom: KIOSK_SPACE.sm },
   list: { paddingBottom: 12, flexGrow: 1 },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 10, marginHorizontal: 20 },
   dayLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dayLabel: { fontSize: 11, fontWeight: '600', paddingHorizontal: 8 },
-  empty: { textAlign: 'center', marginTop: 40, fontSize: TYPO.body, fontWeight: '600' },
+  dayLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', paddingHorizontal: KIOSK_SPACE.xs },
+  empty: { textAlign: 'center', marginTop: KIOSK_SPACE.xxl, fontSize: KIOSK_TYPO.subheading, fontWeight: '600' },
 
   banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
 
   attachMenu: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.lg, marginBottom: 4 },
   attachItem: { alignItems: 'center', gap: 8, flex: 1 },
-  attachIcon: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  attachLabel: { fontSize: 12, fontWeight: '700' },
+  attachIcon: { width: 56, height: 56, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center' },
+  attachLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
 
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, borderWidth: 1.5, borderRadius: 24, paddingLeft: 14, paddingRight: 6, paddingVertical: 8, marginBottom: 20 },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, fontSize: TYPO.body, fontWeight: '600', maxHeight: 120, paddingVertical: 8 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '600', maxHeight: 160, paddingVertical: KIOSK_SPACE.sm },
+  sendBtn: { width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_HIT.control / 2, alignItems: 'center', justifyContent: 'center' },
 
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
   emojiPicker: { flexDirection: 'row', borderRadius: RADIUS.xl, padding: 16, gap: 12, borderWidth: 1 },

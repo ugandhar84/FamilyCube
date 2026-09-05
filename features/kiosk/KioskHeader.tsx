@@ -82,12 +82,20 @@ export function KioskHeader({
 
   return (
     <View style={[s.root, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      {/* ── Time block ────────────────────────────────────────────────
+          On an always-on ambient display the clock is the single most
+          load-bearing glanceable element — it is what the device shows
+          for the ~99% of the day nobody is touching it, and it is what
+          anchors the visual hierarchy of every screen underneath. It was
+          previously 26px utility text sharing a baseline with the date.
+          Now it leads at display scale in a light weight (large + light
+          reads as "ambient clock"; large + heavy reads as "alert"), with
+          the family name as a tracked eyebrow above and the date stacked
+          beneath rather than competing on the same line. */}
       <View style={s.left}>
         <Text style={[s.eyebrow, { color: colors.textTertiary }]} numberOfLines={1}>{familyName.toUpperCase()}</Text>
-        <View style={s.clockRow}>
-          <Text style={[s.clock, { color: colors.textPrimary }]} numberOfLines={1}>{clock}</Text>
-          <Text style={[s.date, { color: colors.textSecondary }]} numberOfLines={1}>{date}</Text>
-        </View>
+        <Text style={[s.clock, { color: colors.textPrimary }]} numberOfLines={1}>{clock}</Text>
+        <Text style={[s.date, { color: colors.textSecondary }]} numberOfLines={1}>{date}</Text>
       </View>
 
       <View style={s.right}>
@@ -127,7 +135,7 @@ export function KioskHeader({
                   <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
                   {needsPin && (
                     <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Lock size={12} color={colors.textSecondary} />
+                      <Lock size={9} color={colors.textSecondary} />
                     </View>
                   )}
                 </View>
@@ -154,7 +162,7 @@ export function KioskHeader({
             accessibilityLabel="Ask Fam"
             accessibilityHint="Open the family assistant"
           >
-            <Sparkles size={28} color="#fff" />
+            <Sparkles size={22} color="#fff" />
           </Pressable>
         )}
 
@@ -166,7 +174,7 @@ export function KioskHeader({
           accessibilityLabel="Lock kiosk"
           accessibilityHint="Hides the current profile until someone signs back in"
         >
-          <Lock size={26} color={colors.textSecondary} />
+          <Lock size={20} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -186,36 +194,46 @@ export function KioskHeader({
 const s = StyleSheet.create({
   root: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    // Deeper vertical padding than a phone header: this is a masthead on
+    // a piece of furniture, and the air around the clock is what makes it
+    // read as ambient rather than as a cramped app chrome bar.
     paddingHorizontal: KIOSK_SPACE.lg, paddingVertical: KIOSK_SPACE.sm,
     borderBottomWidth: StyleSheet.hairlineWidth, gap: KIOSK_SPACE.md,
   },
   left: { flexShrink: 1 },
-  eyebrow: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1.4, marginBottom: 2 },
-  clockRow: { flexDirection: 'row', alignItems: 'baseline', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
-  clock: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', flexShrink: 1 },
+  eyebrow: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
+  // Display-scale and LIGHT-weight, deliberately: at this size a heavy
+  // weight reads as an alarm clock, a light one as an ambient wall clock.
+  // The clock is one of the few elements that genuinely earns display
+  // scale — it's what the device shows for most of its life. Light weight
+  // at this size reads as an ambient wall clock; heavy reads as an alarm.
+  clock: {
+    fontSize: KIOSK_TYPO.hero, fontWeight: '200', letterSpacing: -1,
+    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.hero * 1.05,
+  },
+  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexShrink: 1 },
   avatarScroll: { flexGrow: 0, flexShrink: 1 },
   avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, alignItems: 'center' },
-  avatarItem: { alignItems: 'center', gap: 4, width: 76 },
+  avatarItem: { alignItems: 'center', gap: 3, width: 60 },
   avatarRing: {
-    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2, borderWidth: 3,
+    width: 44, height: 44, borderRadius: 22, borderWidth: 2.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarEmoji: { fontSize: 26 },
+  avatarEmoji: { fontSize: 19 },
   pinBadge: {
-    position: 'absolute', bottom: -2, right: -2, width: 24, height: 24, borderRadius: 12,
-    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
   avatarName: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  divider: { width: StyleSheet.hairlineWidth, height: 44 },
+  divider: { width: StyleSheet.hairlineWidth, height: 32 },
   askFam: {
-    width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.full,
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
     alignItems: 'center', justifyContent: 'center',
-    shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5,
+    shadowOpacity: 0.2, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 3,
   },
   lockBtn: {
-    width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
 });

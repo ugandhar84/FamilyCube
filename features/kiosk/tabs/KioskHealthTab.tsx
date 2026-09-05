@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Heart, Pill, Syringe, FolderOpen } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useUIStore } from '@/store/uiStore';
 import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
@@ -59,12 +59,16 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           {SEGMENTS.map(seg => {
             const active = tab === seg.key;
             return (
-              <Pressable key={seg.key} onPress={() => setTab(seg.key)} style={[s.segment, {
+              <Pressable key={seg.key} onPress={() => setTab(seg.key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={seg.label}
+                style={[s.segment, {
                 backgroundColor: active ? seg.tint + '18' : colors.surface,
                 borderColor: active ? seg.tint + '60' : colors.border,
               }]}>
-                <seg.Icon size={18} color={active ? seg.tint : colors.textSecondary} />
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: active ? seg.tint : colors.textSecondary }}>
+                <seg.Icon size={20} color={active ? seg.tint : colors.textSecondary} />
+                <Text numberOfLines={1} style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: active ? seg.tint : colors.textSecondary }}>
                   {seg.label}
                 </Text>
               </Pressable>
@@ -85,14 +89,15 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  iconBadge: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.3 },
-  segmentRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  root: { flex: 1, padding: KIOSK_SPACE.lg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.lg },
+  iconBadge: { width: 46, height: 46, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
+  segmentRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.lg, flexWrap: 'wrap' },
   segment: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderRadius: 16, borderWidth: 1.5, paddingVertical: 14, paddingHorizontal: 18, flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, minHeight: KIOSK_HIT.control,
+    paddingHorizontal: KIOSK_SPACE.md, flex: 1, minWidth: 180,
   },
-  body: { paddingBottom: 40 },
+  body: { paddingBottom: KIOSK_SPACE.xxl },
 });

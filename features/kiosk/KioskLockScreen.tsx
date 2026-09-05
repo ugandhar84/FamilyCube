@@ -84,7 +84,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
           </View>
 
           <View style={s.lockPill} accessibilityRole="text" accessibilityLabel={`Locked. ${familyName}.`}>
-            <Lock size={18} color={colors.textTertiary} />
+            <Lock size={14} color={colors.textTertiary} />
             <Text style={[s.lockPillText, { color: colors.textTertiary }]} numberOfLines={1}>
               Locked · {familyName}
             </Text>
@@ -115,7 +115,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
                     <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
                     {needsPin && (
                       <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Lock size={16} color={colors.textSecondary} />
+                        <Lock size={13} color={colors.textSecondary} />
                       </View>
                     )}
                   </View>
@@ -163,13 +163,13 @@ const s = StyleSheet.create({
     fontSize: KIOSK_TYPO.clock, fontWeight: '200', letterSpacing: -2,
     fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.clock * 1.05,
   },
-  date: { fontSize: KIOSK_TYPO.heading, fontWeight: '500' },
+  date: { fontSize: KIOSK_TYPO.subheading, fontWeight: '500' },
   lockPill: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: KIOSK_SPACE.md,
     paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
   },
   lockPillText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  prompt: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', marginTop: KIOSK_SPACE.xl, marginBottom: KIOSK_SPACE.xs },
+  prompt: { fontSize: KIOSK_TYPO.body, fontWeight: '700', marginTop: KIOSK_SPACE.lg, marginBottom: KIOSK_SPACE.xs },
   // ScrollView needs BOTH a bounded style and its own contentContainerStyle
   // — the padding belongs on the content, the flex on the viewport.
   gridScroll: { flex: 1, width: '100%' },
@@ -180,14 +180,14 @@ const s = StyleSheet.create({
   // 140-wide tile around a 96px avatar ring: this is the primary (and on a
   // locked kiosk, only) control on screen, tapped by kids and grandparents
   // standing at the counter.
-  tile: { alignItems: 'center', gap: KIOSK_SPACE.sm, width: 140, minHeight: KIOSK_HIT.avatar + 40 },
+  tile: { alignItems: 'center', gap: KIOSK_SPACE.xs, width: 120, minHeight: KIOSK_HIT.avatar + 34 },
   avatarRing: {
     width: KIOSK_HIT.avatar, height: KIOSK_HIT.avatar, borderRadius: KIOSK_HIT.avatar / 2, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarEmoji: { fontSize: 42 },
+  avatarEmoji: { fontSize: 36 },
   pinBadge: {
-    position: 'absolute', bottom: -2, right: -2, width: 32, height: 32, borderRadius: 16,
+    position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: 13,
     borderWidth: 2, alignItems: 'center', justifyContent: 'center',
   },
   name: { fontSize: KIOSK_TYPO.body, fontWeight: '700', textAlign: 'center' },

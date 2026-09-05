@@ -22,7 +22,7 @@
  * FindFam) — this file re-derives that same split rather than importing
  * from the tab layout, keeping this feature fully decoupled from it.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -33,10 +33,14 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
-import { Lock } from 'lucide-react-native';
+import { useEventStore } from '@/store/eventStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import AskCubeChat from '@/components/AskCubeChat';
 import { KioskHeader } from './KioskHeader';
 import { KioskLockScreen } from './KioskLockScreen';
+import { KioskAmbientOverlay } from './KioskAmbientOverlay';
+import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskIdleLock } from './useKioskIdleLock';
 import { KioskHubTab } from './tabs/KioskHubTab';
 import { KioskTasksTab } from './tabs/KioskTasksTab';
@@ -88,7 +92,16 @@ export default function KioskScreen() {
   const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
   const [tab, setTab] = useState<KioskTab>('hub');
   const [askCubeOpen, setAskCubeOpen] = useState(false);
-  const { locked, registerActivity, lockNow, unlock } = useKioskIdleLock();
+  const { locked, ambient, registerActivity, lockNow, unlock, suspendLock, resumeLock } = useKioskIdleLock();
+
+  // One stable object for the whole subtree — a fresh literal each render
+  // would re-run every KioskModalHost's suspend/resume effect on every
+  // parent render, which for a lock-suspension refcount means unbalanced
+  // increments and a lock that never re-arms.
+  const activityApi = useMemo(
+    () => ({ registerActivity, suspendLock, resumeLock }),
+    [registerActivity, suspendLock, resumeLock],
+  );
   const pendingKioskTab = useKioskNavStore(s => s.pendingTab);
   const consumePendingKioskTab = useKioskNavStore(s => s.consumePendingTab);
 
@@ -148,9 +161,32 @@ export default function KioskScreen() {
   // rather than rendering a blank/invalid tab.
   const effectiveTab: KioskTab = rail.some(r => r.key === tab) ? tab : 'hub';
 
+  // Ambient-overlay glance counts. Deliberately COUNTS ONLY, never titles
+  // — the ambient state is what the whole room (guests included) sees, so
+  // "3 events today" is fine where "Dentist 4pm — Maya" would not be.
+  // These hooks sit above the `!active` early return below: a hook called
+  // after a conditional return is a hook-order violation the moment that
+  // condition ever flips (here: the one render before members load).
+  const dayEvents = useEventStore(s2 => s2.dayEvents);
+  const { quests } = useQuestStore();
+  const ambientEventCount = dayEvents.length;
+  const ambientChoreCount = useMemo(
+    () => quests.filter(q => q.status === 'todo' || q.status === 'in_progress' || q.status === 'claimed').length,
+    [quests],
+  );
+
+  // AskCubeChat is a shared phone component rendered straight into its own
+  // Modal — it can't be wrapped in KioskModalHost without changing its
+  // layout, so it holds the lock off via the hook form instead. Without
+  // this, a long Ask Fam conversation counts as total inactivity (every
+  // tap lands in the modal layer, invisible to the root onTouchStart) and
+  // the idle lock fires mid-conversation.
+  useKioskLockSuspended(askCubeOpen);
+
   if (!active) return null;
 
   return (
+    <KioskActivityProvider value={activityApi}>
     <SafeAreaView
       style={[s.root, { backgroundColor: colors.background }]}
       edges={['top', 'bottom']}
@@ -184,11 +220,24 @@ export default function KioskScreen() {
             {rail.map(({ key, label, Icon }) => {
               const on = effectiveTab === key;
               return (
-                <Pressable key={key} onPress={() => setTab(key)} style={s.railBtnWrap}>
+                <Pressable
+                  key={key}
+                  onPress={() => setTab(key)}
+                  style={s.railBtnWrap}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={label}
+                  accessibilityHint={`Show the ${label} screen`}
+                >
                   {on && <View style={[s.railIndicator, { backgroundColor: colors.primary }]} />}
                   <View style={[s.railBtn, on && { backgroundColor: colors.primaryLight }]}>
-                    <Icon size={22} color={on ? colors.primary : colors.textTertiary} />
-                    <Text style={[s.railLabel, { color: on ? colors.primary : colors.textTertiary }]}>{label}</Text>
+                    <Icon size={30} color={on ? colors.primary : colors.textTertiary} />
+                    <Text
+                      style={[s.railLabel, { color: on ? colors.primary : colors.textTertiary }]}
+                      numberOfLines={1}
+                    >
+                      {label}
+                    </Text>
                   </View>
                 </Pressable>
               );
@@ -220,21 +269,44 @@ export default function KioskScreen() {
           variant="kiosk"
         />
       )}
+
+      {/* Ambient veil — LAST sibling inside the SafeAreaView, so it paints
+          over the dashboard but (being a plain View, not a Modal) still
+          sits below any open native sheet. See KioskAmbientOverlay's own
+          header for why that's the deliberate opposite of the lock
+          screen's Modal choice. Suppressed while locked: the lock screen
+          is its own full surface and already shows the time. */}
+      <KioskAmbientOverlay
+        visible={ambient && !locked}
+        familyName={familyName || 'Our Family'}
+        eventCount={ambientEventCount}
+        choreCount={ambientChoreCount}
+        colors={colors}
+      />
     </SafeAreaView>
+    </KioskActivityProvider>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1 },
   row: { flex: 1, flexDirection: 'row' },
+  // Rail widened 84 -> 108 and its buttons 60 -> KIOSK_HIT.control (64),
+  // with the label up from a 10px micro-caption to KIOSK_TYPO.micro (14).
+  // A 10px label on a wall-mounted tablet is decorative, not readable —
+  // which made the rail effectively icon-only guesswork for anyone who
+  // didn't already know the icon set.
   rail: {
-    width: 84, borderRightWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center', paddingVertical: 20,
+    width: 108, borderRightWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center', paddingVertical: KIOSK_SPACE.lg,
   },
-  railGroup: { alignItems: 'center', gap: 10 },
+  railGroup: { alignItems: 'center', gap: KIOSK_SPACE.xs },
   railBtnWrap: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
-  railIndicator: { position: 'absolute', left: 0, width: 3, height: 28, borderRadius: 2 },
-  railBtn: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  railLabel: { fontSize: 10, fontWeight: '800' },
+  railIndicator: { position: 'absolute', left: 0, width: 4, height: 36, borderRadius: 2 },
+  railBtn: {
+    width: 84, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  railLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   content: { flex: 1, minWidth: 0 },
 });

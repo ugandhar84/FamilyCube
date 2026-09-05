@@ -22,9 +22,8 @@
  * already uses.
  */
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, Alert, Platform, KeyboardAvoidingView, Switch, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, Alert, Platform, KeyboardAvoidingView, ScrollView, Switch, StyleSheet } from 'react-native';
 import { X, Trash2, Clock, Lock } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -38,6 +37,8 @@ import { deriveEventEditPermission } from '@/features/tasks/lib/deriveCardAction
 // with no header/Done affordance, a genuine functional gap vs. mobile's
 // real form UI, not just a visual difference.
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { KioskModalHost } from '../KioskActivityContext';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 
 function timeStrToDate(t: string | undefined): Date | null {
   if (!t) return null;
@@ -84,7 +85,15 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   const readOnly = !canEditFull && !canEditRestricted;
 
   const saveFull = () => {
-    if (!title.trim()) return;
+    // AUDIT FIX: re-check the permission at the point of the actual write,
+    // not only where the button is rendered. KioskQuestEditor's own header
+    // already documents this belt-and-suspenders reasoning for quests
+    // ("a future second entry point ... would silently reopen full write
+    // access"); the event editor's save/delete paths were the half that
+    // never got it, and they're the more exposed pair — a calendar event
+    // delete is irreversible and this runs on a device anyone in the house
+    // can walk up to.
+    if (!canEditFull || !title.trim()) return;
     const time = timeValue
       ? `${String(timeValue.getHours()).padStart(2, '0')}:${String(timeValue.getMinutes()).padStart(2, '0')}`
       : undefined;
@@ -101,6 +110,7 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   };
 
   const saveRestricted = () => {
+    if (!canEditRestricted) return;
     const patch: Partial<FamilyEvent> = {};
     if (notes !== (event.notes ?? '')) patch.notes = notes.trim() || undefined;
     if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
@@ -109,6 +119,10 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   };
 
   const confirmDelete = () => {
+    // Same point-of-write re-check as saveFull above. deriveEventEditPermission
+    // is the single source of truth for who may delete an event, and this is
+    // where kiosk actually acts on it.
+    if (!canEditFull) return;
     Alert.alert('Delete this event?', `"${event.title}" will be permanently removed.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => { deleteEvent(event.id); onClose(); } },
@@ -117,25 +131,57 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <KioskModalHost>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.overlay}>
-        <View style={[s.card, { backgroundColor: colors.card, ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}>
+        <View
+          style={[s.card, { backgroundColor: colors.card, ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}
+          accessibilityViewIsModal
+        >
           <View style={s.header}>
-            <Text style={[s.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+            <Text
+              style={[s.headerTitle, { color: colors.textPrimary }]}
+              numberOfLines={2}
+              accessibilityRole="header"
+            >
               {readOnly ? event.title : canEditRestricted ? 'Add a Note' : 'Edit Event'}
             </Text>
-            <Pressable onPress={onClose} hitSlop={12}><X size={22} color={colors.textSecondary} /></Pressable>
+            <Pressable
+              onPress={onClose}
+              hitSlop={16}
+              style={s.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={readOnly ? 'Close' : 'Close without saving'}
+            >
+              <X size={28} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
           {(readOnly || canEditRestricted) && (
-            <View style={[s.lockBadge, { backgroundColor: colors.amberLight, marginHorizontal: 20 }]}>
-              <Lock size={12} color={colors.amber} />
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.amber }}>
+            <View style={[s.lockBadge, { backgroundColor: colors.amberLight, marginHorizontal: KIOSK_SPACE.lg }]}>
+              <Lock size={16} color={colors.amber} />
+              <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: colors.amber }}>
                 {readOnly ? 'Read-only' : 'Locked — only a note can be added'}
               </Text>
             </View>
           )}
 
-          <View style={s.body}>
+          {/* AUDIT FIX: was a plain View. The card is maxHeight-capped
+              (keyboardAwareMaxHeight + the 85% cap in s.card), and the
+              full-edit branch below stacks title + date/time + location +
+              notes + a switch — comfortably taller than that cap once the
+              on-screen keyboard is up on a kiosk. With no scroll container
+              the overflowing fields were simply unreachable: you could see
+              the Title field but never scroll down to Notes or the Save
+              button. Needs BOTH style (so it takes bounded height and
+              scrolls) and contentContainerStyle (for the padding — putting
+              that padding on `style` instead would pad the viewport rather
+              than the content and clip the last field). */}
+          <ScrollView
+            style={s.bodyScroll}
+            contentContainerStyle={s.body}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {readOnly ? (
               <>
                 <DetailRow label="Time" value={event.time ? fmtTime(event.time) : 'All day'} colors={colors} />
@@ -154,7 +200,7 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                   style={[s.input, s.notesInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
                 />
                 <View style={s.switchRow}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Call reminder</Text>
+                  <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Call reminder</Text>
                   <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ false: colors.border, true: colors.primary + '80' }} thumbColor={alertCall ? colors.primary : colors.textTertiary} />
                 </View>
               </>
@@ -164,6 +210,8 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
+                  accessibilityLabel="Event title"
+                  maxLength={120}
                   style={[s.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
                 />
                 <Text style={[s.label, { color: colors.textSecondary }]}>Date &amp; Time</Text>
@@ -172,7 +220,7 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                     onPress={() => { setShowDatePicker(true); setShowTimePicker(false); }}
                     style={[s.input, s.timeBtn, { flex: 3, backgroundColor: showDatePicker ? colors.primaryLight : colors.surface, borderColor: showDatePicker ? colors.primary : colors.border }]}
                   >
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
                       {fmtDisplay(dateValue)}
                     </Text>
                   </Pressable>
@@ -181,7 +229,7 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                     style={[s.input, s.timeBtn, { flex: 2, backgroundColor: showTimePicker ? colors.primaryLight : colors.surface, borderColor: showTimePicker ? colors.primary : colors.border }]}
                   >
                     <Clock size={16} color={timeValue ? colors.primary : colors.textTertiary} />
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: timeValue ? colors.textPrimary : colors.textTertiary }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: timeValue ? colors.textPrimary : colors.textTertiary }}>
                       {timeValue ? fmtTime(`${String(timeValue.getHours()).padStart(2, '0')}:${String(timeValue.getMinutes()).padStart(2, '0')}`) : 'All day'}
                     </Text>
                   </Pressable>
@@ -212,35 +260,58 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                   style={[s.input, s.notesInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
                 />
                 <View style={s.switchRow}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Call reminder</Text>
+                  <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Call reminder</Text>
                   <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ false: colors.border, true: colors.primary + '80' }} thumbColor={alertCall ? colors.primary : colors.textTertiary} />
                 </View>
               </>
             )}
-          </View>
+          </ScrollView>
 
           <View style={s.footer}>
             {canEditFull && (
-              <Pressable onPress={confirmDelete} style={[s.iconBtn, { borderColor: colors.danger }]}>
-                <Trash2 size={18} color={colors.danger} />
+              <Pressable
+                onPress={confirmDelete}
+                style={[s.iconBtn, { borderColor: colors.danger }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete event ${event.title}`}
+              >
+                <Trash2 size={24} color={colors.danger} />
               </Pressable>
             )}
-            <Pressable onPress={onClose} style={[s.btn, { borderWidth: 1.5, borderColor: colors.border }]}>
+            <Pressable
+              onPress={onClose}
+              style={[s.btn, { borderWidth: 1.5, borderColor: colors.border }]}
+              accessibilityRole="button"
+              accessibilityLabel={readOnly ? 'Close' : 'Cancel'}
+            >
               <Text style={[s.btnText, { color: colors.textSecondary }]}>{readOnly ? 'Close' : 'Cancel'}</Text>
             </Pressable>
             {canEditFull && (
-              <Pressable onPress={saveFull} disabled={!title.trim()} style={[s.btn, { backgroundColor: title.trim() ? colors.primary : colors.border, flex: 2 }]}>
+              <Pressable
+                onPress={saveFull}
+                disabled={!title.trim()}
+                style={[s.btn, { backgroundColor: title.trim() ? colors.primary : colors.border, flex: 2 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Save changes"
+                accessibilityState={{ disabled: !title.trim() }}
+              >
                 <Text style={[s.btnText, { color: '#fff' }]}>Save Changes</Text>
               </Pressable>
             )}
             {canEditRestricted && (
-              <Pressable onPress={saveRestricted} style={[s.btn, { backgroundColor: colors.primary, flex: 2 }]}>
+              <Pressable
+                onPress={saveRestricted}
+                style={[s.btn, { backgroundColor: colors.primary, flex: 2 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Save note"
+              >
                 <Text style={[s.btnText, { color: '#fff' }]}>Save Note</Text>
               </Pressable>
             )}
           </View>
         </View>
       </KeyboardAvoidingView>
+      </KioskModalHost>
     </Modal>
   );
 }
@@ -249,25 +320,52 @@ function DetailRow({ label, value, colors }: { label: string; value: string; col
   return (
     <View style={{ marginBottom: 10 }}>
       <Text style={[s.label, { color: colors.textSecondary, marginTop: 0 }]}>{label}</Text>
-      <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: colors.textPrimary }}>{value}</Text>
+      <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '600', color: colors.textPrimary }}>{value}</Text>
     </View>
   );
 }
 
+// Scaled to KIOSK_TYPO/KIOSK_HIT — this form is filled in standing at a
+// counter, so fields and buttons are sized for that rather than for a
+// phone in the hand.
 const s = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  card: { width: 480, maxWidth: '100%', maxHeight: '85%', borderRadius: 24, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 12, gap: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '800', flexShrink: 1 },
-  lockBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 8 },
-  body: { paddingHorizontal: 20, gap: 6 },
-  label: { fontSize: TYPO.caption, fontWeight: '700', marginTop: 10, marginBottom: 6 },
-  input: { borderWidth: 1.5, borderRadius: 14, padding: 14, fontSize: TYPO.body },
-  notesInput: { minHeight: 80, textAlignVertical: 'top' },
-  timeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  footer: { flexDirection: 'row', gap: 10, padding: 20 },
-  iconBtn: { width: 50, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  btn: { flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  btnText: { fontSize: TYPO.body, fontWeight: '800' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: KIOSK_SPACE.lg },
+  card: { width: 620, maxWidth: '100%', maxHeight: '88%', borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm,
+  },
+  headerTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', flexShrink: 1 },
+  closeBtn: {
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  lockBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, alignSelf: 'flex-start',
+    borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6, marginBottom: KIOSK_SPACE.xs,
+  },
+  // `bodyScroll` bounds the scroll viewport (flexShrink lets it give way to
+  // the fixed header/footer); `body` is the content container and owns the
+  // padding — see the ScrollView's own comment above for why the two must
+  // stay separate.
+  bodyScroll: { flexGrow: 0, flexShrink: 1 },
+  body: { paddingHorizontal: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.sm, gap: 6 },
+  label: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.xs },
+  input: {
+    borderWidth: 1.5, borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.md,
+    paddingVertical: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min, fontSize: KIOSK_TYPO.body,
+  },
+  notesInput: { minHeight: 110, textAlignVertical: 'top', paddingTop: KIOSK_SPACE.sm },
+  timeBtn: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: KIOSK_SPACE.md },
+  footer: { flexDirection: 'row', gap: KIOSK_SPACE.sm, padding: KIOSK_SPACE.lg },
+  iconBtn: {
+    width: KIOSK_HIT.control, minHeight: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.sm,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
+  btn: {
+    flex: 1, borderRadius: KIOSK_RADIUS.sm, minHeight: KIOSK_HIT.control,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: KIOSK_SPACE.sm,
+  },
+  btnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
 });

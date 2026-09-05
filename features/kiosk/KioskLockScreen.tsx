@@ -30,9 +30,9 @@ import { useEffect, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 
 export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   familyName: string;
@@ -68,33 +68,76 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
       <View style={[s.root, { backgroundColor: colors.background }]}>
         <SafeAreaView style={s.safe}>
           <View style={s.clockBlock}>
-            <Text style={[s.clock, { color: colors.textPrimary }]}>{clock}</Text>
-            <Text style={[s.date, { color: colors.textSecondary }]}>{date}</Text>
+            <Text
+              style={[s.clock, { color: colors.textPrimary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              // The single most-read element on the whole device — announce
+              // it as a header so a screen-reader user lands on it first.
+              accessibilityRole="header"
+            >
+              {clock}
+            </Text>
+            <Text style={[s.date, { color: colors.textSecondary }]} numberOfLines={1} adjustsFontSizeToFit>
+              {date}
+            </Text>
           </View>
 
-          <View style={s.lockPill}>
-            <Lock size={13} color={colors.textTertiary} />
-            <Text style={[s.lockPillText, { color: colors.textTertiary }]}>Locked · {familyName}</Text>
+          <View style={s.lockPill} accessibilityRole="text" accessibilityLabel={`Locked. ${familyName}.`}>
+            <Lock size={18} color={colors.textTertiary} />
+            <Text style={[s.lockPillText, { color: colors.textTertiary }]} numberOfLines={1}>
+              Locked · {familyName}
+            </Text>
           </View>
 
           <Text style={[s.prompt, { color: colors.textSecondary }]}>Tap your profile to continue</Text>
 
-          <ScrollView contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
-            {visibleMembers.map(m => (
-              <Pressable key={m.id} onPress={() => selectMember(m)} style={s.tile}>
-                <View style={[s.avatarRing, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
-                  {!!m.pinEnabled && !!m.pin && (
-                    <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Lock size={10} color={colors.textSecondary} />
-                    </View>
-                  )}
-                </View>
-                <Text style={[s.name, { color: colors.textPrimary }]} numberOfLines={1}>
-                  {m.name.split(' ')[0]}
-                </Text>
-              </Pressable>
-            ))}
+          <ScrollView
+            style={s.gridScroll}
+            contentContainerStyle={s.grid}
+            showsVerticalScrollIndicator={false}
+          >
+            {visibleMembers.map(m => {
+              const needsPin = !!m.pinEnabled && !!m.pin;
+              // A member with no name at all would otherwise render an
+              // empty tile with nothing to tap-identify or announce.
+              const firstName = m.name?.trim().split(' ')[0] || 'Family member';
+              return (
+                <Pressable
+                  key={m.id}
+                  onPress={() => selectMember(m)}
+                  style={s.tile}
+                  accessibilityRole="button"
+                  accessibilityLabel={firstName}
+                  accessibilityHint={needsPin ? 'Requires a PIN to unlock' : 'Unlocks the kiosk as this person'}
+                >
+                  <View style={[s.avatarRing, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
+                    {needsPin && (
+                      <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Lock size={16} color={colors.textSecondary} />
+                      </View>
+                    )}
+                  </View>
+                  <Text
+                    style={[s.name, { color: colors.textPrimary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    {firstName}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {visibleMembers.length === 0 && (
+              // Previously an entirely blank locked screen with no way
+              // forward and nothing explaining why — a genuine dead end on
+              // a device with no other navigation.
+              <Text style={[s.emptyState, { color: colors.textTertiary }]}>
+                No family profiles are set up yet. Add one from the Family Cube app on a phone.
+              </Text>
+            )}
           </ScrollView>
         </SafeAreaView>
       </View>
@@ -109,31 +152,47 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   );
 }
 
+// Scaled to the kiosk ladder: the clock is the one thing genuinely read
+// from across a room, and the profile tiles are the one thing genuinely
+// tapped from arm's length — both were sized for a phone before.
 const s = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1, alignItems: 'center' },
-  clockBlock: { alignItems: 'center', marginTop: 28, gap: 2 },
-  clock: { fontSize: 56, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] },
-  date: { fontSize: 16, fontWeight: '600' },
-  lockPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14,
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12,
+  clockBlock: { alignItems: 'center', marginTop: KIOSK_SPACE.xl, gap: 4, paddingHorizontal: KIOSK_SPACE.lg },
+  clock: {
+    fontSize: KIOSK_TYPO.clock, fontWeight: '200', letterSpacing: -2,
+    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.clock * 1.05,
   },
-  lockPillText: { fontSize: 12, fontWeight: '700' },
-  prompt: { fontSize: 17, fontWeight: '700', marginTop: 28, marginBottom: 8 },
+  date: { fontSize: KIOSK_TYPO.heading, fontWeight: '500' },
+  lockPill: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: KIOSK_SPACE.md,
+    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
+  },
+  lockPillText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  prompt: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', marginTop: KIOSK_SPACE.xl, marginBottom: KIOSK_SPACE.xs },
+  // ScrollView needs BOTH a bounded style and its own contentContainerStyle
+  // — the padding belongs on the content, the flex on the viewport.
+  gridScroll: { flex: 1, width: '100%' },
   grid: {
     flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
-    gap: 22, padding: 28, paddingTop: 12,
+    gap: KIOSK_SPACE.xl, padding: KIOSK_SPACE.xl, paddingTop: KIOSK_SPACE.md,
   },
-  tile: { alignItems: 'center', gap: 8, width: 100 },
+  // 140-wide tile around a 96px avatar ring: this is the primary (and on a
+  // locked kiosk, only) control on screen, tapped by kids and grandparents
+  // standing at the counter.
+  tile: { alignItems: 'center', gap: KIOSK_SPACE.sm, width: 140, minHeight: KIOSK_HIT.avatar + 40 },
   avatarRing: {
-    width: 76, height: 76, borderRadius: 38, borderWidth: 2.5,
+    width: KIOSK_HIT.avatar, height: KIOSK_HIT.avatar, borderRadius: KIOSK_HIT.avatar / 2, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarEmoji: { fontSize: 32 },
+  avatarEmoji: { fontSize: 42 },
   pinBadge: {
-    position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11,
-    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', bottom: -2, right: -2, width: 32, height: 32, borderRadius: 16,
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
   },
-  name: { fontSize: 15, fontWeight: '700' },
+  name: { fontSize: KIOSK_TYPO.body, fontWeight: '700', textAlign: 'center' },
+  emptyState: {
+    fontSize: KIOSK_TYPO.body, fontWeight: '600', textAlign: 'center',
+    paddingHorizontal: KIOSK_SPACE.xl, maxWidth: 560,
+  },
 });

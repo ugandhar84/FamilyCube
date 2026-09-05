@@ -64,7 +64,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
   Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
-  CalendarPlus, Megaphone, BatteryLow, ChefHat,
+  Megaphone, BatteryLow, ChefHat,
 } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -79,7 +79,7 @@ import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
-import { KioskKidQuickActions } from '../components/KioskKidQuickActions';
+import { KioskKidQuickActions, KioskKidCheckInTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import type { KioskTabKey } from '../kioskTabs';
 
@@ -114,12 +114,19 @@ export function KioskOverviewTab({
   const { k, isDark } = useKioskColors();
   const isParent = active.role === 'parent';
   // Kid role gets a genuinely different Overview, not the parent's with
-  // pieces missing. Three swaps, all scoped to `kid` alone — teen, senior
-  // and parent are untouched:
+  // pieces missing. All swaps below are scoped to `kid` alone — teen,
+  // senior and parent are untouched:
   //
   //   parent/others          kid                     why
   //   ───────────────────────────────────────────────────────────────────
-  //   Grocery quick tile     — dropped —             a shopping errand
+  //   Schedule quick tile    — dropped —             Schedule is already a
+  //   Grocery quick tile     — dropped —             persistent rail tab,
+  //   Meals quick tile       — dropped —             same as Store/Meals —
+  //                                                  a second entry point
+  //                                                  in the hero row is
+  //                                                  redundant, not just
+  //                                                  for kid but this cut
+  //                                                  applies to everyone
   //   Ride & pickup widget   My schedule             ride coordination is
   //                          (KidTodayWidget)        a co-parent job; the
   //                                                  actions were already
@@ -129,8 +136,12 @@ export function KioskOverviewTab({
   //   Grocery snapshot       My chores               a kid's own board +
   //                          (KidChoresWidget)       the up-for-grabs pool
   //
-  // plus one addition: the kid Hub's own six quick actions
-  // (KioskKidQuickActions), which had no kiosk equivalent at all.
+  // plus the kid Hub's own actions with no rail equivalent, as a labeled
+  // "Your stuff" card (KioskKidQuickActions) directly under the hero:
+  // Piggy Bank, Cheer Squad, My Requests, and all eight Ask-a-Parent
+  // destinations flattened into individual tiles (no picker step — each
+  // tile opens its real modal). Check In is the one promoted up into the
+  // hero's own quick row next to Intercom.
   const isKid = active.role === 'kid';
 
   const dayEvents = useEventStore(s => s.dayEvents);
@@ -208,34 +219,28 @@ export function KioskOverviewTab({
             {summarize(dayEvents.length, openChores, unclaimedRides)}
           </Text>
 
-          {/* Quick actions. The mockup's four; each goes somewhere real
-              rather than firing a toast. "Scan Flyer" is dropped — there is
-              no flyer-scanner feature in this app to route to. */}
+          {/* Quick actions. Schedule/Grocery/Meals were dropped for
+              everyone — each already has its own persistent rail tab, so a
+              second entry point here was redundant, not just extra taps.
+              Intercom has no rail equivalent, so it stays.
+
+              This row is deliberately kept SHORT. The kid's own actions
+              (Piggy Bank, Cheer Squad, My Requests, and the eight
+              Ask-a-Parent destinations) are a labeled "Your stuff" card
+              directly below the hero instead — a dozen tiles up here would
+              have made the top of the screen an undifferentiated wall and
+              defeated the point of the separate section. The one
+              exception promoted back up is Check In: everything in "Your
+              stuff" is something a kid browses to, while a check-in is
+              what someone taps once on the way past the tablet, in a
+              hurry, and it deserves to be reachable without reading. */}
           <View style={s.quickRow}>
-            <QuickAction
-              Icon={CalendarPlus} label="Schedule" accent={k.blue} k={k} isDark={isDark}
-              onPress={() => onNavigate('schedule')}
-              hint="Open the family schedule"
-            />
-            {/* Grocery is a shopping errand — parent/teen/senior only. */}
-            {!isKid && (
-              <QuickAction
-                Icon={ShoppingCart} label="Grocery" accent={k.sage} k={k} isDark={isDark}
-                onPress={() => onNavigate('meals')}
-                badge={groceryItems.length || undefined}
-                hint="Open meals and the grocery list"
-              />
-            )}
-            <QuickAction
-              Icon={UtensilsCrossed} label="Meals" accent={k.gold} k={k} isDark={isDark}
-              onPress={() => onNavigate('meals')}
-              hint="Open the weekly meal plan"
-            />
             <QuickAction
               Icon={Megaphone} label="Intercom" accent={k.primary} k={k} isDark={isDark}
               onPress={onIntercom}
               hint="Broadcast an announcement to every family phone"
             />
+            {isKid && <KioskKidCheckInTile active={active} />}
           </View>
         </WidgetCard>
 
@@ -275,19 +280,15 @@ export function KioskOverviewTab({
         </WidgetCard>
       </View>
 
-      {/* ══ KID QUICK ACTIONS ══════════════════════════════════════════
-          The kid Hub's own six tiles (KidMoreRow.tsx), kiosk-scaled. Sits
-          directly under the hero — the same position the mockup's quick
-          actions occupy — because for a kid these ARE the primary actions
-          on this screen, and burying them under the widget deck would make
-          the kid Overview read as a parent's dashboard with a kid strip
-          bolted on at the end. */}
-      {isKid && (
-        <KioskKidQuickActions
-          active={active} members={members}
-          onNavigate={tab => onNavigate(tab)}
-        />
-      )}
+      {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
+          The kid's own actions, as one labeled full-width card directly
+          under the hero — prominent, but visually distinct from the hero's
+          household Intercom action, and above the widget deck so it is not
+          buried among the read-only widgets. Kid-only, matching the phone's
+          own gate: KidCheckinRow and AskParentSheet are mounted from
+          KidView alone, and the kiosk Tasks tab's creation gate is likewise
+          `active.role === 'kid'` (not teen). */}
+      {isKid && <KioskKidQuickActions active={active} members={members} />}
 
       {/* ══ WIDGET DECK ════════════════════════════════════════════════ */}
       <View style={s.deck}>

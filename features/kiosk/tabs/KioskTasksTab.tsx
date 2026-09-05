@@ -19,7 +19,7 @@
  *
  * `colors` is still a prop and still threaded down, because this tab hosts
  * a dozen SHARED PHONE components (SmartTaskComposer, AddQuestModal,
- * AddEventModal, AskParentSheet, the Kid* modals, CollapsibleQuestCard,
+ * AddEventModal, CollapsibleQuestCard,
  * assigneeStyle) that take the app palette and cannot be restyled without
  * forking them. Both palettes resolve off the same useTheme() isDark, so a
  * kiosk frame around app-palette content is consistent within a mode.
@@ -44,10 +44,7 @@ import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
-import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
-import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
-import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
-import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
@@ -121,24 +118,29 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);
 
-  const [showAskParentSheet, setShowAskParentSheet] = useState(false);
-  const [groceryModal, setGroceryModal] = useState(false);
-  const [suppliesModal, setSuppliesModal] = useState(false);
-  const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
-  const [questProposalModal, setQuestProposalModal] = useState(false);
-  const [choreProposalModal, setChoreProposalModal] = useState(false);
-  const [rideRequestModal, setRideRequestModal] = useState(false);
-  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
+  // The kid branch's entire flow — the AskParentSheet picker plus all six
+  // destination modals, and the six pieces of state behind them — now lives
+  // in useKioskAskParent, because the Overview's "Your stuff" section needed
+  // the SAME eight destinations and a second inline copy would have drifted.
+  // `withPicker` keeps THIS tab's behaviour exactly as it was: one button,
+  // the shared phone picker, then a destination. (The Overview skips the
+  // picker and tiles the eight destinations directly — same hook, same
+  // state, same modals, different entry UI.)
+  const { openPicker, node: askParentNode } = useKioskAskParent({
+    active, members, withPicker: true,
+  });
+  const openCreator = () => { if (isKidCreator) openPicker(); else setShowComposer(true); };
 
   // Hold the kiosk idle lock while ANY of these creation sheets is open.
   // They're all shared phone components rendered into their own native
   // Modal, so their touches never reach KioskScreen's root onTouchStart —
   // without this, composing a chore counts as inactivity and the lock can
   // fire mid-form, throwing the draft away. See KioskActivityContext.
+  // The Ask-Parent side of that suspension moved with the flow:
+  // KioskAskParentFlow makes its own useKioskLockSuspended call covering
+  // showAskParentSheet (passed to it as `visible`) plus its own six.
   useKioskLockSuspended(
-    showComposer || showManualQuest || showManualEvent || showAskParentSheet ||
-    groceryModal || suppliesModal || !!askModal || questProposalModal ||
-    choreProposalModal || rideRequestModal || editingQuest !== null,
+    showComposer || showManualQuest || showManualEvent || editingQuest !== null,
   );
 
   // Live-reported: a single card sat at a fixed narrow width inside a
@@ -527,30 +529,10 @@ function KioskBoardView({ active, members, colors, isDark }: {
       )}
 
       {/* Real creation flow, ported from TasksScreen.tsx lines ~474-540 —
-          see this file's top-of-function comment for the full mapping. */}
-      <AskParentSheet
-        visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}
-        onPick={(choice) => {
-          setShowAskParentSheet(false);
-          setTimeout(() => {
-            if (choice === 'ride') setRideRequestModal(true);
-            else if (choice === 'grocery') setGroceryModal(true);
-            else if (choice === 'supplies') setSuppliesModal(true);
-            else if (choice === 'quest') setQuestProposalModal(true);
-            else if (choice === 'chore') setChoreProposalModal(true);
-            else setAskModal(choice);
-          }, 300);
-        }}
-      />
-      <GroceryModal visible={groceryModal} onClose={() => setGroceryModal(false)} active={active} />
-      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
-      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
-      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
-      <KidChoreProposalModal
-        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
-        active={active} members={members} familyId={active.familyId ?? ''}
-      />
-      <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
+          see this file's top-of-function comment for the full mapping. The
+          kid half of it (picker + eight destinations) is the shared
+          useKioskAskParent hook, used here and by the Overview. */}
+      {askParentNode}
 
       <SmartTaskComposer
         visible={showComposer}

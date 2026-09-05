@@ -37,6 +37,7 @@ import {
 } from 'react-native';
 import { ChefHat, ShoppingCart, Plus, Check, Circle } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
+import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore } from '@/store/groceryStore';
 import { categorizeItem } from '@/features/vault/tabs/meals/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -44,11 +45,17 @@ import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
 import { useKioskActivity } from '../KioskActivityContext';
+import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
   const { meals, loading, week } = useKioskMeals();
   const { registerActivity } = useKioskActivity();
+  // Meal lines were read-only — tapping one now opens its full recipe in
+  // the same side drawer the Overview hero's Breakfast/Lunch/Dinner cards
+  // already use (KioskRecipeDrawer), so the two surfaces that both show a
+  // meal behave identically rather than one being tappable and one not.
+  const [openMeal, setOpenMeal] = useState<Meal | null>(null);
 
   const items = useGroceryStore(s => s.items);
   const load = useGroceryStore(s => s.load);
@@ -95,6 +102,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   const today = todayMealDay();
 
   return (
+    <>
     <ScrollView
       contentContainerStyle={s.scroll}
       showsVerticalScrollIndicator={false}
@@ -153,7 +161,14 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     </View>
                     <View style={{ flex: 1, minWidth: 0, gap: KIOSK_SPACE.xs }}>
                       {dayMeals.map(m => (
-                        <View key={m.id} style={s.mealLine}>
+                        <Pressable
+                          key={m.id}
+                          onPress={() => setOpenMeal(m)}
+                          style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${m.title} recipe`}
+                          accessibilityHint="See ingredients and prep steps"
+                        >
                           <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>
@@ -168,7 +183,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                               ].filter(Boolean).join(' · ') || 'No details yet'}
                             </Text>
                           </View>
-                        </View>
+                        </Pressable>
                       ))}
                     </View>
                   </Well>
@@ -249,6 +264,15 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         </View>
       </View>
     </ScrollView>
+
+    <KioskRecipeDrawer
+      visible={!!openMeal}
+      onClose={() => setOpenMeal(null)}
+      meal={openMeal}
+      members={members}
+      k={k}
+    />
+    </>
   );
 }
 

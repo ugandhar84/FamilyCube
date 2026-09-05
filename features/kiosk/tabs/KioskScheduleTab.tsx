@@ -1341,7 +1341,24 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
         {weeks.map((week, wi) => (
           <View key={wi} style={s.monthWeekRow}>
             {week.map((dateStr, di) => {
-              if (!dateStr) return <View key={di} style={s.monthCell} />;
+              // Live-reported: the grid looked misaligned starting at row 2
+              // (the first row made entirely of real, filled cells) once a
+              // two-digit date like "11" appeared. Root cause: this empty
+              // leading-padding cell only ever got `s.monthCell` (flex:1,
+              // minWidth:0), while every FILLED cell also gets
+              // `s.monthCellFilled`'s borderWidth:1 — RN adds border width
+              // on top of a flex box's content area rather than treating it
+              // as a boxSizing:border-box inset by default, so a bordered
+              // flex:1 cell and a borderless flex:1 cell sharing one row
+              // don't actually end up the same rendered width. Row 1 (a mix
+              // of empty + filled cells) partly masked this; row 2 — all 7
+              // cells suddenly real and bordered — is where the drift
+              // became visible. Fix: give the empty cell the SAME border
+              // (just invisible) so every cell in the grid has identical
+              // box geometry regardless of whether it holds a date.
+              if (!dateStr) {
+                return <View key={di} style={[s.monthCell, s.monthCellFilled, { borderColor: 'transparent' }]} />;
+              }
               const isToday = dateStr === todayStr;
               const dayEvents = (eventsByDate[dateStr] ?? []).filter(
                 ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'hidden',

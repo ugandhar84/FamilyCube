@@ -40,7 +40,22 @@ const RRULE_DAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 // from this app's own EventRecurrenceRule shape — both Google and Outlook
 // accept standard RRULE syntax, just wrapped slightly differently (see
 // portableToGoogleBody/portableToOutlookBody).
-export function buildRRule(rule: NonNullable<LocalEventRow['recurrence_rule']>): string {
+//
+// Live-reported: a recurring event with no explicit end date synced out
+// to Google as a genuinely INFINITE RRULE (neither UNTIL nor COUNT), so
+// Google kept expanding the series years into the future (live-reported:
+// "why is the recurring syncing up to 2028 Sep?") — completely out of
+// sync with what the app itself actually shows, since
+// store/eventStore.ts's own RECURRENCE_WINDOW_DAYS caps local
+// materialization at 84 days (12 weeks) and never generates occurrences
+// past that regardless of what the pushed RRULE claims. anchorDate lets
+// this default UNTIL to exactly that same 84-day horizon whenever the
+// user didn't pick their own end date/count — the external copy's
+// lifespan now always matches what FamilyCube itself will ever actually
+// show for that series.
+const DEFAULT_RECURRENCE_WINDOW_DAYS = 84;
+
+export function buildRRule(rule: NonNullable<LocalEventRow['recurrence_rule']>, anchorDate: string): string {
   const parts = [`FREQ=${rule.frequency.toUpperCase()}`];
   if (rule.frequency === 'weekly' && rule.days?.length) {
     parts.push(`BYDAY=${rule.days.map(d => RRULE_DAY[d]).join(',')}`);
@@ -51,6 +66,10 @@ export function buildRRule(rule: NonNullable<LocalEventRow['recurrence_rule']>):
     parts.push(`UNTIL=${until.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`);
   } else if (rule.occurrences) {
     parts.push(`COUNT=${rule.occurrences}`);
+  } else {
+    const [ay, am, ad] = anchorDate.split('-').map(Number);
+    const until = new Date(Date.UTC(ay, am - 1, ad + DEFAULT_RECURRENCE_WINDOW_DAYS, 23, 59, 59));
+    parts.push(`UNTIL=${until.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`);
   }
   return parts.join(';');
 }
@@ -118,7 +137,7 @@ export interface GoogleEventBody {
 }
 
 export function portableToGoogleBody(e: PortableEvent, timezone: string | null): GoogleEventBody {
-  const recurrence = e.recurrenceRule ? [`RRULE:${buildRRule(e.recurrenceRule)}`] : undefined;
+  const recurrence = e.recurrenceRule ? [`RRULE:${buildRRule(e.recurrenceRule, e.date)}`] : undefined;
   if (e.allDay || !e.startTime) {
     const start = e.date;
     const [y, m, d] = e.date.split('-').map(Number);
@@ -196,11 +215,19 @@ function buildOutlookRecurrence(rule: NonNullable<LocalEventRow['recurrence_rule
     interval: 1,
     ...(rule.frequency === 'weekly' && rule.days?.length ? { daysOfWeek: rule.days.map(d => GRAPH_DAY[d]) } : {}),
   };
+  // Same fix as buildRRule's own UNTIL fallback above — 'noEnd' produced a
+  // genuinely infinite Outlook series with no relationship to how far this
+  // app's own local materialization (RECURRENCE_WINDOW_DAYS, 84 days) ever
+  // actually goes, exactly the "why is this syncing years out" bug.
   const range: OutlookEventBody['recurrence']['range'] = rule.endDate
     ? { type: 'endDate', startDate, endDate: rule.endDate }
     : rule.occurrences
     ? { type: 'numbered', startDate, numberOfOccurrences: rule.occurrences }
-    : { type: 'noEnd', startDate };
+    : (() => {
+        const [y, m, d] = startDate.split('-').map(Number);
+        const until = new Date(Date.UTC(y, m - 1, d + DEFAULT_RECURRENCE_WINDOW_DAYS));
+        return { type: 'endDate' as const, startDate, endDate: until.toISOString().slice(0, 10) };
+      })();
   return { pattern, range };
 }
 

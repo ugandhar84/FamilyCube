@@ -48,7 +48,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
 } from 'react-native';
-import { Plus, Check, SlidersHorizontal } from 'lucide-react-native';
+import { Plus, Check, ListPlus } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore, type GroceryItem } from '@/store/groceryStore';
@@ -100,6 +100,44 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     () => isKid ? items.filter(it => it.addedBy === active.id) : items,
     [items, isKid, active.id],
   );
+
+  // Real phone grouping (features/grocery/GroceryScreen.tsx's
+  // categorisedItems + groupedItems, read in full) — live-reported: "i
+  // dont see the the store/cat[egory] grouping ?? like in mobile," so this
+  // reproduces both, not an approximation:
+  //   1. Category buckets first — Supplies and Clothing get their own
+  //      section, everything else falls into Groceries. Same match rule
+  //      (category === 'Supplies'/'School Supplies' or 'Clothing'/
+  //      'Clothes'; everything else, including no category, is groceries).
+  //   2. Only the Groceries bucket is then further grouped by store
+  //      preference, "Any store" always sorted last — the phone's own
+  //      groupedItems does the identical two-step, not a flat list.
+  // The phone's separate kidGroceryGroups step (its OWN "requests from
+  // Priya" style section, splitting kid-added items out of the store
+  // groups entirely) is not reproduced — kiosk already scopes kid items a
+  // different real way (isKid limits visibleItems to that kid's own
+  // additions above), so there is no separate "whose request" grouping
+  // left to show once that filter has already applied.
+  const categorisedItems = useMemo(() => {
+    const buckets: { groceries: GroceryItem[]; supplies: GroceryItem[]; clothing: GroceryItem[] } = { groceries: [], supplies: [], clothing: [] };
+    for (const it of visibleItems) {
+      const cat = it.category;
+      if (cat === 'Supplies' || cat === 'School Supplies') buckets.supplies.push(it);
+      else if (cat === 'Clothing' || cat === 'Clothes') buckets.clothing.push(it);
+      else buckets.groceries.push(it);
+    }
+    return buckets;
+  }, [visibleItems]);
+
+  const groupedGroceries = useMemo(() => {
+    const groups: Record<string, GroceryItem[]> = {};
+    for (const it of categorisedItems.groceries) {
+      const key = it.storePreference || 'Any store';
+      (groups[key] ??= []).push(it);
+    }
+    return Object.entries(groups).sort(([a], [b]) =>
+      a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
+  }, [categorisedItems.groceries]);
 
   // Same read-only mirror of the real phone's "Shopping now at {store}"
   // banner as Overview's Grocery card (features/grocery/GroceryScreen.tsx:
@@ -300,7 +338,13 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     also takes quantity/category/store/notes, which this
                     one-line quick-add intentionally doesn't ask for on
                     every add. Opens the same sheet an edit uses, in
-                    create mode. */}
+                    create mode.
+                    Live-reported: SlidersHorizontal (a real "filter"
+                    glyph) read as a list filter here and confused a tap
+                    that actually opens the add form — there's no filter
+                    anywhere on this list to confuse it with. Swapped for
+                    ListPlus, the same icon ParentQuickActions.tsx already
+                    uses for "add a grocery item" elsewhere in this app. */}
                 <Pressable
                   onPress={() => { setEditingItem(undefined); setItemSheetOpen(true); }}
                   style={({ pressed }) => [
@@ -311,7 +355,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                   accessibilityLabel="Add item with more details"
                   accessibilityHint="Opens a form with quantity, category, store, and notes"
                 >
-                  <SlidersHorizontal size={18} color={k.textMuted} />
+                  <ListPlus size={18} color={k.textMuted} />
                 </Pressable>
               </View>
             )}
@@ -324,22 +368,51 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                 k={k}
               />
             ) : (
-              <View style={{ marginTop: KIOSK_SPACE.sm }}>
-                {visibleItems.map((it, i) => (
-                  <GroceryRow
-                    key={it.id}
-                    name={it.name}
-                    quantity={it.quantity}
-                    category={it.category}
-                    k={k}
-                    isDark={isDark}
-                    divider={i > 0}
-                    // Once approved, a kid's own request is read-only on
-                    // kiosk — they can see it landed on the list, not check
-                    // it off, edit, or delete it themselves.
-                    onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
-                    onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
+              <View style={{ marginTop: KIOSK_SPACE.sm, gap: KIOSK_SPACE.md }}>
+                {categorisedItems.supplies.length > 0 && (
+                  <GroceryCategorySection
+                    label="Supplies" emoji="📚" items={categorisedItems.supplies}
+                    k={k} isDark={isDark} isKid={isKid} active={active}
+                    buyItem={buyItem} onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
                   />
+                )}
+                {categorisedItems.clothing.length > 0 && (
+                  <GroceryCategorySection
+                    label="Clothing" emoji="👕" items={categorisedItems.clothing}
+                    k={k} isDark={isDark} isKid={isKid} active={active}
+                    buyItem={buyItem} onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
+                  />
+                )}
+                {groupedGroceries.map(([store, storeItems]) => (
+                  <View key={store}>
+                    {/* Same store-header shape as GroceryItemsSection.tsx's
+                        real sub-header, minus the pin/geofence affordance
+                        (irrelevant to a stationary kiosk) and the live
+                        per-store "N left" count (redundant here — every
+                        item shown is already unbought, so the section's
+                        own row count already reads at a glance). */}
+                    <Text style={[s.storeLabel, { color: k.primary }]} numberOfLines={1}>
+                      {store === 'Any store' ? 'ANY STORE' : store.toUpperCase()}
+                    </Text>
+                    {storeItems.map((it, i) => (
+                      <GroceryRow
+                        key={it.id}
+                        name={it.name}
+                        quantity={it.quantity}
+                        // No inline category chip — matches the real phone,
+                        // which never shows one either (GroceryItemsSection.tsx
+                        // has no category rendering at all); category is
+                        // information the SECTION already carries once real
+                        // grouping exists, not a per-row restatement.
+                        category={undefined}
+                        k={k}
+                        isDark={isDark}
+                        divider={i > 0}
+                        onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
+                        onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
+                      />
+                    ))}
+                  </View>
                 ))}
               </View>
             )}
@@ -433,6 +506,55 @@ function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdi
   );
 }
 
+/**
+ * A category section (Supplies/Clothing) — matches
+ * features/grocery/components/CategorySection.tsx's real shape: a labeled
+ * header, then store-grouped rows within it, with the store sub-header
+ * shown only when the category actually spans more than one store (the
+ * phone's own `storeGroups.length > 1` gate — a single-store category
+ * doesn't need to repeat its one store name under every item).
+ */
+function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, buyItem, onEditItem }: {
+  label: string; emoji: string; items: GroceryItem[];
+  k: KioskColors; isDark: boolean; isKid: boolean; active: FamilyMember;
+  buyItem: (itemId: string, memberId: string) => Promise<void>;
+  onEditItem: (item: GroceryItem) => void;
+}) {
+  const storeGroups = useMemo(() => {
+    const groups: Record<string, GroceryItem[]> = {};
+    for (const it of items) (groups[it.storePreference || 'Any store'] ??= []).push(it);
+    return Object.entries(groups).sort(([a], [b]) =>
+      a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
+  }, [items]);
+  return (
+    <View>
+      <Text style={[s.categoryLabel, { color: k.text }]} numberOfLines={1}>{emoji} {label}</Text>
+      {storeGroups.map(([store, storeItems]) => (
+        <View key={store}>
+          {storeGroups.length > 1 && (
+            <Text style={[s.storeLabel, { color: k.primary }]} numberOfLines={1}>
+              {store === 'Any store' ? 'ANY STORE' : store.toUpperCase()}
+            </Text>
+          )}
+          {storeItems.map((it, i) => (
+            <GroceryRow
+              key={it.id}
+              name={it.name}
+              quantity={it.quantity}
+              category={undefined}
+              k={k}
+              isDark={isDark}
+              divider={i > 0}
+              onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
+              onEdit={isKid ? undefined : () => onEditItem(it)}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const chefName = (id: string | null | undefined, members: FamilyMember[]) => {
   const n = members.find(m => m.id === id)?.name?.trim().split(' ')[0];
@@ -505,4 +627,13 @@ const s = StyleSheet.create({
   },
   groceryName: { flex: 1, fontSize: 13, fontWeight: '600' },
   groceryQty: { fontSize: 11.5, fontWeight: '700' },
+
+  // Real phone's CategorySection.tsx header convention (emoji + label,
+  // 14/800) — one per category bucket (Supplies/Clothing).
+  categoryLabel: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
+  // Real phone's store sub-header convention (11/800, uppercase, wide
+  // tracking, tinted) — GroceryItemsSection.tsx's own storefront label,
+  // minus its icon (a kitchen-wall glance doesn't need the icon to read
+  // "this is a store name," the all-caps label already does that).
+  storeLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.7, marginBottom: 4, marginTop: 4 },
 });

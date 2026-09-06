@@ -81,9 +81,9 @@
  * more widgets.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, TextInput } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image } from 'react-native';
 import {
-  Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
+  Car, MapPin, UtensilsCrossed, Bell, Check,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -103,9 +103,10 @@ import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from '../components/KioskFormDrawer';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
+import { useKioskPhotos } from '../useKioskPhotos';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
-import { useKioskMeals, todayMealDay } from '../useKioskMeals';
+import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import { railForRole, type KioskTabKey } from '../kioskTabs';
@@ -210,7 +211,9 @@ export function KioskOverviewTab({
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
   const { quests, approveQuest, declineQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
-  const { meals } = useKioskMeals();
+  const buyGroceryItem = useGroceryStore(s => s.buyItem);
+  const restoreGroceryItem = useGroceryStore(s => s.restoreItem);
+  const { meals, week: mealWeek } = useKioskMeals();
   const redemptions = useRewardStore(s => s.redemptions);
   const approveRedemption = useRewardStore(s => s.approveRedemption);
   const rejectRedemption = useRewardStore(s => s.rejectRedemption);
@@ -249,6 +252,35 @@ export function KioskOverviewTab({
       !m.deletedAt && m.inviteStatus !== 'pending' && (m.role === 'kid' || m.role === 'teen')),
     [members],
   );
+
+  // "N/M chores this week" per kid — matches the mockup's own jar-meta line
+  // exactly, derived from real quest data (assigned + approved this week)
+  // rather than invented copy. Monday-start week boundary, same weekOf()
+  // convention useKioskMeals already uses, so both this and the meals
+  // widget agree on what "this week" means.
+  const weekChoreCounts = useMemo(() => {
+    const [wy, wm, wd] = mealWeek.split('-').map(Number);
+    const weekStart = new Date(wy, wm - 1, wd);
+    const counts = new Map<string, { done: number; total: number }>();
+    for (const q of quests) {
+      if (!q.assignedToId) continue;
+      const at = q.approvedAt ?? q.submittedAt ?? q.claimedAt;
+      // "This week" = assigned or already acted on since Monday — a quest
+      // with no timestamp at all (freshly created, still 'todo') still
+      // counts toward the denominator via its dueDate/startedAt falling in
+      // range isn't tracked separately here, so anything currently
+      // assigned to this kid with no completion yet also counts as open
+      // this week rather than being silently excluded.
+      const relevant = q.status !== 'cancelled' && q.status !== 'archived'
+        && (!at || new Date(at) >= weekStart);
+      if (!relevant) continue;
+      const c = counts.get(q.assignedToId) ?? { done: 0, total: 0 };
+      c.total += 1;
+      if (q.status === 'approved' || q.status === 'done') c.done += 1;
+      counts.set(q.assignedToId, c);
+    }
+    return counts;
+  }, [quests, mealWeek]);
 
   // ── Unified approvals queue (parent-only) ────────────────────────────
   // Three genuinely separate systems today — chore reviews, store
@@ -530,38 +562,38 @@ export function KioskOverviewTab({
           </View>
 
           <View style={s.sideCol}>
+            {/* Mockup's .jar row exactly: a colored square with the kid's
+                INITIAL (not an emoji), name + a real "N/M chores this week"
+                progress line (not the coin-source split this used to show),
+                a bare gold number on the right (no "coins" unit label). */}
             {kids.length > 0 && (
               <WidgetCard k={k} isDark={isDark}>
-                <WidgetHeader
-                  Icon={PiggyBank} eyebrow="Allowance" title="Coin jars"
-                  accent={k.purple} k={k} isDark={isDark}
-                />
-                <View style={{ gap: KIOSK_SPACE.sm }}>
-                  {kids.map(kid => {
+                <View style={s.panelHead}>
+                  <Text style={[s.panelTitle, { color: k.textFaint }]}>COIN JARS</Text>
+                </View>
+                <View>
+                  {kids.map((kid, i) => {
                     const main = (kid as any).mainCoins ?? 0;
                     const gp = (kid as any).gpCoins ?? 0;
                     const total = main + gp;
                     const accent = kioskRoleAccent(k, kid.role);
+                    const progress = weekChoreCounts.get(kid.id);
+                    const streak = (kid as any).streak ?? 0;
+                    const firstName = kid.name?.trim().split(' ')[0] ?? '';
                     return (
-                      <Well key={kid.id} k={k} style={s.jarRow}>
-                        <View style={[s.jarAvatar, { backgroundColor: accent + (isDark ? '24' : '1A') }]}>
-                          <Text style={s.jarEmoji}>{kid.emoji ?? '🧒'}</Text>
+                      <View key={kid.id} style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                        <View style={[s.jarAvatar, { backgroundColor: accent }]}>
+                          <Text style={s.jarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
                         </View>
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>
-                            {kid.name?.trim().split(' ')[0]}
+                          <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{firstName}</Text>
+                          <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                            {progress ? `${progress.done}/${progress.total} chores this week` : 'No chores this week'}
+                            {streak > 0 ? ` · ${streak} day streak` : ''}
                           </Text>
-                          {gp > 0 && (
-                            <Text style={[s.jarSplit, { color: k.textFaint }]} numberOfLines={1}>
-                              {main} main · {gp} grandparent
-                            </Text>
-                          )}
                         </View>
-                        <Text style={[s.jarTotal, { color: accent }]} numberOfLines={1}>
-                          {total}
-                          <Text style={[s.jarUnit, { color: k.textMuted }]}> coins</Text>
-                        </Text>
-                      </Well>
+                        <Text style={[s.jarAmt, { color: k.gold }]} numberOfLines={1}>{total}</Text>
+                      </View>
                     );
                   })}
                 </View>
@@ -574,30 +606,77 @@ export function KioskOverviewTab({
               </WidgetCard>
             )}
 
+            {/* Mockup's "Meals This Week" reuses the SAME .jar row shape as
+                Coin Jars (no avatar, no amount) — a real weekly plan from
+                the same family_meals data the Meals tab itself uses, not a
+                separate "today only" summary. */}
             <WidgetCard k={k} isDark={isDark}>
-              <WidgetHeader
-                Icon={ShoppingCart} eyebrow="Kitchen" title="Grocery list"
-                accent={k.sage} k={k} isDark={isDark}
-                right={groceryItems.length > 0
-                  ? <Chip label={`${groceryItems.length}`} accent={k.sage} isDark={isDark} k={k} />
-                  : undefined}
-              />
+              <View style={s.panelHead}>
+                <Text style={[s.panelTitle, { color: k.textFaint }]}>MEALS THIS WEEK</Text>
+              </View>
+              {meals.length === 0 ? (
+                <EmptyNote text="No meals planned for this week." k={k} />
+              ) : (
+                <View>
+                  {daysFromToday().slice(0, 3).map((day, i) => {
+                    const dayMeals = meals.filter(m => m.day === day);
+                    const dinner = dayMeals.find(m => (m.type ?? '').toLowerCase() === 'dinner') ?? dayMeals[0];
+                    const dayLabel = day === todayMealDay() ? 'Tonight' : day;
+                    const chef = dinner?.chef_id ? members.find(mm => mm.id === dinner.chef_id)?.name?.trim().split(' ')[0] : undefined;
+                    return (
+                      <View key={day} style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>
+                            {dayLabel}{dinner ? ` — ${dinner.title}` : ''}
+                          </Text>
+                          <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                            {dinner
+                              ? [chef ? `${chef} cooking` : null, dinner.prep_minutes ? `${dinner.prep_minutes} min` : null].filter(Boolean).join(' · ') || 'Planned'
+                              : 'Not planned yet'}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </WidgetCard>
+
+            {/* Mockup's checkable .grocery-row exactly: a square check that
+                fills sage-green when bought, item text strikes through —
+                wired to the real buyItem/restoreItem toggle rather than the
+                previous read-only dot-and-quantity line. */}
+            <WidgetCard k={k} isDark={isDark}>
+              <View style={s.panelHead}>
+                <Text style={[s.panelTitle, { color: k.textFaint }]}>GROCERY LIST</Text>
+              </View>
               {groceryItems.length === 0 ? (
                 <EmptyNote text="The grocery list is empty." k={k} />
               ) : (
-                <View style={{ gap: KIOSK_SPACE.xs }}>
-                  {groceryItems.slice(0, 4).map(it => (
-                    <View key={it.id} style={s.groceryLine}>
-                      <View style={[s.groceryDot, { backgroundColor: k.sage }]} />
-                      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{it.name}</Text>
-                      {!!it.quantity && (
-                        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{it.quantity}</Text>
-                      )}
-                    </View>
+                <View>
+                  {groceryItems.slice(0, 5).map((it, i) => (
+                    <Pressable
+                      key={it.id}
+                      onPress={() => it.isBought ? restoreGroceryItem(it.id) : buyGroceryItem(it.id, active.id)}
+                      style={[s.groceryRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: it.isBought }}
+                      accessibilityLabel={it.name}
+                    >
+                      <View style={[s.groceryCheck, { borderColor: it.isBought ? k.sage : k.cardBorder, backgroundColor: it.isBought ? k.sage : 'transparent' }]}>
+                        {it.isBought && <Check size={11} color={k.onAccent} />}
+                      </View>
+                      <Text
+                        style={[s.groceryItemText, { color: it.isBought ? k.textFaint : k.text, textDecorationLine: it.isBought ? 'line-through' : 'none' }]}
+                        numberOfLines={1}
+                      >
+                        {it.name}
+                      </Text>
+                    </Pressable>
                   ))}
-                  {groceryItems.length > 4 && (
+                  {groceryItems.length > 5 && (
                     <Text style={[s.groceryMore, { color: k.textFaint }]} numberOfLines={1}>
-                      and {groceryItems.length - 4} more
+                      and {groceryItems.length - 5} more
                     </Text>
                   )}
                 </View>
@@ -610,7 +689,7 @@ export function KioskOverviewTab({
               />
             </WidgetCard>
 
-            <KioskMemorySlideshow compact height={200} />
+            <FamilyFeedStrip k={k} isDark={isDark} onOpen={() => onNavigate('memories')} />
           </View>
         </View>
       ) : (
@@ -1324,6 +1403,48 @@ function SeniorTasksWidget({ active, quests, k, isDark, onOpenTasks, style }: {
  * a guest can stand in front of. The Find tab (a deliberate act of
  * navigation) is where precise location lives.
  */
+/**
+ * Mockup's "Family Feed" sidebar panel: a horizontal scroller of recent
+ * photo thumbnails with a caption below each. KioskMemorySlideshow's own
+ * `compact` mode is a VERTICAL strip (the shape every other role's Overview
+ * already uses) — this is a separate small component rather than a new mode
+ * bolted onto that shared one, since only this parent sidebar needs the
+ * horizontal shape.
+ *
+ * Caption is the memory's title alone, not "Who · caption" the way the
+ * mockup shows it — family_memories (useKioskPhotos' real source) has no
+ * uploader/member field at all, and inventing a name would be exactly the
+ * kind of fabricated content this app's own real-data-or-nothing rule
+ * (see this file's header) exists to prevent.
+ */
+function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolean; onOpen: () => void }) {
+  const { photos } = useKioskPhotos();
+  return (
+    <WidgetCard k={k} isDark={isDark} padded={false}>
+      <View style={[s.panelHead, { paddingHorizontal: KIOSK_SPACE.md, paddingTop: KIOSK_SPACE.md, marginBottom: KIOSK_SPACE.sm }]}>
+        <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY FEED</Text>
+      </View>
+      {photos.length === 0 ? (
+        <EmptyNote text="No family photos kept yet." k={k} style={{ paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md }} />
+      ) : (
+        <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="Open Memories">
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md }}
+          >
+            {photos.slice(0, 8).map(p => (
+              <View key={p.key} style={s.feedItem}>
+                <Image source={{ uri: p.url }} style={s.feedThumb} />
+                <Text style={[s.feedCap, { color: k.textMuted }]} numberOfLines={2}>{p.title}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Pressable>
+      )}
+    </WidgetCard>
+  );
+}
+
 function RadarStrip({ members, k, isDark, onOpen }: {
   members: FamilyMember[]; k: KioskColors; isDark: boolean; onOpen: () => void;
 }) {
@@ -1609,19 +1730,27 @@ const s = StyleSheet.create({
   },
   approvalTextBtnLabel: { fontSize: 11.5, fontWeight: '700' },
 
-  jarRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm },
-  jarAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  jarEmoji: { fontSize: 20 },
-  jarName: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  jarSplit: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2 },
-  jarTotal: { fontSize: KIOSK_TYPO.heading, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  jarUnit: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Mockup's .jar/.jar-avatar/.jar-name/.jar-meta/.jar-amt exactly.
+  jarRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  jarAvatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  jarInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  jarName: { fontSize: 13.5, fontWeight: '700' },
+  jarMeta: { fontSize: 11.5, marginTop: 2 },
+  jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
-  groceryLine: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, minHeight: 26 },
-  groceryDot: { width: 6, height: 6, borderRadius: 3 },
-  groceryName: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
-  groceryQty: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Mockup's .grocery-row/.grocery-check/.grocery-item exactly.
+  groceryRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, minHeight: KIOSK_HIT.control },
+  groceryCheck: {
+    width: 18, height: 18, borderRadius: 5, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  groceryItemText: { fontSize: 13, fontWeight: '600' },
   groceryMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+
+  // Mockup's .feed-item/.feed-thumb/.feed-cap exactly.
+  feedItem: { width: 120, gap: KIOSK_SPACE.xs },
+  feedThumb: { width: 120, height: 90, borderRadius: 10, backgroundColor: '#0002' },
+  feedCap: { fontSize: 12.5, lineHeight: 16 },
 
   radarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
   radarCell: {

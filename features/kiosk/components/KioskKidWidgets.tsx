@@ -215,6 +215,19 @@ export function KidTodayWidget({ active, k, isDark, onOpenSchedule, style }: {
 // its own card body — see that file for the formatter's provenance. Nothing
 // about the string it produces changed; this file is a pure import site now.
 
+// Live-reported: the status strip's counter pills looked cramped — "In
+// Progress" and "Needs Redo" wrapped to 2 lines at kiosk's documented
+// smallest allowed text size (KIOSK_TYPO.micro, the absolute floor per
+// kioskTheme.ts — going smaller wasn't an option). COLUMN_STATUSES.label
+// itself is deliberately the Chores board's OWN wording, reused rather
+// than reinvented (see kidQuestLanes.ts), so it stays as-is everywhere
+// else this reads from it (the Chores tab's filters, this pill's own
+// accessibilityLabel). This is a display-only shortening, scoped to just
+// this one cramped 4-up strip.
+const STATUS_STRIP_SHORT_LABEL: Record<string, string> = {
+  todo: 'To Do', progress: 'Active', redo: 'Redo', review: 'Review',
+};
+
 export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -403,9 +416,9 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
               </Text>
               <Text
                 style={[s.statusLabel, { color: on || isSelected ? accent : k.textFaint }]}
-                numberOfLines={2}
+                numberOfLines={1}
               >
-                {b.label}
+                {STATUS_STRIP_SHORT_LABEL[b.key] ?? b.label}
               </Text>
             </Pressable>
           );
@@ -622,7 +635,7 @@ function ChoreCardRow({
                 style={[s.coinBadge, { backgroundColor: k.well, borderColor: k.goldEdge }]}
                 accessibilityLabel={`Worth ${q.coins} coins`}
               >
-                <Coins size={13} color={k.gold} />
+                <Coins size={9} color={k.gold} />
                 <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
               </View>
             )}
@@ -630,7 +643,7 @@ function ChoreCardRow({
               style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
               accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
             >
-              <meta.Icon size={12} color={meta.accent} />
+              <meta.Icon size={9} color={meta.accent} />
               <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
             </View>
           </View>
@@ -660,7 +673,7 @@ function ChoreCardRow({
             accessibilityLabel={`${btn.label}: ${q.title}`}
             accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
           >
-            <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
+            <btn.Icon size={12} color={kioskOnAccent(k, btn.accent)} />
             <Text
               style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
               numberOfLines={1}
@@ -738,18 +751,23 @@ const s = StyleSheet.create({
   // Badges/pills sit on `k.card`, not on a tint of their own accent: they
   // are already inside a status-tinted card, and a tint on a tint muddies
   // both. A solid card-colored chip reads as lifted off the wash.
+  // Live-reported (twice) as "too dominated" next to the title. Text is
+  // already at kiosk's documented floor (KIOSK_TYPO.micro — can't go
+  // smaller), so the second pass shrinks everything else instead: smaller
+  // icons, tighter padding, a thinner border and a smaller radius, so
+  // these read as quiet inline tags rather than button-weight chips.
   coinBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingHorizontal: 5, paddingVertical: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: StyleSheet.hairlineWidth,
   },
-  coinBadgeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  coinBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', fontVariant: ['tabular-nums'] },
   statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: KIOSK_SPACE.xs + 2, paddingVertical: 3,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingHorizontal: 5, paddingVertical: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: StyleSheet.hairlineWidth,
   },
-  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.3 },
+  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.1 },
   choreTimeline: { fontSize: KIOSK_TYPO.micro, fontWeight: '600' },
   choreHelper: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   // Side-by-side, primary weighted 2:1 over the outlined decline — the same
@@ -759,15 +777,21 @@ const s = StyleSheet.create({
   // column (this card sits in the Overview's widget deck, not the full-
   // width Chores board the phone screenshot's card lives in), and the
   // 16px icon was competing with an already-tight label for room.
+  // Live-reported: these read as too heavy/dominant for a secondary action
+  // row under an already-shrunk badge row. minHeight stays at KIOSK_HIT.min
+  // (kiosk's touch-target floor — never negotiable), but everything visual
+  // around that floor is tightened: thinner border, smaller icon/text,
+  // tighter horizontal padding, so the button reads as a trim pill sized to
+  // its label rather than a big block competing with the title above it.
   choreActions: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginTop: 2 },
   choreBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 4,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
+    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   choreBtnPrimary: { flex: 2 },
   choreBtnGhost: { flex: 1 },
-  choreBtnText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  choreBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', flexShrink: 1 },
 
   poolHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,

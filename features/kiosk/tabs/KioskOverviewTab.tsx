@@ -60,15 +60,31 @@
  *   5. the photo frame and the FindFam strip — unchanged, shared family
  *      content that reads the same to everyone
  *
- * Teen, senior and parent are deliberately untouched by all of it; the
- * owner's ask was specifically about kids, and inventing a narrower
- * teen/senior variant nobody asked for is how role gating drifts.
+ * Teen and parent are deliberately untouched by all of the kid-specific
+ * composition above; the owner's ask was specifically about kids, and
+ * inventing a narrower teen variant nobody asked for is how role gating
+ * drifts.
+ *
+ * ── The senior/grandparent Overview ─────────────────────────────────────
+ * Senior got a smaller version of the same fix, for the same underlying
+ * problem: before this, a grandparent's widget deck was the parent's deck
+ * with the parent-gated pieces silently missing (no coin jars, rides shown
+ * read-only with no actions) plus a household grocery list that isn't
+ * theirs either — subtraction, not composition, same anti-pattern kid used
+ * to have. Unlike kid, this is NOT a denser replacement: the design brief
+ * is explicit that Grandparent keeps its own "one-decision-at-a-time"
+ * simplicity even as the other roles' Hubs get more visually dense, so
+ * `isSenior` swaps the Rides + Grocery slots for exactly one calm summary
+ * card (SeniorTasksWidget: what's open, up to three titles, a link to the
+ * full board — no inline actions) and gives the photo feed a taller,
+ * more generous frame as this role's warm centerpiece, rather than adding
+ * more widgets.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
   Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
-  Megaphone, BatteryLow, ChefHat,
+  Megaphone, BatteryLow, ChefHat, CheckSquare,
 } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -149,6 +165,18 @@ export function KioskOverviewTab({
   // tile opens its real modal). Check In is the one promoted up into the
   // hero's own quick row next to Intercom.
   const isKid = active.role === 'kid';
+  // Senior/grandparent gets its own calm composition too, for the same
+  // reason kid did: the parent's widget deck (rides to drive, coin jars for
+  // OTHER kids, a household grocery list) is either not theirs to act on or
+  // not theirs at all — before this it just silently disappeared piece by
+  // piece (parent-gated widgets hide themselves), leaving a sparser deck
+  // with nothing of the grandparent's own in its place. Unlike kid, this is
+  // deliberately NOT a denser replacement: the design brief calls for
+  // Grandparent to keep "one-decision-at-a-time simplicity" rather than the
+  // parent/kid Hub's full density, so the swap here is a single calm
+  // summary card (SeniorTasksWidget below) plus a taller, more generous
+  // photo feed — not a multi-widget board with inline actions.
+  const isSenior = active.role === 'senior';
 
   const dayEvents = useEventStore(s => s.dayEvents);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
@@ -222,12 +250,25 @@ export function KioskOverviewTab({
             </View>
           </View>
 
-          <Text style={[s.heroTitle, { color: k.text }]} numberOfLines={2}>
-            {greeting}, {active.name?.trim().split(' ')[0]}
-          </Text>
-          <Text style={[s.heroSub, { color: k.textMuted }]} numberOfLines={2}>
-            {summarize(dayEvents.length, openChores, unclaimedRides)}
-          </Text>
+          {/* Avatar + greeting — was a plain text line with nothing to
+              anchor the eye (live-reported: the Hub should have "real
+              presence," not just a text row). The active member's own
+              emoji in a role-tinted disc gives the greeting a face, the
+              same "who is this for" signal the coin-jar and radar rows
+              already give everyone else on this screen. */}
+          <View style={s.heroGreetRow}>
+            <View style={[s.heroAvatar, { backgroundColor: kioskRoleAccent(k, active.role) + (isDark ? '26' : '18') }]}>
+              <Text style={s.heroAvatarEmoji}>{active.emoji ?? '👤'}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[s.heroTitle, { color: k.text }]} numberOfLines={2}>
+                {greeting}, {active.name?.trim().split(' ')[0]}
+              </Text>
+              <Text style={[s.heroSub, { color: k.textMuted }]} numberOfLines={2}>
+                {summarize(dayEvents.length, openChores, unclaimedRides)}
+              </Text>
+            </View>
+          </View>
 
           {/* Quick actions. Schedule/Grocery/Meals were dropped for
               everyone — each already has its own persistent rail tab, so a
@@ -356,6 +397,11 @@ export function KioskOverviewTab({
             active={active} k={k} isDark={isDark} style={s.widget}
             onOpenSchedule={() => onNavigate('schedule')}
           />
+        ) : isSenior ? (
+          <SeniorTasksWidget
+            active={active} quests={quests} k={k} isDark={isDark} style={s.widget}
+            onOpenTasks={() => onNavigate('tasks')}
+          />
         ) : (
           <WidgetCard k={k} isDark={isDark} style={s.widget}>
             <WidgetHeader
@@ -385,7 +431,9 @@ export function KioskOverviewTab({
         {/* ── Kids' coin jars ──
             Parent-only: a kiosk sits where anyone can see it, and one
             child's balance is not another child's business — the phone
-            applies the same rule (a kid sees only their own wallet). */}
+            applies the same rule (a kid sees only their own wallet). Also
+            not shown to senior — a grandparent's Overview stays to its own
+            single summary card rather than the parent's full deck. */}
         {isParent && kids.length > 0 && (
           <WidgetCard k={k} isDark={isDark} style={s.widget}>
             <WidgetHeader
@@ -440,7 +488,7 @@ export function KioskOverviewTab({
             active={active} members={members} k={k} isDark={isDark} style={s.widget}
             onOpenTasks={() => onNavigate('tasks')}
           />
-        ) : (
+        ) : isSenior ? null : (
         <WidgetCard k={k} isDark={isDark} style={s.widget}>
           <WidgetHeader
             Icon={ShoppingCart} eyebrow="Kitchen" title="Grocery list"
@@ -488,8 +536,14 @@ export function KioskOverviewTab({
             stock image anywhere in this path, and a household with no
             photos yet gets a clean empty state rather than a stranger's
             stock family on its kitchen wall. See KioskMemorySlideshow's
-            compact branch (FeedList) for the layout itself. */}
-        <KioskMemorySlideshow compact height={200} style={s.widget} />
+            compact branch (FeedList) for the layout itself.
+
+            Taller for senior — with only one other widget in their deck
+            (SeniorTasksWidget) instead of the parent/kid deck's three, the
+            photo feed is deliberately the generous, warm centerpiece of
+            their Overview rather than a small compact strip squeezed in
+            among logistics widgets that aren't theirs. */}
+        <KioskMemorySlideshow compact height={isSenior ? 340 : 200} style={isSenior ? s.widgetWide : s.widget} />
       </View>
 
       {/* ══ FINDFAM RADAR STRIP ═══════════════════════════════════════ */}
@@ -650,6 +704,84 @@ function RideRow({
   );
 }
 
+// ── Senior's own tasks — one calm summary card, not a board ──────────────
+/**
+ * Replaces the parent's Rides widget in a senior/grandparent's Overview
+ * (see the isSenior comment above for why the parent deck doesn't apply
+ * here). Deliberately the simplest widget on this screen: a single number
+ * ("what's open"), up to three titles, and a link into Tasks for anything
+ * beyond that — no inline claim/submit/approve actions, no status lanes,
+ * no board. The design brief is explicit that Grandparent keeps
+ * "one-decision-at-a-time simplicity" even as the other roles' Hubs get
+ * denser, so this stays a glance-and-go summary rather than growing into
+ * its own copy of KidChoresWidget's action-button machinery.
+ *
+ * "Yours" mirrors the one senior-scoped filter this app already shipped
+ * for exactly this purpose (the now-unreachable KioskHubTab's openPool/
+ * inProgress memos): a chore this senior is either assigned to directly or
+ * sponsoring (sponsorUserId), open or in flight — not the whole household's
+ * board.
+ */
+function SeniorTasksWidget({ active, quests, k, isDark, onOpenTasks, style }: {
+  active: FamilyMember;
+  quests: import('@/store/questStore').Quest[];
+  k: KioskColors;
+  isDark: boolean;
+  onOpenTasks: () => void;
+  style?: any;
+}) {
+  const mine = useMemo(
+    () => quests.filter(q =>
+      (q.assignedToId === active.id || q.sponsorUserId === active.id) &&
+      (q.status === 'todo' || q.status === 'claimed' || q.status === 'in_progress' || q.status === 'pending_approval'),
+    ),
+    [quests, active.id],
+  );
+  const inReview = useMemo(() => mine.filter(q => q.status === 'pending_approval').length, [mine]);
+
+  return (
+    <WidgetCard k={k} isDark={isDark} style={style}>
+      <WidgetHeader
+        Icon={CheckSquare} eyebrow="Your list" title="Chores & errands"
+        accent={k.purple} k={k} isDark={isDark}
+        right={mine.length > 0
+          ? <Chip label={`${mine.length}`} accent={k.purple} isDark={isDark} k={k} />
+          : undefined}
+      />
+      {mine.length === 0 ? (
+        <EmptyNote text="Nothing open on your list right now." k={k} />
+      ) : (
+        <View>
+          {mine.slice(0, 3).map((q, i) => (
+            <View
+              key={q.id}
+              style={[s.seniorTaskRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+            >
+              <View style={[s.seniorTaskDot, { backgroundColor: q.status === 'pending_approval' ? k.gold : k.purple }]} />
+              <Text style={[s.seniorTaskTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
+              {q.status === 'pending_approval' && (
+                <Text style={[s.seniorTaskMeta, { color: k.gold }]}>Awaiting review</Text>
+              )}
+            </View>
+          ))}
+          {mine.length > 3 && (
+            <Text style={[s.seniorTaskMeta, { color: k.textFaint, marginTop: KIOSK_SPACE.xs }]}>
+              and {mine.length - 3} more
+            </Text>
+          )}
+        </View>
+      )}
+      <ActionButton
+        label={inReview > 0 ? `See full list · ${inReview} awaiting review` : 'See full list'}
+        accent={k.purple} k={k} isDark={isDark}
+        onPress={onOpenTasks}
+        style={{ marginTop: KIOSK_SPACE.sm }}
+        accessibilityHint="Open the chores and tasks board"
+      />
+    </WidgetCard>
+  );
+}
+
 // ── FindFam radar strip ─────────────────────────────────────────────────
 /**
  * The mockup's full-width GPS banner. Reads the SAME `member_locations`
@@ -773,7 +905,10 @@ const s = StyleSheet.create({
   liveRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.6 },
-  heroTitle: { fontSize: KIOSK_TYPO.hero, fontWeight: '800', letterSpacing: -0.8, marginTop: KIOSK_SPACE.md },
+  heroGreetRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.md },
+  heroAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  heroAvatarEmoji: { fontSize: 28 },
+  heroTitle: { fontSize: KIOSK_TYPO.hero, fontWeight: '800', letterSpacing: -0.8 },
   heroSub: { fontSize: KIOSK_TYPO.body, fontWeight: '600', marginTop: 4 },
 
   // nowrap, not wrap: with Check In / Piggy Bank / Cheer Squad / My
@@ -818,6 +953,17 @@ const s = StyleSheet.create({
   // Widget deck.
   deck: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   widget: { flexGrow: 1, flexBasis: 320, minWidth: 0 },
+  // Senior's photo feed — a wider minimum basis than the standard widget so
+  // it reads as the deck's centerpiece (see the Family Feed comment above)
+  // rather than matching width with a single small summary card next to it.
+  widgetWide: { flexGrow: 3, flexBasis: 420, minWidth: 0 },
+
+  seniorTaskRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,
+  },
+  seniorTaskDot: { width: 6, height: 6, borderRadius: 3 },
+  seniorTaskTitle: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  seniorTaskMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
   rideTop: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
   rideTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },

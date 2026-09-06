@@ -31,6 +31,24 @@
  * stacking is exactly what KioskFormDrawer's own header already flags as
  * the reason every other kiosk form avoids nesting a second native dialog.
  *
+ * ── Shape: 'drawer', same as the kid's own grocery-request form ─────────
+ * Live-requested: "we can use the side narrow form similar to the school
+ * supplies in the kids account" — a narrow right-anchored drawer, not a
+ * centered dialog. The closer, same-domain reference actually already in
+ * this file is KioskGroceryRequestSheet (a kid's own "Request Groceries"
+ * form): same 'drawer' shape, and this sheet reuses that file's exact
+ * store-picker pattern — a real pill row sourced from
+ * groceryStore.pastStores merged with DEFAULT_GROCERY_STORES, the same
+ * two sources AddItemSheet's own store-suggestion chips pull from on the
+ * phone — rather than a bare free-text field.
+ *
+ * The shape call itself matches KioskFormDrawer's own stated rule: this
+ * form has real length (name, quick-suggestions, quantity+store, a store
+ * pill row, category pills, notes) rather than the short fixed two-or-
+ * three-field case a dialog suits, so 'drawer' is correct by the same
+ * reasoning KioskGroceryRequestSheet and KioskSuppliesRequestSheet both
+ * already document.
+ *
  * ── Not ported: AddItemSheet's AI quick-suggestions strip ───────────────
  * That calls the grocery-ai-suggest edge function for personalized
  * autocomplete while typing a NEW item's name — a nice-to-have for typing
@@ -45,6 +63,7 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-
 import { ShoppingCart, Trash2 } from 'lucide-react-native';
 import type { GroceryItem } from '@/store/groceryStore';
 import { useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from '@/features/grocery/components/types';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -62,8 +81,14 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
   const addItem = useGroceryStore(s => s.addItem);
   const updateItem = useGroceryStore(s => s.updateItem);
   const removeItem = useGroceryStore(s => s.removeItem);
+  const pastStores = useGroceryStore(s => s.pastStores);
   const isEdit = !!item;
   const accent = k.sage;
+
+  // Same store-pill source as KioskGroceryRequestSheet/AddItemSheet: real
+  // past-run stores first (what this family actually shops at), the app's
+  // generic defaults filling in the rest.
+  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])].slice(0, 8);
 
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
@@ -133,7 +158,7 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
   return (
     <KioskFormDrawer
       visible={visible}
-      variant="dialog"
+      variant="drawer"
       title={isEdit ? 'Edit Item' : 'Add to List'}
       subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
       accent={accent}
@@ -225,6 +250,25 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
           />
         </View>
       </View>
+
+      {/* Same store-pill row as KioskGroceryRequestSheet's own store
+          picker — a real remembered/default store is one tap, typing
+          stays available above for anything not in the pool. */}
+      {storePool.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow} keyboardShouldPersistTaps="always">
+          {storePool.map(st => (
+            <KioskPill
+              key={st}
+              label={`🏪 ${st}`}
+              selected={store === st}
+              accent={accent}
+              k={k}
+              onPress={() => setStore(store === st ? '' : st)}
+              hint="Sets the preferred store — tap again to clear"
+            />
+          ))}
+        </ScrollView>
+      )}
 
       {/* ── Category ── */}
       <View style={s.section}>

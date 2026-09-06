@@ -751,12 +751,12 @@ export function KioskOverviewTab({
                     rather than the heaviest one. */}
                 <Pressable
                   onPress={() => onNavigate('store')}
-                  style={({ pressed }) => [s.jarStoreLink, pressed && { opacity: 0.6 }]}
+                  style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
                   accessibilityRole="button"
                   accessibilityLabel="Open reward store"
                   accessibilityHint="See perks the kids can spend coins on"
                 >
-                  <Text style={[s.jarStoreLinkText, { color: k.primary }]}>Open reward store</Text>
+                  <Text style={[s.panelTextLinkText, { color: k.primary }]}>Open reward store</Text>
                   <ChevronRight size={14} color={k.primary} />
                 </Pressable>
               </WidgetCard>
@@ -842,12 +842,20 @@ export function KioskOverviewTab({
                   )}
                 </View>
               )}
-              <ActionButton
-                label="Open list" accent={k.sage} k={k} isDark={isDark}
+              {/* Live-requested: a quiet text link, not a full button —
+                  same treatment as Coin Jars' "Open reward store" link
+                  right above it, reusing the identical style rather than a
+                  second near-duplicate. */}
+              <Pressable
                 onPress={() => onNavigate('meals')}
-                style={{ marginTop: KIOSK_SPACE.sm }}
+                style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open list"
                 accessibilityHint="Open the meals and grocery screen"
-              />
+              >
+                <Text style={[s.panelTextLinkText, { color: k.sage }]}>Open list</Text>
+                <ChevronRight size={14} color={k.sage} />
+              </Pressable>
             </WidgetCard>
 
             <FamilyFeedStrip k={k} isDark={isDark} onOpen={() => onNavigate('memories')} />
@@ -1755,11 +1763,14 @@ const s = StyleSheet.create({
   jarName: { fontSize: 13.5, fontWeight: '700' },
   jarMeta: { fontSize: 11.5, marginTop: 2 },
   jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  jarStoreLink: {
+  // Shared quiet "see more" link for any sidebar panel (Coin Jars' "Open
+  // reward store", Grocery's "Open list") — not named after either card
+  // specifically, since a third panel could reuse it the same way.
+  panelTextLink: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
     marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
   },
-  jarStoreLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  panelTextLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
   // Mockup's .tl-item exactly: 58px time column + flexible body, 14px gap,
   // 13px vertical padding, hairline top border between rows.

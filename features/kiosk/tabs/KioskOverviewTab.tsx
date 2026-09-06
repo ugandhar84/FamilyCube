@@ -80,7 +80,7 @@
  * more generous frame as this role's warm centerpiece, rather than adding
  * more widgets.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import {
   Car, UtensilsCrossed, Bell, Check, ChevronRight,
@@ -593,86 +593,7 @@ export function KioskOverviewTab({
               )}
             </WidgetCard>
 
-            {/* Family Schedule — genuinely missing until now: the mockup's
-                own center-column timeline (Now-strip -> Schedule ->
-                Approvals) had no real equivalent on this screen at all.
-                Parent-only (this whole branch is), so the real per-event
-                sensitivity redaction (canViewSensitiveEventDetail) doesn't
-                apply here — a parent already gets full detail on every
-                event unconditionally, same rule KioskScheduleTab enforces
-                elsewhere on this device for other roles. All-day events
-                (no time slot) list first, timed events after in order —
-                same convention every other real calendar surface in this
-                app already uses for all-day items. */}
-            <WidgetCard k={k} isDark={isDark}>
-              <View style={[s.panelHead, { marginBottom: 4 }]}>
-                <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY SCHEDULE</Text>
-                <Text style={[s.panelCount, { color: k.textFaint }]}>
-                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Text>
-              </View>
-              {dayEvents.length === 0 ? (
-                <EmptyNote text="Nothing on the calendar today." k={k} />
-              ) : (
-                <View>
-                  {[...dayEvents]
-                    .sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? ''))
-                    .map((ev, i) => {
-                      const a = eventAssignee(ev);
-                      // Mock's exact .tl-item.done / .tl-item.current states:
-                      // an all-day event is neither (no time to compare);
-                      // a timed event is "current" while nowHHMM falls
-                      // inside [time, endTime), "done" once its end (or, if
-                      // it has none, its start) has already passed.
-                      const nowHHMM = new Date().toTimeString().slice(0, 5);
-                      const isCurrent = !ev.allDay && !!ev.time && ev.time <= nowHHMM && (!ev.endTime || ev.endTime > nowHHMM);
-                      const isDone = !ev.allDay && !!ev.time && (ev.endTime ? ev.endTime <= nowHHMM : ev.time < nowHHMM);
-                      return (
-                        <View
-                          key={ev.id}
-                          style={[
-                            s.tlItem,
-                            i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-                          ]}
-                        >
-                          {/* Mock's .tl-item.current::before is absolutely
-                              positioned (left:-20px, no width/margin effect
-                              on the row itself) — a real borderLeftWidth
-                              here would shift this ONE row 1px out of
-                              alignment with every other row in the list
-                              (confirmed: an earlier version did exactly
-                              that with a marginLeft:-1 hack). This overlay
-                              approach matches the mock exactly AND never
-                              touches layout. */}
-                          {isCurrent && <View style={[s.tlCurrentBar, { backgroundColor: k.primary }]} />}
-                          <Text style={[s.tlTime, { color: k.textFaint }]} numberOfLines={1}>
-                            {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
-                          </Text>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            {!!a.name && (
-                              <Text style={[s.tlWho, { color: k.textFaint }]} numberOfLines={1}>{a.name}</Text>
-                            )}
-                            <Text
-                              style={[s.tlTitle, { color: isCurrent ? k.primary : isDone ? k.textFaint : k.text }, isDone && { textDecorationLine: 'line-through' }]}
-                              numberOfLines={1}
-                            >
-                              {ev.title}
-                            </Text>
-                            {!!ev.location && (
-                              <Text
-                                style={[s.tlMeta, { color: isDone ? k.textFaint : k.textMuted }, isDone && { textDecorationLine: 'line-through' }]}
-                                numberOfLines={1}
-                              >
-                                {ev.location}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    })}
-                </View>
-              )}
-            </WidgetCard>
+            <FamilySchedulePanel dayEvents={dayEvents} k={k} isDark={isDark} />
 
             <WidgetCard k={k} isDark={isDark}>
               <WidgetHeader
@@ -1191,7 +1112,12 @@ function ParentApprovalsWidget({
       {filtered.length === 0 ? (
         <EmptyNote text="Nothing waiting on a decision right now." k={k} />
       ) : (
-        <View>
+        // Live-requested: "show max 5 and scrollable" — same bounded-
+        // ScrollView pattern already used for Meals This Week's own
+        // remaining-week list, so a big pending queue scrolls inside this
+        // card instead of pushing Rides/Family Schedule further down or
+        // running unbounded off the screen.
+        <ScrollView style={s.approvalsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
           {filtered.map((item, i) => (
             <ApprovalRow
               key={item.id} item={item} k={k} isDark={isDark}
@@ -1204,7 +1130,7 @@ function ParentApprovalsWidget({
               onDeclineRequest={onDeclineRequest}
             />
           ))}
-        </View>
+        </ScrollView>
       )}
       <RedoReasonSheet
         target={redoTarget} k={k}
@@ -1502,6 +1428,146 @@ function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolea
             ))}
           </ScrollView>
         </Pressable>
+      )}
+    </WidgetCard>
+  );
+}
+
+/**
+ * FamilySchedulePanel — the mock's own center-column timeline
+ * (Now-strip -> Schedule -> Approvals), extracted into its own component
+ * per the "make it modular" direction rather than staying inline JSX in
+ * the main render.
+ *
+ * Live-requested: "always show ongoing onwards, remaining scroll to" —
+ * bounded to a real height (same "N rows before it scrolls" pattern as
+ * Meals This Week/Approvals) AND auto-scrolled, once, to the first not-yet-
+ * done event on mount/data-change, so a parent glancing at this panel
+ * mid-afternoon sees the current/next event first rather than having to
+ * scroll past a morning's worth of already-finished rows. Measured via
+ * each row's own onLayout (its real rendered position) rather than a
+ * guessed fixed row height, since row height genuinely varies (a row with
+ * a "who" line or a location line is taller than one without either).
+ */
+function FamilySchedulePanel({ dayEvents, k, isDark }: {
+  dayEvents: FamilyEvent[]; k: KioskColors; isDark: boolean;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const rowOffsets = useRef<Map<string, number>>(new Map());
+  const hasScrolled = useRef(false);
+
+  const sorted = useMemo(
+    () => [...dayEvents].sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? '')),
+    [dayEvents],
+  );
+  const nowHHMM = new Date().toTimeString().slice(0, 5);
+  const rowState = (ev: FamilyEvent) => {
+    const isCurrent = !ev.allDay && !!ev.time && ev.time <= nowHHMM && (!ev.endTime || ev.endTime > nowHHMM);
+    const isDone = !ev.allDay && !!ev.time && (ev.endTime ? ev.endTime <= nowHHMM : ev.time < nowHHMM);
+    return { isCurrent, isDone };
+  };
+  // Re-run once new layout measurements come in (each row's onLayout fires
+  // after this render commits) — cheap no-op once already scrolled for
+  // this data set, guarded by hasScrolled so a later re-render (e.g. the
+  // clock ticking a done row into being) doesn't keep re-snapping the
+  // scroll position out from under someone reading it.
+  useEffect(() => {
+    hasScrolled.current = false;
+  }, [dayEvents]);
+  const maybeScrollToOngoing = () => {
+    if (hasScrolled.current) return;
+    const firstOpenIdx = sorted.findIndex(ev => !rowState(ev).isDone);
+    if (firstOpenIdx <= 0) { hasScrolled.current = true; return; } // nothing done above it — no scroll needed
+    const target = sorted[firstOpenIdx];
+    const y = rowOffsets.current.get(target.id);
+    if (y == null) return; // that row hasn't reported its layout yet
+    hasScrolled.current = true;
+    scrollRef.current?.scrollTo({ y, animated: false });
+  };
+
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      {/* Family Schedule — genuinely missing until now: the mockup's own
+          center-column timeline (Now-strip -> Schedule -> Approvals) had
+          no real equivalent on this screen at all. Parent-only (this
+          whole branch is), so the real per-event sensitivity redaction
+          (canViewSensitiveEventDetail) doesn't apply here — a parent
+          already gets full detail on every event unconditionally, same
+          rule KioskScheduleTab enforces elsewhere on this device for
+          other roles. All-day events (no time slot) list first, timed
+          events after in order — same convention every other real
+          calendar surface in this app already uses for all-day items. */}
+      <View style={[s.panelHead, { marginBottom: 4 }]}>
+        <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY SCHEDULE</Text>
+        <Text style={[s.panelCount, { color: k.textFaint }]}>
+          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        </Text>
+      </View>
+      {dayEvents.length === 0 ? (
+        <EmptyNote text="Nothing on the calendar today." k={k} />
+      ) : (
+        <ScrollView ref={scrollRef} style={s.scheduleScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {sorted.map((ev, i) => {
+            const a = eventAssignee(ev);
+            // Mock's exact .tl-item.done / .tl-item.current states: an
+            // all-day event is neither (no time to compare); a timed
+            // event is "current" while nowHHMM falls inside
+            // [time, endTime), "done" once its end (or, if it has none,
+            // its start) has already passed.
+            const { isCurrent, isDone } = rowState(ev);
+            return (
+              <View
+                key={ev.id}
+                onLayout={(e) => {
+                  rowOffsets.current.set(ev.id, e.nativeEvent.layout.y);
+                  // Checked after EVERY row's layout, not just the last —
+                  // RN doesn't guarantee child onLayout firing order, so
+                  // the target row (which comes before the last one in
+                  // the list) might not have reported its own y yet by
+                  // the time the last row does. hasScrolled + the y==null
+                  // bail inside maybeScrollToOngoing make this cheap to
+                  // call opportunistically until it actually succeeds.
+                  maybeScrollToOngoing();
+                }}
+                style={[
+                  s.tlItem,
+                  i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
+                ]}
+              >
+                {/* Mock's .tl-item.current::before is absolutely
+                    positioned (left:-20px, no width/margin effect on the
+                    row itself) — a real borderLeftWidth here would shift
+                    this ONE row 1px out of alignment with every other row
+                    in the list (confirmed: an earlier version did exactly
+                    that with a marginLeft:-1 hack). This overlay approach
+                    matches the mock exactly AND never touches layout. */}
+                {isCurrent && <View style={[s.tlCurrentBar, { backgroundColor: k.primary }]} />}
+                <Text style={[s.tlTime, { color: k.textFaint }]} numberOfLines={1}>
+                  {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
+                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  {!!a.name && (
+                    <Text style={[s.tlWho, { color: k.textFaint }]} numberOfLines={1}>{a.name}</Text>
+                  )}
+                  <Text
+                    style={[s.tlTitle, { color: isCurrent ? k.primary : isDone ? k.textFaint : k.text }, isDone && { textDecorationLine: 'line-through' }]}
+                    numberOfLines={1}
+                  >
+                    {ev.title}
+                  </Text>
+                  {!!ev.location && (
+                    <Text
+                      style={[s.tlMeta, { color: isDone ? k.textFaint : k.textMuted }, isDone && { textDecorationLine: 'line-through' }]}
+                      numberOfLines={1}
+                    >
+                      {ev.location}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
       )}
     </WidgetCard>
   );
@@ -1835,6 +1901,12 @@ const s = StyleSheet.create({
   // rather than pushing Grocery/Family Feed further down — 4 rows'
   // (~180px) worth before it scrolls.
   mealsWeekScroll: { maxHeight: 200 },
+  // 5 rows' worth (~65px each incl. padding) before it scrolls, same
+  // bounded-ScrollView reasoning as Meals This Week's own list.
+  approvalsScroll: { maxHeight: 320 },
+  // 5 rows' worth (~64px each: 13px vertical padding x2 + ~38px of
+  // stacked time/who/title/meta text), same bounded-ScrollView reasoning.
+  scheduleScroll: { maxHeight: 320 },
 
   // Real fixed 3-per-row grid — flexGrow:0/flexShrink:0/flexBasis:33.333%,
   // the same "every cell is exactly one third regardless of neighbors'

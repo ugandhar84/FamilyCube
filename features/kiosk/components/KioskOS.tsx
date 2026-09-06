@@ -269,8 +269,15 @@ export function EmptyNote({ text, k, style }: { text: string; k: KioskColors; st
 }
 
 const s = StyleSheet.create({
+  // sm (10) rather than xl (26) — matches the reference mockup's tighter
+  // panel radius (`--radius: 10px`). Sits below KIOSK_RADIUS.lg, which
+  // drawers/sheets use, so a widget card is now the LEAST rounded surface
+  // in kiosk mode rather than the most — a deliberate flip from the
+  // ladder's original "bigger surface = bigger radius" assumption, chosen
+  // to match the mockup's tight, editorial-panel identity for every widget
+  // rather than inventing a new one-off radius step.
   card: {
-    borderRadius: KIOSK_RADIUS.xl,
+    borderRadius: KIOSK_RADIUS.sm,
     borderWidth: 1,
   },
   header: {

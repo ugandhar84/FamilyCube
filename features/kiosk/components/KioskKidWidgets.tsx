@@ -44,6 +44,7 @@ import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
+import { useKioskFonts, KIOSK_FONT } from '../kioskFonts';
 import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline, kioskQuestMeta } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
@@ -641,6 +642,18 @@ function ChoreCardRow({
   // more than one stage doesn't get clipped there.
   const timelineStages = timeline ? timeline.split(' → ') : [];
 
+  // docs/kitchen-hub-mockup.html's own font stack for this card ("Inter
+  // handles dense schedule/chore text" — its own footer note), per
+  // element's weight in that file: .chorecard .name/.coinpill and
+  // .taskchip .t-title are 800 (extrabold); .chorecard .sub and .taskchip
+  // .t-meta are 600 (semibold). Falls back to `undefined` (the OS system
+  // font, with the numeric fontWeight the styles below still carry) until
+  // the face finishes loading — same pattern ArcadeScreen.tsx uses for
+  // Baloo 2, never a blocked/blank render while a Google Font downloads.
+  const fontsLoaded = useKioskFonts();
+  const fontExtrabold = fontsLoaded ? KIOSK_FONT.inter.extrabold : undefined;
+  const fontSemibold = fontsLoaded ? KIOSK_FONT.inter.semibold : undefined;
+
   return (
     <CollapsibleQuestCard
       accentColor={meta.accent}
@@ -659,7 +672,7 @@ function ChoreCardRow({
         // shape — comfortably sized pills on their own row, not squeezed
         // onto the title's row — which is what this now matches.
         <View style={s.choreCardHeader}>
-          <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+          <Text style={[s.choreTitle, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={2}>{q.title}</Text>
           <View style={s.choreCardBadgeRow}>
             {q.coins > 0 && (
               <View
@@ -667,7 +680,7 @@ function ChoreCardRow({
                 accessibilityLabel={`Worth ${q.coins} coins`}
               >
                 <Coins size={13} color={k.gold} />
-                <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+                <Text style={[s.coinBadgeText, { color: k.gold, fontFamily: fontExtrabold }]} numberOfLines={1}>{q.coins}</Text>
               </View>
             )}
             <View
@@ -675,7 +688,7 @@ function ChoreCardRow({
               accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
             >
               <meta.Icon size={12} color={meta.accent} />
-              <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+              <Text style={[s.statusPillText, { color: meta.accent, fontFamily: fontExtrabold }]} numberOfLines={1}>{meta.label}</Text>
             </View>
           </View>
         </View>
@@ -693,10 +706,10 @@ function ChoreCardRow({
           {(!!timeline || inReview) && (
             <View style={[s.choreMetaRow, { borderTopColor: k.cardBorder }]}>
               {!!timeline && (
-                <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={1}>{timeline}</Text>
+                <Text style={[s.choreTimeline, { color: k.textFaint, fontFamily: fontSemibold }]} numberOfLines={1}>{timeline}</Text>
               )}
               {inReview && (
-                <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={1}>
+                <Text style={[s.choreHelper, { color: k.gold, fontFamily: fontSemibold }]} numberOfLines={1}>
                   Waiting on a parent to review
                 </Text>
               )}
@@ -718,7 +731,7 @@ function ChoreCardRow({
               >
                 <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
                 <Text
-                  style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
+                  style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent), fontFamily: fontExtrabold }]}
                   numberOfLines={1}
                 >
                   {btn.label}
@@ -737,7 +750,7 @@ function ChoreCardRow({
                   accessibilityLabel={`Can't do this: ${q.title}`}
                   accessibilityHint="Give a reason and put this chore back up for grabs"
                 >
-                  <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
+                  <Text style={[s.choreBtnText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
                     Can't do this
                   </Text>
                 </Pressable>
@@ -758,7 +771,7 @@ function ChoreCardRow({
       {timelineStages.length > 0 && (
         <View style={s.choreExpandedTimeline}>
           {timelineStages.map((stage, i) => (
-            <Text key={i} style={[s.choreTimelineStage, { color: k.textMuted }]} numberOfLines={1}>
+            <Text key={i} style={[s.choreTimelineStage, { color: k.textMuted, fontFamily: fontSemibold }]} numberOfLines={1}>
               {stage}
             </Text>
           ))}
@@ -766,8 +779,8 @@ function ChoreCardRow({
       )}
       {!!q.declineReason && (
         <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
-          <Text style={[s.choreDeclineLabel, { color: k.danger }]} numberOfLines={1}>Parent's note</Text>
-          <Text style={[s.choreDeclineText, { color: k.text }]} numberOfLines={4}>{q.declineReason}</Text>
+          <Text style={[s.choreDeclineLabel, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>Parent's note</Text>
+          <Text style={[s.choreDeclineText, { color: k.text, fontFamily: fontSemibold }]} numberOfLines={4}>{q.declineReason}</Text>
         </View>
       )}
     </CollapsibleQuestCard>

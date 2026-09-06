@@ -100,7 +100,7 @@ import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from '../components/KioskFormDrawer';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskPhotos } from '../useKioskPhotos';
@@ -243,7 +243,11 @@ export function KioskOverviewTab({
   const { quests, approveQuest, declineQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const buyGroceryItem = useGroceryStore(s => s.buyItem);
-  const restoreGroceryItem = useGroceryStore(s => s.restoreItem);
+  // Real phone behavior (features/grocery/GroceryScreen.tsx filters
+  // !isBought the same way in every one of its own list views) — a bought
+  // item leaves the active list entirely rather than staying visible
+  // struck through.
+  const unboughtGroceryItems = useMemo(() => groceryItems.filter(it => !it.isBought), [groceryItems]);
   const { meals, week: mealWeek } = useKioskMeals();
   const redemptions = useRewardStore(s => s.redemptions);
   const approveRedemption = useRewardStore(s => s.approveRedemption);
@@ -650,9 +654,7 @@ export function KioskOverviewTab({
                 a bare gold number on the right (no "coins" unit label). */}
             {kids.length > 0 && (
               <WidgetCard k={k} isDark={isDark}>
-                <View style={s.panelHead}>
-                  <Text style={[s.panelTitle, { color: k.textFaint }]}>COIN JARS</Text>
-                </View>
+                <PanelHead title="Coin jars" k={k} />
                 <View>
                   {kids.map((kid, i) => {
                     const main = (kid as any).mainCoins ?? 0;
@@ -701,9 +703,7 @@ export function KioskOverviewTab({
                 the same family_meals data the Meals tab itself uses, not a
                 separate "today only" summary. */}
             <WidgetCard k={k} isDark={isDark}>
-              <View style={s.panelHead}>
-                <Text style={[s.panelTitle, { color: k.textFaint }]}>MEALS THIS WEEK</Text>
-              </View>
+              <PanelHead title="Meals this week" k={k} />
               {meals.length === 0 ? (
                 <EmptyNote text="No meals planned for this week." k={k} />
               ) : (
@@ -737,15 +737,21 @@ export function KioskOverviewTab({
               )}
             </WidgetCard>
 
-            {/* Mockup's checkable .grocery-row exactly: a square check that
-                fills sage-green when bought, item text strikes through —
-                wired to the real buyItem/restoreItem toggle rather than the
-                previous read-only dot-and-quantity line. */}
+            {/* Live-corrected: matches the REAL phone's grocery behavior
+                (features/grocery/GroceryScreen.tsx), not the mockup's own
+                invented .grocery-row.got (checked, struck-through, stays
+                visible). The real app filters bought items out of the
+                active list entirely wherever it's shown — this shows the
+                same `!isBought` set the phone's own "List" tab badge
+                counts. Skips the phone's confirmation Alert on purpose
+                (live-confirmed): a dialog on every check-off is real
+                friction a fast kitchen-wall tap shouldn't have, and kiosk
+                never had one before this — only the underlying "bought
+                items leave the active list" data model is matched, not
+                every UI step. */}
             <WidgetCard k={k} isDark={isDark}>
-              <View style={s.panelHead}>
-                <Text style={[s.panelTitle, { color: k.textFaint }]}>GROCERY LIST</Text>
-              </View>
-              {groceryItems.length === 0 ? (
+              <PanelHead title="Grocery list" k={k} />
+              {unboughtGroceryItems.length === 0 ? (
                 <EmptyNote text="The grocery list is empty." k={k} />
               ) : (
                 // Live-requested: "show 6 items and then rest are in scroll
@@ -755,22 +761,18 @@ export function KioskOverviewTab({
                 // Schedule: every real item renders, capped to ~6 rows
                 // visible before it scrolls.
                 <ScrollView style={s.groceryScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-                  {groceryItems.map((it, i) => (
+                  {unboughtGroceryItems.map((it, i) => (
                     <Pressable
                       key={it.id}
-                      onPress={() => it.isBought ? restoreGroceryItem(it.id) : buyGroceryItem(it.id, active.id)}
+                      onPress={() => buyGroceryItem(it.id, active.id)}
                       style={[s.groceryRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                       accessibilityRole="checkbox"
-                      accessibilityState={{ checked: it.isBought }}
+                      accessibilityState={{ checked: false }}
                       accessibilityLabel={it.name}
+                      accessibilityHint="Mark as bought and remove from the list"
                     >
-                      <View style={[s.groceryCheck, { borderColor: it.isBought ? k.sage : k.cardBorder, backgroundColor: it.isBought ? k.sage : 'transparent' }]}>
-                        {it.isBought && <Check size={11} color={k.onAccent} />}
-                      </View>
-                      <Text
-                        style={[s.groceryItemText, { color: it.isBought ? k.textFaint : k.text, textDecorationLine: it.isBought ? 'line-through' : 'none' }]}
-                        numberOfLines={1}
-                      >
+                      <View style={[s.groceryCheck, { borderColor: k.cardBorder }]} />
+                      <Text style={[s.groceryItemText, { color: k.text }]} numberOfLines={1}>
                         {it.name}
                       </Text>
                     </Pressable>
@@ -1075,12 +1077,12 @@ function ParentApprovalsWidget({
           WidgetHeader is right for every card-shaped widget on this
           screen; this panel is deliberately the mockup's own denser list-
           panel style instead. */}
-      <View style={s.panelHead}>
-        <Text style={[s.panelTitle, { color: k.textFaint }]}>APPROVALS</Text>
-        {approvals.length > 0 && (
-          <Text style={[s.panelCount, { color: k.textFaint }]}>{approvals.length} pending</Text>
-        )}
-      </View>
+      <PanelHead
+        title="Approvals" k={k}
+        right={approvals.length > 0
+          ? <Text style={[s.panelCount, { color: k.textFaint }]}>{approvals.length} pending</Text>
+          : undefined}
+      />
       <View style={s.filterRow}>
         {/* Local chip, not the shared KioskPill — the mockup's .chip.active
             is a solid dark-fill/inverted-text pill (background:var(--text),
@@ -1410,9 +1412,10 @@ function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolea
   const { photos } = useKioskPhotos();
   return (
     <WidgetCard k={k} isDark={isDark} padded={false}>
-      <View style={[s.panelHead, { paddingHorizontal: KIOSK_SPACE.md, paddingTop: KIOSK_SPACE.md, marginBottom: KIOSK_SPACE.sm }]}>
-        <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY FEED</Text>
-      </View>
+      <PanelHead
+        title="Family feed" k={k}
+        style={{ paddingHorizontal: KIOSK_SPACE.md, paddingTop: KIOSK_SPACE.md, marginBottom: KIOSK_SPACE.sm }}
+      />
       {photos.length === 0 ? (
         <EmptyNote text="No family photos kept yet." k={k} style={{ paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md }} />
       ) : (
@@ -1498,12 +1501,14 @@ function FamilySchedulePanel({ dayEvents, k, isDark }: {
           other roles. All-day events (no time slot) list first, timed
           events after in order — same convention every other real
           calendar surface in this app already uses for all-day items. */}
-      <View style={[s.panelHead, { marginBottom: 4 }]}>
-        <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY SCHEDULE</Text>
-        <Text style={[s.panelCount, { color: k.textFaint }]}>
-          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-        </Text>
-      </View>
+      <PanelHead
+        title="Family schedule" k={k} style={{ marginBottom: 4 }}
+        right={
+          <Text style={[s.panelCount, { color: k.textFaint }]}>
+            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </Text>
+        }
+      />
       {dayEvents.length === 0 ? (
         <EmptyNote text="Nothing on the calendar today." k={k} />
       ) : (
@@ -1624,18 +1629,20 @@ function RadarStrip({ members, k, isDark, onOpen, style }: {
           Schedule) — this was the one widget still using the old
           WidgetHeader icon-chip + two-line title, visibly out of step
           with the rest of the screen. */}
-      <View style={s.panelHead}>
-        <Text style={[s.panelTitle, { color: k.textFaint }]}>FIND FAM</Text>
-        <Pressable
-          onPress={onOpen} hitSlop={10}
-          accessibilityRole="button" accessibilityLabel="Open the map"
-          accessibilityHint="See everyone on the family map"
-        >
-          <Text style={[s.panelCount, { color: sharing > 0 ? k.sage : k.textFaint }]}>
-            {sharing}/{visible.length} sharing
-          </Text>
-        </Pressable>
-      </View>
+      <PanelHead
+        title="Find fam" k={k}
+        right={
+          <Pressable
+            onPress={onOpen} hitSlop={10}
+            accessibilityRole="button" accessibilityLabel="Open the map"
+            accessibilityHint="See everyone on the family map"
+          >
+            <Text style={[s.panelCount, { color: sharing > 0 ? k.sage : k.textFaint }]}>
+              {sharing}/{visible.length} sharing
+            </Text>
+          </Pressable>
+        }
+      />
       {/* Real fixed 3-per-row grid (flexGrow:0/flexBasis:33.333%, same
           pattern established earlier this session for the kid/senior
           deck) rather than the old flexGrow:1/flexBasis:220 combination,
@@ -1822,8 +1829,11 @@ const s = StyleSheet.create({
   // list-like than every card-shaped widget around it.
   // Mockup's .panel-head/.panel-title exactly: single row, 11px/700/
   // uppercase/0.12em-tracked title, small faint count on the right.
-  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  panelTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3, textTransform: 'uppercase' },
+  // panelHead/panelTitle now live as the shared PanelHead component in
+  // KioskOS.tsx — promoted there once a third file (KioskMealsTab.tsx)
+  // needed the identical style. panelCount stays local: it's real
+  // right-slot CONTENT (a count, a date, a sharing readout), not part of
+  // the shared header shell itself.
   panelCount: { fontSize: 11 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   // Mockup's .chip exactly: 999px pill, 1px border, 7x13 padding, 12px/700 text.

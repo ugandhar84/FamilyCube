@@ -130,6 +130,38 @@ export function WidgetHeader({
 }
 
 /**
+ * The mockup's OTHER header shape — `.panel-head`/`.panel-title`: a single
+ * uppercase label line with a small faint value on the right (a count, a
+ * date, a "N sharing" readout), no icon chip and no second title line.
+ *
+ * Promoted here from being copy-pasted per-file (KioskOverviewTab.tsx
+ * first, for its own rebuilt Approvals/Coin Jars/Meals This Week/Grocery/
+ * Family Feed/Family Schedule/Find panels, then needed again verbatim in
+ * KioskMealsTab.tsx) into a real shared primitive — a third consumer
+ * needing the identical style is the signal that it stopped being a
+ * one-off local pattern.
+ *
+ * Distinct from WidgetHeader (icon-chip + two-line eyebrow/title) on
+ * purpose: WidgetHeader is right for a card-shaped widget in a grid;
+ * PanelHead is right for the mockup's denser list-style panels, which
+ * this app increasingly uses once a panel was actually rebuilt against
+ * the mockup's own CSS rather than approximated.
+ */
+export function PanelHead({ title, k, right, style }: {
+  title: string;
+  k: KioskColors;
+  right?: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[s.panelHead, style]}>
+      <Text style={[s.panelTitle, { color: k.textFaint }]} numberOfLines={1}>{title.toUpperCase()}</Text>
+      {right}
+    </View>
+  );
+}
+
+/**
  * An inset block inside a widget — the mockup's nested `bg-hub-bg` panels.
  * In dark mode this is DARKER than the card it sits in (a recess); in light
  * mode it is a warm tint against the white card, which is the light-mode
@@ -286,6 +318,10 @@ const s = StyleSheet.create({
     gap: KIOSK_SPACE.sm,
     marginBottom: KIOSK_SPACE.md,
   },
+  // Mock's exact .panel-head/.panel-title: 11px/700/uppercase/0.12em
+  // tracking, right-aligned faint value slot, 10px bottom margin.
+  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  panelTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3, textTransform: 'uppercase' },
   headerIcon: {
     width: 38, height: 38, borderRadius: KIOSK_RADIUS.md,
     alignItems: 'center', justifyContent: 'center',

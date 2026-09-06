@@ -84,7 +84,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, TextInput } from 'react-native';
 import {
   Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
-  Megaphone, BatteryLow, ChefHat, CheckSquare, ClipboardCheck, X, Gift, HandHelping,
+  Megaphone, BatteryLow, ChefHat, CheckSquare, X,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
@@ -471,25 +471,139 @@ export function KioskOverviewTab({
           `active.role === 'kid'` (not teen). */}
       {isKid && <KioskKidQuickActions active={active} members={members} />}
 
-      {/* ══ WIDGET DECK ════════════════════════════════════════════════ */}
-      <View style={s.deck}>
-        {/* ── Approvals (parent only) ──
-            Two grid columns wide (same widgetWide treatment as senior's
-            photo feed) rather than full-width or squeezed to one column —
-            a decision surface earns more room than Coin jars/Grocery next
-            to it, but it's still a card in the deck, not its own banner. */}
-        {isParent && (
-          <ParentApprovalsWidget
-            approvals={approvals} k={k} isDark={isDark}
-            onApproveChore={(id) => approveQuest(id, active.id)}
-            onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
-            onApproveRedemption={(id) => approveRedemption(id, active.id)}
-            onRejectRedemption={(id) => rejectRedemption(id, active.id)}
-            onApproveRequest={(id) => approveRequest(id, active.id)}
-            onDeclineRequest={(id) => declineRequest(id, active.id)}
-          />
-        )}
+      {/* ══ PARENT: two-column page (matches the reference mockup's own
+          layout exactly — a wide center column of "things to act on"
+          stacked full-width, next to a narrower sidebar of "glanceable
+          household state" stacked full-width) — NOT the flex-wrap grid of
+          equal-width cards every other role still uses below. Kid/senior/
+          teen are unaffected: their compositions were never part of what
+          the mockup depicted for this screen, and stay on the original
+          deck. */}
+      {isParent ? (
+        <View style={s.twoColRow}>
+          <View style={s.centerCol}>
+            <WidgetCard k={k} isDark={isDark}>
+              <WidgetHeader
+                Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
+                accent={k.sage} k={k} isDark={isDark}
+                right={rides.length > 0
+                  ? <Chip label={`${rides.length}`} accent={k.gold} isDark={isDark} k={k} />
+                  : undefined}
+              />
+              {rides.length === 0 ? (
+                <EmptyNote text="Every ride today has a confirmed driver." k={k} />
+              ) : (
+                <View style={{ gap: KIOSK_SPACE.sm }}>
+                  {rides.map(ev => (
+                    <RideRow
+                      key={ev.id} ev={ev} k={k} isDark={isDark} members={members}
+                      canAct={isParent} actorId={active.id} actorName={active.name}
+                      onRemind={remindEventAssignee}
+                      onClaim={claimHelperSlot}
+                    />
+                  ))}
+                </View>
+              )}
+            </WidgetCard>
 
+            <ParentApprovalsWidget
+              approvals={approvals} k={k} isDark={isDark}
+              onApproveChore={(id) => approveQuest(id, active.id)}
+              onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
+              onApproveRedemption={(id) => approveRedemption(id, active.id)}
+              onRejectRedemption={(id) => rejectRedemption(id, active.id)}
+              onApproveRequest={(id) => approveRequest(id, active.id)}
+              onDeclineRequest={(id) => declineRequest(id, active.id)}
+            />
+          </View>
+
+          <View style={s.sideCol}>
+            {kids.length > 0 && (
+              <WidgetCard k={k} isDark={isDark}>
+                <WidgetHeader
+                  Icon={PiggyBank} eyebrow="Allowance" title="Coin jars"
+                  accent={k.purple} k={k} isDark={isDark}
+                />
+                <View style={{ gap: KIOSK_SPACE.sm }}>
+                  {kids.map(kid => {
+                    const main = (kid as any).mainCoins ?? 0;
+                    const gp = (kid as any).gpCoins ?? 0;
+                    const total = main + gp;
+                    const accent = kioskRoleAccent(k, kid.role);
+                    return (
+                      <Well key={kid.id} k={k} style={s.jarRow}>
+                        <View style={[s.jarAvatar, { backgroundColor: accent + (isDark ? '24' : '1A') }]}>
+                          <Text style={s.jarEmoji}>{kid.emoji ?? '🧒'}</Text>
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>
+                            {kid.name?.trim().split(' ')[0]}
+                          </Text>
+                          {gp > 0 && (
+                            <Text style={[s.jarSplit, { color: k.textFaint }]} numberOfLines={1}>
+                              {main} main · {gp} grandparent
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={[s.jarTotal, { color: accent }]} numberOfLines={1}>
+                          {total}
+                          <Text style={[s.jarUnit, { color: k.textMuted }]}> coins</Text>
+                        </Text>
+                      </Well>
+                    );
+                  })}
+                </View>
+                <ActionButton
+                  label="Open reward store" accent={k.primary} k={k} isDark={isDark}
+                  onPress={() => onNavigate('store')}
+                  style={{ marginTop: KIOSK_SPACE.sm }}
+                  accessibilityHint="See perks the kids can spend coins on"
+                />
+              </WidgetCard>
+            )}
+
+            <WidgetCard k={k} isDark={isDark}>
+              <WidgetHeader
+                Icon={ShoppingCart} eyebrow="Kitchen" title="Grocery list"
+                accent={k.sage} k={k} isDark={isDark}
+                right={groceryItems.length > 0
+                  ? <Chip label={`${groceryItems.length}`} accent={k.sage} isDark={isDark} k={k} />
+                  : undefined}
+              />
+              {groceryItems.length === 0 ? (
+                <EmptyNote text="The grocery list is empty." k={k} />
+              ) : (
+                <View style={{ gap: KIOSK_SPACE.xs }}>
+                  {groceryItems.slice(0, 4).map(it => (
+                    <View key={it.id} style={s.groceryLine}>
+                      <View style={[s.groceryDot, { backgroundColor: k.sage }]} />
+                      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{it.name}</Text>
+                      {!!it.quantity && (
+                        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{it.quantity}</Text>
+                      )}
+                    </View>
+                  ))}
+                  {groceryItems.length > 4 && (
+                    <Text style={[s.groceryMore, { color: k.textFaint }]} numberOfLines={1}>
+                      and {groceryItems.length - 4} more
+                    </Text>
+                  )}
+                </View>
+              )}
+              <ActionButton
+                label="Open list" accent={k.sage} k={k} isDark={isDark}
+                onPress={() => onNavigate('meals')}
+                style={{ marginTop: KIOSK_SPACE.sm }}
+                accessibilityHint="Open the meals and grocery screen"
+              />
+            </WidgetCard>
+
+            <KioskMemorySlideshow compact height={200} />
+          </View>
+        </View>
+      ) : (
+      /* ══ WIDGET DECK (kid / senior / teen) ═══════════════════════════ */
+      <View style={s.deck}>
         {/* ── Ride & pickup radar (kid: their own day instead) ──
             A kid can neither remind nor take over a ride — both actions
             were already parent-gated — so for them this slot was a
@@ -505,81 +619,7 @@ export function KioskOverviewTab({
             active={active} quests={quests} k={k} isDark={isDark} style={s.widget}
             onOpenTasks={() => onNavigate('tasks')}
           />
-        ) : (
-          <WidgetCard k={k} isDark={isDark} style={s.widget}>
-            <WidgetHeader
-              Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
-              accent={k.sage} k={k} isDark={isDark}
-              right={rides.length > 0
-                ? <Chip label={`${rides.length}`} accent={k.gold} isDark={isDark} k={k} />
-                : undefined}
-            />
-            {rides.length === 0 ? (
-              <EmptyNote text="Every ride today has a confirmed driver." k={k} />
-            ) : (
-              <View style={{ gap: KIOSK_SPACE.sm }}>
-                {rides.map(ev => (
-                  <RideRow
-                    key={ev.id} ev={ev} k={k} isDark={isDark} members={members}
-                    canAct={isParent} actorId={active.id} actorName={active.name}
-                    onRemind={remindEventAssignee}
-                    onClaim={claimHelperSlot}
-                  />
-                ))}
-              </View>
-            )}
-          </WidgetCard>
-        )}
-
-        {/* ── Kids' coin jars ──
-            Parent-only: a kiosk sits where anyone can see it, and one
-            child's balance is not another child's business — the phone
-            applies the same rule (a kid sees only their own wallet). Also
-            not shown to senior — a grandparent's Overview stays to its own
-            single summary card rather than the parent's full deck. */}
-        {isParent && kids.length > 0 && (
-          <WidgetCard k={k} isDark={isDark} style={s.widget}>
-            <WidgetHeader
-              Icon={PiggyBank} eyebrow="Allowance" title="Coin jars"
-              accent={k.purple} k={k} isDark={isDark}
-            />
-            <View style={{ gap: KIOSK_SPACE.sm }}>
-              {kids.map(kid => {
-                const main = (kid as any).mainCoins ?? 0;
-                const gp = (kid as any).gpCoins ?? 0;
-                const total = main + gp;
-                const accent = kioskRoleAccent(k, kid.role);
-                return (
-                  <Well key={kid.id} k={k} style={s.jarRow}>
-                    <View style={[s.jarAvatar, { backgroundColor: accent + (isDark ? '24' : '1A') }]}>
-                      <Text style={s.jarEmoji}>{kid.emoji ?? '🧒'}</Text>
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>
-                        {kid.name?.trim().split(' ')[0]}
-                      </Text>
-                      {gp > 0 && (
-                        <Text style={[s.jarSplit, { color: k.textFaint }]} numberOfLines={1}>
-                          {main} main · {gp} grandparent
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={[s.jarTotal, { color: accent }]} numberOfLines={1}>
-                      {total}
-                      <Text style={[s.jarUnit, { color: k.textMuted }]}> coins</Text>
-                    </Text>
-                  </Well>
-                );
-              })}
-            </View>
-            <ActionButton
-              label="Open reward store" accent={k.primary} k={k} isDark={isDark}
-              onPress={() => onNavigate('store')}
-              style={{ marginTop: KIOSK_SPACE.sm }}
-              accessibilityHint="See perks the kids can spend coins on"
-            />
-          </WidgetCard>
-        )}
+        ) : null}
 
         {/* ── Grocery snapshot (kid: their own chore board instead) ──
             The household grocery list is a shopping concern. In its slot a
@@ -591,43 +631,7 @@ export function KioskOverviewTab({
             active={active} members={members} k={k} isDark={isDark} style={s.widget}
             onOpenTasks={() => onNavigate('tasks')}
           />
-        ) : isSenior ? null : (
-        <WidgetCard k={k} isDark={isDark} style={s.widget}>
-          <WidgetHeader
-            Icon={ShoppingCart} eyebrow="Kitchen" title="Grocery list"
-            accent={k.sage} k={k} isDark={isDark}
-            right={groceryItems.length > 0
-              ? <Chip label={`${groceryItems.length}`} accent={k.sage} isDark={isDark} k={k} />
-              : undefined}
-          />
-          {groceryItems.length === 0 ? (
-            <EmptyNote text="The grocery list is empty." k={k} />
-          ) : (
-            <View style={{ gap: KIOSK_SPACE.xs }}>
-              {groceryItems.slice(0, 4).map(it => (
-                <View key={it.id} style={s.groceryLine}>
-                  <View style={[s.groceryDot, { backgroundColor: k.sage }]} />
-                  <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{it.name}</Text>
-                  {!!it.quantity && (
-                    <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{it.quantity}</Text>
-                  )}
-                </View>
-              ))}
-              {groceryItems.length > 4 && (
-                <Text style={[s.groceryMore, { color: k.textFaint }]} numberOfLines={1}>
-                  and {groceryItems.length - 4} more
-                </Text>
-              )}
-            </View>
-          )}
-          <ActionButton
-            label="Open list" accent={k.sage} k={k} isDark={isDark}
-            onPress={() => onNavigate('meals')}
-            style={{ marginTop: KIOSK_SPACE.sm }}
-            accessibilityHint="Open the meals and grocery screen"
-          />
-        </WidgetCard>
-        )}
+        ) : null}
 
         {/* ── Family Feed ──
             Renamed from "Family photos" and changed from a single auto-
@@ -648,6 +652,7 @@ export function KioskOverviewTab({
             among logistics widgets that aren't theirs. */}
         <KioskMemorySlideshow compact height={isSenior ? 340 : 200} style={isSenior ? s.widgetWide : s.widget} />
       </View>
+      )}
 
       {/* ══ FINDFAM RADAR STRIP ═══════════════════════════════════════ */}
       <RadarStrip
@@ -817,14 +822,14 @@ function RideRow({
  * actually needs attention first — an emergency request could be sitting
  * unseen behind three routine chore photos. This widget is that one place.
  *
- * Internals match the reference mockup's own Approvals panel, not just its
- * colors: filter chips to narrow the merged list by kind, and flat list
- * rows (a checkbox-style status dot, inline title/meta/who-badge, a coin
- * figure, small text-button pairs) rather than the card-in-card Well rows
- * every other widget on this screen uses. Sized as the deck's widgetWide
- * slot (two grid columns, same treatment as senior's photo feed) rather
- * than full-width — a decision surface earns more room than its neighbors,
- * but stays a card in the deck rather than its own full-width banner.
+ * Matches the reference mockup's own Approvals panel, not just its colors:
+ * filter chips to narrow the merged list by kind, and flat list rows (a
+ * checkbox-style status dot, inline title/meta/who-badge, a coin figure,
+ * small text-button pairs) rather than the card-in-card Well rows every
+ * other widget on this screen uses. Renders full-width of the parent
+ * Overview's centerCol (see the twoColRow layout above) — the mockup's own
+ * Approvals panel is full-width of its page's center column too, not a
+ * small card sharing a row with the sidebar's Coin Jars/Meals/Grocery.
  */
 type ApprovalFilterKey = 'all' | ApprovalItem['kind'];
 const APPROVAL_FILTERS: { key: ApprovalFilterKey; label: string }[] = [
@@ -858,23 +863,46 @@ function ParentApprovalsWidget({
   const [redoTarget, setRedoTarget] = useState<{ id: string; title: string } | null>(null);
 
   return (
-    <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined} style={s.widgetWide}>
-      <WidgetHeader
-        Icon={ClipboardCheck} eyebrow="Waiting on you" title="Approvals"
-        accent={hasUrgent ? k.danger : k.primary} k={k} isDark={isDark}
-        right={approvals.length > 0
-          ? <Chip label={`${approvals.length} pending`} accent={hasUrgent ? k.danger : k.primary} isDark={isDark} k={k} filled={hasUrgent} />
-          : undefined}
-      />
+    <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined}>
+      {/* Local header, not the shared WidgetHeader — the mockup's own
+          .panel-head is a single line (uppercase eyebrow-style title + a
+          small faint count, no separate large title underneath), not
+          WidgetHeader's fixed icon-chip + two-line eyebrow/title shape.
+          WidgetHeader is right for every card-shaped widget on this
+          screen; this panel is deliberately the mockup's own denser list-
+          panel style instead. */}
+      <View style={s.panelHead}>
+        <Text style={[s.panelTitle, { color: k.textFaint }]}>APPROVALS</Text>
+        {approvals.length > 0 && (
+          <Text style={[s.panelCount, { color: k.textFaint }]}>{approvals.length} pending</Text>
+        )}
+      </View>
       <View style={s.filterRow}>
+        {/* Local chip, not the shared KioskPill — the mockup's .chip.active
+            is a solid dark-fill/inverted-text pill (background:var(--text),
+            color:var(--ink)), not KioskPill's accent-tinted-wash selected
+            state. KioskPill's own look is correct for its other consumers
+            (request-form presets); changing it there to match this one
+            panel would be the same mistake as editing a shared radius
+            token for one card's sake. */}
         {APPROVAL_FILTERS.map(f => {
           const count = f.key === 'all' ? approvals.length : approvals.filter(a => a.kind === f.key).length;
+          const selected = filter === f.key;
           return (
-            <KioskPill
-              key={f.key} label={count > 0 ? `${f.label} · ${count}` : f.label}
-              selected={filter === f.key} onPress={() => setFilter(f.key)}
-              accent={k.primary} k={k}
-            />
+            <Pressable
+              key={f.key} onPress={() => setFilter(f.key)}
+              style={[s.filterChip, {
+                backgroundColor: selected ? k.text : k.well,
+                borderColor: selected ? k.text : k.cardBorder,
+              }]}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={f.label}
+            >
+              <Text style={[s.filterChipText, { color: selected ? k.card : k.textMuted }]} numberOfLines={1}>
+                {f.label}{count > 0 ? ` ${count}` : ''}
+              </Text>
+            </Pressable>
           );
         })}
       </View>
@@ -908,16 +936,12 @@ function ParentApprovalsWidget({
   );
 }
 
-const APPROVAL_KIND_ICON: Record<ApprovalItem['kind'], LucideIcon> = {
-  chore: CheckSquare, redemption: Gift, request: HandHelping,
-};
-
 /**
- * A flat list row — the mockup's `.task` (checkbox-style status dot, title +
- * inline meta/who-badge, coin amount, small text-button pair) — rather than
- * the bordered `Well` card ApprovalRow used before this rewrite. Every other
- * widget's rows are cards because every other widget is a small grid card;
- * this panel is a list, so its rows are list rows.
+ * A flat list row — the mockup's `.task` (a plain bordered checkbox square,
+ * title + inline meta/who-badge, coin amount, small filled text-button
+ * pair) — rather than the bordered `Well` card ApprovalRow used before this
+ * rewrite. Every other widget's rows are cards because every other widget
+ * is a small grid card; this panel is a list, so its rows are list rows.
  */
 function ApprovalRow({
   item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
@@ -937,8 +961,6 @@ function ApprovalRow({
   const [busy, setBusy] = useState(false);
   const rawId = item.id.slice(item.id.indexOf(':') + 1);
   const urgent = item.urgencyRank >= 3;
-  const dotColor = urgent ? k.danger : item.kind === 'redemption' ? k.gold : item.kind === 'request' ? k.purple : k.primary;
-  const Icon = APPROVAL_KIND_ICON[item.kind];
 
   const approve = () => {
     setBusy(true);
@@ -958,9 +980,11 @@ function ApprovalRow({
 
   return (
     <View style={[s.approvalRow, !isFirst && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-      <View style={[s.approvalDot, { backgroundColor: dotColor + (isDark ? '24' : '1A'), borderColor: dotColor }]}>
-        <Icon size={12} color={dotColor} />
-      </View>
+      {/* Mockup's .task-check: a plain bordered square, not a colored
+          icon-in-circle — the row's own accent already reads through the
+          card's left-edge Well accent elsewhere in this app; here it stays
+          neutral, matching the mockup's own quiet checkbox exactly. */}
+      <View style={[s.approvalCheck, { borderColor: k.cardBorder }]} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[s.approvalTitle, { color: k.text }]} numberOfLines={1}>{item.title}</Text>
         <View style={s.approvalMetaRow}>
@@ -983,11 +1007,17 @@ function ApprovalRow({
             48px floor (KIOSK_HIT.min) — the mockup is a cursor-driven web
             page with no such floor; this is a tablet a kid or grandparent
             taps at an angle, so the visual size and the tap target are
-            deliberately different here. */}
+            deliberately different here. Filled (not outline) — the
+            mockup's own .task-action is a filled surface-2 rectangle, not
+            a transparent/bordered button. */}
+        {/* Same neutral fill on both — the mockup's .task-action background
+            never changes per action, only the LABEL color does
+            (.task-action.deny{color:var(--danger)}), so Decline/Redo isn't
+            a red button, it's a neutral button with red text. */}
         <Pressable
           onPress={decline} disabled={busy}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          style={({ pressed }) => [s.approvalTextBtn, { borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [s.approvalTextBtn, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
           accessibilityRole="button"
           accessibilityLabel={item.kind === 'chore' ? 'Redo' : 'Decline'}
         >
@@ -998,11 +1028,11 @@ function ApprovalRow({
         <Pressable
           onPress={approve} disabled={busy}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          style={({ pressed }) => [s.approvalTextBtn, { borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [s.approvalTextBtn, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
           accessibilityRole="button"
           accessibilityLabel="Approve"
         >
-          <Text style={[s.approvalTextBtnLabel, { color: k.sage }]}>Approve</Text>
+          <Text style={[s.approvalTextBtnLabel, { color: k.text }]}>Approve</Text>
         </Pressable>
       </View>
     </View>
@@ -1305,6 +1335,19 @@ const s = StyleSheet.create({
   mealTypeTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', textAlign: 'center', marginTop: 2 },
   mealTypeEmpty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center', marginTop: 4 },
 
+  // Parent's two-column page — center column (Rides, Approvals) full-width
+  // of its own column, sidebar column (Coin jars, Grocery, Photo feed)
+  // full-width of ITS column — matching the mockup's actual page shape
+  // (a wide main column next to a narrower sidebar, measured off the
+  // mockup's own rendered proportions: roughly 530px center to 280px
+  // sidebar, ~1.9:1) rather than the flex-wrap grid every other role uses.
+  // Cards inside each column render with no explicit width style of their
+  // own (WidgetCard's default) — the column itself sets the width, so a
+  // card doesn't also need flexBasis fighting its container.
+  twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  centerCol: { flex: 1.9, gap: KIOSK_SPACE.md, minWidth: 0 },
+  sideCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
+
   // Widget deck.
   //
   // A real fixed grid rather than flexGrow-stretched flex-wrap. The
@@ -1351,14 +1394,25 @@ const s = StyleSheet.create({
   // literal pixel values rather than translated through the wider kiosk
   // type/space scale, since this panel is deliberately denser and more
   // list-like than every card-shaped widget around it.
+  // Mockup's .panel-head/.panel-title exactly: single row, 11px/700/
+  // uppercase/0.12em-tracked title, small faint count on the right.
+  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  panelTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3, textTransform: 'uppercase' },
+  panelCount: { fontSize: 11 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  // Mockup's .chip exactly: 999px pill, 1px border, 7x13 padding, 12px/700 text.
+  filterChip: {
+    borderWidth: 1, borderRadius: 999,
+    paddingHorizontal: 13, paddingVertical: 7,
+  },
+  filterChipText: { fontSize: 12, fontWeight: '700' },
   approvalRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12,
   },
-  approvalDot: {
-    width: 26, height: 26, borderRadius: 8, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  // Mockup's .task-check exactly: 22px, 6px radius, 2px border, no fill.
+  approvalCheck: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, flexShrink: 0,
   },
   approvalTitle: { fontSize: 14, fontWeight: '700' },
   approvalMetaRow: {

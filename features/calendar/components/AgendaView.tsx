@@ -100,6 +100,25 @@ export default function AgendaView({
     });
   };
 
+  // Live-requested: "select day and all" — a day's header IS effectively a
+  // "select everything on this date" control, rather than tapping every row
+  // under it one at a time. Toggles the whole group: if every event in the
+  // day is already selected, tapping again clears just that day (so it also
+  // works as the day's own deselect-all); otherwise it adds every event in
+  // the day that isn't already selected.
+  const toggleSelectDay = (dayEvents: FamilyEvent[]) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      const allSelected = dayEvents.every(ev => next.has(ev.id));
+      for (const ev of dayEvents) {
+        if (allSelected) next.delete(ev.id); else next.add(ev.id);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(visibleEvents.map(ev => ev.id)));
+
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
 
   const bulkDelete = () => {

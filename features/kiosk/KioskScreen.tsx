@@ -342,9 +342,6 @@ export default function KioskScreen() {
               active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
               onAskFam={() => setAskFamOpen(true)}
-              onIntercom={() => setIntercomOpen(true)}
-              onStandby={() => setStandbyPinned(true)}
-              onLock={lockNow}
             />
           )}
 

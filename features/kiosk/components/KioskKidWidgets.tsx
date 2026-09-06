@@ -630,6 +630,11 @@ function ChoreCardRow({
   const meta = kioskQuestMeta(q, k);
   const timeline = questTimeline(q);
   const inReview = q.status === 'pending_approval';
+  // questTimeline() joins every stage ("Claimed ... → Submitted ... →
+  // Approved ...") into one string for the pinned meta row's 1-line
+  // summary; the expanded view below splits it back out so a chore with
+  // more than one stage doesn't get clipped there.
+  const timelineStages = timeline ? timeline.split(' → ') : [];
 
   return (
     <CollapsibleQuestCard
@@ -737,7 +742,29 @@ function ChoreCardRow({
         </>
       }
     >
-      {null}
+      {/* Live-reported: "add the expanded [content] in the expanded view"
+          — with the meta line/buttons now always visible in pinnedFooter,
+          the chevron had nothing left to show. Real detail behind it now:
+          the full stage-by-stage timeline (the pinned meta row above only
+          shows it truncated to 1 line, which clips a chore that's been
+          claimed AND submitted AND approved), plus the parent's own note
+          on a declined/needs-redo chore — a real field (declineReason)
+          that had no home anywhere on this card before. */}
+      {timelineStages.length > 0 && (
+        <View style={s.choreExpandedTimeline}>
+          {timelineStages.map((stage, i) => (
+            <Text key={i} style={[s.choreTimelineStage, { color: k.textMuted }]} numberOfLines={1}>
+              {stage}
+            </Text>
+          ))}
+        </View>
+      )}
+      {!!q.declineReason && (
+        <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
+          <Text style={[s.choreDeclineLabel, { color: k.danger }]} numberOfLines={1}>Parent's note</Text>
+          <Text style={[s.choreDeclineText, { color: k.text }]} numberOfLines={4}>{q.declineReason}</Text>
+        </View>
+      )}
     </CollapsibleQuestCard>
   );
 }
@@ -809,6 +836,17 @@ const s = StyleSheet.create({
   },
   choreTimeline: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
   choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700' },
+  // Expanded (chevron-tapped) content — full stage-by-stage timeline and
+  // the parent's decline note, both real detail with nowhere else to live
+  // on this card now that the meta row/buttons are always visible.
+  choreExpandedTimeline: { gap: 3, marginBottom: 6 },
+  choreTimelineStage: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
+  choreDeclineNote: {
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    padding: KIOSK_SPACE.sm, gap: 2,
+  },
+  choreDeclineLabel: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '900', letterSpacing: 0.3 },
+  choreDeclineText: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600', lineHeight: CHORE_CARD_TYPO.meta * 1.4 },
   // Side-by-side, primary weighted 2:1 over the outlined decline — the same
   // flex ratio the phone card uses for this exact pair. Always visible now
   // (pinnedFooter, not collapsible body) — see ChoreCardRow's own comment,

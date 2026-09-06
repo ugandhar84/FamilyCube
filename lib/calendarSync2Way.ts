@@ -31,6 +31,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
 
 const MAP_KEY_PREFIX = 'apple_calendar_sync_map_'; // + memberId
 const LAST_SWEEP_KEY_PREFIX = 'apple_calendar_sync_last_sweep_'; // + memberId
@@ -182,6 +183,57 @@ export async function clearAppleSyncedEvents(memberId: string): Promise<{ delete
   return { deleted };
 }
 
+// The mirror image of clearAppleSyncedEvents: that function deletes DEVICE
+// events this app pushed OUT (the FamilyCube calendar's whole contents,
+// safe to wipe as a block since every entry there is app-originated); this
+// one deletes the LOCAL FamilyCube rows that were pulled IN from an event
+// the user added directly in their own device Calendar app, without
+// touching the device event itself — deleting someone's own calendar entry
+// on their own device because they stopped wanting it mirrored into the
+// app would be exactly the kind of surprising, hard-to-reverse action this
+// feature must never do.
+//
+// A pulled-in event is source_provider='apple' AND has an entry in `map`
+// (reconcileAppleCalendar's `map[newId] = deviceEvent.id`, set on genuinely
+// new device events, see the "Genuinely new — added directly in the device
+// Calendar app" branch above) — that map entry must be removed alongside
+// the soft-delete, selectively (NOT a full saveMap({}) like the outbound
+// cleanup above), or the next reconcile sweep would find the stale
+// familyEventId still mapped to a real device event, see the local row is
+// gone (soft-deleted), and silently skip it forever per the "locally
+// deleted already" branch in reconcileAppleCalendar — leaking the map
+// entry and never re-importing that device event even if the user wanted
+// to bring it back later by re-syncing.
+//
+// Deliberately does NOT call eventStore's deleteEvent — that function
+// unconditionally also pushes a delete to the device calendar
+// (pushEventToAppleCalendar) when Apple sync is enabled, which is exactly
+// the outbound-direction side effect this cleanup must NOT trigger for an
+// inbound-originated event. Soft-deletes directly instead, the same
+// deleted_at/deleted_by columns eventStore's own deleteEvent uses.
+export async function clearInboundAppleEvents(memberId: string): Promise<{ deleted: number }> {
+  const map = await loadMap(memberId);
+  const { data: inboundEvents, error } = await supabase.from('calendar_events')
+    .select('id').eq('member_id', memberId).eq('source_provider', 'apple').is('deleted_at', null);
+  if (error) throw new Error(error.message);
+  if (!inboundEvents?.length) return { deleted: 0 };
+
+  const ids = inboundEvents.map(e => e.id);
+  const now = new Date().toISOString();
+  const { error: deleteError } = await supabase.from('calendar_events')
+    .update({ deleted_at: now, deleted_by: memberId }).in('id', ids);
+  if (deleteError) throw new Error(deleteError.message);
+
+  const idSet = new Set(ids);
+  let mapChanged = false;
+  for (const familyEventId of Object.keys(map)) {
+    if (idSet.has(familyEventId)) { delete map[familyEventId]; mapChanged = true; }
+  }
+  if (mapChanged) await saveMap(memberId, map);
+
+  return { deleted: ids.length };
+}
+
 // expo-calendar's createEventAsync/updateEventAsync take startDate/endDate
 // — this previously built start/end instead, a field-name mismatch that
 // meant the native EventKit bridge never received a start date at all,
@@ -293,23 +345,23 @@ export async function reconcileAppleCalendar(
     const map = await loadMap(memberId);
     const reverseMap = new Map(Object.entries(map).map(([fcId, devId]) => [devId, fcId]));
 
-    // Was 30 days ahead — live-reported: an event added to the device
-    // calendar for November (2+ months out from a September sweep) never
-    // showed up in the app at all, correctly per the old window but not
-    // what's actually wanted. Widened to 365 days to match Outlook's own
-    // inbound delta window (calendar-webhook-outlook's initial
-    // calendarView/delta call), so all three providers cover roughly the
-    // same forward range. Unlike Google (which only bounds its FIRST
-    // full sync to 90 days — every poll after that uses an unbounded
-    // sync_token with no date limit at all), this sweep has no
-    // equivalent "unlimited via token" mechanism; it's a fresh windowed
-    // query every time, so this window is the real, permanent limit —
-    // there's no cheaper way to ask EventKit "what changed" the way a
-    // server-side delta/sync-token API can.
+    // Narrowed to 90 days ahead (owner: cap all three providers' 2-way
+    // sync to a 90-day window). Was previously widened 30->365 after a
+    // live report that a November event (2+ months out from a September
+    // sweep) never showed up — that regression is REINTRODUCED by this
+    // change for anything more than ~3 months out, a deliberate tradeoff
+    // this time rather than an oversight. 90 days matches Outlook's own
+    // window (calendar-webhook-outlook's calendarView/delta) and Google's
+    // (googleReconcile.ts's initial-sync timeMax, kept enforced over a
+    // connection's whole life by calendar-google-reseed). Unlike Google,
+    // this sweep has no "unlimited via token" mechanism to periodically
+    // reseed — it's a fresh windowed query every time, so this window is
+    // the real, permanent limit; there's no cheaper way to ask EventKit
+    // "what changed" the way a server-side delta/sync-token API can.
     const windowStart = new Date();
     windowStart.setDate(windowStart.getDate() - 1);
     const windowEnd = new Date();
-    windowEnd.setDate(windowEnd.getDate() + 365);
+    windowEnd.setDate(windowEnd.getDate() + 90);
     const deviceEvents = await Calendar.getEventsAsync([calendarId], windowStart, windowEnd);
 
     for (const deviceEvent of deviceEvents) {

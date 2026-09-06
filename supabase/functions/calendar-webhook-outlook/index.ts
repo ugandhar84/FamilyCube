@@ -55,8 +55,15 @@ serve(async (req) => {
 
 async function reconcileOutlookChanges(supabase: any, connection: CalendarConnectionRow): Promise<void> {
   const accessToken = await getValidAccessToken(supabase, connection);
+  // 90 days, not 365 — matches Google's own sync-window bound (see
+  // googleReconcile.ts) and calendar-google-reseed's periodic re-seeding,
+  // which keeps Google's window enforced over a connection's whole life.
+  // Outlook's calendarView/delta stays scoped to this range for the life
+  // of the delta chain (unlike Google's calendar-wide syncToken), so this
+  // one bound is already enforced on every poll going forward — no
+  // reseed mechanism needed on this side.
   let url = connection.delta_link
-    ?? `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${new Date().toISOString()}&endDateTime=${new Date(Date.now() + 365 * 86400_000).toISOString()}`;
+    ?? `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${new Date().toISOString()}&endDateTime=${new Date(Date.now() + 90 * 86400_000).toISOString()}`;
   const changedItems: any[] = [];
   let nextDeltaLink: string | null = null;
 

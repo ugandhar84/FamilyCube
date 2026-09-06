@@ -475,7 +475,7 @@ export function KioskOverviewTab({
           />
           {todayMeals.length === 0 ? (
             <Pressable
-              onPress={() => isParent ? setShowMeals(true) : onNavigate('meals')}
+              onPress={() => onNavigate('meals')}
               style={({ pressed }) => [
                 s.mealEmpty,
                 { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
@@ -500,7 +500,7 @@ export function KioskOverviewTab({
                 return (
                   <Pressable
                     key={type}
-                    onPress={() => meal ? setOpenMeal(meal) : (isParent ? setShowMeals(true) : onNavigate('meals'))}
+                    onPress={() => meal ? setOpenMeal(meal) : onNavigate('meals')}
                     style={({ pressed }) => [
                       s.mealTypeCard,
                       { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },

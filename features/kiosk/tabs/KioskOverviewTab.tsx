@@ -81,9 +81,9 @@
  * more widgets.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import {
-  Car, MapPin, UtensilsCrossed, Bell, Check, ChevronRight,
+  Car, UtensilsCrossed, Bell, Check, ChevronRight,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -707,6 +707,19 @@ export function KioskOverviewTab({
               onApproveRequest={(id) => approveRequest(id, active.id)}
               onDeclineRequest={(id) => declineRequest(id, active.id)}
             />
+
+            {/* Find — mounted here (parent-only) so it genuinely shares
+                centerCol's own width with Rides/Approvals above it by
+                construction, the same fix that resolved Happening Now's
+                width mismatch earlier. Kid/teen get their own separate
+                mount of this same component in the flex-wrap deck below
+                (s.widget-sized, matching its siblings there) — not a
+                duplicated implementation, just two mount points for one
+                component with a caller-supplied width. */}
+            <RadarStrip
+              members={members} k={k} isDark={isDark}
+              onOpen={() => onNavigate('findfam')}
+            />
           </View>
 
           <View style={[s.sideCol, isNarrowParentLayout && s.colFullWidth]}>
@@ -911,14 +924,23 @@ export function KioskOverviewTab({
             their Overview rather than a small compact strip squeezed in
             among logistics widgets that aren't theirs. */}
         <KioskMemorySlideshow compact height={isSenior ? 340 : 200} style={isSenior ? s.widgetWide : s.widget} />
+
+        {/* ── Find (kid/teen only — no equivalent rail tab for senior) ──
+            Previously a full-width strip shared by every role, below the
+            whole page. Split into two mount points instead: this one for
+            kid/teen (own s.widget-sized card, same as its siblings in
+            this flex-wrap deck), a separate one inside centerCol for
+            parent (see that mount's own comment for why). Not duplicated
+            logic — the same RadarStrip component, just two call sites
+            with different widths. */}
+        {!isSenior && (
+          <RadarStrip
+            members={members} k={k} isDark={isDark} style={s.widget}
+            onOpen={() => onNavigate('findfam')}
+          />
+        )}
       </View>
       )}
-
-      {/* ══ FINDFAM RADAR STRIP ═══════════════════════════════════════ */}
-      <RadarStrip
-        members={members} k={k} isDark={isDark}
-        onOpen={() => onNavigate('findfam')}
-      />
     </ScrollView>
     </>
   );
@@ -1485,8 +1507,14 @@ function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolea
   );
 }
 
-function RadarStrip({ members, k, isDark, onOpen }: {
+function RadarStrip({ members, k, isDark, onOpen, style }: {
   members: FamilyMember[]; k: KioskColors; isDark: boolean; onOpen: () => void;
+  /** Caller-controlled outer width — parent mounts this inside centerCol
+   *  (no extra style needed, stretches to match Approvals/Rides exactly);
+   *  kid/teen mount it in their own flex-wrap deck (s.widget, same as
+   *  every sibling card there). Same component either way, not a
+   *  duplicated one — only the mount point and this one prop differ. */
+  style?: StyleProp<ViewStyle>;
 }) {
   const [rows, setRows] = useState<RadarRow[]>([]);
 
@@ -1523,24 +1551,29 @@ function RadarStrip({ members, k, isDark, onOpen }: {
   }).length;
 
   return (
-    <WidgetCard k={k} isDark={isDark} style={{ marginTop: KIOSK_SPACE.md }}>
-      <WidgetHeader
-        Icon={MapPin} eyebrow="FindFam" title="Where everyone is"
-        accent={k.sage} k={k} isDark={isDark}
-        right={
-          <Pressable
-            onPress={onOpen} hitSlop={10}
-            accessibilityRole="button" accessibilityLabel="Open the map"
-            accessibilityHint="See everyone on the family map"
-          >
-            <Chip
-              label={`${sharing}/${visible.length} sharing`}
-              accent={sharing > 0 ? k.sage : k.textFaint}
-              isDark={isDark} k={k}
-            />
-          </Pressable>
-        }
-      />
+    <WidgetCard k={k} isDark={isDark} style={style}>
+      {/* Local panelHead, matching every other rebuilt panel this session
+          (Approvals, Coin Jars, Meals, Grocery, Family Feed, Family
+          Schedule) — this was the one widget still using the old
+          WidgetHeader icon-chip + two-line title, visibly out of step
+          with the rest of the screen. */}
+      <View style={s.panelHead}>
+        <Text style={[s.panelTitle, { color: k.textFaint }]}>FIND FAM</Text>
+        <Pressable
+          onPress={onOpen} hitSlop={10}
+          accessibilityRole="button" accessibilityLabel="Open the map"
+          accessibilityHint="See everyone on the family map"
+        >
+          <Text style={[s.panelCount, { color: sharing > 0 ? k.sage : k.textFaint }]}>
+            {sharing}/{visible.length} sharing
+          </Text>
+        </Pressable>
+      </View>
+      {/* Real fixed 3-per-row grid (flexGrow:0/flexBasis:33.333%, same
+          pattern established earlier this session for the kid/senior
+          deck) rather than the old flexGrow:1/flexBasis:220 combination,
+          which produced a variable 2-4 column count depending on width
+          instead of a consistent 3. */}
       <View style={s.radarGrid}>
         {visible.map(m => {
           const raw = rows.find(x => x.member_id === m.id);
@@ -1551,7 +1584,7 @@ function RadarStrip({ members, k, isDark, onOpen }: {
           const accent = kioskRoleAccent(k, m.role);
           const low = loc?.battery_level != null && loc.battery_level <= 20;
           return (
-            <Well key={m.id} k={k} style={s.radarCell}>
+            <View key={m.id} style={s.radarCell}>
               <View style={[s.radarAvatar, { borderColor: loc ? accent : k.cardBorder }]}>
                 <Text style={s.radarEmoji}>{m.emoji ?? '👤'}</Text>
               </View>
@@ -1570,13 +1603,13 @@ function RadarStrip({ members, k, isDark, onOpen }: {
               </View>
               {low && (
                 <View style={s.radarBattery} accessibilityLabel={`Battery ${loc!.battery_level} percent`}>
-                  <BatteryLow size={15} color={k.danger} />
+                  <BatteryLow size={13} color={k.danger} />
                   <Text style={[s.radarBatteryText, { color: k.danger }]} numberOfLines={1}>
                     {loc!.battery_level}%
                   </Text>
                 </View>
               )}
-            </Well>
+            </View>
           );
         })}
       </View>
@@ -1803,9 +1836,14 @@ const s = StyleSheet.create({
   // (~180px) worth before it scrolls.
   mealsWeekScroll: { maxHeight: 200 },
 
+  // Real fixed 3-per-row grid — flexGrow:0/flexShrink:0/flexBasis:33.333%,
+  // the same "every cell is exactly one third regardless of neighbors'
+  // content" pattern established earlier this session for the kid/senior
+  // widget deck (RN's Yoga resolves gap before splitting a percentage
+  // basis, so no manual gap-subtraction math is needed alongside it).
   radarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
   radarCell: {
-    flexGrow: 1, flexBasis: 220, minWidth: 0,
+    flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', minWidth: 0,
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     minHeight: KIOSK_HIT.primary,
   },

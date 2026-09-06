@@ -654,8 +654,13 @@ export function KioskOverviewTab({
               {meals.length === 0 ? (
                 <EmptyNote text="No meals planned for this week." k={k} />
               ) : (
-                <View>
-                  {daysFromToday().slice(0, 3).map((day, i) => {
+                // Live-requested: "focus from today to rest of the week
+                // with scrollable view" — every remaining day (today
+                // through the week's last day), not a fixed 3-day slice,
+                // in a bounded-height scroller so a full week's rows don't
+                // push the rest of the sidebar down.
+                <ScrollView style={s.mealsWeekScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                  {daysFromToday().map((day, i) => {
                     const dayMeals = meals.filter(m => m.day === day);
                     const dinner = dayMeals.find(m => (m.type ?? '').toLowerCase() === 'dinner') ?? dayMeals[0];
                     const dayLabel = day === todayMealDay() ? 'Tonight' : day;
@@ -675,7 +680,7 @@ export function KioskOverviewTab({
                       </View>
                     );
                   })}
-                </View>
+                </ScrollView>
               )}
             </WidgetCard>
 
@@ -1333,12 +1338,12 @@ function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolea
         <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="Open Memories">
           <ScrollView
             horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md }}
+            contentContainerStyle={{ gap: 10, paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md }}
           >
             {photos.slice(0, 8).map(p => (
               <View key={p.key} style={s.feedItem}>
-                <Image source={{ uri: p.url }} style={s.feedThumb} />
-                <Text style={[s.feedCap, { color: k.textMuted }]} numberOfLines={2}>{p.title}</Text>
+                <Image source={{ uri: p.url }} style={[s.feedThumb, { borderColor: k.cardBorder }]} />
+                <Text style={[s.feedCap, { color: k.textFaint }]} numberOfLines={2}>{p.title}</Text>
               </View>
             ))}
           </ScrollView>
@@ -1624,10 +1629,15 @@ const s = StyleSheet.create({
   groceryItemText: { fontSize: 13, fontWeight: '600' },
   groceryMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
 
-  // Mockup's .feed-item/.feed-thumb/.feed-cap exactly.
-  feedItem: { width: 120, gap: KIOSK_SPACE.xs },
-  feedThumb: { width: 120, height: 90, borderRadius: 10, backgroundColor: '#0002' },
-  feedCap: { fontSize: 12.5, lineHeight: 16 },
+  // Mockup's .feed-item/.feed-thumb/.feed-cap exactly: 96px square thumb,
+  // 9px radius, 10.5px caption with a 5px top margin.
+  feedItem: { width: 96 },
+  feedThumb: { width: 96, height: 96, borderRadius: 9, borderWidth: 1, backgroundColor: '#0002' },
+  feedCap: { fontSize: 10.5, lineHeight: 13.5, marginTop: 5 },
+  // Bounded so a full remaining-week list scrolls inside the sidebar card
+  // rather than pushing Grocery/Family Feed further down — 4 rows'
+  // (~180px) worth before it scrolls.
+  mealsWeekScroll: { maxHeight: 200 },
 
   radarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
   radarCell: {

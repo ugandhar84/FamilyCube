@@ -341,7 +341,7 @@ export default function KioskScreen() {
             <ParentStatsColumn
               active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
-              onMessageKids={() => setTab('chat')}
+              onAskFam={() => setAskFamOpen(true)}
             />
           )}
 

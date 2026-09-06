@@ -24,6 +24,7 @@
  */
 import { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useRewardStore } from '@/store/rewardStore';
@@ -34,7 +35,7 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme'
 import { railForRole, type KioskTabKey } from '../kioskTabs';
 
 export function ParentStatsColumn({
-  active, members, familyName, activeTab, onNavigate, onMessageKids,
+  active, members, familyName, activeTab, onNavigate, onAskFam,
 }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -47,7 +48,11 @@ export function ParentStatsColumn({
    *  assuming Overview is always the active one. */
   activeTab: KioskTabKey;
   onNavigate: (tab: KioskTabKey) => void;
-  onMessageKids: () => void;
+  /** Opens the real KioskAskFamDrawer (same one the nav rail's own "Ask
+   *  Fam" card opens elsewhere) — live-corrected: this slot was "Message
+   *  the kids" (a quick note to family chat), swapped back to the real Ask
+   *  Fam feature this column's pinned-action slot originally carried. */
+  onAskFam: () => void;
 }) {
   const { k, isDark } = useKioskColors();
 
@@ -157,14 +162,17 @@ export function ParentStatsColumn({
       </ScrollView>
 
       <Pressable
-        onPress={onMessageKids}
+        onPress={onAskFam}
         style={({ pressed }) => [s.messageKidsBtn, { backgroundColor: pressed ? k.cardHover : k.text }]}
         accessibilityRole="button"
-        accessibilityLabel="Message the kids"
-        accessibilityHint="Open family chat"
+        accessibilityLabel="Ask Family AI"
+        accessibilityHint="Look up your family's schedule, chores and meals"
       >
-        <Text style={[s.messageKidsTitle, { color: k.card }]}>Message the kids</Text>
-        <Text style={[s.messageKidsSub, { color: k.card }]}>Quick note to the family chat</Text>
+        <View style={s.askFamRow}>
+          <Sparkles size={16} color={k.purple} />
+          <Text style={[s.messageKidsTitle, { color: k.card }]}>Ask Family AI</Text>
+        </View>
+        <Text style={[s.messageKidsSub, { color: k.card }]}>Quick answers about your family's day</Text>
       </Pressable>
     </View>
   );
@@ -197,6 +205,7 @@ const s = StyleSheet.create({
     borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.md,
     minHeight: KIOSK_HIT.control,
   },
+  askFamRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   messageKidsTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   messageKidsSub: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, opacity: 0.75 },
 });

@@ -61,6 +61,11 @@ export default function CalendarSyncScreen() {
   const [connecting, setConnecting] = useState<`${CalendarProvider}:${CalendarPurpose}` | null>(null);
   const [cleaningConnectionId, setCleaningConnectionId] = useState<string | null>(null);
   const [appleCleaning, setAppleCleaning] = useState(false);
+  // Inbound-direction cleanup — the mirror of the two above, tracked
+  // separately so a connection's outbound and inbound cleanup buttons can
+  // each show their own loading state independently.
+  const [cleaningInboundConnectionId, setCleaningInboundConnectionId] = useState<string | null>(null);
+  const [appleInboundCleaning, setAppleInboundCleaning] = useState(false);
   const [appleToggling, setAppleToggling] = useState(false);
   // TestFlight/production has no Metro console — every Apple sync failure
   // previously went to console.warn only, making "still not synced, no
@@ -271,6 +276,62 @@ export default function CalendarSyncScreen() {
     );
   };
 
+  // Live-requested: the opposite direction of handleCleanupExternal — "keep
+  // on the external calendar but delete in the app." Removes events this
+  // connection PULLED IN (source_provider matches the connection's
+  // provider) from calendar_events, without touching anything on Google/
+  // Outlook itself — the external calendar keeps them exactly as they are,
+  // and re-syncing later would pull them right back in.
+  const handleCleanupInbound = (connection: ConnectionRow) => {
+    showAlert(
+      `Remove synced events from FamilyCube?`,
+      `Events pulled in from ${PROVIDER_LABEL[connection.provider]} will be deleted here in FamilyCube. Nothing on ${PROVIDER_LABEL[connection.provider]} itself changes.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            if (!activeMemberId) return;
+            setCleaningInboundConnectionId(connection.id);
+            try {
+              const { data, error } = await supabase.functions.invoke('calendar-sync-cleanup-inbound', {
+                body: { connectionId: connection.id, memberId: activeMemberId },
+              });
+              if (error || !data?.ok) { showAlert('Could not remove events', data?.error ?? error?.message ?? 'Please try again.'); return; }
+              showToast(data.deleted > 0 ? `Removed ${data.deleted} synced event${data.deleted === 1 ? '' : 's'}` : 'Nothing to remove');
+            } finally {
+              setCleaningInboundConnectionId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCleanupInboundApple = () => {
+    showAlert(
+      'Remove synced events from FamilyCube?',
+      'Events pulled in from your device\'s Calendar app will be deleted here in FamilyCube. Nothing on your device calendar itself changes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            if (!activeMemberId) return;
+            setAppleInboundCleaning(true);
+            try {
+              const { clearInboundAppleEvents } = await import('@/lib/calendarSync2Way');
+              const { deleted } = await clearInboundAppleEvents(activeMemberId);
+              showToast(deleted > 0 ? `Removed ${deleted} synced event${deleted === 1 ? '' : 's'}` : 'Nothing to remove');
+            } catch (e: any) {
+              showAlert('Could not remove events', e?.message ?? 'Please try again.');
+            } finally {
+              setAppleInboundCleaning(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const s = makeStyles(colors);
 
   const renderProviderRow = (provider: CalendarProvider, purpose: CalendarPurpose) => {
@@ -335,6 +396,21 @@ export default function CalendarSyncScreen() {
               <ActivityIndicator size="small" color={colors.textSecondary} />
             ) : (
               <Text style={s.cleanupBtnText}>Remove synced events from {PROVIDER_LABEL[provider]}</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        {/* Mirror of the button above — deletes events pulled IN from this
+            connection rather than events pushed out to it. Same personal-
+            only, non-error gate. */}
+        {connection && connection.status !== 'error' && purpose === 'personal' && (
+          <TouchableOpacity
+            onPress={() => handleCleanupInbound(connection)}
+            disabled={cleaningInboundConnectionId === connection.id}
+            style={s.cleanupBtn}>
+            {cleaningInboundConnectionId === connection.id ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <Text style={s.cleanupBtnText}>Remove synced events from FamilyCube</Text>
             )}
           </TouchableOpacity>
         )}
@@ -419,6 +495,18 @@ export default function CalendarSyncScreen() {
                   <ActivityIndicator size="small" color={colors.textSecondary} />
                 ) : (
                   <Text style={s.cleanupBtnText}>Remove synced events from Apple Calendar</Text>
+                )}
+              </TouchableOpacity>
+            )}
+            {/* Mirror of the button above — deletes events pulled IN from
+                the device Calendar app rather than events pushed out to
+                it. */}
+            {activeMember?.appleCalendarSyncEnabled && (
+              <TouchableOpacity onPress={handleCleanupInboundApple} disabled={appleInboundCleaning} style={s.cleanupBtn}>
+                {appleInboundCleaning ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Text style={s.cleanupBtnText}>Remove synced events from FamilyCube</Text>
                 )}
               </TouchableOpacity>
             )}

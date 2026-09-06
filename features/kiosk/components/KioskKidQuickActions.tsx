@@ -798,10 +798,14 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
  * The phone's KidRequestHistoryModal, reduced to the part that matters on
  * a kitchen tablet: the kid's own asks and what a grown-up said back.
  * Reads kidRequestStore.requests, filtered to `fromMemberId === active.id`
- * exactly as the phone modal does, over the phone modal's own DEFAULT
- * window (last 7 days) — the phone's date-range pickers and per-item
- * expansion are deliberately not ported, because a range picker is a
- * phone-in-hand interaction and this surface is a glance.
+ * exactly as the phone modal does. Live-reported: this sheet wasn't
+ * showing history at all — it had been fixed to the phone modal's DEFAULT
+ * 7-day window, but unlike the phone (which lets a kid widen it up to 30
+ * days via date pickers) kiosk had no way to see anything older. The
+ * phone's date-range pickers and per-item expansion are still deliberately
+ * not ported here — a range picker is a phone-in-hand interaction and this
+ * surface is a glance — but the window itself is now the phone's full
+ * 30-day ceiling outright, so a request from three weeks ago still shows.
  */
 function KidRequestsSheet({ active, members, k, isDark, onClose }: {
   active: FamilyMember; members: FamilyMember[]; k: KioskColors; isDark: boolean;
@@ -809,8 +813,15 @@ function KidRequestsSheet({ active, members, k, isDark, onClose }: {
 }) {
   const requests = useKidRequestStore(s => s.requests);
 
+  // Live-reported: "My Requests" wasn't showing history — this window was
+  // hard-capped to the phone modal's DEFAULT of 7 days with no way to see
+  // anything older, unlike the phone which lets a kid widen it (up to 30
+  // days) via date pickers. Kiosk still doesn't want that picker
+  // interaction (see the file header), so instead of a 7-day default this
+  // just shows the phone's full 30-day ceiling outright — the most history
+  // a glanceable kitchen surface can show without adding a range control.
   const mine = useMemo(() => {
-    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return requests
       .filter(r => r.fromMemberId === active.id && !!r.requestedAt)
       .filter(r => parseDbTime(r.requestedAt).getTime() >= since)
@@ -829,11 +840,11 @@ function KidRequestsSheet({ active, members, k, isDark, onClose }: {
 
   return (
     <KioskSheet
-      title="My Requests" subtitle="Last 7 days" accent={k.blue} Icon={ClipboardList}
+      title="My Requests" subtitle="Last 30 days" accent={k.blue} Icon={ClipboardList}
       k={k} isDark={isDark} onClose={onClose}
     >
       {mine.length === 0 ? (
-        <EmptyNote text="You haven't asked for anything this week." k={k} />
+        <EmptyNote text="You haven't asked for anything in the last 30 days." k={k} />
       ) : (
         <View style={{ gap: KIOSK_SPACE.sm }}>
           {mine.map(r => {

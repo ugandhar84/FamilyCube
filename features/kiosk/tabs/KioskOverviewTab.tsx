@@ -81,9 +81,9 @@
  * more widgets.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions } from 'react-native';
 import {
-  Car, MapPin, UtensilsCrossed, Bell, Check,
+  Car, MapPin, UtensilsCrossed, Bell, Check, ChevronRight,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -162,6 +162,20 @@ export function KioskOverviewTab({
   onIntercom: () => void;
 }) {
   const { k, isDark } = useKioskColors();
+  // Live-requested: "card sizes and text adjust based on rotation without
+  // cutting and trimming or over-zooming." Parent's two-column center/
+  // sidebar split (centerCol flex:1.9, sideCol flex:1) needs real
+  // horizontal room for Rides/Approvals rows (title+meta+coin+two buttons)
+  // to not get cramped — on a narrower window (a portrait-rotated iPad,
+  // roughly 834-1024pt vs. ~1194-1366pt landscape, or any kiosk device
+  // smaller than the ones this was designed against) that side-by-side
+  // split stops fitting. Below the threshold, centerCol/sideCol stack
+  // vertically instead of splitting a too-narrow row — same
+  // useWindowDimensions-driven pattern KioskFindFamTab/KioskHubTab/
+  // KioskMemoryGrid already use elsewhere in this file's own codebase,
+  // not a new one invented for this screen alone.
+  const { width: winWidth } = useWindowDimensions();
+  const isNarrowParentLayout = winWidth < 900;
   const isParent = active.role === 'parent';
   // Kid role gets a genuinely different Overview, not the parent's with
   // pieces missing. All swaps below are scoped to `kid` alone — teen,
@@ -561,8 +575,8 @@ export function KioskOverviewTab({
           the mockup depicted for this screen, and stay on the original
           deck. */}
       {isParent ? (
-        <View style={s.twoColRow}>
-          <View style={s.centerCol}>
+        <View style={[s.twoColRow, isNarrowParentLayout && s.twoColRowStacked]}>
+          <View style={[s.centerCol, isNarrowParentLayout && s.colFullWidth]}>
             <WidgetCard k={k} isDark={isDark}>
               <WidgetHeader
                 Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
@@ -598,7 +612,7 @@ export function KioskOverviewTab({
             />
           </View>
 
-          <View style={s.sideCol}>
+          <View style={[s.sideCol, isNarrowParentLayout && s.colFullWidth]}>
             {/* Mockup's .jar row exactly: a colored square with the kid's
                 INITIAL (not an emoji), name + a real "N/M chores this week"
                 progress line (not the coin-source split this used to show),
@@ -634,12 +648,20 @@ export function KioskOverviewTab({
                     );
                   })}
                 </View>
-                <ActionButton
-                  label="Open reward store" accent={k.primary} k={k} isDark={isDark}
+                {/* Live-requested: a quiet text link, not a full button —
+                    the mockup's own Coin Jars panel has no footer action
+                    at all, so this stays the smallest real affordance
+                    rather than the heaviest one. */}
+                <Pressable
                   onPress={() => onNavigate('store')}
-                  style={{ marginTop: KIOSK_SPACE.sm }}
+                  style={({ pressed }) => [s.jarStoreLink, pressed && { opacity: 0.6 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open reward store"
                   accessibilityHint="See perks the kids can spend coins on"
-                />
+                >
+                  <Text style={[s.jarStoreLinkText, { color: k.primary }]}>Open reward store</Text>
+                  <ChevronRight size={14} color={k.primary} />
+                </Pressable>
               </WidgetCard>
             )}
 
@@ -1527,6 +1549,12 @@ const s = StyleSheet.create({
   // own (WidgetCard's default) — the column itself sets the width, so a
   // card doesn't also need flexBasis fighting its container.
   twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  // Below isNarrowParentLayout's threshold: stack instead of split — a
+  // fractional flex share of an already-narrow row is what actually causes
+  // cramped/clipped content on rotation, not any single component's own
+  // sizing.
+  twoColRowStacked: { flexDirection: 'column' },
+  colFullWidth: { flex: undefined, width: '100%' },
   centerCol: { flex: 1.9, gap: KIOSK_SPACE.md, minWidth: 0 },
   sideCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
 
@@ -1619,6 +1647,11 @@ const s = StyleSheet.create({
   jarName: { fontSize: 13.5, fontWeight: '700' },
   jarMeta: { fontSize: 11.5, marginTop: 2 },
   jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  jarStoreLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
+  },
+  jarStoreLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
   // Mockup's .grocery-row/.grocery-check/.grocery-item exactly.
   groceryRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, minHeight: KIOSK_HIT.control },

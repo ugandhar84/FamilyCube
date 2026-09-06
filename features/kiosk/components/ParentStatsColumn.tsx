@@ -23,7 +23,7 @@
  * whether or not KioskOverviewTab itself is even mounted.
  */
 import { useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -55,6 +55,14 @@ export function ParentStatsColumn({
   onAskFam: () => void;
 }) {
   const { k, isDark } = useKioskColors();
+  // Live-requested: adjust to rotation without cutting/trimming or over-
+  // zooming. A fixed 220px column ate a much bigger share of a narrower
+  // (portrait-rotated) window — clamped to a real percentage of the actual
+  // window width instead, floored/ceilinged so it never gets so narrow the
+  // tab-list labels wrap badly, nor so wide it crowds out the content area
+  // on a genuinely small device.
+  const { width: winWidth } = useWindowDimensions();
+  const colWidth = Math.max(190, Math.min(240, Math.round(winWidth * 0.22)));
 
   const kids = useMemo(
     () => members.filter(m =>
@@ -86,7 +94,7 @@ export function ParentStatsColumn({
   ];
 
   return (
-    <View style={s.statsCol}>
+    <View style={[s.statsCol, { width: colWidth }]}>
       {/* Own ScrollView, same "scrolls independently, pinned action stays
           put" shape as KioskScreen.tsx's shared nav rail (its Ask Fam card
           below the tab list) — a real multi-column page has each column
@@ -179,7 +187,9 @@ export function ParentStatsColumn({
 }
 
 const s = StyleSheet.create({
-  statsCol: { width: 220, gap: KIOSK_SPACE.md },
+  // width set inline per-render from colWidth (real window-relative), not
+  // here — see the component body's own comment.
+  statsCol: { gap: KIOSK_SPACE.md },
   statsColScroll: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
   statsIdentity: { alignItems: 'flex-start' },
   statsAvatar: {

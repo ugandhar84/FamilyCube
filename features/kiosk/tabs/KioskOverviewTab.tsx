@@ -478,15 +478,17 @@ export function KioskOverviewTab({
         </WidgetCard>
         )}
 
-        {/* ── Kept: the photo frame ──
-            The mockup's photo-frame widget, deferred by the prior pass and
-            picked up here. Every frame is a real `family_memories` row via
-            useKioskPhotos — there is no stock image anywhere in this path,
-            and a household with no photos yet gets a clean empty state
-            rather than a stranger's stock family on its kitchen wall.
-            The compact form: shorter frame, no counter chip. It advances
-            on its own without ever reporting that as kiosk activity, so a
-            rotating frame still lets the idle lock fire. */}
+        {/* ── Family Feed ──
+            Renamed from "Family photos" and changed from a single auto-
+            advancing cross-fade to a vertically scrollable strip of recent
+            photos, latest on top — live-reported request, applies to every
+            role's Overview since this one compact widget was already
+            shared by all of them (parent/kid/teen/senior). Every card is a
+            real `family_memories` row via useKioskPhotos — there is no
+            stock image anywhere in this path, and a household with no
+            photos yet gets a clean empty state rather than a stranger's
+            stock family on its kitchen wall. See KioskMemorySlideshow's
+            compact branch (FeedList) for the layout itself. */}
         <KioskMemorySlideshow compact height={200} style={s.widget} />
       </View>
 

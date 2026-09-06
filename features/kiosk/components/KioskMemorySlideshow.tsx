@@ -1,16 +1,23 @@
 /**
  * KioskMemorySlideshow — the ambient photo surface for kiosk mode, used
  * both as the Memories tab's hero and (in its compact form) as the
- * Overview tab's "Kept" photo-frame widget.
+ * Overview tab's photo-frame widget.
  *
- * ── Why a slideshow rather than a grid ──────────────────────────────────
- * The Memories tab already carries a full scrolling feed (the real
- * MemoriesTab component, with hearts, captions and posting). That feed is
- * for someone standing at the device. This is for the other 99% of the
- * time: a countertop display glanced at from across the room, where a grid
- * of thumbnails resolves to nothing and one large photo resolves to a face.
- * So the two coexist — slideshow on top, feed below — rather than one
- * replacing the other.
+ * ── Two shapes, one hook ─────────────────────────────────────────────────
+ * The Memories tab's hero (non-compact) is still the original cross-fading
+ * single frame — for someone standing at the device, that tab already
+ * carries a full scrolling feed below it (the real MemoriesTab component,
+ * with hearts, captions and posting), so the hero's job is just an ambient
+ * "now showing" glance.
+ *
+ * The Overview widget (compact) is different: live-reported as "Family
+ * photos" but requested to become "Family Feed" — a vertically scrollable
+ * strip of recent photos, latest on top, the SAME across every role's
+ * Overview (parent/kid/teen/senior all render this one compact widget
+ * already; there was never a per-role variant to reconcile). Renders as a
+ * ScrollView of stacked photo cards (FeedList below) instead of the
+ * cross-fade Frame, so a glance at the widget shows several recent photos
+ * at once and a swipe reveals more, rather than waiting for auto-advance.
  *
  * ── Real data only ──────────────────────────────────────────────────────
  * Every frame is a real `family_memories` row via useKioskPhotos. There is
@@ -36,7 +43,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Image, Pressable, StyleSheet, Animated, AccessibilityInfo,
+  View, Text, Image, Pressable, ScrollView, StyleSheet, Animated, AccessibilityInfo,
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { Images, ImageOff } from 'lucide-react-native';
@@ -66,8 +73,8 @@ export function KioskMemorySlideshow({
     <WidgetCard k={k} isDark={isDark} style={style}>
       <WidgetHeader
         Icon={Images}
-        eyebrow="Kept"
-        title={compact ? 'Family photos' : 'Recently kept'}
+        eyebrow={compact ? 'Family' : 'Kept'}
+        title={compact ? 'Family Feed' : 'Recently kept'}
         accent={k.purple}
         k={k}
         isDark={isDark}
@@ -88,6 +95,8 @@ export function KioskMemorySlideshow({
             style={{ textAlign: 'center', maxWidth: 340 }}
           />
         </View>
+      ) : compact ? (
+        <FeedList photos={photos} height={height} />
       ) : (
         <Frame photos={photos} height={height} />
       )}
@@ -196,6 +205,47 @@ function Frame({ photos, height }: { photos: KioskPhoto[]; height: number }) {
   );
 }
 
+/**
+ * "Family Feed" — the Overview widget's compact form. A vertical strip of
+ * recent photo cards, latest on top (photos already arrives newest-first
+ * from useKioskPhotos, same ordering the real Memories feed uses), so a
+ * glance at the widget shows several recent photos stacked rather than
+ * only one auto-advancing frame — the same layout regardless of which
+ * role's Overview it's rendered on.
+ *
+ * Deliberately just a scrollable list of static images, not the Memories
+ * tab's full interactive feed (hearts/delete/post/lightbox) — this is
+ * still the glanceable widget, not a second copy of the tab that owns
+ * those actions. Scrolling the strip IS activity (registerActivity on
+ * scroll-begin), unlike the cross-fade Frame's own auto-advance, since a
+ * kid/parent actively scrolling a feed is unambiguously someone at the
+ * device, not the ambient rotation the idle lock needs to see through.
+ */
+function FeedList({ photos, height }: { photos: KioskPhoto[]; height: number }) {
+  const { k } = useKioskColors();
+  const { registerActivity } = useKioskActivity();
+  return (
+    <ScrollView
+      style={{ height }}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={s.feedContent}
+      onScrollBeginDrag={registerActivity}
+    >
+      {photos.map(photo => (
+        <View key={photo.key} style={[s.feedCard, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+          <Image source={{ uri: photo.url }} style={s.feedImage} resizeMode="cover" />
+          <View style={s.feedCaption} pointerEvents="none">
+            <Text style={s.captionTitle} numberOfLines={1}>{photo.title}</Text>
+            {!!photo.date && (
+              <Text style={s.captionDate} numberOfLines={1}>{photo.date}</Text>
+            )}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
 const s = StyleSheet.create({
   frame: {
     borderRadius: KIOSK_RADIUS.lg,
@@ -219,4 +269,16 @@ const s = StyleSheet.create({
     borderRadius: KIOSK_RADIUS.full,
   },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F7F2EE' },
+
+  feedContent: { gap: KIOSK_SPACE.sm, paddingBottom: 2 },
+  feedCard: {
+    borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  feedImage: { width: '100%', aspectRatio: 16 / 9 },
+  feedCaption: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
+    backgroundColor: 'rgba(10,8,7,0.62)',
+  },
 });

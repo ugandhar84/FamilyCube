@@ -1,19 +1,33 @@
 /**
- * KioskHeader — the one persistent status bar every kiosk screen shares,
- * rebuilt to the reference mockup's top bar.
+ * KioskHeader — the one persistent status bar every kiosk screen shares.
  *
- * Left  · a live "Kitchen Hub" status dot + the family name, then the
- *         profile switcher (avatar strip)
+ * Left  · a live "Kitchen Hub" status dot + family name, a real time +
+ *         weather readout, then the profile switcher (avatar strip)
  * Mid   · the clock and date — the single most load-bearing glanceable
  *         element on an always-on display, and what the device shows for
  *         the ~99% of the day nobody is touching it
- * Right · Intercom, Standby, Ask Fam (parent), Lock
+ * Right · theme mode, Intercom (broadcast/announcement), Standby, Ask Fam
+ *         (parent), Lock
  *
- * Deliberately NOT in the mockup's version of this bar: the weather pill.
- * The mockup hardcodes "72°F". This codebase has no weather provider and no
- * key for one, so any temperature here would be a fabricated reading
- * presented on a surface a household would reasonably trust for exactly
- * that. Omitted cleanly rather than stubbed — see the report.
+ * ── Weather, now real ────────────────────────────────────────────────────
+ * A prior pass of this file deliberately omitted the mockup's hardcoded
+ * "72°F" pill: this codebase had no weather provider and no key, so any
+ * number shown would have been fabricated on a surface a household would
+ * reasonably trust. That's now resolved with a REAL fetch (lib/weather.ts,
+ * ported from the proven Petkoinia implementation) — Open-Meteo, keyless,
+ * device GPS only, via the same safe expo-location wrapper
+ * (lib/location.ts) already used elsewhere in this app. useKioskWeather
+ * returns null whenever no real reading is available (permission denied,
+ * fetch failed, still loading) and the readout simply doesn't render in
+ * that case — never a placeholder value.
+ *
+ * ── Theme mode ────────────────────────────────────────────────────────────
+ * A real three-way cycle (system -> light -> dark -> system) over the same
+ * ThemeContext every other screen in this app already reads/writes — kiosk
+ * previously had no control for this at all, purely inheriting whatever the
+ * household's phone-set preference was. Icon reflects the CURRENT mode, not
+ * the mode a tap would switch to, matching how a settings toggle should
+ * read (state, not a command).
  *
  * Profile switching matches the phone's own PersonaSwitcherSheet rule
  * exactly: a member with no PIN switches instantly; a member with
@@ -29,12 +43,14 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Sparkles, Lock, Megaphone, Moon } from 'lucide-react-native';
+import { Sparkles, Lock, Megaphone, Moon, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
+import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors, kioskRoleAccent } from './kioskPalette';
 import { useKioskLockSuspended } from './KioskActivityContext';
+import { useKioskWeather } from './useKioskWeather';
 
 export function KioskHeader({
   familyName, members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
@@ -92,15 +108,45 @@ export function KioskHeader({
   const clock = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const date = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
+  const weather = useKioskWeather();
+
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const cycleTheme = () => {
+    const next: Record<ThemeMode, ThemeMode> = { system: 'light', light: 'dark', dark: 'system' };
+    setThemeMode(next[themeMode]);
+  };
+  const themeIcon = themeMode === 'light' ? Sun : themeMode === 'dark' ? MoonStar : MonitorSmartphone;
+  const themeLabel = themeMode === 'light' ? 'Light' : themeMode === 'dark' ? 'Dark' : 'Auto';
+
   return (
     <View style={[s.root, { backgroundColor: k.card, borderBottomColor: k.cardBorder }]}>
-      {/* ── Left: status + family, then profiles ─────────────────────── */}
+      {/* ── Left: status + family + time/weather, then profiles ────────── */}
       <View style={s.left}>
-        <View style={s.brand}>
-          <View style={[s.liveDot, { backgroundColor: k.sage }]} />
-          <Text style={[s.brandText, { color: k.textFaint }]} numberOfLines={1}>
-            {familyName.toUpperCase()}
-          </Text>
+        <View style={s.brandCol}>
+          <View style={s.brand}>
+            <View style={[s.liveDot, { backgroundColor: k.sage }]} />
+            <Text style={[s.brandText, { color: k.textFaint }]} numberOfLines={1}>
+              {familyName.toUpperCase()}
+            </Text>
+          </View>
+          {/* Compact time + real weather, right under the family name — a
+              second, smaller glance point beside the big center clock,
+              closer to where the profile switcher itself sits. Weather
+              renders only once a real reading has actually come back
+              (useKioskWeather returns null otherwise) — never a
+              placeholder, same rule the header's own comment documents. */}
+          <View style={s.switcherMeta} accessible accessibilityRole="text" accessibilityLabel={weather ? `${clock}, ${weather.temperature}${weather.unit}, ${weather.condition}` : clock}>
+            <Text style={[s.switcherMetaText, { color: k.textMuted }]} numberOfLines={1}>{clock}</Text>
+            {weather && (
+              <>
+                <Text style={[s.switcherMetaDot, { color: k.textFaint }]}>·</Text>
+                <Text style={s.switcherMetaIcon}>{weather.icon}</Text>
+                <Text style={[s.switcherMetaText, { color: k.textMuted }]} numberOfLines={1}>
+                  {weather.temperature}{weather.unit}
+                </Text>
+              </>
+            )}
+          </View>
         </View>
 
         {/* Horizontal scroll rather than a fixed slice: a family with more
@@ -170,10 +216,21 @@ export function KioskHeader({
         <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>{date}</Text>
       </View>
 
-      {/* ── Right: actions ───────────────────────────────────────────── */}
+      {/* ── Right: theme mode, then actions ─────────────────────────────
+          Theme mode leads, quiet/neutral like Lock — it's a display
+          preference, not a household action, so it reads differently from
+          Announcement/Standby/Assistant on purpose. Icon reflects the
+          CURRENT mode (state), not what a tap switches to (a command) —
+          tapping cycles system -> light -> dark -> system. */}
       <View style={s.right}>
         <HeaderButton
-          Icon={Megaphone} label="Intercom" accent={k.primary} k={k} isDark={isDark}
+          Icon={themeIcon} label={themeLabel} accent={k.textMuted} k={k} isDark={isDark}
+          onPress={cycleTheme}
+          hint={`Display theme: ${themeLabel}. Tap to change.`}
+          neutral
+        />
+        <HeaderButton
+          Icon={Megaphone} label="Announcement" accent={k.primary} k={k} isDark={isDark}
           onPress={onIntercom}
           hint="Broadcast an announcement to every family phone"
           wide
@@ -261,7 +318,12 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, gap: KIOSK_SPACE.md,
   },
   left: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, flexShrink: 1, minWidth: 0 },
+  brandCol: { gap: 2 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  switcherMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  switcherMetaText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  switcherMetaDot: { fontSize: KIOSK_TYPO.micro },
+  switcherMetaIcon: { fontSize: KIOSK_TYPO.micro + 1 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
   avatarScroll: { flexGrow: 0, flexShrink: 1 },

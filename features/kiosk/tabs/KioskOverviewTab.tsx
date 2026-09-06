@@ -84,13 +84,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
   Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
-  Megaphone, BatteryLow, ChefHat, CheckSquare,
+  Megaphone, BatteryLow, ChefHat, CheckSquare, ClipboardCheck, X, Gift, HandHelping,
 } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useGroceryStore } from '@/store/groceryStore';
+import { useRewardStore } from '@/store/rewardStore';
+import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime } from '@/lib/dates';
@@ -114,6 +117,25 @@ interface RadarRow {
   share_location_enabled?: boolean;
   lat: number | null;
   lng: number | null;
+}
+
+/**
+ * One row in the unified Approvals widget — the shared shape a chore
+ * review, a store redemption, and a kid request all get normalized into so
+ * the three real systems behind them can sit in one ranked list instead of
+ * three separate badges the parent has to check separately.
+ */
+interface ApprovalItem {
+  id: string;
+  kind: 'chore' | 'redemption' | 'request';
+  /** ISO timestamp used to order within the same urgency tier — oldest first. */
+  sortAt: string;
+  title: string;
+  who?: string;
+  emoji: string;
+  meta: string;
+  /** Higher sorts first. Only a kid request's real urgency ever exceeds 1. */
+  urgencyRank: 1 | 2 | 3 | 4;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -181,9 +203,15 @@ export function KioskOverviewTab({
   const dayEvents = useEventStore(s => s.dayEvents);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
-  const { quests } = useQuestStore();
+  const { quests, approveQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const { meals } = useKioskMeals();
+  const redemptions = useRewardStore(s => s.redemptions);
+  const approveRedemption = useRewardStore(s => s.approveRedemption);
+  const rejectRedemption = useRewardStore(s => s.rejectRedemption);
+  const kidRequests = useKidRequestStore(s => s.requests);
+  const approveRequest = useKidRequestStore(s => s.approveRequest);
+  const declineRequest = useKidRequestStore(s => s.declineRequest);
 
   // ── Today's meals (real family_meals rows) ───────────────────────────
   // Was a single "Tonight's dinner" summary that, once fixed to be
@@ -216,6 +244,58 @@ export function KioskOverviewTab({
       !m.deletedAt && m.inviteStatus !== 'pending' && (m.role === 'kid' || m.role === 'teen')),
     [members],
   );
+
+  // ── Unified approvals queue (parent-only) ────────────────────────────
+  // Three genuinely separate systems today — chore reviews, store
+  // redemptions, kid requests — each with their own screen and their own
+  // "pending" badge, nowhere merged into one ranked list a parent can clear
+  // from the Overview. Built here rather than reusing the now-unreachable
+  // KioskHubTab (its pendingReview/pendingRedemptions memos were the right
+  // reference for the underlying queries, but that tab never merged the
+  // three, and it's dead code besides).
+  const pendingChoreReviews = useMemo(
+    () => quests.filter(q => q.status === 'pending_approval'),
+    [quests],
+  );
+  const pendingRedemptions = useMemo(
+    () => isParent ? redemptions.filter(r => r.status === 'pending') : [],
+    [redemptions, isParent],
+  );
+  const pendingKidRequests = useMemo(
+    () => isParent
+      ? kidRequests.filter(r => r.status === 'pending' && (!r.toMemberId || r.toMemberId === active.id))
+      : [],
+    [kidRequests, isParent, active.id],
+  );
+  const approvals = useMemo(() => {
+    if (!isParent) return [] as ApprovalItem[];
+    const memberFirst = (id?: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0];
+    const memberEmoji = (id?: string) => members.find(m => m.id === id)?.emoji ?? '🙂';
+    const items: ApprovalItem[] = [
+      ...pendingChoreReviews.map((q): ApprovalItem => ({
+        id: `quest:${q.id}`, kind: 'chore', sortAt: q.submittedAt ?? '',
+        title: q.title, who: memberFirst(q.assignedToId) ?? memberFirst(q.sponsorUserId), emoji: memberEmoji(q.assignedToId ?? q.sponsorUserId),
+        meta: q.coins ? `${q.coins} coins on approval` : 'Ready for review',
+        urgencyRank: 1,
+      })),
+      ...pendingRedemptions.map((r): ApprovalItem => ({
+        id: `redemption:${r.id}`, kind: 'redemption', sortAt: r.redeemedAt,
+        title: r.rewardTitle ?? 'Reward redemption', who: r.memberName ?? memberFirst(r.memberId), emoji: memberEmoji(r.memberId),
+        meta: `${r.deductedCoins} coins${r.wallet === 'gpCoins' ? ' · grandparent jar' : ''}`,
+        urgencyRank: 1,
+      })),
+      ...pendingKidRequests.map((req): ApprovalItem => ({
+        id: `request:${req.id}`, kind: 'request', sortAt: req.requestedAt,
+        title: req.detail, who: memberFirst(req.fromMemberId), emoji: memberEmoji(req.fromMemberId),
+        meta: REQUEST_META[req.type]?.label ?? 'Request',
+        urgencyRank: req.urgency === 'emergency' ? 4 : req.urgency === 'urgent' ? 3 : req.urgency === 'soon' ? 2 : 1,
+      })),
+    ];
+    // Most urgent first; within the same urgency, oldest first — the one
+    // that's been waiting longest surfaces before a just-arrived duplicate
+    // at the same rank, so nothing quietly ages at the bottom of its tier.
+    return items.sort((a, b) => b.urgencyRank - a.urgencyRank || a.sortAt.localeCompare(b.sortAt));
+  }, [isParent, pendingChoreReviews, pendingRedemptions, pendingKidRequests, members]);
 
   // ── Chore counts for the hero line ───────────────────────────────────
   const openChores = useMemo(
@@ -426,6 +506,21 @@ export function KioskOverviewTab({
               </View>
             )}
           </WidgetCard>
+        )}
+
+        {/* ── Unified approvals ──
+            Parent-only, same reasoning as coin jars below: this is a
+            decision surface, not household-shared content. */}
+        {isParent && (
+          <ParentApprovalsWidget
+            approvals={approvals} k={k} isDark={isDark}
+            onApproveChore={(id) => approveQuest(id, active.id)}
+            onApproveRedemption={(id) => approveRedemption(id, active.id)}
+            onRejectRedemption={(id) => rejectRedemption(id, active.id)}
+            onApproveRequest={(id) => approveRequest(id, active.id)}
+            onDeclineRequest={(id) => declineRequest(id, active.id)}
+            onOpenMore={() => onNavigate('tasks')}
+          />
         )}
 
         {/* ── Kids' coin jars ──
@@ -704,6 +799,146 @@ function RideRow({
   );
 }
 
+// ── Unified approvals ─────────────────────────────────────────────────────
+/**
+ * The genuinely new piece of this screen: chore reviews, store redemptions,
+ * and kid requests are three separate systems on the phone today (Tasks'
+ * review lane, the Store screen's redemption queue, and the Requests inbox),
+ * each with its own badge, nowhere merged. A parent standing at the kiosk
+ * had no single place to see "everything waiting on me" ranked by what
+ * actually needs attention first — an emergency request could be sitting
+ * unseen behind three routine chore photos. This widget is that one place.
+ *
+ * Kept to the same shape as every other widget on this screen: up to four
+ * rows inline, real actions on each (no picker step), a link to the fuller
+ * screen for anything beyond that.
+ */
+function ParentApprovalsWidget({
+  approvals, k, isDark, onApproveChore, onApproveRedemption, onRejectRedemption,
+  onApproveRequest, onDeclineRequest, onOpenMore,
+}: {
+  approvals: ApprovalItem[];
+  k: KioskColors;
+  isDark: boolean;
+  onApproveChore: (questId: string) => void;
+  onApproveRedemption: (id: string) => void;
+  onRejectRedemption: (id: string) => void;
+  onApproveRequest: (id: string) => void;
+  onDeclineRequest: (id: string) => void;
+  onOpenMore: () => void;
+}) {
+  const visible = approvals.slice(0, 4);
+  const overflow = approvals.length - visible.length;
+  const hasUrgent = approvals.some(a => a.urgencyRank >= 3);
+
+  return (
+    <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined} style={s.widget}>
+      <WidgetHeader
+        Icon={ClipboardCheck} eyebrow="Waiting on you" title="Approvals"
+        accent={hasUrgent ? k.danger : k.primary} k={k} isDark={isDark}
+        right={approvals.length > 0
+          ? <Chip label={`${approvals.length}`} accent={hasUrgent ? k.danger : k.primary} isDark={isDark} k={k} filled={hasUrgent} />
+          : undefined}
+      />
+      {approvals.length === 0 ? (
+        <EmptyNote text="Nothing waiting on a decision right now." k={k} />
+      ) : (
+        <View style={{ gap: KIOSK_SPACE.sm }}>
+          {visible.map(item => (
+            <ApprovalRow
+              key={item.id} item={item} k={k} isDark={isDark}
+              onApproveChore={onApproveChore}
+              onApproveRedemption={onApproveRedemption}
+              onRejectRedemption={onRejectRedemption}
+              onApproveRequest={onApproveRequest}
+              onDeclineRequest={onDeclineRequest}
+            />
+          ))}
+          {overflow > 0 && (
+            <ActionButton
+              label={`See ${overflow} more`} accent={k.primary} k={k} isDark={isDark}
+              onPress={onOpenMore}
+              accessibilityHint="Open the full approvals list"
+            />
+          )}
+        </View>
+      )}
+    </WidgetCard>
+  );
+}
+
+const APPROVAL_KIND_ICON: Record<ApprovalItem['kind'], LucideIcon> = {
+  chore: CheckSquare, redemption: Gift, request: HandHelping,
+};
+
+function ApprovalRow({
+  item, k, isDark, onApproveChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
+}: {
+  item: ApprovalItem;
+  k: KioskColors;
+  isDark: boolean;
+  onApproveChore: (questId: string) => void;
+  onApproveRedemption: (id: string) => void;
+  onRejectRedemption: (id: string) => void;
+  onApproveRequest: (id: string) => void;
+  onDeclineRequest: (id: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const rawId = item.id.slice(item.id.indexOf(':') + 1);
+  const urgent = item.urgencyRank >= 3;
+  const accent = urgent ? k.danger : item.kind === 'redemption' ? k.gold : item.kind === 'request' ? k.purple : k.primary;
+  const Icon = APPROVAL_KIND_ICON[item.kind];
+
+  const approve = () => {
+    setBusy(true);
+    if (item.kind === 'chore') onApproveChore(rawId);
+    else if (item.kind === 'redemption') onApproveRedemption(rawId);
+    else onApproveRequest(rawId);
+  };
+  const decline = () => {
+    setBusy(true);
+    if (item.kind === 'redemption') onRejectRedemption(rawId);
+    else if (item.kind === 'request') onDeclineRequest(rawId);
+  };
+
+  return (
+    <Well k={k} accent={accent}>
+      <View style={s.rideTop}>
+        <View style={[s.approvalIcon, { backgroundColor: accent + (isDark ? '24' : '1A') }]}>
+          <Icon size={16} color={accent} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[s.rideTitle, { color: k.text }]} numberOfLines={2}>{item.title}</Text>
+          <Text style={[s.rideMeta, { color: k.textMuted }]} numberOfLines={1}>
+            {item.who ? `${item.who} · ` : ''}{item.meta}
+          </Text>
+        </View>
+        {urgent && <Chip label="Urgent" accent={k.danger} isDark={isDark} k={k} filled />}
+      </View>
+      <View style={s.rideActions}>
+        {/* A chore decline needs a reason (declineQuest's real signature
+            requires one, shown to the kid as "why it came back") — a single
+            tap here can't collect that, so a chore that needs redo stays a
+            Tasks-screen action; only redemptions and requests decline inline. */}
+        {item.kind !== 'chore' && (
+          <ActionButton
+            label="Decline" Icon={X} accent={k.danger} k={k} isDark={isDark}
+            disabled={busy} style={{ flex: 1 }}
+            accessibilityHint={`Decline this ${item.kind}`}
+            onPress={decline}
+          />
+        )}
+        <ActionButton
+          label="Approve" Icon={Check} accent={k.sage} k={k} isDark={isDark}
+          variant="solid" disabled={busy} style={{ flex: 1 }}
+          accessibilityHint={`Approve this ${item.kind}`}
+          onPress={approve}
+        />
+      </View>
+    </Well>
+  );
+}
+
 // ── Senior's own tasks — one calm summary card, not a board ──────────────
 /**
  * Replaces the parent's Rides widget in a senior/grandparent's Overview
@@ -970,6 +1205,11 @@ const s = StyleSheet.create({
   rideMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },
   rideActions: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
   rideNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: KIOSK_SPACE.xs },
+
+  approvalIcon: {
+    width: 30, height: 30, borderRadius: KIOSK_RADIUS.sm,
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
 
   jarRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm },
   jarAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

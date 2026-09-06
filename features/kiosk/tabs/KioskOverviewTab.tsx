@@ -388,52 +388,6 @@ export function KioskOverviewTab({
   return (
     <>
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-      {/* ══ HAPPENING NOW (parent) ═══════════════════════════════════════
-          Matches the mockup's own .now-strip exactly: a compact single-
-          line panel (live dot, uppercase eyebrow, current/next event, a
-          right-aligned time) — NOT a greeting hero. The mockup has no
-          avatar+"Good morning"+quick-actions block anywhere; that was
-          this file's own pre-mock content, carried over by mistake and
-          never actually replaced. Kid/senior/teen keep that original hero
-          exactly as it was below — their compositions were never part of
-          what the mockup depicted, same reasoning as every other kid/
-          senior branch in this file. */}
-      {isParent && (
-        <WidgetCard k={k} isDark={isDark} style={s.nowStrip}>
-          {/* Mock's exact colors: .now-strip .liveDot and .now-label are
-              both var(--orange) — the ROLE accent (navy/k.primary for
-              Parent specifically, per the per-role --orange retint at the
-              top of the mock's own CSS), not a fixed green. Halo is a
-              static soft ring (box-shadow: 0 0 0 4px accent at 18%
-              opacity) — NOT animated; the mock's one @keyframes pulse
-              belongs to an unrelated kid-request "waiting" status dot
-              elsewhere. A plain View can't express a symmetric CSS
-              box-shadow ring, so the halo is a second, larger, tinted
-              circle layered behind the solid dot. */}
-          <View style={s.nowStripDotWrap}>
-            <View style={[s.nowStripDotHalo, { backgroundColor: k.primary + (isDark ? '30' : '2E') }]} />
-            <View style={[s.nowStripDot, { backgroundColor: k.primary }]} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            {/* Mock's own now-label is a literal, always-on "Happening
-                now" — not derived from any state. Matched exactly per
-                live confirmation, rather than the richer isNow/upcoming
-                distinction this file computed on its own. */}
-            <Text style={[s.nowStripLabel, { color: k.primary }]}>HAPPENING NOW</Text>
-            <Text style={[s.nowStripWhat, { color: k.text }]} numberOfLines={1}>
-              {nowHappening ? nowHappening.event.title : 'Nothing on the calendar today'}
-            </Text>
-          </View>
-          {nowHappening && (
-            <Text style={[s.nowStripTime, { color: k.textFaint }]} numberOfLines={1}>
-              {nowHappening.isNow && nowHappening.event.endTime
-                ? `until ${fmtTime(nowHappening.event.endTime)}`
-                : fmtTime(nowHappening.event.time!)}
-            </Text>
-          )}
-        </WidgetCard>
-      )}
-
       {!isParent && (
       <>
       <View style={s.heroRow}>
@@ -594,6 +548,51 @@ export function KioskOverviewTab({
       {isParent ? (
         <View style={[s.twoColRow, isNarrowParentLayout && s.twoColRowStacked]}>
           <View style={[s.centerCol, isNarrowParentLayout && s.colFullWidth]}>
+            {/* ══ HAPPENING NOW ═══════════════════════════════════════════
+                Matches the mockup's own .now-strip exactly: a compact
+                single-line panel (live dot, uppercase eyebrow, current/
+                next event, a right-aligned time) — NOT a greeting hero.
+                Lives INSIDE centerCol as its first child (a real bug fix:
+                an earlier version rendered this as a sibling of the whole
+                twoColRow instead, spanning the combined center+sidebar
+                width — visibly wider than Family Schedule right below it,
+                which only spans centerCol's own share). */}
+            <WidgetCard k={k} isDark={isDark} style={s.nowStrip}>
+              {/* Live-requested (kept, final call): green (k.sage) for the
+                  dot AND the label, matching this app's own established
+                  "live" color everywhere else it appears (KioskHeader's
+                  own live dot, the kid/senior hero's Live chip) — a
+                  deliberate real-app choice over the mock's own role-
+                  accent (navy for Parent). Halo stays a static soft ring
+                  (box-shadow: 0 0 0 4px accent at 18% opacity in the mock)
+                  — NOT animated; the mock's one @keyframes pulse belongs
+                  to an unrelated kid-request "waiting" status dot
+                  elsewhere. A plain View can't express a symmetric CSS
+                  box-shadow ring, so the halo is a second, larger, tinted
+                  circle layered behind the solid dot. */}
+              <View style={s.nowStripDotWrap}>
+                <View style={[s.nowStripDotHalo, { backgroundColor: k.sage + (isDark ? '30' : '2E') }]} />
+                <View style={[s.nowStripDot, { backgroundColor: k.sage }]} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                {/* Mock's own now-label is a literal, always-on "Happening
+                    now" — not derived from any state. Matched exactly per
+                    live confirmation, rather than the richer isNow/upcoming
+                    distinction this file computed on its own. */}
+                <Text style={[s.nowStripLabel, { color: k.sage }]}>HAPPENING NOW</Text>
+                <Text style={[s.nowStripWhat, { color: k.text }]} numberOfLines={1}>
+                  {nowHappening ? nowHappening.event.title : 'Nothing on the calendar today'}
+                </Text>
+              </View>
+              {nowHappening && (
+                <Text style={[s.nowStripTime, { color: k.textFaint }]} numberOfLines={1}>
+                  {nowHappening.isNow && nowHappening.event.endTime
+                    ? `until ${fmtTime(nowHappening.event.endTime)}`
+                    : fmtTime(nowHappening.event.time!)}
+                </Text>
+              )}
+            </WidgetCard>
+
             {/* Family Schedule — genuinely missing until now: the mockup's
                 own center-column timeline (Now-strip -> Schedule ->
                 Approvals) had no real equivalent on this screen at all.

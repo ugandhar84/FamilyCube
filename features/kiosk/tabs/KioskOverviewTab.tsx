@@ -83,7 +83,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image } from 'react-native';
 import {
-  Car, MapPin, UtensilsCrossed, Bell, Check,
+  Car, MapPin, UtensilsCrossed, Bell, Check, ArrowLeft,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -107,6 +107,7 @@ import { useKioskPhotos } from '../useKioskPhotos';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
+import { KioskMealsTab } from './KioskMealsTab';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import { railForRole, type KioskTabKey } from '../kioskTabs';
@@ -229,6 +230,13 @@ export function KioskOverviewTab({
   // below and KioskRecipeDrawer.
   const todayMeals = useMemo(() => meals.filter(m => m.day === todayMealDay()), [meals]);
   const [openMeal, setOpenMeal] = useState<Meal | null>(null);
+  // Live-requested: tapping into Meals from Overview shouldn't navigate
+  // away — it should render the real Meals tab content in place, seamlessly,
+  // with the stats column staying put (it's still "Overview," just showing
+  // different content in the area to its right). Scoped to Meals only for
+  // now; every other link on this screen (Schedule, Store, Chat, the tab
+  // list, etc) still navigates away exactly as it did before.
+  const [showMeals, setShowMeals] = useState(false);
 
   // ── Rides needing attention ──────────────────────────────────────────
   // The mockup's "Co-Parent Pending Rides" card. A ride needs attention if
@@ -368,6 +376,29 @@ export function KioskOverviewTab({
         onNavigate={onNavigate}
       />
     )}
+    {isParent && showMeals ? (
+      // KioskMealsTab owns its own top-level ScrollView — rendering it
+      // INSIDE this file's own ScrollView (a few lines below) would be a
+      // real nested-ScrollView bug (broken/ambiguous scroll gesture
+      // routing, content that can't reach its own bottom), not just a
+      // style nit. So the whole Hero+ScrollView branch is skipped
+      // entirely here rather than swapped out further down inside it —
+      // KioskMealsTab becomes a direct sibling of ParentStatsColumn with
+      // its own independent scroll, exactly the shape a real tab switch
+      // would have produced anyway.
+      <View style={s.mealsInlineCol}>
+        <Pressable
+          onPress={() => setShowMeals(false)}
+          style={({ pressed }) => [s.backToOverviewBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Overview"
+        >
+          <ArrowLeft size={16} color={k.textMuted} />
+          <Text style={[s.backToOverviewText, { color: k.textMuted }]}>Back to Overview</Text>
+        </Pressable>
+        <KioskMealsTab active={active} members={members} />
+      </View>
+    ) : (
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
       {/* ══ HERO ROW ═══════════════════════════════════════════════════ */}
       <View style={s.heroRow}>
@@ -609,7 +640,11 @@ export function KioskOverviewTab({
             {/* Mockup's "Meals This Week" reuses the SAME .jar row shape as
                 Coin Jars (no avatar, no amount) — a real weekly plan from
                 the same family_meals data the Meals tab itself uses, not a
-                separate "today only" summary. */}
+                separate "today only" summary. The whole card opens the real
+                Meals tab content in place (see showMeals above) — tapping
+                anywhere on it, not just a small link, matching how a tap
+                target this size should behave on a tablet. */}
+            <Pressable onPress={() => setShowMeals(true)} accessibilityRole="button" accessibilityLabel="Open Meals">
             <WidgetCard k={k} isDark={isDark}>
               <View style={s.panelHead}>
                 <Text style={[s.panelTitle, { color: k.textFaint }]}>MEALS THIS WEEK</Text>
@@ -641,6 +676,7 @@ export function KioskOverviewTab({
                 </View>
               )}
             </WidgetCard>
+            </Pressable>
 
             {/* Mockup's checkable .grocery-row exactly: a square check that
                 fills sage-green when bought, item text strikes through —
@@ -683,7 +719,7 @@ export function KioskOverviewTab({
               )}
               <ActionButton
                 label="Open list" accent={k.sage} k={k} isDark={isDark}
-                onPress={() => onNavigate('meals')}
+                onPress={() => setShowMeals(true)}
                 style={{ marginTop: KIOSK_SPACE.sm }}
                 accessibilityHint="Open the meals and grocery screen"
               />
@@ -751,6 +787,7 @@ export function KioskOverviewTab({
         onOpen={() => onNavigate('findfam')}
       />
     </ScrollView>
+    )}
     </View>
     </>
   );
@@ -1645,6 +1682,15 @@ const s = StyleSheet.create({
   // own (WidgetCard's default) — the column itself sets the width, so a
   // card doesn't also need flexBasis fighting its container.
   twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  // Meals-inline: takes the full width twoColRow's two children would
+  // otherwise split between them (center+sidebar combined) — the stats
+  // column to its left is untouched, only this area swaps content.
+  mealsInlineCol: { flex: 1, minWidth: 0, gap: KIOSK_SPACE.sm },
+  backToOverviewBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    alignSelf: 'flex-start', paddingVertical: KIOSK_SPACE.xs,
+  },
+  backToOverviewText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   centerCol: { flex: 1.9, gap: KIOSK_SPACE.md, minWidth: 0 },
   sideCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
 

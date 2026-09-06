@@ -603,8 +603,23 @@ export function KioskOverviewTab({
                     .sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? ''))
                     .map((ev, i) => {
                       const a = eventAssignee(ev);
+                      // Mock's exact .tl-item.done / .tl-item.current states:
+                      // an all-day event is neither (no time to compare);
+                      // a timed event is "current" while nowHHMM falls
+                      // inside [time, endTime), "done" once its end (or, if
+                      // it has none, its start) has already passed.
+                      const nowHHMM = new Date().toTimeString().slice(0, 5);
+                      const isCurrent = !ev.allDay && !!ev.time && ev.time <= nowHHMM && (!ev.endTime || ev.endTime > nowHHMM);
+                      const isDone = !ev.allDay && !!ev.time && (ev.endTime ? ev.endTime <= nowHHMM : ev.time < nowHHMM);
                       return (
-                        <View key={ev.id} style={[s.tlItem, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                        <View
+                          key={ev.id}
+                          style={[
+                            s.tlItem,
+                            i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
+                            isCurrent && { borderLeftWidth: 3, borderLeftColor: k.primary, marginLeft: -1 },
+                          ]}
+                        >
                           <Text style={[s.tlTime, { color: k.textFaint }]} numberOfLines={1}>
                             {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
                           </Text>
@@ -612,9 +627,19 @@ export function KioskOverviewTab({
                             {!!a.name && (
                               <Text style={[s.tlWho, { color: k.textFaint }]} numberOfLines={1}>{a.name}</Text>
                             )}
-                            <Text style={[s.tlTitle, { color: k.text }]} numberOfLines={1}>{ev.title}</Text>
+                            <Text
+                              style={[s.tlTitle, { color: isCurrent ? k.primary : isDone ? k.textFaint : k.text }, isDone && { textDecorationLine: 'line-through' }]}
+                              numberOfLines={1}
+                            >
+                              {ev.title}
+                            </Text>
                             {!!ev.location && (
-                              <Text style={[s.tlMeta, { color: k.textMuted }]} numberOfLines={1}>{ev.location}</Text>
+                              <Text
+                                style={[s.tlMeta, { color: isDone ? k.textFaint : k.textMuted }, isDone && { textDecorationLine: 'line-through' }]}
+                                numberOfLines={1}
+                              >
+                                {ev.location}
+                              </Text>
                             )}
                           </View>
                         </View>

@@ -35,7 +35,7 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme'
 import { railForRole, type KioskTabKey } from '../kioskTabs';
 
 export function ParentStatsColumn({
-  active, members, familyName, activeTab, onNavigate, onAskFam,
+  active, members, familyName, activeTab, onNavigate, onAskFam, onIntercom, onStandby, onLock,
 }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -53,6 +53,15 @@ export function ParentStatsColumn({
    *  the kids" (a quick note to family chat), swapped back to the real Ask
    *  Fam feature this column's pinned-action slot originally carried. */
   onAskFam: () => void;
+  /** The mockup's own rail.tools row (Broadcast/Lock Kiosk/Dim to Standby)
+   *  — genuinely missing from the first build of this column, caught on a
+   *  full data-vs-real audit. These are the SAME real actions
+   *  KioskHeader's own Announcement/Lock/Standby buttons already trigger
+   *  (KioskScreen.tsx wires both to the same underlying state), not a
+   *  second, parallel set of controls. */
+  onIntercom: () => void;
+  onStandby: () => void;
+  onLock: () => void;
 }) {
   const { k, isDark } = useKioskColors();
   // Live-requested: adjust to rotation without cutting/trimming or over-
@@ -107,6 +116,43 @@ export function ParentStatsColumn({
             </View>
             <Text style={[s.statsName, { color: k.text }]} numberOfLines={1}>{active.name?.trim().split(' ')[0]}</Text>
             <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>{familyName}</Text>
+          </View>
+        </WidgetCard>
+
+        {/* Household tools — the mockup's rail.tools row (Broadcast, Lock
+            Kiosk, Dim to Standby). Same real actions KioskHeader's own
+            Announcement/Lock/Standby buttons already trigger; this is a
+            second, closer-at-hand access point for a parent already
+            looking at this column, not a duplicate feature. */}
+        <WidgetCard k={k} isDark={isDark} padded={false}>
+          <View style={s.toolsCol}>
+            <Pressable
+              onPress={onIntercom}
+              style={({ pressed }) => [s.toolBtn, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder }]}
+              accessibilityRole="button" accessibilityLabel="Broadcast"
+              accessibilityHint="Broadcast an announcement to every family phone"
+            >
+              <Text style={s.toolIcon}>📢</Text>
+              <Text style={[s.toolLabel, { color: k.text }]} numberOfLines={1}>Broadcast</Text>
+            </Pressable>
+            <Pressable
+              onPress={onLock}
+              style={({ pressed }) => [s.toolBtn, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder }]}
+              accessibilityRole="button" accessibilityLabel="Lock Kiosk"
+              accessibilityHint="Hide the current profile until someone signs back in"
+            >
+              <Text style={s.toolIcon}>🔒</Text>
+              <Text style={[s.toolLabel, { color: k.text }]} numberOfLines={1}>Lock Kiosk</Text>
+            </Pressable>
+            <Pressable
+              onPress={onStandby}
+              style={({ pressed }) => [s.toolBtn, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder }]}
+              accessibilityRole="button" accessibilityLabel="Dim to Standby"
+              accessibilityHint="Show the ambient clock display now"
+            >
+              <Text style={s.toolIcon}>🌙</Text>
+              <Text style={[s.toolLabel, { color: k.text }]} numberOfLines={1}>Dim to Standby</Text>
+            </Pressable>
           </View>
         </WidgetCard>
 
@@ -218,4 +264,12 @@ const s = StyleSheet.create({
   askFamRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   messageKidsTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   messageKidsSub: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, opacity: 0.75 },
+  toolsCol: { gap: KIOSK_SPACE.xs },
+  toolBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.control,
+  },
+  toolIcon: { fontSize: 16 },
+  toolLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 });

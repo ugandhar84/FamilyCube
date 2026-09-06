@@ -48,18 +48,21 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
 } from 'react-native';
-import { Plus, Check, ListPlus } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore, type GroceryItem } from '@/store/groceryStore';
 import { categorizeItem } from '@/features/vault/tabs/meals/types';
+import { CAT_ICON, itemEmoji, mapBoughtRow } from '@/features/grocery/components/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
-import { WidgetCard, PanelHead, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, PanelHead, Well, TabTitle, EmptyNote } from '../components/KioskOS';
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
 import { useKioskActivity } from '../KioskActivityContext';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
+import { KioskStoreMoveSheet } from '../components/KioskStoreMoveSheet';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
@@ -89,6 +92,11 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // on kiosk, same as everywhere else on this screen.
   const [itemSheetOpen, setItemSheetOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GroceryItem | undefined>(undefined);
+
+  // Quick "move to a different store" without opening the full edit sheet —
+  // see KioskStoreMoveSheet's own header for why this mirrors the phone's
+  // ItemCard.tsx onMoveStore button rather than its drag-and-drop layer.
+  const [movingItem, setMovingItem] = useState<GroceryItem | undefined>(undefined);
 
   const items = useGroceryStore(s => s.items);
   const load = useGroceryStore(s => s.load);
@@ -157,6 +165,96 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // own guard short-circuits if it's already subscribed for this family, so
   // this costs nothing when the phone's grocery screen already loaded it.
   useEffect(() => { if (familyId) load(familyId); }, [familyId, load]);
+
+  // "where is the purchase history?" — the real phone feature this answers
+  // is RecentlyBoughtSection.tsx (last 7 days of is_bought=true rows), not
+  // HistoryTab.tsx's scanned-RECEIPT history (grocery_receipts — a table
+  // that only ever gets rows from the phone's camera-based receipt scan,
+  // which kiosk has no hardware for). Reused verbatim: same query shape,
+  // same 7-day window, same mapBoughtRow() this file already imports from
+  // the real shared types module rather than a kiosk-local reimplementation.
+  const [boughtItems, setBoughtItems] = useState<GroceryItem[]>([]);
+  const [boughtExpanded, setBoughtExpanded] = useState(false);
+  useEffect(() => {
+    if (!familyId) return;
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    supabase.from('grocery_items')
+      .select('*').eq('family_id', familyId).eq('is_bought', true)
+      .gte('bought_at', since).order('bought_at', { ascending: false }).limit(50)
+      .then(({ data }) => setBoughtItems((data ?? []).map(mapBoughtRow)));
+  }, [familyId, items.length]); // items.length: re-check after any buy this session, same as GroceryScreen's setTimeout(refreshBought,600) after handleBuyItem
+
+  // Price estimate — same GroceryScreen.tsx checkPrices(): the kroger-prices
+  // edge function, called on demand (never automatically), using the same
+  // getLocationAPI() safe wrapper already ported into kiosk for weather.
+  // Persists estimated_price to grocery_items on success so a later kiosk
+  // session (or the phone) sees the same number without re-fetching.
+  const [priceMap, setPriceMap] = useState<Record<string, { price: number | null; source: string }>>({});
+  const [priceLoading, setPriceLoading] = useState(false);
+  useEffect(() => {
+    if (!visibleItems.length) return;
+    const seeded: typeof priceMap = {};
+    for (const it of visibleItems) {
+      if (it.estimatedPrice == null) continue;
+      const isReceipt = it.priceSource === 'receipt';
+      if (isReceipt && priceMap[it.name]?.source !== 'receipt') seeded[it.name] = { price: it.estimatedPrice, source: 'receipt' };
+      else if (!isReceipt && !priceMap[it.name]) seeded[it.name] = { price: it.estimatedPrice, source: 'estimate' };
+    }
+    if (Object.keys(seeded).length) setPriceMap(prev => ({ ...prev, ...seeded }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleItems]);
+
+  const cartTotal = useMemo(
+    () => visibleItems.reduce((sum, it) => sum + (priceMap[it.name]?.price ?? 0), 0),
+    [visibleItems, priceMap],
+  );
+
+  const checkPrices = async () => {
+    const toFetch = visibleItems.filter(it => !priceMap[it.name] && it.priceSource !== 'receipt');
+    if (!toFetch.length || priceLoading) return;
+    setPriceLoading(true);
+    try {
+      let country = 'US';
+      let zipCode: string | undefined;
+      try {
+        const { getLocationAPI } = await import('@/lib/location');
+        const locationAPI = getLocationAPI();
+        if (locationAPI) {
+          const status = await Promise.race([
+            locationAPI.requestForegroundPermissionsAsync().then(r => r.status),
+            new Promise<string>(res => setTimeout(() => res('denied'), 5000)),
+          ]);
+          if (status === 'granted') {
+            const loc = await Promise.race([
+              locationAPI.getCurrentPositionAsync({ accuracy: locationAPI.Accuracy.Low }),
+              new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+            ]);
+            const [place] = await locationAPI.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+            country = place?.isoCountryCode ?? 'US';
+            zipCode = place?.postalCode ?? undefined;
+          }
+        }
+      } catch (locErr) {
+        console.warn('[KioskMealsTab] location lookup failed:', String(locErr));
+      }
+      const { data, error } = await supabase.functions.invoke('kroger-prices', {
+        body: { items: toFetch.map(it => it.name), country, zipCode },
+      });
+      if (error) console.error('[KioskMealsTab] kroger-prices error:', error);
+      if (data?.prices) {
+        const newEntries: typeof priceMap = {};
+        for (const p of data.prices) newEntries[p.name] = { price: p.krogerPrice ?? p.fallbackEstimate, source: p.source };
+        setPriceMap(prev => ({ ...prev, ...newEntries }));
+        const updates = toFetch
+          .filter(it => newEntries[it.name]?.price != null)
+          .map(it => supabase.from('grocery_items').update({ estimated_price: newEntries[it.name].price }).eq('id', it.id));
+        Promise.allSettled(updates).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[KioskMealsTab] checkPrices() uncaught error:', String(err));
+    }
+    setPriceLoading(false);
+  };
 
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
@@ -296,6 +394,37 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
               </View>
             )}
 
+            {/* Same GroceryScreen.tsx price-estimate strip: an on-demand
+                "Check Prices" action (never automatic — a live Kroger
+                lookup per unpriced item), and the running estimated total
+                once at least one price is known. Hidden for a kid — this
+                is money/budget information, same spirit as the phone's
+                own isKid-gated affordances elsewhere on this screen. */}
+            {!isKid && visibleItems.length > 0 && (
+              <Pressable
+                onPress={checkPrices}
+                disabled={priceLoading}
+                style={({ pressed }) => [
+                  s.priceStrip,
+                  { backgroundColor: k.well, borderColor: k.cardBorder },
+                  pressed && !priceLoading && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={cartTotal > 0 ? `Estimated total ${cartTotal.toFixed(2)} dollars` : 'Check prices'}
+                accessibilityHint="Looks up an estimated price for each item on the list"
+              >
+                <Sparkles size={14} color={k.textMuted} />
+                <Text style={[s.priceStripText, { color: k.textMuted }]} numberOfLines={1}>
+                  {priceLoading ? 'Checking prices…' : cartTotal > 0 ? `Estimated total (${visibleItems.length} items)` : 'Check Prices'}
+                </Text>
+                {priceLoading ? (
+                  <ActivityIndicator size="small" color={k.textMuted} />
+                ) : cartTotal > 0 ? (
+                  <Text style={[s.priceStripTotal, { color: k.primary }]}>${cartTotal.toFixed(2)}</Text>
+                ) : null}
+              </Pressable>
+            )}
+
             {/* Add. Deliberately the first thing under the header: the
                 overwhelmingly common kitchen interaction is "we just ran
                 out of X", and it should be one tap plus typing, never a
@@ -373,14 +502,20 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                   <GroceryCategorySection
                     label="Supplies" emoji="📚" items={categorisedItems.supplies}
                     k={k} isDark={isDark} isKid={isKid} active={active}
-                    buyItem={buyItem} onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
+                    priceMap={priceMap}
+                    buyItem={buyItem}
+                    onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
+                    onMoveItem={it => setMovingItem(it)}
                   />
                 )}
                 {categorisedItems.clothing.length > 0 && (
                   <GroceryCategorySection
                     label="Clothing" emoji="👕" items={categorisedItems.clothing}
                     k={k} isDark={isDark} isKid={isKid} active={active}
-                    buyItem={buyItem} onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
+                    priceMap={priceMap}
+                    buyItem={buyItem}
+                    onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
+                    onMoveItem={it => setMovingItem(it)}
                   />
                 )}
                 {groupedGroceries.map(([store, storeItems]) => (
@@ -397,23 +532,70 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     {storeItems.map((it, i) => (
                       <GroceryRow
                         key={it.id}
-                        name={it.name}
-                        quantity={it.quantity}
-                        // No inline category chip — matches the real phone,
-                        // which never shows one either (GroceryItemsSection.tsx
-                        // has no category rendering at all); category is
-                        // information the SECTION already carries once real
-                        // grouping exists, not a per-row restatement.
-                        category={undefined}
+                        item={it}
+                        priceInfo={priceMap[it.name]}
                         k={k}
                         isDark={isDark}
                         divider={i > 0}
                         onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
                         onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
+                        onMove={isKid ? undefined : () => setMovingItem(it)}
                       />
                     ))}
                   </View>
                 ))}
+              </View>
+            )}
+
+            {/* "where is the purchase history?" — RecentlyBoughtSection.tsx's
+                real shape: collapsed by default (last-7-days is a glance
+                feature, not something that should push the active list
+                down every time it's non-empty), who bought it and when.
+                The phone's own Return-to-store flow (multi-select bought
+                items → assign a return chore) is NOT reproduced — that is
+                a genuinely separate feature (creates a quest, opens an
+                assignee picker) beyond "show me what we bought," and this
+                screen has no assignee-picker primitive to build it on yet. */}
+            {boughtItems.length > 0 && (
+              <View style={[s.boughtSection, { borderTopColor: k.cardBorder }]}>
+                <Pressable
+                  onPress={() => setBoughtExpanded(e => !e)}
+                  style={s.boughtHeader}
+                  accessibilityRole="button"
+                  accessibilityLabel="Recently bought"
+                  accessibilityState={{ expanded: boughtExpanded }}
+                  accessibilityHint={boughtExpanded ? 'Collapses the recently bought list' : 'Shows the last 7 days of bought items'}
+                >
+                  <View style={[s.boughtIcon, { backgroundColor: k.sage + (isDark ? '26' : '1A') }]}>
+                    <Check size={14} color={k.sage} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.boughtTitle, { color: k.textMuted }]} numberOfLines={1}>RECENTLY BOUGHT</Text>
+                    <Text style={[s.boughtMeta, { color: k.textFaint }]} numberOfLines={1}>Last 7 days · {boughtItems.length} items</Text>
+                  </View>
+                  {boughtExpanded ? <ChevronUp size={16} color={k.textFaint} /> : <ChevronDown size={16} color={k.textFaint} />}
+                </Pressable>
+                {boughtExpanded && (
+                  <View style={{ marginTop: KIOSK_SPACE.xs }}>
+                    {boughtItems.map((it, i) => {
+                      const buyer = members.find(m => m.id === it.boughtBy)?.name?.trim().split(' ')[0];
+                      const when = it.boughtAt ? new Date(it.boughtAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+                      return (
+                        <View
+                          key={it.id}
+                          style={[s.boughtRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                        >
+                          <Text style={[s.boughtName, { color: k.textMuted }]} numberOfLines={1}>
+                            {it.name}{it.quantity ? ` × ${it.quantity}` : ''}
+                          </Text>
+                          <Text style={[s.boughtWhen, { color: k.textFaint }]} numberOfLines={1}>
+                            {[buyer, when].filter(Boolean).join(' · ')}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             )}
           </WidgetCard>
@@ -438,39 +620,48 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         item={editingItem}
       />
     )}
+
+    {!!movingItem && (
+      <KioskStoreMoveSheet
+        visible={!!movingItem}
+        onClose={() => setMovingItem(undefined)}
+        itemId={movingItem.id}
+        itemName={movingItem.name}
+        currentStore={movingItem.storePreference}
+      />
+    )}
     </>
   );
 }
 
 /**
- * One checkable list row. Tapping it calls the real groceryStore.buyItem,
- * which writes `is_bought` to Postgres — the item then disappears from
- * every device via the store's own realtime subscription, including the
- * phone of whoever is standing in the aisle. The mockup's checkbox was a
- * plain unbacked <input>.
+ * One list row — matches features/grocery/components/ItemCard.tsx's real
+ * shape: an icon square (per-item emoji when the name matches a known
+ * ingredient, falling back to a category-level icon — itemEmoji()/CAT_ICON,
+ * the same real functions ItemCard.tsx itself calls, not a kiosk
+ * reimplementation), name + quantity, an optional estimated price, an
+ * optional move-to-store button, then the buy checkbox.
  *
- * onBuy is optional: a kid's own already-approved request renders read-only
- * (no checkbox, no press) — they can see it made the list, not check it off
- * themselves.
- */
-/**
- * Real phone split (features/grocery/components/GroceryItemsSection.tsx's
- * DraggableItemRow): the checkbox is its own buy target, the row BODY is a
- * separate tap target that opens detail/edit — not the same Pressable.
- * Reproduced here: the checkbox buys directly (no confirm, matching the
- * phone's own onBuy), tapping the name/row opens the edit sheet, which is
- * where edit/delete live (also matching the phone's detail-sheet gating).
+ * Tap targets match the phone's own DraggableItemRow split: the checkbox is
+ * its own buy target (direct, no confirm — matches the phone's onBuy), the
+ * row BODY opens the edit sheet (edit/delete live there), and the move
+ * button is a third, independent target for KioskStoreMoveSheet.
  *
- * onBuy/onEdit both optional: a kid's own already-approved request renders
- * fully read-only (no checkbox, no edit access) — they can see it made the
- * list, not manage it themselves.
+ * onBuy/onEdit/onMove all optional: a kid's own already-approved request
+ * renders fully read-only (no checkbox, no edit or move access) — they can
+ * see it made the list, not manage it themselves.
  */
-function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdit }: {
-  name: string; quantity?: string; category?: string;
-  k: KioskColors; isDark: boolean; divider?: boolean; onBuy?: () => void; onEdit?: () => void;
+function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove }: {
+  item: GroceryItem;
+  priceInfo?: { price: number | null; source: string };
+  k: KioskColors; isDark: boolean; divider?: boolean;
+  onBuy?: () => void; onEdit?: () => void; onMove?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const readOnly = !onBuy;
+  const emoji = itemEmoji(item.name);
+  const CatIcon = CAT_ICON[item.category ?? 'Other'] ?? CAT_ICON.Other;
+  const iconTint = kioskCatColor(k, item.category);
   return (
     <Pressable
       onPress={onEdit}
@@ -481,9 +672,32 @@ function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdi
         pressed && !!onEdit && { opacity: 0.7 },
       ]}
       accessibilityRole={onEdit ? 'button' : undefined}
-      accessibilityLabel={quantity ? `${name}, ${quantity}` : name}
+      accessibilityLabel={item.quantity ? `${item.name}, ${item.quantity}` : item.name}
       accessibilityHint={onEdit ? 'Opens this item to edit or delete it' : undefined}
     >
+      <View style={[s.itemIcon, { backgroundColor: iconTint + (isDark ? '26' : '1A') }]}>
+        {emoji ? <Text style={s.itemEmojiText}>{emoji}</Text> : <CatIcon size={16} color={iconTint} strokeWidth={1.8} />}
+      </View>
+      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{item.name}</Text>
+      {!!item.quantity && (
+        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{item.quantity}</Text>
+      )}
+      {priceInfo?.price != null && (
+        <Text style={[s.priceTag, { color: priceInfo.source === 'kroger' || priceInfo.source === 'receipt' ? k.sage : k.gold }]}>
+          ${priceInfo.price.toFixed(2)}
+        </Text>
+      )}
+      {!!onMove && (
+        <Pressable
+          onPress={onMove}
+          hitSlop={10}
+          style={s.moveIconBtn}
+          accessibilityRole="button"
+          accessibilityLabel={`Move ${item.name} to a different store`}
+        >
+          <Store size={15} color={k.textFaint} />
+        </Pressable>
+      )}
       {!readOnly && (
         <Pressable
           onPress={async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
@@ -491,17 +705,12 @@ function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdi
           style={[s.checkbox, { borderColor: k.cardBorder }, busy && { opacity: 0.5 }]}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: false, disabled: busy }}
-          accessibilityLabel={`Mark ${name} as bought`}
+          accessibilityLabel={`Mark ${item.name} as bought`}
           accessibilityHint="Marks as bought and removes it from the list"
         >
           {busy && <Check size={13} color={k.sage} />}
         </Pressable>
       )}
-      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{name}</Text>
-      {!!quantity && (
-        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{quantity}</Text>
-      )}
-      {!!category && <Chip label={category} accent={k.gold} isDark={isDark} k={k} />}
     </Pressable>
   );
 }
@@ -514,11 +723,13 @@ function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdi
  * phone's own `storeGroups.length > 1` gate — a single-store category
  * doesn't need to repeat its one store name under every item).
  */
-function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, buyItem, onEditItem }: {
+function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, priceMap, buyItem, onEditItem, onMoveItem }: {
   label: string; emoji: string; items: GroceryItem[];
   k: KioskColors; isDark: boolean; isKid: boolean; active: FamilyMember;
+  priceMap: Record<string, { price: number | null; source: string }>;
   buyItem: (itemId: string, memberId: string) => Promise<void>;
   onEditItem: (item: GroceryItem) => void;
+  onMoveItem: (item: GroceryItem) => void;
 }) {
   const storeGroups = useMemo(() => {
     const groups: Record<string, GroceryItem[]> = {};
@@ -539,20 +750,42 @@ function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active,
           {storeItems.map((it, i) => (
             <GroceryRow
               key={it.id}
-              name={it.name}
-              quantity={it.quantity}
-              category={undefined}
+              item={it}
+              priceInfo={priceMap[it.name]}
               k={k}
               isDark={isDark}
               divider={i > 0}
               onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
               onEdit={isKid ? undefined : () => onEditItem(it)}
+              onMove={isKid ? undefined : () => onMoveItem(it)}
             />
           ))}
         </View>
       ))}
     </View>
   );
+}
+
+/**
+ * Kiosk-side equivalent of features/grocery/components/types.tsx's
+ * catDotColor(colors) — same category→hue grouping (produce/dairy/meat/
+ * frozen read as one family, grains/snacks/beverages as another, etc.),
+ * rebuilt on KioskColors' own tokens (k.sage/k.gold/k.primary/k.textFaint)
+ * since that function's real implementation is keyed to phone theme tokens
+ * (colors.teal/colors.amber/colors.primary) that don't exist on this
+ * screen's palette.
+ */
+function kioskCatColor(k: KioskColors, category?: string): string {
+  switch (category) {
+    case 'Produce': case 'Dairy': case 'Meat': case 'Frozen': case 'Seafood': case 'Deli': case 'Frozen Meals':
+      return k.sage;
+    case 'Grains': case 'Snacks': case 'Beverages': case 'Bakery':
+      return k.gold;
+    case 'Cleaning': case 'Personal Care': case 'Spices': case 'Supplies': case 'Clothing':
+      return k.primary;
+    default:
+      return k.textFaint;
+  }
 }
 
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -627,6 +860,14 @@ const s = StyleSheet.create({
   },
   groceryName: { flex: 1, fontSize: 13, fontWeight: '600' },
   groceryQty: { fontSize: 11.5, fontWeight: '700' },
+  // Real phone's ItemCard.tsx icon-square convention (32px tinted rounded
+  // square holding either a per-item emoji or a category icon).
+  itemIcon: {
+    width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  itemEmojiText: { fontSize: 15 },
+  priceTag: { fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  moveIconBtn: { padding: 4 },
 
   // Real phone's CategorySection.tsx header convention (emoji + label,
   // 14/800) — one per category bucket (Supplies/Clothing).
@@ -636,4 +877,29 @@ const s = StyleSheet.create({
   // minus its icon (a kitchen-wall glance doesn't need the icon to read
   // "this is a store name," the all-caps label already does that).
   storeLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.7, marginBottom: 4, marginTop: 4 },
+
+  // Real phone's price-estimate strip (GroceryScreen.tsx's "Estimated
+  // total" row + its GroceryAiBanner "Check Prices" action, merged into
+  // one tappable strip here rather than two separate widgets).
+  priceStrip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingVertical: 9, paddingHorizontal: 12, marginBottom: 10,
+  },
+  priceStripText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  priceStripTotal: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+
+  // Real phone's RecentlyBoughtSection.tsx convention: a collapsed-by-
+  // default header row, expanding to a plain struck-through-free list
+  // (kiosk shows a bought item's name plainly, not struck through — it's
+  // already segregated into its own section, unlike the phone's inline
+  // treatment inside the same list it buys from).
+  boughtSection: { marginTop: KIOSK_SPACE.md, paddingTop: KIOSK_SPACE.sm, borderTopWidth: StyleSheet.hairlineWidth },
+  boughtHeader: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  boughtIcon: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  boughtTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  boughtMeta: { fontSize: 11, marginTop: 1 },
+  boughtRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, gap: KIOSK_SPACE.sm },
+  boughtName: { flex: 1, fontSize: 12.5, fontWeight: '600' },
+  boughtWhen: { fontSize: 11 },
 });

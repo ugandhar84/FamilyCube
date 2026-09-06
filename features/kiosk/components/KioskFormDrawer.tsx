@@ -63,22 +63,34 @@
  * dialog is NOT full-height, so bottom padding alone would push it up only
  * if it were bottom-anchored — with justifyContent:'center' the padding
  * reduces the available box and re-centers the card in what's left, which
- * lifts it above the keyboard correctly. The maxHeight is a PERCENTAGE of
- * that same shrinking box, so a tall dialog also gets shorter (and its body
- * scrolls) rather than being clipped. Both cases are handled by the one
- * KeyboardAvoidingView below; no per-variant keyboard branch is needed.
+ * lifts it above the keyboard correctly.
+ *
+ * The dialog's maxHeight is NOT a fixed percentage, though — it's clamped
+ * live via useKeyboardAwareMaxHeight, the exact same hook every phone
+ * bottom sheet in this app uses (AppBottomSheet.tsx, BottomSheet.tsx,
+ * KidModals.tsx's four forms). Live-reported: a static maxHeight percentage
+ * plus KeyboardAvoidingView's padding left a field lower in the form (e.g.
+ * the Supplies drawer's note field) scrolled behind the fixed head once
+ * the keyboard opened — the panel was being pushed up without its own
+ * height budget shrinking to match, so a plain ScrollView inside couldn't
+ * bring a lower field into the space that was actually left. Clamping
+ * maxHeight to the REAL space above the keyboard (not just a percentage of
+ * the full, keyboard-agnostic screen) fixes that at the source, matching
+ * the one pattern in this codebase already proven to solve it. A drawer
+ * doesn't need this — it's already height:'100%' inside the same shrinking
+ * KeyboardAvoidingView box, so there's no separate percentage to reclamp.
  */
 import type { ReactNode } from 'react';
 import {
-  Modal, View, Text, Pressable,
+  Modal, View, Text, Pressable, ScrollView,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { X } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { KioskModalHost } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import type { KioskColors } from '../kioskPalette';
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 export function KioskFormDrawer({
   visible, title, subtitle, accent, Icon, k, onClose, children,
@@ -114,6 +126,18 @@ export function KioskFormDrawer({
 }) {
   const enabled = !!canSubmit && !submitting;
   const isDialog = variant === 'dialog';
+  // Live-reported: a field lower in the form (e.g. the Supplies drawer's
+  // note field) ended up scrolled behind the fixed header once the
+  // keyboard opened. KeyboardAwareScrollView's own auto-scroll heuristics
+  // were fighting the outer KeyboardAvoidingView instead of solving this —
+  // switched to the exact pattern the phone's own KidModals.tsx sheets use
+  // (GroceryModal/SuppliesModal/etc, all four): useKeyboardAwareMaxHeight
+  // shrinks the panel to the REAL space left above the keyboard (not just
+  // relying on KeyboardAvoidingView's padding to push it up while keeping
+  // its full-height budget), and a plain ScrollView is then enough — once
+  // the panel itself is correctly bounded, there's nothing left for a
+  // fancier auto-scroll library to compensate for.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(85);
 
   return (
     <Modal
@@ -149,7 +173,7 @@ export function KioskFormDrawer({
             style={[
               s.panelBase,
               isDialog
-                ? [s.panelDialog, { borderColor: k.cardBorder }]
+                ? [s.panelDialog, { borderColor: k.cardBorder }, keyboardAwareMaxHeight != null && { maxHeight: keyboardAwareMaxHeight }]
                 : [s.panelDrawer, { borderLeftColor: k.cardBorder }],
               { backgroundColor: k.card },
             ]}
@@ -206,27 +230,25 @@ export function KioskFormDrawer({
               content (fields + button) exceeds maxHeight does the body cap
               out and start scrolling.
 
-              KeyboardAwareScrollView (not a plain ScrollView) on top of the
-              outer KeyboardAvoidingView above: the two solve DIFFERENT
-              problems and are not redundant. The outer view shrinks/re-
-              centers the whole panel so the keyboard doesn't cover it. This
-              inner one then auto-scrolls whichever field is actually
-              focused up above the keyboard within that already-shrunk
-              space — without it, a field lower in a long form (e.g. the
-              third item row in the grocery/supplies drawers) could still
-              end up hidden behind the keyboard even though the panel
-              itself fit, requiring a kid to manually scroll to see what
-              they were typing.
+              Live-reported: a field lower in the form (e.g. the Supplies
+              drawer's note field) ended up scrolled behind the fixed head
+              once the keyboard opened — KeyboardAwareScrollView's own
+              auto-scroll heuristics here were fighting the outer
+              KeyboardAvoidingView rather than solving it. Replaced with the
+              exact pattern the phone's own KidModals.tsx sheets use
+              (GroceryModal/SuppliesModal/AskModal/KidRequestModal, all
+              four): useKeyboardAwareMaxHeight above shrinks panelDialog to
+              the REAL space left above the keyboard, not just relying on
+              KeyboardAvoidingView's padding to push the panel up while it
+              keeps its full-height budget. Once the panel itself is
+              correctly bounded like that, a plain ScrollView already shows
+              whichever field is focused — nothing extra to compensate for.
             */}
-            <KeyboardAwareScrollView
+            <ScrollView
               style={isDialog ? s.bodyDialog : s.body}
               contentContainerStyle={s.bodyContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="always"
-              enableOnAndroid
-              enableAutomaticScroll
-              extraScrollHeight={KIOSK_SPACE.lg}
-              keyboardOpeningTime={0}
             >
               {children}
 
@@ -264,7 +286,7 @@ export function KioskFormDrawer({
                   )}
                 </View>
               )}
-            </KeyboardAwareScrollView>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>

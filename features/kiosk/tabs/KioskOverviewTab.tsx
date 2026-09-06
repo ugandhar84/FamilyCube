@@ -248,6 +248,17 @@ export function KioskOverviewTab({
   // item leaves the active list entirely rather than staying visible
   // struck through.
   const unboughtGroceryItems = useMemo(() => groceryItems.filter(it => !it.isBought), [groceryItems]);
+  const groceryRuns = useGroceryStore(s => s.runs);
+  // Read-only mirror of the real phone's "Shopping now at {store}" banner
+  // (features/grocery/GroceryScreen.tsx: activeRuns = runs.filter(status
+  // === 'active'), shows activeRuns[0]) — live-requested: kiosk can't
+  // start a run, so no tap-to-open/start action is offered here, only the
+  // same status glance.
+  const activeGroceryRun = useMemo(() => groceryRuns.find(r => r.status === 'active'), [groceryRuns]);
+  const activeGroceryShopper = useMemo(
+    () => activeGroceryRun ? members.find(m => m.id === activeGroceryRun.shopperId)?.name?.trim().split(' ')[0] : undefined,
+    [activeGroceryRun, members],
+  );
   const { meals, week: mealWeek } = useKioskMeals();
   const redemptions = useRewardStore(s => s.redemptions);
   const approveRedemption = useRewardStore(s => s.approveRedemption);
@@ -751,6 +762,14 @@ export function KioskOverviewTab({
                 every UI step. */}
             <WidgetCard k={k} isDark={isDark}>
               <PanelHead title="Grocery list" k={k} />
+              {activeGroceryRun && (
+                <View style={[s.groceryRunBanner, { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' }]}>
+                  <View style={[s.liveDot, { backgroundColor: k.sage }]} />
+                  <Text style={[s.groceryRunBannerText, { color: k.sage }]} numberOfLines={1}>
+                    Shopping now at {activeGroceryRun.store}{activeGroceryShopper ? ` · ${activeGroceryShopper}` : ''}
+                  </Text>
+                </View>
+              )}
               {unboughtGroceryItems.length === 0 ? (
                 <EmptyNote text="The grocery list is empty." k={k} />
               ) : (
@@ -1901,6 +1920,15 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   groceryItemText: { fontSize: 13, fontWeight: '600' },
+
+  // Read-only mirror of the real phone's active-run banner (no tap target —
+  // kiosk can't start/open a run, this is status-only).
+  groceryRunBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 9,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingVertical: 9, paddingHorizontal: 12, marginBottom: 10,
+  },
+  groceryRunBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
 
   // Mockup's .feed-item/.feed-thumb/.feed-cap exactly: 96px square thumb,
   // 9px radius, 10.5px caption with a 5px top margin.

@@ -35,14 +35,14 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
 } from 'react-native';
-import { ChefHat, ShoppingCart, Plus, Check, Circle } from 'lucide-react-native';
+import { Plus, Check } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore } from '@/store/groceryStore';
 import { categorizeItem } from '@/features/vault/tabs/meals/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, PanelHead, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
 import { useKioskActivity } from '../KioskActivityContext';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
@@ -71,10 +71,23 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   const load = useGroceryStore(s => s.load);
   const addItem = useGroceryStore(s => s.addItem);
   const buyItem = useGroceryStore(s => s.buyItem);
+  const runs = useGroceryStore(s => s.runs);
 
   const visibleItems = useMemo(
     () => isKid ? items.filter(it => it.addedBy === active.id) : items,
     [items, isKid, active.id],
+  );
+
+  // Same read-only mirror of the real phone's "Shopping now at {store}"
+  // banner as Overview's Grocery card (features/grocery/GroceryScreen.tsx:
+  // activeRuns = runs.filter(status === 'active')) — kiosk can't start or
+  // open a run, so no tap target, just the status glance. Shown to
+  // everyone, not just !isKid — a kid on kiosk can already see the whole
+  // household list's status, this isn't the add/buy surface that's scoped.
+  const activeRun = useMemo(() => runs.find(r => r.status === 'active'), [runs]);
+  const activeRunShopper = useMemo(
+    () => activeRun ? members.find(m => m.id === activeRun.shopperId)?.name?.trim().split(' ')[0] : undefined,
+    [activeRun, members],
   );
 
   const familyId = (members[0] as any)?.familyId as string | undefined;
@@ -133,32 +146,24 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       <View style={s.columns}>
         {/* ══ MEAL PLAN ═══════════════════════════════════════════════ */}
         <View style={s.colWide}>
-          <WidgetCard k={k} isDark={isDark} padded={false} style={s.panel}>
-            <View style={s.panelPad}>
-              <WidgetHeader
-                Icon={ChefHat} eyebrow="Week plan" title="What we're eating"
-                accent={k.gold} k={k} isDark={isDark}
-                right={meals.length > 0
-                  ? <Chip label={`${meals.length} planned`} accent={k.gold} isDark={isDark} k={k} />
-                  : undefined}
-              />
-            </View>
+          <WidgetCard k={k} isDark={isDark}>
+            <PanelHead
+              title="What we're eating"
+              k={k}
+              right={meals.length > 0
+                ? <Text style={[s.panelCount, { color: k.textFaint }]}>{meals.length} planned</Text>
+                : undefined}
+            />
 
             {loading ? (
               <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
             ) : byDay.length === 0 ? (
-              <View style={s.panelPad}>
-                <Well k={k} style={{ alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xl }}>
-                  <ChefHat size={30} color={k.textFaint} />
-                  <EmptyNote
-                    text="No meals planned for this week yet. Plan the week from the Meals screen on a phone — the plan appears here automatically."
-                    k={k}
-                    style={{ textAlign: 'center', maxWidth: 380 }}
-                  />
-                </Well>
-              </View>
+              <EmptyNote
+                text="No meals planned for this week yet. Plan the week from the Meals screen on a phone — the plan appears here automatically."
+                k={k}
+              />
             ) : (
-              <View style={[s.panelPad, { paddingTop: 0, gap: KIOSK_SPACE.sm }]}>
+              <View style={{ gap: KIOSK_SPACE.sm }}>
                 {byDay.map(({ day, meals: dayMeals }) => (
                   <Well
                     key={day}
@@ -212,71 +217,75 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
         {/* ══ GROCERY LIST ════════════════════════════════════════════ */}
         <View style={s.colNarrow}>
-          <WidgetCard k={k} isDark={isDark} padded={false} style={s.panel}>
-            <View style={s.panelPad}>
-              <WidgetHeader
-                Icon={ShoppingCart} eyebrow={isKid ? 'My requests' : 'Household'}
-                title={isKid ? 'My grocery items' : 'Grocery list'}
-                accent={k.sage} k={k} isDark={isDark}
-                right={visibleItems.length > 0
-                  ? <Chip label={`${visibleItems.length}`} accent={k.sage} isDark={isDark} k={k} />
-                  : undefined}
-              />
+          <WidgetCard k={k} isDark={isDark}>
+            <PanelHead
+              title={isKid ? 'My grocery items' : 'Grocery list'}
+              k={k}
+              right={visibleItems.length > 0
+                ? <Text style={[s.panelCount, { color: k.textFaint }]}>{visibleItems.length}</Text>
+                : undefined}
+            />
 
-              {/* Add. Deliberately the first thing under the header: the
-                  overwhelmingly common kitchen interaction is "we just ran
-                  out of X", and it should be one tap plus typing, never a
-                  navigation. Hidden for kids — this box writes straight to
-                  groceryStore, bypassing the real kid→parent approval flow
-                  (kidRequestStore + KioskGroceryRequestSheet) a kid's
-                  request normally goes through; a kid asks via that flow
-                  instead, from the header's Ask Fam/Ask Parent affordance. */}
-              {!isKid && (
-                <View style={s.addRow}>
-                  <TextInput
-                    value={draft}
-                    onChangeText={setDraft}
-                    onSubmitEditing={submitItem}
-                    onFocus={registerActivity}
-                    placeholder="Add an item…"
-                    placeholderTextColor={k.textFaint}
-                    style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
-                    returnKeyType="done"
-                    editable={!!familyId}
-                    accessibilityLabel="New grocery item"
-                  />
-                  <Pressable
-                    onPress={submitItem}
-                    disabled={!draft.trim() || adding || !familyId}
-                    style={({ pressed }) => [
-                      s.addBtn,
-                      { backgroundColor: k.sage },
-                      (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Add to grocery list"
-                    accessibilityState={{ disabled: !draft.trim() || adding }}
-                  >
-                    {adding
-                      ? <ActivityIndicator size="small" color={k.onAccent} />
-                      : <Plus size={22} color={k.onAccent} />}
-                  </Pressable>
-                </View>
-              )}
-            </View>
+            {activeRun && (
+              <View style={[s.runBanner, { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' }]}>
+                <View style={[s.runDot, { backgroundColor: k.sage }]} />
+                <Text style={[s.runBannerText, { color: k.sage }]} numberOfLines={1}>
+                  Shopping now at {activeRun.store}{activeRunShopper ? ` · ${activeRunShopper}` : ''}
+                </Text>
+              </View>
+            )}
+
+            {/* Add. Deliberately the first thing under the header: the
+                overwhelmingly common kitchen interaction is "we just ran
+                out of X", and it should be one tap plus typing, never a
+                navigation. Hidden for kids — this box writes straight to
+                groceryStore, bypassing the real kid→parent approval flow
+                (kidRequestStore + KioskGroceryRequestSheet) a kid's
+                request normally goes through; a kid asks via that flow
+                instead, from the header's Ask Fam/Ask Parent affordance. */}
+            {!isKid && (
+              <View style={s.addRow}>
+                <TextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  onSubmitEditing={submitItem}
+                  onFocus={registerActivity}
+                  placeholder="Add an item…"
+                  placeholderTextColor={k.textFaint}
+                  style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
+                  returnKeyType="done"
+                  editable={!!familyId}
+                  accessibilityLabel="New grocery item"
+                />
+                <Pressable
+                  onPress={submitItem}
+                  disabled={!draft.trim() || adding || !familyId}
+                  style={({ pressed }) => [
+                    s.addBtn,
+                    { backgroundColor: k.sage },
+                    (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add to grocery list"
+                  accessibilityState={{ disabled: !draft.trim() || adding }}
+                >
+                  {adding
+                    ? <ActivityIndicator size="small" color={k.onAccent} />
+                    : <Plus size={22} color={k.onAccent} />}
+                </Pressable>
+              </View>
+            )}
 
             {visibleItems.length === 0 ? (
-              <View style={s.panelPad}>
-                <EmptyNote
-                  text={isKid
-                    ? "None of your grocery requests have been approved yet."
-                    : "Nothing on the list. Add something above."}
-                  k={k}
-                />
-              </View>
+              <EmptyNote
+                text={isKid
+                  ? "None of your grocery requests have been approved yet."
+                  : "Nothing on the list. Add something above."}
+                k={k}
+              />
             ) : (
-              <View style={[s.panelPad, { paddingTop: 0, gap: KIOSK_SPACE.xs }]}>
-                {visibleItems.map(it => (
+              <View style={{ marginTop: KIOSK_SPACE.sm }}>
+                {visibleItems.map((it, i) => (
                   <GroceryRow
                     key={it.id}
                     name={it.name}
@@ -284,6 +293,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     category={it.category}
                     k={k}
                     isDark={isDark}
+                    divider={i > 0}
                     // Once approved, a kid's own request is read-only on
                     // kiosk — they can see it landed on the list, not check
                     // it off themselves.
@@ -319,9 +329,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
  * (no checkbox, no press) — they can see it made the list, not check it off
  * themselves.
  */
-function GroceryRow({ name, quantity, category, k, isDark, onBuy }: {
+function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy }: {
   name: string; quantity?: string; category?: string;
-  k: KioskColors; isDark: boolean; onBuy?: () => void;
+  k: KioskColors; isDark: boolean; divider?: boolean; onBuy?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const readOnly = !onBuy;
@@ -331,7 +341,8 @@ function GroceryRow({ name, quantity, category, k, isDark, onBuy }: {
       disabled={readOnly}
       style={({ pressed }) => [
         s.groceryRow,
-        { backgroundColor: pressed && !readOnly ? k.cardHover : k.well, borderColor: k.cardBorder },
+        divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
+        pressed && !readOnly && { opacity: 0.7 },
         busy && { opacity: 0.5 },
       ]}
       accessibilityRole={readOnly ? undefined : 'checkbox'}
@@ -340,13 +351,13 @@ function GroceryRow({ name, quantity, category, k, isDark, onBuy }: {
       accessibilityHint={readOnly ? undefined : 'Mark as bought and remove from the list'}
     >
       {!readOnly && (
-        <View style={[s.checkbox, { borderColor: k.sage }]}>
-          {busy ? <Check size={16} color={k.sage} /> : <Circle size={0} color="transparent" />}
+        <View style={[s.checkbox, { borderColor: k.cardBorder }]}>
+          {busy && <Check size={13} color={k.sage} />}
         </View>
       )}
-      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={2}>{name}</Text>
+      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{name}</Text>
       {!!quantity && (
-        <Text style={[s.groceryQty, { color: k.textMuted }]} numberOfLines={1}>{quantity}</Text>
+        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{quantity}</Text>
       )}
       {!!category && <Chip label={category} accent={k.gold} isDark={isDark} k={k} />}
     </Pressable>
@@ -368,17 +379,35 @@ const s = StyleSheet.create({
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   colWide: { flexGrow: 2, flexBasis: 440, minWidth: 0 },
   colNarrow: { flexGrow: 1, flexBasis: 340, minWidth: 0 },
-  panel: { overflow: 'hidden' },
-  panelPad: { padding: KIOSK_SPACE.md },
+
+  // Mock-exact .panel-head right-slot value: a small faint count, same
+  // convention as Overview's own panelCount (approvals/sharing readouts).
+  panelCount: { fontSize: 11 },
+
+  // Mock-exact active-run banner, same shape/colors as Overview's Grocery
+  // card so the two surfaces read as one feature, not two.
+  runBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 9,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingVertical: 9, paddingHorizontal: 12, marginBottom: 10,
+  },
+  runDot: { width: 8, height: 8, borderRadius: 4 },
+  runBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
 
   dayRow: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },
   dayLabelCol: { width: 74 },
-  dayLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1, paddingTop: 3 },
+  // Mock-exact .panel-title convention (uppercase, wide tracking, faint)
+  // applied to a day label rather than a section title — the same visual
+  // grammar, a different piece of text.
+  dayLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3, paddingTop: 3 },
   mealLine: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs },
   mealDivider: { height: StyleSheet.hairlineWidth },
   mealEmoji: { fontSize: 24 },
-  mealTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  mealMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  // Mock-exact .jar-name/.jar-meta convention (13.5/700 primary line,
+  // 11.5 meta) — the same pairing Overview's Coin Jars and Meals This
+  // Week rows use for "a name/label plus a dim detail line."
+  mealTitle: { fontSize: 13.5, fontWeight: '700' },
+  mealMeta: { fontSize: 11.5, marginTop: 2 },
 
   addRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xs },
   addInput: {
@@ -390,15 +419,17 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
+  // Mock-exact .grocery-row convention: a plain unfilled checkbox square,
+  // no card-shaped well around each row (Overview's own Grocery list rows
+  // are the same flat hairline-divided rows, not individually boxed).
   groceryRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    minHeight: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
+    minHeight: KIOSK_HIT.control, paddingVertical: KIOSK_SPACE.sm,
   },
   checkbox: {
-    width: 24, height: 24, borderRadius: 7, borderWidth: 2,
+    width: 18, height: 18, borderRadius: 5, borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  groceryName: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
-  groceryQty: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  groceryName: { flex: 1, fontSize: 13, fontWeight: '600' },
+  groceryQty: { fontSize: 11.5, fontWeight: '700' },
 });

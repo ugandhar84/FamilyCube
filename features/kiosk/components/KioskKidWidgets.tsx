@@ -598,16 +598,23 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
  * comfortable medium (not squeezed to kiosk's absolute floor), meta/
  * timeline text small and quiet, button label readable at arm's length.
  */
-// Live-reported: "reduce the text sized all component scales of this
-// card" — scaled the whole set down a step (title/badge/button each ~2px
-// smaller) while keeping meta at kiosk's documented text-size floor
-// (KIOSK_TYPO.micro = 12 — never go below that on a kiosk, even in a
-// locally-scaled system like this one).
+// Live-reported: "can we use the TYPO what we have it in the MOCK html?"
+// — docs/kitchen-hub-mockup.html's own .chorecard rule is the kiosk
+// mockup's real reference sizing for this exact card (name/sub/coinpill),
+// taken at its clamp()'s upper bound since kiosk renders at a fixed size
+// rather than the mock's responsive vw-based scaling:
+//   .chorecard .name     font-size: clamp(12.5px, 1.05vw, 14.5px) → 14.5
+//   .chorecard .sub       font-size: clamp(10.5px, 0.9vw, 12px)    → 12
+//   .chorecard .coinpill  font-size: clamp(10.5px, 0.9vw, 12.5px)  → 12.5
+// The mock has no separate status-pill/button rule (its chorecard is
+// read-only), so those two reuse the closest sized rule in the same file
+// (.taskchip .t-title=13.5 for the button label; .t-meta=11 for the
+// status pill, since it's peer to a badge/tag, not a headline).
 const CHORE_CARD_TYPO = {
-  title: 14,
-  badge: 11,
+  title: 14.5,
+  badge: 12.5,
   meta: 12,
-  button: 12.5,
+  button: 13.5,
 } as const;
 
 function ChoreCardRow({

@@ -106,7 +106,12 @@ export function ParentStatsColumn({
           live in KioskHeader's own Announcement/Lock/Standby buttons, and
           having them twice was judged redundant rather than a helpful
           second access point. */}
-      <WidgetCard k={k} isDark={isDark}>
+      {/* Mock's own .identity is 22px/20px padding — genuinely more than
+          the generic .panel-head's 16px/18px/10px every other card uses
+          (WidgetCard's own default KIOSK_SPACE.md=14 padding). Live-
+          requested to match that real, larger identity padding rather
+          than the shared default. */}
+      <WidgetCard k={k} isDark={isDark} style={s.statsIdentityCard}>
         <View style={s.statsIdentity}>
           <View style={[s.statsAvatar, { backgroundColor: kioskRoleAccent(k, active.role) + (isDark ? '26' : '18') }]}>
             <Text style={s.statsAvatarEmoji}>{active.emoji ?? '👤'}</Text>
@@ -223,6 +228,9 @@ const s = StyleSheet.create({
   // pinned Ask Family AI footer below.
   statsColScrollBody: { flex: 1 },
   statsColScroll: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
+  // Mock's exact .identity padding (22px 20px) — overrides WidgetCard's
+  // shared 14px default for this card specifically.
+  statsIdentityCard: { paddingVertical: 22, paddingHorizontal: 20 },
   statsIdentity: { alignItems: 'flex-start' },
   statsAvatar: {
     width: 44, height: 44, borderRadius: KIOSK_RADIUS.md,

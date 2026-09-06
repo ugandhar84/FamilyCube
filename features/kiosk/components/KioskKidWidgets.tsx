@@ -635,11 +635,6 @@ function ChoreCardRow({
   const meta = kioskQuestMeta(q, k);
   const timeline = questTimeline(q);
   const inReview = q.status === 'pending_approval';
-  // questTimeline() joins every stage ("Claimed ... → Submitted ... →
-  // Approved ...") into one string for the pinned meta row's 1-line
-  // summary; the expanded view below splits it back out so a chore with
-  // more than one stage doesn't get clipped there.
-  const timelineStages = timeline ? timeline.split(' → ') : [];
 
   return (
     <CollapsibleQuestCard
@@ -680,94 +675,67 @@ function ChoreCardRow({
           </View>
         </View>
       }
-      // Live-reported with a screenshot of the phone's own card: the action
-      // buttons (and the claimed-date / progress line above them) are
-      // ALWAYS visible there, not hidden behind the chevron tap the way
-      // this card's CollapsibleQuestCard shell defaults to. pinnedFooter is
-      // exactly that escape hatch — rendered outside the collapsible body,
-      // so a kid sees "Mark Done → Get 10 Coins" without expanding
-      // anything. Only the timeline text (a "collapsed by default, more
-      // detail on tap" nicety) stays as real collapsible `children` below.
-      pinnedFooter={
-        <>
-          {(!!timeline || inReview) && (
-            <View style={[s.choreMetaRow, { borderTopColor: k.cardBorder }]}>
-              {!!timeline && (
-                <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={1}>{timeline}</Text>
-              )}
-              {inReview && (
-                <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={1}>
-                  Waiting on a parent to review
-                </Text>
-              )}
-            </View>
-          )}
-
-          {btn && (
-            <View style={s.choreActions}>
-              <Pressable
-                onPress={btn.action}
-                style={({ pressed }) => [
-                  s.choreBtn, s.choreBtnPrimary,
-                  { backgroundColor: btn.accent, borderColor: btn.accent },
-                  pressed && { opacity: 0.75 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`${btn.label}: ${q.title}`}
-                accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
-              >
-                <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
-                <Text
-                  style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
-                  numberOfLines={1}
-                >
-                  {btn.label}
-                </Text>
-              </Pressable>
-
-              {showDecline && (
-                <Pressable
-                  onPress={onDecline}
-                  style={({ pressed }) => [
-                    s.choreBtn, s.choreBtnGhost,
-                    { borderColor: k.dangerEdge, backgroundColor: k.card },
-                    pressed && { opacity: 0.75 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Can't do this: ${q.title}`}
-                  accessibilityHint="Give a reason and put this chore back up for grabs"
-                >
-                  <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
-                    Can't do this
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-        </>
-      }
     >
-      {/* Live-reported: "add the expanded [content] in the expanded view"
-          — with the meta line/buttons now always visible in pinnedFooter,
-          the chevron had nothing left to show. Real detail behind it now:
-          the full stage-by-stage timeline (the pinned meta row above only
-          shows it truncated to 1 line, which clips a chore that's been
-          claimed AND submitted AND approved), plus the parent's own note
-          on a declined/needs-redo chore — a real field (declineReason)
-          that had no home anywhere on this card before. */}
-      {timelineStages.length > 0 && (
-        <View style={s.choreExpandedTimeline}>
-          {timelineStages.map((stage, i) => (
-            <Text key={i} style={[s.choreTimelineStage, { color: k.textMuted }]} numberOfLines={1}>
-              {stage}
-            </Text>
-          ))}
-        </View>
+      {/* Live-reported: back to a real expandable card — tap the chevron to
+          reveal the timeline, in-review helper, parent's decline note, and
+          the action buttons, rather than a pinnedFooter that showed them
+          always-open. Everything below is real collapsible `children`. */}
+      {!!timeline && (
+        <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={2}>{timeline}</Text>
       )}
+
+      {inReview && (
+        <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={2}>
+          Waiting on a parent to review this chore.
+        </Text>
+      )}
+
       {!!q.declineReason && (
         <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
           <Text style={[s.choreDeclineLabel, { color: k.danger }]} numberOfLines={1}>Parent's note</Text>
           <Text style={[s.choreDeclineText, { color: k.text }]} numberOfLines={4}>{q.declineReason}</Text>
+        </View>
+      )}
+
+      {btn && (
+        <View style={s.choreActions}>
+          <Pressable
+            onPress={btn.action}
+            style={({ pressed }) => [
+              s.choreBtn, s.choreBtnPrimary,
+              { backgroundColor: btn.accent, borderColor: btn.accent },
+              pressed && { opacity: 0.75 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${btn.label}: ${q.title}`}
+            accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
+          >
+            <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
+            <Text
+              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
+              numberOfLines={1}
+            >
+              {btn.label}
+            </Text>
+          </Pressable>
+
+          {showDecline && (
+            <Pressable
+              onPress={onDecline}
+              style={({ pressed }) => [
+                s.choreBtn, s.choreBtnGhost,
+                { borderColor: k.dangerEdge, backgroundColor: k.card },
+                pressed && { opacity: 0.75 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Can't do this: ${q.title}`}
+              accessibilityHint="Give a reason and put this chore back up for grabs"
+            >
+              <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
+                Can't do this
+              </Text>
+            </Pressable>
+          )}
         </View>
       )}
     </CollapsibleQuestCard>
@@ -831,21 +799,10 @@ const s = StyleSheet.create({
     borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
   },
   statusPillText: { fontSize: CHORE_CARD_TYPO.statusPill, fontWeight: '800', letterSpacing: 0.3 },
-  // The claimed-date / progress line, ALWAYS visible above the buttons in
-  // pinnedFooter (see ChoreCardRow) — a hairline top border separates it
-  // from the header, matching the reference screenshot's own divider.
-  choreMetaRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth, paddingTop: KIOSK_SPACE.sm, marginTop: 2,
-    gap: KIOSK_SPACE.sm,
-  },
   choreTimeline: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
   choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700' },
-  // Expanded (chevron-tapped) content — full stage-by-stage timeline and
-  // the parent's decline note, both real detail with nowhere else to live
-  // on this card now that the meta row/buttons are always visible.
-  choreExpandedTimeline: { gap: 3, marginBottom: 6 },
-  choreTimelineStage: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
+  // The parent's decline note on a needs-redo chore — real collapsible
+  // detail (children, not pinnedFooter) revealed by the chevron tap.
   choreDeclineNote: {
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     padding: KIOSK_SPACE.sm, gap: 2,
@@ -853,9 +810,8 @@ const s = StyleSheet.create({
   choreDeclineLabel: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '900', letterSpacing: 0.3 },
   choreDeclineText: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600', lineHeight: CHORE_CARD_TYPO.meta * 1.4 },
   // Side-by-side, primary weighted 2:1 over the outlined decline — the same
-  // flex ratio the phone card uses for this exact pair. Always visible now
-  // (pinnedFooter, not collapsible body) — see ChoreCardRow's own comment,
-  // matching the live-reported reference screenshot of the phone's card.
+  // flex ratio the phone card uses for this exact pair. Real collapsible
+  // content (children), revealed by the chevron tap — see ChoreCardRow.
   // Live-reported: "don't use bulky buttons" — pill-shaped (full radius)
   // and hugging KIOSK_HIT.min (kiosk's touch floor, still the non-
   // negotiable minimum) rather than a taller rectangular block with extra

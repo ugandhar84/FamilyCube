@@ -237,10 +237,7 @@ export default function KioskScreen() {
           members={members}
           activeId={active.id}
           onSwitch={setActiveMember}
-          isParent={isParent}
-          onAskFam={() => setAskCubeOpen(true)}
           onIntercom={() => setIntercomOpen(true)}
-          onStandby={() => setStandbyPinned(true)}
           onLock={lockNow}
         />
 

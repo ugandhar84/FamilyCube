@@ -1,13 +1,18 @@
 /**
  * KioskHeader — the one persistent status bar every kiosk screen shares.
  *
- * Left  · a live "Kitchen Hub" status dot + family name, a real time +
- *         weather readout, then the profile switcher (avatar strip)
- * Mid   · the clock and date — the single most load-bearing glanceable
- *         element on an always-on display, and what the device shows for
- *         the ~99% of the day nobody is touching it
- * Right · theme mode, Intercom (broadcast/announcement), Standby, Ask Fam
- *         (parent), Lock
+ * Left  · a live status dot + a real weather readout, then the profile
+ *         switcher (avatar strip) — given the header's freed width now
+ *         that the center clock and two right-side buttons are gone
+ * Right · theme mode, Announcement (broadcast), Lock
+ *
+ * Live-requested removals: the center clock (redundant with the device's
+ * own status-bar clock, top-left of the screen — a kiosk still runs
+ * inside the OS chrome, not a dedicated always-on display with no other
+ * clock in view), Standby, and Assistant (AskCubeChat) — the last one
+ * doubly redundant for the one role it was ever shown to, since a parent
+ * now has the same real Ask Family AI action pinned at the bottom of
+ * ParentStatsColumn instead.
  *
  * ── Weather, now real ────────────────────────────────────────────────────
  * A prior pass of this file deliberately omitted the mockup's hardcoded
@@ -41,9 +46,9 @@
  * the real hazard the filter prevents: it sets them active, and every
  * subsequent write goes out under a member id the backend considers gone.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Sparkles, Lock, Megaphone, Moon, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
+import { Lock, Megaphone, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
@@ -53,19 +58,13 @@ import { useKioskLockSuspended } from './KioskActivityContext';
 import { useKioskWeather } from './useKioskWeather';
 
 export function KioskHeader({
-  members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
+  members, activeId, onSwitch, onIntercom, onLock,
 }: {
   members: FamilyMember[];
   activeId: string;
   onSwitch: (id: string) => void;
-  isParent: boolean;
-  /** Opens the real AI assistant (AskCubeChat). Parent-only. */
-  onAskFam: () => void;
   /** Opens the house intercom broadcast modal. */
   onIntercom: () => void;
-  /** Enters the ambient standby display immediately, rather than waiting
-   *  out the idle timer — the mockup's sparkle button. */
-  onStandby: () => void;
   /** Manual "lock and go", separate from the idle-timeout auto-lock.
    *  Available to anyone, not parent-gated — locking is a courtesy, not a
    *  permission. */
@@ -98,15 +97,6 @@ export function KioskHeader({
   // the hook form is the right tool here.
   useKioskLockSuspended(pinTarget !== null);
 
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
-
-  const clock = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const date = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
   const weather = useKioskWeather();
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -128,14 +118,13 @@ export function KioskHeader({
         <View style={s.brandCol}>
           <View style={s.brand}>
             <View style={[s.liveDot, { backgroundColor: k.sage }]} />
-            {/* Compact real weather next to the live dot — a second,
-                smaller glance point beside the big center clock, closer to
-                where the profile switcher itself sits. Renders only once a
-                real reading has actually come back (useKioskWeather
-                returns null otherwise) — never a placeholder. Time is NOT
-                repeated here — the center clock already shows it; showing
-                it twice in one header was exactly the redundancy being
-                cleaned up. */}
+            {/* Compact real weather next to the live dot. Renders only
+                once a real reading has actually come back
+                (useKioskWeather returns null otherwise) — never a
+                placeholder. No time shown here at all — the device's own
+                status-bar clock (top-left of the screen) already covers
+                that, and this header's own center clock was removed for
+                being exactly that same redundancy. */}
             {weather && (
               <View style={s.switcherMeta} accessible accessibilityRole="text" accessibilityLabel={`${weather.temperature}${weather.unit}, ${weather.condition}`}>
                 <Text style={s.switcherMetaIcon}>{weather.icon}</Text>
@@ -204,22 +193,20 @@ export function KioskHeader({
         </ScrollView>
       </View>
 
-      {/* ── Middle: clock ────────────────────────────────────────────
-          Display-scale and LIGHT-weight, deliberately: at this size a heavy
-          weight reads as an alarm clock, a light one as an ambient wall
-          clock — and this is the element the device shows for most of its
-          life. */}
-      <View style={s.clockBlock} accessible accessibilityRole="text" accessibilityLabel={`${clock}, ${date}`}>
-        <Text style={[s.clock, { color: k.text }]} numberOfLines={1}>{clock}</Text>
-        <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>{date}</Text>
-      </View>
-
       {/* ── Right: theme mode, then actions ─────────────────────────────
-          Theme mode leads, quiet/neutral like Lock — it's a display
-          preference, not a household action, so it reads differently from
-          Announcement/Standby/Assistant on purpose. Icon reflects the
-          CURRENT mode (state), not what a tap switches to (a command) —
-          tapping cycles system -> light -> dark -> system. */}
+          Live-requested removals: the big center clock (redundant with
+          the device's own status-bar clock, top-left of the screen — a
+          kiosk still runs inside the OS chrome, it isn't a dedicated
+          always-on display with no other clock in view) and both Standby
+          and Assistant. Assistant (AskCubeChat via onAskFam) is also now
+          redundant for the one role it was ever shown to — a parent has
+          the same real Ask Family AI action pinned at the bottom of
+          ParentStatsColumn now (added since this button was built),
+          closer to hand than a header icon. Theme mode leads, quiet/
+          neutral like Lock — a display preference, not a household
+          action. Icon reflects the CURRENT mode (state), not what a tap
+          switches to (a command) — tapping cycles
+          system -> light -> dark -> system. */}
       <View style={s.right}>
         <HeaderButton
           Icon={themeIcon} label={themeLabel} accent={k.textMuted} k={k} isDark={isDark}
@@ -232,18 +219,6 @@ export function KioskHeader({
           onPress={onIntercom}
           hint="Broadcast an announcement to every family phone"
         />
-        <HeaderButton
-          Icon={Moon} label="Standby" accent={k.gold} k={k} isDark={isDark}
-          onPress={onStandby}
-          hint="Show the ambient clock display now"
-        />
-        {isParent && (
-          <HeaderButton
-            Icon={Sparkles} label="Assistant" accent={k.purple} k={k} isDark={isDark}
-            onPress={onAskFam}
-            hint="Open the family AI assistant"
-          />
-        )}
         <HeaderButton
           Icon={Lock} label="Lock" accent={k.textMuted} k={k} isDark={isDark}
           onPress={onLock}
@@ -314,16 +289,27 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
     borderBottomWidth: StyleSheet.hairlineWidth, gap: KIOSK_SPACE.md,
   },
-  left: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, flexShrink: 1, minWidth: 0 },
+  // flex:1 (was: sized to its own content only) — with the center clock
+  // and two right-side buttons removed per live direction, this row no
+  // longer has anything else claiming the header's freed width. Live-
+  // requested "give more scroll space" for the switcher: without flex:1
+  // here, that freed space just sits empty in the middle of the header
+  // instead of the avatar strip actually getting to use it.
+  left: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, minWidth: 0 },
   brandCol: { gap: 2 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   switcherMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // Live-requested: size the weather readout to match the rest of the
+  // header's own small text (avatarName/brandText, both KIOSK_TYPO.micro)
+  // rather than standing out larger — the emoji specifically capped down a
+  // couple points below that, since an emoji glyph renders visually larger
+  // than Latin text at the same nominal font-size.
   switcherMetaText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   switcherMetaDot: { fontSize: KIOSK_TYPO.micro },
-  switcherMetaIcon: { fontSize: KIOSK_TYPO.micro + 1 },
+  switcherMetaIcon: { fontSize: KIOSK_TYPO.micro - 2 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
-  avatarScroll: { flexGrow: 0, flexShrink: 1 },
+  avatarScroll: { flex: 1, minWidth: 0 },
   avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
   avatarItem: { alignItems: 'center', gap: 3, width: 58 },
   avatarRing: {
@@ -336,13 +322,6 @@ const s = StyleSheet.create({
     borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
   avatarName: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-
-  clockBlock: { alignItems: 'center', flexShrink: 0, paddingHorizontal: KIOSK_SPACE.sm },
-  clock: {
-    fontSize: KIOSK_TYPO.hero, fontWeight: '200', letterSpacing: -1,
-    fontVariant: ['tabular-nums'], lineHeight: KIOSK_TYPO.hero * 1.05,
-  },
-  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
 
   right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginLeft: 'auto' },
   headerBtn: {

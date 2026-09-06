@@ -221,7 +221,12 @@ const s = StyleSheet.create({
   // alignItems:'stretch' already gives this column the row's full HEIGHT
   // with no flex needed for that; width is fixed content-driven instead
   // (see this component body's own comment on colWidth's replacement).
-  statsCol: { width: 240, gap: KIOSK_SPACE.md },
+  // marginTop matches the shared nav rail's own paddingVertical
+  // (KioskScreen.tsx's s.rail, KIOSK_SPACE.sm=10) — this column replaces
+  // that rail for a parent, but rendered with zero top spacing sat flush
+  // against the header with no breathing room at all, less even than the
+  // rail it replaced (which already had 10px here).
+  statsCol: { width: 240, gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.sm },
   // flex:1 here is correct — this is INSIDE statsCol (a flexDirection:
   // 'column' by default), where flex:1 correctly means "fill remaining
   // VERTICAL space" between the sticky identity header above and the

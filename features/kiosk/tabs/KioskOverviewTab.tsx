@@ -748,8 +748,14 @@ export function KioskOverviewTab({
               {groceryItems.length === 0 ? (
                 <EmptyNote text="The grocery list is empty." k={k} />
               ) : (
-                <View>
-                  {groceryItems.slice(0, 5).map((it, i) => (
+                // Live-requested: "show 6 items and then rest are in scroll
+                // view" — was a hard slice(0,5) with a static "and N more"
+                // text and no way to reach the rest at all. Same bounded-
+                // ScrollView pattern as Approvals/Meals This Week/Family
+                // Schedule: every real item renders, capped to ~6 rows
+                // visible before it scrolls.
+                <ScrollView style={s.groceryScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                  {groceryItems.map((it, i) => (
                     <Pressable
                       key={it.id}
                       onPress={() => it.isBought ? restoreGroceryItem(it.id) : buyGroceryItem(it.id, active.id)}
@@ -769,12 +775,7 @@ export function KioskOverviewTab({
                       </Text>
                     </Pressable>
                   ))}
-                  {groceryItems.length > 5 && (
-                    <Text style={[s.groceryMore, { color: k.textFaint }]} numberOfLines={1}>
-                      and {groceryItems.length - 5} more
-                    </Text>
-                  )}
-                </View>
+                </ScrollView>
               )}
               {/* Live-requested: a quiet text link, not a full button —
                   same treatment as Coin Jars' "Open reward store" link
@@ -1890,7 +1891,6 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   groceryItemText: { fontSize: 13, fontWeight: '600' },
-  groceryMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
 
   // Mockup's .feed-item/.feed-thumb/.feed-cap exactly: 96px square thumb,
   // 9px radius, 10.5px caption with a 5px top margin.
@@ -1907,6 +1907,9 @@ const s = StyleSheet.create({
   // 5 rows' worth (~64px each: 13px vertical padding x2 + ~38px of
   // stacked time/who/title/meta text), same bounded-ScrollView reasoning.
   scheduleScroll: { maxHeight: 320 },
+  // 6 rows' worth (each a single-line KIOSK_HIT.control-height checkable
+  // row, 52px) before it scrolls, same bounded-ScrollView reasoning.
+  groceryScroll: { maxHeight: 312 },
 
   // Real fixed 3-per-row grid — flexGrow:0/flexShrink:0/flexBasis:33.333%,
   // the same "every cell is exactly one third regardless of neighbors'

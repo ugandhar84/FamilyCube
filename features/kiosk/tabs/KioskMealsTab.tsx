@@ -13,8 +13,18 @@
  * Meal type/weekOf helper. Grocery goes straight through the existing
  * useGroceryStore — including its realtime subscription, so a partner
  * checking items off at the store updates this screen live, and its
- * addItem/buyItem actions, so a check-off here is a real DB write another
- * device sees, not local state.
+ * addItem/updateItem/removeItem/buyItem actions, so any change here is a
+ * real DB write another device sees, not local state.
+ *
+ * Grocery CRUD is full parity with the phone's own GroceryScreen (live-
+ * requested: "100% parity except start run, since it stays at kitchen") —
+ * Create (quick-add row, or KioskGroceryItemSheet for the full field set),
+ * Read (realtime list), Update (KioskGroceryItemSheet in edit mode, opened
+ * by tapping a row), Delete (same sheet's confirm-to-delete), and Buy
+ * (the row's own checkbox). The one real phone affordance NOT ported is
+ * starting/opening a shopping run (CreateRunSheet/RunDetailSheet) — a
+ * fixed kitchen display isn't the device you carry to the store, so kiosk
+ * only ever READS run status (the "Shopping now at {store}" banner above).
  *
  * Two deliberate scope decisions:
  *   · NO stove/oven timer widget. The mockup has one; the owner ruled it
@@ -26,19 +36,22 @@
  *     the grocery list against it; planning the week stays on the phone.
  *     The empty state says so rather than dead-ending.
  *
- * Role scoping: adding and checking off grocery items is open to everyone
- * (a kid noticing the milk is gone is exactly the behavior a family list
- * wants, and it's how the phone's own grocery screen already behaves).
- * Nothing here deletes.
+ * Role scoping: adding, editing, deleting, and checking off grocery items
+ * is open to everyone (a kid noticing the milk is gone is exactly the
+ * behavior a family list wants, and it's how the phone's own grocery
+ * screen already behaves) — EXCEPT a kid's own already-approved requests,
+ * which stay read-only on kiosk (they can see it made the list, not
+ * manage it), same scoping the phone's own isKid-gated onDelete/onMoveStore
+ * already use.
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
 } from 'react-native';
-import { Plus, Check } from 'lucide-react-native';
+import { Plus, Check, SlidersHorizontal } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
-import { useGroceryStore } from '@/store/groceryStore';
+import { useGroceryStore, type GroceryItem } from '@/store/groceryStore';
 import { categorizeItem } from '@/features/vault/tabs/meals/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
@@ -46,6 +59,7 @@ import { WidgetCard, PanelHead, Well, Chip, TabTitle, EmptyNote } from '../compo
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
 import { useKioskActivity } from '../KioskActivityContext';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
+import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
@@ -66,6 +80,15 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // already use (KioskRecipeDrawer), so the two surfaces that both show a
   // meal behave identically rather than one being tappable and one not.
   const [openMeal, setOpenMeal] = useState<Meal | null>(null);
+
+  // Full CRUD parity with the phone's own grocery list (live-requested:
+  // "100% parity except start run, since it stays at kitchen") — undefined
+  // = add-new mode, a real item = edit mode. Same dual-mode sheet the
+  // phone's AddItemSheet uses, gated the same isKid way as the inline
+  // quick-add row: a kid manages their own already-approved items read-only
+  // on kiosk, same as everywhere else on this screen.
+  const [itemSheetOpen, setItemSheetOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<GroceryItem | undefined>(undefined);
 
   const items = useGroceryStore(s => s.items);
   const load = useGroceryStore(s => s.load);
@@ -273,6 +296,23 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     ? <ActivityIndicator size="small" color={k.onAccent} />
                     : <Plus size={22} color={k.onAccent} />}
                 </Pressable>
+                {/* Full-field parity entry point: the phone's AddItemSheet
+                    also takes quantity/category/store/notes, which this
+                    one-line quick-add intentionally doesn't ask for on
+                    every add. Opens the same sheet an edit uses, in
+                    create mode. */}
+                <Pressable
+                  onPress={() => { setEditingItem(undefined); setItemSheetOpen(true); }}
+                  style={({ pressed }) => [
+                    s.moreBtn,
+                    { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add item with more details"
+                  accessibilityHint="Opens a form with quantity, category, store, and notes"
+                >
+                  <SlidersHorizontal size={18} color={k.textMuted} />
+                </Pressable>
               </View>
             )}
 
@@ -296,8 +336,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     divider={i > 0}
                     // Once approved, a kid's own request is read-only on
                     // kiosk — they can see it landed on the list, not check
-                    // it off themselves.
+                    // it off, edit, or delete it themselves.
                     onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
+                    onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
                   />
                 ))}
               </View>
@@ -314,6 +355,16 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       members={members}
       k={k}
     />
+
+    {!!familyId && (
+      <KioskGroceryItemSheet
+        visible={itemSheetOpen}
+        onClose={() => { setItemSheetOpen(false); setEditingItem(undefined); }}
+        familyId={familyId}
+        memberId={active.id}
+        item={editingItem}
+      />
+    )}
     </>
   );
 }
@@ -329,31 +380,49 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
  * (no checkbox, no press) — they can see it made the list, not check it off
  * themselves.
  */
-function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy }: {
+/**
+ * Real phone split (features/grocery/components/GroceryItemsSection.tsx's
+ * DraggableItemRow): the checkbox is its own buy target, the row BODY is a
+ * separate tap target that opens detail/edit — not the same Pressable.
+ * Reproduced here: the checkbox buys directly (no confirm, matching the
+ * phone's own onBuy), tapping the name/row opens the edit sheet, which is
+ * where edit/delete live (also matching the phone's detail-sheet gating).
+ *
+ * onBuy/onEdit both optional: a kid's own already-approved request renders
+ * fully read-only (no checkbox, no edit access) — they can see it made the
+ * list, not manage it themselves.
+ */
+function GroceryRow({ name, quantity, category, k, isDark, divider, onBuy, onEdit }: {
   name: string; quantity?: string; category?: string;
-  k: KioskColors; isDark: boolean; divider?: boolean; onBuy?: () => void;
+  k: KioskColors; isDark: boolean; divider?: boolean; onBuy?: () => void; onEdit?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const readOnly = !onBuy;
   return (
     <Pressable
-      onPress={readOnly ? undefined : async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
-      disabled={readOnly}
+      onPress={onEdit}
+      disabled={!onEdit}
       style={({ pressed }) => [
         s.groceryRow,
         divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-        pressed && !readOnly && { opacity: 0.7 },
-        busy && { opacity: 0.5 },
+        pressed && !!onEdit && { opacity: 0.7 },
       ]}
-      accessibilityRole={readOnly ? undefined : 'checkbox'}
-      accessibilityState={readOnly ? undefined : { checked: false, disabled: busy }}
+      accessibilityRole={onEdit ? 'button' : undefined}
       accessibilityLabel={quantity ? `${name}, ${quantity}` : name}
-      accessibilityHint={readOnly ? undefined : 'Mark as bought and remove from the list'}
+      accessibilityHint={onEdit ? 'Opens this item to edit or delete it' : undefined}
     >
       {!readOnly && (
-        <View style={[s.checkbox, { borderColor: k.cardBorder }]}>
+        <Pressable
+          onPress={async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
+          hitSlop={10}
+          style={[s.checkbox, { borderColor: k.cardBorder }, busy && { opacity: 0.5 }]}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: false, disabled: busy }}
+          accessibilityLabel={`Mark ${name} as bought`}
+          accessibilityHint="Marks as bought and removes it from the list"
+        >
           {busy && <Check size={13} color={k.sage} />}
-        </View>
+        </Pressable>
       )}
       <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{name}</Text>
       {!!quantity && (
@@ -417,6 +486,10 @@ const s = StyleSheet.create({
   addBtn: {
     width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
     alignItems: 'center', justifyContent: 'center',
+  },
+  moreBtn: {
+    width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 
   // Mock-exact .grocery-row convention: a plain unfilled checkbox square,

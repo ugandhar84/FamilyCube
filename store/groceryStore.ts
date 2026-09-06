@@ -175,7 +175,7 @@ interface GroceryState {
   cleanup: () => void;
 
   addItem:    (params: { familyId: string; name: string; quantity?: string; category?: string; storePreference?: string; addedBy: string; notes?: string; aiGenerated?: boolean }) => Promise<GroceryItem | null>;
-  updateItem:    (itemId: string, patch: Partial<Pick<GroceryItem, 'quantity' | 'category' | 'storePreference' | 'notes'>>) => Promise<void>;
+  updateItem:    (itemId: string, patch: Partial<Pick<GroceryItem, 'name' | 'quantity' | 'category' | 'storePreference' | 'notes'>>) => Promise<void>;
   removeItem:    (itemId: string) => Promise<void>;
   buyItem:       (itemId: string, memberId: string) => Promise<void>;
   restoreItem:   (itemId: string) => Promise<void>;
@@ -446,6 +446,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
 
   updateItem: async (itemId, patch) => {
     const row: Record<string, unknown> = {};
+    if ('name' in patch) row.name = patch.name;
     if ('quantity' in patch) row.quantity = patch.quantity ?? null;
     if ('category' in patch) row.category = patch.category ?? null;
     if ('storePreference' in patch) row.store_preference = patch.storePreference ?? null;

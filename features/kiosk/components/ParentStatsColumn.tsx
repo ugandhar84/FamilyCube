@@ -221,12 +221,16 @@ const s = StyleSheet.create({
   // alignItems:'stretch' already gives this column the row's full HEIGHT
   // with no flex needed for that; width is fixed content-driven instead
   // (see this component body's own comment on colWidth's replacement).
-  // marginTop matches the shared nav rail's own paddingVertical
-  // (KioskScreen.tsx's s.rail, KIOSK_SPACE.sm=10) — this column replaces
-  // that rail for a parent, but rendered with zero top spacing sat flush
-  // against the header with no breathing room at all, less even than the
-  // rail it replaced (which already had 10px here).
-  statsCol: { width: 240, gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.sm },
+  // marginTop/marginLeft both match the REAL sibling columns' own spacing
+  // exactly — KioskOverviewTab.tsx's s.scroll uses padding: KIOSK_SPACE.lg
+  // (20) on every edge, so centerCol/sideCol sit 20px below the header AND
+  // 20px in from their own left edge. This column previously had neither:
+  // marginTop matched the shared nav rail's smaller 10px instead (the
+  // wrong reference point — the sibling content columns are what it
+  // visually sits beside now, not the rail it replaced), and had no left
+  // inset at all, sitting flush at the screen's true x=0 since
+  // KioskScreen.tsx's s.row carries no horizontal padding of its own.
+  statsCol: { width: 240, gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.lg, marginLeft: KIOSK_SPACE.lg },
   // flex:1 here is correct — this is INSIDE statsCol (a flexDirection:
   // 'column' by default), where flex:1 correctly means "fill remaining
   // VERTICAL space" between the sticky identity header above and the

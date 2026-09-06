@@ -163,19 +163,21 @@ export function KioskOverviewTab({
 }) {
   const { k, isDark } = useKioskColors();
   // Live-requested: "card sizes and text adjust based on rotation without
-  // cutting and trimming or over-zooming." Parent's two-column center/
-  // sidebar split (centerCol flex:1.9, sideCol flex:1) needs real
-  // horizontal room for Rides/Approvals rows (title+meta+coin+two buttons)
-  // to not get cramped — on a narrower window (a portrait-rotated iPad,
-  // roughly 834-1024pt vs. ~1194-1366pt landscape, or any kiosk device
-  // smaller than the ones this was designed against) that side-by-side
-  // split stops fitting. Below the threshold, centerCol/sideCol stack
-  // vertically instead of splitting a too-narrow row — same
-  // useWindowDimensions-driven pattern KioskFindFamTab/KioskHubTab/
-  // KioskMemoryGrid already use elsewhere in this file's own codebase,
-  // not a new one invented for this screen alone.
+  // cutting and trimming or over-zooming." Parent's page is a real 3-column
+  // grid (stats rail + centerCol flex + sideCol fixed 340px, matching the
+  // mockup's own `.layout{grid-template-columns: 300px 1fr 340px}`) — on a
+  // narrower window (a portrait-rotated iPad, roughly 834-1024pt vs.
+  // ~1194-1366pt landscape, or any kiosk device smaller than what this was
+  // designed against) a fixed 340px sidebar plus a real rail leaves
+  // centerCol's Rides/Approvals rows (title+meta+coin+two buttons)
+  // genuinely cramped. Below the threshold, centerCol/sideCol stack
+  // vertically instead — 1080px, the SAME breakpoint the mock's own
+  // @media(max-width:1080px) rule uses to collapse its 3-column grid to
+  // `1fr`, not an arbitrary value. Same useWindowDimensions-driven pattern
+  // KioskFindFamTab/KioskHubTab/KioskMemoryGrid already use elsewhere in
+  // this codebase, not a new one invented for this screen alone.
   const { width: winWidth } = useWindowDimensions();
-  const isNarrowParentLayout = winWidth < 900;
+  const isNarrowParentLayout = winWidth < 1080;
   const isParent = active.role === 'parent';
   // Kid role gets a genuinely different Overview, not the parent's with
   // pieces missing. All swaps below are scoped to `kid` alone — teen,
@@ -398,11 +400,26 @@ export function KioskOverviewTab({
           senior branch in this file. */}
       {isParent && (
         <WidgetCard k={k} isDark={isDark} style={s.nowStrip}>
-          <View style={[s.nowStripDot, { backgroundColor: k.primary }]} />
+          {/* Mock's exact colors: .now-strip .liveDot and .now-label are
+              both var(--orange) — the ROLE accent (navy/k.primary for
+              Parent specifically, per the per-role --orange retint at the
+              top of the mock's own CSS), not a fixed green. Halo is a
+              static soft ring (box-shadow: 0 0 0 4px accent at 18%
+              opacity) — NOT animated; the mock's one @keyframes pulse
+              belongs to an unrelated kid-request "waiting" status dot
+              elsewhere. A plain View can't express a symmetric CSS
+              box-shadow ring, so the halo is a second, larger, tinted
+              circle layered behind the solid dot. */}
+          <View style={s.nowStripDotWrap}>
+            <View style={[s.nowStripDotHalo, { backgroundColor: k.primary + (isDark ? '30' : '2E') }]} />
+            <View style={[s.nowStripDot, { backgroundColor: k.primary }]} />
+          </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[s.nowStripLabel, { color: k.primary }]}>
-              {nowHappening ? (nowHappening.isNow ? 'HAPPENING NOW' : 'UP NEXT') : 'TODAY'}
-            </Text>
+            {/* Mock's own now-label is a literal, always-on "Happening
+                now" — not derived from any state. Matched exactly per
+                live confirmation, rather than the richer isNow/upcoming
+                distinction this file computed on its own. */}
+            <Text style={[s.nowStripLabel, { color: k.primary }]}>HAPPENING NOW</Text>
             <Text style={[s.nowStripWhat, { color: k.text }]} numberOfLines={1}>
               {nowHappening ? nowHappening.event.title : 'Nothing on the calendar today'}
             </Text>
@@ -617,9 +634,18 @@ export function KioskOverviewTab({
                           style={[
                             s.tlItem,
                             i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-                            isCurrent && { borderLeftWidth: 3, borderLeftColor: k.primary, marginLeft: -1 },
                           ]}
                         >
+                          {/* Mock's .tl-item.current::before is absolutely
+                              positioned (left:-20px, no width/margin effect
+                              on the row itself) — a real borderLeftWidth
+                              here would shift this ONE row 1px out of
+                              alignment with every other row in the list
+                              (confirmed: an earlier version did exactly
+                              that with a marginLeft:-1 hack). This overlay
+                              approach matches the mock exactly AND never
+                              touches layout. */}
+                          {isCurrent && <View style={[s.tlCurrentBar, { backgroundColor: k.primary }]} />}
                           <Text style={[s.tlTime, { color: k.textFaint }]} numberOfLines={1}>
                             {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
                           </Text>
@@ -1127,7 +1153,7 @@ function ParentApprovalsWidget({
               accessibilityLabel={f.label}
             >
               <Text style={[s.filterChipText, { color: selected ? k.card : k.textMuted }]} numberOfLines={1}>
-                {f.label}{count > 0 ? ` ${count}` : ''}
+                {f.label} <Text style={{ opacity: 0.6 }}>({count})</Text>
               </Text>
             </Pressable>
           );
@@ -1223,11 +1249,16 @@ function ApprovalRow({
           )}
         </View>
       </View>
-      {typeof item.coins === 'number' && (
-        <Text style={[s.approvalCoin, { color: k.gold }]} numberOfLines={1}>
-          {item.coins > 0 ? `+${item.coins}` : item.coins}
-        </Text>
-      )}
+      {/* Mock's .task-coin always occupies this slot, even with nothing to
+          show — a real coin figure, or an em-dash at reduced opacity for a
+          kid request (which never carries coins). Keeps every row's coin
+          column aligned instead of requests alone losing their right edge. */}
+      <Text
+        style={[s.approvalCoin, typeof item.coins === 'number' ? { color: k.gold } : { color: k.textFaint, opacity: 0.35 }]}
+        numberOfLines={1}
+      >
+        {typeof item.coins === 'number' ? (item.coins > 0 ? `+${item.coins}` : item.coins) : '—'}
+      </Text>
       <View style={s.approvalActions}>
         {/* Visually sized off the mockup's compact .task-action spec, but
             hitSlop keeps the REAL tappable extent at kiosk's documented
@@ -1554,6 +1585,8 @@ const s = StyleSheet.create({
   // construction and can't drift the way an arithmetic width can.
   // Mockup's .now-strip exactly: 18/20px padding, 16px gap, single row.
   nowStrip: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 18 },
+  nowStripDotWrap: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  nowStripDotHalo: { position: 'absolute', width: 16, height: 16, borderRadius: 8 },
   nowStripDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   nowStripLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.1 },
   nowStripWhat: { fontSize: 14, fontWeight: '600', marginTop: 2 },
@@ -1613,10 +1646,12 @@ const s = StyleSheet.create({
 
   // Parent's two-column page — center column (Rides, Approvals) full-width
   // of its own column, sidebar column (Coin jars, Grocery, Photo feed)
-  // full-width of ITS column — matching the mockup's actual page shape
-  // (a wide main column next to a narrower sidebar, measured off the
-  // mockup's own rendered proportions: roughly 530px center to 280px
-  // sidebar, ~1.9:1) rather than the flex-wrap grid every other role uses.
+  // full-width of ITS column — matching the mockup's actual page grid
+  // EXACTLY: `.layout{grid-template-columns: 300px 1fr 340px}` (rail,
+  // center, right-col) — the rail and sidebar are FIXED pixel columns,
+  // only the center column is flexible. Full re-read of the mock's own
+  // CSS corrected an earlier approximation here that used a 1.9:1 flex
+  // ratio between center and sidebar instead of matching this real grid.
   // Cards inside each column render with no explicit width style of their
   // own (WidgetCard's default) — the column itself sets the width, so a
   // card doesn't also need flexBasis fighting its container.
@@ -1624,11 +1659,13 @@ const s = StyleSheet.create({
   // Below isNarrowParentLayout's threshold: stack instead of split — a
   // fractional flex share of an already-narrow row is what actually causes
   // cramped/clipped content on rotation, not any single component's own
-  // sizing.
+  // sizing. Matches the mock's own @media(max-width:1080px) rule, which
+  // collapses its whole 3-column grid to `1fr` at the same width this
+  // file's own isNarrowParentLayout threshold uses.
   twoColRowStacked: { flexDirection: 'column' },
   colFullWidth: { flex: undefined, width: '100%' },
-  centerCol: { flex: 1.9, gap: KIOSK_SPACE.md, minWidth: 0 },
-  sideCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
+  centerCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
+  sideCol: { flex: undefined, width: 340, gap: KIOSK_SPACE.md, minWidth: 0 },
 
   // Widget deck.
   //
@@ -1727,7 +1764,11 @@ const s = StyleSheet.create({
 
   // Mockup's .tl-item exactly: 58px time column + flexible body, 14px gap,
   // 13px vertical padding, hairline top border between rows.
-  tlItem: { flexDirection: 'row', gap: 14, paddingVertical: 13 },
+  tlItem: { flexDirection: 'row', gap: 14, paddingVertical: 13, position: 'relative' },
+  // Mock's .tl-item.current::before: a 3px accent bar overlaid at the
+  // panel's own left edge, absolutely positioned so it never affects the
+  // row's own layout/width.
+  tlCurrentBar: { position: 'absolute', left: -KIOSK_SPACE.md, top: 0, bottom: 0, width: 3 },
   tlTime: { width: 58, fontSize: 12, fontWeight: '600', marginTop: 2 },
   tlWho: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 1 },
   tlTitle: { fontSize: 14, fontWeight: '700' },

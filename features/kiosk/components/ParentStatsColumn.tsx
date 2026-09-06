@@ -64,14 +64,17 @@ export function ParentStatsColumn({
   onLock: () => void;
 }) {
   const { k, isDark } = useKioskColors();
-  // Live-requested: adjust to rotation without cutting/trimming or over-
-  // zooming. A fixed 220px column ate a much bigger share of a narrower
-  // (portrait-rotated) window — clamped to a real percentage of the actual
-  // window width instead, floored/ceilinged so it never gets so narrow the
-  // tab-list labels wrap badly, nor so wide it crowds out the content area
-  // on a genuinely small device.
+  // The mock's own grid is `grid-template-columns: 300px 1fr 340px` — this
+  // column IS that first fixed 300px rail. Full re-read of the mock's CSS
+  // corrected an earlier version here that used an invented
+  // percentage-of-window formula instead of the mock's real fixed number.
+  // Still floored on a genuinely small/narrow window (live-requested:
+  // adjust to rotation without cutting/trimming) — 300px is too wide to
+  // give up entirely on a narrow portrait window, so it shrinks down to a
+  // real percentage only below the point where a fixed 300px would eat
+  // most of the screen.
   const { width: winWidth } = useWindowDimensions();
-  const colWidth = Math.max(190, Math.min(240, Math.round(winWidth * 0.22)));
+  const colWidth = winWidth < 700 ? Math.max(190, Math.round(winWidth * 0.32)) : 300;
 
   const kids = useMemo(
     () => members.filter(m =>

@@ -136,6 +136,9 @@ interface ApprovalItem {
   who?: string;
   emoji: string;
   meta: string;
+  /** Coins on the line, matching the mockup's .task-coin figure. Requests
+   *  carry no coin value, same as the mockup (t.coin is 0 there too). */
+  coins?: number;
   /** Higher sorts first. Only a kid request's real urgency ever exceeds 1. */
   urgencyRank: 1 | 2 | 3 | 4;
 }
@@ -277,13 +280,14 @@ export function KioskOverviewTab({
       ...pendingChoreReviews.map((q): ApprovalItem => ({
         id: `quest:${q.id}`, kind: 'chore', sortAt: q.submittedAt ?? '',
         title: q.title, who: memberFirst(q.assignedToId) ?? memberFirst(q.sponsorUserId), emoji: memberEmoji(q.assignedToId ?? q.sponsorUserId),
-        meta: q.coins ? `${q.coins} coins on approval` : 'Ready for review',
+        meta: 'Ready for review', coins: q.coins || undefined,
         urgencyRank: 1,
       })),
       ...pendingRedemptions.map((r): ApprovalItem => ({
         id: `redemption:${r.id}`, kind: 'redemption', sortAt: r.redeemedAt,
         title: r.rewardTitle ?? 'Reward redemption', who: r.memberName ?? memberFirst(r.memberId), emoji: memberEmoji(r.memberId),
-        meta: `${r.deductedCoins} coins${r.wallet === 'gpCoins' ? ' · grandparent jar' : ''}`,
+        meta: r.wallet === 'gpCoins' ? 'Grandparent jar' : 'Reward redemption',
+        coins: -r.deductedCoins,
         urgencyRank: 1,
       })),
       ...pendingKidRequests.map((req): ApprovalItem => ({
@@ -469,6 +473,23 @@ export function KioskOverviewTab({
 
       {/* ══ WIDGET DECK ════════════════════════════════════════════════ */}
       <View style={s.deck}>
+        {/* ── Approvals (parent only) ──
+            Two grid columns wide (same widgetWide treatment as senior's
+            photo feed) rather than full-width or squeezed to one column —
+            a decision surface earns more room than Coin jars/Grocery next
+            to it, but it's still a card in the deck, not its own banner. */}
+        {isParent && (
+          <ParentApprovalsWidget
+            approvals={approvals} k={k} isDark={isDark}
+            onApproveChore={(id) => approveQuest(id, active.id)}
+            onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
+            onApproveRedemption={(id) => approveRedemption(id, active.id)}
+            onRejectRedemption={(id) => rejectRedemption(id, active.id)}
+            onApproveRequest={(id) => approveRequest(id, active.id)}
+            onDeclineRequest={(id) => declineRequest(id, active.id)}
+          />
+        )}
+
         {/* ── Ride & pickup radar (kid: their own day instead) ──
             A kid can neither remind nor take over a ride — both actions
             were already parent-gated — so for them this slot was a
@@ -508,22 +529,6 @@ export function KioskOverviewTab({
               </View>
             )}
           </WidgetCard>
-        )}
-
-        {/* ── Unified approvals ──
-            Parent-only, same reasoning as coin jars below: this is a
-            decision surface, not household-shared content. */}
-        {isParent && (
-          <ParentApprovalsWidget
-            approvals={approvals} k={k} isDark={isDark}
-            onApproveChore={(id) => approveQuest(id, active.id)}
-            onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
-            onApproveRedemption={(id) => approveRedemption(id, active.id)}
-            onRejectRedemption={(id) => rejectRedemption(id, active.id)}
-            onApproveRequest={(id) => approveRequest(id, active.id)}
-            onDeclineRequest={(id) => declineRequest(id, active.id)}
-            onOpenMore={() => onNavigate('tasks')}
-          />
         )}
 
         {/* ── Kids' coin jars ──
@@ -812,13 +817,26 @@ function RideRow({
  * actually needs attention first — an emergency request could be sitting
  * unseen behind three routine chore photos. This widget is that one place.
  *
- * Kept to the same shape as every other widget on this screen: up to four
- * rows inline, real actions on each (no picker step), a link to the fuller
- * screen for anything beyond that.
+ * Internals match the reference mockup's own Approvals panel, not just its
+ * colors: filter chips to narrow the merged list by kind, and flat list
+ * rows (a checkbox-style status dot, inline title/meta/who-badge, a coin
+ * figure, small text-button pairs) rather than the card-in-card Well rows
+ * every other widget on this screen uses. Sized as the deck's widgetWide
+ * slot (two grid columns, same treatment as senior's photo feed) rather
+ * than full-width — a decision surface earns more room than its neighbors,
+ * but stays a card in the deck rather than its own full-width banner.
  */
+type ApprovalFilterKey = 'all' | ApprovalItem['kind'];
+const APPROVAL_FILTERS: { key: ApprovalFilterKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'chore', label: 'Chores' },
+  { key: 'redemption', label: 'Redemptions' },
+  { key: 'request', label: 'Kid requests' },
+];
+
 function ParentApprovalsWidget({
   approvals, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption,
-  onApproveRequest, onDeclineRequest, onOpenMore,
+  onApproveRequest, onDeclineRequest,
 }: {
   approvals: ApprovalItem[];
   k: KioskColors;
@@ -830,32 +848,44 @@ function ParentApprovalsWidget({
   onRejectRedemption: (id: string) => void;
   onApproveRequest: (id: string) => void;
   onDeclineRequest: (id: string) => void;
-  onOpenMore: () => void;
 }) {
-  const visible = approvals.slice(0, 4);
-  const overflow = approvals.length - visible.length;
+  const [filter, setFilter] = useState<ApprovalFilterKey>('all');
+  const filtered = filter === 'all' ? approvals : approvals.filter(a => a.kind === filter);
   const hasUrgent = approvals.some(a => a.urgencyRank >= 3);
-  // One shared redo sheet for the whole widget rather than one per row — a
+  // One shared redo sheet for the whole panel rather than one per row — a
   // parent only ever declines one chore at a time, and this matches the
   // phone's own RedoSheet, which is a single sheet at the deck level too.
   const [redoTarget, setRedoTarget] = useState<{ id: string; title: string } | null>(null);
 
   return (
-    <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined} style={s.widget}>
+    <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined} style={s.widgetWide}>
       <WidgetHeader
         Icon={ClipboardCheck} eyebrow="Waiting on you" title="Approvals"
         accent={hasUrgent ? k.danger : k.primary} k={k} isDark={isDark}
         right={approvals.length > 0
-          ? <Chip label={`${approvals.length}`} accent={hasUrgent ? k.danger : k.primary} isDark={isDark} k={k} filled={hasUrgent} />
+          ? <Chip label={`${approvals.length} pending`} accent={hasUrgent ? k.danger : k.primary} isDark={isDark} k={k} filled={hasUrgent} />
           : undefined}
       />
-      {approvals.length === 0 ? (
+      <View style={s.filterRow}>
+        {APPROVAL_FILTERS.map(f => {
+          const count = f.key === 'all' ? approvals.length : approvals.filter(a => a.kind === f.key).length;
+          return (
+            <KioskPill
+              key={f.key} label={count > 0 ? `${f.label} · ${count}` : f.label}
+              selected={filter === f.key} onPress={() => setFilter(f.key)}
+              accent={k.primary} k={k}
+            />
+          );
+        })}
+      </View>
+      {filtered.length === 0 ? (
         <EmptyNote text="Nothing waiting on a decision right now." k={k} />
       ) : (
-        <View style={{ gap: KIOSK_SPACE.sm }}>
-          {visible.map(item => (
+        <View>
+          {filtered.map((item, i) => (
             <ApprovalRow
               key={item.id} item={item} k={k} isDark={isDark}
+              isFirst={i === 0}
               onApproveChore={onApproveChore}
               onDeclineChore={() => setRedoTarget({ id: item.id.slice(item.id.indexOf(':') + 1), title: item.title })}
               onApproveRedemption={onApproveRedemption}
@@ -864,13 +894,6 @@ function ParentApprovalsWidget({
               onDeclineRequest={onDeclineRequest}
             />
           ))}
-          {overflow > 0 && (
-            <ActionButton
-              label={`See ${overflow} more`} accent={k.primary} k={k} isDark={isDark}
-              onPress={onOpenMore}
-              accessibilityHint="Open the full approvals list"
-            />
-          )}
         </View>
       )}
       <RedoReasonSheet
@@ -889,12 +912,20 @@ const APPROVAL_KIND_ICON: Record<ApprovalItem['kind'], LucideIcon> = {
   chore: CheckSquare, redemption: Gift, request: HandHelping,
 };
 
+/**
+ * A flat list row — the mockup's `.task` (checkbox-style status dot, title +
+ * inline meta/who-badge, coin amount, small text-button pair) — rather than
+ * the bordered `Well` card ApprovalRow used before this rewrite. Every other
+ * widget's rows are cards because every other widget is a small grid card;
+ * this panel is a list, so its rows are list rows.
+ */
 function ApprovalRow({
-  item, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
+  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
 }: {
   item: ApprovalItem;
   k: KioskColors;
   isDark: boolean;
+  isFirst: boolean;
   onApproveChore: (questId: string) => void;
   /** Opens the shared redo-reason sheet — never a direct decline. */
   onDeclineChore: () => void;
@@ -906,7 +937,7 @@ function ApprovalRow({
   const [busy, setBusy] = useState(false);
   const rawId = item.id.slice(item.id.indexOf(':') + 1);
   const urgent = item.urgencyRank >= 3;
-  const accent = urgent ? k.danger : item.kind === 'redemption' ? k.gold : item.kind === 'request' ? k.purple : k.primary;
+  const dotColor = urgent ? k.danger : item.kind === 'redemption' ? k.gold : item.kind === 'request' ? k.purple : k.primary;
   const Icon = APPROVAL_KIND_ICON[item.kind];
 
   const approve = () => {
@@ -926,40 +957,55 @@ function ApprovalRow({
   };
 
   return (
-    <Well k={k} accent={accent}>
-      <View style={s.rideTop}>
-        <View style={[s.approvalIcon, { backgroundColor: accent + (isDark ? '24' : '1A') }]}>
-          <Icon size={16} color={accent} />
+    <View style={[s.approvalRow, !isFirst && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+      <View style={[s.approvalDot, { backgroundColor: dotColor + (isDark ? '24' : '1A'), borderColor: dotColor }]}>
+        <Icon size={12} color={dotColor} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[s.approvalTitle, { color: k.text }]} numberOfLines={1}>{item.title}</Text>
+        <View style={s.approvalMetaRow}>
+          <Text style={[s.approvalMeta, { color: k.textFaint }]} numberOfLines={1}>{item.meta}</Text>
+          {!!item.who && (
+            <View style={[s.approvalBadge, { backgroundColor: k.well }]}>
+              <Text style={[s.approvalBadgeText, { color: k.textMuted }]} numberOfLines={1}>{item.who}</Text>
+            </View>
+          )}
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[s.rideTitle, { color: k.text }]} numberOfLines={2}>{item.title}</Text>
-          <Text style={[s.rideMeta, { color: k.textMuted }]} numberOfLines={1}>
-            {item.who ? `${item.who} · ` : ''}{item.meta}
+      </View>
+      {typeof item.coins === 'number' && (
+        <Text style={[s.approvalCoin, { color: k.gold }]} numberOfLines={1}>
+          {item.coins > 0 ? `+${item.coins}` : item.coins}
+        </Text>
+      )}
+      <View style={s.approvalActions}>
+        {/* Visually sized off the mockup's compact .task-action spec, but
+            hitSlop keeps the REAL tappable extent at kiosk's documented
+            48px floor (KIOSK_HIT.min) — the mockup is a cursor-driven web
+            page with no such floor; this is a tablet a kid or grandparent
+            taps at an angle, so the visual size and the tap target are
+            deliberately different here. */}
+        <Pressable
+          onPress={decline} disabled={busy}
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+          style={({ pressed }) => [s.approvalTextBtn, { borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel={item.kind === 'chore' ? 'Redo' : 'Decline'}
+        >
+          <Text style={[s.approvalTextBtnLabel, { color: k.danger }]}>
+            {item.kind === 'chore' ? 'Redo' : 'Decline'}
           </Text>
-        </View>
-        {urgent && <Chip label="Urgent" accent={k.danger} isDark={isDark} k={k} filled />}
+        </Pressable>
+        <Pressable
+          onPress={approve} disabled={busy}
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+          style={({ pressed }) => [s.approvalTextBtn, { borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Approve"
+        >
+          <Text style={[s.approvalTextBtnLabel, { color: k.sage }]}>Approve</Text>
+        </Pressable>
       </View>
-      <View style={s.rideActions}>
-        <ActionButton
-          // Matches the phone's own copy exactly: chores get "Redo" (they
-          // reopen the chore for the kid to fix, they aren't rejected
-          // outright the way a redemption or request is), everything else
-          // keeps "Decline".
-          label={item.kind === 'chore' ? 'Redo' : 'Decline'}
-          Icon={item.kind === 'chore' ? undefined : X}
-          accent={k.danger} k={k} isDark={isDark}
-          disabled={busy} style={{ flex: 1 }}
-          accessibilityHint={item.kind === 'chore' ? 'Send this chore back for redo' : `Decline this ${item.kind}`}
-          onPress={decline}
-        />
-        <ActionButton
-          label="Approve" Icon={Check} accent={k.sage} k={k} isDark={isDark}
-          variant="solid" disabled={busy} style={{ flex: 1 }}
-          accessibilityHint={`Approve this ${item.kind}`}
-          onPress={approve}
-        />
-      </View>
-    </Well>
+    </View>
   );
 }
 
@@ -1301,10 +1347,34 @@ const s = StyleSheet.create({
   rideActions: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
   rideNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: KIOSK_SPACE.xs },
 
-  approvalIcon: {
-    width: 30, height: 30, borderRadius: KIOSK_RADIUS.sm,
-    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  // Approvals panel — sized directly off the mockup's own .task/.task-*
+  // literal pixel values rather than translated through the wider kiosk
+  // type/space scale, since this panel is deliberately denser and more
+  // list-like than every card-shaped widget around it.
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  approvalRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12,
   },
+  approvalDot: {
+    width: 26, height: 26, borderRadius: 8, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  approvalTitle: { fontSize: 14, fontWeight: '700' },
+  approvalMetaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 3,
+  },
+  approvalMeta: { fontSize: 11.5, fontWeight: '600' },
+  approvalBadge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  approvalBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  approvalCoin: { fontSize: 14, fontWeight: '700', flexShrink: 0 },
+  approvalActions: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+  approvalTextBtn: {
+    borderWidth: 1, borderRadius: 7,
+    paddingHorizontal: 12, paddingVertical: 8,
+    minHeight: 0,
+  },
+  approvalTextBtnLabel: { fontSize: 11.5, fontWeight: '700' },
 
   jarRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm },
   jarAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

@@ -108,7 +108,7 @@ import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
-import type { KioskTabKey } from '../kioskTabs';
+import { railForRole, type KioskTabKey } from '../kioskTabs';
 
 interface RadarRow {
   member_id: string;
@@ -333,6 +333,7 @@ export function KioskOverviewTab({
         pendingRequestCount={pendingKidRequests.length}
         kids={kids}
         onMessageKids={() => onNavigate('chat')}
+        onNavigate={onNavigate}
       />
     )}
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
@@ -841,7 +842,7 @@ function RideRow({
  * that already works correctly.
  */
 function ParentStatsColumn({
-  active, k, isDark, pendingChoreCount, pendingRedemptionCount, pendingRequestCount, kids, onMessageKids,
+  active, k, isDark, pendingChoreCount, pendingRedemptionCount, pendingRequestCount, kids, onMessageKids, onNavigate,
 }: {
   active: FamilyMember;
   k: KioskColors;
@@ -851,6 +852,11 @@ function ParentStatsColumn({
   pendingRequestCount: number;
   kids: FamilyMember[];
   onMessageKids: () => void;
+  /** Same navigate-a-tab function the screen already threads through this
+   *  component — this column now doubles as the tab list for a parent on
+   *  Overview, since KioskScreen.tsx hides its own shared nav rail exactly
+   *  when this column is on screen (see that file's own comment). */
+  onNavigate: (tab: KioskTabKey) => void;
 }) {
   const rows: { label: string; value: number }[] = [
     { label: 'Chores pending review', value: pendingChoreCount },
@@ -871,6 +877,47 @@ function ParentStatsColumn({
             </View>
             <Text style={[s.statsName, { color: k.text }]} numberOfLines={1}>{active.name?.trim().split(' ')[0]}</Text>
             <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>Household overview</Text>
+          </View>
+        </WidgetCard>
+
+        {/* This column's own copy of the tab list — the actual replacement
+            for KioskScreen.tsx's shared nav rail, which is hidden while
+            this column is on screen. Same railForRole/onNavigate every
+            other tab already uses, just laid out to fit here (compact
+            rows instead of the rail's own bigger vertical buttons) rather
+            than a second, separately-maintained tab list. */}
+        <WidgetCard k={k} isDark={isDark} padded={false}>
+          {/* Overview is always first in railForRole's output and is the
+              only row ever filled solid (the active tab) — clipped locally
+              so that fill can't poke past WidgetCard's own rounded corners
+              on iOS, which doesn't clip a child to a parent's borderRadius
+              without an explicit overflow:'hidden' somewhere in the chain. */}
+          <View style={{ borderRadius: KIOSK_RADIUS.sm, overflow: 'hidden' }}>
+          {railForRole(active.role).map((item, i) => {
+            const isOverview = item.key === 'overview';
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => onNavigate(item.key)}
+                disabled={isOverview}
+                style={({ pressed }) => [
+                  s.railTabRow,
+                  i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
+                  isOverview
+                    ? { backgroundColor: k.primary }
+                    : { backgroundColor: pressed ? k.cardHover : 'transparent' },
+                ]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isOverview }}
+                accessibilityLabel={item.label}
+              >
+                <item.Icon size={16} color={isOverview ? k.onPrimary : k.textMuted} />
+                <Text style={[s.railTabLabel, { color: isOverview ? k.onPrimary : k.text }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
           </View>
         </WidgetCard>
 
@@ -1448,6 +1495,12 @@ const s = StyleSheet.create({
   statsAvatarEmoji: { fontSize: 20 },
   statsName: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
   statsSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  railTabRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
+    minHeight: KIOSK_HIT.control,
+  },
+  railTabLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   statsRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,

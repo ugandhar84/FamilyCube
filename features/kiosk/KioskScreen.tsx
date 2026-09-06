@@ -251,7 +251,16 @@ export default function KioskScreen() {
               grandparent walks up to cold — an unfamiliar glyph set is a
               guessing game. Scrolls when the full eleven-entry rail is
               taller than a short landscape screen; the Ask Fam card is
-              pinned below it rather than scrolling away. */}
+              pinned below it rather than scrolling away.
+
+              Hidden ONLY for a parent on Overview specifically: Overview's
+              own ParentStatsColumn (KioskOverviewTab.tsx) carries this same
+              tab list itself now, matching the reference mockup's page
+              (which has no separate persistent nav bar at all — its rail
+              IS the page's own left column). Every other tab, and every
+              other role, keeps this rail exactly as it always has — it's
+              still the only way to navigate for them. */}
+          {!(isParent && effectiveTab === 'overview') && (
           <View style={[s.rail, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
             <ScrollView
               contentContainerStyle={s.railGroup}
@@ -319,6 +328,7 @@ export default function KioskScreen() {
               <Text style={[s.askFamText, { color: k.purple }]} numberOfLines={1}>Ask Fam</Text>
             </Pressable>
           </View>
+          )}
 
           {/* ══ ACTIVE TAB ═══════════════════════════════════════════ */}
           <View style={s.content}>

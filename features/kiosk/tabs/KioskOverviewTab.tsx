@@ -207,6 +207,21 @@ export function KioskOverviewTab({
   const isSenior = active.role === 'senior';
 
   const dayEvents = useEventStore(s => s.dayEvents);
+
+  // "Happening now" — the mockup's compact top strip (a live dot, an
+  // uppercase eyebrow, the current/next event, a right-aligned time), NOT
+  // a greeting hero. Real derivation: an event actually in progress right
+  // now (time <= now < endTime) wins; otherwise the next timed event later
+  // today; otherwise null (renders "Nothing on the calendar today" instead
+  // of a fabricated placeholder).
+  const nowHappening = useMemo(() => {
+    const nowHHMM = new Date().toTimeString().slice(0, 5);
+    const timed = dayEvents.filter(e => !!e.time && !e.allDay);
+    const inProgress = timed.find(e => e.time! <= nowHHMM && (!e.endTime || e.endTime > nowHHMM));
+    if (inProgress) return { event: inProgress, isNow: true };
+    const upcoming = timed.filter(e => e.time! > nowHHMM).sort((a, b) => a.time!.localeCompare(b.time!))[0];
+    return upcoming ? { event: upcoming, isNow: false } : null;
+  }, [dayEvents]);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
   const { quests, approveQuest, declineQuest } = useQuestStore();
@@ -357,7 +372,39 @@ export function KioskOverviewTab({
   return (
     <>
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-      {/* ══ HERO ROW ═══════════════════════════════════════════════════ */}
+      {/* ══ HAPPENING NOW (parent) ═══════════════════════════════════════
+          Matches the mockup's own .now-strip exactly: a compact single-
+          line panel (live dot, uppercase eyebrow, current/next event, a
+          right-aligned time) — NOT a greeting hero. The mockup has no
+          avatar+"Good morning"+quick-actions block anywhere; that was
+          this file's own pre-mock content, carried over by mistake and
+          never actually replaced. Kid/senior/teen keep that original hero
+          exactly as it was below — their compositions were never part of
+          what the mockup depicted, same reasoning as every other kid/
+          senior branch in this file. */}
+      {isParent && (
+        <WidgetCard k={k} isDark={isDark} style={s.nowStrip}>
+          <View style={[s.nowStripDot, { backgroundColor: k.primary }]} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.nowStripLabel, { color: k.primary }]}>
+              {nowHappening ? (nowHappening.isNow ? 'HAPPENING NOW' : 'UP NEXT') : 'TODAY'}
+            </Text>
+            <Text style={[s.nowStripWhat, { color: k.text }]} numberOfLines={1}>
+              {nowHappening ? nowHappening.event.title : 'Nothing on the calendar today'}
+            </Text>
+          </View>
+          {nowHappening && (
+            <Text style={[s.nowStripTime, { color: k.textFaint }]} numberOfLines={1}>
+              {nowHappening.isNow && nowHappening.event.endTime
+                ? `until ${fmtTime(nowHappening.event.endTime)}`
+                : fmtTime(nowHappening.event.time!)}
+            </Text>
+          )}
+        </WidgetCard>
+      )}
+
+      {!isParent && (
+      <>
       <View style={s.heroRow}>
         <WidgetCard k={k} isDark={isDark} style={s.hero}>
           <View style={s.heroTop}>
@@ -492,6 +539,8 @@ export function KioskOverviewTab({
         members={members}
         k={k}
       />
+      </>
+      )}
 
       {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
           The kid's own actions, as one labeled full-width card directly
@@ -1404,6 +1453,13 @@ const s = StyleSheet.create({
   // Hero. Wraps to stacked on a narrow/portrait pane — flexBasis with
   // flexWrap rather than a measured breakpoint, so it reflows by
   // construction and can't drift the way an arithmetic width can.
+  // Mockup's .now-strip exactly: 18/20px padding, 16px gap, single row.
+  nowStrip: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 18 },
+  nowStripDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  nowStripLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.1 },
+  nowStripWhat: { fontSize: 14, fontWeight: '600', marginTop: 2 },
+  nowStripTime: { fontSize: 12, flexShrink: 0 },
+
   heroRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   hero: { flexGrow: 3, flexBasis: 460, minWidth: 0 },
   heroSide: { flexGrow: 1, flexBasis: 280, minWidth: 0 },

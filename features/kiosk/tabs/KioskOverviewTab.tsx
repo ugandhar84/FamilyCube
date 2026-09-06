@@ -81,7 +81,7 @@
  * more widgets.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput } from 'react-native';
 import {
   Car, PiggyBank, MapPin, UtensilsCrossed, Bell, Check, ShoppingCart,
   Megaphone, BatteryLow, ChefHat, CheckSquare, ClipboardCheck, X, Gift, HandHelping,
@@ -91,6 +91,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
@@ -100,6 +101,7 @@ import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
+import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from '../components/KioskFormDrawer';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
@@ -203,7 +205,7 @@ export function KioskOverviewTab({
   const dayEvents = useEventStore(s => s.dayEvents);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
-  const { quests, approveQuest } = useQuestStore();
+  const { quests, approveQuest, declineQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const { meals } = useKioskMeals();
   const redemptions = useRewardStore(s => s.redemptions);
@@ -515,6 +517,7 @@ export function KioskOverviewTab({
           <ParentApprovalsWidget
             approvals={approvals} k={k} isDark={isDark}
             onApproveChore={(id) => approveQuest(id, active.id)}
+            onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
             onApproveRedemption={(id) => approveRedemption(id, active.id)}
             onRejectRedemption={(id) => rejectRedemption(id, active.id)}
             onApproveRequest={(id) => approveRequest(id, active.id)}
@@ -814,13 +817,15 @@ function RideRow({
  * screen for anything beyond that.
  */
 function ParentApprovalsWidget({
-  approvals, k, isDark, onApproveChore, onApproveRedemption, onRejectRedemption,
+  approvals, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption,
   onApproveRequest, onDeclineRequest, onOpenMore,
 }: {
   approvals: ApprovalItem[];
   k: KioskColors;
   isDark: boolean;
   onApproveChore: (questId: string) => void;
+  /** Matches the phone's requestRedo(id, reviewerId, reason, presetKey?). */
+  onDeclineChore: (questId: string, reason: string, presetKey?: RejectionPresetKey) => void;
   onApproveRedemption: (id: string) => void;
   onRejectRedemption: (id: string) => void;
   onApproveRequest: (id: string) => void;
@@ -830,6 +835,10 @@ function ParentApprovalsWidget({
   const visible = approvals.slice(0, 4);
   const overflow = approvals.length - visible.length;
   const hasUrgent = approvals.some(a => a.urgencyRank >= 3);
+  // One shared redo sheet for the whole widget rather than one per row — a
+  // parent only ever declines one chore at a time, and this matches the
+  // phone's own RedoSheet, which is a single sheet at the deck level too.
+  const [redoTarget, setRedoTarget] = useState<{ id: string; title: string } | null>(null);
 
   return (
     <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined} style={s.widget}>
@@ -848,6 +857,7 @@ function ParentApprovalsWidget({
             <ApprovalRow
               key={item.id} item={item} k={k} isDark={isDark}
               onApproveChore={onApproveChore}
+              onDeclineChore={() => setRedoTarget({ id: item.id.slice(item.id.indexOf(':') + 1), title: item.title })}
               onApproveRedemption={onApproveRedemption}
               onRejectRedemption={onRejectRedemption}
               onApproveRequest={onApproveRequest}
@@ -863,6 +873,14 @@ function ParentApprovalsWidget({
           )}
         </View>
       )}
+      <RedoReasonSheet
+        target={redoTarget} k={k}
+        onClose={() => setRedoTarget(null)}
+        onSend={(reason, presetKey) => {
+          if (redoTarget) onDeclineChore(redoTarget.id, reason, presetKey);
+          setRedoTarget(null);
+        }}
+      />
     </WidgetCard>
   );
 }
@@ -872,12 +890,14 @@ const APPROVAL_KIND_ICON: Record<ApprovalItem['kind'], LucideIcon> = {
 };
 
 function ApprovalRow({
-  item, k, isDark, onApproveChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
+  item, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
 }: {
   item: ApprovalItem;
   k: KioskColors;
   isDark: boolean;
   onApproveChore: (questId: string) => void;
+  /** Opens the shared redo-reason sheet — never a direct decline. */
+  onDeclineChore: () => void;
   onApproveRedemption: (id: string) => void;
   onRejectRedemption: (id: string) => void;
   onApproveRequest: (id: string) => void;
@@ -896,9 +916,13 @@ function ApprovalRow({
     else onApproveRequest(rawId);
   };
   const decline = () => {
+    // Chore decline opens the reason sheet instead of firing immediately —
+    // never sets busy here, since the row stays interactive until the sheet
+    // itself sends or is cancelled.
+    if (item.kind === 'chore') { onDeclineChore(); return; }
     setBusy(true);
     if (item.kind === 'redemption') onRejectRedemption(rawId);
-    else if (item.kind === 'request') onDeclineRequest(rawId);
+    else onDeclineRequest(rawId);
   };
 
   return (
@@ -916,18 +940,18 @@ function ApprovalRow({
         {urgent && <Chip label="Urgent" accent={k.danger} isDark={isDark} k={k} filled />}
       </View>
       <View style={s.rideActions}>
-        {/* A chore decline needs a reason (declineQuest's real signature
-            requires one, shown to the kid as "why it came back") — a single
-            tap here can't collect that, so a chore that needs redo stays a
-            Tasks-screen action; only redemptions and requests decline inline. */}
-        {item.kind !== 'chore' && (
-          <ActionButton
-            label="Decline" Icon={X} accent={k.danger} k={k} isDark={isDark}
-            disabled={busy} style={{ flex: 1 }}
-            accessibilityHint={`Decline this ${item.kind}`}
-            onPress={decline}
-          />
-        )}
+        <ActionButton
+          // Matches the phone's own copy exactly: chores get "Redo" (they
+          // reopen the chore for the kid to fix, they aren't rejected
+          // outright the way a redemption or request is), everything else
+          // keeps "Decline".
+          label={item.kind === 'chore' ? 'Redo' : 'Decline'}
+          Icon={item.kind === 'chore' ? undefined : X}
+          accent={k.danger} k={k} isDark={isDark}
+          disabled={busy} style={{ flex: 1 }}
+          accessibilityHint={item.kind === 'chore' ? 'Send this chore back for redo' : `Decline this ${item.kind}`}
+          onPress={decline}
+        />
         <ActionButton
           label="Approve" Icon={Check} accent={k.sage} k={k} isDark={isDark}
           variant="solid" disabled={busy} style={{ flex: 1 }}
@@ -936,6 +960,56 @@ function ApprovalRow({
         />
       </View>
     </Well>
+  );
+}
+
+/**
+ * Kiosk equivalent of the phone's RedoSheet (ParentReviewDeck.tsx) — same
+ * REJECTION_PRESETS list, same "pick a preset or write your own" shape, same
+ * requestRedo(id, reviewerId, reason, presetKey) call underneath. Built on
+ * KioskFormDrawer/KioskPill rather than a hand-rolled Modal so it matches
+ * every other kiosk form sheet's chrome (scrim, keyboard-aware height,
+ * KioskModalHost idle-lock participation) instead of copying the phone's
+ * raw Modal styling verbatim.
+ */
+function RedoReasonSheet({ target, k, onClose, onSend }: {
+  target: { id: string; title: string } | null;
+  k: KioskColors;
+  onClose: () => void;
+  onSend: (reason: string, presetKey?: RejectionPresetKey) => void;
+}) {
+  const [preset, setPreset] = useState<RejectionPresetKey | null>(null);
+  const [customMsg, setCustomMsg] = useState('');
+
+  const reason = preset === 'CUSTOM' ? customMsg.trim() : REJECTION_PRESETS.find(p => p.key === preset)?.label ?? '';
+
+  const close = () => { setPreset(null); setCustomMsg(''); onClose(); };
+
+  return (
+    <KioskFormDrawer
+      visible={!!target} title="Request redo" subtitle={target?.title}
+      accent={k.danger} Icon={X} k={k} onClose={close}
+      submitLabel="Send redo" canSubmit={!!reason} onSubmit={() => { onSend(reason, preset ?? undefined); setPreset(null); setCustomMsg(''); }}
+      footerNote="The kid sees this note on their chore card."
+    >
+      <KioskFieldLabel k={k}>What needs fixing?</KioskFieldLabel>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md }}>
+        {REJECTION_PRESETS.map(p => (
+          <KioskPill
+            key={p.key} label={p.label} selected={preset === p.key}
+            onPress={() => setPreset(p.key)} accent={k.danger} k={k}
+          />
+        ))}
+      </View>
+      {preset === 'CUSTOM' && (
+        <TextInput
+          value={customMsg} onChangeText={setCustomMsg}
+          placeholder="Describe what needs to be fixed…" placeholderTextColor={k.textFaint}
+          multiline numberOfLines={3}
+          style={[kioskInputStyle(k), { minHeight: 90, textAlignVertical: 'top' }]}
+        />
+      )}
+    </KioskFormDrawer>
   );
 }
 
@@ -1186,12 +1260,33 @@ const s = StyleSheet.create({
   mealTypeEmpty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center', marginTop: 4 },
 
   // Widget deck.
+  //
+  // A real fixed grid rather than flexGrow-stretched flex-wrap. The
+  // previous flexGrow:1/flexBasis:320 combination let each row's cards
+  // stretch to fill whatever space was left in that row, so column count
+  // and column width both drifted row to row depending on which widgets
+  // happened to land together — reported as the deck looking "random"
+  // rather than matching the mockup's own aligned grid sections.
+  // flexGrow:0/flexShrink:0 here is what actually fixes it: every widget
+  // is EXACTLY one third of the deck's width regardless of its neighbors'
+  // content, so columns line up top to bottom the way a real grid would.
+  // RN's Yoga engine resolves gap before splitting the percentage basis
+  // (unlike older web flexbox engines), so '33.333%' alongside the deck's
+  // own `gap` needs no manual gap-subtraction math.
+  //
+  // Tradeoff, accepted: a short widget (e.g. Grocery) now leaves empty
+  // space below it in its own column rather than a later card flowing up
+  // into that gap — the cost of every column being a true fixed width.
   deck: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
-  widget: { flexGrow: 1, flexBasis: 320, minWidth: 0 },
-  // Senior's photo feed — a wider minimum basis than the standard widget so
-  // it reads as the deck's centerpiece (see the Family Feed comment above)
-  // rather than matching width with a single small summary card next to it.
-  widgetWide: { flexGrow: 3, flexBasis: 420, minWidth: 0 },
+  // No minWidth alongside flexShrink:0/a percentage basis — that pairing
+  // would force a fixed pixel floor per column and overflow horizontally
+  // on any kiosk device narrower than 3 columns' worth, instead of letting
+  // flexWrap reflow down to 2 or 1 columns the way it does today.
+  widget: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%' },
+  // Senior's photo feed — two grid columns wide (still grid-aligned, unlike
+  // the old flexGrow:3 ratio) so it reads as the deck's centerpiece next to
+  // the one-column SeniorTasksWidget beside it.
+  widgetWide: { flexGrow: 0, flexShrink: 0, flexBasis: '66.666%' },
 
   seniorTaskRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,

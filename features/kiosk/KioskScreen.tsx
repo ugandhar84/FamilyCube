@@ -234,7 +234,6 @@ export default function KioskScreen() {
         )}
 
         <KioskHeader
-          familyName={familyName || 'Our Family'}
           members={members}
           activeId={active.id}
           onSwitch={setActiveMember}
@@ -340,7 +339,7 @@ export default function KioskScreen() {
               rather than inside KioskOverviewTab. */}
           {isParent && (
             <ParentStatsColumn
-              active={active} members={members} activeTab={effectiveTab}
+              active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
               onMessageKids={() => setTab('chat')}
             />

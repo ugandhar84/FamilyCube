@@ -53,9 +53,8 @@ import { useKioskLockSuspended } from './KioskActivityContext';
 import { useKioskWeather } from './useKioskWeather';
 
 export function KioskHeader({
-  familyName, members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
+  members, activeId, onSwitch, isParent, onAskFam, onIntercom, onStandby, onLock,
 }: {
-  familyName: string;
   members: FamilyMember[];
   activeId: string;
   onSwitch: (id: string) => void;
@@ -120,31 +119,30 @@ export function KioskHeader({
 
   return (
     <View style={[s.root, { backgroundColor: k.card, borderBottomColor: k.cardBorder }]}>
-      {/* ── Left: status + family + time/weather, then profiles ────────── */}
+      {/* ── Left: live status + weather, then profiles ──────────────────
+          Family name removed from here — it's shown once, in
+          ParentStatsColumn's identity card, rather than repeated in every
+          header on every screen. The live dot alone still carries "this
+          display is live," its original purpose. */}
       <View style={s.left}>
         <View style={s.brandCol}>
           <View style={s.brand}>
             <View style={[s.liveDot, { backgroundColor: k.sage }]} />
-            <Text style={[s.brandText, { color: k.textFaint }]} numberOfLines={1}>
-              {familyName.toUpperCase()}
-            </Text>
-          </View>
-          {/* Compact time + real weather, right under the family name — a
-              second, smaller glance point beside the big center clock,
-              closer to where the profile switcher itself sits. Weather
-              renders only once a real reading has actually come back
-              (useKioskWeather returns null otherwise) — never a
-              placeholder, same rule the header's own comment documents. */}
-          <View style={s.switcherMeta} accessible accessibilityRole="text" accessibilityLabel={weather ? `${clock}, ${weather.temperature}${weather.unit}, ${weather.condition}` : clock}>
-            <Text style={[s.switcherMetaText, { color: k.textMuted }]} numberOfLines={1}>{clock}</Text>
+            {/* Compact real weather next to the live dot — a second,
+                smaller glance point beside the big center clock, closer to
+                where the profile switcher itself sits. Renders only once a
+                real reading has actually come back (useKioskWeather
+                returns null otherwise) — never a placeholder. Time is NOT
+                repeated here — the center clock already shows it; showing
+                it twice in one header was exactly the redundancy being
+                cleaned up. */}
             {weather && (
-              <>
-                <Text style={[s.switcherMetaDot, { color: k.textFaint }]}>·</Text>
+              <View style={s.switcherMeta} accessible accessibilityRole="text" accessibilityLabel={`${weather.temperature}${weather.unit}, ${weather.condition}`}>
                 <Text style={s.switcherMetaIcon}>{weather.icon}</Text>
                 <Text style={[s.switcherMetaText, { color: k.textMuted }]} numberOfLines={1}>
                   {weather.temperature}{weather.unit}
                 </Text>
-              </>
+              </View>
             )}
           </View>
         </View>
@@ -233,7 +231,6 @@ export function KioskHeader({
           Icon={Megaphone} label="Announcement" accent={k.primary} k={k} isDark={isDark}
           onPress={onIntercom}
           hint="Broadcast an announcement to every family phone"
-          wide
         />
         <HeaderButton
           Icon={Moon} label="Standby" accent={k.gold} k={k} isDark={isDark}

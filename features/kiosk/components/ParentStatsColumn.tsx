@@ -34,10 +34,14 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme'
 import { railForRole, type KioskTabKey } from '../kioskTabs';
 
 export function ParentStatsColumn({
-  active, members, activeTab, onNavigate, onMessageKids,
+  active, members, familyName, activeTab, onNavigate, onMessageKids,
 }: {
   active: FamilyMember;
   members: FamilyMember[];
+  /** Shown under the active member's name — replaces the header's own
+   *  family-name text (removed from there as redundant: same info, once
+   *  is enough). */
+  familyName: string;
   /** The screen's real current tab (KioskScreen.tsx's `effectiveTab`) —
    *  this column highlights whichever row actually matches, rather than
    *  assuming Overview is always the active one. */
@@ -89,7 +93,7 @@ export function ParentStatsColumn({
               <Text style={s.statsAvatarEmoji}>{active.emoji ?? '👤'}</Text>
             </View>
             <Text style={[s.statsName, { color: k.text }]} numberOfLines={1}>{active.name?.trim().split(' ')[0]}</Text>
-            <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>Household overview</Text>
+            <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>{familyName}</Text>
           </View>
         </WidgetCard>
 

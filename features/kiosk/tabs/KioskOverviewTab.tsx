@@ -577,6 +577,53 @@ export function KioskOverviewTab({
       {isParent ? (
         <View style={[s.twoColRow, isNarrowParentLayout && s.twoColRowStacked]}>
           <View style={[s.centerCol, isNarrowParentLayout && s.colFullWidth]}>
+            {/* Family Schedule — genuinely missing until now: the mockup's
+                own center-column timeline (Now-strip -> Schedule ->
+                Approvals) had no real equivalent on this screen at all.
+                Parent-only (this whole branch is), so the real per-event
+                sensitivity redaction (canViewSensitiveEventDetail) doesn't
+                apply here — a parent already gets full detail on every
+                event unconditionally, same rule KioskScheduleTab enforces
+                elsewhere on this device for other roles. All-day events
+                (no time slot) list first, timed events after in order —
+                same convention every other real calendar surface in this
+                app already uses for all-day items. */}
+            <WidgetCard k={k} isDark={isDark}>
+              <View style={[s.panelHead, { marginBottom: 4 }]}>
+                <Text style={[s.panelTitle, { color: k.textFaint }]}>FAMILY SCHEDULE</Text>
+                <Text style={[s.panelCount, { color: k.textFaint }]}>
+                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              </View>
+              {dayEvents.length === 0 ? (
+                <EmptyNote text="Nothing on the calendar today." k={k} />
+              ) : (
+                <View>
+                  {[...dayEvents]
+                    .sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? ''))
+                    .map((ev, i) => {
+                      const a = eventAssignee(ev);
+                      return (
+                        <View key={ev.id} style={[s.tlItem, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                          <Text style={[s.tlTime, { color: k.textFaint }]} numberOfLines={1}>
+                            {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
+                          </Text>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            {!!a.name && (
+                              <Text style={[s.tlWho, { color: k.textFaint }]} numberOfLines={1}>{a.name}</Text>
+                            )}
+                            <Text style={[s.tlTitle, { color: k.text }]} numberOfLines={1}>{ev.title}</Text>
+                            {!!ev.location && (
+                              <Text style={[s.tlMeta, { color: k.textMuted }]} numberOfLines={1}>{ev.location}</Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                </View>
+              )}
+            </WidgetCard>
+
             <WidgetCard k={k} isDark={isDark}>
               <WidgetHeader
                 Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
@@ -1652,6 +1699,14 @@ const s = StyleSheet.create({
     marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
   },
   jarStoreLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+
+  // Mockup's .tl-item exactly: 58px time column + flexible body, 14px gap,
+  // 13px vertical padding, hairline top border between rows.
+  tlItem: { flexDirection: 'row', gap: 14, paddingVertical: 13 },
+  tlTime: { width: 58, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  tlWho: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 1 },
+  tlTitle: { fontSize: 14, fontWeight: '700' },
+  tlMeta: { fontSize: 12, marginTop: 2 },
 
   // Mockup's .grocery-row/.grocery-check/.grocery-item exactly.
   groceryRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, minHeight: KIOSK_HIT.control },

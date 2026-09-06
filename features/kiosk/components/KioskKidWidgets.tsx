@@ -586,6 +586,30 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
  * this widget's status pill instead, since My Chores' whole point is
  * surfacing status at a glance) rather than inventing a different split.
  */
+/**
+ * This card's own text scale, deliberately separate from the shared
+ * KIOSK_TYPO tokens. Reusing KIOSK_TYPO here (body/caption/micro/label)
+ * pinned every element on this card to sizes tuned for OTHER, differently-
+ * proportioned surfaces — several rounds of live-reported "too big"/"too
+ * cramped" feedback on this exact card came from nudging between those
+ * fixed steps rather than sizing this card's own hierarchy on its own
+ * terms. Calibrated against the phone's real KidQuestCard reference
+ * screenshot: title clearly the largest thing on the card, badges a
+ * comfortable medium (not squeezed to kiosk's absolute floor), meta/
+ * timeline text small and quiet, button label readable at arm's length.
+ */
+// Live-reported: "reduce the text sized all component scales of this
+// card" — scaled the whole set down a step (title/badge/button each ~2px
+// smaller) while keeping meta at kiosk's documented text-size floor
+// (KIOSK_TYPO.micro = 12 — never go below that on a kiosk, even in a
+// locally-scaled system like this one).
+const CHORE_CARD_TYPO = {
+  title: 14,
+  badge: 11,
+  meta: 12,
+  button: 12.5,
+} as const;
+
 function ChoreCardRow({
   q, k, isDark, btn, showDecline, onDecline,
 }: {
@@ -613,7 +637,10 @@ function ChoreCardRow({
         // depending on exact pixel widths. Row 1 is the title alone, at
         // its own full width; row 2 is always coins + status together,
         // so the header reads as a fixed, predictable 2-line shape no
-        // matter how long a chore's name is.
+        // matter how long a chore's name is. Live-reported reference
+        // screenshot (the phone's own KidQuestCard) shows this exact
+        // shape — comfortably sized pills on their own row, not squeezed
+        // onto the title's row — which is what this now matches.
         <View style={s.choreCardHeader}>
           <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
           <View style={s.choreCardBadgeRow}>
@@ -636,58 +663,74 @@ function ChoreCardRow({
           </View>
         </View>
       }
-    >
-      {!!timeline && (
-        <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={2}>{timeline}</Text>
-      )}
-
-      {inReview && (
-        <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={2}>
-          Waiting on a parent to review this chore.
-        </Text>
-      )}
-
-      {btn && (
-        <View style={s.choreActions}>
-          <Pressable
-            onPress={btn.action}
-            style={({ pressed }) => [
-              s.choreBtn, s.choreBtnPrimary,
-              { backgroundColor: btn.accent, borderColor: btn.accent },
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`${btn.label}: ${q.title}`}
-            accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
-          >
-            <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
-            <Text
-              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
-              numberOfLines={1}
-            >
-              {btn.label}
-            </Text>
-          </Pressable>
-
-          {showDecline && (
-            <Pressable
-              onPress={onDecline}
-              style={({ pressed }) => [
-                s.choreBtn, s.choreBtnGhost,
-                { borderColor: k.dangerEdge, backgroundColor: k.card },
-                pressed && { opacity: 0.75 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Can't do this: ${q.title}`}
-              accessibilityHint="Give a reason and put this chore back up for grabs"
-            >
-              <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
-                Can't do this
-              </Text>
-            </Pressable>
+      // Live-reported with a screenshot of the phone's own card: the action
+      // buttons (and the claimed-date / progress line above them) are
+      // ALWAYS visible there, not hidden behind the chevron tap the way
+      // this card's CollapsibleQuestCard shell defaults to. pinnedFooter is
+      // exactly that escape hatch — rendered outside the collapsible body,
+      // so a kid sees "Mark Done → Get 10 Coins" without expanding
+      // anything. Only the timeline text (a "collapsed by default, more
+      // detail on tap" nicety) stays as real collapsible `children` below.
+      pinnedFooter={
+        <>
+          {(!!timeline || inReview) && (
+            <View style={[s.choreMetaRow, { borderTopColor: k.cardBorder }]}>
+              {!!timeline && (
+                <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={1}>{timeline}</Text>
+              )}
+              {inReview && (
+                <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={1}>
+                  Waiting on a parent to review
+                </Text>
+              )}
+            </View>
           )}
-        </View>
-      )}
+
+          {btn && (
+            <View style={s.choreActions}>
+              <Pressable
+                onPress={btn.action}
+                style={({ pressed }) => [
+                  s.choreBtn, s.choreBtnPrimary,
+                  { backgroundColor: btn.accent, borderColor: btn.accent },
+                  pressed && { opacity: 0.75 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${btn.label}: ${q.title}`}
+                accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
+              >
+                <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
+                <Text
+                  style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
+                  numberOfLines={1}
+                >
+                  {btn.label}
+                </Text>
+              </Pressable>
+
+              {showDecline && (
+                <Pressable
+                  onPress={onDecline}
+                  style={({ pressed }) => [
+                    s.choreBtn, s.choreBtnGhost,
+                    { borderColor: k.dangerEdge, backgroundColor: k.card },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Can't do this: ${q.title}`}
+                  accessibilityHint="Give a reason and put this chore back up for grabs"
+                >
+                  <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
+                    Can't do this
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+        </>
+      }
+    >
+      {null}
     </CollapsibleQuestCard>
   );
 }
@@ -727,47 +770,56 @@ const s = StyleSheet.create({
   // its own row, coins + status pill together on the row below — a fixed
   // 2-row shape regardless of title length (see ChoreCardRow's own comment
   // for why this replaced a single flex-wrapping row).
+  //
+  // Text sizes below are CHORE_CARD_TYPO, not KIOSK_TYPO — see that
+  // constant's own comment for why this card needed its own scale rather
+  // than the shared kiosk tokens.
   choreCardHeader: { gap: 6 },
   choreCardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
-  // The title is a real heading here, unlike the old caption-size row
-  // label — the card now gives its buttons a full row of their own, so the
-  // title no longer competes with a button for the same horizontal space.
-  // Shrunk from subheading — at that size, in this widget's own narrower
-  // column, the title read oversized next to the rest of the card.
-  choreTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  choreTitle: { fontSize: CHORE_CARD_TYPO.title, fontWeight: '800' },
   // Badges/pills sit on `k.card`, not on a tint of their own accent: they
   // are already inside a status-tinted card, and a tint on a tint muddies
   // both. A solid card-colored chip reads as lifted off the wash.
   coinBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
-  },
-  coinBadgeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: KIOSK_SPACE.xs + 2, paddingVertical: 3,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
     borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
   },
-  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.3 },
-  choreTimeline: { fontSize: KIOSK_TYPO.micro, fontWeight: '600' },
-  choreHelper: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  coinBadgeText: { fontSize: CHORE_CARD_TYPO.badge, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  },
+  statusPillText: { fontSize: CHORE_CARD_TYPO.badge, fontWeight: '800', letterSpacing: 0.3 },
+  // The claimed-date / progress line, ALWAYS visible above the buttons in
+  // pinnedFooter (see ChoreCardRow) — a hairline top border separates it
+  // from the header, matching the reference screenshot's own divider.
+  choreMetaRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth, paddingTop: KIOSK_SPACE.sm, marginTop: 2,
+    gap: KIOSK_SPACE.sm,
+  },
+  choreTimeline: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
+  choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700' },
   // Side-by-side, primary weighted 2:1 over the outlined decline — the same
-  // flex ratio the phone card uses for this exact pair. Shrunk from
-  // KIOSK_TYPO.label/gap.sm padding: at that size, "Mark Done → Get Paid"
-  // plus its icon read as oversized/crowded in this widget's own narrower
-  // column (this card sits in the Overview's widget deck, not the full-
-  // width Chores board the phone screenshot's card lives in), and the
-  // 16px icon was competing with an already-tight label for room.
-  choreActions: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginTop: 2 },
+  // flex ratio the phone card uses for this exact pair. Always visible now
+  // (pinnedFooter, not collapsible body) — see ChoreCardRow's own comment,
+  // matching the live-reported reference screenshot of the phone's card.
+  // Live-reported: "don't use bulky buttons" — pill-shaped (full radius)
+  // and hugging KIOSK_HIT.min (kiosk's touch floor, still the non-
+  // negotiable minimum) rather than a taller rectangular block with extra
+  // padding on top of it, so this reads as a light, friendly tap target
+  // instead of a heavy panel.
+  choreActions: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
   choreBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 4,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    height: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
   },
   choreBtnPrimary: { flex: 2 },
   choreBtnGhost: { flex: 1 },
-  choreBtnText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  choreBtnText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800', flexShrink: 1 },
 
   poolHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,

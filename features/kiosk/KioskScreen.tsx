@@ -52,6 +52,7 @@ import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { KioskAskFamDrawer } from './components/KioskAskFamDrawer';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
+import { useKioskFonts } from './kioskFonts';
 import { railForRole, type KioskTabKey } from './kioskTabs';
 import { useKioskIdleLock } from './useKioskIdleLock';
 import { KioskOverviewTab } from './tabs/KioskOverviewTab';
@@ -69,6 +70,16 @@ import { useTheme } from '@/lib/ThemeContext';
 
 export default function KioskScreen() {
   const { k, isDark } = useKioskColors();
+  // Starts Inter/Fraunces loading the moment kiosk mounts, not lazily
+  // deferred until a kid first opens a screen that needs them (the
+  // Overview's My Chores widget, currently the only consumer) — same
+  // "load once, high in the feature's own tree" call site ArcadeScreen.tsx
+  // uses for Baloo 2. The returned boolean isn't consumed here; any kiosk
+  // component that needs the fonts calls useKioskFonts() itself (cheap and
+  // idempotent once loaded, same as calling useFonts from more than one
+  // screen already does elsewhere in this app) rather than threading this
+  // one boolean through props/context for a single current consumer.
+  useKioskFonts();
   // The pre-existing tabs (Tasks/Schedule/Chat/FindFam/Store/Memories/
   // School/Health) still take the app's own `colors`/`isDark` props and are
   // migrated to the kiosk palette incrementally — see the report. Both

@@ -44,6 +44,7 @@ import { showToast } from '@/components/AppToast';
 
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
+import { useKioskFonts, KIOSK_FONT } from '../kioskFonts';
 import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline, kioskQuestMeta } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
@@ -214,6 +215,17 @@ export function KidTodayWidget({ active, k, isDark, onOpenSchedule, style }: {
 // ../kidQuestLanes when the Chores board needed the identical line inside
 // its own card body — see that file for the formatter's provenance. Nothing
 // about the string it produces changed; this file is a pure import site now.
+
+// Live-reported: "give the chore filter names too short" — the status
+// strip's counter pills wrapped to 2 uneven lines for the longer labels
+// ("In Progress", "Needs Redo") even at kiosk's smallest allowed text
+// size. COLUMN_STATUSES.label itself stays as-is (it's the Chores board's
+// OWN wording, reused deliberately rather than reinvented — see
+// kidQuestLanes.ts), so this is a display-only alias scoped to just this
+// one cramped 4-up strip.
+const STATUS_STRIP_SHORT_LABEL: Record<string, string> = {
+  todo: 'To Do', progress: 'Active', redo: 'Redo', review: 'Review',
+};
 
 export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style }: {
   active: FamilyMember;
@@ -403,9 +415,9 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
               </Text>
               <Text
                 style={[s.statusLabel, { color: on || isSelected ? accent : k.textFaint }]}
-                numberOfLines={2}
+                numberOfLines={1}
               >
-                {b.label}
+                {STATUS_STRIP_SHORT_LABEL[b.key] ?? b.label}
               </Text>
             </Pressable>
           );
@@ -619,7 +631,11 @@ const CHORE_CARD_TYPO = {
   badge: 12.5,
   statusPill: 11,
   meta: 12,
-  button: 13.5,
+  // Live-reported: "smaller button sizes" — nudged down one step from the
+  // .taskchip .t-title size (13.5) since the buttons are back to being
+  // real collapsible content now (see ChoreCardRow's children), not an
+  // always-visible pinnedFooter competing for attention with the header.
+  button: 12,
 } as const;
 
 function ChoreCardRow({
@@ -635,6 +651,18 @@ function ChoreCardRow({
   const meta = kioskQuestMeta(q, k);
   const timeline = questTimeline(q);
   const inReview = q.status === 'pending_approval';
+
+  // docs/kitchen-hub-mockup.html's own font stack for this card ("Inter
+  // handles dense schedule/chore text" — its own footer note), per
+  // element's weight in that file: .chorecard .name/.coinpill and
+  // .taskchip .t-title are 800 (extrabold); .chorecard .sub and .taskchip
+  // .t-meta are 600 (semibold). Falls back to `undefined` (the OS system
+  // font, with the numeric fontWeight the styles below still carry) until
+  // the face finishes loading — same pattern ArcadeScreen.tsx uses for
+  // Baloo 2, never a blocked/blank render while a Google Font downloads.
+  const fontsLoaded = useKioskFonts();
+  const fontExtrabold = fontsLoaded ? KIOSK_FONT.inter.extrabold : undefined;
+  const fontSemibold = fontsLoaded ? KIOSK_FONT.inter.semibold : undefined;
 
   return (
     <CollapsibleQuestCard
@@ -654,7 +682,7 @@ function ChoreCardRow({
         // shape — comfortably sized pills on their own row, not squeezed
         // onto the title's row — which is what this now matches.
         <View style={s.choreCardHeader}>
-          <Text style={[s.choreTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
+          <Text style={[s.choreTitle, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={2}>{q.title}</Text>
           <View style={s.choreCardBadgeRow}>
             {q.coins > 0 && (
               <View
@@ -662,7 +690,7 @@ function ChoreCardRow({
                 accessibilityLabel={`Worth ${q.coins} coins`}
               >
                 <Coins size={13} color={k.gold} />
-                <Text style={[s.coinBadgeText, { color: k.gold }]} numberOfLines={1}>{q.coins}</Text>
+                <Text style={[s.coinBadgeText, { color: k.gold, fontFamily: fontExtrabold }]} numberOfLines={1}>{q.coins}</Text>
               </View>
             )}
             <View
@@ -670,7 +698,7 @@ function ChoreCardRow({
               accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
             >
               <meta.Icon size={12} color={meta.accent} />
-              <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+              <Text style={[s.statusPillText, { color: meta.accent, fontFamily: fontExtrabold }]} numberOfLines={1}>{meta.label}</Text>
             </View>
           </View>
         </View>
@@ -681,19 +709,19 @@ function ChoreCardRow({
           the action buttons, rather than a pinnedFooter that showed them
           always-open. Everything below is real collapsible `children`. */}
       {!!timeline && (
-        <Text style={[s.choreTimeline, { color: k.textFaint }]} numberOfLines={2}>{timeline}</Text>
+        <Text style={[s.choreTimeline, { color: k.textFaint, fontFamily: fontSemibold }]} numberOfLines={2}>{timeline}</Text>
       )}
 
       {inReview && (
-        <Text style={[s.choreHelper, { color: k.gold }]} numberOfLines={2}>
+        <Text style={[s.choreHelper, { color: k.gold, fontFamily: fontSemibold }]} numberOfLines={2}>
           Waiting on a parent to review this chore.
         </Text>
       )}
 
       {!!q.declineReason && (
         <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
-          <Text style={[s.choreDeclineLabel, { color: k.danger }]} numberOfLines={1}>Parent's note</Text>
-          <Text style={[s.choreDeclineText, { color: k.text }]} numberOfLines={4}>{q.declineReason}</Text>
+          <Text style={[s.choreDeclineLabel, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>Parent's note</Text>
+          <Text style={[s.choreDeclineText, { color: k.text, fontFamily: fontSemibold }]} numberOfLines={4}>{q.declineReason}</Text>
         </View>
       )}
 
@@ -712,7 +740,7 @@ function ChoreCardRow({
           >
             <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
             <Text
-              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent) }]}
+              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent), fontFamily: fontExtrabold }]}
               numberOfLines={1}
             >
               {btn.label}
@@ -731,7 +759,7 @@ function ChoreCardRow({
               accessibilityLabel={`Can't do this: ${q.title}`}
               accessibilityHint="Give a reason and put this chore back up for grabs"
             >
-              <Text style={[s.choreBtnText, { color: k.danger }]} numberOfLines={1}>
+              <Text style={[s.choreBtnText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
                 Can't do this
               </Text>
             </Pressable>

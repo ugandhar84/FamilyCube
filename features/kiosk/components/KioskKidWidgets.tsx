@@ -609,10 +609,15 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
 // The mock has no separate status-pill/button rule (its chorecard is
 // read-only), so those two reuse the closest sized rule in the same file
 // (.taskchip .t-title=13.5 for the button label; .t-meta=11 for the
-// status pill, since it's peer to a badge/tag, not a headline).
+// status pill, since it's peer to a badge/tag, not a headline). Was
+// briefly folded into the same `badge` token as the coin pill (12.5) —
+// live-corrected: that's the .chorecard .coinpill size, not .taskchip
+// .t-meta, so the status pill gets its own `statusPill: 11` token instead
+// of silently reusing the coin badge's number.
 const CHORE_CARD_TYPO = {
   title: 14.5,
   badge: 12.5,
+  statusPill: 11,
   meta: 12,
   button: 13.5,
 } as const;
@@ -825,7 +830,7 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
     borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
   },
-  statusPillText: { fontSize: CHORE_CARD_TYPO.badge, fontWeight: '800', letterSpacing: 0.3 },
+  statusPillText: { fontSize: CHORE_CARD_TYPO.statusPill, fontWeight: '800', letterSpacing: 0.3 },
   // The claimed-date / progress line, ALWAYS visible above the buttons in
   // pinnedFooter (see ChoreCardRow) — a hairline top border separates it
   // from the header, matching the reference screenshot's own divider.

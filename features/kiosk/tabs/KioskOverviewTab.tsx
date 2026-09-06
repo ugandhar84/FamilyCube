@@ -109,7 +109,7 @@ import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
-import { railForRole, type KioskTabKey } from '../kioskTabs';
+import type { KioskTabKey } from '../kioskTabs';
 
 interface RadarRow {
   member_id: string;
@@ -356,18 +356,6 @@ export function KioskOverviewTab({
 
   return (
     <>
-    <View style={isParent ? s.pageRow : { flex: 1 }}>
-    {isParent && (
-      <ParentStatsColumn
-        active={active} k={k} isDark={isDark}
-        pendingChoreCount={pendingChoreReviews.length}
-        pendingRedemptionCount={pendingRedemptions.length}
-        pendingRequestCount={pendingKidRequests.length}
-        kids={kids}
-        onMessageKids={() => onNavigate('chat')}
-        onNavigate={onNavigate}
-      />
-    )}
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
       {/* ══ HERO ROW ═══════════════════════════════════════════════════ */}
       <View style={s.heroRow}>
@@ -751,7 +739,6 @@ export function KioskOverviewTab({
         onOpen={() => onNavigate('findfam')}
       />
     </ScrollView>
-    </View>
     </>
   );
 }
@@ -901,139 +888,6 @@ function RideRow({
         </Text>
       )}
     </Well>
-  );
-}
-
-// ── Parent's stats column ────────────────────────────────────────────────
-/**
- * The mockup's left rail is genuinely a THIRD content column, not just
- * navigation chrome to skip past — a stats list (pending counts per
- * approval kind, each kid's balance) and a "Message the kids" button, none
- * of which exist anywhere in the real kiosk's shared nav rail today.
- *
- * That shared rail (KioskScreen.tsx, KIOSK_RAIL_WIDTH=96) is a narrow icon+
- * label tab strip present on EVERY kiosk tab, not just Overview — widening
- * it to fit this content would change every other screen for the sake of
- * one. This is instead a NEW column, rendered only when Overview mounts for
- * a parent, sitting between that shared rail and the two-column page this
- * file already builds — matching the mockup's actual page shape (rail,
- * stats column, center column, sidebar column) without touching navigation
- * that already works correctly.
- */
-function ParentStatsColumn({
-  active, k, isDark, pendingChoreCount, pendingRedemptionCount, pendingRequestCount, kids, onMessageKids, onNavigate,
-}: {
-  active: FamilyMember;
-  k: KioskColors;
-  isDark: boolean;
-  pendingChoreCount: number;
-  pendingRedemptionCount: number;
-  pendingRequestCount: number;
-  kids: FamilyMember[];
-  onMessageKids: () => void;
-  /** Same navigate-a-tab function the screen already threads through this
-   *  component — this column now doubles as the tab list for a parent on
-   *  Overview, since KioskScreen.tsx hides its own shared nav rail exactly
-   *  when this column is on screen (see that file's own comment). */
-  onNavigate: (tab: KioskTabKey) => void;
-}) {
-  const rows: { label: string; value: number }[] = [
-    { label: 'Chores pending review', value: pendingChoreCount },
-    { label: 'Redemption requests', value: pendingRedemptionCount },
-    { label: 'Kid requests awaiting reply', value: pendingRequestCount },
-  ];
-  return (
-    <View style={s.statsCol}>
-      {/* Own ScrollView, same "scrolls independently, pinned action stays
-          put" shape as KioskScreen.tsx's shared nav rail (its Ask Fam card
-          below the tab list) — a real 3-column page has each column handle
-          its own overflow, not one shared page-level scroll for everything. */}
-      <ScrollView contentContainerStyle={s.statsColScroll} showsVerticalScrollIndicator={false}>
-        <WidgetCard k={k} isDark={isDark}>
-          <View style={s.statsIdentity}>
-            <View style={[s.statsAvatar, { backgroundColor: kioskRoleAccent(k, active.role) + (isDark ? '26' : '18') }]}>
-              <Text style={s.statsAvatarEmoji}>{active.emoji ?? '👤'}</Text>
-            </View>
-            <Text style={[s.statsName, { color: k.text }]} numberOfLines={1}>{active.name?.trim().split(' ')[0]}</Text>
-            <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>Household overview</Text>
-          </View>
-        </WidgetCard>
-
-        {/* This column's own copy of the tab list — the actual replacement
-            for KioskScreen.tsx's shared nav rail, which is hidden while
-            this column is on screen. Same railForRole/onNavigate every
-            other tab already uses, just laid out to fit here (compact
-            rows instead of the rail's own bigger vertical buttons) rather
-            than a second, separately-maintained tab list. */}
-        <WidgetCard k={k} isDark={isDark} padded={false}>
-          {/* Overview is always first in railForRole's output and is the
-              only row ever filled solid (the active tab) — clipped locally
-              so that fill can't poke past WidgetCard's own rounded corners
-              on iOS, which doesn't clip a child to a parent's borderRadius
-              without an explicit overflow:'hidden' somewhere in the chain. */}
-          <View style={{ borderRadius: KIOSK_RADIUS.sm, overflow: 'hidden' }}>
-          {railForRole(active.role).map((item, i) => {
-            const isOverview = item.key === 'overview';
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => onNavigate(item.key)}
-                disabled={isOverview}
-                style={({ pressed }) => [
-                  s.railTabRow,
-                  i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-                  isOverview
-                    ? { backgroundColor: k.primary }
-                    : { backgroundColor: pressed ? k.cardHover : 'transparent' },
-                ]}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isOverview }}
-                accessibilityLabel={item.label}
-              >
-                <item.Icon size={16} color={isOverview ? k.onPrimary : k.textMuted} />
-                <Text style={[s.railTabLabel, { color: isOverview ? k.onPrimary : k.text }]} numberOfLines={1}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-          </View>
-        </WidgetCard>
-
-        <WidgetCard k={k} isDark={isDark}>
-          <View>
-            {rows.map((row, i) => (
-              <View key={row.label} style={[s.statsRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-                <Text style={[s.statsLabel, { color: k.textMuted }]} numberOfLines={2}>{row.label}</Text>
-                <Text style={[s.statsValue, { color: k.text }]}>{row.value}</Text>
-              </View>
-            ))}
-            {kids.map(kid => {
-              const total = ((kid as any).mainCoins ?? 0) + ((kid as any).gpCoins ?? 0);
-              return (
-                <View key={kid.id} style={[s.statsRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-                  <Text style={[s.statsLabel, { color: k.textMuted }]} numberOfLines={1}>
-                    {kid.name?.trim().split(' ')[0]}'s balance
-                  </Text>
-                  <Text style={[s.statsValue, { color: k.text }]}>{total} coins</Text>
-                </View>
-              );
-            })}
-          </View>
-        </WidgetCard>
-      </ScrollView>
-
-      <Pressable
-        onPress={onMessageKids}
-        style={({ pressed }) => [s.messageKidsBtn, { backgroundColor: pressed ? k.cardHover : k.text }]}
-        accessibilityRole="button"
-        accessibilityLabel="Message the kids"
-        accessibilityHint="Open family chat"
-      >
-        <Text style={[s.messageKidsTitle, { color: k.card }]}>Message the kids</Text>
-        <Text style={[s.messageKidsSub, { color: k.card }]}>Quick note to the family chat</Text>
-      </Pressable>
-    </View>
   );
 }
 
@@ -1601,39 +1455,6 @@ const s = StyleSheet.create({
   mealTypeEmoji: { fontSize: 28, marginTop: 2 },
   mealTypeTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', textAlign: 'center', marginTop: 2 },
   mealTypeEmpty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center', marginTop: 4 },
-
-  // Parent's page row — the stats column (fixed width, matching the
-  // mockup's own rail proportions) beside the scrollable two-column content
-  // area (flex:1, everything below this takes the rest).
-  pageRow: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.md },
-  statsCol: { width: 220, gap: KIOSK_SPACE.md },
-  statsColScroll: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
-  statsIdentity: { alignItems: 'flex-start' },
-  statsAvatar: {
-    width: 44, height: 44, borderRadius: KIOSK_RADIUS.md,
-    alignItems: 'center', justifyContent: 'center', marginBottom: KIOSK_SPACE.sm,
-  },
-  statsAvatarEmoji: { fontSize: 20 },
-  statsName: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
-  statsSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-  railTabRow: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
-    minHeight: KIOSK_HIT.control,
-  },
-  railTabLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  statsRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,
-  },
-  statsLabel: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
-  statsValue: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  messageKidsBtn: {
-    borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.md,
-    minHeight: KIOSK_HIT.control,
-  },
-  messageKidsTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  messageKidsSub: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, opacity: 0.75 },
 
   // Parent's two-column page — center column (Rides, Approvals) full-width
   // of its own column, sidebar column (Coin jars, Grocery, Photo feed)

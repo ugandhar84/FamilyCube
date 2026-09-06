@@ -50,6 +50,7 @@ import { KioskAmbientOverlay, type AmbientNextUp } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { KioskAskFamDrawer } from './components/KioskAskFamDrawer';
+import { ParentStatsColumn } from './components/ParentStatsColumn';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { useKioskFonts } from './kioskFonts';
@@ -253,14 +254,17 @@ export default function KioskScreen() {
               taller than a short landscape screen; the Ask Fam card is
               pinned below it rather than scrolling away.
 
-              Hidden ONLY for a parent on Overview specifically: Overview's
-              own ParentStatsColumn (KioskOverviewTab.tsx) carries this same
-              tab list itself now, matching the reference mockup's page
-              (which has no separate persistent nav bar at all — its rail
-              IS the page's own left column). Every other tab, and every
-              other role, keeps this rail exactly as it always has — it's
-              still the only way to navigate for them. */}
-          {!(isParent && effectiveTab === 'overview') && (
+              Hidden for EVERY parent tab, not just Overview: ParentStatsColumn
+              (mounted just below, as a persistent shell) carries this same
+              tab list itself, matching the mockup's own page (no separate
+              persistent nav bar at all — its rail IS the page's own left
+              column) — and per live correction, that shell has to stay put
+              across every tab, not just disappear the moment a parent
+              navigates away from Overview (the earlier version's actual
+              bug: hiding this rail only on Overview meant every OTHER tab
+              still forced a real "leave the shell" navigation). Every
+              other role keeps this rail exactly as it always has. */}
+          {!isParent && (
           <View style={[s.rail, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
             <ScrollView
               contentContainerStyle={s.railGroup}
@@ -328,6 +332,18 @@ export default function KioskScreen() {
               <Text style={[s.askFamText, { color: k.purple }]} numberOfLines={1}>Ask Fam</Text>
             </Pressable>
           </View>
+          )}
+
+          {/* Parent's persistent shell, replacing the rail above on every
+              tab — see ParentStatsColumn.tsx's own header for why this
+              lives here (mounted once, independent of which tab is active)
+              rather than inside KioskOverviewTab. */}
+          {isParent && (
+            <ParentStatsColumn
+              active={active} members={members} activeTab={effectiveTab}
+              onNavigate={setTab}
+              onMessageKids={() => setTab('chat')}
+            />
           )}
 
           {/* ══ ACTIVE TAB ═══════════════════════════════════════════ */}

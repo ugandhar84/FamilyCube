@@ -59,6 +59,7 @@ import { localDateStr, fmtTime } from '@/lib/dates';
 import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS, collapseSeries } from '../../calendar/components/calendarDateHelpers';
 import { assigneeStyle, MultiPersonTimeFill, OverlappingAvatars } from '@/features/calendar/components/EventCard';
 import { KioskEventEditor } from '../components/KioskEventEditor';
+import { KioskEventDetailSheet } from '../components/KioskEventDetailSheet';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -115,6 +116,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
   const [editingEvent, setEditingEvent] = useState<FamilyEvent | null>(null);
+  const [viewingEvent, setViewingEvent] = useState<FamilyEvent | null>(null);
   // TWO SEPARATE CONTROLS, matching CalendarScreen.tsx exactly. A previous
   // pass collapsed the phone's two into kiosk's single row of member pills
   // (pre-selecting the kid's own pill, relabeled "Mine", as a stand-in for
@@ -224,7 +226,29 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
   // any sibling's event, anything already past — still falls through to
   // KioskEventEditor, which renders it read-only for them.
   const [kidEditEvent, setKidEditEvent] = useState<FamilyEvent | null>(null);
+  // Live-reported (Schedule-tab mobile-parity audit): a plain tap on any
+  // event card opened KioskEventEditor — the FULL edit form — directly,
+  // with no lighter detail/action layer in between. Every real mobile
+  // calendar view instead opens EventDetailSheet on tap (Confirm/Can't
+  // Make It/Remind/Take Over/Override/Acknowledge/RSVP all live there) and
+  // reserves the edit form for a separate "Edit full details" pencil
+  // inside that sheet, or a long-press elsewhere (CalendarScreen.tsx's own
+  // routeLongPress). routeEventPress now matches that split: a kid's own
+  // pending REQUEST keeps its existing special-case (KidRequestModal, the
+  // only place they get a real Withdraw); everything else opens
+  // KioskEventDetailSheet, never KioskEventEditor directly. routeLongPress
+  // is the new, separate path straight to the edit form.
   const routeEventPress = (ev: FamilyEvent) => {
+    if (isKidViewer
+      && ev.memberId === active.id
+      && ev.approvalPending
+      && !isEventPast(ev.date, ev.time)) {
+      setKidEditEvent(ev);
+      return;
+    }
+    setViewingEvent(ev);
+  };
+  const routeLongPress = (ev: FamilyEvent) => {
     if (isKidViewer
       && ev.memberId === active.id
       && ev.approvalPending
@@ -243,7 +267,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     showComposer || showManualQuest || showManualEvent || showAskParentSheet ||
     groceryModal || suppliesModal || !!askModal || questProposalModal ||
     choreProposalModal || rideRequestModal || editingEvent !== null ||
-    kidEditEvent !== null,
+    kidEditEvent !== null || viewingEvent !== null,
   );
 
   const todayStr = localDateStr(new Date());
@@ -560,18 +584,26 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
           members={members} active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress} />
+          involvedFor={involvedFor} onEventPress={routeEventPress} onLongPressEvent={routeLongPress} />
       )}
       {viewMode === 'agenda' && (
         <AgendaView
           cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr}
           colors={colors} isDark={isDark} members={members} active={active}
           onEventPress={routeEventPress}
+          onLongPressEvent={routeLongPress}
           onAdd={canCreate ? openCreator : undefined}
         />
       )}
 
       <KioskEventEditor event={editingEvent} active={active} members={members} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
+      <KioskEventDetailSheet
+        event={viewingEvent}
+        active={active}
+        members={members}
+        onClose={() => setViewingEvent(null)}
+        onEditFull={() => { setEditingEvent(viewingEvent); setViewingEvent(null); }}
+      />
 
       {/* A kid/teen's own still-pending request, in the same KidRequestModal
           edit mode CalendarScreen.tsx:1709-1713 uses — carries the
@@ -816,13 +848,21 @@ interface KioskEventCardProps {
    *  view's own hour gutter already states the hour and the card carries
    *  its own start–end line. */
   density: 'agenda' | 'day';
+  /** Long-press only — opens the full KioskEventEditor drawer. */
   onPress: () => void;
+  /** Plain tap — opens KioskEventDetailSheet (Confirm/Can't Make It/
+      Remind/Take Over/Acknowledge/RSVP), matching every real mobile
+      calendar view's own tap-to-detail behavior. Was missing entirely
+      until this split existed — a plain tap previously did nothing on
+      this card, forcing a long-press into the full edit form just to see
+      or act on a pending assignment (Schedule-tab mobile-parity audit). */
+  onOpenDetail: () => void;
   claimNote?: string;
   onClaim?: () => void;
 }
 
 function KioskEventCard({
-  ev, members, active, colors, isDark, k, density, onPress, claimNote, onClaim,
+  ev, members, active, colors, isDark, k, density, onPress, onOpenDetail, claimNote, onClaim,
 }: KioskEventCardProps) {
   const updateEvent = useEventStore(st => st.updateEvent);
 
@@ -880,10 +920,18 @@ function KioskEventCard({
       // space used to open the full editor immediately, which made the
       // card's OWN inner tappable elements (the assign-picker avatars, the
       // claim button, check-off) too easy to miss past by fat-fingering
-      // the surrounding card instead. Long-press only for the editor; the
-      // inner Pressables (their own onPress handlers, unchanged) still
-      // fire on a plain tap since they're nested inside this one and stop
-      // their own touch from bubbling up to this outer long-press.
+      // the surrounding card instead. That first fix made a plain tap do
+      // NOTHING, which the Schedule-tab mobile-parity audit then flagged
+      // as its own gap — every real mobile view opens EventDetailSheet on
+      // a plain tap (Confirm/Can't Make It/Remind/Take Over live there),
+      // reserving the full edit form for a long-press or an explicit
+      // pencil inside that sheet. onPress now opens the lighter detail
+      // sheet; onLongPress still reaches the full editor. The card's own
+      // inner Pressables (assign-picker avatars, claim button, check-off)
+      // still fire their own onPress on a plain tap first, same as before
+      // — RN's responder system means a nested Pressable's touch never
+      // also reaches this outer one.
+      onPress={onOpenDetail}
       onLongPress={onPress}
       style={({ pressed }) => [
         s.card,
@@ -1220,7 +1268,7 @@ function KioskEventCard({
  *    rather than a kiosk-local reimplementation of the rule.
  */
 function AgendaView({
-  cursor, eventsByDate, todayStr, colors, isDark, members, active, onEventPress, onAdd,
+  cursor, eventsByDate, todayStr, colors, isDark, members, active, onEventPress, onLongPressEvent, onAdd,
 }: {
   cursor: Date;
   eventsByDate: Record<string, FamilyEvent[]>;
@@ -1228,7 +1276,10 @@ function AgendaView({
   colors: any; isDark: boolean;
   members: FamilyMember[];
   active: FamilyMember;
+  /** Plain tap — opens KioskEventDetailSheet. */
   onEventPress: (ev: FamilyEvent) => void;
+  /** Long-press — opens the full KioskEventEditor drawer. */
+  onLongPressEvent: (ev: FamilyEvent) => void;
   onAdd?: () => void;
 }) {
   const { k } = useKioskColors();
@@ -1356,7 +1407,8 @@ function AgendaView({
                   colors={colors} isDark={isDark}
                   k={k}
                   density="agenda"
-                  onPress={() => onEventPress(ev)}
+                  onPress={() => onLongPressEvent(ev)}
+                  onOpenDetail={() => onEventPress(ev)}
                   claimNote={claimNote[ev.id]}
                   // The mockup's "Claim Ride" — wired to the real race-safe
                   // claim, and only offered when there is genuinely an open
@@ -1605,11 +1657,14 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, invo
 const DAY_START_HOUR = 6;
 const DAY_END_HOUR = 22;
 
-function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress }: {
+function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress, onLongPressEvent }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
   members: FamilyMember[]; active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
+  /** Plain tap — opens KioskEventDetailSheet. */
   onEventPress: (ev: FamilyEvent) => void;
+  /** Long-press — opens the full KioskEventEditor drawer. */
+  onLongPressEvent: (ev: FamilyEvent) => void;
 }) {
   const { k } = useKioskColors();
   const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
@@ -1693,7 +1748,8 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
                     colors={colors} isDark={isDark}
                     k={k}
                     density="day"
-                    onPress={() => onEventPress(ev)}
+                    onPress={() => onLongPressEvent(ev)}
+                    onOpenDetail={() => onEventPress(ev)}
                     claimNote={claimNote[ev.id]}
                     onClaim={needsDriver && canClaim ? () => {
                       claimHelperSlot(

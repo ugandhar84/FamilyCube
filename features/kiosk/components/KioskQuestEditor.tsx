@@ -58,8 +58,8 @@ import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverla
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import { ALL_CATEGORIES, CATEGORY_META } from '@/features/quests/components/questFormShared';
 import {
-  resolveDomainFromLooseLabel, previewAssignment, previewKidChoreAssignment,
-  type AssignmentSuggestion,
+  resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
+  type AssignmentSuggestion, type ResponsibilityCategory,
 } from '@/lib/responsibilityCategories';
 import { fmtDate, fmtTime, localDateStr } from '@/lib/dates';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
@@ -125,6 +125,22 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
   // parent actually saves changes via the real Assign To picker below.
   const [assignmentSuggestion, setAssignmentSuggestion] = useState<AssignmentSuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  // Optional subcategory refinement — real EditQuestModal.tsx field
+  // [fresh-audit gap], absent from kiosk entirely before this. Lets the
+  // Responsibility Engine preview target a specific subcategory
+  // (e.g. "Doctor visit" within Medical) instead of only the coarse
+  // top-level category. Verbatim EditQuestModal.tsx lines 128-138 —
+  // refetches and resets to null every time `category` changes, same
+  // real reasoning: a subcategory pick from the PREVIOUS category would
+  // be meaningless once the category itself changed.
+  const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
+  const [subcategoryOptions, setSubcategoryOptions] = useState<ResponsibilityCategory[]>([]);
+  useEffect(() => {
+    setSubcategoryId(null);
+    setAssignmentSuggestion(null);
+    const domain = resolveDomainFromLooseLabel(category);
+    fetchSubcategoriesForDomain(domain).then(setSubcategoryOptions);
+  }, [category]);
 
   useEffect(() => {
     if (quest) {
@@ -374,6 +390,25 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
         </View>
       </View>
 
+      {/* Optional subcategory refinement — real EditQuestModal.tsx field
+          [fresh-audit gap]. Purely a Responsibility Engine input; doesn't
+          change the chore's own stored category. */}
+      {subcategoryOptions.length > 0 && (
+        <View style={s.section}>
+          <KioskFieldLabel k={k}>SPECIFICALLY… (OPTIONAL)</KioskFieldLabel>
+          <View style={s.pillWrap}>
+            {subcategoryOptions.map(sc => (
+              <KioskPill
+                key={sc.id} label={sc.subcategoryLabel}
+                selected={subcategoryId === sc.id}
+                onPress={() => setSubcategoryId(subcategoryId === sc.id ? null : sc.id)}
+                accent={k.purple} k={k}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Responsibility Engine — "who would this go to" preview. Real
           server-side scoring (process-task-assignment / process-kid-
           chore-assignment, same dryRun RPCs the phone calls), not local
@@ -391,7 +426,7 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
               setAssignmentSuggestion(null);
               const familyId = active.familyId!;
               const result = isAdultTask
-                ? await previewAssignment({ taskId: quest.id, taskType: 'chore', familyId, category: resolveDomainFromLooseLabel(category) })
+                ? await previewAssignment({ taskId: quest.id, taskType: 'chore', familyId, category: subcategoryId ?? resolveDomainFromLooseLabel(category) })
                 : await previewKidChoreAssignment({ choreId: quest.id, familyId });
               setAssignmentSuggestion(result);
               setLoadingSuggestion(false);

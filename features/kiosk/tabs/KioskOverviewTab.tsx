@@ -111,6 +111,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -138,6 +139,8 @@ import { OutgoingPendingCard } from '@/features/hub/parent/backlog/OutgoingPendi
 import { LockedAssignmentCard } from '@/features/hub/parent/backlog/LockedAssignmentCard';
 import { YourRidesSection } from '@/features/hub/senior/YourRidesSection';
 import { SectionCard, CollapsibleCard } from '@/features/hub/hubComponents';
+import { KidRideBanner } from '@/features/hub/kid/KidRideBanner';
+import { useCountdown } from '@/features/hub/hubUtils';
 
 interface RadarRow {
   member_id: string;
@@ -624,6 +627,47 @@ export function KioskOverviewTab({
   }, [seniorDedupSeriesPending, seniorDedupSeriesDriving, seniorDedupSeriesClaimed]);
   const [seniorDeclineId, setSeniorDeclineId] = useState<string | null>(null);
   const [seniorDeclineText, setSeniorDeclineText] = useState('');
+
+  // ── KidRideBanner (Teen + Senior — genuinely shared, identical real
+  // derivation on both TeenView.tsx and SeniorView.tsx) ─────────────────
+  // "This viewer as RIDER, being picked up" — scoped to memberId/memberIds
+  // so it never collides with a teen/senior's own DRIVING assignments
+  // above (matched on driver name instead). Verbatim from both real files'
+  // own confirmedRide/rideCountdown/dismissedRideIds/confirmPickup blocks —
+  // identical on both, confirmed via direct read of each.
+  const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isTeen && !isSenior) return;
+    AsyncStorage.getItem(`dismissed_rides_${active.id}`).then(val => {
+      if (val) setDismissedRideIds(new Set(JSON.parse(val)));
+    });
+  }, [active.id, isTeen, isSenior]);
+  useEffect(() => {
+    if (!isTeen && !isSenior) return;
+    AsyncStorage.setItem(`dismissed_rides_${active.id}`, JSON.stringify([...dismissedRideIds]));
+  }, [dismissedRideIds, active.id, isTeen, isSenior]);
+  const confirmedRide = useMemo(() => {
+    if (!isTeen && !isSenior) return undefined;
+    return backlogWindowEvents.find(e => {
+      if (e.date < localDateStr()) return false;
+      if (!(e.memberId === active.id || e.memberIds?.includes(active.id))) return false;
+      const a = eventAssignee(e);
+      return a.name && a.status === 'confirmed';
+    });
+  }, [backlogWindowEvents, active.id, isTeen, isSenior]);
+  const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+  const confirmPickup = (ev: FamilyEvent) => {
+    if (ev.pickupConfirmedAt) return;
+    updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id });
+    useChatStore.getState().sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
+  };
+  // Real signal from tripViews (already built for AlertBanner above) — a
+  // genuinely dispatched driver reads as "on the way," not "overdue,"
+  // even if the clock alone would say the scheduled time passed.
+  const rideBannerDriverDispatched = confirmedRide
+    ? [primaryTripView, ...otherTripViews].some(t => t && t.driverMemberId === eventAssignee(confirmedRide).id)
+    : false;
+  const rideBannerConflictReason = confirmedRide ? conflictReasons.get(confirmedRide.id) : undefined;
 
   // ── Household Backlog (parent-only) ──────────────────────────────────
   // Real ParentView.tsx's own derivation (its lines ~475-589), reproduced
@@ -1805,6 +1849,26 @@ export function KioskOverviewTab({
             )}
           </View>
 
+          {/* Ride banner — "you are being picked up" (this senior as rider,
+              not driver — see the shared confirmedRide derivation above,
+              also used by Teen below). Real component genuinely shared
+              between TeenView.tsx and SeniorView.tsx (confirmed via its
+              own header comment: "SeniorView (the only real consumer of
+              this banner besides TeenView)"). onSendDriverLate/
+              lateNudgeSent deliberately omitted, matching real
+              SeniorView.tsx/TeenView.tsx (neither passes them — that
+              button is Kid-only on the real phone). */}
+          {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+            <KidRideBanner
+              ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={phoneDark}
+              active={active} members={members}
+              onConfirmPickup={confirmPickup}
+              onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+              driverDispatched={rideBannerDriverDispatched}
+              conflictReason={rideBannerConflictReason}
+            />
+          )}
+
           {/* Caregiver-mode chore review — real SeniorView.tsx gates this
               behind an active temporary-approver grant (a parent can hand a
               grandparent approve/decline authority for a window of time,
@@ -1981,6 +2045,22 @@ export function KioskOverviewTab({
               />
             </View>
           </WidgetCard>
+        </View>
+      )}
+
+      {/* ── Teen-only real Hub sections ────────────────────────────────────
+          Real TeenView.tsx section kiosk had zero equivalent of before this
+          — same reuse pattern as the Senior block above. */}
+      {isTeen && confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+        <View style={{ marginTop: KIOSK_SPACE.md }}>
+          <KidRideBanner
+            ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={phoneDark}
+            active={active} members={members}
+            onConfirmPickup={confirmPickup}
+            onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+            driverDispatched={rideBannerDriverDispatched}
+            conflictReason={rideBannerConflictReason}
+          />
         </View>
       )}
       </>

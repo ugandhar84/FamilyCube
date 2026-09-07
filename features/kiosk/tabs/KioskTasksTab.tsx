@@ -38,10 +38,10 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
-  CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion,
+  CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion, Pencil,
 } from 'lucide-react-native';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
@@ -228,6 +228,12 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const declineGPOffer = useChoreStore(s => s.declineGPOffer);
   const gpOffersPending = useMemo(() => chores.filter(c => c.status === 'gp_offer_pending'), [chores]);
   const [redoTargetBoard, setRedoTargetBoard] = useState<{ id: string; title: string } | null>(null);
+  // Photo-proof viewer [GAP — audit A13] — read-only tap-to-enlarge for an
+  // already-submitted proof photo. No camera needed (kiosk's own real
+  // camera-capture punt for SUBMITTING a photo stays as-is — this is only
+  // about VIEWING one someone already submitted), same real full-screen
+  // Modal shape SubmitQuestSheet.tsx's own proofPhotoViewerUri uses.
+  const [proofPhotoViewerUri, setProofPhotoViewerUri] = useState<string | null>(null);
   const isParent = active.role === 'parent';
   const isKidCreator = active.role === 'kid';
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
@@ -749,6 +755,16 @@ function KioskBoardView({ active, members, colors, isDark }: {
           </Text>
         )}
 
+        {/* ── Edited-by notice [GAP — audit A12] ─────────────────────── */}
+        {!!q.lastModifiedById && (
+          <View style={s.editedByRow}>
+            <Pencil size={10} color={k.textFaint} />
+            <Text style={[s.editedByText, { color: k.textFaint }]} numberOfLines={1}>
+              edited by {memberOf(q.lastModifiedById)?.name ?? 'parent'}
+            </Text>
+          </View>
+        )}
+
         <View style={s.cardMeta}>
           <View style={[s.assigneeChip, { backgroundColor: q.isPool ? k.well : rs.badge, borderColor: q.isPool ? k.cardBorder : rs.dot + '55' }]}>
             {!q.isPool && <Text style={{ fontSize: 14 }}>{assignee?.emoji ?? '👤'}</Text>}
@@ -788,6 +804,27 @@ function KioskBoardView({ active, members, colors, isDark }: {
               ? 'Waiting on a grandparent to review this chore.'
               : 'Waiting on a parent to review this chore.'}
           </Text>
+        )}
+
+        {/* ── Photo-proof thumbnail [GAP — audit A13] ─────────────────
+            Read-only tap-to-enlarge for a photo the kid already
+            submitted — a parent reviewing on kiosk had no way to see it
+            before tapping Approve. Submitting a NEW photo still stays a
+            phone-only action (no camera flow on kiosk) — this is purely
+            about viewing one that already exists. */}
+        {!!q.photoUrl && (
+          <Pressable onPress={() => setProofPhotoViewerUri(q.photoUrl!)} style={s.photoThumbWrap} accessibilityRole="imagebutton" accessibilityLabel={`View submitted photo for ${q.title}`}>
+            <Image source={{ uri: q.photoUrl }} style={s.photoThumb} resizeMode="cover" />
+            <View style={s.photoThumbTag}>
+              <Text style={s.photoThumbTagText}>Tap to enlarge</Text>
+            </View>
+          </Pressable>
+        )}
+        {q.photoRequired && !q.photoUrl && q.status !== 'todo' && (
+          <View style={[s.photoMissingBox, { backgroundColor: k.goldSoft }]}>
+            <Camera size={22} color={k.gold} />
+            <Text style={[s.photoMissingText, { color: k.gold }]}>Photo proof missing</Text>
+          </View>
         )}
 
         {/* ── Reward pending review [GAP] (phone:169-173) ───────────────
@@ -1746,6 +1783,26 @@ function KioskBoardView({ active, members, colors, isDark }: {
         }}
       />
 
+      {/* Full-screen photo-proof viewer [GAP — audit A13] — same real
+          near-black-scrim, tap-anywhere-to-close shape
+          SubmitQuestSheet.tsx's own proofPhotoViewerUri Modal uses. */}
+      <Modal
+        visible={!!proofPhotoViewerUri}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setProofPhotoViewerUri(null)}
+      >
+        <Pressable style={s.photoViewerScrim} onPress={() => setProofPhotoViewerUri(null)} accessibilityRole="button" accessibilityLabel="Close photo">
+          {!!proofPhotoViewerUri && (
+            <Image source={{ uri: proofPhotoViewerUri }} style={s.photoViewerImage} resizeMode="contain" />
+          )}
+          <View style={s.photoViewerCloseTag}>
+            <Text style={s.photoViewerCloseText}>Close ✕</Text>
+          </View>
+        </Pressable>
+      </Modal>
+
       {isParent && (
         <KioskQuestEditor
           quest={editingQuest}
@@ -2286,6 +2343,18 @@ const s = StyleSheet.create({
   cashOutTotal: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900' },
   cashOutBreakdown: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs },
   cashOutLine: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  editedByRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  editedByText: { fontSize: KIOSK_TYPO.micro, fontWeight: '600' },
+  photoThumbWrap: { borderRadius: KIOSK_RADIUS.sm, overflow: 'hidden' },
+  photoThumb: { width: '100%', height: 160 },
+  photoThumbTag: { position: 'absolute', bottom: 8, right: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: KIOSK_RADIUS.sm, backgroundColor: 'rgba(0,0,0,0.6)' },
+  photoThumbTagText: { fontSize: KIOSK_TYPO.micro, color: '#fff', fontWeight: '700' },
+  photoMissingBox: { minHeight: 80, alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm },
+  photoMissingText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  photoViewerScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center', alignItems: 'center' },
+  photoViewerImage: { width: '100%', height: '100%' },
+  photoViewerCloseTag: { position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: KIOSK_RADIUS.full, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs },
+  photoViewerCloseText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', color: '#fff' },
   gpBtn: { flex: 2 },
   gpBtnRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignSelf: 'stretch' },
   gpBtnSecondary: { flex: 1 },

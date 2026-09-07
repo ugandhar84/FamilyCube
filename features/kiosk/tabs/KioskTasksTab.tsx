@@ -2317,6 +2317,10 @@ const s = StyleSheet.create({
   // blocks at a glance rather than one uniform field of cards.
   // Each zone is a WidgetCard now, so the gap between them is a plain
   // margin rather than the old bare-View rhythm.
+  // Deliberately NO borderRadius override — WidgetCard's own shared
+  // default (KIOSK_RADIUS.sm) is what Overview uses everywhere too (that
+  // file never overrides it either); matching Overview's real radius
+  // means leaving this alone, not adopting a rounder one-off shape.
   zone: { marginBottom: KIOSK_SPACE.md },
 
   // ── Two-column layout, matching KioskOverviewTab.tsx's own real

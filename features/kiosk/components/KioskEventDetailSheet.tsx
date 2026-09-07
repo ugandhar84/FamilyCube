@@ -63,6 +63,14 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
   const { k } = useKioskColors();
   const [changeOpen, setChangeOpen] = useState(false);
   const [cancelledSelfName, setCancelledSelfName] = useState<string | undefined>(undefined);
+  // Live-crashed: "Rendered more hooks than during the previous render" —
+  // this hook used to sit AFTER the `if (!event) return null` early return
+  // below, so it was skipped entirely on a null-event render and then
+  // suddenly present the next time an event was passed in, violating
+  // Rules of Hooks. Every hook in this component must run unconditionally
+  // on every render regardless of `event`, same as the two useState calls
+  // right above already correctly do.
+  const updateEvent = useEventStore(s => s.updateEvent);
 
   if (!event) return null;
   const ev = event;
@@ -112,8 +120,6 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
   const hadPriorHelper = !!assignee.name;
   const borderCol = showAlarm ? k.dangerEdge : isPending ? k.goldEdge : isRejected ? k.cardBorder : k.sageEdge;
   const bgCol = showAlarm ? k.dangerSoft : isPending ? k.goldSoft : k.well;
-
-  const updateEvent = useEventStore(s => s.updateEvent);
 
   return (
     <KioskFormDrawer

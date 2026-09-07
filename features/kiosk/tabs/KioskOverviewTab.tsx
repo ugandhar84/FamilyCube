@@ -95,7 +95,10 @@ import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirme
 import { classifyEventUrgency } from '@/features/hub/lib/classifyEventUrgency';
 import { dedupeRideSeries } from '@/features/hub/lib/dedupeRideSeries';
 import { useQuestStore } from '@/store/choreAdapter';
-import { REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
+import { useChoreStore, REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
+import { HouseholdBacklogSection } from '@/features/hub/parent/HouseholdBacklogSection';
+import { PushbackSheet } from '@/features/hub/parent/PushbackSheet';
+import { DelegateSheet } from '@/features/hub/parent/DelegateSheet';
 import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
@@ -260,7 +263,14 @@ export function KioskOverviewTab({
   const confirmEventAssignment = useEventStore(s => s.confirmEventAssignment);
   const declineEventAssignment = useEventStore(s => s.declineEventAssignment);
   const reassignEvent = useEventStore(s => s.reassignEvent);
-  const { quests, approveQuest, declineQuest } = useQuestStore();
+  // updateEvent/updateEventScoped — real ParentView.tsx wires the exact same
+  // pair (destructured off useEventStore()) straight into
+  // HouseholdBacklogSection for its HelperEventCard mounts (myHelperEvents/
+  // coParentHelperEvents). Read here via the same per-selector style every
+  // other eventStore action on this screen already uses.
+  const updateEvent = useEventStore(s => s.updateEvent);
+  const updateEventScoped = useEventStore(s => s.updateEventScoped);
+  const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const buyGroceryItem = useGroceryStore(s => s.buyItem);
   // Real phone behavior (features/grocery/GroceryScreen.tsx filters
@@ -347,6 +357,106 @@ export function KioskOverviewTab({
   );
   const [myRides] = dedupeRideSeries(myRidesRaw);
   const [coParentRides] = dedupeRideSeries(coParentRidesRaw);
+
+  // ── Household Backlog (parent-only) ──────────────────────────────────
+  // Real ParentView.tsx's own derivation (its lines ~475-589), reproduced
+  // here exactly rather than re-invented — same real useChoreStore
+  // selectors, same filter chain, same "System A vs System B" ownership
+  // rules described in that file's own comments (read in full before this
+  // was written). HouseholdBacklogSection itself is the same real,
+  // exported, self-contained component ParentView.tsx mounts — imported
+  // and mounted directly below rather than reimplemented, matching this
+  // session's established reuse pattern (GpOfferReviewCard, HelperEventCard,
+  // AiEngineBanner, SmartTaskComposer, AddQuestModal all did the same).
+  //
+  // myHelperEvents/coParentHelperEvents deliberately reuse the SAME
+  // myPending/coParentPending buckets the Pickup radar widget above already
+  // computed via classifyEventUrgency/usePendingUnconfirmedEvents — not a
+  // second independent derivation — exactly like ParentView.tsx, which
+  // computes classifyEventUrgency ONCE and feeds both its own Pickup-radar-
+  // equivalent section and HouseholdBacklogSection from the same
+  // myPending/coParentPending. dedupeRideSeries is applied a SECOND time
+  // here (myPending/coParentPending are the pre-dedupe raw lists) — the
+  // same reasoning ParentView.tsx's own comment gives: myRides/coParentRides
+  // above already deduped myRidesRaw/coParentRidesRaw for the radar widget,
+  // but Backlog needs its own dedupe of the underlying myPending/
+  // coParentPending pair, since a shared dedupeRideSeries call's seenSeries
+  // set is not reusable across two structurally-identical-looking but
+  // independently-partitioned lists.
+  const {
+    parentAssignments, addParentQuest,
+    getParentQuestPool, getActiveAssignmentChoreIds,
+    getMyDirectPending, getMyLockedItems, getMyOutgoingPending,
+    completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing,
+  } = useChoreStore();
+
+  const chorePool = useMemo(() => getParentQuestPool(), [getParentQuestPool, quests]);
+  const activeAssignmentChoreIds = useMemo(() => getActiveAssignmentChoreIds(), [getActiveAssignmentChoreIds, parentAssignments]);
+  const adultMemberIds = useMemo(
+    () => new Set(members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id)),
+    [members],
+  );
+  const doneStatuses = useMemo(() => new Set(['done', 'approved', 'archived', 'cancelled', 'completed']), []);
+  const adultQuests = useMemo(() => quests.filter(q => {
+    if (doneStatuses.has(q.status)) return false;
+    if (q.isAdultTask) return true;
+    if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;
+    return false;
+  }), [quests, doneStatuses, adultMemberIds]);
+  const adultQuestsNoLiveAssignment = useMemo(
+    () => adultQuests.filter(q => !activeAssignmentChoreIds.has(q.id)),
+    [adultQuests, activeAssignmentChoreIds],
+  );
+  const myAdultQuests = useMemo(
+    () => adultQuestsNoLiveAssignment.filter(q => q.assignedToId === active.id),
+    [adultQuestsNoLiveAssignment, active.id],
+  );
+  const othersAdultQuests = useMemo(
+    () => adultQuestsNoLiveAssignment.filter(q => q.assignedToId && q.assignedToId !== active.id),
+    [adultQuestsNoLiveAssignment, active.id],
+  );
+  const unassignedAdultQ = useMemo(
+    () => adultQuestsNoLiveAssignment.filter(q => !q.assignedToId && (q as any).isPool !== false),
+    [adultQuestsNoLiveAssignment],
+  );
+  const choreIdsSet = useMemo(() => new Set(chorePool.map(c => c.id)), [chorePool]);
+  const questPool = useMemo(() => [
+    ...chorePool.filter(c => !activeAssignmentChoreIds.has(c.id)),
+    ...unassignedAdultQ.filter(q => !choreIdsSet.has(q.id) && !activeAssignmentChoreIds.has(q.id)).map(q => ({
+      id: q.id, title: q.title, description: q.description, dueDate: q.dueDate,
+      categoryType: 'parent_only_quest' as const, category: q.category,
+      basePoints: q.coins, coinsReward: q.coins, xpReward: 0, status: 'todo' as const,
+      assignedToId: undefined, isPrivateParent: true, requiresPhotoProof: false,
+      redoCount: 0, recurrenceRule: { frequency: 'once' as const },
+      createdAt: (q as any).createdAt ?? new Date().toISOString(), _isQuestRow: true,
+      shoppingItems: (q as any).shoppingItems, shoppingStore: (q as any).shoppingStore, shoppingBudget: (q as any).shoppingBudget,
+    })),
+  ], [chorePool, activeAssignmentChoreIds, unassignedAdultQ, choreIdsSet]);
+  const systemBIds = useMemo(
+    () => new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id)),
+    [myAdultQuests, othersAdultQuests],
+  );
+  const myDirectPending = useMemo(() => getMyDirectPending(active.id), [getMyDirectPending, active.id, parentAssignments]);
+  const myLockedItems = useMemo(() => getMyLockedItems(active.id), [getMyLockedItems, active.id, parentAssignments]);
+  const myOutgoingPending = useMemo(() => getMyOutgoingPending(active.id), [getMyOutgoingPending, active.id, parentAssignments]);
+  const [myHelperEvents] = dedupeRideSeries(myRidesRaw);
+  const [coParentHelperEvents] = dedupeRideSeries(coParentRidesRaw);
+
+  // Delegate/Pushback sheets — same open/close-state-plus-onClose pattern
+  // this file already uses for KioskEventEditor/KioskRunDetailSheet (see
+  // viewingEvent/viewingRun above), not a new convention.
+  const [delegateTarget, setDelegateTarget] = useState<{ choreId: string; choreTitle: string } | null>(null);
+  const [pushbackTarget, setPushbackTarget] = useState<{
+    assignmentId: string; choreTitle: string; assignedBy?: string; assignedTo?: string;
+  } | null>(null);
+  // handlePullTask — real ParentView.tsx's own version is a one-line wrapper
+  // around the real addParentQuest store action (`(chore) =>
+  // addParentQuest(chore.id, active.id, active.id, 'PULL')`), not a
+  // separate store action of its own — reproduced verbatim rather than
+  // imported, since it isn't exported from anywhere.
+  const handlePullTask = (chore: import('@/store/choreStore').ChoreTask) => {
+    addParentQuest(chore.id, active.id, active.id, 'PULL');
+  };
 
   // ── Kids' coin jars (real balances) ──────────────────────────────────
   const kids = useMemo(
@@ -587,7 +697,24 @@ export function KioskOverviewTab({
           )}
         </WidgetCard>
       </View>
+      </>
+      )}
 
+      {/* KioskRecipeDrawer/KioskRunDetailSheet/KioskEventEditor — hoisted
+          out of the `!isParent` fragment above (a real pre-existing bug
+          found while wiring PushbackSheet/DelegateSheet below, fixed here
+          since it directly blocks this same "tap a ride row to see detail"
+          path for a parent): all three were mounted ONLY inside
+          `{!isParent && (...)}`, so for a parent viewer that whole fragment
+          never rendered and none of the three ever mounted — yet the
+          Pickup radar widget's own RideRow (isParent-only, deep in the
+          parent branch below) calls `onOpenDetail={setViewingEvent}`. A
+          parent tapping a ride row set viewingEvent with nothing mounted
+          to render it. Hoisted here (still above both the kid/other-role
+          hero and the parent's own two-column page) so all three sheets
+          are always mounted regardless of role, matching how their own
+          trigger state (openMeal/viewingRun/viewingEvent) is genuinely
+          role-agnostic top-level useState. */}
       <KioskRecipeDrawer
         visible={!!openMeal}
         onClose={() => setOpenMeal(null)}
@@ -612,8 +739,31 @@ export function KioskOverviewTab({
         colors={colors}
         isDark={phoneDark}
       />
-      </>
-      )}
+
+      {/* PushbackSheet/DelegateSheet — the real, exported, standalone sheet
+          components HouseholdBacklogSection's own onRespond/onDelegate
+          callbacks open (see the HouseholdBacklogSection mount below), same
+          real props ParentView.tsx passes. Mounted unconditionally
+          alongside the three sheets just above for the identical reason:
+          delegateTarget/pushbackTarget are only ever set from the isParent
+          branch below, but the sheet itself needs to be mounted regardless
+          of which JSX branch set the trigger state — the same fix just
+          applied to KioskEventEditor et al. */}
+      <PushbackSheet
+        target={pushbackTarget}
+        colors={colors} isDark={phoneDark}
+        onClose={() => setPushbackTarget(null)}
+        respondToParentQuest={respondToParentQuest}
+      />
+
+      <DelegateSheet
+        target={delegateTarget}
+        questPool={questPool}
+        members={members} active={active} colors={colors} isDark={phoneDark}
+        onClose={() => setDelegateTarget(null)}
+        updateQuest={updateQuest}
+        addParentQuest={addParentQuest}
+      />
 
       {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
           The kid's own actions, as one labeled full-width card directly
@@ -758,6 +908,49 @@ export function KioskOverviewTab({
                 ParentApprovalsWidget above it; renders nothing when there's
                 no recently-approved chore to show (matches the phone). */}
             <KioskDisputeApprovalWidget active={active} members={members} k={k} isDark={isDark} />
+
+            {/* Household Backlog — real ParentView.tsx section kiosk was
+                missing almost entirely (only its "Rides needing attention"
+                sub-piece existed here, via the Pickup radar widget above).
+                HouseholdBacklogSection is the same real, exported,
+                self-contained component the phone mounts — imported
+                directly rather than reimplemented, with every prop backed
+                by a real useChoreStore/useEventStore selector or action
+                (see the derivation block above active/pendingUnconfirmed).
+
+                Wrapped in an unpadded WidgetCard: HouseholdBacklogSection's
+                own root View already carries `paddingHorizontal: 16` (sized
+                for the phone's own screen-edge gutter) plus SectionCard's
+                bare icon+title header (no border/background of its own) —
+                a padded WidgetCard would double that horizontal inset
+                asymmetrically against WidgetCard's own uniform padding, and
+                an unwrapped mount would have no border/card background at
+                all, visually inconsistent with every sibling widget in this
+                column. padded={false} + a manual vertical pad here is the
+                same fix FamilyFeedStrip already uses below for the same
+                reason (its own PanelHead/content manage horizontal padding
+                internally, this WidgetCard only needs to add the vertical
+                breathing room a padded card would otherwise provide). */}
+            <WidgetCard k={k} isDark={isDark} padded={false}>
+              <View style={{ paddingVertical: KIOSK_SPACE.sm }}>
+                <HouseholdBacklogSection
+                  active={active} members={members} colors={colors} isDark={phoneDark}
+                  questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
+                  myDirectPending={myDirectPending} myLockedItems={myLockedItems}
+                  myOutgoingPending={myOutgoingPending}
+                  myHelperEvents={myHelperEvents} coParentHelperEvents={coParentHelperEvents}
+                  systemBIds={systemBIds} parentAssignments={parentAssignments}
+                  updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
+                  completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
+                  cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}
+                  appreciationPing={appreciationPing} handlePullTask={handlePullTask}
+                  onAddTask={() => onNavigate('tasks')}
+                  onDelegate={(choreId, choreTitle) => setDelegateTarget({ choreId, choreTitle })}
+                  onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) =>
+                    setPushbackTarget({ assignmentId, choreTitle, assignedBy, assignedTo })}
+                />
+              </View>
+            </WidgetCard>
 
             {/* Find — mounted here (parent-only) so it genuinely shares
                 centerCol's own width with Rides/Approvals above it by

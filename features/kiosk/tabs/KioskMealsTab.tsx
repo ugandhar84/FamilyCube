@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
-  findNodeHandle, UIManager, Dimensions,
+  findNodeHandle, UIManager, Dimensions, Alert,
 } from 'react-native';
 import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
@@ -104,6 +104,20 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // see KioskStoreMoveSheet's own header for why this mirrors the phone's
   // ItemCard.tsx onMoveStore button rather than its drag-and-drop layer.
   const [movingItem, setMovingItem] = useState<GroceryItem | undefined>(undefined);
+
+  // Bulk multi-select for delete — same real long-press-to-select mode
+  // BulkSelectToolbar.tsx gates on (isSelecting = selectedIds.size > 0),
+  // not a separate boolean flag.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isSelecting = selectedIds.size > 0;
+  const toggleSelectItem = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+  const removeItem = useGroceryStore(s => s.removeItem);
 
   // "user can put the location fence here also .. like in mobile so user
   // can add their frequent shopping address" — same real feature and same
@@ -288,7 +302,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   // Drag only makes sense with more than one store section to drop into,
   // and never for a kid (matches the phone's own dragEnabled formula).
-  const dragEnabled = !isKid && groupedGroceries.length > 1;
+  const dragEnabled = !isKid && !isSelecting && groupedGroceries.length > 1;
 
   // Same read-only mirror of the real phone's "Shopping now at {store}"
   // banner as Overview's Grocery card (features/grocery/GroceryScreen.tsx:
@@ -673,6 +687,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     buyItem={buyItem}
                     onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
                     onMoveItem={it => setMovingItem(it)}
+                    isSelecting={isSelecting}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelectItem}
                   />
                 )}
                 {categorisedItems.clothing.length > 0 && (
@@ -683,6 +700,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     buyItem={buyItem}
                     onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
                     onMoveItem={it => setMovingItem(it)}
+                    isSelecting={isSelecting}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelectItem}
                   />
                 )}
                 {groupedGroceries.map(([store, storeItems]) => (
@@ -746,6 +766,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                           onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
                           onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
                           onMove={isKid ? undefined : () => setMovingItem(it)}
+                          selecting={isSelecting}
+                          selected={selectedIds.has(it.id)}
+                          onToggleSelect={isKid ? undefined : () => toggleSelectItem(it.id)}
+                          onLongPress={isKid ? undefined : () => toggleSelectItem(it.id)}
                         />
                       </KioskDraggableItemRow>
                     ))}
@@ -827,6 +851,53 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       </View>
     </ScrollView>
 
+    {/* Same real shape as BulkSelectToolbar.tsx: a floating bar while any
+        item is selected — count, Select All, destructive Delete (N) with
+        a confirm step, Cancel. Live-requested: "i want delete potion from
+        the grocery list" → confirmed as this separate long-press select
+        mode, distinct from the existing single-item delete already in
+        KioskGroceryItemSheet. */}
+    {isSelecting && (
+      <View style={[s.bulkBar, { backgroundColor: k.primary }]}>
+        <Text style={[s.bulkCount, { color: k.onAccent }]}>{selectedIds.size} selected</Text>
+        <Pressable
+          onPress={() => setSelectedIds(new Set(visibleItems.map(it => it.id)))}
+          style={[s.bulkBtn, { borderColor: k.onAccent + '4D' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Select all"
+        >
+          <Text style={[s.bulkBtnText, { color: k.onAccent }]}>Select All</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            const ids = Array.from(selectedIds);
+            Alert.alert('Delete items?', `Remove ${ids.length} item${ids.length !== 1 ? 's' : ''} from the list?`, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: `Delete (${ids.length})`, style: 'destructive', onPress: () => {
+                  ids.forEach(id => removeItem(id));
+                  setSelectedIds(new Set());
+                },
+              },
+            ]);
+          }}
+          style={[s.bulkBtn, { backgroundColor: k.danger, borderColor: k.danger }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${selectedIds.size} items`}
+        >
+          <Text style={[s.bulkBtnText, { color: k.onAccent }]}>Delete ({selectedIds.size})</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setSelectedIds(new Set())}
+          style={[s.bulkBtn, { borderColor: k.onAccent + '4D' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel selection"
+        >
+          <Text style={[s.bulkBtnText, { color: k.onAccent }]}>Cancel</Text>
+        </Pressable>
+      </View>
+    )}
+
     <KioskRecipeDrawer
       visible={!!openMeal}
       onClose={() => setOpenMeal(null)}
@@ -898,34 +969,55 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
  * onBuy/onEdit/onMove all optional: a kid's own already-approved request
  * renders fully read-only (no checkbox, no edit or move access) — they can
  * see it made the list, not manage it themselves.
+ *
+ * Bulk multi-select (live-requested: "i want delete potion from the
+ * grocery list" → confirmed as the phone's separate long-press select
+ * mode, not the existing single-item delete already in
+ * KioskGroceryItemSheet): while `selecting`, the icon square is replaced
+ * by a selection circle and the row's own press toggles selection instead
+ * of opening the edit sheet — same behavior swap ItemCard.tsx's real
+ * `selecting ? onToggleSelect : onPress` makes.
  */
-function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove }: {
+function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove, selecting, selected, onToggleSelect, onLongPress }: {
   item: GroceryItem;
   priceInfo?: { price: number | null; source: string };
   k: KioskColors; isDark: boolean; divider?: boolean;
   onBuy?: () => void; onEdit?: () => void; onMove?: () => void;
+  selecting?: boolean; selected?: boolean;
+  onToggleSelect?: () => void; onLongPress?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const readOnly = !onBuy;
   const emoji = itemEmoji(item.name);
   const CatIcon = CAT_ICON[item.category ?? 'Other'] ?? CAT_ICON.Other;
   const iconTint = kioskCatColor(k, item.category);
+  const canPress = selecting ? !!onToggleSelect : !!onEdit;
   return (
     <Pressable
-      onPress={onEdit}
-      disabled={!onEdit}
+      onPress={selecting ? onToggleSelect : onEdit}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      disabled={!canPress}
       style={({ pressed }) => [
         s.groceryRow,
         divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-        pressed && !!onEdit && { opacity: 0.7 },
+        selected && { backgroundColor: k.primary + '10' },
+        pressed && canPress && { opacity: 0.7 },
       ]}
-      accessibilityRole={onEdit ? 'button' : undefined}
+      accessibilityRole={selecting ? 'checkbox' : onEdit ? 'button' : undefined}
+      accessibilityState={selecting ? { checked: !!selected } : undefined}
       accessibilityLabel={item.quantity ? `${item.name}, ${item.quantity}` : item.name}
-      accessibilityHint={onEdit ? 'Opens this item to edit or delete it' : undefined}
+      accessibilityHint={selecting ? 'Toggles selection for bulk delete' : onEdit ? 'Opens this item to edit or delete it' : undefined}
     >
-      <View style={[s.itemIcon, { backgroundColor: iconTint + (isDark ? '26' : '1A') }]}>
-        {emoji ? <Text style={s.itemEmojiText}>{emoji}</Text> : <CatIcon size={16} color={iconTint} strokeWidth={1.8} />}
-      </View>
+      {selecting ? (
+        <View style={[s.selectCircle, { borderColor: selected ? k.primary : k.cardBorder, backgroundColor: selected ? k.primary : 'transparent' }]}>
+          {selected && <Check size={12} color={k.onAccent} />}
+        </View>
+      ) : (
+        <View style={[s.itemIcon, { backgroundColor: iconTint + (isDark ? '26' : '1A') }]}>
+          {emoji ? <Text style={s.itemEmojiText}>{emoji}</Text> : <CatIcon size={16} color={iconTint} strokeWidth={1.8} />}
+        </View>
+      )}
       <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{item.name}</Text>
       {!!item.quantity && (
         <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{item.quantity}</Text>
@@ -935,7 +1027,7 @@ function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove
           ${priceInfo.price.toFixed(2)}
         </Text>
       )}
-      {!!onMove && (
+      {!selecting && !!onMove && (
         <Pressable
           onPress={onMove}
           hitSlop={10}
@@ -946,7 +1038,7 @@ function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove
           <Store size={15} color={k.textFaint} />
         </Pressable>
       )}
-      {!readOnly && (
+      {!selecting && !readOnly && (
         <Pressable
           onPress={async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
           hitSlop={10}
@@ -971,13 +1063,16 @@ function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove
  * phone's own `storeGroups.length > 1` gate — a single-store category
  * doesn't need to repeat its one store name under every item).
  */
-function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, priceMap, buyItem, onEditItem, onMoveItem }: {
+function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, priceMap, buyItem, onEditItem, onMoveItem, isSelecting, selectedIds, onToggleSelect }: {
   label: string; emoji: string; items: GroceryItem[];
   k: KioskColors; isDark: boolean; isKid: boolean; active: FamilyMember;
   priceMap: Record<string, { price: number | null; source: string }>;
   buyItem: (itemId: string, memberId: string) => Promise<void>;
   onEditItem: (item: GroceryItem) => void;
   onMoveItem: (item: GroceryItem) => void;
+  isSelecting: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
 }) {
   const storeGroups = useMemo(() => {
     const groups: Record<string, GroceryItem[]> = {};
@@ -1006,6 +1101,10 @@ function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active,
               onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
               onEdit={isKid ? undefined : () => onEditItem(it)}
               onMove={isKid ? undefined : () => onMoveItem(it)}
+              selecting={isSelecting}
+              selected={selectedIds.has(it.id)}
+              onToggleSelect={isKid ? undefined : () => onToggleSelect(it.id)}
+              onLongPress={isKid ? undefined : () => onToggleSelect(it.id)}
             />
           ))}
         </View>
@@ -1108,6 +1207,12 @@ const s = StyleSheet.create({
     width: 18, height: 18, borderRadius: 5, borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
   },
+  // Same 28px footprint as itemIcon so a row's layout doesn't jump when
+  // toggling into/out of select mode.
+  selectCircle: {
+    width: 28, height: 28, borderRadius: 14, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
   groceryName: { flex: 1, fontSize: 13, fontWeight: '600' },
   groceryQty: { fontSize: 11.5, fontWeight: '700' },
   // Real phone's ItemCard.tsx icon-square convention (32px tinted rounded
@@ -1165,4 +1270,20 @@ const s = StyleSheet.create({
     paddingHorizontal: 9, paddingVertical: 5, flexShrink: 0,
   },
   undoBtnText: { fontSize: 11, fontWeight: '700' },
+
+  // Same real shape as BulkSelectToolbar.tsx's floating bar, positioned
+  // relative to this tab's own root rather than the whole-screen absolute
+  // coordinates the phone uses (kiosk has no floating tab bar to clear).
+  bulkBar: {
+    position: 'absolute', left: KIOSK_SPACE.lg, right: KIOSK_SPACE.lg, bottom: KIOSK_SPACE.lg,
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.lg, paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md,
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8,
+  },
+  bulkCount: { flex: 1, fontSize: 13, fontWeight: '700' },
+  bulkBtn: {
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.full,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 7,
+  },
+  bulkBtnText: { fontSize: 12, fontWeight: '700' },
 });

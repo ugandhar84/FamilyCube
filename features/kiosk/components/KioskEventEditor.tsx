@@ -320,6 +320,18 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       : undefined;
     const foldedHelperId =
       (category === 'Medical' || category === 'Sports' || category === 'Ride') ? helperId : undefined;
+    // Live-reported: assigning someone ELSE via this picker never showed
+    // "needs your action" on their own device — root cause traced to this
+    // exact patch never setting helperStatus/driverStatus at all, so the
+    // row landed with a real name/id but no pending marker for any of the
+    // real display surfaces that key off it (mobile's Household Backlog
+    // pending list, a teen's "You Were Asked to Drive" card, and the
+    // notification-triggering write in eventStore's updateEvent) to find.
+    // Same real self-vs-other rule EventFormModal.tsx's own submit uses
+    // (that file's line 618 for helper, 647 for driver) — assigning
+    // yourself auto-confirms, anyone else starts 'pending'.
+    const foldedHelperStatus = foldedHelper ? (foldedHelperId === active.id ? 'confirmed' as const : 'pending' as const) : undefined;
+    const foldedDriverStatus = category === 'Study' && driverName.trim() ? (driverId === active.id ? 'confirmed' as const : 'pending' as const) : undefined;
 
     const patch: Partial<FamilyEvent> = {
       title: title.trim(),
@@ -362,7 +374,8 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       // (see the state declarations above for why this isn't Ride's).
       driverName: category === 'Study' ? (driverName.trim() || undefined) : event.driverName,
       driverId: category === 'Study' ? driverId : event.driverId,
-      ...(foldedHelper !== undefined ? { helper: foldedHelper } : {}),
+      driverStatus: category === 'Study' ? foldedDriverStatus : event.driverStatus,
+      ...(foldedHelper !== undefined ? { helper: foldedHelper, helperStatus: foldedHelperStatus } : {}),
       ...(foldedHelperId !== undefined ? { helperId: foldedHelperId } : {}),
     };
 

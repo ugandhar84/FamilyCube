@@ -69,6 +69,7 @@ import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
 import { KioskRedoReasonDialog } from '../components/KioskRedoReasonDialog';
 import { GpOfferReviewCard } from '@/features/hub/parent/GpOfferReviewCard';
+import { KioskAiChoresEngine } from '../components/KioskAiChoresEngine';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
@@ -1243,6 +1244,25 @@ function KioskBoardView({ active, members, colors, isDark }: {
         ) : undefined}
       />
 
+      {/* ── CubeAI Chores Engine [GAP — audit D3] ───────────────────────
+          Same real AutoBalance/Spark/Advice engine the phone's own
+          Chores toolbar always shows — entirely absent from kiosk
+          before this (confirmed via grep: zero references anywhere in
+          this file to AiEngineBanner/AiTool/AutoBalanceCard/FomoCard/
+          AdviceCard/callAutoBalance/callFomo/callAdvice/family-ai).
+          Parent-only, matching QuestsScreen.tsx's own isParent gate. */}
+      {isParent && (
+        <View style={s.aiBannerRow}>
+          <KioskAiChoresEngine
+            quests={filteredQuests}
+            kids={members.filter(m => m.role === 'kid' || m.role === 'teen')}
+            activeMemberId={active.id}
+            colors={colors}
+            isDark={isDark}
+          />
+        </View>
+      )}
+
       {/* ── Filter bar ────────────────────────────────────────────────
           The phone's "Member / Filter Pills + Status Tabs" block
           (QuestsScreen.tsx:942-954 → QuestFilters.tsx), in kiosk's own
@@ -2133,6 +2153,7 @@ const s = StyleSheet.create({
 
   // ── Filter bar ────────────────────────────────────────────────────────
   filterBar: { gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md },
+  aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },
   // A horizontal ScrollView in a flex column stretches to fill leftover
   // vertical space unless flexGrow is pinned on the ScrollView ITSELF (not
   // its contentContainerStyle) — live-reported on KioskScheduleTab as

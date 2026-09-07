@@ -84,6 +84,16 @@ import { WidgetCard, PanelHead } from '../components/KioskOS';
  */
 type ViewMode = 'agenda' | 'day' | 'week' | 'month';
 const VIEW_MODES: ViewMode[] = ['agenda', 'day', 'week', 'month'];
+// A distinct real brand accent per mode when active, instead of every tab
+// filling the same k.primary [live-reported: "with different tinted
+// colors"] — reusing the same four-color set kiosk already uses for role/
+// category variety elsewhere (primary/sage/gold/purple), not new colors.
+const MODE_ACCENT: Record<ViewMode, (k: KioskColors) => string> = {
+  agenda: k => k.primary,
+  day: k => k.sage,
+  week: k => k.gold,
+  month: k => k.purple,
+};
 
 /** How far forward Agenda looks. Live-reported from a screenshot: "i see
  *  extra events in the mobile app not in kiosec" — kiosk's own 14-day
@@ -526,12 +536,16 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           <View style={[s.modeSwitch, { backgroundColor: k.well }]}>
             {VIEW_MODES.map(mode => {
               const on = viewMode === mode;
+              // Each mode gets its own real brand accent when active,
+              // rather than every tab filling the same k.primary
+              // [live-reported: "with different tinted colors"].
+              const accent = MODE_ACCENT[mode](k);
               return (
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
-                  style={[s.modeBtn, on && { backgroundColor: k.primary }]}
+                  style={[s.modeBtn, on && { backgroundColor: accent }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
                   accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
-                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
+                  <Text style={[s.modeBtnText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>
                     {mode[0].toUpperCase() + mode.slice(1)}
                   </Text>
                 </Pressable>
@@ -1909,12 +1923,14 @@ const s = StyleSheet.create({
     flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3,
     flexShrink: 1, minWidth: 0,
   },
+  // Same compact sizing as the filter chips right beside it
+  // [live-reported: "make the same size of the filter chips"].
   modeBtn: {
-    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
+    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min - 10,
     justifyContent: 'center', borderRadius: KIOSK_RADIUS.sm,
     flexShrink: 1, minWidth: 0,
   },
-  modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  modeBtnText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   // "My Schedule" / All — deliberately the SAME segmented treatment as
   // modeSwitch/modeBtn above (same radius, padding, active fill, text
   // style) so the header reads as one control language rather than a third

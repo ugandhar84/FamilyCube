@@ -1020,23 +1020,20 @@ function KioskEventCard({
             {forLabel && allAssignees.length > 0 && (
               <View style={s.forCluster}>
                 <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}:</Text>
+                {/* Live-requested: "on the cards we should remove the name
+                    where we literally have avatars" — the avatar (or ring
+                    of avatars) already identifies who, via FamilyAvatar's
+                    own initials/photo; a name label right next to it was
+                    redundant. accessibilityLabel below carries the name(s)
+                    for screen readers, so nothing is lost for that case. */}
                 {allAssignees.length > 1 ? (
-                  // Live-requested: "if i select multiple th same shuld
-                  // show" (overlapped, matching the family-wide ask right
-                  // above it) — per-avatar name labels don't compose with
-                  // overlapping circles, so 2+ people get ONE combined
-                  // name line under the cluster instead of one per avatar.
-                  <View style={s.avatarWithName}>
+                  <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
                     <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
-                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>
-                      {allAssignees.map(m => m.name.split(' ')[0]).join(', ')}
-                    </Text>
                   </View>
                 ) : (
-                  <View style={s.avatarWithName}>
+                  <View accessible accessibilityLabel={`${forLabel}: ${allAssignees[0].name}`}>
                     <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
                       siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
-                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>{allAssignees[0].name.split(' ')[0]}</Text>
                   </View>
                 )}
               </View>
@@ -1045,10 +1042,9 @@ function KioskEventCard({
               <View style={s.forCluster}>
                 <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{helperLabelFor(cat)}:</Text>
                 {helperMember ? (
-                  <View style={s.avatarWithName}>
+                  <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
                     <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
                       siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
-                    <Text style={[s.avatarName, { color: k.text }]} numberOfLines={1}>{helperMember.name.split(' ')[0]}</Text>
                   </View>
                 ) : (
                   // A genuinely external non-member (a coach, a neighbour) has
@@ -1954,8 +1950,6 @@ const s = StyleSheet.create({
     columnGap: KIOSK_SPACE.lg, rowGap: KIOSK_SPACE.xs,
   },
   forCluster: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap', flexShrink: 1 },
-  avatarWithName: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  avatarName: { fontSize: 12, fontWeight: '600', maxWidth: 110 },
   // The picker's own cells are the tap target, so they carry the padding
   // that brings a 36px avatar up to a kiosk-legal hit area.
   pickerCell: { padding: 6, borderRadius: KIOSK_RADIUS.full },

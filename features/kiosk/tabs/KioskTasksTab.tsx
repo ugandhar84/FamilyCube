@@ -2364,10 +2364,14 @@ const s = StyleSheet.create({
   // Right-aligned, compact — sits under the masthead's title/New-Chore row
   // rather than as its own full-bleed card [live-reported: "filter strip
   // should be top right and the size also should be smaller"].
+  // Full-width bar, member pills left / status tabs right (justify-
+  // between) — the mock's own "TOP FILTER PILLS BAR" is one shared
+  // bg-white/60 card the full width of the content column, not a
+  // right-aligned strip tucked under the masthead [live-reported: "the
+  // pill filter alignment is not matching with mock"].
   filterBar: {
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end',
-    alignSelf: 'flex-end',
-    gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md,
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+    gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
   },
   aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },

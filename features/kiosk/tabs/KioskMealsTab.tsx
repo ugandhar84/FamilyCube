@@ -49,7 +49,7 @@ import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
   findNodeHandle, UIManager, Dimensions,
 } from 'react-native';
-import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
@@ -67,6 +67,7 @@ import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
 import { KioskStoreMoveSheet } from '../components/KioskStoreMoveSheet';
 import { KioskDraggableItemRow } from '../components/KioskDraggableItemRow';
 import { KioskPinStoreLocationSheet } from '../components/KioskPinStoreLocationSheet';
+import { KioskReceiptScanSheet } from '../components/KioskReceiptScanSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
@@ -113,6 +114,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // ahead of the phone's own rollout.
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
+  const [showReceiptScan, setShowReceiptScan] = useState(false);
   const pinStoreLocation = useGroceryStore(s => s.pinStoreLocation);
   const pinnedStores = useGroceryStore(s => s.pinnedStores);
   const loadPinnedStores = useGroceryStore(s => s.loadPinnedStores);
@@ -529,9 +531,25 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
             <PanelHead
               title={isKid ? 'My grocery items' : 'Grocery list'}
               k={k}
-              right={visibleItems.length > 0
-                ? <Text style={[s.panelCount, { color: k.textFaint }]}>{visibleItems.length}</Text>
-                : undefined}
+              right={
+                <View style={s.panelHeadRight}>
+                  {!isKid && (
+                    <Pressable
+                      onPress={() => setShowReceiptScan(true)}
+                      hitSlop={8}
+                      style={s.scanBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Scan a receipt"
+                      accessibilityHint="Scans a paper receipt and adds the items to the list"
+                    >
+                      <ScanLine size={14} color={k.gold} />
+                    </Pressable>
+                  )}
+                  {visibleItems.length > 0 && (
+                    <Text style={[s.panelCount, { color: k.textFaint }]}>{visibleItems.length}</Text>
+                  )}
+                </View>
+              }
             />
 
             {activeRun && (
@@ -849,6 +867,17 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         }}
       />
     )}
+
+    {!!familyId && (
+      <KioskReceiptScanSheet
+        visible={showReceiptScan}
+        onClose={() => setShowReceiptScan(false)}
+        familyId={familyId}
+        memberId={active.id}
+        memberName={active.name?.trim().split(' ')[0]}
+        onSuccess={() => load(familyId)}
+      />
+    )}
     </>
   );
 }
@@ -1026,6 +1055,8 @@ const s = StyleSheet.create({
   // Mock-exact .panel-head right-slot value: a small faint count, same
   // convention as Overview's own panelCount (approvals/sharing readouts).
   panelCount: { fontSize: 11 },
+  panelHeadRight: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  scanBtn: { padding: 2 },
 
   // Mock-exact active-run banner, same shape/colors as Overview's Grocery
   // card so the two surfaces read as one feature, not two.

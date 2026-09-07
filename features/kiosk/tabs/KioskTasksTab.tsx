@@ -2368,24 +2368,16 @@ const s = StyleSheet.create({
   // The chore's claimed → submitted → approved trail inside the card body.
   timelineText: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginBottom: KIOSK_SPACE.xs },
 
-  // Pool lane — the hero zone. Wide tiles, generous minimums.
-  //
-  // Real, fixed-fraction grid, not a fixed-pixel width in a flex-wrap row
-  // [fresh-audit finding — user-reported "cards not aligned"]. A fixed
-  // 320px card doesn't divide a row's real width evenly — on e.g. a
-  // 1200px zone with this same KIOSK_SPACE.md gap, three 320px cards
-  // consume 992px and leave ~208px of dead space at the row's end, a
-  // ragged remainder that shifts with every different zone width/kiosk
-  // device size. Same real fix Overview's own widget deck already applies
-  // for the identical problem (KioskOverviewTab.tsx's own `widget` style,
-  // whose comment documents this exact failure mode being reported as
-  // the deck looking "random"): flexGrow:0/flexShrink:0 + a PERCENTAGE
-  // flexBasis, so every card is an exact fraction of the row regardless
-  // of its neighbors — no minWidth alongside it, for the same reason
-  // Overview's own comment gives (would force horizontal overflow on a
-  // narrower kiosk instead of letting flexWrap reflow to fewer columns).
-  poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
-  poolCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%' },
+  // Pool lane — a plain full-width vertical stack, matching the approved
+  // Overview-language mock's own "Up for grabs" row list exactly (one
+  // chore per row, full width — not a wrapped tile grid). Replaces an
+  // earlier percentage-flexBasis tile-grid attempt that live-reported as
+  // broken (cards rendering far narrower than intended, content
+  // truncating to single characters) — a plain vertical stack has no
+  // percentage-of-ambiguous-parent-width math to get wrong, and matches
+  // the actual approved design besides.
+  poolGrid: { gap: KIOSK_SPACE.md },
+  poolCard: { width: '100%' },
 
   // Lane column heads — a label plus a count chip, not a run-on string.
   colHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
@@ -2542,14 +2534,11 @@ const s = StyleSheet.create({
   dueText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   // (cardActionBtn's full-width single button was replaced by the two-up
   // actionRow above, which the phone card's own branches all use.)
-  gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
-  // Percentage flexBasis, not a fixed pixel width [fresh-audit finding —
-  // see poolCard's own comment above for the full reasoning]. Same fix,
-  // same reason: a fixed 320px card leaves a ragged, width-dependent
-  // dead-space remainder at the end of every row instead of dividing it
-  // into exact thirds.
-  gpCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%', gap: KIOSK_SPACE.sm },
-  claimCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  // Plain full-width vertical stack — see poolGrid's own comment above for
+  // why the earlier percentage-flexBasis tile-grid attempt is gone.
+  gpGrid: { gap: KIOSK_SPACE.md },
+  gpCard: { width: '100%', gap: KIOSK_SPACE.sm },
+  claimCard: { width: '100%', gap: KIOSK_SPACE.sm },
   claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
   claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
   claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },

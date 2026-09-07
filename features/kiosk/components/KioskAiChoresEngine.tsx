@@ -28,8 +28,8 @@
  * `quests`/`kids` data instead of duplicating a second implementation.
  */
 import { useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
-import { AiEngineBanner, type AiTool } from '@/features/quests/components/AiEngineBanner';
+import { View, Text, Pressable } from 'react-native';
+import { type AiTool } from '@/features/quests/components/AiEngineBanner';
 import { AutoBalanceCard, FomoCard, AdviceCard } from '@/features/quests/components/AiFeatureCards';
 import {
   callAutoBalance, callAutoBalanceFallback, callFomo, buildFomoResult, callAdvice, buildAdviceFallback,
@@ -40,15 +40,21 @@ import { useChatStore } from '@/store/chatStore';
 import type { Quest } from '@/store/questStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { todayLocal } from '@/lib/dates';
+import { Bot, Sparkles, Flame, Award } from 'lucide-react-native';
+import { WidgetCard, ActionButton } from './KioskOS';
+import { KIOSK_RADIUS, KIOSK_SPACE, KIOSK_TYPO } from '../kioskTheme';
+import type { KioskColors } from '../kioskPalette';
 
-export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDark }: {
+export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDark, k }: {
   quests: Quest[];
   kids: FamilyMember[];
   activeMemberId: string;
   colors: any;
   isDark: boolean;
+  k: KioskColors;
 }) {
   const [showAiTool, setShowAiTool] = useState<AiTool>('none');
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [autoBalResult, setAutoBalResult] = useState<any>(null);
   const [fomoResult, setFomoResult] = useState<any>(null);
@@ -137,15 +143,71 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
     }
   };
 
+  const TOOLS: { key: AiTool; label: string; Icon: typeof Sparkles; accent: string }[] = [
+    { key: 'autobalance', label: 'Balance', Icon: Sparkles, accent: k.primary },
+    { key: 'spark',       label: 'Spark',   Icon: Flame,    accent: k.gold },
+    { key: 'advice',      label: 'Advice',  Icon: Award,    accent: k.purple },
+  ];
+
   return (
-    <View>
-      <AiEngineBanner
-        showAiTool={showAiTool}
-        isAiLoading={isAiLoading}
-        onRunAI={runAI}
-        colors={colors}
-        isDark={isDark}
-      />
+    <View style={{ width: '100%' }}>
+      {/* Shell matches the approved reference mock's own CubeAI card
+          exactly — icon chip, "CubeAI ●" + a status line, a single
+          right-aligned action button — rather than AiEngineBanner's own
+          small pill-that-expands pattern [live-reported: "you didn't
+          match the cubeAI card too"]. The real AutoBalance/Spark/Advice
+          tools + their result panels are unchanged underneath; "View
+          Details" just reveals the same tool row the mock has no way to
+          represent (it's static HTML with no per-role/per-feature logic
+          to show three real AI actions inline). */}
+      <WidgetCard k={k} isDark={isDark} style={{ borderRadius: KIOSK_RADIUS.xl }}>
+        <Pressable
+          onPress={() => setToolsOpen(o => !o)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}
+          accessibilityRole="button"
+          accessibilityLabel="CubeAI Chores Engine"
+          accessibilityHint="Opens smart chore tools: Balance, Spark, and Advice"
+        >
+          <View style={{
+            width: 38, height: 38, borderRadius: KIOSK_RADIUS.md,
+            backgroundColor: k.primary + '18', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Bot size={18} color={k.primary} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: k.text }}>CubeAI</Text>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: k.sage }} />
+            </View>
+            <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted }} numberOfLines={1}>
+              Smart chore redistribution active for the weekend.
+            </Text>
+          </View>
+          <ActionButton
+            label={toolsOpen ? 'Close' : 'View Details'}
+            accent={k.primary}
+            k={k} isDark={isDark} variant="soft"
+            onPress={() => setToolsOpen(o => !o)}
+            accessibilityHint="Toggles the CubeAI tools"
+          />
+        </Pressable>
+
+        {toolsOpen && (
+          <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.md, flexWrap: 'wrap' }}>
+            {TOOLS.map(tool => (
+              <ActionButton
+                key={tool.key}
+                label={tool.label} Icon={tool.Icon} accent={tool.accent}
+                k={k} isDark={isDark}
+                variant={showAiTool === tool.key ? 'solid' : 'soft'}
+                onPress={() => runAI(tool.key)}
+                accessibilityHint={`Runs the ${tool.label} tool`}
+              />
+            ))}
+            {isAiLoading && <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted, alignSelf: 'center' }}>Thinking…</Text>}
+          </View>
+        )}
+      </WidgetCard>
       {showAiTool === 'autobalance' && !!autoBalResult && (
         <AutoBalanceCard
           result={autoBalResult} onApply={handleApply} appliedActions={appliedActions}

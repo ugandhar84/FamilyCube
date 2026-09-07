@@ -1485,6 +1485,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
             activeMemberId={active.id}
             colors={colors}
             isDark={isDark}
+            k={k}
           />
         </View>
       )}

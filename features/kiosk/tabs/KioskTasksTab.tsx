@@ -896,6 +896,24 @@ function KioskBoardView({ active, members, colors, isDark }: {
           </View>
         )}
 
+        {/* ── Named handoff — receiver's offer banner [GAP — audit A10] ──
+            Someone handed this chore directly to q.pendingHandoffTo (via
+            offerChoreHandoff — a real, already-existing store action this
+            card just never showed the receiving end of). Display only;
+            the real Accept/Pass buttons sit in the action row below,
+            matching QuestCard.tsx's own split between this banner and its
+            action-row buttons exactly. */}
+        {q.pendingHandoffTo === active.id && (
+          <View style={[s.noticeBanner, { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }]}>
+            <Text style={[s.noticeTitle, { color: k.primary }]} numberOfLines={1}>
+              {memberName(q.pendingHandoffOfferedBy) ?? 'Someone'} wants to hand you this
+            </Text>
+            {!!q.pendingHandoffReason && (
+              <Text style={[s.noticeText, { color: k.textMuted }]} numberOfLines={2}>"{q.pendingHandoffReason}"</Text>
+            )}
+          </View>
+        )}
+
         {actions.canEdit && (
           <Pressable
             onPress={() => setEditingQuest(q)}
@@ -997,6 +1015,36 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 disputeRedo(q.id, active.id);
                 showToast('Asked a parent to take another look ✓');
               }}
+            />
+          </View>
+        ) : q.pendingHandoffTo === active.id ? (
+          // ── Named handoff receiver: Accept/Pass [GAP — audit A10] ────
+          // Same real store actions (acceptChoreHandoff/
+          // declineChoreHandoff) QuestCard.tsx's own action row calls for
+          // this exact case — "I've got it" takes the chore on, "Can't
+          // either" declines and puts it back, no reason required (the
+          // offering person already gave one, if any, in the banner above).
+          <View style={s.actionRow}>
+            <ActionButton
+              label="I've got it"
+              Icon={Check}
+              accent={k.sage}
+              k={k}
+              isDark={kioskDark}
+              variant="solid"
+              style={s.actionPrimary}
+              accessibilityHint={`Accept the handoff of ${q.title}`}
+              onPress={() => { registerActivity(); useChoreStore.getState().acceptChoreHandoff(q.id, active.id); showToast('Accepted ✓'); }}
+            />
+            <ActionButton
+              label="Can't either"
+              accent={k.danger}
+              k={k}
+              isDark={kioskDark}
+              variant="soft"
+              style={s.actionSecondary}
+              accessibilityHint={`Decline the handoff of ${q.title}`}
+              onPress={() => { registerActivity(); useChoreStore.getState().declineChoreHandoff(q.id, active.id); showToast('Passed — back with the parent ✓'); }}
             />
           </View>
         ) : actions.canAcceptGp ? (

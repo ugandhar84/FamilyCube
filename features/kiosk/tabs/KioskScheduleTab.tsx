@@ -440,22 +440,6 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               </Pressable>
             )}
           </View>
-
-          <View style={[s.modeSwitch, { backgroundColor: k.well }]}>
-            {VIEW_MODES.map(mode => {
-              const on = viewMode === mode;
-              return (
-                <Pressable key={mode} onPress={() => setViewMode(mode)}
-                  style={[s.modeBtn, on && { backgroundColor: k.primary }]}
-                  accessibilityRole="tab" accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
-                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
-                    {mode[0].toUpperCase() + mode.slice(1)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
         </View>
 
         {/* ROW 1 — "My Schedule" / "All" scope, the phone's own toggle
@@ -500,33 +484,61 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
             under their real name. No self-relabeling to "Mine" here — the
             scope toggle owns that concept now. Parent/senior only, matching
             the phone's isParentOrSenior gate on the same row. */}
-        {canFilterByMember && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
-            <Pressable onPress={() => setFilterMemberId(null)}
-              accessibilityRole="button" accessibilityLabel="All Family"
-              accessibilityHint="Clears the member filter"
-              accessibilityState={{ selected: !filterMemberId }}
-              style={[s.filterChip, { backgroundColor: !filterMemberId ? k.primary : k.well, borderColor: !filterMemberId ? k.primary : k.cardBorder }]}>
-              <Text style={[s.filterText, { color: !filterMemberId ? k.onPrimary : k.textMuted }]} numberOfLines={1}>All Family</Text>
-            </Pressable>
-            {members.map(m => {
-              const rs = assigneeStyle(m, colors, isDark);
-              const on = filterMemberId === m.id;
-              const label = m.name.split(' ')[0];
+        {/* Member filter + Day/Week/Month/Agenda mode switch, ONE shared
+            row (member pills left, mode switch right) — matching Chores'
+            own filter bar pattern exactly [live-reported: "bring that
+            agenda, day week month to the same row of filter similar to
+            chores"]. The mode switch used to sit up in headerTop, beside
+            the prev/next/Today nav cluster; canFilterByMember still gates
+            whether the member-pill half renders (kid/teen viewers don't
+            get it), but the mode switch always does, so this row renders
+            unconditionally with the member pills as its own optional
+            child. */}
+        <View style={s.scheduleFilterBar}>
+          {canFilterByMember ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
+              <Pressable onPress={() => setFilterMemberId(null)}
+                accessibilityRole="button" accessibilityLabel="All Family"
+                accessibilityHint="Clears the member filter"
+                accessibilityState={{ selected: !filterMemberId }}
+                style={[s.filterChip, { backgroundColor: !filterMemberId ? k.primary : k.well, borderColor: !filterMemberId ? k.primary : k.cardBorder }]}>
+                <Text style={[s.filterText, { color: !filterMemberId ? k.onPrimary : k.textMuted }]} numberOfLines={1}>All Family</Text>
+              </Pressable>
+              {members.map(m => {
+                const rs = assigneeStyle(m, colors, isDark);
+                const on = filterMemberId === m.id;
+                const label = m.name.split(' ')[0];
+                return (
+                  <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Filter to ${label}`}
+                    accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
+                    accessibilityState={{ selected: on }}
+                    style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
+                    <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
+                    <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : <View />}
+
+          <View style={[s.modeSwitch, { backgroundColor: k.well }]}>
+            {VIEW_MODES.map(mode => {
+              const on = viewMode === mode;
               return (
-                <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Filter to ${label}`}
-                  accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
-                  accessibilityState={{ selected: on }}
-                  style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
-                  <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
-                  <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
+                <Pressable key={mode} onPress={() => setViewMode(mode)}
+                  style={[s.modeBtn, on && { backgroundColor: k.primary }]}
+                  accessibilityRole="tab" accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
+                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
+                    {mode[0].toUpperCase() + mode.slice(1)}
+                  </Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
-        )}
+          </View>
+        </View>
       </WidgetCard>
 
       {rangeLoading && eventsByDate && Object.keys(eventsByDate).length === 0 && (
@@ -1862,6 +1874,14 @@ const s = StyleSheet.create({
   loadingText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   header: { marginBottom: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
+  // Member filter pills (left) + Day/Week/Month/Agenda mode switch
+  // (right), one shared row — matching Chores' own filter bar
+  // (KioskTasksTab.tsx's s.filterBar) [live-reported: "bring that agenda,
+  // day week month to the same row of filter similar to chores"].
+  scheduleFilterBar: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+    gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm,
+  },
   // flexShrink/minWidth so the Add button joining this cluster reflows
   // instead of pushing the mode switcher off a narrow portrait pane — the
   // same "let it reflow rather than compute a width" rule modeSwitch uses.

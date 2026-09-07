@@ -95,7 +95,10 @@ import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirme
 import { useUpcomingOpenEvents } from '@/features/hub/useUpcomingOpenEvents';
 import { classifyEventUrgency } from '@/features/hub/lib/classifyEventUrgency';
 import { dedupeRideSeries } from '@/features/hub/lib/dedupeRideSeries';
-import { isHomeLocation } from '@/features/hub/hubUtils';
+import { isHomeLocation, hoursUntilEvent, isWorkEvent, minutesBetween } from '@/features/hub/hubUtils';
+import { detectAssigneeConflicts, detectWorkConflicts } from '@/features/hub/lib/detectAssigneeConflicts';
+import { AlertBanner } from '@/features/hub/hubComponents';
+import { useTripStore } from '@/store/tripStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
 import { HouseholdBacklogSection } from '@/features/hub/parent/HouseholdBacklogSection';
@@ -254,6 +257,104 @@ export function KioskOverviewTab({
   // events is the fuller loaded set. Matched exactly below rather than
   // substituting the narrower dayEvents as an approximation.
   const allEvents = useEventStore(s => s.events);
+
+  // ── Trip dispatch (real Pick-up Radar "En Route" trips) ──────────────
+  // Only two real primitives AlertBanner itself actually needs — the full
+  // live-trip-dashboard UI (EnRouteBanner, per-trip cards, etc.) is a
+  // separate, much larger real surface that ParentView.tsx's own caller
+  // (HubScreen.tsx) mounts alongside AlertBanner, not inside it; that
+  // fuller dashboard is out of scope here. `tripViews` below reproduces
+  // HubScreen.tsx's own real shaping of raw `activeTrips: Trip[]` (its
+  // lines ~255-278) — AlertBanner needs `driverName`, which isn't a field
+  // on the raw Trip row at all (only `driverMemberId`), so the same
+  // members-lookup mapping has to happen here too, not just a re-typing.
+  const rawActiveTrips = useTripStore(s => s.activeTrips);
+  const dispatchTrip = useTripStore(s => s.dispatch);
+  const tripViews = useMemo(() => rawActiveTrips.map(t => {
+    const driver = members.find(m => m.id === t.driverMemberId);
+    const pickup = t.pickupMemberId ? members.find(m => m.id === t.pickupMemberId) : undefined;
+    return {
+      tripId: t.id,
+      kidName: pickup?.name.split(' ')[0] ?? 'Family', kidEmoji: pickup?.emoji,
+      driverName: driver?.name.split(' ')[0] ?? 'Someone', driverEmoji: driver?.emoji,
+      driverMemberId: t.driverMemberId,
+      etaMinutes: t.etaMinutes,
+      startedAtMs: new Date(t.startedAt).getTime(),
+    };
+  }), [rawActiveTrips, members]);
+  // Same driver-scoped "primary vs other" split HubScreen.tsx uses to feed
+  // ParentView's activeTrip/otherActiveTrips props — AlertBanner only ever
+  // reads these two for their driverName (activeTripDriverNames below), so
+  // the split's own semantics (mine-first, else most-recent-other) don't
+  // actually matter for correctness here, but reproducing it verbatim
+  // keeps this one derivation trivially diffable against the real file
+  // rather than inventing a differently-shaped equivalent.
+  const myTripView = tripViews.find(v => v.driverMemberId === active.id);
+  const primaryTripView = myTripView ?? tripViews[0] ?? null;
+  const otherTripViews = tripViews.filter(v => v.tripId !== primaryTripView?.tripId);
+  const onDispatchDirect = (memberId: string | undefined, etaMinutes: number, eventId?: string) => {
+    if (!familyId) return;
+    dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes, eventId });
+  };
+
+  // ── Conflict detection + never-dispatched escalation (AlertBanner) ───
+  // Kiosk had ZERO equivalent of this before — real ParentView.tsx's own
+  // scheduling-conflict banner (kid double-booked / helper-driver
+  // double-booked / clashes with a parent's Work event) and its
+  // "confirmed driver, time already passed, trip never started" escalation
+  // card. Reproduced verbatim from ParentView.tsx's own lines ~229-324
+  // against dayEvents (already the real today-only, non-Work-filtered-out
+  // event list this file uses everywhere else — same real shape as that
+  // file's own `allTodayEvents`/`todayEvents` split below).
+  const workEventsToday = useMemo(() => dayEvents.filter(e => isWorkEvent(e)), [dayEvents]);
+  const nonWorkEventsToday = useMemo(() => dayEvents.filter(e => !isWorkEvent(e)), [dayEvents]);
+  const { conflictEvents, conflictReasons, neverDispatchedOverdue } = useMemo(() => {
+    const reasons = new Map<string, string>();
+    const upcoming = nonWorkEventsToday.filter(e => hoursUntilEvent(e.date, e.time) >= 0);
+
+    // A: kid double-booked (same memberId, same date, <30 min, non-Work)
+    const timedMemberEvents = upcoming.filter(e => !!e.time && !!e.memberId);
+    for (let i = 0; i < timedMemberEvents.length; i++) {
+      for (let j = i + 1; j < timedMemberEvents.length; j++) {
+        const a = timedMemberEvents[i], b = timedMemberEvents[j];
+        if (a.memberId !== b.memberId) continue;
+        if (minutesBetween(a.time!, b.time!) < 30) {
+          const kidName = members.find(m => m.id === a.memberId)?.name.split(' ')[0] ?? 'Kid';
+          const label = `${kidName} double-booked`;
+          if (!reasons.has(a.id)) reasons.set(a.id, label);
+          if (!reasons.has(b.id)) reasons.set(b.id, label);
+        }
+      }
+    }
+    // B: helper/driver double-booked
+    for (const [id, label] of detectAssigneeConflicts(upcoming)) {
+      if (!reasons.has(id)) reasons.set(id, label);
+    }
+    // C + D: family event vs. a Work event
+    const upcomingWork = workEventsToday.filter(e => hoursUntilEvent(e.date, e.time) >= 0);
+    for (const [id, label] of detectWorkConflicts(upcoming, upcomingWork, members)) {
+      if (!reasons.has(id)) reasons.set(id, label);
+    }
+
+    const conflictIds = new Set(reasons.keys());
+    const conflicts = nonWorkEventsToday.filter(e => (e.conflict || conflictIds.has(e.id)) && !e.conflictAcknowledged);
+
+    const activeTripDriverNames = new Set(
+      [primaryTripView, ...otherTripViews].filter((t): t is NonNullable<typeof t> => !!t).map(t => t.driverName)
+    );
+    const neverDispatched = nonWorkEventsToday.filter(e => {
+      const a = eventAssignee(e);
+      if (!a.name || a.status !== 'confirmed' || e.approvalPending) return false;
+      if (e.pickupConfirmedAt) return false;
+      if (e.tripAlertDismissedAt) return false;
+      if (activeTripDriverNames.has(a.name)) return false;
+      const h = hoursUntilEvent(e.date, e.time);
+      return h < 0 && h > -1;
+    });
+
+    return { conflictEvents: conflicts, conflictReasons: reasons, neverDispatchedOverdue: neverDispatched };
+  }, [nonWorkEventsToday, workEventsToday, members, primaryTripView, otherTripViews]);
+  const showAlertBanner = conflictEvents.length > 0 || neverDispatchedOverdue.length > 0;
 
   // "Happening now" — the mockup's compact top strip (a live dot, an
   // uppercase eyebrow, the current/next event, a right-aligned time), NOT
@@ -1074,6 +1175,35 @@ export function KioskOverviewTab({
                 ParentApprovalsWidget above it; renders nothing when there's
                 no recently-approved chore to show (matches the phone). */}
             <KioskDisputeApprovalWidget active={active} members={members} k={k} isDark={isDark} />
+
+            {/* Alert Banner — real ParentView.tsx's own scheduling-conflict
+                + "confirmed driver, trip never started" escalation banner,
+                kiosk had ZERO equivalent of before this. Same real,
+                exported, self-contained AlertBanner component the phone
+                mounts (features/hub/hubComponents.tsx) — reused directly,
+                fed the conflictEvents/conflictReasons/neverDispatchedOverdue
+                derived above (verbatim port of ParentView.tsx's own logic)
+                plus onDispatch wired to the same minimal real tripStore
+                primitive (dispatch()) HubScreen.tsx itself uses, not the
+                full live-trip-dashboard UI — AlertBanner's own real
+                dependency on trip state is only ever these two plain
+                fields (driverName, for suppressing a redundant "never
+                dispatched" card once a trip is actually running).
+
+                Rendered only when showAlertBanner is true, matching the
+                real phone's own `{showBanner && <AlertBanner ... />}`
+                guard exactly — renders nothing (not even an empty
+                container) the rest of the time. */}
+            {showAlertBanner && (
+              <AlertBanner
+                conflictEvents={conflictEvents}
+                neverDispatchedEvents={neverDispatchedOverdue}
+                conflictReasons={conflictReasons}
+                members={members} colors={colors} isDark={phoneDark} updateEvent={updateEvent}
+                activeName={active.name} activeMemberId={active.id}
+                onDispatch={onDispatchDirect}
+              />
+            )}
 
             {/* Action Needed — real ParentView.tsx's own "unassigned ride /
                 kid-request-needing-a-reply" surface, kiosk had ZERO

@@ -2318,15 +2318,38 @@ const s = StyleSheet.create({
   timelineText: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginBottom: KIOSK_SPACE.xs },
 
   // Pool lane — the hero zone. Wide tiles, generous minimums.
+  //
+  // Real, fixed-fraction grid, not a fixed-pixel width in a flex-wrap row
+  // [fresh-audit finding — user-reported "cards not aligned"]. A fixed
+  // 320px card doesn't divide a row's real width evenly — on e.g. a
+  // 1200px zone with this same KIOSK_SPACE.md gap, three 320px cards
+  // consume 992px and leave ~208px of dead space at the row's end, a
+  // ragged remainder that shifts with every different zone width/kiosk
+  // device size. Same real fix Overview's own widget deck already applies
+  // for the identical problem (KioskOverviewTab.tsx's own `widget` style,
+  // whose comment documents this exact failure mode being reported as
+  // the deck looking "random"): flexGrow:0/flexShrink:0 + a PERCENTAGE
+  // flexBasis, so every card is an exact fraction of the row regardless
+  // of its neighbors — no minWidth alongside it, for the same reason
+  // Overview's own comment gives (would force horizontal overflow on a
+  // narrower kiosk instead of letting flexWrap reflow to fewer columns).
   poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
-  poolCard: { width: 320, maxWidth: '100%' },
+  poolCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%' },
 
   // People zone — compact roster chips (see the render comment). Each is
   // ~220px and one line tall, so six people fit where two cards did.
   rosterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
+  // Kept as a fixed width rather than switching to a percentage flexBasis
+  // like poolCard/gpCard above — a roster chip's own real column count
+  // varies with family size (2 to 8+ members), so there's no fixed
+  // fraction that's "right" here the way a stable 3-column grid is for a
+  // richer card; this stays a genuinely dense, many-per-row flow. Made
+  // flexGrow:0/flexShrink:0 explicit (RN's own default for an unset
+  // flexShrink on a fixed-width child is 1, letting it silently
+  // narrow under pressure) so its real width never drifts.
   rosterChip: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    width: 220, maxWidth: '100%',
+    flexGrow: 0, flexShrink: 0, width: 220, maxWidth: '100%',
     borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.sm,
   },
@@ -2488,10 +2511,13 @@ const s = StyleSheet.create({
   // (cardActionBtn's full-width single button was replaced by the two-up
   // actionRow above, which the phone card's own branches all use.)
   gpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
-  // maxWidth so a fixed-width card can never exceed a narrow portrait
-  // pane and clip — same guard applied to every fixed-width card in kiosk.
-  gpCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
-  claimCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  // Percentage flexBasis, not a fixed pixel width [fresh-audit finding —
+  // see poolCard's own comment above for the full reasoning]. Same fix,
+  // same reason: a fixed 320px card leaves a ragged, width-dependent
+  // dead-space remainder at the end of every row instead of dividing it
+  // into exact thirds.
+  gpCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  claimCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%', gap: KIOSK_SPACE.sm },
   claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
   claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
   claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },

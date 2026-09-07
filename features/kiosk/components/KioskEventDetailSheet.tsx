@@ -154,6 +154,21 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
         )}
       </View>
 
+      {/* Live-requested: "small letters the created by and date time if
+          available" — real EventDetailSheet.tsx has no equivalent (this
+          is a genuinely new addition, not a parity port); createdBy/
+          createdAt are real columns already mapped in eventStore.ts, just
+          never surfaced in any UI before this. Quiet, secondary — smaller
+          than every other line on the sheet, only rendered when the data
+          actually exists rather than showing a blank/placeholder line for
+          an older event created before these columns existed. */}
+      {(ev.createdBy || ev.createdAt) && (
+        <Text style={[s.createdMeta, { color: k.textFaint }]}>
+          {ev.createdBy ? `Created by ${members.find(m => m.id === ev.createdBy)?.name.split(' ')[0] ?? 'someone'}` : 'Created'}
+          {ev.createdAt ? ` · ${new Date(ev.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
+        </Text>
+      )}
+
       {forLabel && allAssignees.length > 0 && (
         <View style={s.section}>
           <View style={s.row}>
@@ -363,7 +378,14 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
               {showCantMakeIt && !changeOpen && (
                 <Pressable
                   onPress={() => { setCancelledSelfName(active.name); setChangeOpen(true); }}
-                  style={[s.primaryActionBtn, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge, flex: showConfirm ? 1 : undefined }]}
+                  // flex:1 always, not only when paired with Confirm — a
+                  // lone action in this row previously sized to its own
+                  // content width (no paddingHorizontal on primaryActionBtn
+                  // either, compounding it), rendering as a small, cramped
+                  // pill floating at the row's left edge instead of filling
+                  // it the way the sheet's other full-row actions do
+                  // [live-reported: "the can't make it button is not good"].
+                  style={[s.primaryActionBtn, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge, flex: 1 }]}
                 >
                   <X size={15} color={k.danger} />
                   <Text style={[s.primaryActionText, { color: k.danger }]}>Can't Make It</Text>
@@ -561,6 +583,7 @@ const s = StyleSheet.create({
   catPill: { borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 4, borderWidth: 1 },
   catPillText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
   dateText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  createdMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: -2 },
   donePill: { borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3 },
   donePillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   label: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
@@ -578,8 +601,15 @@ const s = StyleSheet.create({
   helperLabel: { fontSize: KIOSK_TYPO.label },
   helperName: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   declineReason: { fontSize: KIOSK_TYPO.label, marginTop: 2 },
-  statusPill: { borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3 },
-  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  // Matches the Schedule card's own catBadge exactly (KioskScheduleTab.tsx)
+  // [live-reported: "the sheet radio is not matching with the other card
+  // radio"] — this sheet's own pill previously used a rounder, larger
+  // shape (KIOSK_RADIUS.sm=10/KIOSK_SPACE.xs=6/micro=12) than the card's
+  // tighter one (5/7/2/10), so the same real status read as two different
+  // pill conventions depending on whether it was seen on the card or
+  // after opening its detail sheet.
+  statusPill: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  statusPillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   helperActionsRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, paddingTop: KIOSK_SPACE.sm, borderTopWidth: 1 },
   chipBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 7, borderRadius: KIOSK_RADIUS.sm },
   chipBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
@@ -588,7 +618,7 @@ const s = StyleSheet.create({
   notesBox: { borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.sm },
   notesText: { fontSize: KIOSK_TYPO.body, lineHeight: 20 },
   actionsSection: { gap: KIOSK_SPACE.sm, borderTopWidth: 1, paddingTop: KIOSK_SPACE.md },
-  primaryActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, minHeight: KIOSK_HIT.control },
+  primaryActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, minHeight: KIOSK_HIT.control, paddingHorizontal: KIOSK_SPACE.lg },
   primaryActionText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   cancelRow: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' },
   cancelRowText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },

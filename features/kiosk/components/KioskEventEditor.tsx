@@ -135,6 +135,13 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [alertCall, setAlertCall] = useState(false);
+  // Real EventFormModal.tsx field [fresh-audit gap] — a kiosk-only parent
+  // had no way to mark/unmark an event private (or view whether it
+  // already was), even though kiosk correctly redacts private events
+  // elsewhere via isEventSensitive/canViewSensitiveEventDetail. Gated
+  // !isKid && category !== 'Medical', verbatim the real form's gate
+  // (Medical is always private regardless of this toggle).
+  const [isPrivateTag, setIsPrivateTag] = useState(false);
   // "Who is this for" — real multi-select, same shape EventFormModal.tsx's
   // own memberIds state uses (memberIds[0] becomes the real memberId
   // column, the rest ride along in memberIds when there's more than one).
@@ -209,6 +216,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       setLocation(event.location ?? '');
       setNotes(event.notes ?? '');
       setAlertCall(event.alertCall ?? false);
+      setIsPrivateTag(event.privacyLevel === 'private');
       setShowDatePicker(false);
       setShowTimePicker(false);
       // Same real memberIds-else-memberId prefill shape EventFormModal.tsx's
@@ -365,6 +373,11 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       location: foldedLocation,
       notes: notes.trim() || undefined,
       alertCall,
+      // Medical stays always-private regardless of the toggle, matching
+      // the real form's own privacyLevel folding exactly (EventFormModal.
+      // tsx line 651: `(isPrivateTag || category === 'Medical') ?
+      // 'private' : 'normal'`).
+      privacyLevel: (isPrivateTag || category === 'Medical') ? 'private' : 'normal',
       doctorName: category === 'Medical' ? (doctorName.trim() || undefined) : event.doctorName,
       coachName: category === 'Sports' ? (coachName.trim() || undefined) : event.coachName,
       subject: category === 'Study' ? (subject || undefined) : event.subject,
@@ -742,6 +755,16 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
             <Text style={[s.switchLabel, { color: k.text }]}>Call reminder</Text>
             <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={alertCall ? k.primary : k.textFaint} />
           </View>
+          {/* Real EventFormModal.tsx field [fresh-audit gap]. Medical is
+              always private on its own (see saveFull's own comment) —
+              hidden here rather than shown-but-disabled, since toggling it
+              for Medical would do nothing and only invite confusion. */}
+          {category !== 'Medical' && (
+            <View style={s.switchRow}>
+              <Text style={[s.switchLabel, { color: k.text }]}>🔒 Mark as private</Text>
+              <Switch value={isPrivateTag} onValueChange={setIsPrivateTag} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={isPrivateTag ? k.primary : k.textFaint} />
+            </View>
+          )}
         </>
       )}
     </KioskFormDrawer>

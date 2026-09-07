@@ -599,6 +599,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
     const meta = kioskQuestMeta(q, k);
     const overdue = isQuestOverdue(q);
     const mates = teamMatesOf(q, quests);
+    // A GP-submitted receipt [GAP — audit A7] — real ChoreTask-native
+    // fields (receiptPhotoUrl/receiptAmount/receiptNote/receiptReimbursedAt)
+    // that don't exist on the Quest shim at all, so this card had zero way
+    // to show one even existed. Same real chores lookup pendingBountyClaims
+    // above already established for this file.
+    const rawChore = chores.find(c => c.id === q.id);
+    const hasReceipt = !!rawChore?.receiptPhotoUrl || rawChore?.receiptAmount != null;
+    const receiptReimbursed = !!rawChore?.receiptReimbursedAt;
     // Phone gate, verbatim: the terms-change prompt is the kid's own
     // decision on their own chore, so it only appears for the assignee.
     // A parent glancing at the same card sees the diff (below) but no
@@ -815,6 +823,55 @@ function KioskBoardView({ active, members, colors, isDark }: {
             <Text style={[s.teamText, { color: k.gold }]} numberOfLines={3}>
               {`Also offered to ${mates.map(t => memberName(t.assignedToId) ?? 'a sibling').join(' & ')} — everyone who finishes gets the full ${q.coins} 🪙`}
             </Text>
+          </View>
+        )}
+
+        {/* ── GP receipt / reimbursement [GAP — audit A7] ────────────────
+            Same real block ParentReviewDeck.tsx's own ReviewCard shows
+            (photo, amount, note, Mark Reimbursed) — was entirely absent
+            from this board's own chore cards. Parent-only action;
+            everyone can see the receipt was submitted and whether it's
+            been paid back. */}
+        {hasReceipt && (
+          <View style={[s.receiptBox, { borderColor: receiptReimbursed ? k.sageEdge : k.goldEdge, backgroundColor: receiptReimbursed ? k.sageSoft : k.goldSoft }]}>
+            <View style={s.receiptHeaderRow}>
+              <Text style={{ fontSize: 16 }}>🧾</Text>
+              <Text style={[s.receiptHeaderText, { color: receiptReimbursed ? k.sage : k.gold, flex: 1 }]} numberOfLines={1}>
+                {receiptReimbursed ? 'Receipt reimbursed ✓' : 'GP submitted a receipt'}
+              </Text>
+              {rawChore?.receiptAmount != null && (
+                <View style={[s.receiptAmountPill, { backgroundColor: receiptReimbursed ? k.sage : k.gold }]}>
+                  <Text style={s.receiptAmountText}>${rawChore.receiptAmount.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+            {!!rawChore?.receiptPhotoUrl && (
+              <Image source={{ uri: rawChore.receiptPhotoUrl }} style={s.receiptPhoto} resizeMode="cover" />
+            )}
+            {!!rawChore?.receiptNote && (
+              <Text style={[s.receiptNote, { color: k.textMuted }]} numberOfLines={3}>"{rawChore.receiptNote}"</Text>
+            )}
+            {!receiptReimbursed && isParent && (
+              <ActionButton
+                label="💳 Mark Reimbursed" accent={k.gold} k={k} isDark={kioskDark} variant="solid"
+                style={s.receiptBtn}
+                accessibilityHint={`Confirm you've reimbursed the receipt on ${q.title}`}
+                onPress={() => {
+                  registerActivity();
+                  const memberLabel = memberOf(q.assignedToId)?.name?.split(' ')[0] ?? 'the helper';
+                  Alert.alert(
+                    'Mark as Reimbursed?',
+                    rawChore?.receiptAmount != null
+                      ? `Confirm you've paid $${rawChore.receiptAmount.toFixed(2)} back to ${memberLabel}.`
+                      : `Confirm you've reimbursed ${memberLabel} for this receipt.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: '💳 Reimbursed', onPress: () => useChoreStore.getState().acknowledgeGPReimbursement(q.id) },
+                    ],
+                  );
+                }}
+              />
+            )}
           </View>
         )}
 
@@ -2012,6 +2069,14 @@ const s = StyleSheet.create({
   noticeTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   noticeText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', lineHeight: KIOSK_TYPO.caption * 1.35 },
   strike: { textDecorationLine: 'line-through' },
+  receiptBox: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5, gap: KIOSK_SPACE.xs, padding: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.xs },
+  receiptHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  receiptHeaderText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  receiptAmountPill: { borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3 },
+  receiptAmountText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', color: '#fff' },
+  receiptPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
+  receiptNote: { fontSize: KIOSK_TYPO.label, fontStyle: 'italic' },
+  receiptBtn: { alignSelf: 'stretch' },
   teamRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs,
     marginBottom: KIOSK_SPACE.xs,

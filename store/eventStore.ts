@@ -637,6 +637,73 @@ function sortByTime(evs: FamilyEvent[]): FamilyEvent[] {
   return [...evs].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 }
 
+// Live-reported bug: editing an event's date (e.g. moving "Pickup Maya
+// from Soccer" from the 7th to the 8th) wrote correctly to the DB and
+// correctly updated dayEvents/rangeEvents in place — but updateEvent()
+// never touched _dayCache/_rangeCache the way addEvent() already does
+// (see that function's own comments), so the OLD date's cache entry kept
+// the pre-edit snapshot indefinitely. Any later cache-first re-serve
+// (selectDate's own unconditional _dayCache re-serve before its
+// corrective refetch resolves, or loadRange's 5-minute SWR window)
+// clobbers the live, correct state with that stale snapshot — this is
+// what made the moved event "briefly disappear, then come back" on the
+// old date. Reported as kiosk-specific because kiosk's always-on 2-minute
+// background poll (app/_layout.tsx) and its tab-remount-on-switch pattern
+// repeatedly re-trigger this cache-first re-serve in a way mobile's
+// interactive, single-session Calendar screen usage rarely surfaces —
+// the underlying bug is 100% shared store code, not kiosk-only logic.
+//
+// Reconciles both caches for an id whose event may have MOVED date
+// (prevDate !== nextEvent.date), not just changed in place — removes it
+// from the old date's _dayCache entry (and any _rangeCache window that no
+// longer covers it) and inserts/updates it in the new date's entries,
+// mirroring addEvent's own same-date cache patch but generalized for the
+// move case updateEvent needs and addEvent never did.
+function reconcileDateCaches(
+  get: () => EventState,
+  set: (partial: Partial<EventState>) => void,
+  id: string,
+  prevDate: string | undefined,
+  nextEvent: FamilyEvent,
+) {
+  const dayCache = get()._dayCache;
+  let dayCacheChanged = false;
+  const nextDayCache = { ...dayCache };
+  if (prevDate && prevDate !== nextEvent.date) {
+    const oldEntry = dayCache[prevDate];
+    if (oldEntry) {
+      nextDayCache[prevDate] = { ...oldEntry, events: oldEntry.events.filter(e => e.id !== id) };
+      dayCacheChanged = true;
+    }
+  }
+  const newEntry = dayCache[nextEvent.date];
+  if (newEntry) {
+    const withoutSelf = newEntry.events.filter(e => e.id !== id);
+    nextDayCache[nextEvent.date] = { ...newEntry, events: sortByTime([...withoutSelf, nextEvent]) };
+    dayCacheChanged = true;
+  }
+  if (dayCacheChanged) set({ _dayCache: nextDayCache });
+
+  const rangeCache = get()._rangeCache;
+  let rangeCacheChanged = false;
+  const nextRangeCache = { ...rangeCache };
+  for (const key of Object.keys(rangeCache)) {
+    const [from, to] = key.split(':');
+    const entry = rangeCache[key];
+    const inNewWindow = nextEvent.date >= from && nextEvent.date <= to;
+    const hadIt = entry.events.some(e => e.id === id);
+    if (!inNewWindow && hadIt) {
+      nextRangeCache[key] = { ...entry, events: entry.events.filter(e => e.id !== id) };
+      rangeCacheChanged = true;
+    } else if (inNewWindow) {
+      const withoutSelf = entry.events.filter(e => e.id !== id);
+      nextRangeCache[key] = { ...entry, events: sortByTime([...withoutSelf, nextEvent]) };
+      rangeCacheChanged = true;
+    }
+  }
+  if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
+}
+
 export function fromRow(row: any): FamilyEvent {
   return {
     id:                row.id,
@@ -1266,6 +1333,19 @@ function ensureRealtime(
           // across many dates (recurring series, none matching currentDate)
           // would otherwise fire one setState per row here too.
           if (rowDate) _rtCacheInvalidateBuffer.push(rowDate);
+          // Live-reported bug: a row that CHANGES date (payload.new.date
+          // !== payload.old.date — an edit moving an event to a different
+          // day, not just any row whose date happens to differ from
+          // currentDate) only ever had the NEW date's cache invalidated
+          // here. The OLD date's _dayCache entry — the one that still held
+          // this event, on a device where currentDate WAS that old date —
+          // was never touched, so it kept serving the stale pre-move
+          // snapshot indefinitely on any later cache-first re-serve. Same
+          // root cause as updateEvent()'s own fix (see reconcileDateCaches),
+          // for the realtime-received side of the same edit rather than
+          // the device that made it.
+          const oldRowDate: string = (oldRow?.date ?? '').slice(0, 10);
+          if (oldRowDate && oldRowDate !== rowDate) _rtCacheInvalidateBuffer.push(oldRowDate);
           if (_rtCacheInvalidateFlushTimer) clearTimeout(_rtCacheInvalidateFlushTimer);
           _rtCacheInvalidateFlushTimer = setTimeout(() => {
             const dates = _rtCacheInvalidateBuffer.splice(0, _rtCacheInvalidateBuffer.length);
@@ -1938,6 +2018,11 @@ export const useEventStore = create<EventState>((set, get) => ({
         events: sortByTime(s.events.map(e => e.id === id ? { ...e, ...stamped } : e)),
         rangeEvents: sortByTime(s.rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)),
       }));
+      // See reconcileDateCaches's own header comment — this fast path
+      // includes `date` as one of its own TEXT_CHECKED_FIELDS, so a
+      // date-changing edit routed through here has the identical stale-
+      // cache exposure the general path below has.
+      reconcileDateCaches(get, set, id, prevEvent?.date, { ...(prevEvent as FamilyEvent), ...stamped });
       // Was a bare `return` — this fast path handles the single most
       // common real edit shape (title/date/time/location/notes only,
       // exactly what EventFormModal's edit save sends for a plain text/
@@ -2048,6 +2133,14 @@ export const useEventStore = create<EventState>((set, get) => ({
     const next = sortByTime(get().dayEvents.map(e => e.id === id ? updated : e));
     set({ dayEvents: next, events: next });
     set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? updated : e)) });
+    // See reconcileDateCaches's own header comment (live-reported: a
+    // moved event "briefly disappeared, then came back" on its old date)
+    // — dayEvents/rangeEvents above are updated correctly in place, but
+    // neither _dayCache nor _rangeCache were ever touched by this
+    // function, so the OLD date's cache entry kept the pre-edit snapshot
+    // indefinitely until some unrelated cache-first re-serve clobbered
+    // the just-fixed live state back to it.
+    reconcileDateCaches(get, set, id, prevEvent?.date, updated);
 
     // Personal-calendar 2-way sync — only push once the write is
     // CONFIRMED, matching the original ordering (this always ran only

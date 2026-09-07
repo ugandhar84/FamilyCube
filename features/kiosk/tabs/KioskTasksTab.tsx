@@ -1898,6 +1898,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
   const { registerActivity } = useKioskActivity();
   const { quests, claimQuest, submitQuest, approveQuest, updateQuest } = useQuestStore();
   const cheerChore = useChoreStore(s => s.cheerChore);
+  const chores = useChoreStore(s => s.chores);
 
   const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
   // CreateQuestModal's own real scope (SeniorView.tsx's own `kids`,
@@ -1973,7 +1974,25 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
     q.questType === 'grandparent_quest' && q.assignedToId === active.id &&
     ['claimed', 'in_progress'].includes(q.status)
   ), [quests]);
-  const pendingReview = useMemo(() => quests.filter(q => q.status === 'pending_approval'), [quests]);
+  // Real deriveCardActions.ts's own gpOnlyReview guard on canApprove
+  // [fresh-audit wiring bug]: choreAdapter.ts's translation collapses BOTH
+  // raw 'pending_grandparent_approval' and 'gp_offer_pending' onto this
+  // Quest shim's 'pending_approval' status, so a plain q.status ===
+  // 'pending_approval' filter can't tell a real "any grandparent can
+  // approve this" item from a GP-only-review one meant for a different
+  // flow entirely (the sponsoring grandparent's own Accept/Decline). The
+  // write itself is safe either way — choreStore.approveChore no-ops
+  // unless the RAW status is exactly 'pending_approval' — but tapping
+  // "Approve" on a GP-only item did nothing at all, a dead button with no
+  // visible effect. Excluded here the same way deriveCardActions.ts does.
+  const gpOnlyReviewChoreIds = useMemo(
+    () => new Set(chores.filter(c => c.status === 'pending_grandparent_approval' || c.status === 'gp_offer_pending').map(c => c.id)),
+    [chores],
+  );
+  const pendingReview = useMemo(
+    () => quests.filter(q => q.status === 'pending_approval' && !gpOnlyReviewChoreIds.has(q.id)),
+    [quests, gpOnlyReviewChoreIds],
+  );
   // ── GP-Welcome pool: Pass/Reconsider/Backout/Done [GAP — audit A6] ──────
   // Distinct from myGpQuestsOpen/myGpQuestsAssigned above (this grandparent's
   // OWN sponsored quests for kids) — this is the reverse: ordinary family

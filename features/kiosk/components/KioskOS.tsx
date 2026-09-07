@@ -441,10 +441,15 @@ export function KioskExpandableCard({
         // cards, confirmed via grep, so it doesn't ripple into any other
         // kiosk screen's use of the shared s.card shape.
         { borderRadius: KIOSK_RADIUS.xl },
+        // No per-row shadow: these rows already live inside a WidgetCard
+        // zone that carries its own elevation — stacking a second, accent-
+        // tinted shadow on every individual row is what made the board
+        // read "heavier" than the mock's own flat, near-borderless rows
+        // [live-reported: "no where real to mock"]. The accent still shows
+        // via the left accent bar below, just without the glow.
         {
           backgroundColor: k.card,
           borderColor: k.cardBorder,
-          ...kioskElevation(accentColor, isDark),
         },
       ]}
     >

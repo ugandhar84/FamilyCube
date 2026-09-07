@@ -708,14 +708,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
               </View>
 
               {/* Coin chip + History, stacked to the right of title+tags —
-                  matching the mock's own right-aligned coin figure. Filled
-                  rather than wash: coins are the headline reward, not a
-                  status label (every status pill deliberately stays
-                  outlined, see badgeRow's own comment above). */}
+                  matching the mock's own right-aligned coin figure. Wash
+                  variant, not filled: k.gold is a dark saturated brown at
+                  full fill (reads like a button, not a reward chip) — the
+                  mock's own coin pill is a soft amber tint. */}
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   {!isAdultAssignee && (
-                    <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
+                    <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
                   )}
                   {/* Primary action button ALWAYS visible in the collapsed
                       header, matching the approved reference mock's own
@@ -728,13 +728,30 @@ function KioskBoardView({ active, members, colors, isDark }: {
                       uses (RN correctly routes a touch to the innermost
                       matching target, and hitSlop keeps it reliably
                       tappable without also toggling the card). */}
-                  {!!btn && (
+                  {!!btn ? (
                     <ActionButton
                       label={btn.label} Icon={btn.Icon} accent={btn.accent}
                       k={k} isDark={kioskDark} variant="solid"
                       style={s.headerActionBtn}
                       accessibilityHint={q.title}
                       onPress={() => { registerActivity(); btn.action(); }}
+                    />
+                  ) : actions.canEdit && (
+                    // No claim/submit/approve action for THIS viewer (e.g.
+                    // a parent looking at a kid's own to-do/pool chore —
+                    // canClaim/canSubmit are kid/teen-only, canApprove only
+                    // applies once submitted) — real behavior, not a bug;
+                    // the mock's own static "Claim"/"Done" buttons have no
+                    // per-role logic to represent this. A parent's own real
+                    // action here is Edit (deriveQuestActions.canEdit,
+                    // isParent && !done && !declined), so that's what shows
+                    // instead of leaving the header with no button at all.
+                    <ActionButton
+                      label="Edit" Icon={Pencil} accent={k.textMuted}
+                      k={k} isDark={kioskDark} variant="soft"
+                      style={s.headerActionBtn}
+                      accessibilityHint={`Edit ${q.title}`}
+                      onPress={() => { registerActivity(); setEditingQuest(q); }}
                     />
                   )}
                 </View>
@@ -1532,7 +1549,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                     {!!child && (
                       <Text style={[s.cardSub, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{child.name.split(' ')[0]}</Text>
                     )}
-                    <Chip label={`+${coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
+                    <Chip label={`+${coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
                   </View>
                   <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{chore.title}</Text>
                   {!!claim.submissionPhotoUrl && (

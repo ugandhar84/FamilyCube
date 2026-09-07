@@ -77,7 +77,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet } from 'react-native';
 import { Trash2, Clock, Lock, CalendarDays } from 'lucide-react-native';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, estimateOccurrenceCount } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtTime, localDateStr, parseLocalDate } from '@/lib/dates';
@@ -287,7 +287,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
     setDriverName(m?.name ?? '');
   };
 
-  const saveFull = () => {
+  const saveFull = async () => {
     // AUDIT FIX: re-check the permission at the point of the actual write,
     // not only where the button is rendered. KioskQuestEditor's own header
     // already documents this belt-and-suspenders reasoning for quests
@@ -402,11 +402,32 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
     // the whole run through the recurring path rather than trying to
     // retrofit a plain event into a series in place.
     if (repeatFreq !== 'none' && !event.seriesId) {
+      const rule = { frequency: repeatFreq, days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [dateValue.getDay()]) : undefined };
+      // Real EventFormModal.tsx's own confirmLargeRecurrence guard
+      // [fresh-audit gap] — same real OCCURRENCE_WARNING_THRESHOLD (40)
+      // and the same real estimateOccurrenceCount this file's own
+      // addRecurringEvent call ultimately materializes from, so the count
+      // shown here is exactly what gets created, not a separate estimate.
+      // Without this, turning a plain kiosk-edited event into a series
+      // could silently flood the calendar the same way a daily-rule typo
+      // once did on the real phone (that incident is this whole guard's
+      // reason to exist, per EventFormModal.tsx's own comment).
+      const count = estimateOccurrenceCount(localDateStr(dateValue), rule);
+      if (count >= 40) {
+        const proceed = await new Promise<boolean>(resolve => {
+          Alert.alert(
+            "That's a lot of events",
+            `This creates ${count} events over the next ${Math.ceil(count / 7)} weeks. Continue?`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Create anyway', style: 'destructive', onPress: () => resolve(true) },
+            ],
+          );
+        });
+        if (!proceed) return;
+      }
       deleteEvent(event.id);
-      addRecurringEvent(
-        { ...event, ...patch } as Omit<FamilyEvent, 'id'>,
-        { frequency: repeatFreq, days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [dateValue.getDay()]) : undefined },
-      );
+      addRecurringEvent({ ...event, ...patch } as Omit<FamilyEvent, 'id'>, rule);
       onClose();
       return;
     }

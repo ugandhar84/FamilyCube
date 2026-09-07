@@ -57,7 +57,7 @@ import {
 } from '../kidQuestLanes';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { CATEGORY_META } from '@/features/quests/components/questFormShared';
-import { fmtDateShort } from '@/lib/dates';
+import { fmtDateShort, withinLast24h } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
@@ -1900,11 +1900,23 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 
   const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
+  // Real SeniorView.tsx filter: ['approved','auto_approved','completed']
+  // on the raw ChoreTask.status — choreAdapter.ts's own translation maps
+  // auto_approved→'approved' and completed→'done' onto this Quest shim,
+  // so ['approved','done'] here is already the correct equivalent (not a
+  // gap by itself). What WAS genuinely missing: the real 24h window
+  // ("today's finished grandkid chores... the point is the pending
+  // action, not a history feed") — this used to show cheer-eligible
+  // chores indefinitely. Real fallback chain is approvedAt ?? reviewedAt
+  // ?? createdAt (raw ChoreTask fields) — neither reviewedAt nor createdAt
+  // exists on this Quest shim, so approvedAt ?? completedAt ?? claimedAt
+  // substitutes the closest real always-set-on-completion timestamps this
+  // shape actually has.
   const kidsCheerable = useMemo(() => quests.filter(q => {
     if (!['approved', 'done'].includes(q.status)) return false;
     if (!q.assignedToId || !kids.some(k => k.id === q.assignedToId)) return false;
     if ((q.cheers ?? []).some(c => c.memberId === active.id)) return false;
-    return true;
+    return withinLast24h(q.approvedAt ?? q.completedAt ?? q.claimedAt);
   }), [quests, kids, active.id]);
 
   const myGpQuestsOpen = useMemo(() => quests.filter(q =>

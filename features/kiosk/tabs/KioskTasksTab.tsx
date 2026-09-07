@@ -38,7 +38,7 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
   CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion,
@@ -191,6 +191,21 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const giveBackChore = useChoreStore(s => s.giveBackChore);
   const startGrandparentQuest = useChoreStore(s => s.startGrandparentQuest);
+  // A multi-slot bounty's per-claim submissions [GAP — audit A2/A3, the
+  // same real feature entered from two angles: QuestCard.tsx's inline
+  // per-participant approve/decline row IS this same chore.claims data
+  // (confirmed: choreAdapter.ts's approveParticipant/declineParticipant
+  // route straight to approveBountyClaim/declineBountyClaim, not a
+  // separate system) — live entirely in chore.claims, never touching the
+  // parent chore's own status, so KioskBoardView's own pending_approval
+  // column can't see them at all. Same real derivation
+  // ParentReviewDeck.tsx's own pendingBountyClaims uses.
+  const chores = useChoreStore(s => s.chores);
+  const approveBountyClaim = useChoreStore(s => s.approveBountyClaim);
+  const declineBountyClaim = useChoreStore(s => s.declineBountyClaim);
+  const pendingBountyClaims = useMemo(() => chores.flatMap(c =>
+    (c.claims ?? []).filter(cl => cl.status === 'pending_approval').map(cl => ({ chore: c, claim: cl })),
+  ), [chores]);
   const [redoTargetBoard, setRedoTargetBoard] = useState<{ id: string; title: string } | null>(null);
   const isParent = active.role === 'parent';
   const isKidCreator = active.role === 'kid';
@@ -1251,6 +1266,71 @@ function KioskBoardView({ active, members, colors, isDark }: {
         </WidgetCard>
       )}
 
+      {/* ── Zone 1.5: Bounty claims needing review [GAP — audit A2/A3] ──
+          Same real card content ParentReviewDeck.tsx's own
+          BountyClaimReviewCard has (submitted photo, child's note, the
+          same real coin figure) — a review surface KioskBoardView had
+          zero visibility into at all, since these claims never touch the
+          parent chore's own status the rest of this board keys off. */}
+      {isParent && pendingBountyClaims.length > 0 && (
+        <WidgetCard k={k} isDark={kioskDark} accent={k.primary} style={s.zone}>
+          <WidgetHeader
+            Icon={Trophy} eyebrow="Bounty" title="Claims needing review"
+            accent={k.primary} k={k} isDark={kioskDark}
+            right={<Chip label={`${pendingBountyClaims.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
+          />
+          <View style={s.gpGrid}>
+            {pendingBountyClaims.map(({ chore, claim }) => {
+              const child = members.find(m => m.id === claim.memberId);
+              const coins = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+              return (
+                <Well key={`${chore.id}:${claim.memberId}`} k={k} accent={k.primary} style={s.claimCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }}>
+                    {!!child && (
+                      <Text style={[s.cardSub, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{child.name.split(' ')[0]}</Text>
+                    )}
+                    <Chip label={`+${coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                  </View>
+                  <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{chore.title}</Text>
+                  {!!claim.submissionPhotoUrl && (
+                    <Image source={{ uri: claim.submissionPhotoUrl }} style={s.claimPhoto} resizeMode="cover" />
+                  )}
+                  {chore.requiresPhotoProof && !claim.submissionPhotoUrl && (
+                    <Text style={[s.cardSub, { color: k.gold }]} numberOfLines={2}>⚠️ No photo submitted — photo was required</Text>
+                  )}
+                  {!!claim.submissionNote && (
+                    <View style={[s.claimNoteBox, { backgroundColor: k.well }]}>
+                      <Text style={[s.claimNoteLabel, { color: k.textFaint }]}>CHILD'S NOTE</Text>
+                      <Text style={[s.cardSub, { color: k.textMuted }]}>{claim.submissionNote}</Text>
+                    </View>
+                  )}
+                  <View style={s.gpBtnRow}>
+                    <ActionButton
+                      label="Decline" accent={k.danger} k={k} isDark={kioskDark} variant="soft"
+                      style={s.gpBtnSecondary}
+                      accessibilityHint={`Decline ${child?.name?.split(' ')[0] ?? 'this'}'s claim on ${chore.title}`}
+                      onPress={() => {
+                        registerActivity();
+                        Alert.alert('Decline this claim?', `${child?.name?.split(' ')[0] ?? 'This claimant'}'s slot goes back for a redo.`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Decline', style: 'destructive', onPress: () => declineBountyClaim(chore.id, claim.memberId, active.id) },
+                        ]);
+                      }}
+                    />
+                    <ActionButton
+                      label="Approve" Icon={Check} accent={k.sage} k={k} isDark={kioskDark} variant="solid"
+                      style={s.gpBtn}
+                      accessibilityHint={`Approve ${child?.name?.split(' ')[0] ?? 'this'}'s claim on ${chore.title}`}
+                      onPress={() => { registerActivity(); approveBountyClaim(chore.id, claim.memberId, active.id); showToast('Approved ✓'); }}
+                    />
+                  </View>
+                </Well>
+              );
+            })}
+          </View>
+        </WidgetCard>
+      )}
+
       {/* ── Zone 2: Who has what ──────────────────────────────────────
           Person-first, matching KioskHeader's avatar language. A status
           kanban answers "what is stuck where," which is a project-
@@ -1972,6 +2052,10 @@ const s = StyleSheet.create({
   // maxWidth so a fixed-width card can never exceed a narrow portrait
   // pane and clip — same guard applied to every fixed-width card in kiosk.
   gpCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  claimCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
+  claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
+  claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
+  claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },
   gpBtn: { flex: 2 },
   gpBtnRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignSelf: 'stretch' },
   gpBtnSecondary: { flex: 1 },

@@ -32,7 +32,7 @@
  * because removing them is a cleanup decision beyond a styling pass — but
  * a future pass should confirm and drop them rather than migrate them.
  */
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle, type TextStyle, type ViewProps } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT, kioskElevation } from '../kioskTheme';
@@ -379,6 +379,82 @@ export function KioskListRowAction({ k, label, color, onPress, disabled, accessi
   );
 }
 
+/**
+ * KioskExpandableCard — kiosk-native replacement for the phone's
+ * CollapsibleQuestCard (features/quests/components/CollapsibleQuestCard.tsx)
+ * shell, built for KioskTasksTab.tsx's chore cards. Same real interaction
+ * contract that file's callers actually use (tap toggles expand/collapse,
+ * double-tap-within-320ms fires `onDoubleTap` instead — confirmed by
+ * reading the phone component in full: KioskTasksTab.tsx never passes
+ * `pinnedFooter`, `dimmed`, `initiallyExpanded`, or `onLongPress`, so this
+ * only reproduces the subset actually exercised), but built on WidgetCard's
+ * own flat radius/border/kioskElevation instead of the phone's BlurView +
+ * LinearGradient frosted-glass shell at borderRadius 28 — the one real
+ * visual mismatch a KioskTasksTab-vs-KioskOverviewTab comparison found
+ * (every other convention in that file — chip shapes, spacing, hierarchy —
+ * was already consistent with Overview's).
+ */
+export function KioskExpandableCard({
+  accentColor, k, isDark, onDoubleTap, header, children,
+}: {
+  accentColor: string;
+  k: KioskColors;
+  isDark: boolean;
+  onDoubleTap?: () => void;
+  header: ReactNode;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lastTap = useRef(0);
+  const handlePress = () => {
+    const now = Date.now();
+    if (onDoubleTap && now - lastTap.current < 320) {
+      onDoubleTap();
+    } else {
+      setExpanded(e => !e);
+    }
+    lastTap.current = now;
+  };
+  return (
+    <View
+      style={[
+        s.card,
+        {
+          backgroundColor: k.card,
+          borderColor: k.cardBorder,
+          ...kioskElevation(accentColor, isDark),
+        },
+      ]}
+    >
+      <Pressable
+        onPress={handlePress}
+        style={s.expandableHeaderRow}
+        accessibilityRole="button"
+        accessibilityHint={onDoubleTap ? 'Tap to expand or collapse, double-tap to edit' : 'Tap to expand or collapse'}
+      >
+        {/* Same accent glow the phone shell uses in place of a solid color
+            block — a hairline, not a chunky bar, so it reads as a status
+            cue rather than competing with the card's own content. */}
+        <View style={[s.expandableAccentBar, { backgroundColor: accentColor }]} />
+        <View style={{ flex: 1 }}>{header}</View>
+        <ChevronIcon expanded={expanded} color={accentColor} />
+      </Pressable>
+      {expanded && (
+        <View style={s.expandableBody}>
+          {children}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ChevronIcon({ expanded, color }: { expanded: boolean; color: string }) {
+  // Plain Text glyph rather than pulling in lucide's ChevronUp/Down just
+  // for this one shell — matches EmptyNote's own "no icon dependency for
+  // a one-off" precedent in this file.
+  return <Text style={{ fontSize: 13, color, fontWeight: '700' }}>{expanded ? '︿' : '﹀'}</Text>;
+}
+
 const s = StyleSheet.create({
   // sm (10) rather than xl (26) — matches the reference mockup's tighter
   // panel radius (`--radius: 10px`). Sits below KIOSK_RADIUS.lg, which
@@ -463,4 +539,15 @@ const s = StyleSheet.create({
     minHeight: 0,
   },
   listRowActionLabel: { fontSize: 11.5, fontWeight: '700' },
+  expandableHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    // Matches WidgetCard's own `padded` convention (KIOSK_SPACE.md on both
+    // axes) rather than the phone shell's one-off 16/15 — this card sits
+    // beside other WidgetCard-built surfaces in the same lane and should
+    // read as the same family of tile, not its own padding rhythm.
+    padding: KIOSK_SPACE.md,
+    minHeight: KIOSK_HIT.control,
+  },
+  expandableAccentBar: { width: 3, height: 26, borderRadius: 2, opacity: 0.85 },
+  expandableBody: { paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md, paddingTop: 2 },
 });

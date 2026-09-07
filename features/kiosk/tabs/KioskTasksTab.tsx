@@ -18,11 +18,24 @@
  * every useKioskLockSuspended declaration are all unchanged.
  *
  * `colors` is still a prop and still threaded down, because this tab hosts
- * a dozen SHARED PHONE components (SmartTaskComposer, AddQuestModal,
- * AddEventModal, CollapsibleQuestCard,
- * assigneeStyle) that take the app palette and cannot be restyled without
- * forking them. Both palettes resolve off the same useTheme() isDark, so a
- * kiosk frame around app-palette content is consistent within a mode.
+ * a handful of SHARED PHONE components (SmartTaskComposer, AddQuestModal,
+ * AddEventModal, assigneeStyle) that take the app palette and cannot be
+ * restyled without forking them. Both palettes resolve off the same
+ * useTheme() isDark, so a kiosk frame around app-palette content is
+ * consistent within a mode.
+ *
+ * The one exception this used to also carry — CollapsibleQuestCard's own
+ * phone-scale shell (BlurView/LinearGradient glass effect, borderRadius 28,
+ * a custom shadow) sitting inside kiosk's otherwise-flat Well/WidgetCard
+ * containers — was the single real visual mismatch a direct comparison
+ * against KioskOverviewTab.tsx turned up (everything else — chip shapes,
+ * spacing, hierarchy, token usage — was already consistent). Replaced with
+ * KioskExpandableCard (KioskOS.tsx), a kiosk-native shell reproducing the
+ * same real interaction contract this file actually uses (tap toggles
+ * expand/collapse, double-tap-within-320ms edits instead) on WidgetCard's
+ * own flat radius/border/kioskElevation. renderQuestCard's own header/
+ * children content — every status pill, badge, and action row inside the
+ * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
@@ -47,8 +60,7 @@ import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
-import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
-import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -575,10 +587,10 @@ function KioskBoardView({ active, members, colors, isDark }: {
     const showTermsPrompt = !!q.pendingTerms && isAssignedTo(q, active.id) &&
       (active.role === 'kid' || active.role === 'teen');
     return (
-      <CollapsibleQuestCard
+      <KioskExpandableCard
         accentColor={catMeta.color}
-        cardBg={k.card}
-        cardBord={k.cardBorder}
+        k={k}
+        isDark={kioskDark}
         onDoubleTap={actions.canEdit ? () => setEditingQuest(q) : undefined}
         header={
           <View style={s.cardHeader}>
@@ -650,7 +662,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   three happy-path stamps. Kiosk had no route to that at
                   all. Opens the kiosk-native sheet, which reads the SAME
                   fetchActivityLog('chore', id) rows the phone sheet does.
-                  Sits inside CollapsibleQuestCard's own header Pressable,
+                  Sits inside KioskExpandableCard's own header Pressable,
                   so it needs a real hitSlop to be reliably hit without
                   toggling the card instead. */}
               <Pressable
@@ -924,7 +936,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
             )}
           </View>
         ) : null}
-      </CollapsibleQuestCard>
+      </KioskExpandableCard>
     );
   };
 

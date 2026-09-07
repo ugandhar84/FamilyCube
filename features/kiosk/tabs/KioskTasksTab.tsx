@@ -167,7 +167,7 @@ function FilterPill({
         pressed && { opacity: 0.75 },
       ]}
     >
-      {!!emoji && <Text style={{ fontSize: 18 }}>{emoji}</Text>}
+      {!!emoji && <Text style={{ fontSize: 13 }}>{emoji}</Text>}
       <Text
         style={[s.filterChipText, { color: selected ? kioskOnAccent(k, accent) : k.textMuted }]}
         numberOfLines={1}
@@ -1320,34 +1320,17 @@ function KioskBoardView({ active, members, colors, isDark }: {
         ) : undefined}
       />
 
-      <View style={[s.twoColRow, isNarrowBoardLayout && s.twoColRowStacked]}>
-      <View style={[s.centerCol, isNarrowBoardLayout && s.colFullWidth]}>
-
-      {/* ── CubeAI Chores Engine [GAP — audit D3] ───────────────────────
-          Same real AutoBalance/Spark/Advice engine the phone's own
-          Chores toolbar always shows — entirely absent from kiosk
-          before this (confirmed via grep: zero references anywhere in
-          this file to AiEngineBanner/AiTool/AutoBalanceCard/FomoCard/
-          AdviceCard/callAutoBalance/callFomo/callAdvice/family-ai).
-          Parent-only, matching QuestsScreen.tsx's own isParent gate. */}
-      {isParent && (
-        <View style={s.aiBannerRow}>
-          <KioskAiChoresEngine
-            quests={filteredQuests}
-            kids={members.filter(m => m.role === 'kid' || m.role === 'teen')}
-            activeMemberId={active.id}
-            colors={colors}
-            isDark={isDark}
-          />
-        </View>
-      )}
-
       {/* ── Filter bar ────────────────────────────────────────────────
           The phone's "Member / Filter Pills + Status Tabs" block
           (QuestsScreen.tsx:942-954 → QuestFilters.tsx), in kiosk's own
           visual language. Two rows because they're two independent facets
           and stacking them is what makes that legible from across a
           kitchen; the phone stacks them for the same reason.
+
+          Sits right under the masthead, right-aligned and compact
+          [live-reported: "filter strip should be top right and the size
+          also should be smaller"] — no longer its own full-bleed card
+          between the AI banner and the board.
 
           Sizing note — this bar must not reintroduce the ragged-column bug
           documented at length above s.columns. It can't: it's a sibling
@@ -1360,10 +1343,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
           hit and records in its own stylesheet. The status row wraps
           instead of scrolling, since it is a fixed three-item set. */}
       {/* One shared card wrapping both rows, member pills and status tabs
-          laid out as ONE wrapping row (justify-between) — matching the
-          approved reference mock exactly, which never renders these as
-          two visually separate stacked rows floating on the bare page
-          background the way this used to. */}
+          laid out as ONE wrapping row — matching the approved reference
+          mock's own filter chips, just right-aligned under the masthead
+          instead of its own full-bleed card. */}
       <View style={[s.filterBar, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
         <ScrollView
           horizontal
@@ -1484,6 +1466,28 @@ function KioskBoardView({ active, members, colors, isDark }: {
           </View>
         )}
       </View>
+
+      <View style={[s.twoColRow, isNarrowBoardLayout && s.twoColRowStacked]}>
+      <View style={[s.centerCol, isNarrowBoardLayout && s.colFullWidth]}>
+
+      {/* ── CubeAI Chores Engine [GAP — audit D3] ───────────────────────
+          Same real AutoBalance/Spark/Advice engine the phone's own
+          Chores toolbar always shows — entirely absent from kiosk
+          before this (confirmed via grep: zero references anywhere in
+          this file to AiEngineBanner/AiTool/AutoBalanceCard/FomoCard/
+          AdviceCard/callAutoBalance/callFomo/callAdvice/family-ai).
+          Parent-only, matching QuestsScreen.tsx's own isParent gate. */}
+      {isParent && (
+        <View style={s.aiBannerRow}>
+          <KioskAiChoresEngine
+            quests={filteredQuests}
+            kids={members.filter(m => m.role === 'kid' || m.role === 'teen')}
+            activeMemberId={active.id}
+            colors={colors}
+            isDark={isDark}
+          />
+        </View>
+      )}
 
       {/* ── Sibling Cheer view ────────────────────────────────────────
           The phone swaps the whole quest list for SiblingCheerPanel when
@@ -2356,10 +2360,14 @@ const s = StyleSheet.create({
   // bg-white/60 p-4 rounded-3xl bar) — member pills and status tabs both
   // live inside it now, laid out as one wrapping row rather than two
   // stacked rows on the bare page background.
+  // Right-aligned, compact — sits under the masthead's title/New-Chore row
+  // rather than as its own full-bleed card [live-reported: "filter strip
+  // should be top right and the size also should be smaller"].
   filterBar: {
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md,
-    padding: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl, borderWidth: 1,
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
   },
   aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },
   // A horizontal ScrollView in a flex column stretches to fill leftover
@@ -2373,11 +2381,11 @@ const s = StyleSheet.create({
     paddingVertical: 2,
   },
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min - 10,
     justifyContent: 'center', borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
   },
-  filterChipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', flexShrink: 1 },
+  filterChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', flexShrink: 1 },
   // Wraps rather than scrolls — a fixed three-item set, and a three-pill
   // row that scrolls when it doesn't need to reads as broken.
   // Matching the approved reference mock exactly: a gray pill CONTAINER
@@ -2386,16 +2394,16 @@ const s = StyleSheet.create({
   // fully transparent with no border at all, not each pill bordered on
   // its own the way the member-filter row above is.
   statusRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-    padding: 6, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    flexDirection: 'row', flexWrap: 'wrap', gap: 4,
+    padding: 4, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
     alignSelf: 'flex-start',
   },
   statusTab: {
-    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min - 6,
+    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min - 12,
     justifyContent: 'center', alignItems: 'center',
     borderRadius: KIOSK_RADIUS.full,
   },
-  statusTabText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  statusTabText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 
   // The chore's claimed → submitted → approved trail inside the card body.
   timelineText: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginBottom: KIOSK_SPACE.xs },

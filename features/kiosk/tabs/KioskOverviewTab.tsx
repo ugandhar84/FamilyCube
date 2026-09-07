@@ -85,6 +85,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWin
 import {
   Car, UtensilsCrossed, Bell, Check, ChevronRight,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X, UserCheck,
+  AlertTriangle, MapPin,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
@@ -135,6 +136,8 @@ import { SendBonusCard } from '@/features/hub/senior/SendBonusCard';
 import { DirectPendingCard } from '@/features/hub/parent/backlog/DirectPendingCard';
 import { OutgoingPendingCard } from '@/features/hub/parent/backlog/OutgoingPendingCard';
 import { LockedAssignmentCard } from '@/features/hub/parent/backlog/LockedAssignmentCard';
+import { YourRidesSection } from '@/features/hub/senior/YourRidesSection';
+import { SectionCard, CollapsibleCard } from '@/features/hub/hubComponents';
 
 interface RadarRow {
   member_id: string;
@@ -519,6 +522,74 @@ export function KioskOverviewTab({
   );
   const [myRides] = dedupeRideSeries(myRidesRaw);
   const [coParentRides] = dedupeRideSeries(coParentRidesRaw);
+
+  // ── Senior's own "Your Rides" (SeniorView.tsx) ────────────────────────
+  // Real derivation reproduced verbatim (SeniorView.tsx lines ~419-483,
+  // ~652-663, ~776-787) against the same upcomingEvents source
+  // (useUpcomingOpenEvents) already fetched above as backlogWindowEvents —
+  // confirmed the exact same real hook call, not a re-derivation.
+  //
+  // myDrivingToday is deliberately NOT built here — kiosk is a shared
+  // household surface, and starting a live trip dispatch ("I'm En Route")
+  // from it is out of scope by explicit direction (no one should be able
+  // to start a ride from the kiosk). The real YourRidesSection component
+  // below is mounted with myDrivingToday={[]} for that reason (suppresses
+  // its own built-in dispatch button entirely, rather than passing a
+  // fake/no-op handler into a real action button), and a separate,
+  // genuinely read-only "Currently Driving" card is built kiosk-native
+  // further below to still surface the same information.
+  const isSeniorPastEvent = (e: { date?: string; time?: string }): boolean => {
+    if (!e.date) return false;
+    const today = localDateStr();
+    if (e.date < today) return true;
+    if (e.date > today) return false;
+    return e.time ? hoursUntilEvent(e.date, e.time) < 0 : false;
+  };
+  const seniorMyPendingAssignments = useMemo(() => backlogWindowEvents.filter(e => {
+    const a = eventAssignee(e);
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isSeniorPastEvent(e);
+  }), [backlogWindowEvents, active.id, active.name]);
+  const seniorMyDrivingTodayInfo = useMemo(() => backlogWindowEvents.filter(e => {
+    const a = eventAssignee(e);
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed' && !isWorkEvent(e) && !isSeniorPastEvent(e);
+  }), [backlogWindowEvents, active.id, active.name]);
+  const seniorMyClaimedRides = useMemo(() => backlogWindowEvents.filter(e => {
+    if (!e.isOpenToGrandparents) return false;
+    const a = eventAssignee(e);
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed' && !isSeniorPastEvent(e);
+  }), [backlogWindowEvents, active.id, active.name]);
+  const seniorUrgentPending = useMemo(() => seniorMyPendingAssignments.filter(e =>
+    hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0
+  ), [seniorMyPendingAssignments]);
+  // Same two-layer dedupe SeniorView.tsx itself applies: series-collapse
+  // first (each list gets its OWN dedupeRideSeries call — a shared
+  // seenSeries set would let one section's occurrence wrongly suppress a
+  // different section's legitimate occurrence of the same series), THEN an
+  // id-based cross-section dedupe in the same call order the real
+  // myPendingAssignments → myDrivingToday → myClaimedRides mount uses, so
+  // an event id already shown in an earlier section is suppressed from a
+  // later one exactly as the real Hub does.
+  const [seniorDedupSeriesPending] = dedupeRideSeries(seniorMyPendingAssignments);
+  const [seniorDedupSeriesDriving] = dedupeRideSeries(seniorMyDrivingTodayInfo);
+  const [seniorDedupSeriesClaimed] = dedupeRideSeries(seniorMyClaimedRides);
+  const { seniorRidesPending, seniorRidesDrivingInfo, seniorRidesClaimed } = useMemo(() => {
+    const seen = new Set<string>();
+    const dedupe = (list: FamilyEvent[]) => {
+      const out = list.filter(e => !seen.has(e.id));
+      out.forEach(e => seen.add(e.id));
+      return out;
+    };
+    return {
+      seniorRidesPending: dedupe(seniorDedupSeriesPending),
+      seniorRidesDrivingInfo: dedupe(seniorDedupSeriesDriving),
+      seniorRidesClaimed: dedupe(seniorDedupSeriesClaimed),
+    };
+  }, [seniorDedupSeriesPending, seniorDedupSeriesDriving, seniorDedupSeriesClaimed]);
+  const [seniorDeclineId, setSeniorDeclineId] = useState<string | null>(null);
+  const [seniorDeclineText, setSeniorDeclineText] = useState('');
 
   // ── Household Backlog (parent-only) ──────────────────────────────────
   // Real ParentView.tsx's own derivation (its lines ~475-589), reproduced
@@ -1663,6 +1734,81 @@ export function KioskOverviewTab({
                 </Text>
               </View>
               <ParentReviewDeck parent={active} members={members} colors={colors} isDark={phoneDark} />
+            </View>
+          )}
+
+          {/* Your Rides — real SeniorView.tsx section, kiosk had zero
+              equivalent of before this. myDrivingToday is deliberately []
+              here (see the derivation block's own comment above) — a
+              shared kiosk surface shouldn't offer a live "start this trip"
+              dispatch button, so that one built-in action is intentionally
+              suppressed by starving it of data rather than reused as-is.
+              The read-only "Currently Driving" card right after it covers
+              the same information without an action. */}
+          <YourRidesSection
+            myPendingAssignments={seniorRidesPending}
+            myDrivingToday={[]}
+            myClaimedRides={seniorRidesClaimed}
+            urgentPending={seniorUrgentPending}
+            active={active} members={members} colors={colors} isDark={phoneDark}
+            declineId={seniorDeclineId} declineText={seniorDeclineText}
+            setDeclineId={setSeniorDeclineId} setDeclineText={setSeniorDeclineText}
+            updateEvent={updateEvent}
+            onEnRoute={() => {}}
+            conflictReasons={conflictReasons}
+          />
+
+          {/* Currently Driving — kiosk-native, read-only substitute for the
+              real YourRidesSection's myDrivingToday card, which on the
+              phone includes a live "I'm En Route" dispatch button. Kiosk is
+              a shared household surface, not a personal device — nobody
+              should be able to start a trip dispatch from it, so this
+              shows the same information (what this senior is confirmed to
+              drive today, any scheduling conflict) with no action at all,
+              rather than reusing the real card with a suppressed or fake
+              handler wired to its built-in button. */}
+          {seniorRidesDrivingInfo.length > 0 && (
+            <View style={{ paddingHorizontal: 16 }}>
+              <SectionCard
+                large icon={<Car size={18} color={k.sage} />} title="Currently Driving"
+                subtitle={`${seniorRidesDrivingInfo.length} confirmed today`}
+                colors={colors} isDark={phoneDark}
+              >
+                <View style={{ gap: 10 }}>
+                  {seniorRidesDrivingInfo.map(ev => {
+                    const kid = members.find(m => m.id === ev.memberId);
+                    const conflictReason = conflictReasons.get(ev.id);
+                    return (
+                      <CollapsibleCard key={ev.id} accent={k.sage} colors={colors} isDark={phoneDark} defaultExpanded={false}
+                        summary={
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Car size={16} color={k.sage} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '800', color: k.sage }} numberOfLines={1}>{ev.title}</Text>
+                              <Text style={{ fontSize: 13, color: k.sage, opacity: 0.75 }}>
+                                {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}
+                              </Text>
+                            </View>
+                          </View>
+                        }
+                      >
+                        {conflictReason && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                            <AlertTriangle size={12} color={colors.danger} />
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.danger }}>{conflictReason}</Text>
+                          </View>
+                        )}
+                        {ev.location && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <MapPin size={12} color={colors.textSecondary} />
+                            <Text style={{ fontSize: 13, color: colors.textSecondary }}>{ev.location}</Text>
+                          </View>
+                        )}
+                      </CollapsibleCard>
+                    );
+                  })}
+                </View>
+              </SectionCard>
             </View>
           )}
 

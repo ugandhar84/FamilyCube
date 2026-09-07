@@ -520,7 +520,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                   accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
                   accessibilityState={{ selected: on }}
                   style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
-                  <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
+                  <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
                   <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
                 </Pressable>
               );
@@ -1923,14 +1923,16 @@ const s = StyleSheet.create({
   // stretches to fill leftover vertical space instead of hugging its pills.
   filterRowOuter: { flexGrow: 0 },
   filterRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
-  // Card radius, not a full pill [live-reported: "anywhere in the app
-  // uses the pills do the same"].
+  // Same compact sizing as Chores' own filter strip (KioskTasksTab.tsx's
+  // s.filterChip) — smaller padding/min-height/border than the original
+  // full-size control [live-reported: "on the schedule can we do the same
+  // size of filter stip which is in the chores"].
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min - 10, justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
   },
-  filterText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  filterText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
 
   // Week
   week: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.xs },

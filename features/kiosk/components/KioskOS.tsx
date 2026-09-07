@@ -522,8 +522,14 @@ const s = StyleSheet.create({
     borderWidth: 1,
     padding: KIOSK_SPACE.md,
   },
+  // Card radius, not a full pill — matching the card-radius direction
+  // applied to Chores' own filter pills [live-reported: "anywhere in the
+  // app uses the pills do the same"]. Chip is the one shared primitive
+  // for status/coin/role tags used across every kiosk screen, so this one
+  // edit covers all of them without risking any circle/avatar/toggle use
+  // (Chip is never used as one of those).
   chip: {
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 4,
     alignSelf: 'flex-start',
   },

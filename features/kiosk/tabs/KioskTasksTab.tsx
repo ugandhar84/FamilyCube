@@ -2402,15 +2402,18 @@ const s = StyleSheet.create({
   // active one is a plain white fill with no border, inactive ones are
   // fully transparent with no border at all, not each pill bordered on
   // its own the way the member-filter row above is.
+  // Card radius, matching the member filter pills right beside this
+  // control and the shared Chip [live-reported: "anywhere in the app
+  // uses the pills do the same"].
   statusRow: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 4,
-    padding: 4, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    padding: 4, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     alignSelf: 'flex-start',
   },
   statusTab: {
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min - 12,
     justifyContent: 'center', alignItems: 'center',
-    borderRadius: KIOSK_RADIUS.full,
+    borderRadius: KIOSK_RADIUS.sm,
   },
   statusTabText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
 

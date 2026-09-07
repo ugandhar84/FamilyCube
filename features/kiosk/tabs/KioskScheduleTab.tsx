@@ -1459,8 +1459,16 @@ function AgendaView({
                       verbatim copy. Parent-only — a kid tapping this on a
                       long recurring series would land in a bulk-delete
                       sheet with no reason to be there; matches this file's
-                      own established isViewerParent-gating convention. */}
+                      own established isViewerParent-gating convention.
+                      Wrapped in the SAME width/center constraint s.card
+                      uses (width:'100%', maxWidth:720, alignSelf:'center')
+                      — without it, the chip's own flex-start hugs this
+                      row's full outer width while the card above it stays
+                      capped and centered, so on any screen wider than
+                      720px the chip's left edge drifted from the card's
+                      own left edge instead of sitting flush under it. */}
                   {!isKidViewer && seriesMeta && hiddenCount > 0 && (
+                    <View style={{ width: '100%', maxWidth: 720, alignSelf: 'center' }}>
                     <Pressable
                       onPress={() => setViewingSeriesId(seriesMeta.seriesId)}
                       style={[s.seriesMoreChip, { backgroundColor: k.purpleSoft, borderWidth: 1, borderColor: k.purpleEdge }]}
@@ -1474,6 +1482,7 @@ function AgendaView({
                       </Text>
                       <Text style={[s.seriesMoreChipLink, { color: k.textFaint }]}>Manage →</Text>
                     </Pressable>
+                    </View>
                   )}
                 </View>
               );

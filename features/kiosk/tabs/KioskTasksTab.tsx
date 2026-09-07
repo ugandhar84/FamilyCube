@@ -721,6 +721,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   Sits inside KioskExpandableCard's own header Pressable,
                   so it needs a real hitSlop to be reliably hit without
                   toggling the card instead. */}
+              {/* Text label added [live-reported: "don't see view
+                  details"] — icon-only with no visible text didn't read
+                  as a details/history affordance while scanning a
+                  collapsed board, even though the real full-log sheet it
+                  opens was already there and correctly wired. */}
               <Pressable
                 onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
                 hitSlop={12}
@@ -734,6 +739,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 accessibilityHint="Shows everything that has happened on this chore"
               >
                 <History size={13} color={k.textMuted} />
+                <Text style={[s.historyBtnText, { color: k.textMuted }]}>Details</Text>
               </Pressable>
             </View>
           </View>
@@ -2442,10 +2448,16 @@ const s = StyleSheet.create({
   // own header Pressable, so it needs to read as a separate tappable thing
   // rather than decoration. hitSlop (at the call site) carries it past the
   // touch floor without making the chip visually heavy.
+  // Widened from a bare 30x30 icon-only circle to a labeled pill
+  // [live-reported: "don't see view details"] — same real History icon,
+  // now with a visible text label so it reads as a details affordance at
+  // a glance instead of an unlabeled icon a scanning user could miss.
   historyBtn: {
-    width: 30, height: 30, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', marginLeft: 'auto',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    height: 30, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, justifyContent: 'center', marginLeft: 'auto',
   },
+  historyBtnText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   catBadge: { width: 32, height: 32, borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800', lineHeight: KIOSK_TYPO.body * 1.3 },
   cardSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },

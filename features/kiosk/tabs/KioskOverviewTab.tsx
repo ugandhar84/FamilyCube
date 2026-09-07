@@ -92,7 +92,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
-import { useGroceryStore } from '@/store/groceryStore';
+import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
@@ -110,6 +110,7 @@ import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
+import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
 import type { KioskTabKey } from '../kioskTabs';
 
 interface RadarRow {
@@ -276,6 +277,7 @@ export function KioskOverviewTab({
   // below and KioskRecipeDrawer.
   const todayMeals = useMemo(() => meals.filter(m => m.day === todayMealDay()), [meals]);
   const [openMeal, setOpenMeal] = useState<Meal | null>(null);
+  const [viewingRun, setViewingRun] = useState<GroceryRun | null>(null);
 
   // ── Rides needing attention ──────────────────────────────────────────
   // The mockup's "Co-Parent Pending Rides" card. A ride needs attention if
@@ -540,6 +542,14 @@ export function KioskOverviewTab({
         members={members}
         k={k}
       />
+
+      <KioskRunDetailSheet
+        visible={!!viewingRun}
+        run={viewingRun}
+        active={active}
+        members={members}
+        onClose={() => setViewingRun(null)}
+      />
       </>
       )}
 
@@ -772,12 +782,23 @@ export function KioskOverviewTab({
             <WidgetCard k={k} isDark={isDark}>
               <PanelHead title="Grocery list" k={k} />
               {activeGroceryRun && (
-                <View style={[s.groceryRunBanner, { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' }]}>
+                <Pressable
+                  onPress={() => setViewingRun(activeGroceryRun)}
+                  style={({ pressed }) => [
+                    s.groceryRunBanner,
+                    { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Shopping now at ${activeGroceryRun.store}`}
+                  accessibilityHint="Opens the live item list for this trip"
+                >
                   <View style={[s.liveDot, { backgroundColor: k.sage }]} />
                   <Text style={[s.groceryRunBannerText, { color: k.sage }]} numberOfLines={1}>
                     Shopping now at {activeGroceryRun.store}{activeGroceryShopper ? ` · ${activeGroceryShopper}` : ''}
                   </Text>
-                </View>
+                  <Text style={[s.groceryRunBannerLink, { color: k.sage }]}>View →</Text>
+                </Pressable>
               )}
               {unboughtGroceryItems.length === 0 ? (
                 <EmptyNote text="The grocery list is empty." k={k} />
@@ -1882,14 +1903,17 @@ const s = StyleSheet.create({
   },
   groceryItemText: { fontSize: 13, fontWeight: '600' },
 
-  // Read-only mirror of the real phone's active-run banner (no tap target —
-  // kiosk can't start/open a run, this is status-only).
+  // Tappable — opens KioskRunDetailSheet's live item list. Was read-only
+  // status-only; live-requested to show the run's actual live item list
+  // ("added by X · N ago"), so this is now a real navigation target, not
+  // a start/open-a-run affordance (still not ported — kiosk can't do that).
   groceryRunBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 9,
     borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingVertical: 9, paddingHorizontal: 12, marginBottom: 10,
   },
   groceryRunBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  groceryRunBannerLink: { fontSize: 11, fontWeight: '800', flexShrink: 0 },
 
   // Mockup's .feed-item/.feed-thumb/.feed-cap exactly: 96px square thumb,
   // 9px radius, 10.5px caption with a 5px top margin.

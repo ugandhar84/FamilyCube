@@ -54,7 +54,7 @@ import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reani
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
-import { useGroceryStore, type GroceryItem } from '@/store/groceryStore';
+import { useGroceryStore, type GroceryItem, type GroceryRun } from '@/store/groceryStore';
 import { categorizeItem } from '@/features/vault/tabs/meals/types';
 import { CAT_ICON, itemEmoji, mapBoughtRow } from '@/features/grocery/components/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -69,6 +69,7 @@ import { KioskDraggableItemRow } from '../components/KioskDraggableItemRow';
 import { KioskPinStoreLocationSheet } from '../components/KioskPinStoreLocationSheet';
 import { KioskReceiptScanSheet } from '../components/KioskReceiptScanSheet';
 import { KioskGroceryPresenceStrip } from '../components/KioskGroceryPresenceStrip';
+import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
@@ -129,6 +130,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // ahead of the phone's own rollout.
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
+  const [viewingRun, setViewingRun] = useState<GroceryRun | null>(null);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
   const pinStoreLocation = useGroceryStore(s => s.pinStoreLocation);
   const pinnedStores = useGroceryStore(s => s.pinnedStores);
@@ -575,13 +577,29 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                 choice — see KioskGroceryPresenceStrip's own header). */}
             <KioskGroceryPresenceStrip familyId={familyId} excludeMemberId={active.id} />
 
+            {/* Tappable — opens KioskRunDetailSheet's live item list.
+                Live-requested: "if other person added to that shop it
+                should live reflect in to the list of that run direcly"
+                — the banner alone only ever showed the store name, never
+                the run's actual items. */}
             {activeRun && (
-              <View style={[s.runBanner, { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' }]}>
+              <Pressable
+                onPress={() => setViewingRun(activeRun)}
+                style={({ pressed }) => [
+                  s.runBanner,
+                  { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Shopping now at ${activeRun.store}`}
+                accessibilityHint="Opens the live item list for this trip"
+              >
                 <View style={[s.runDot, { backgroundColor: k.sage }]} />
                 <Text style={[s.runBannerText, { color: k.sage }]} numberOfLines={1}>
                   Shopping now at {activeRun.store}{activeRunShopper ? ` · ${activeRunShopper}` : ''}
                 </Text>
-              </View>
+                <Text style={[s.runBannerLink, { color: k.sage }]}>View list →</Text>
+              </Pressable>
             )}
 
             {/* Same GroceryScreen.tsx price-estimate strip: an on-demand
@@ -958,6 +976,14 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         onSuccess={() => load(familyId)}
       />
     )}
+
+    <KioskRunDetailSheet
+      visible={!!viewingRun}
+      run={viewingRun}
+      active={active}
+      members={members}
+      onClose={() => setViewingRun(null)}
+    />
     </>
   );
 }
@@ -1175,6 +1201,7 @@ const s = StyleSheet.create({
   },
   runDot: { width: 8, height: 8, borderRadius: 4 },
   runBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  runBannerLink: { fontSize: 11, fontWeight: '800', flexShrink: 0 },
 
   dayRow: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },
   dayLabelCol: { width: 74 },

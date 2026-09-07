@@ -69,6 +69,7 @@ import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
 import { KioskRedoReasonDialog } from '../components/KioskRedoReasonDialog';
 import { GpOfferReviewCard } from '@/features/hub/parent/GpOfferReviewCard';
+import { CreateQuestModal } from '@/features/hub/senior/CreateQuestModal';
 import { KioskAiChoresEngine } from '../components/KioskAiChoresEngine';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
@@ -1899,6 +1900,52 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
   const cheerChore = useChoreStore(s => s.cheerChore);
 
   const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
+  // CreateQuestModal's own real scope (SeniorView.tsx's own `kids`,
+  // role==='kid' only) — narrower than the kid+teen `kids` above, which
+  // serves other, wider purposes here (cheering, GP-pool). Not
+  // interchangeable — a grandparent sponsoring a chore for a specific
+  // grandkid picks from the same kid-only list the real phone form does.
+  const sponsorableKids = members.filter(m => m.role === 'kid');
+
+  // ── Sponsor a Chore [fresh-audit gap] ─────────────────────────────────
+  // A grandparent standing at kiosk had NO way to sponsor/create a
+  // grandparent quest at all — confirmed via grep, zero references to
+  // CreateQuestModal/createGrandparentQuest/Sponsor anywhere in
+  // features/kiosk/ before this. QuestsScreen.tsx's own isSenior-gated
+  // "Sponsor Chore" toolbar button opens the exact same real
+  // CreateQuestModal + createGrandparentQuest flow SeniorView.tsx's own
+  // Hub-side sponsor button uses (that file's own comment: "same
+  // CreateQuestModal + createGrandparentQuest flow as the Hub's 'Sponsor a
+  // Quest', so both entry points produce the exact same safe, two-gate
+  // quest") — reused directly here as this view's own third entry point,
+  // same real component, same real store call, verbatim state shape from
+  // QuestsScreen.tsx's own handleCreateSponsorQuest.
+  const [showSponsorModal, setShowSponsorModal] = useState(false);
+  const [newQuestMode, setNewQuestMode] = useState<'local' | 'virtual'>('local');
+  const [newQuestTitle, setNewQuestTitle] = useState('');
+  const [newQuestDesc, setNewQuestDesc] = useState('');
+  const [newQuestPoints, setNewQuestPoints] = useState('350');
+  const [newQuestKidIds, setNewQuestKidIds] = useState<string[]>([]);
+  const [newQuestPhoto, setNewQuestPhoto] = useState(true);
+  const handleCreateSponsorQuest = () => {
+    if (!newQuestTitle.trim()) return;
+    useChoreStore.getState().createGrandparentQuest({
+      title: newQuestTitle.trim(),
+      description: newQuestDesc.trim() || undefined,
+      basePoints: parseInt(newQuestPoints, 10) || 350,
+      childIds: newQuestKidIds,
+      sponsorId: active.id,
+      mode: newQuestMode,
+      requiresPhoto: newQuestPhoto,
+    });
+    setNewQuestTitle('');
+    setNewQuestDesc('');
+    setNewQuestPoints('350');
+    setNewQuestKidIds([]);
+    setNewQuestMode('local');
+    setNewQuestPhoto(true);
+    setShowSponsorModal(false);
+  };
 
   // Real SeniorView.tsx filter: ['approved','auto_approved','completed']
   // on the raw ChoreTask.status — choreAdapter.ts's own translation maps
@@ -2014,6 +2061,39 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
         title="Cheer Your Grandkids"
         subtitle="High-five what they finished, and pitch in on your own chores"
         k={k}
+        right={
+          <ActionButton
+            label="Sponsor Chore"
+            Icon={Plus}
+            accent={k.sage}
+            k={k}
+            isDark={kioskDark}
+            variant="solid"
+            accessibilityHint="Create a chore for a grandkid"
+            onPress={() => { registerActivity(); setShowSponsorModal(true); }}
+          />
+        }
+      />
+
+      {/* Real, exported CreateQuestModal + createGrandparentQuest flow —
+          same two entry points the phone has (Hub's own Sponsor button,
+          QuestsScreen.tsx's toolbar Sponsor Chore button) both produce.
+          editing is always false here — kiosk has no equivalent yet of
+          re-opening this form to revise an already-created, still-pending
+          sponsored quest (that's MySponsoredQuestsSection's own onEdit,
+          a separate real gap, not part of this fix). */}
+      <CreateQuestModal
+        visible={showSponsorModal}
+        onClose={() => setShowSponsorModal(false)}
+        editing={false}
+        kids={sponsorableKids} colors={colors} isDark={isDark}
+        newQuestMode={newQuestMode} setNewQuestMode={setNewQuestMode}
+        newQuestTitle={newQuestTitle} setNewQuestTitle={setNewQuestTitle}
+        newQuestDesc={newQuestDesc} setNewQuestDesc={setNewQuestDesc}
+        newQuestPoints={newQuestPoints} setNewQuestPoints={setNewQuestPoints}
+        newQuestKidIds={newQuestKidIds} setNewQuestKidIds={setNewQuestKidIds}
+        newQuestPhoto={newQuestPhoto} setNewQuestPhoto={setNewQuestPhoto}
+        onCreate={handleCreateSponsorQuest}
       />
 
       <WidgetCard k={k} isDark={kioskDark} style={s.zone}>

@@ -109,6 +109,7 @@ import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
+import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import type { KioskTabKey } from '../kioskTabs';
 
 interface RadarRow {
@@ -643,6 +644,14 @@ export function KioskOverviewTab({
               onApproveRequest={(id) => approveRequest(id, active.id)}
               onDeclineRequest={(id) => declineRequest(id, active.id)}
             />
+
+            {/* Live-reported: "in approval there is missing cards to the
+                parner when other parner approved chore for revoke /
+                dispute" — ChoreReviewSection.tsx's real Scenario 4.7 flow
+                had no kiosk equivalent at all. Parent-only, same as
+                ParentApprovalsWidget above it; renders nothing when there's
+                no recently-approved chore to show (matches the phone). */}
+            <KioskDisputeApprovalWidget active={active} members={members} k={k} isDark={isDark} />
 
             {/* Find — mounted here (parent-only) so it genuinely shares
                 centerCol's own width with Rides/Approvals above it by

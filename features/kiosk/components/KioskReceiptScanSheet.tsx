@@ -91,7 +91,28 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
         body: { familyId, scannedById: memberId, imageBase64: base64, imageUrl },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Live-reported: "it says edge function returned non 2xx, when i
+        // upload random picture" — the edge function correctly returns a
+        // structured {error:'not_a_receipt', message:'...'} body for
+        // exactly this case, but as an HTTP 422, not a 200. The Supabase
+        // client's own behavior on any non-2xx response is to throw a
+        // FunctionsHttpError with a fixed generic message and leave `data`
+        // null — so `data?.error === 'not_a_receipt'` below could never
+        // run for this failure, only the generic "Edge Function returned
+        // a non-2xx status code" ever surfaced. The real structured body
+        // is still there, just on error.context (the raw Response object,
+        // per @supabase/functions-js's FunctionsHttpError — needs its own
+        // .json() read rather than being parsed already). This same latent
+        // gap exists in the phone's ReceiptScanSheet.tsx too (identical
+        // `if (error) throw new Error(error.message)` ahead of the same
+        // two data?.error checks) — not something introduced by this port.
+        let body: { error?: string; message?: string } | null = null;
+        try { body = await (error as any)?.context?.json?.(); } catch { /* context wasn't JSON (network/relay error) — fall through to the generic message */ }
+        if (body?.error === 'not_a_receipt') throw new Error(body.message ?? "This image doesn't look like a receipt.");
+        if (body?.error === 'not_grocery') throw new Error(body.message ?? 'Only grocery/shopping receipts are supported.');
+        throw new Error(body?.message ?? error.message);
+      }
       if (data?.error === 'not_a_receipt') throw new Error(data.message ?? "This image doesn't look like a receipt.");
       if (data?.error === 'not_grocery') throw new Error(data.message ?? 'Only grocery/shopping receipts are supported.');
       const extracted: ExtractedItem[] = data.items ?? [];

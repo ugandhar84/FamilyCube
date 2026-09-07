@@ -68,6 +68,7 @@ import { KioskStoreMoveSheet } from '../components/KioskStoreMoveSheet';
 import { KioskDraggableItemRow } from '../components/KioskDraggableItemRow';
 import { KioskPinStoreLocationSheet } from '../components/KioskPinStoreLocationSheet';
 import { KioskReceiptScanSheet } from '../components/KioskReceiptScanSheet';
+import { KioskGroceryPresenceStrip } from '../components/KioskGroceryPresenceStrip';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
@@ -565,6 +566,14 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                 </View>
               }
             />
+
+            {/* Live-asked: "does the kiosk person see other person is
+                live in shopping?" — separate, ephemeral signal from the
+                run-status banner right below (that one reflects a
+                CREATED run; this one is pure "someone has the grocery
+                screen open right now," watch-only per the confirmed
+                choice — see KioskGroceryPresenceStrip's own header). */}
+            <KioskGroceryPresenceStrip familyId={familyId} excludeMemberId={active.id} />
 
             {activeRun && (
               <View style={[s.runBanner, { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' }]}>

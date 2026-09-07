@@ -206,6 +206,16 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const pendingBountyClaims = useMemo(() => chores.flatMap(c =>
     (c.claims ?? []).filter(cl => cl.status === 'pending_approval').map(cl => ({ chore: c, claim: cl })),
   ), [chores]);
+  // Cash-out approval [GAP — audit A8] — a kid's coin-to-cash conversion
+  // request, entirely absent from this board (which only ever reads
+  // `quests`/`chores`, never PointTransaction rows at all).
+  const getPendingCashOuts = useChoreStore(s => s.getPendingCashOuts);
+  const approveCashOut = useChoreStore(s => s.approveCashOut);
+  const denyCashOut = useChoreStore(s => s.denyCashOut);
+  const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
+  const currencySymbol = useChoreStore(s => s.householdSettings.currencySymbol);
+  const transactions = useChoreStore(s => s.transactions);
+  const pendingCashOuts = useMemo(() => getPendingCashOuts(), [getPendingCashOuts, transactions]);
   const [redoTargetBoard, setRedoTargetBoard] = useState<{ id: string; title: string } | null>(null);
   const isParent = active.role === 'parent';
   const isKidCreator = active.role === 'kid';
@@ -1388,6 +1398,72 @@ function KioskBoardView({ active, members, colors, isDark }: {
         </WidgetCard>
       )}
 
+      {/* ── Zone 1.6: Cash-out approval [GAP — audit A8] ──────────────
+          Same real card ParentReviewDeck.tsx's own CashOutCard has (the
+          Spend/Save/Give allocation breakdown, the real currency
+          conversion) — entirely absent before, since this board only
+          ever read quests/chores, never PointTransaction rows. */}
+      {isParent && pendingCashOuts.length > 0 && (
+        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
+          <WidgetHeader
+            Icon={Check} eyebrow="Real money" title="Cash-out requests"
+            accent={k.sage} k={k} isDark={kioskDark}
+            right={<Chip label={`${pendingCashOuts.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+          />
+          <View style={s.gpGrid}>
+            {pendingCashOuts.map(req => {
+              const member = members.find(m => m.id === req.userId);
+              return (
+                <Well key={req.id} k={k} accent={k.sage} style={s.claimCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }}>
+                    <Text style={[s.cardSub, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>
+                      {member?.name?.split(' ')[0] ?? req.userId} · Cash-Out Request
+                    </Text>
+                    <Text style={[s.cashOutTotal, { color: k.sage }]}>
+                      {currencySymbol}{(req.amount * pointsToFiatRatio).toFixed(2)}
+                    </Text>
+                  </View>
+                  <View style={[s.cashOutBreakdown, { backgroundColor: k.well }]}>
+                    {([
+                      { l: '🛍️ Spend', v: req.spendAllocation },
+                      { l: '🏦 Save', v: req.saveAllocation },
+                      { l: '❤️ Give', v: req.giveAllocation },
+                    ] as const).map(j => (
+                      <View key={j.l} style={{ flexDirection: 'row' }}>
+                        <Text style={[s.cardSub, { color: k.textMuted, flex: 1 }]}>{j.l}</Text>
+                        <Text style={[s.cashOutLine, { color: k.sage }]}>
+                          {j.v} pts ({currencySymbol}{(j.v * pointsToFiatRatio).toFixed(2)})
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={s.gpBtnRow}>
+                    <ActionButton
+                      label="Deny" accent={k.danger} k={k} isDark={kioskDark} variant="soft"
+                      style={s.gpBtnSecondary}
+                      accessibilityHint="Deny this cash-out request"
+                      onPress={() => {
+                        registerActivity();
+                        Alert.alert('Deny Cash-Out?', 'Funds stay in their wallet.', [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Deny', style: 'destructive', onPress: () => denyCashOut(req.id) },
+                        ]);
+                      }}
+                    />
+                    <ActionButton
+                      label="💵 Approve Payout" accent={k.sage} k={k} isDark={kioskDark} variant="solid"
+                      style={s.gpBtn}
+                      accessibilityHint="Approve this cash-out payout"
+                      onPress={() => { registerActivity(); approveCashOut(req.id); showToast('Payout approved ✓'); }}
+                    />
+                  </View>
+                </Well>
+              );
+            })}
+          </View>
+        </WidgetCard>
+      )}
+
       {/* ── Zone 2: Who has what ──────────────────────────────────────
           Person-first, matching KioskHeader's avatar language. A status
           kanban answers "what is stuck where," which is a project-
@@ -2121,6 +2197,9 @@ const s = StyleSheet.create({
   claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
   claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
   claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },
+  cashOutTotal: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900' },
+  cashOutBreakdown: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs },
+  cashOutLine: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   gpBtn: { flex: 2 },
   gpBtnRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignSelf: 'stretch' },
   gpBtnSecondary: { flex: 1 },

@@ -663,8 +663,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 <Text style={{ fontSize: 18 }}>{catMeta.emoji}</Text>
               </View>
               <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
+              {/* Filled rather than wash — coins are the headline reward on
+                  a chore card, not a status label, so this one chip earns
+                  the bolder treatment every other status pill deliberately
+                  avoids (see badgeRow's own comment on why THOSE stay
+                  outlined). Visual-polish pass only, same real q.coins
+                  value. */}
               {!isAdultAssignee && (
-                <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
               )}
             </View>
 
@@ -1513,7 +1519,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                     {!!child && (
                       <Text style={[s.cardSub, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{child.name.split(' ')[0]}</Text>
                     )}
-                    <Chip label={`+${coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                    <Chip label={`+${coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
                   </View>
                   <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{chore.title}</Text>
                   {!!claim.submissionPhotoUrl && (

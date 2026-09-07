@@ -660,7 +660,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <View style={s.cardHeader}>
             <View style={s.cardTopRow}>
               <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
-                <Text style={{ fontSize: 17 }}>{catMeta.emoji}</Text>
+                <Text style={{ fontSize: 18 }}>{catMeta.emoji}</Text>
               </View>
               <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
               {!isAdultAssignee && (
@@ -2469,7 +2469,10 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.sm, justifyContent: 'center', marginLeft: 'auto',
   },
   historyBtnText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  catBadge: { width: 32, height: 32, borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  // Matches WidgetHeader's own headerIcon exactly (38x38, KIOSK_RADIUS.md)
+  // — the same icon-chip size/shape Overview uses everywhere, rather than
+  // this card's own smaller one-off badge. Visual-polish pass only.
+  catBadge: { width: 38, height: 38, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800', lineHeight: KIOSK_TYPO.body * 1.3 },
   cardSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   // The chore's own instructions — italic, matching the phone's treatment

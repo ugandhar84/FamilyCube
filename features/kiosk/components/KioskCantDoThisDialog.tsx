@@ -152,7 +152,7 @@ const s = StyleSheet.create({
   },
   preset: {
     minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    paddingHorizontal: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+    paddingHorizontal: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
   },
   presetText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   input: {

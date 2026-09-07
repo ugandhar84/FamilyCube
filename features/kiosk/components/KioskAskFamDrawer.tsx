@@ -230,7 +230,7 @@ const s = StyleSheet.create({
   foot: { borderTopWidth: StyleSheet.hairlineWidth, padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
   chips: { gap: KIOSK_SPACE.xs, paddingRight: KIOSK_SPACE.md },
   chip: {
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: 38, justifyContent: 'center',
   },
   chipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },

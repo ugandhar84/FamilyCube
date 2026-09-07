@@ -427,8 +427,13 @@ const s = StyleSheet.create({
   submitText: { fontSize: KIOSK_TYPO.body, fontWeight: '900' },
   footNote: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', textAlign: 'center' },
   fieldLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 0.4 },
+  // KioskPill's own shell — the shared category/frequency/difficulty
+  // selector chip used by every kiosk form (QuestEditor, EventEditor,
+  // grocery/supplies/ride request sheets, proposal sheets). One edit here
+  // covers every form chip in the app [live-reported: "including form
+  // chips"] — card radius, not a full pill.
   pill: {
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
     justifyContent: 'center',
   },

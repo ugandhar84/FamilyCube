@@ -623,7 +623,7 @@ const s = StyleSheet.create({
   cancelRow: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' },
   cancelRowText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   driverChipRow: { gap: KIOSK_SPACE.xs, paddingRight: KIOSK_SPACE.xs },
-  driverChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 9, borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5 },
+  driverChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 9, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5 },
   driverChipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   reasonBox: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, borderWidth: 1.5 },
   reasonLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },

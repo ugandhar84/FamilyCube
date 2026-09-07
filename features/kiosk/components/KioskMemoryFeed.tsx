@@ -473,7 +473,7 @@ const s = StyleSheet.create({
     position: 'absolute', top: KIOSK_SPACE.sm, left: KIOSK_SPACE.sm,
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 3,
-    borderRadius: KIOSK_RADIUS.full,
+    borderRadius: KIOSK_RADIUS.sm,
     backgroundColor: 'rgba(10,8,7,0.62)',
   },
   badgeRight: { left: undefined, right: KIOSK_SPACE.sm },
@@ -503,7 +503,7 @@ const s = StyleSheet.create({
   heartBtn: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.sm,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   heartCount: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   lovedBy: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', flexShrink: 1 },
@@ -513,7 +513,7 @@ const s = StyleSheet.create({
   saveBtn: {
     position: 'absolute', bottom: 50, alignSelf: 'center', zIndex: 100,
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: KIOSK_RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.control,
   },
   saveText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', color: '#fff' },

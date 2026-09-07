@@ -134,7 +134,7 @@ const s = StyleSheet.create({
   zoneTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.3, flexShrink: 1 },
   zoneCount: {
     minWidth: 30, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 1,
-    borderRadius: KIOSK_RADIUS.full, alignItems: 'center', justifyContent: 'center',
+    borderRadius: KIOSK_RADIUS.sm, alignItems: 'center', justifyContent: 'center',
   },
   zoneCountText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900', fontVariant: ['tabular-nums'] },
   zoneSpacer: { flex: 1 },

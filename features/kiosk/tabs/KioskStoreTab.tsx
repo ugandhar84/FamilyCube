@@ -410,7 +410,7 @@ const s = StyleSheet.create({
   coinPill: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   coinText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
 

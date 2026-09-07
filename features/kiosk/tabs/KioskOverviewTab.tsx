@@ -3500,9 +3500,11 @@ const s = StyleSheet.create({
   // the shared header shell itself.
   panelCount: { fontSize: 11 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  // Mockup's .chip exactly: 999px pill, 1px border, 7x13 padding, 12px/700 text.
+  // Card radius, not the mockup's original 999px pill — matching the
+  // card-radius direction applied app-wide to text pills/tags
+  // [live-reported: "anywhere in the app uses the pills do the same"].
   filterChip: {
-    borderWidth: 1, borderRadius: 999,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: 13, paddingVertical: 7,
   },
   filterChipText: { fontSize: 12, fontWeight: '700' },

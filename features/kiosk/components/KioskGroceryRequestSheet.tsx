@@ -371,7 +371,7 @@ const s = StyleSheet.create({
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   addText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   empty: {

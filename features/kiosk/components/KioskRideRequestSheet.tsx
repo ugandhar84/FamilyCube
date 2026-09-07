@@ -614,7 +614,7 @@ const s = StyleSheet.create({
   // Step 2 — the "you picked X, change it" chip.
   catChip: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    alignSelf: 'flex-start', borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    alignSelf: 'flex-start', borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min,
   },
   catChipEmoji: { fontSize: 18 },

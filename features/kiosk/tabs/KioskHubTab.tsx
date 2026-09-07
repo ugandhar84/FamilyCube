@@ -432,7 +432,7 @@ const s = StyleSheet.create({
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
   alertStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.lg },
   alertPill: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.full,
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
     borderWidth: 1, paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
   },
   alertText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
@@ -456,7 +456,7 @@ const s = StyleSheet.create({
     paddingTop: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm, minHeight: 44,
   },
   backlogTitle: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700', marginRight: KIOSK_SPACE.xs },
-  coinPill: { paddingHorizontal: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.full, paddingVertical: 5 },
+  coinPill: { paddingHorizontal: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.sm, paddingVertical: 5 },
   coinText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   empty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', textAlign: 'center' },
   timeline: { position: 'relative' },
@@ -481,7 +481,7 @@ const s = StyleSheet.create({
   tlMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 5 },
   tlStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs },
   tlWho: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flex: 1, marginRight: KIOSK_SPACE.xs },
-  statusPill: { paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5, borderRadius: KIOSK_RADIUS.full },
+  statusPill: { paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5, borderRadius: KIOSK_RADIUS.sm },
   statusText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   // Same row shape as tlItem (time label + dot-on-rail + content), but the
   // "content" is a plain horizontal line instead of a card — marks exactly

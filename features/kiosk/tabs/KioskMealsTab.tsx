@@ -1302,7 +1302,7 @@ const s = StyleSheet.create({
   boughtWhen: { fontSize: 11 },
   undoBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1, borderRadius: KIOSK_RADIUS.full,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: 9, paddingVertical: 5, flexShrink: 0,
   },
   undoBtnText: { fontSize: 11, fontWeight: '700' },
@@ -1318,7 +1318,7 @@ const s = StyleSheet.create({
   },
   bulkCount: { flex: 1, fontSize: 13, fontWeight: '700' },
   bulkBtn: {
-    borderWidth: 1, borderRadius: KIOSK_RADIUS.full,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 7,
   },
   bulkBtnText: { fontSize: 12, fontWeight: '700' },

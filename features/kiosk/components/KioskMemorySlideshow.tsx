@@ -266,8 +266,10 @@ const s = StyleSheet.create({
     flexDirection: 'row', gap: 5,
     backgroundColor: 'rgba(10,8,7,0.45)',
     paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 5,
-    borderRadius: KIOSK_RADIUS.full,
+    borderRadius: KIOSK_RADIUS.sm,
   },
+  // Individual dots stay circular (a page-indicator dot, not a tag) —
+  // only the container pill around them changed.
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F7F2EE' },
 
   feedContent: { gap: KIOSK_SPACE.sm, paddingBottom: 2 },

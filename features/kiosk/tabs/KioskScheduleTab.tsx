@@ -1923,10 +1923,12 @@ const s = StyleSheet.create({
   // stretches to fill leftover vertical space instead of hugging its pills.
   filterRowOuter: { flexGrow: 0 },
   filterRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
+  // Card radius, not a full pill [live-reported: "anywhere in the app
+  // uses the pills do the same"].
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   filterText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
 
@@ -2063,7 +2065,7 @@ const s = StyleSheet.create({
   },
   claimBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   statusPill: {
-    borderRadius: KIOSK_RADIUS.full, flexShrink: 0,
+    borderRadius: KIOSK_RADIUS.sm, flexShrink: 0,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
   },
   statusPillText: { fontSize: 11, fontWeight: '700' },

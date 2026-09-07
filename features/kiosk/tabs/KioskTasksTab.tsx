@@ -2439,7 +2439,7 @@ const s = StyleSheet.create({
     // the message text — this row is otherwise unchanged.
     flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
     alignSelf: 'flex-start', maxWidth: '100%',
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md,
   },
   boardEmptyText: { fontSize: KIOSK_TYPO.body, fontWeight: '600', flexShrink: 1 },
@@ -2469,7 +2469,7 @@ const s = StyleSheet.create({
   // same way in both appearances.
   statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 3,
     flexShrink: 1,
   },
@@ -2561,7 +2561,7 @@ const s = StyleSheet.create({
   },
   editLinkText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   assigneeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.full,
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, borderWidth: 1, flexShrink: 1,
   },
   assigneeChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
@@ -2590,7 +2590,7 @@ const s = StyleSheet.create({
   photoMissingText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   photoViewerScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center', alignItems: 'center' },
   photoViewerImage: { width: '100%', height: '100%' },
-  photoViewerCloseTag: { position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: KIOSK_RADIUS.full, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs },
+  photoViewerCloseTag: { position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs },
   photoViewerCloseText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', color: '#fff' },
   gpBtn: { flex: 2 },
   gpBtnRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignSelf: 'stretch' },

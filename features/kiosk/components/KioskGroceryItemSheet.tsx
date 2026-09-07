@@ -311,7 +311,7 @@ const s = StyleSheet.create({
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.sm,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
   deleteConfirmText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
 });

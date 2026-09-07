@@ -91,6 +91,8 @@ import { RecurrenceControl } from '@/features/tasks/components/forms/RecurrenceC
 // with no header/Done affordance, a genuine functional gap vs. mobile's
 // real form UI, not just a visual difference.
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
+import HelperAssignmentSection from '@/features/calendar/components/eventForm/HelperAssignmentSection';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -108,8 +110,8 @@ function timeStrToDate(t: string | undefined): Date | null {
   return d;
 }
 
-export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
-  event: FamilyEvent | null; active: FamilyMember; onClose: () => void; colors: any; isDark: boolean;
+export function KioskEventEditor({ event, active, members, onClose, colors, isDark }: {
+  event: FamilyEvent | null; active: FamilyMember; members: FamilyMember[]; onClose: () => void; colors: any; isDark: boolean;
 }) {
   const { k } = useKioskColors();
   const updateEvent = useEventStore(s => s.updateEvent);
@@ -133,6 +135,12 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [alertCall, setAlertCall] = useState(false);
+  // "Who is this for" — real multi-select, same shape EventFormModal.tsx's
+  // own memberIds state uses (memberIds[0] becomes the real memberId
+  // column, the rest ride along in memberIds when there's more than one).
+  // A genuine gap this file had with zero prior UI: kiosk could edit
+  // every other field but never reassign an event to a different member.
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   // Category + its own fields — real EventCategory picker, same 9 values
   // EventFormModal.tsx's own type has. The category-specific state below
   // is form-local exactly like EventFormModal.tsx's own equivalents
@@ -149,7 +157,25 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   const [isOnline, setIsOnline] = useState(false);
   const [pickupLocation, setPickupLocation] = useState('');
   const [dropLocation, setDropLocation] = useState('');
+  // Real family-member picker + free-text fallback backing "who's
+  // accompanying/driving" for Medical/Sports/Ride — the real helper/
+  // helperId pair HelperAssignmentSection.tsx's own "Accompanied by
+  // (adult)" / "Drop-off by (adult)" / "Driven by (adult)" pickers use.
+  // Was plain free-text only, a real gap next to the phone's own picker.
+  const [helperId, setHelperId] = useState<string | undefined>(undefined);
+  const [helperName, setHelperName] = useState('');
+  // Study's own SEPARATE "who's driving to the session" picker — real
+  // driverName/driverId columns. Confirmed by reading CategoryFields.tsx
+  // in full: this "🚗 Drive Assignment" MemberPicker only ever renders
+  // inside the Study block (line ~229-249), never Ride's — a bug in this
+  // file's own earlier build had Ride writing "Driver" into driverName/
+  // driverId instead of helper/helperId, which EventFormModal.tsx's own
+  // submit-time comment calls out explicitly ("Drive assignment —
+  // distinct from `helper` (tutor/escort/coach)"). Fixed: Ride now uses
+  // the same helper/helperId + HelperAssignmentSection every other
+  // escort-needing category does; this pair is Study-only.
   const [driverName, setDriverName] = useState('');
+  const [driverId, setDriverId] = useState<string | undefined>(undefined);
   // Live-requested: "yeah all add modify forms also should present and
   // recurence sheet also should be there" — same real vocabulary/shape as
   // EventFormModal.tsx's own repeatFreq/repeatDays ('none' rather than
@@ -170,6 +196,9 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       setAlertCall(event.alertCall ?? false);
       setShowDatePicker(false);
       setShowTimePicker(false);
+      // Same real memberIds-else-memberId prefill shape EventFormModal.tsx's
+      // own prefill uses (that file's line ~177-178, read before writing this).
+      setMemberIds(event.memberIds?.length ? event.memberIds : (event.memberId ? [event.memberId] : []));
       // Category + its fields — same reverse-derivation direction as
       // EventFormModal.tsx's own edit-prefill: clinicLocation/venueLocation/
       // tutorName aren't real columns, so an existing event's `location`/
@@ -191,7 +220,16 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       setTutorName(cat === 'Study' && !event.helperId ? (event.helper ?? '') : '');
       setPickupLocation(cat === 'Ride' ? (event.pickupLocation ?? '') : '');
       setDropLocation(cat === 'Ride' ? (event.dropLocation ?? '') : '');
-      setDriverName(cat === 'Ride' ? (event.driverName ?? event.helper ?? '') : '');
+      // helper/helperId — the real "accompanying/driving" pair for
+      // Medical/Sports/Ride (HelperAssignmentSection.tsx). Study alone
+      // skips this: its own Tutor field above already owns `helper`.
+      const needsHelper = cat === 'Medical' || cat === 'Sports' || cat === 'Ride';
+      setHelperId(needsHelper ? event.helperId : undefined);
+      setHelperName(needsHelper ? (event.helper ?? '') : '');
+      // driverName/driverId — Study's OWN separate "drive assignment"
+      // pair, real columns, unrelated to helper/helperId above.
+      setDriverName(cat === 'Study' ? (event.driverName ?? '') : '');
+      setDriverId(cat === 'Study' ? event.driverId : undefined);
       // Existing recurrence, if any — pre-fills the control the same way
       // the phone's own EditEventModal would read it from the event's row
       // (the frequency/days live on the series anchor's recurrenceRule).
@@ -207,6 +245,23 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
   const canEditFull = perm.canEditFull;
   const canEditRestricted = perm.canEditRestricted;
   const readOnly = !canEditFull && !canEditRestricted;
+
+  // Same real "adult" filter EventFormModal.tsx's own HelperAssignmentSection
+  // mount uses (that file's line ~435-439) — simplified to parent-only here
+  // since kiosk deliberately doesn't carry the GP/teen ride-sharing toggles
+  // that widen it there (see this file's header comment on scope).
+  const adults = members.filter(m => m.role === 'parent');
+  const siblings = members.map(m => m.name);
+  const handleHelperSelect = (id: string) => {
+    const m = members.find(x => x.id === id);
+    setHelperId(id);
+    setHelperName(m?.name ?? '');
+  };
+  const handleDriverSelect = (id: string) => {
+    const m = adults.find(x => x.id === id);
+    setDriverId(id);
+    setDriverName(m?.name ?? '');
+  };
 
   const saveFull = () => {
     // AUDIT FIX: re-check the permission at the point of the actual write,
@@ -236,10 +291,19 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       : category === 'Study'  ? (isOnline ? 'Online — Zoom' : (venueLocation.trim() || undefined))
       : category === 'Ride'   ? (dropLocation.trim() || undefined)
       : (location.trim() || undefined);
+    // helper/helperId — Study's own dedicated Tutor field is the source
+    // of truth for `helper` there (real column, folded from tutorName);
+    // Medical/Sports/Ride's `helper`/`helperId` instead comes straight
+    // from HelperAssignmentSection's own picker/free-text state, exactly
+    // the real "accompanying/driving adult" pair EventFormModal.tsx's own
+    // submit uses for these three categories (helperId prefers the
+    // picker's selection, helperName is the fallback/display value).
     const foldedHelper =
       category === 'Study' ? (tutorName.trim() || undefined)
-      : category === 'Ride' ? (driverName.trim() || undefined)
+      : (category === 'Medical' || category === 'Sports' || category === 'Ride') ? (helperName.trim() || undefined)
       : undefined;
+    const foldedHelperId =
+      (category === 'Medical' || category === 'Sports' || category === 'Ride') ? helperId : undefined;
 
     const patch: Partial<FamilyEvent> = {
       title: title.trim(),
@@ -247,6 +311,21 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       time,
       allDay: !time,
       category,
+      // Same memberIds[0]->memberId shape EventFormModal.tsx's own
+      // eventInput uses (that file's line ~604-605) — an empty picker
+      // clears both, matching the phone's "nobody explicitly picked, hand
+      // it to the auto-assignment engine / family-wide" convention rather
+      // than leaving the event's PREVIOUS assignee stuck forever.
+      // memberIds is `[]`, never undefined — live-crashed "null value in
+      // column member_ids violates not-null constraint" on Family/clear:
+      // toRowPartial's own generic `?? null` fallback (eventStore.ts) has
+      // no per-column default table the way toRow()'s insert path does
+      // (member_ids: ev.memberIds ?? []), so an undefined here reaches the
+      // DB as a literal null against a NOT NULL column. This UI is the
+      // first caller to actually clear memberIds through the partial-
+      // update path, surfacing a pre-existing gap in toRowPartial itself.
+      memberId: memberIds[0],
+      memberIds: memberIds.length > 1 ? memberIds : [],
       location: foldedLocation,
       notes: notes.trim() || undefined,
       alertCall,
@@ -255,8 +334,12 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
       subject: category === 'Study' ? (subject || undefined) : event.subject,
       pickupLocation: category === 'Ride' ? (pickupLocation.trim() || undefined) : event.pickupLocation,
       dropLocation: category === 'Ride' ? (dropLocation.trim() || undefined) : event.dropLocation,
-      driverName: category === 'Ride' ? (driverName.trim() || undefined) : event.driverName,
+      // driverName/driverId — Study's own separate drive-assignment pair
+      // (see the state declarations above for why this isn't Ride's).
+      driverName: category === 'Study' ? (driverName.trim() || undefined) : event.driverName,
+      driverId: category === 'Study' ? driverId : event.driverId,
       ...(foldedHelper !== undefined ? { helper: foldedHelper } : {}),
+      ...(foldedHelperId !== undefined ? { helperId: foldedHelperId } : {}),
     };
 
     // A brand-new repeat rule on an event that wasn't already a series —
@@ -413,6 +496,28 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
               placeholderTextColor={k.textFaint}
             />
           </View>
+          {/* Live-requested: "check if anything is missing like assinments
+              or pickers etc those also should match to mobile" — this file
+              had no way to reassign an event to a different member at all.
+              Same real MemberPicker EventFormModal.tsx's own "Who is this
+              for" row uses, unmodified (its own prop contract is
+              self-contained, unlike CategoryFields.tsx's 37+ coupled
+              props — no rebuild needed to reuse it directly here). */}
+          <View style={s.section}>
+            <MemberPicker
+              label="WHO IS THIS FOR"
+              hint="Leave blank for the whole family"
+              selectedIds={memberIds}
+              members={members}
+              onToggle={(id) => setMemberIds(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id])}
+              onSelectAll={() => setMemberIds(prev => prev.length === members.length ? [] : members.map(m => m.id))}
+              colors={colors}
+              isDark={isDark}
+              siblings={members.map(m => m.name)}
+              showFamilyOption
+              onClear={() => setMemberIds([])}
+            />
+          </View>
           <View style={s.section}>
             <KioskFieldLabel k={k}>DATE &amp; TIME</KioskFieldLabel>
             <View style={s.row}>
@@ -471,6 +576,11 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
               <TextInput value={doctorName} onChangeText={setDoctorName} style={input} placeholderTextColor={k.textFaint} placeholder="Who's the appointment with?" />
               <KioskFieldLabel k={k}>CLINIC</KioskFieldLabel>
               <LocationAutocompleteInput value={clinicLocation} onChangeText={setClinicLocation} colors={colors} accent={k.primary} placeholder="Clinic or office address" />
+              <HelperAssignmentSection
+                category={category} catColor={kioskCatAccent(category, k).fg} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
+                helperId={helperId} handleHelperSelect={handleHelperSelect}
+                helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
+              />
             </View>
           )}
           {category === 'Sports' && (
@@ -479,6 +589,11 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
               <TextInput value={coachName} onChangeText={setCoachName} style={input} placeholderTextColor={k.textFaint} placeholder="Coach's name" />
               <KioskFieldLabel k={k}>VENUE</KioskFieldLabel>
               <LocationAutocompleteInput value={venueLocation} onChangeText={setVenueLocation} colors={colors} accent={k.primary} placeholder="Field, gym, or rink" />
+              <HelperAssignmentSection
+                category={category} catColor={kioskCatAccent(category, k).fg} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
+                helperId={helperId} handleHelperSelect={handleHelperSelect}
+                helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
+              />
             </View>
           )}
           {category === 'Study' && (
@@ -501,6 +616,23 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
                   <LocationAutocompleteInput value={venueLocation} onChangeText={setVenueLocation} colors={colors} accent={k.primary} placeholder="Where's the session?" />
                 </>
               )}
+              {/* Study's OWN separate "who's driving to the session" pair —
+                  real driverName/driverId columns, distinct from `helper`
+                  (the Tutor field above already owns that). Same real
+                  MemberPicker CategoryFields.tsx's own "🚗 Drive Assignment"
+                  row uses for this exact category (confirmed by reading
+                  that file in full — this block only ever renders inside
+                  Study there, never Ride's). */}
+              <MemberPicker
+                label="DRIVE ASSIGNMENT"
+                selectedIds={driverId ? [driverId] : []}
+                members={adults}
+                onToggle={handleDriverSelect}
+                colors={colors} isDark={isDark} siblings={siblings}
+              />
+              {!driverId && (
+                <TextInput value={driverName} onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }} style={input} placeholderTextColor={k.textFaint} placeholder="Or type a name (e.g. external driver)" />
+              )}
             </View>
           )}
           {category === 'Ride' && (
@@ -509,8 +641,11 @@ export function KioskEventEditor({ event, active, onClose, colors, isDark }: {
               <LocationAutocompleteInput value={pickupLocation} onChangeText={setPickupLocation} colors={colors} accent={k.primary} placeholder="Pickup address" />
               <KioskFieldLabel k={k}>DROP TO</KioskFieldLabel>
               <LocationAutocompleteInput value={dropLocation} onChangeText={setDropLocation} colors={colors} accent={k.primary} placeholder="Drop-off address" />
-              <KioskFieldLabel k={k}>DRIVER</KioskFieldLabel>
-              <TextInput value={driverName} onChangeText={setDriverName} style={input} placeholderTextColor={k.textFaint} placeholder="Who's driving?" />
+              <HelperAssignmentSection
+                category={category} catColor={kioskCatAccent(category, k).fg} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
+                helperId={helperId} handleHelperSelect={handleHelperSelect}
+                helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
+              />
             </View>
           )}
           {/* Live-requested: "all add modify forms also should present and

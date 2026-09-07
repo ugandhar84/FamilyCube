@@ -1083,12 +1083,27 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
 // meant to touch. Building the patch from `keys` (the update's own field
 // list, plus whatever stamped always adds) means a write can only ever
 // affect columns the caller actually named.
+// A handful of calendar_events columns are NOT NULL with an empty-
+// array/object default (member_ids, grandparent_passed_ids, rsvps) — the
+// generic `?? null` fallback below is correct for every genuinely-
+// nullable column, but for these three it produces a literal null the DB
+// rejects outright. toRow()'s own insert path already has this per-column
+// default (e.g. member_ids: ev.memberIds ?? []); toRowPartial lacked it,
+// live-crashing "null value in column member_ids violates not-null
+// constraint" the first time a caller (KioskEventEditor's new member
+// picker, clearing an event back to family-wide) actually sent memberIds:
+// undefined through the partial-update path.
+const NOT_NULL_EMPTY_DEFAULT: Partial<Record<keyof FamilyEvent, unknown>> = {
+  memberIds: [], grandparentPassedIds: [], rsvps: {},
+};
+
 function toRowPartial(ev: FamilyEvent, keys: Iterable<keyof FamilyEvent>): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const key of keys) {
     const col = EVENT_COLUMN[key];
     if (!col) continue;
-    patch[col] = (ev as any)[key] ?? null;
+    const val = (ev as any)[key];
+    patch[col] = val ?? (key in NOT_NULL_EMPTY_DEFAULT ? NOT_NULL_EMPTY_DEFAULT[key] : null);
   }
   return patch;
 }

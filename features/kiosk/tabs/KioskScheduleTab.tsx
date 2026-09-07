@@ -49,15 +49,15 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Platf
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays as CalendarIcon,
   MapPin, AlertTriangle, Stethoscope, BookOpen, Trophy, StickyNote,
-  Check, Lock, RefreshCw, Car,
+  Check, Lock, RefreshCw, Car, Repeat,
 } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { localDateStr, fmtTime } from '@/lib/dates';
-import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS } from '../../calendar/components/calendarDateHelpers';
-import { assigneeStyle, MultiPersonTimeFill } from '@/features/calendar/components/EventCard';
+import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS, collapseSeries } from '../../calendar/components/calendarDateHelpers';
+import { assigneeStyle, MultiPersonTimeFill, OverlappingAvatars } from '@/features/calendar/components/EventCard';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
@@ -71,6 +71,7 @@ import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridVi
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
+import { WidgetCard, PanelHead } from '../components/KioskOS';
 
 /**
  * Four modes, per the updated reference mockup. `agenda` is new and is the
@@ -82,9 +83,16 @@ import { useKioskColors, type KioskColors } from '../kioskPalette';
 type ViewMode = 'agenda' | 'day' | 'week' | 'month';
 const VIEW_MODES: ViewMode[] = ['agenda', 'day', 'week', 'month'];
 
-/** How far forward Agenda looks. Two weeks is enough to cover "what's
- *  coming up" without turning the list into a scroll marathon. */
-const AGENDA_DAYS = 14;
+/** How far forward Agenda looks. Live-reported from a screenshot: "i see
+ *  extra events in the mobile app not in kiosec" — kiosk's own 14-day
+ *  window was a kiosk-invented value, not matched to the real phone. Both
+ *  CalendarScreen.tsx (its own Agenda mode, `loadRange(today,
+ *  addDays(today, 60))`) and TasksScreen.tsx (`today -> +60 days`,
+ *  explicitly commented as matching "CalendarScreen's own Agenda view")
+ *  use 60 days — an event 3-6 weeks out (the screenshot's own missing
+ *  "Maha Saptami"/"Maha Ashtami"/Halloween) is real, current, and simply
+ *  outside a 14-day window, not a data or filter bug. */
+const AGENDA_DAYS = 60;
 
 function startOfWeek(d: Date): Date {
   const r = new Date(d);
@@ -94,6 +102,15 @@ function startOfWeek(d: Date): Date {
 }
 
 export function KioskScheduleTab({ active, members, colors, isDark }: { active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean }) {
+  // Live-requested: "redesing cards and the all fonts similar to the
+  // overview and the meals" — this tab's own sub-components (AgendaView/
+  // WeekView/DayView/MonthView/KioskEventCard) already call useKioskColors()
+  // internally, but the top-level function never did: its header/nav/mode-
+  // switcher was built entirely on the phone-theme `colors` prop passed
+  // down from KioskScreen.tsx, which is why the header read as a different
+  // visual language from Overview/Meals even though the cards beneath it
+  // were already mostly on kiosk's own palette.
+  const { k } = useKioskColors();
   const rangeEvents = useEventStore(s => s.rangeEvents);
   const rangeLoading = useEventStore(s => s.rangeLoading);
   const loadRange = useEventStore(s => s.loadRange);
@@ -347,30 +364,35 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
 
   return (
     <View style={s.root}>
-      <View style={s.header}>
+      {/* Header rebuilt onto kiosk's own palette/card shell to match
+          Overview/Meals — was entirely on the phone-theme `colors` prop,
+          the one real gap between this tab's already-kiosk-palette-native
+          card system (KioskEventCard/AgendaView/etc. already call
+          useKioskColors() internally) and its own top-level chrome. */}
+      <WidgetCard k={k} isDark={isDark} style={s.header}>
         <View style={s.headerTop}>
           <View style={s.navRow}>
-            <Pressable onPress={() => shiftCursor(-1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}
+            <Pressable onPress={() => shiftCursor(-1)} style={[s.navBtn, { backgroundColor: k.well }]} hitSlop={8}
               accessibilityRole="button" accessibilityLabel={`Previous ${viewMode}`}>
-              <ChevronLeft size={26} color={colors.textSecondary} />
+              <ChevronLeft size={26} color={k.textMuted} />
             </Pressable>
             <View>
               {/* "My Schedule" for a kid, matching CalendarScreen.tsx:1070's
                   own isKid title swap — the kiosk's default view is now
                   scoped to them, so a "Family Schedule"-style label would
                   misdescribe what's actually on screen. */}
-              <Text style={[s.title, { color: colors.textPrimary }]}>
+              <Text style={[s.title, { color: k.text }]}>
                 {active.role === 'kid' ? 'My Schedule' : 'Schedule'}
               </Text>
-              <Text style={[s.range, { color: colors.textSecondary }]}>{headerLabel}</Text>
+              <Text style={[s.range, { color: k.textMuted }]}>{headerLabel}</Text>
             </View>
-            <Pressable onPress={() => shiftCursor(1)} style={[s.navBtn, { backgroundColor: colors.surface }]} hitSlop={8}
+            <Pressable onPress={() => shiftCursor(1)} style={[s.navBtn, { backgroundColor: k.well }]} hitSlop={8}
               accessibilityRole="button" accessibilityLabel={`Next ${viewMode}`}>
-              <ChevronRight size={26} color={colors.textSecondary} />
+              <ChevronRight size={26} color={k.textMuted} />
             </Pressable>
-            <Pressable onPress={() => setCursor(new Date())} style={[s.todayBtn, { borderColor: colors.border }]}
+            <Pressable onPress={() => setCursor(new Date())} style={[s.todayBtn, { borderColor: k.cardBorder }]}
               accessibilityRole="button" accessibilityLabel="Jump to today">
-              <Text style={[s.todayBtnText, { color: colors.textSecondary }]}>Today</Text>
+              <Text style={[s.todayBtnText, { color: k.textMuted }]}>Today</Text>
             </Pressable>
             {/* Creation lives HERE, beside Today, rather than at the foot of
                 a populated list — on a kitchen tablet the action a passer-by
@@ -380,29 +402,29 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 that one is a first-action prompt inside an otherwise blank
                 view, not a persistent control. */}
             {canCreate && (
-              <Pressable onPress={openCreator} style={[s.headerAddBtn, { backgroundColor: colors.primary }]}
+              <Pressable onPress={openCreator} style={[s.headerAddBtn, { backgroundColor: k.primary }]}
                 accessibilityRole="button"
                 accessibilityLabel={isKidCreator ? 'Ask a parent' : 'Add an event'}
                 accessibilityHint={isKidCreator
                   ? 'Sends a request to a parent to add something to the schedule'
                   : 'Opens the composer to add a new event'}>
-                <Plus size={22} color="#fff" />
-                <Text style={s.headerAddBtnText} numberOfLines={1}>
+                <Plus size={22} color={k.onPrimary} />
+                <Text style={[s.headerAddBtnText, { color: k.onPrimary }]} numberOfLines={1}>
                   {isKidCreator ? 'Ask a parent' : 'Add an event'}
                 </Text>
               </Pressable>
             )}
           </View>
 
-          <View style={[s.modeSwitch, { backgroundColor: colors.surface }]}>
+          <View style={[s.modeSwitch, { backgroundColor: k.well }]}>
             {VIEW_MODES.map(mode => {
               const on = viewMode === mode;
               return (
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
-                  style={[s.modeBtn, on && { backgroundColor: colors.primary }]}
+                  style={[s.modeBtn, on && { backgroundColor: k.primary }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
                   accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
-                  <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>
+                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
                     {mode[0].toUpperCase() + mode.slice(1)}
                   </Text>
                 </Pressable>
@@ -419,7 +441,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
             language. Non-parents only, matching the phone's `&& !isParent`
             gate — a parent's scope is permanently 'all' there and here. */}
         {canScopeSchedule && (
-          <View style={[s.scopeSwitch, { backgroundColor: colors.surface }]}
+          <View style={[s.scopeSwitch, { backgroundColor: k.well }]}
             accessibilityRole="tablist">
             {([{ key: 'mine' as const, label: 'My Schedule' }, { key: 'all' as const, label: 'All' }]).map(t => {
               const on = scheduleScope === t.key;
@@ -432,13 +454,13 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                     // otherwise contradict each other on screen.
                     if (t.key === 'mine') setFilterMemberId(null);
                   }}
-                  style={[s.scopeBtn, on && { backgroundColor: colors.primary }]}
+                  style={[s.scopeBtn, on && { backgroundColor: k.primary }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
                   accessibilityLabel={t.label}
                   accessibilityHint={t.key === 'mine'
                     ? 'Shows only events you are part of'
                     : 'Shows the whole family’s events'}>
-                  <Text style={[s.modeBtnText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>
+                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
                     {t.label}
                   </Text>
                 </Pressable>
@@ -459,8 +481,8 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
               accessibilityRole="button" accessibilityLabel="All Family"
               accessibilityHint="Clears the member filter"
               accessibilityState={{ selected: !filterMemberId }}
-              style={[s.filterChip, { backgroundColor: !filterMemberId ? colors.primary : colors.surface, borderColor: !filterMemberId ? colors.primary : colors.border }]}>
-              <Text style={[s.filterText, { color: !filterMemberId ? '#fff' : colors.textSecondary }]} numberOfLines={1}>All Family</Text>
+              style={[s.filterChip, { backgroundColor: !filterMemberId ? k.primary : k.well, borderColor: !filterMemberId ? k.primary : k.cardBorder }]}>
+              <Text style={[s.filterText, { color: !filterMemberId ? k.onPrimary : k.textMuted }]} numberOfLines={1}>All Family</Text>
             </Pressable>
             {members.map(m => {
               const rs = assigneeStyle(m, colors, isDark);
@@ -472,15 +494,15 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                   accessibilityLabel={`Filter to ${label}`}
                   accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
                   accessibilityState={{ selected: on }}
-                  style={[s.filterChip, { backgroundColor: on ? rs.dot : colors.surface, borderColor: on ? rs.dot : colors.border }]}>
+                  style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
                   <Text style={{ fontSize: 20 }}>{m.emoji ?? '👤'}</Text>
-                  <Text style={[s.filterText, { color: on ? '#fff' : colors.textSecondary }]} numberOfLines={1}>{label}</Text>
+                  <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
                 </Pressable>
               );
             })}
           </ScrollView>
         )}
-      </View>
+      </WidgetCard>
 
       {rangeLoading && eventsByDate && Object.keys(eventsByDate).length === 0 && (
         // Only shown while the FIRST fetch for this range is still in
@@ -490,8 +512,8 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         // this range" (blank grid either way) while a fetch failed or was
         // still loading.
         <View style={s.loadingStrip}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading schedule…</Text>
+          <ActivityIndicator color={k.primary} />
+          <Text style={[s.loadingText, { color: k.textMuted }]}>Loading schedule…</Text>
         </View>
       )}
 
@@ -549,7 +571,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         />
       )}
 
-      <KioskEventEditor event={editingEvent} active={active} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
+      <KioskEventEditor event={editingEvent} active={active} members={members} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
 
       {/* A kid/teen's own still-pending request, in the same KidRequestModal
           edit mode CalendarScreen.tsx:1709-1713 uses — carries the
@@ -762,7 +784,7 @@ function helperLabelFor(cat: string): string {
  * warm near-black. Each category is mapped to the nearest kiosk accent,
  * which is contrast-verified in both modes by kioskPalette.
  */
-function kioskCatAccent(cat: string, k: KioskColors): { fg: string; soft: string; edge: string } {
+export function kioskCatAccent(cat: string, k: KioskColors): { fg: string; soft: string; edge: string } {
   switch (cat) {
     case 'Medical': return { fg: k.danger, soft: k.dangerSoft, edge: k.dangerEdge };
     case 'Work':    return { fg: k.purple, soft: k.purpleSoft, edge: k.purpleEdge };
@@ -886,7 +908,7 @@ function KioskEventCard({
             title. Phone: EventCard.tsx:536-546. */}
         <View style={s.cardHead}>
           {density === 'agenda' && (
-            <View style={[s.timeChip, { backgroundColor: cs.soft, borderColor: cs.edge }]}>
+            <View style={[s.timeChip, { backgroundColor: cs.soft }]}>
               <Text style={[s.timeChipText, { color: cs.fg }]} numberOfLines={1}>
                 {ev.time ? fmtTime(ev.time) : 'All day'}
               </Text>
@@ -894,17 +916,27 @@ function KioskEventCard({
           )}
           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
             <View style={s.badgeRow}>
-              <View style={[s.catBadge, { backgroundColor: cs.soft, borderColor: cs.edge }]}>
+              <View style={[s.catBadge, { backgroundColor: cs.soft }]}>
                 <Text style={[s.catBadgeText, { color: cs.fg }]} numberOfLines={1}>{cat.toUpperCase()}</Text>
               </View>
+              {/* Live-requested: "the icon on them to show recurent" —
+                  neither platform marks a recurring event visually before
+                  this; added since Agenda's own collapseSeries means one
+                  card can now stand in for a whole series, and the icon is
+                  what tells a viewer that's happening. Plain icon, no
+                  label/pill — it needs no explanation, matching the quiet
+                  weight every other secondary signal on this card now has. */}
+              {!!ev.seriesId && (
+                <Repeat size={13} color={k.textFaint} accessibilityLabel="Repeating event" />
+              )}
               {isConf && <AlertTriangle size={16} color={k.gold} />}
               {showSync && (
                 <View
-                  style={[s.syncBadge, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+                  style={[s.syncBadge, { backgroundColor: k.well }]}
                   accessibilityRole="text"
                   accessibilityLabel={`Synced from ${ev.lastExternalSyncAccount ?? providerLabel}`}
                 >
-                  <RefreshCw size={12} color={k.textFaint} />
+                  <RefreshCw size={11} color={k.textFaint} />
                   <Text style={[s.syncText, { color: k.textFaint }]} numberOfLines={1}>
                     {ev.lastExternalSyncAccount ?? providerLabel}
                   </Text>
@@ -957,7 +989,7 @@ function KioskEventCard({
         {/* Scheduling conflict banner. Phone: EventCard.tsx:571-576. */}
         {isConf && (
           <View
-            style={[s.conflictRow, { backgroundColor: k.goldSoft, borderColor: k.goldEdge }]}
+            style={[s.conflictRow, { backgroundColor: k.goldSoft }]}
             accessibilityRole="alert"
             accessibilityLabel="Scheduling conflict detected"
           >
@@ -979,13 +1011,25 @@ function KioskEventCard({
             {forLabel && allAssignees.length > 0 && (
               <View style={s.forCluster}>
                 <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}:</Text>
-                {allAssignees.map(m => (
-                  <View key={m.id} style={s.avatarWithName}>
-                    <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
-                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
-                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
+                {allAssignees.length > 1 ? (
+                  // Live-requested: "if i select multiple th same shuld
+                  // show" (overlapped, matching the family-wide ask right
+                  // above it) — per-avatar name labels don't compose with
+                  // overlapping circles, so 2+ people get ONE combined
+                  // name line under the cluster instead of one per avatar.
+                  <View style={s.avatarWithName}>
+                    <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
+                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>
+                      {allAssignees.map(m => m.name.split(' ')[0]).join(', ')}
+                    </Text>
                   </View>
-                ))}
+                ) : (
+                  <View style={s.avatarWithName}>
+                    <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
+                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
+                    <Text style={[s.avatarName, { color: k.textMuted }]} numberOfLines={1}>{allAssignees[0].name.split(' ')[0]}</Text>
+                  </View>
+                )}
               </View>
             )}
             {!!helperName && (
@@ -1189,11 +1233,38 @@ function AgendaView({
 
   // Only days that actually have something, forward from the cursor. A
   // fourteen-row list of "No events" is noise, not a calendar.
+  //
+  // Live-requested: "the recurent cards should show similar to the mobile
+  // app .. we just need to hide them similar to mobile app" —
+  // CalendarScreen.tsx:1022's own collapseSeries(scopedRangeEvents), read
+  // in full: a recurring series (up to 84 materialized occurrences for a
+  // daily rule) collapses to just the next upcoming occurrence (plus
+  // today's own, if today has one) — Agenda-only, matching exactly; Week
+  // needs each occurrence on its real day column and Month needs every
+  // occurrence for its per-day dots, so neither collapses (same real
+  // reasoning that file's own comment gives, not a kiosk-specific
+  // decision). Collapsing happens on the FLAT list, across day
+  // boundaries — a weekly series has occurrences on different real dates
+  // all sharing one seriesId — then the collapsed result is re-grouped by
+  // day the same way eventsByDate already groups everything else.
   const days = useMemo(() => {
-    const out: { dateStr: string; events: FamilyEvent[] }[] = [];
+    const flat: FamilyEvent[] = [];
     for (let i = 0; i <= AGENDA_DAYS; i++) {
       const dateStr = toDateStr(addDays(cursor, i));
       const evs = eventsByDate[dateStr];
+      if (evs?.length) flat.push(...evs);
+    }
+    const collapsed = collapseSeries(flat);
+    const byDate = new Map<string, FamilyEvent[]>();
+    for (const ev of collapsed) {
+      const list = byDate.get(ev.date) ?? [];
+      list.push(ev);
+      byDate.set(ev.date, list);
+    }
+    const out: { dateStr: string; events: FamilyEvent[] }[] = [];
+    for (let i = 0; i <= AGENDA_DAYS; i++) {
+      const dateStr = toDateStr(addDays(cursor, i));
+      const evs = byDate.get(dateStr);
       if (evs?.length) out.push({ dateStr, events: evs });
     }
     return out;
@@ -1208,12 +1279,12 @@ function AgendaView({
   if (days.length === 0) {
     return (
       <ScrollView contentContainerStyle={s.agendaEmptyWrap} showsVerticalScrollIndicator={false}>
-        <CalendarIcon size={30} color={colors.textTertiary} />
+        <CalendarIcon size={30} color={k.textFaint} />
         {/* Kid-specific framing, ported from CalendarScreen.tsx:1432 — a kid
             doesn't schedule, they ASK, and the button below opens
             AskParentSheet rather than an event form, so generic "Add an
             event" copy would promise authority they don't have. */}
-        <Text style={[s.agendaEmptyText, { color: colors.textTertiary }]} numberOfLines={3}>
+        <Text style={[s.agendaEmptyText, { color: k.textFaint }]} numberOfLines={3}>
           {isKidViewer
             ? 'Nothing on your schedule for the next two weeks. Tap below to ask for a ride or anything else.'
             : 'Nothing scheduled in the next two weeks.'}
@@ -1221,12 +1292,12 @@ function AgendaView({
         {onAdd && (
           <Pressable
             onPress={onAdd}
-            style={[s.monthAddBtn, { backgroundColor: colors.primary, alignSelf: 'center' }]}
+            style={[s.monthAddBtn, { backgroundColor: k.primary, alignSelf: 'center' }]}
             accessibilityRole="button"
             accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
           >
-            <Plus size={22} color="#fff" />
-            <Text style={s.monthAddBtnText}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
+            <Plus size={22} color={k.onPrimary} />
+            <Text style={[s.monthAddBtnText, { color: k.onPrimary }]}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -1241,11 +1312,11 @@ function AgendaView({
         return (
           <View key={dateStr} style={s.agendaGroup}>
             <View style={s.agendaDayHead}>
-              <View style={[s.agendaDayBar, { backgroundColor: isToday ? colors.primary : colors.border }]} />
-              <Text style={[s.agendaDayLabel, { color: isToday ? colors.primary : colors.textPrimary }]} numberOfLines={1}>
+              <View style={[s.agendaDayBar, { backgroundColor: isToday ? k.primary : k.cardBorder }]} />
+              <Text style={[s.agendaDayLabel, { color: isToday ? k.primary : k.text }]} numberOfLines={1}>
                 {isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'long' })}
               </Text>
-              <Text style={[s.agendaDayDate, { color: colors.textTertiary }]} numberOfLines={1}>
+              <Text style={[s.agendaDayDate, { color: k.textFaint }]} numberOfLines={1}>
                 {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </Text>
             </View>
@@ -1334,7 +1405,7 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
     <View style={s.monthRoot}>
       <View style={s.monthDow}>
         {['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d => (
-          <Text key={d} style={[s.monthDowText, { color: colors.textTertiary }]}>{d}</Text>
+          <Text key={d} style={[s.monthDowText, { color: k.textFaint }]}>{d}</Text>
         ))}
       </View>
       <View style={s.monthGrid}>
@@ -1388,10 +1459,10 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                     (isToday ? ', today' : '') +
                     (dayEvents.length ? `, ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}` : ', no events')
                   }
-                  style={[s.monthCell, s.monthCellFilled, { borderColor: colors.border },
-                    isToday && { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+                  style={[s.monthCell, s.monthCellFilled, { borderColor: k.cardBorder },
+                    isToday && { backgroundColor: k.primarySoft, borderColor: k.primary },
                     isSelected && { borderColor: k.blue, borderWidth: 2 }]}>
-                  <Text style={[s.monthDayNum, { color: isToday ? colors.primary : colors.textPrimary }]}>{dayNum}</Text>
+                  <Text style={[s.monthDayNum, { color: isToday ? k.primary : k.text }]}>{dayNum}</Text>
                   {/* Live-requested: match the reference mockup's month
                       cells — small truncated title badges, category-
                       colored, not plain dots. A dot told you a day had
@@ -1415,7 +1486,7 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                           key={ev.id}
                           style={[
                             s.monthBadge,
-                            { backgroundColor: redacted ? k.well : cs.soft, borderColor: redacted ? k.cardBorder : cs.edge },
+                            { backgroundColor: redacted ? k.well : cs.soft },
                           ]}
                         >
                           <Text
@@ -1428,7 +1499,7 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                       );
                     })}
                     {dayEvents.length > 3 && (
-                      <Text style={[s.monthMore, { color: colors.textTertiary }]}>+{dayEvents.length - 3} more</Text>
+                      <Text style={[s.monthMore, { color: k.textFaint }]}>+{dayEvents.length - 3} more</Text>
                     )}
                   </View>
                 </Pressable>
@@ -1462,9 +1533,9 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, invo
         const dayEvents = eventsByDate[dateStr] ?? [];
         return (
           <View key={dateStr} style={s.dayCol}>
-            <View style={[s.dayHead, isToday && { borderBottomColor: colors.primary }]}>
-              <Text style={[s.dow, { color: colors.textTertiary }]}>{d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text>
-              <Text style={[s.dnum, { color: isToday ? colors.primary : colors.textPrimary }]}>{d.getDate()}</Text>
+            <View style={[s.dayHead, isToday && { borderBottomColor: k.primary }]}>
+              <Text style={[s.dow, { color: k.textFaint }]}>{d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text>
+              <Text style={[s.dnum, { color: isToday ? k.primary : k.text }]}>{d.getDate()}</Text>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
               {dayEvents.map(ev => {
@@ -1494,15 +1565,15 @@ function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, invo
                     accessibilityRole="button"
                     accessibilityLabel={`${ev.title}${ev.time ? `, ${fmtTime(ev.time)}` : ', all day'}`}
                     accessibilityHint="Opens this event"
-                    style={[s.evChip, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
-                    {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={colors.card} size={60} radius={0} />}
-                    <Text style={[s.evTitle, { color: colors.textPrimary }]} numberOfLines={2}>{ev.title}</Text>
+                    style={[s.evChip, { backgroundColor: k.card, borderColor: k.cardBorder, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
+                    {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={k.card} size={60} radius={0} />}
+                    <Text style={[s.evTitle, { color: k.text }]} numberOfLines={2}>{ev.title}</Text>
                     {/* Live-reported: raw ev.time ("HH:MM" 24h, the DB's
                         actual stored format) was rendered directly instead
                         of through fmtTime — mobile's own event cards always
                         format via fmtTime (lib/dates.ts), which always
                         produces 12h AM/PM regardless of device locale. */}
-                    {!!ev.time && <Text style={[s.evTime, { color: colors.textSecondary }]}>{fmtTime(ev.time)}</Text>}
+                    {!!ev.time && <Text style={[s.evTime, { color: k.textMuted }]}>{fmtTime(ev.time)}</Text>}
                     {involved.length > 0 && (
                       <Text style={[s.evWho, { color: rs.dot }]} numberOfLines={1}>
                         {involved.map(m => m.name.split(' ')[0]).join(', ')}
@@ -1566,7 +1637,7 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
             if (vis === 'hidden') return null;
             if (vis === 'busy-block') {
               return (
-                <View key={ev.id} style={[s.dayAllDayChip, { backgroundColor: k.well, borderColor: k.cardBorder, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }]}
+                <View key={ev.id} style={[s.dayAllDayChip, { backgroundColor: k.well, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }]}
                   accessibilityRole="text" accessibilityLabel="Busy, all day">
                   <Lock size={15} color={k.textFaint} />
                   <Text style={[s.dayAllDayText, { color: k.textMuted }]} numberOfLines={1}>Busy</Text>
@@ -1580,7 +1651,7 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
                 accessibilityRole="button"
                 accessibilityLabel={`${ev.title}, all day`}
                 accessibilityHint="Opens this event"
-                style={[s.dayAllDayChip, { backgroundColor: rs.badge, borderColor: rs.dot + '55' }]}>
+                style={[s.dayAllDayChip, { backgroundColor: rs.badge }]}>
                 <Text style={[s.dayAllDayText, { color: rs.text }]} numberOfLines={1}>{ev.title}</Text>
               </Pressable>
             );
@@ -1591,8 +1662,8 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
         const hourEvents = eventsAtHour(h);
         const label = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
         return (
-          <View key={h} style={[s.dayHourRow, { borderTopColor: colors.border }]}>
-            <Text style={[s.dayHourLabel, { color: colors.textTertiary }]}>{label}</Text>
+          <View key={h} style={[s.dayHourRow, { borderTopColor: k.cardBorder }]}>
+            <Text style={[s.dayHourLabel, { color: k.textFaint }]}>{label}</Text>
             <View style={s.dayHourEvents}>
               {hourEvents.map(ev => {
                 const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
@@ -1665,11 +1736,11 @@ const s = StyleSheet.create({
   },
   todayBtn: {
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
   },
-  todayBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  todayBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', textAlign: 'center' },
-  range: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 2, textAlign: 'center' },
+  range: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2, textAlign: 'center' },
   // Four modes now, not three (Agenda was added). Horizontal padding
   // tightened from KIOSK_SPACE.lg and the group allowed to shrink, so the
   // switcher fits a narrow/portrait content pane instead of pushing the
@@ -1684,7 +1755,7 @@ const s = StyleSheet.create({
     justifyContent: 'center', borderRadius: KIOSK_RADIUS.sm,
     flexShrink: 1, minWidth: 0,
   },
-  modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  modeBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   // "My Schedule" / All — deliberately the SAME segmented treatment as
   // modeSwitch/modeBtn above (same radius, padding, active fill, text
   // style) so the header reads as one control language rather than a third
@@ -1708,7 +1779,7 @@ const s = StyleSheet.create({
     minHeight: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.sm,
     flexShrink: 1, minWidth: 0,
   },
-  headerAddBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', color: '#fff' },
+  headerAddBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   // Horizontal ScrollView needs flexGrow:0 on the ScrollView itself or it
   // stretches to fill leftover vertical space instead of hugging its pills.
   filterRowOuter: { flexGrow: 0 },
@@ -1716,9 +1787,9 @@ const s = StyleSheet.create({
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
   },
-  filterText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  filterText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
 
   // Week
   week: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.xs },
@@ -1727,20 +1798,20 @@ const s = StyleSheet.create({
     alignItems: 'center', paddingBottom: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.xs,
     borderBottomWidth: 3, borderBottomColor: 'transparent',
   },
-  dow: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },
+  dow: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 1 },
   dnum: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', marginTop: 2 },
   evChip: {
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, borderLeftWidth: 4,
+    borderRadius: 6, borderWidth: 1, borderLeftWidth: 3,
     padding: KIOSK_SPACE.sm, position: 'relative', minHeight: 56,
   },
   evTitle: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
-  evTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 3 },
-  evWho: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 4 },
+  evTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '500', marginTop: 3 },
+  evWho: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 4 },
 
   // Month
   monthRoot: { flex: 1 },
   monthDow: { flexDirection: 'row', marginBottom: KIOSK_SPACE.xs },
-  monthDowText: { flex: 1, textAlign: 'center', fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 1 },
+  monthDowText: { flex: 1, textAlign: 'center', fontSize: KIOSK_TYPO.label, fontWeight: '700', letterSpacing: 1 },
   monthGrid: { flex: 1, gap: KIOSK_SPACE.xs },
   monthWeekRow: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.xs },
   monthCell: { flex: 1, minWidth: 0 },
@@ -1749,28 +1820,25 @@ const s = StyleSheet.create({
   // Grown from 88 — a cell now stacks up to 3 title badges under the day
   // number instead of a single row of dots, so it needs real height.
   monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 130 },
-  monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   monthBadges: { gap: 3, marginTop: KIOSK_SPACE.xs },
-  monthBadge: {
-    borderRadius: 4, borderWidth: 1,
-    paddingHorizontal: 5, paddingVertical: 2,
-  },
-  monthBadgeText: { fontSize: 10, fontWeight: '800' },
-  monthMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 1 },
+  monthBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  monthBadgeText: { fontSize: 10, fontWeight: '600' },
+  monthMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 1 },
 
   // Day
   dayRoot: { flex: 1 },
   dayAllDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md },
   dayAllDayChip: {
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.min, justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    borderRadius: KIOSK_RADIUS.sm,
   },
-  dayAllDayText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  dayAllDayText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   dayHourRow: {
     flexDirection: 'row', minHeight: 72, borderTopWidth: StyleSheet.hairlineWidth,
     paddingVertical: KIOSK_SPACE.sm, gap: KIOSK_SPACE.md,
   },
-  dayHourLabel: { width: 76, fontSize: KIOSK_TYPO.caption, fontWeight: '700', paddingTop: 2 },
+  dayHourLabel: { width: 76, fontSize: KIOSK_TYPO.caption, fontWeight: '600', paddingTop: 2 },
   dayHourEvents: { flex: 1, gap: KIOSK_SPACE.xs, minWidth: 0 },
   // Day's own per-hour event card is gone — that view now renders the
   // shared KioskEventCard (`card`/`cardBody` below) at 'day' density.
@@ -1778,7 +1846,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.primary,
   },
-  monthAddBtnText: { color: '#fff', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  monthAddBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
 
   // ── Agenda ─────────────────────────────────────────────────────────────
   agendaScroll: { paddingHorizontal: 4, paddingBottom: 40, gap: KIOSK_SPACE.lg },
@@ -1792,8 +1860,8 @@ const s = StyleSheet.create({
   // A bar rather than a dot: at kiosk distance a dot disappears while a bar
   // still reads as structure. Same device the zone headers use.
   agendaDayBar: { width: 4, height: 18, borderRadius: 2 },
-  agendaDayLabel: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.3 },
-  agendaDayDate: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  agendaDayLabel: { fontSize: KIOSK_TYPO.heading, fontWeight: '700', letterSpacing: -0.3 },
+  agendaDayDate: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   // Agenda's own simplified row (time chip + title + one joined meta line)
   // is gone — it now renders the shared KioskEventCard below at 'agenda'
   // density, which carries every field the phone's EventCardTimeline does.
@@ -1808,49 +1876,63 @@ const s = StyleSheet.create({
   // of badges. Capped, not removed: a card still fills a narrower/portrait
   // width naturally (maxWidth only bites once the scroll container is
   // wider than this), so this doesn't regress the narrow-width layout.
+  // Live-reported from a screenshot: "current schedule page is now showing
+  // as heavy" — was borderRadius:KIOSK_RADIUS.md (bigger than every other
+  // kiosk card, which use .sm per the mock's real --radius:10px) and a 5px
+  // left accent (Overview's own left-accent bars — Family Schedule's
+  // tlCurrentBar — are 3px). Matched to Overview/Meals' actual card
+  // convention instead of this tab's own heavier one.
   card: {
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderLeftWidth: 5,
-    minHeight: KIOSK_HIT.primary, width: '100%', maxWidth: 720, alignSelf: 'center',
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, borderLeftWidth: 3,
+    minHeight: KIOSK_HIT.control, width: '100%', maxWidth: 720, alignSelf: 'center',
   },
-  cardBody: { padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
-  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.md },
+  cardBody: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
+  // Soft fill, no border — Overview's own badge convention (approvalBadge:
+  // {borderRadius:5, paddingHorizontal:7, paddingVertical:2}, no border at
+  // all), not a bordered "button" shape. The screenshot's weight came from
+  // exactly this — every one of these three reading as a small button
+  // rather than a quiet inline label.
   timeChip: {
-    minWidth: 86, alignItems: 'center', justifyContent: 'center',
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+    minWidth: 78, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 6, paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 4,
   },
-  timeChipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  timeChipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', fontVariant: ['tabular-nums'] },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexWrap: 'wrap' },
-  catBadge: {
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 2,
-  },
-  catBadgeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 0.6 },
+  catBadge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  catBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   syncBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.xs, paddingVertical: 2, maxWidth: 180,
+    borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2, maxWidth: 160,
   },
-  syncText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', flexShrink: 1 },
-  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', letterSpacing: -0.2 },
-  cardTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  syncText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
+  // Live-reported: "all are zoomed and sharp letter which are not required
+  // for attentions .. so some fight is going on between the content ..
+  // follow mock styles of buttons and cards and colors and styles." Nearly
+  // every text style below was fontWeight:'800' regardless of role — a
+  // title, a meta label, a value, a badge, a status pill, ALL competing at
+  // the same visual weight, so nothing actually stood out. Real hierarchy
+  // now, matching Overview/Meals' own discipline (jar-name 700, jar-meta
+  // unweighted or 600 at most, panel-title 700 but 11px): the TITLE is the
+  // one bold, prominent thing on the card; everything else steps down.
+  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', letterSpacing: -0.2 },
+  cardTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontVariant: ['tabular-nums'] },
   claimBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.control,
     paddingHorizontal: KIOSK_SPACE.md, flexShrink: 0,
   },
-  claimBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  claimBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   statusPill: {
     borderRadius: KIOSK_RADIUS.full, flexShrink: 0,
-    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
   },
-  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  statusPillText: { fontSize: 11, fontWeight: '700' },
   conflictRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+    borderRadius: 6, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6,
   },
-  conflictText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  conflictText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
   forRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
@@ -1864,47 +1946,47 @@ const s = StyleSheet.create({
   },
   forCluster: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap', flexShrink: 1 },
   avatarWithName: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  avatarName: { fontSize: KIOSK_TYPO.label, fontWeight: '800', maxWidth: 110 },
+  avatarName: { fontSize: 12, fontWeight: '600', maxWidth: 110 },
   // The picker's own cells are the tap target, so they carry the padding
   // that brings a 36px avatar up to a kiosk-legal hit area.
   pickerCell: { padding: 6, borderRadius: KIOSK_RADIUS.full },
-  metaLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  metaLabel: { fontSize: 11.5, fontWeight: '600' },
   helperRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
-  helperName: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
-  needsDriver: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
-  declineReason: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontStyle: 'italic' },
+  helperName: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  needsDriver: { fontSize: 12, fontWeight: '600' },
+  declineReason: { fontSize: KIOSK_TYPO.caption, fontWeight: '500', fontStyle: 'italic' },
   fieldRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexWrap: 'wrap' },
-  fieldLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
-  fieldValue: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  fieldLabel: { fontSize: 11.5, fontWeight: '600' },
+  fieldValue: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
   legRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   legCell: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexShrink: 1 },
   locLink: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32, flexShrink: 1 },
   locPuck: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  locText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  locText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
   notesRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,
   },
-  notesText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontStyle: 'italic', flexShrink: 1 },
+  notesText: { fontSize: KIOSK_TYPO.caption, fontWeight: '500', fontStyle: 'italic', flexShrink: 1 },
   approvalRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     flexWrap: 'wrap', gap: KIOSK_SPACE.sm,
     borderTopWidth: 1, paddingTop: KIOSK_SPACE.sm, marginTop: 2,
   },
   approvalLabel: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, flexShrink: 1 },
-  approvalText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  approvalText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', flexShrink: 1 },
   approveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.md, minHeight: KIOSK_HIT.control,
     paddingHorizontal: KIOSK_SPACE.md, flexShrink: 0,
   },
-  approveBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '900' },
-  claimNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  approveBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  claimNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   busyBlock: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.md, minHeight: KIOSK_HIT.control,
   },
-  busyText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', flexShrink: 1 },
+  busyText: { fontSize: KIOSK_TYPO.body, fontWeight: '600', flexShrink: 1 },
 });

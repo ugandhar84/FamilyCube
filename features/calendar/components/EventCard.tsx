@@ -105,6 +105,51 @@ export function MultiPersonTimeFill({ hexColors, scrimColor, size = 40, radius =
   );
 }
 
+/**
+ * OverlappingAvatars — a "for/patient" row with 2+ real assignees shows
+ * them as one overlapping cluster (each avatar's own ring color, later
+ * avatars drawn on top toward the front) instead of separate avatar+name
+ * pairs laid out side by side. Live-requested on kiosk, then explicitly
+ * asked for on mobile too ("even mobile also we should show same") —
+ * shared here rather than built twice so both surfaces draw the identical
+ * cluster from the same real assignee list. Deliberately only for the
+ * explicit multi-select case (ev.memberIds has 2+ entries); a genuinely
+ * unassigned/family-wide event keeps its own existing picker-or-dash
+ * treatment (mobile: this file's own render below; kiosk:
+ * KioskScheduleTab.tsx's forRow branch) — confirmed scope, not a gap this
+ * covers.
+ */
+export function OverlappingAvatars({ members, siblings, size = 28, ringColor, borderColor, overlap = 0.42 }: {
+  members: { id: string; name: string; emoji?: string; avatarUrl?: string }[];
+  siblings: string[];
+  size?: number;
+  ringColor: string;
+  /** The card's own background — avatars need a real border in this color
+      so overlapping circles read as separate people, not one blob. */
+  borderColor: string;
+  /** Fraction of `size` the next avatar tucks under the previous one. */
+  overlap?: number;
+}) {
+  return (
+    <View style={{ flexDirection: 'row' }}>
+      {members.map((m, i) => (
+        <View
+          key={m.id}
+          style={{
+            marginLeft: i === 0 ? 0 : -size * overlap,
+            zIndex: i,
+            borderRadius: size / 2 + 2,
+            borderWidth: 2,
+            borderColor,
+          }}
+        >
+          <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} siblings={siblings} size={size} ringColor={ringColor} ringWidth={1.5} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── Location link — tappable address that opens the native maps app ──────────
 function shortAddress(addr: string, maxLen = 22): string {
   if (addr.length <= maxLen) return addr;
@@ -463,7 +508,20 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
 }
 
 function fmtTimePartsLocal(time?: string): { time: string; ampm: string } {
-  if (!time) return { time: '--:--', ampm: '' };
+  // Live-reported: "if no time we should [show] all day in the time place
+  // instead of --|--" — a placeholder like "--:--" read as missing/broken
+  // data rather than the real, deliberate "no time set" state an all-day
+  // event actually has. Split across the SAME two-line slot a real time
+  // already uses (time on top, ampm below) rather than one long string —
+  // the stacked chip this feeds (EventCardRow's 40x40px, overflow:hidden
+  // box) was built for a value the width of "4:45"/"PM", and "All day" as
+  // one string doesn't fit there at any font size that stays legible. The
+  // The OTHER real call site (line 453) concatenates the two parts
+  // directly with no separator (`{time}{ampm.toLowerCase()}`, matching a
+  // real time's own "4:45pm") — "All"+"day" would run together into
+  // "Allday" there, so `time` carries its own trailing space here
+  // specifically to keep that a real two-word "All day" at both sites.
+  if (!time) return { time: 'All ', ampm: 'day' };
   const [hStr, mStr] = time.split(':');
   let h = parseInt(hStr, 10);
   const m = mStr ?? '00';
@@ -585,9 +643,11 @@ export function EventCardTimeline({
                 {allAssignees.length > 0 ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', flex: 1 }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
-                    {allAssignees.map(m => (
-                      <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={cs.dot} ringWidth={1.5} />
-                    ))}
+                    {allAssignees.length > 1 ? (
+                      <OverlappingAvatars members={allAssignees} siblings={members.map(x => x.name)} size={24} ringColor={cs.dot} borderColor={colors.card} />
+                    ) : (
+                      <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={cs.dot} ringWidth={1.5} />
+                    )}
                   </View>
                 ) : !isPast && isParent && pickerMembers.length > 0 ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>

@@ -81,11 +81,11 @@
  * more widgets.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, Alert, ActivityIndicator, type StyleProp, type ViewStyle } from 'react-native';
 import {
   Car, UtensilsCrossed, Bell, Check, ChevronRight,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X, UserCheck,
-  AlertTriangle, MapPin,
+  AlertTriangle, MapPin, AlertOctagon,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
@@ -439,6 +439,40 @@ export function KioskOverviewTab({
   const approveItems = useKidRequestStore(s => s.approveItems);
   const rejectItems = useKidRequestStore(s => s.rejectItems);
   const toggleGPWelcome = useKidRequestStore(s => s.toggleGPWelcome);
+  const sendKidRequest = useKidRequestStore(s => s.sendRequest);
+
+  // ── Emergency SOS (senior-only real feature) ──────────────────────────
+  // Real SeniorView.tsx triggerSos, reproduced with one deliberate
+  // substitution: the real flow attempts live device GPS via expo-location
+  // and reverse-geocodes it into a street-level location label. Kiosk is a
+  // fixed countertop/wall device — per explicit direction, no GPS attempt
+  // at all here, just a static "Sent from the kitchen kiosk" label, since
+  // a live GPS read off the kiosk's own hardware would report the KIOSK's
+  // fixed position, not necessarily the senior's own if they're elsewhere
+  // in the house or away — a genuinely misleading location for a safety
+  // feature to report as if it were live tracking. Everything past that
+  // substitution (sendRequest → notifyKidRequest → family-notifier fan-out
+  // to parents+grandparents, type:'emergency' auto-escalating urgency) is
+  // the exact same real dispatch path every other kid request already
+  // uses on kiosk.
+  const [sosActive, setSosActive] = useState(false);
+  const [sosSending, setSosSending] = useState(false);
+  const triggerSos = async () => {
+    setSosSending(true);
+    try {
+      await sendKidRequest({
+        type: 'emergency', fromMemberId: active.id,
+        detail: `${active.name.split(' ')[0]} triggered Emergency SOS — sent from the kitchen kiosk`,
+        location: 'Sent from the kitchen kiosk',
+      });
+      setSosActive(true);
+    } catch (e: any) {
+      console.warn('[KioskOverviewTab] SOS dispatch failed', e?.message ?? e);
+      Alert.alert("Couldn't send SOS", 'Please try again, or call a family member directly.');
+    } finally {
+      setSosSending(false);
+    }
+  };
 
   // ── Today's meals (real family_meals rows) ───────────────────────────
   // Was a single "Tonight's dinner" summary that, once fixed to be
@@ -1713,6 +1747,64 @@ export function KioskOverviewTab({
           root already carries its own horizontal padding/header chrome). */}
       {isSenior && (
         <View style={{ gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.md }}>
+          {/* Emergency SOS — real, verified-current SeniorView.tsx feature
+              (not the removed PawBond SOS/social surface — that was a
+              wholly different lost-pet-alert screen). Same real dispatch
+              path (sendRequest, type:'emergency', auto-escalating urgency,
+              fanned out to parents+grandparents via family-notifier) —
+              only the location step differs, see triggerSos's own comment
+              above for why. "Call Family" opens kiosk's own Chat tab
+              (onNavigate('chat')) rather than the phone's router.push,
+              since kiosk has no expo-router tab stack of its own. */}
+          <View style={{ marginBottom: 2 }}>
+            {sosActive ? (
+              <View style={{ borderRadius: KIOSK_RADIUS.lg, backgroundColor: '#450A0A', borderWidth: 2, borderColor: colors.danger, padding: 18, gap: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <AlertOctagon size={16} color={colors.danger} />
+                  <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '900', color: '#FCA5A5', flex: 1 }}>SOS Alert Sent to Family</Text>
+                  <Pressable onPress={() => setSosActive(false)} style={{ backgroundColor: colors.danger + '30', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.label, fontWeight: '800', color: colors.danger }}>Cancel</Text>
+                  </Pressable>
+                </View>
+                <Text style={{ fontSize: KIOSK_TYPO.caption, color: '#F87171', lineHeight: 19 }}>
+                  Parents have been notified. Help is on the way.{'\n'}Stay where you are.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Pressable onPress={() => onNavigate('chat')} style={{ flex: 1, borderRadius: KIOSK_RADIUS.md, backgroundColor: colors.danger, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, minHeight: KIOSK_HIT.control }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: '#fff' }}>Call Family</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setSosActive(false)} style={{ flex: 1, borderRadius: KIOSK_RADIUS.md, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', paddingVertical: 14, alignItems: 'center', minHeight: KIOSK_HIT.control, justifyContent: 'center' }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: '#F87171' }}>I'm OK Now</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable
+                disabled={sosSending}
+                onPress={() => Alert.alert(
+                  'Send Emergency SOS?',
+                  'This will immediately alert all family members.',
+                  [{ text: 'Cancel', style: 'cancel' }, { text: 'Send SOS', style: 'destructive', onPress: triggerSos }],
+                )}
+                style={{ borderRadius: KIOSK_RADIUS.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: isDark ? '#1A0000' : '#FFF1F1', borderWidth: 2, borderColor: colors.danger + '50', opacity: sosSending ? 0.7 : 1, minHeight: KIOSK_HIT.primary }}
+                accessibilityRole="button"
+                accessibilityLabel="Emergency SOS"
+                accessibilityHint="Alerts all family members immediately"
+              >
+                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+                  {sosSending ? <ActivityIndicator color="#fff" /> : <AlertOctagon size={24} color="#fff" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: KIOSK_TYPO.subheading, fontWeight: '900', color: colors.danger }}>Emergency SOS</Text>
+                  <Text style={{ fontSize: KIOSK_TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Alert every family member instantly</Text>
+                </View>
+                <View style={{ backgroundColor: colors.danger + '20', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <Text style={{ fontSize: KIOSK_TYPO.label, fontWeight: '800', color: colors.danger }}>{sosSending ? 'Sending…' : 'Hold'}</Text>
+                </View>
+              </Pressable>
+            )}
+          </View>
+
           {/* Caregiver-mode chore review — real SeniorView.tsx gates this
               behind an active temporary-approver grant (a parent can hand a
               grandparent approve/decline authority for a window of time,

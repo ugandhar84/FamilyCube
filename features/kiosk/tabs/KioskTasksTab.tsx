@@ -60,7 +60,7 @@ import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort, withinLast24h } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
-import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
+import { WidgetCard, PanelHead, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -662,99 +662,109 @@ function KioskBoardView({ active, members, colors, isDark }: {
               <View style={[s.catBadge, { backgroundColor: catMeta.color + '18' }]}>
                 <Text style={{ fontSize: 18 }}>{catMeta.emoji}</Text>
               </View>
-              <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{q.title}</Text>
-              {/* Filled rather than wash — coins are the headline reward on
-                  a chore card, not a status label, so this one chip earns
-                  the bolder treatment every other status pill deliberately
-                  avoids (see badgeRow's own comment on why THOSE stay
-                  outlined). Visual-polish pass only, same real q.coins
-                  value. */}
-              {!isAdultAssignee && (
-                <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
-              )}
-            </View>
 
-            {/* ── Summary badge row [GAP] ──────────────────────────────
-                The phone puts status, overdue and reward-pending in the
-                ALWAYS-VISIBLE summary beside the coin badge (KidQuestCard
-                .tsx:117-133), which is the whole point of them: a kid
-                scanning a lane must see "in review" or "overdue" without
-                expanding anything. Kiosk showed none of it collapsed —
-                status was inferable only from which lane the card sat in,
-                and a card in the pool zone or the Overview widget carried
-                no status cue at all. Its own row rather than crammed
-                beside the title, so a two-line title can't squeeze the
-                pills off the card at kiosk scale. */}
-            <View style={s.badgeRow}>
-              <View
-                style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
-                accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
-              >
-                <meta.Icon size={12} color={meta.accent} />
-                <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+              {/* Title + status tags share one column, title pinned to a
+                  single line — matching the approved reference mock's own
+                  layout (tags sit right under the title, not on their own
+                  full-width row below the coin chip). Single-line rather
+                  than the old numberOfLines={2} is the real fix for the
+                  squeeze risk a wrapping title used to create for the tag
+                  row beside it: a 2-line title left unpredictable leftover
+                  height for the tags below; a 1-line title's own height is
+                  fixed, so the tag row underneath always renders at its
+                  full card width regardless of title length. */}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
+
+                {/* ── Summary badge row [GAP] ──────────────────────────
+                    The phone puts status, overdue and reward-pending in
+                    the ALWAYS-VISIBLE summary beside the coin badge
+                    (KidQuestCard.tsx:117-133), which is the whole point
+                    of them: a kid scanning a lane must see "in review" or
+                    "overdue" without expanding anything. */}
+                <View style={s.badgeRow}>
+                  <View
+                    style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
+                    accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
+                  >
+                    <meta.Icon size={12} color={meta.accent} />
+                    <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
+                  </View>
+
+                  {overdue && (
+                    <View
+                      style={[s.statusPill, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}
+                      accessibilityLabel={isMultiSlotQuest(q)
+                        ? 'This chore is overdue'
+                        : `Overdue — was due ${fmtDateShort(q.dueDate)}`}
+                    >
+                      <TriangleAlert size={12} color={k.danger} />
+                      <Text style={[s.statusPillText, { color: k.danger }]} numberOfLines={1}>
+                        {/* A multi-slot bounty shares ONE due date across
+                            every claimant, so naming that date on an
+                            individual's card misrepresents it as
+                            personal — the phone shows a generic label
+                            instead (KidQuestCard.tsx:124). */}
+                        {isMultiSlotQuest(q) ? 'Chore overdue' : fmtDateShort(q.dueDate)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {q.rewardPendingReview && (
+                    <View
+                      style={[s.statusPill, { backgroundColor: k.well, borderColor: k.goldEdge }]}
+                      accessibilityLabel="The reward for this chore is waiting on a parent's approval"
+                    >
+                      <Clock3 size={12} color={k.gold} />
+                      <Text style={[s.statusPillText, { color: k.gold }]} numberOfLines={1}>
+                        Reward pending
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
 
-              {overdue && (
-                <View
-                  style={[s.statusPill, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}
-                  accessibilityLabel={isMultiSlotQuest(q)
-                    ? 'This chore is overdue'
-                    : `Overdue — was due ${fmtDateShort(q.dueDate)}`}
+              {/* Coin chip + History, stacked to the right of title+tags —
+                  matching the mock's own right-aligned coin figure. Filled
+                  rather than wash: coins are the headline reward, not a
+                  status label (every status pill deliberately stays
+                  outlined, see badgeRow's own comment above). */}
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                {!isAdultAssignee && (
+                  <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
+                )}
+                {/* ── History [GAP] ────────────────────────────────────
+                    The inline timeline below is the three-stamp summary;
+                    the phone ALSO puts a History icon in this same
+                    summary row (KidQuestCard.tsx:137-139) opening the
+                    full activity log — every edit, reassignment, redo
+                    and dispute, not just the three happy-path stamps.
+                    Kiosk had no route to that at all. Opens the
+                    kiosk-native sheet, which reads the SAME
+                    fetchActivityLog('chore', id) rows the phone sheet
+                    does. Sits inside KioskExpandableCard's own header
+                    Pressable, so it needs a real hitSlop to be reliably
+                    hit without toggling the card instead. Text label
+                    added [live-reported: "don't see view details"] —
+                    icon-only with no visible text didn't read as a
+                    details/history affordance while scanning a collapsed
+                    board. */}
+                <Pressable
+                  onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
+                  hitSlop={12}
+                  style={({ pressed }) => [
+                    s.historyBtn,
+                    { backgroundColor: k.well, borderColor: k.cardBorder, marginLeft: 0 },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`History for ${q.title}`}
+                  accessibilityHint="Shows everything that has happened on this chore"
                 >
-                  <TriangleAlert size={12} color={k.danger} />
-                  <Text style={[s.statusPillText, { color: k.danger }]} numberOfLines={1}>
-                    {/* A multi-slot bounty shares ONE due date across every
-                        claimant, so naming that date on an individual's
-                        card misrepresents it as personal — the phone shows
-                        a generic label instead (KidQuestCard.tsx:124). */}
-                    {isMultiSlotQuest(q) ? 'Chore overdue' : fmtDateShort(q.dueDate)}
-                  </Text>
-                </View>
-              )}
-
-              {q.rewardPendingReview && (
-                <View
-                  style={[s.statusPill, { backgroundColor: k.well, borderColor: k.goldEdge }]}
-                  accessibilityLabel="The reward for this chore is waiting on a parent's approval"
-                >
-                  <Clock3 size={12} color={k.gold} />
-                  <Text style={[s.statusPillText, { color: k.gold }]} numberOfLines={1}>
-                    Reward pending
-                  </Text>
-                </View>
-              )}
-
-              {/* ── History [GAP] ──────────────────────────────────────
-                  The inline timeline below is the three-stamp summary; the
-                  phone ALSO puts a History icon in this same summary row
-                  (KidQuestCard.tsx:137-139) opening the full activity log —
-                  every edit, reassignment, redo and dispute, not just the
-                  three happy-path stamps. Kiosk had no route to that at
-                  all. Opens the kiosk-native sheet, which reads the SAME
-                  fetchActivityLog('chore', id) rows the phone sheet does.
-                  Sits inside KioskExpandableCard's own header Pressable,
-                  so it needs a real hitSlop to be reliably hit without
-                  toggling the card instead. */}
-              {/* Text label added [live-reported: "don't see view
-                  details"] — icon-only with no visible text didn't read
-                  as a details/history affordance while scanning a
-                  collapsed board, even though the real full-log sheet it
-                  opens was already there and correctly wired. */}
-              <Pressable
-                onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
-                hitSlop={12}
-                style={({ pressed }) => [
-                  s.historyBtn,
-                  { backgroundColor: k.well, borderColor: k.cardBorder },
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`History for ${q.title}`}
-                accessibilityHint="Shows everything that has happened on this chore"
-              >
-                <History size={13} color={k.textMuted} />
-                <Text style={[s.historyBtnText, { color: k.textMuted }]}>Details</Text>
-              </Pressable>
+                  <History size={13} color={k.textMuted} />
+                  <Text style={[s.historyBtnText, { color: k.textMuted }]}>Details</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         }
@@ -1455,15 +1465,8 @@ function KioskBoardView({ active, members, colors, isDark }: {
           session for the Hub's Cheer Squad sheet — rather than becoming a
           third copy of the same cheering UI. */}
       {kidFilter === 'cheer' && avail.showCheer && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
-          <WidgetHeader
-            Icon={PartyPopper}
-            eyebrow="Their wins"
-            title="Sibling Cheer"
-            accent={k.sage}
-            k={k}
-            isDark={kioskDark}
-          />
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead title="Sibling Cheer" k={k} />
           <KioskKidCheerList active={active} members={members} k={k} isDark={kioskDark} />
         </WidgetCard>
       )}
@@ -1476,15 +1479,15 @@ function KioskBoardView({ active, members, colors, isDark }: {
           is addressed to the ROOM rather than to an individual, so it
           gets hero treatment: full width, tinted tiles, big cards. */}
       {poolQuests.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.gold} style={s.zone}>
-          <WidgetHeader
-            Icon={Sparkles}
-            eyebrow="Anyone can claim these"
-            title="Up for grabs"
-            accent={k.gold}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          {/* Plain uppercase-tracked label + small count pill — matching
+              the approved reference mock's own zone header exactly (no
+              icon-chip), not WidgetHeader's fixed icon+eyebrow+title
+              shape. Real eyebrow copy kept verbatim as the label text. */}
+          <PanelHead
+            title="Anyone can claim these"
             k={k}
-            isDark={kioskDark}
-            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
+            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.poolGrid}>
             {poolQuests.map(q => (
@@ -1503,11 +1506,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
           zero visibility into at all, since these claims never touch the
           parent chore's own status the rest of this board keys off. */}
       {isParent && pendingBountyClaims.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.primary} style={s.zone}>
-          <WidgetHeader
-            Icon={Trophy} eyebrow="Bounty" title="Claims needing review"
-            accent={k.primary} k={k} isDark={kioskDark}
-            right={<Chip label={`${pendingBountyClaims.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead
+            title="Claims needing review"
+            k={k}
+            right={<Chip label={`${pendingBountyClaims.length}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {pendingBountyClaims.map(({ chore, claim }) => {
@@ -1567,11 +1570,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
           conversion) — entirely absent before, since this board only
           ever read quests/chores, never PointTransaction rows. */}
       {isParent && pendingCashOuts.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
-          <WidgetHeader
-            Icon={Check} eyebrow="Real money" title="Cash-out requests"
-            accent={k.sage} k={k} isDark={kioskDark}
-            right={<Chip label={`${pendingCashOuts.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead
+            title="Cash-out requests"
+            k={k}
+            right={<Chip label={`${pendingCashOuts.length}`} accent={k.sage} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {pendingCashOuts.map(req => {
@@ -1634,11 +1637,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
           pattern of reusing real shared-phone components (SmartTaskComposer,
           AddQuestModal) with the phone colors prop threaded through. */}
       {isParent && gpOffersPending.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
-          <WidgetHeader
-            Icon={Sparkles} eyebrow="Waiting on you" title="Grandparent offers"
-            accent={k.sage} k={k} isDark={kioskDark}
-            right={<Chip label={`${gpOffersPending.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead
+            title="Grandparent offers"
+            k={k}
+            right={<Chip label={`${gpOffersPending.length}`} accent={k.sage} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {gpOffersPending.map(c => (
@@ -1663,10 +1666,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           above for the alignment fix). */}
       {byColumn.some(c => c.items.length > 0) && (
         <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          <WidgetHeader
-            Icon={Clock3} eyebrow="By status" title="In flight"
-            accent={k.primary} k={k} isDark={kioskDark}
-          />
+          <PanelHead title="In flight" k={k} />
           {/* ── Lane grid sizing ────────────────────────────────────────
               The even-division fix documented above s.columns (flex:1 +
               flexBasis:0 + minWidth:0) is intact and untouched — it is
@@ -1762,7 +1762,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           same as the roster always was. */}
       <View style={[s.sideCol, isNarrowBoardLayout && s.colFullWidth]}>
         {isParent && kidStats.length > 0 && (
-          <WidgetCard k={k} isDark={kioskDark}>
+          <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
             <PanelHead title="Who has what" k={k} />
             {kidStats.map(({ member, open, total }, i) => {
               const rs = assigneeStyle(member, colors, isDark);
@@ -1798,7 +1798,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
             existed anywhere on this tab before), not a mobile-parity
             port — purely this visual pass's own addition. */}
         {isParent && kidStats.length > 0 && (
-          <WidgetCard k={k} isDark={kioskDark}>
+          <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
             <PanelHead title="Coin balance" k={k} />
             {kidStats.map(({ member }, i) => {
               const rs = assigneeStyle(member, colors, isDark);
@@ -2173,11 +2173,11 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
       />
 
       <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-        <WidgetHeader
-          Icon={PartyPopper} eyebrow="Last finished" title="Ready to cheer"
-          accent={k.sage} k={k} isDark={kioskDark}
+        <PanelHead
+          title="Ready to cheer"
+          k={k}
           right={kidsCheerable.length > 0
-            ? <Chip label={`${kidsCheerable.length}`} accent={k.sage} isDark={kioskDark} k={k} />
+            ? <Chip label={`${kidsCheerable.length}`} accent={k.sage} isDark={kioskDark} k={k} filled />
             : undefined}
         />
         {kidsCheerable.length === 0 ? (
@@ -2195,11 +2195,11 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
       </WidgetCard>
 
       {pendingReview.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.primary} style={s.zone}>
-          <WidgetHeader
-            Icon={Check} eyebrow="Needs a grown-up" title="Waiting on approval"
-            accent={k.primary} k={k} isDark={kioskDark}
-            right={<Chip label={`${pendingReview.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead
+            title="Waiting on approval"
+            k={k}
+            right={<Chip label={`${pendingReview.length}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {pendingReview.map(q => gpCard(q, {
@@ -2220,10 +2220,10 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
           branches use. */}
       {gpPoolOpen.length > 0 && (
         <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          <WidgetHeader
-            Icon={PartyPopper} eyebrow="Family asked" title="Help with a family chore"
-            accent={k.gold} k={k} isDark={kioskDark}
-            right={<Chip label={`${gpPoolOpen.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
+          <PanelHead
+            title="Help with a family chore"
+            k={k}
+            right={<Chip label={`${gpPoolOpen.length}`} accent={k.gold} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {gpPoolOpen.map(q => {
@@ -2258,11 +2258,11 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
       )}
 
       {gpPoolClaimed.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
-          <WidgetHeader
-            Icon={Check} eyebrow="You're helping" title="Family chores you claimed"
-            accent={k.sage} k={k} isDark={kioskDark}
-            right={<Chip label={`${gpPoolClaimed.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <PanelHead
+            title="Family chores you claimed"
+            k={k}
+            right={<Chip label={`${gpPoolClaimed.length}`} accent={k.sage} isDark={kioskDark} k={k} filled />}
           />
           <View style={s.gpGrid}>
             {gpPoolClaimed.map(q => gpCard(q, {
@@ -2285,10 +2285,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 
       {(myGpQuestsOpen.length > 0 || myGpQuestsAssigned.length > 0) && (
         <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          <WidgetHeader
-            Icon={Sparkles} eyebrow="Yours" title="Your sponsored chores"
-            accent={k.gold} k={k} isDark={kioskDark}
-          />
+          <PanelHead title="Your sponsored chores" k={k} />
           <View style={s.gpGrid}>
             {myGpQuestsOpen.map(q => gpCard(q, {
               label: 'Claim', accent: k.primary, hint: q.title,
@@ -2317,11 +2314,13 @@ const s = StyleSheet.create({
   // blocks at a glance rather than one uniform field of cards.
   // Each zone is a WidgetCard now, so the gap between them is a plain
   // margin rather than the old bare-View rhythm.
-  // Deliberately NO borderRadius override — WidgetCard's own shared
-  // default (KIOSK_RADIUS.sm) is what Overview uses everywhere too (that
-  // file never overrides it either); matching Overview's real radius
-  // means leaving this alone, not adopting a rounder one-off shape.
-  zone: { marginBottom: KIOSK_SPACE.md },
+  // Rounder than the shared WidgetCard default (KIOSK_RADIUS.sm=10) —
+  // matches the approved reference mock's own rounded-3xl (24px) panels,
+  // per explicit direction to adopt that newer, softer look. Overridden
+  // per-zone here rather than in KioskOS.tsx's shared s.card, which every
+  // other kiosk screen (Overview, Schedule) also builds from and isn't
+  // part of this ask.
+  zone: { marginBottom: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl },
 
   // ── Two-column layout, matching KioskOverviewTab.tsx's own real
   // twoColRow/centerCol/sideCol/colFullWidth values exactly (same 1080px
@@ -2331,6 +2330,8 @@ const s = StyleSheet.create({
   colFullWidth: { flex: undefined, width: '100%' },
   centerCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
   sideCol: { flex: undefined, width: 340, gap: KIOSK_SPACE.md, minWidth: 0 },
+  // Same rounder radius as `zone` above, for the sidebar's own panels.
+  sidebarPanel: { borderRadius: KIOSK_RADIUS.xl },
 
   // ── Sidebar jar-row, matching KioskOverviewTab.tsx's own Coin Jars
   // jarRow/jarAvatar/jarName/jarMeta/jarAmt exactly.
@@ -2381,7 +2382,7 @@ const s = StyleSheet.create({
   // percentage-of-ambiguous-parent-width math to get wrong, and matches
   // the actual approved design besides.
   poolGrid: { gap: KIOSK_SPACE.md },
-  poolCard: { width: '100%' },
+  poolCard: { width: '100%', borderRadius: KIOSK_RADIUS.xl },
 
   // Lane column heads — a label plus a count chip, not a run-on string.
   colHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
@@ -2541,8 +2542,8 @@ const s = StyleSheet.create({
   // Plain full-width vertical stack — see poolGrid's own comment above for
   // why the earlier percentage-flexBasis tile-grid attempt is gone.
   gpGrid: { gap: KIOSK_SPACE.md },
-  gpCard: { width: '100%', gap: KIOSK_SPACE.sm },
-  claimCard: { width: '100%', gap: KIOSK_SPACE.sm },
+  gpCard: { width: '100%', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.xl },
+  claimCard: { width: '100%', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.xl },
   claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
   claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
   claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },

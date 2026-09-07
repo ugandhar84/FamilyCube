@@ -434,6 +434,13 @@ export function KioskExpandableCard({
     <View
       style={[
         s.card,
+        // Rounder than the shared card default, matching the approved
+        // reference mock's own softer look — safe to set directly here
+        // (not via a style override at the call site) since this
+        // component is exclusively used by KioskTasksTab.tsx's own chore
+        // cards, confirmed via grep, so it doesn't ripple into any other
+        // kiosk screen's use of the shared s.card shape.
+        { borderRadius: KIOSK_RADIUS.xl },
         {
           backgroundColor: k.card,
           borderColor: k.cardBorder,

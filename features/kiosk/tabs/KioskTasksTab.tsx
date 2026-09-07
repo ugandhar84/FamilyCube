@@ -1519,13 +1519,21 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <PanelHead
             title="Anyone can claim these"
             k={k}
-            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} filled />}
+            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
           />
+          {/* Plain View, not a Well wrapper — KioskExpandableCard already
+              draws its own card shell (background/border/accent bar) per
+              row, so wrapping it in a second k.well-tinted, accent-bordered
+              Well double-boxed every row here, the one thing that made
+              this zone look different from "In flight" right below it
+              [live-reported: "like in flight card"] even though both use
+              the exact same renderQuestCard. Matching In flight's own flat
+              s.poolCard wrapper exactly. */}
           <View style={s.poolGrid}>
             {poolQuests.map(q => (
-              <Well key={q.id} k={k} accent={k.gold} style={s.poolCard}>
+              <View key={q.id} style={s.poolCard}>
                 {renderQuestCard(q)}
-              </Well>
+              </View>
             ))}
           </View>
         </WidgetCard>
@@ -1542,7 +1550,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <PanelHead
             title="Claims needing review"
             k={k}
-            right={<Chip label={`${pendingBountyClaims.length}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
+            right={<Chip label={`${pendingBountyClaims.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
           />
           <View style={s.gpGrid}>
             {pendingBountyClaims.map(({ chore, claim }) => {
@@ -1701,7 +1709,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <PanelHead
             title="In flight"
             k={k}
-            right={<Chip label={`${byColumn.reduce((n, c) => n + c.items.length, 0)}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
+            right={<Chip label={`${byColumn.reduce((n, c) => n + c.items.length, 0)}`} accent={k.primary} isDark={kioskDark} k={k} />}
           />
           {/* Flat full-width vertical stack, matching the approved
               reference mock's own "By Status • In Flight" zone exactly —
@@ -2214,7 +2222,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
           <PanelHead
             title="Waiting on approval"
             k={k}
-            right={<Chip label={`${pendingReview.length}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
+            right={<Chip label={`${pendingReview.length}`} accent={k.primary} isDark={kioskDark} k={k} />}
           />
           <View style={s.gpGrid}>
             {pendingReview.map(q => gpCard(q, {
@@ -2238,7 +2246,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
           <PanelHead
             title="Help with a family chore"
             k={k}
-            right={<Chip label={`${gpPoolOpen.length}`} accent={k.gold} isDark={kioskDark} k={k} filled />}
+            right={<Chip label={`${gpPoolOpen.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
           />
           <View style={s.gpGrid}>
             {gpPoolOpen.map(q => {

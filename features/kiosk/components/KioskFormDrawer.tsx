@@ -248,7 +248,24 @@ export function KioskFormDrawer({
               style={isDialog ? s.bodyDialog : s.body}
               contentContainerStyle={s.bodyContent}
               showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="always"
+              // Live-reported: "the keyboard always opening even i click on
+              // the outside" — this outer body scroll was the one drawer-
+              // shell ScrollView using "always" (every sibling kiosk form —
+              // KioskAskFamDrawer/KioskEventEditor/KioskIntercomModal/
+              // KioskKidQuickActions — already uses "handled" for its own
+              // outer scroll). "always" makes RN preserve keyboard focus
+              // through EVERY tap inside this ScrollView, including a tap
+              // on blank space below the fields, which is exactly what
+              // should dismiss focus. "handled" is the correct middle
+              // ground: a tap that lands on an interactive child (a field,
+              // a pill, a button) still registers normally, but a tap on
+              // non-interactive space is treated as a real outside-tap and
+              // blurs the focused input. The horizontal chip-row
+              // ScrollViews nested inside individual forms (category/store
+              // pill strips) keep "always" — that narrow case is a chip
+              // that needs to register while a field above stays focused,
+              // which is different from this outer container.
+              keyboardShouldPersistTaps="handled"
             >
               {children}
 

@@ -44,11 +44,13 @@
  * manage it), same scoping the phone's own isKid-gated onDelete/onMoveStore
  * already use.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
+  findNodeHandle, UIManager, Dimensions,
 } from 'react-native';
-import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw } from 'lucide-react-native';
+import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
@@ -63,6 +65,10 @@ import { useKioskActivity } from '../KioskActivityContext';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
 import { KioskStoreMoveSheet } from '../components/KioskStoreMoveSheet';
+import { KioskDraggableItemRow } from '../components/KioskDraggableItemRow';
+import { KioskPinStoreLocationSheet } from '../components/KioskPinStoreLocationSheet';
+import { useFeatureFlag } from '@/lib/featureFlags';
+import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
@@ -98,10 +104,34 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // ItemCard.tsx onMoveStore button rather than its drag-and-drop layer.
   const [movingItem, setMovingItem] = useState<GroceryItem | undefined>(undefined);
 
+  // "user can put the location fence here also .. like in mobile so user
+  // can add their frequent shopping address" — same real feature and same
+  // OFF-by-default feature flag GroceryScreen.tsx itself gates this
+  // behind (store_proximity_reminders isn't released to anyone yet, on
+  // any platform), so this stays invisible today and appears on kiosk and
+  // phone together the moment that flag ships, rather than kiosk shipping
+  // ahead of the phone's own rollout.
+  const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
+  const [pinningStore, setPinningStore] = useState<string | null>(null);
+  const pinStoreLocation = useGroceryStore(s => s.pinStoreLocation);
+  const pinnedStores = useGroceryStore(s => s.pinnedStores);
+  const loadPinnedStores = useGroceryStore(s => s.loadPinnedStores);
+
   const items = useGroceryStore(s => s.items);
   const load = useGroceryStore(s => s.load);
   const addItem = useGroceryStore(s => s.addItem);
   const buyItem = useGroceryStore(s => s.buyItem);
+  // Live-requested: "can we make undo already bought one to put back to
+  // original store?" — restoreItem is a real, already-correct store
+  // action (writes is_bought:false back to Postgres, same realtime path
+  // as every other write here) that genuinely has NO caller anywhere in
+  // this app today, phone included (grepped the whole repo) — not a
+  // phone feature kiosk was missing, a real capability nobody had wired a
+  // button to yet. The item's storePreference was never touched by
+  // buying it, so restoring naturally puts it back in the same store
+  // section it came from — no extra bookkeeping needed for "original
+  // store."
+  const restoreItem = useGroceryStore(s => s.restoreItem);
   const runs = useGroceryStore(s => s.runs);
 
   const visibleItems = useMemo(
@@ -147,6 +177,117 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
   }, [categorisedItems.groceries]);
 
+  // ── Drag-and-drop between store sections ─────────────────────────────────
+  // Live-requested on top of the tap-based KioskStoreMoveSheet already
+  // shipped: "Yes, add real drag-and-drop." Ported from
+  // features/grocery/components/GroceryItemsSection.tsx's own drag system —
+  // read in full, including its crash-history comments, since this exact
+  // feature has a documented SIGSEGV history on the phone even in its
+  // mature, previously-shipped form.
+  const updateItem = useGroceryStore(s => s.updateItem);
+  const itemsById = useMemo(() => Object.fromEntries(visibleItems.map(it => [it.id, it])), [visibleItems]);
+
+  // Each store section's on-screen Y range, measured in ABSOLUTE window
+  // coordinates (not onLayout's scroll-content-relative ones) so it's
+  // directly comparable to dragAbsoluteY, which KioskDraggableItemRow
+  // reports from the gesture's own e.absoluteY — same reasoning as the
+  // phone's own UIManager.measureInWindow choice over onLayout here.
+  const sectionBounds = useRef<Record<string, { top: number; bottom: number }>>({});
+  const registerSectionLayout = useCallback((store: string, ref: View | null) => {
+    if (!ref) return;
+    const handle = findNodeHandle(ref);
+    if (!handle) return;
+    UIManager.measureInWindow(handle, (x, y, width, height) => {
+      sectionBounds.current[store] = { top: y, bottom: y + height };
+    });
+  }, []);
+
+  const storeAtY = useCallback((pageY: number): string | null => {
+    for (const [store, bounds] of Object.entries(sectionBounds.current)) {
+      if (pageY >= bounds.top && pageY <= bounds.bottom) return store;
+    }
+    return null;
+  }, []);
+
+  const draggingId = useSharedValue<string | null>(null);
+  const dragAbsoluteY = useSharedValue(0);
+  const [hoveredStore, setHoveredStore] = useState<string | null>(null);
+
+  const AUTOSCROLL_EDGE = 110;
+  const AUTOSCROLL_SPEED = 10;
+  const [viewportHeight] = useState(() => Dimensions.get('window').height);
+
+  const updateHoveredStore = useCallback((y: number) => {
+    setHoveredStore(storeAtY(y));
+  }, [storeAtY]);
+
+  // Auto-scroll for THIS screen's own top-level ScrollView (mealsScrollRef
+  // below) — same setInterval-driven relative-scroll pattern
+  // GroceryScreen.tsx's own handleAutoScroll uses, since RN's ScrollView
+  // only exposes an absolute scrollTo, never a relative "scroll by."
+  const mealsScrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoScrollDelta = useRef(0);
+  const handleAutoScroll = useCallback((delta: number | null) => {
+    if (delta === null) {
+      if (autoScrollTimer.current) { clearInterval(autoScrollTimer.current); autoScrollTimer.current = null; }
+      return;
+    }
+    autoScrollDelta.current = delta;
+    if (autoScrollTimer.current) return;
+    autoScrollTimer.current = setInterval(() => {
+      scrollYRef.current = Math.max(0, scrollYRef.current + autoScrollDelta.current);
+      mealsScrollRef.current?.scrollTo({ y: scrollYRef.current, animated: false });
+    }, 16);
+  }, []);
+
+  const HOVER_CHECK_THRESHOLD = 8;
+  useAnimatedReaction(
+    () => ({ y: dragAbsoluteY.value, dragging: draggingId.value !== null }),
+    (curr, prev) => {
+      if (!curr.dragging) {
+        if (prev?.dragging) {
+          runOnJS(setHoveredStore)(null);
+          runOnJS(handleAutoScroll)(null);
+        }
+        return;
+      }
+      const movedEnough = !prev?.dragging || Math.abs(curr.y - prev.y) >= HOVER_CHECK_THRESHOLD;
+      if (movedEnough) runOnJS(updateHoveredStore)(curr.y);
+      if (viewportHeight > 0) {
+        if (curr.y < AUTOSCROLL_EDGE) runOnJS(handleAutoScroll)(-AUTOSCROLL_SPEED);
+        else if (curr.y > viewportHeight - AUTOSCROLL_EDGE) runOnJS(handleAutoScroll)(AUTOSCROLL_SPEED);
+        else runOnJS(handleAutoScroll)(null);
+      }
+    },
+    [viewportHeight, updateHoveredStore, handleAutoScroll],
+  );
+
+  const handleDrop = useCallback((itemId: string, pageY: number) => {
+    setHoveredStore(null);
+    handleAutoScroll(null);
+    const item = itemsById[itemId];
+    if (!item) return;
+    const store = storeAtY(pageY);
+    if (!store || store === (item.storePreference ?? 'Any store')) return;
+    const target = store === 'Any store' ? undefined : store;
+    // Same deferred-mutation fix GroceryItemsSection.tsx's own handleDrop
+    // comment documents: moving the last item out of a section collapses
+    // groupedGroceries by one section on the very next render, unmounting
+    // every OTHER KioskDraggableItemRow in that now-empty section in the
+    // same synchronous update that runs while this gesture's onEnd
+    // callback is still on the stack — the still-live version of the
+    // SIGSEGV this whole file's header references. Deferring the actual
+    // store write lets onEnd fully return control to the native gesture
+    // handler first.
+    setTimeout(() => updateItem(itemId, { storePreference: target }), 0);
+  }, [itemsById, updateItem, storeAtY, handleAutoScroll]);
+
+  // Drag only makes sense with more than one store section to drop into,
+  // and never for a kid (matches the phone's own dragEnabled formula).
+  const dragEnabled = !isKid && groupedGroceries.length > 1;
+
   // Same read-only mirror of the real phone's "Shopping now at {store}"
   // banner as Overview's Grocery card (features/grocery/GroceryScreen.tsx:
   // activeRuns = runs.filter(status === 'active')) — kiosk can't start or
@@ -165,6 +306,11 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // own guard short-circuits if it's already subscribed for this family, so
   // this costs nothing when the phone's grocery screen already loaded it.
   useEffect(() => { if (familyId) load(familyId); }, [familyId, load]);
+
+  useEffect(() => {
+    if (!familyId || !geofencingEnabled) return;
+    loadPinnedStores(familyId);
+  }, [familyId, geofencingEnabled, loadPinnedStores]);
 
   // "where is the purchase history?" — the real phone feature this answers
   // is RecentlyBoughtSection.tsx (last 7 days of is_bought=true rows), not
@@ -291,6 +437,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   return (
     <>
     <ScrollView
+      ref={mealsScrollRef}
+      onScroll={e => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
+      scrollEventThrottle={16}
       contentContainerStyle={s.scroll}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -519,28 +668,68 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                   />
                 )}
                 {groupedGroceries.map(([store, storeItems]) => (
-                  <View key={store}>
+                  <View
+                    key={store}
+                    ref={el => registerSectionLayout(store, el)}
+                    style={[s.storeSection, hoveredStore === store && { backgroundColor: k.primary + '14' }]}
+                  >
                     {/* Same store-header shape as GroceryItemsSection.tsx's
-                        real sub-header, minus the pin/geofence affordance
-                        (irrelevant to a stationary kiosk) and the live
-                        per-store "N left" count (redundant here — every
-                        item shown is already unbought, so the section's
-                        own row count already reads at a glance). */}
-                    <Text style={[s.storeLabel, { color: k.primary }]} numberOfLines={1}>
-                      {store === 'Any store' ? 'ANY STORE' : store.toUpperCase()}
-                    </Text>
+                        real sub-header, minus the live per-store "N left"
+                        count (redundant here — every item shown is
+                        already unbought, so the section's own row count
+                        already reads at a glance). The pin affordance
+                        below WAS scoped out here as "irrelevant to a
+                        stationary kiosk" — corrected on request: pinning
+                        just writes a {lat,lng} for the store name, and
+                        which device did the pinning has no bearing on
+                        which family member's own phone later geofences
+                        against it, so a kiosk pinning "where Costco is"
+                        once from the kitchen wall is exactly as valid as
+                        a phone doing it. Same real gate as the phone's
+                        own onPinStore condition: only for a real store
+                        (not "Any store"), only once it has 2+ unbought
+                        items, only if not already pinned. */}
+                    <View style={s.storeHeadRow}>
+                      <Text style={[s.storeLabel, { color: k.primary, flex: 1 }]} numberOfLines={1}>
+                        {store === 'Any store' ? 'ANY STORE' : store.toUpperCase()}
+                      </Text>
+                      {geofencingEnabled && !isKid && store !== 'Any store'
+                        && storeItems.filter(i => !i.isBought).length >= 2
+                        && !pinnedStores?.[store] && (
+                        <Pressable
+                          onPress={() => setPinningStore(store)}
+                          hitSlop={8}
+                          style={s.pinBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Pin ${store}'s location`}
+                          accessibilityHint="Sets this store's map location for nearby reminders"
+                        >
+                          <MapPin size={13} color={k.textFaint} />
+                          <Text style={[s.pinBtnText, { color: k.textFaint }]}>Pin</Text>
+                        </Pressable>
+                      )}
+                    </View>
                     {storeItems.map((it, i) => (
-                      <GroceryRow
+                      <KioskDraggableItemRow
                         key={it.id}
-                        item={it}
-                        priceInfo={priceMap[it.name]}
+                        itemId={it.id}
                         k={k}
-                        isDark={isDark}
-                        divider={i > 0}
-                        onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
-                        onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
-                        onMove={isKid ? undefined : () => setMovingItem(it)}
-                      />
+                        dragEnabled={dragEnabled}
+                        draggingId={draggingId}
+                        dragAbsoluteY={dragAbsoluteY}
+                        onDrop={handleDrop}
+                      >
+                        <GroceryRow
+                          item={it}
+                          priceInfo={priceMap[it.name]}
+                          k={k}
+                          isDark={isDark}
+                          divider={i > 0}
+                          onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
+                          onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
+                          onMove={isKid ? undefined : () => setMovingItem(it)}
+                        />
+                      </KioskDraggableItemRow>
                     ))}
                   </View>
                 ))}
@@ -585,12 +774,29 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                           key={it.id}
                           style={[s.boughtRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                         >
-                          <Text style={[s.boughtName, { color: k.textMuted }]} numberOfLines={1}>
-                            {it.name}{it.quantity ? ` × ${it.quantity}` : ''}
-                          </Text>
-                          <Text style={[s.boughtWhen, { color: k.textFaint }]} numberOfLines={1}>
-                            {[buyer, when].filter(Boolean).join(' · ')}
-                          </Text>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={[s.boughtName, { color: k.textMuted }]} numberOfLines={1}>
+                              {it.name}{it.quantity ? ` × ${it.quantity}` : ''}
+                            </Text>
+                            <Text style={[s.boughtWhen, { color: k.textFaint }]} numberOfLines={1}>
+                              {[buyer, when].filter(Boolean).join(' · ')}
+                            </Text>
+                          </View>
+                          {!isKid && (
+                            <Pressable
+                              onPress={async () => {
+                                await restoreItem(it.id);
+                                setBoughtItems(prev => prev.filter(b => b.id !== it.id));
+                              }}
+                              style={({ pressed }) => [s.undoBtn, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder }]}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Undo — put ${it.name} back on the list`}
+                              accessibilityHint="Marks this item as not bought, returning it to its original store section"
+                            >
+                              <RotateCcw size={12} color={k.textMuted} />
+                              <Text style={[s.undoBtnText, { color: k.textMuted }]}>Undo</Text>
+                            </Pressable>
+                          )}
                         </View>
                       );
                     })}
@@ -628,6 +834,19 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         itemId={movingItem.id}
         itemName={movingItem.name}
         currentStore={movingItem.storePreference}
+      />
+    )}
+
+    {geofencingEnabled && (
+      <KioskPinStoreLocationSheet
+        visible={!!pinningStore}
+        store={pinningStore ?? ''}
+        onClose={() => setPinningStore(null)}
+        onPin={async (lat, lng) => {
+          if (!pinningStore || !familyId) return;
+          await pinStoreLocation({ familyId, store: pinningStore, latitude: lat, longitude: lng, pinnedBy: active.id });
+          registerStoreGeofences(familyId, active.id).catch(() => {});
+        }}
       />
     )}
     </>
@@ -877,6 +1096,13 @@ const s = StyleSheet.create({
   // minus its icon (a kitchen-wall glance doesn't need the icon to read
   // "this is a store name," the all-caps label already does that).
   storeLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.7, marginBottom: 4, marginTop: 4 },
+  // Same live hover-highlight GroceryItemsSection.tsx's own store
+  // sub-header background does while a drag is over this section —
+  // borderRadius/padding only actually visible once the tint applies.
+  storeSection: { borderRadius: KIOSK_RADIUS.sm, marginHorizontal: -6, paddingHorizontal: 6 },
+  storeHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  pinBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
+  pinBtnText: { fontSize: 10.5, fontWeight: '700' },
 
   // Real phone's price-estimate strip (GroceryScreen.tsx's "Estimated
   // total" row + its GroceryAiBanner "Check Prices" action, merged into
@@ -902,4 +1128,10 @@ const s = StyleSheet.create({
   boughtRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, gap: KIOSK_SPACE.sm },
   boughtName: { flex: 1, fontSize: 12.5, fontWeight: '600' },
   boughtWhen: { fontSize: 11 },
+  undoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.full,
+    paddingHorizontal: 9, paddingVertical: 5, flexShrink: 0,
+  },
+  undoBtnText: { fontSize: 11, fontWeight: '700' },
 });

@@ -875,7 +875,16 @@ function KioskEventCard({
 
   return (
     <Pressable
-      onPress={onPress}
+      // Live-requested: "dont open edit form when we click - we should do
+      // a long press to open the edit" — a plain tap on the card's empty
+      // space used to open the full editor immediately, which made the
+      // card's OWN inner tappable elements (the assign-picker avatars, the
+      // claim button, check-off) too easy to miss past by fat-fingering
+      // the surrounding card instead. Long-press only for the editor; the
+      // inner Pressables (their own onPress handlers, unchanged) still
+      // fire on a plain tap since they're nested inside this one and stop
+      // their own touch from bubbling up to this outer long-press.
+      onLongPress={onPress}
       style={({ pressed }) => [
         s.card,
         {

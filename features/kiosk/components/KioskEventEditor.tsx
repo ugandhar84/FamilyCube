@@ -141,6 +141,21 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
   // A genuine gap this file had with zero prior UI: kiosk could edit
   // every other field but never reassign an event to a different member.
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  // Live-requested: "when i select family it should show all family
+  // members avatars overlapped" — same as explicitly picking everyone.
+  // MemberPicker's own Family chip writes memberIds=[] (its highlighted-
+  // ring state is hardcoded to selectedIds.length===0 — changing what
+  // Family WRITES there would make the chip itself immediately look
+  // unselected right after tapping it), which is ALSO what a plain never-
+  // touched event already has, and those two need to stay visually
+  // different: a genuinely untouched event keeps its on-card tap-to-claim
+  // picker (confirmed explicitly kept), while Family should show the
+  // overlap cluster. This flag is the one place that distinction lives —
+  // set the moment Family is tapped, expanded to all 4 real ids only at
+  // save time (saveFull), so MemberPicker's own selection semantics never
+  // change and the DB ends up with the exact same real memberIds shape a
+  // manual "select all" would have produced.
+  const [familyPicked, setFamilyPicked] = useState(false);
   // Category + its own fields — real EventCategory picker, same 9 values
   // EventFormModal.tsx's own type has. The category-specific state below
   // is form-local exactly like EventFormModal.tsx's own equivalents
@@ -199,6 +214,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       // Same real memberIds-else-memberId prefill shape EventFormModal.tsx's
       // own prefill uses (that file's line ~177-178, read before writing this).
       setMemberIds(event.memberIds?.length ? event.memberIds : (event.memberId ? [event.memberId] : []));
+      setFamilyPicked(false);
       // Category + its fields — same reverse-derivation direction as
       // EventFormModal.tsx's own edit-prefill: clinicLocation/venueLocation/
       // tutorName aren't real columns, so an existing event's `location`/
@@ -324,8 +340,16 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       // DB as a literal null against a NOT NULL column. This UI is the
       // first caller to actually clear memberIds through the partial-
       // update path, surfacing a pre-existing gap in toRowPartial itself.
-      memberId: memberIds[0],
-      memberIds: memberIds.length > 1 ? memberIds : [],
+      //
+      // familyPicked expands the Family tap into the SAME real shape a
+      // manual "select all" produces (all real member ids), rather than
+      // a plain empty array — that empty-array state stays reserved for a
+      // genuinely untouched event, which keeps its own on-card tap-to-
+      // claim picker (confirmed kept). Family instead now saves as
+      // "explicitly everyone," so it shows the same overlapping-avatar
+      // cluster manually picking all 4 would.
+      memberId: familyPicked ? members[0]?.id : memberIds[0],
+      memberIds: familyPicked ? members.map(m => m.id) : (memberIds.length > 1 ? memberIds : []),
       location: foldedLocation,
       notes: notes.trim() || undefined,
       alertCall,
@@ -506,16 +530,16 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
           <View style={s.section}>
             <MemberPicker
               label="WHO IS THIS FOR"
-              hint="Leave blank for the whole family"
+              hint="Tap Family to assign everyone"
               selectedIds={memberIds}
               members={members}
-              onToggle={(id) => setMemberIds(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id])}
-              onSelectAll={() => setMemberIds(prev => prev.length === members.length ? [] : members.map(m => m.id))}
+              onToggle={(id) => { setFamilyPicked(false); setMemberIds(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]); }}
+              onSelectAll={() => { setFamilyPicked(false); setMemberIds(prev => prev.length === members.length ? [] : members.map(m => m.id)); }}
               colors={colors}
               isDark={isDark}
               siblings={members.map(m => m.name)}
               showFamilyOption
-              onClear={() => setMemberIds([])}
+              onClear={() => { setFamilyPicked(true); setMemberIds([]); }}
             />
           </View>
           <View style={s.section}>

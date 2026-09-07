@@ -60,6 +60,7 @@ import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS, collapseSe
 import { assigneeStyle, MultiPersonTimeFill, OverlappingAvatars } from '@/features/calendar/components/EventCard';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskEventDetailSheet } from '../components/KioskEventDetailSheet';
+import { KioskSeriesManagerSheet } from '../components/KioskSeriesManagerSheet';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -1286,6 +1287,13 @@ function AgendaView({
   const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
   const [claimNote, setClaimNote] = useState<Record<string, string>>({});
   const isKidViewer = active.role === 'kid' || active.role === 'teen';
+  // Real AgendaView.tsx's own "+N more · Manage →" chip route
+  // [fresh-audit gap] — real mobile pushes a full expo-router screen
+  // (SeriesManagerScreen.tsx), which kiosk has no navigation stack to
+  // reach; KioskSeriesManagerSheet below reproduces that screen's real
+  // logic (same deleteEvent/deleteEventScoped calls) as a kiosk-native
+  // sheet instead.
+  const [viewingSeriesId, setViewingSeriesId] = useState<string | null>(null);
 
   // Only days that actually have something, forward from the cursor. A
   // fourteen-row list of "No events" is noise, not a calendar.
@@ -1303,7 +1311,15 @@ function AgendaView({
   // boundaries — a weekly series has occurrences on different real dates
   // all sharing one seriesId — then the collapsed result is re-grouped by
   // day the same way eventsByDate already groups everything else.
-  const days = useMemo(() => {
+  // hiddenCountByRepId/seriesMetaByRepId — real AgendaView.tsx's own
+  // parallel tracking (its lines 60-83) alongside the same collapse rule
+  // collapseSeries performs, since that shared helper only returns the
+  // collapsed array and discards how many occurrences it rolled up. Real
+  // mobile's own "+N more · Manage →" chip [fresh-audit gap] needs this
+  // count; kiosk's Agenda called collapseSeries directly and had nowhere
+  // to get it from, so the chip (and any route to manage the rest of a
+  // flooded series) had no data to render from at all.
+  const { days, hiddenCountByRepId, seriesMetaByRepId } = useMemo(() => {
     const flat: FamilyEvent[] = [];
     for (let i = 0; i <= AGENDA_DAYS; i++) {
       const dateStr = toDateStr(addDays(cursor, i));
@@ -1311,6 +1327,21 @@ function AgendaView({
       if (evs?.length) flat.push(...evs);
     }
     const collapsed = collapseSeries(flat);
+    const hiddenCountByRepId = new Map<string, number>();
+    const seriesMetaByRepId = new Map<string, { seriesId: string; total: number }>();
+    const bySeriesId = new Map<string, FamilyEvent[]>();
+    for (const ev of flat) {
+      if (!ev.seriesId) continue;
+      const group = bySeriesId.get(ev.seriesId);
+      if (group) group.push(ev); else bySeriesId.set(ev.seriesId, [ev]);
+    }
+    for (const rep of collapsed) {
+      if (!rep.seriesId) continue;
+      const group = bySeriesId.get(rep.seriesId);
+      if (!group || group.length <= 1) continue;
+      hiddenCountByRepId.set(rep.id, group.length - 1);
+      seriesMetaByRepId.set(rep.id, { seriesId: rep.seriesId, total: group.length });
+    }
     const byDate = new Map<string, FamilyEvent[]>();
     for (const ev of collapsed) {
       const list = byDate.get(ev.date) ?? [];
@@ -1323,7 +1354,7 @@ function AgendaView({
       const evs = byDate.get(dateStr);
       if (evs?.length) out.push({ dateStr, events: evs });
     }
-    return out;
+    return { days: out, hiddenCountByRepId, seriesMetaByRepId };
   }, [cursor, eventsByDate]);
 
   // Claiming writes, so it follows the same rule every other writing action
@@ -1398,34 +1429,64 @@ function AgendaView({
               const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
               const needsDriver = isRide && !assignee.name;
 
+              const hiddenCount = hiddenCountByRepId.get(ev.id) ?? 0;
+              const seriesMeta = seriesMetaByRepId.get(ev.id);
+
               return (
-                <KioskEventCard
-                  key={ev.id}
-                  ev={ev}
-                  members={members}
-                  active={active}
-                  colors={colors} isDark={isDark}
-                  k={k}
-                  density="agenda"
-                  onPress={() => onLongPressEvent(ev)}
-                  onOpenDetail={() => onEventPress(ev)}
-                  claimNote={claimNote[ev.id]}
-                  // The mockup's "Claim Ride" — wired to the real race-safe
-                  // claim, and only offered when there is genuinely an open
-                  // slot to claim.
-                  onClaim={needsDriver && canClaim ? () => {
-                    claimHelperSlot(
-                      ev.id, 'driver', active.name, undefined,
-                      () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
-                      (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
-                    );
-                  } : undefined}
-                />
+                <View key={ev.id}>
+                  <KioskEventCard
+                    ev={ev}
+                    members={members}
+                    active={active}
+                    colors={colors} isDark={isDark}
+                    k={k}
+                    density="agenda"
+                    onPress={() => onLongPressEvent(ev)}
+                    onOpenDetail={() => onEventPress(ev)}
+                    claimNote={claimNote[ev.id]}
+                    // The mockup's "Claim Ride" — wired to the real race-safe
+                    // claim, and only offered when there is genuinely an open
+                    // slot to claim.
+                    onClaim={needsDriver && canClaim ? () => {
+                      claimHelperSlot(
+                        ev.id, 'driver', active.name, undefined,
+                        () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
+                        (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
+                      );
+                    } : undefined}
+                  />
+                  {/* Real AgendaView.tsx's own chip (its lines 214-230),
+                      verbatim copy. Parent-only — a kid tapping this on a
+                      long recurring series would land in a bulk-delete
+                      sheet with no reason to be there; matches this file's
+                      own established isViewerParent-gating convention. */}
+                  {!isKidViewer && seriesMeta && hiddenCount > 0 && (
+                    <Pressable
+                      onPress={() => setViewingSeriesId(seriesMeta.seriesId)}
+                      style={[s.seriesMoreChip, { backgroundColor: k.purpleSoft, borderWidth: 1, borderColor: k.purpleEdge }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${hiddenCount} more occurrences in this series`}
+                      accessibilityHint="Opens series management"
+                    >
+                      <Text style={{ fontSize: 14 }}>🔁</Text>
+                      <Text style={[s.seriesMoreChipText, { color: k.purple }]}>
+                        +{hiddenCount} more · {seriesMeta.total} total in series
+                      </Text>
+                      <Text style={[s.seriesMoreChipLink, { color: k.textFaint }]}>Manage →</Text>
+                    </Pressable>
+                  )}
+                </View>
               );
             })}
           </View>
         );
       })}
+
+      <KioskSeriesManagerSheet
+        seriesId={viewingSeriesId}
+        onClose={() => setViewingSeriesId(null)}
+        colors={colors} isDark={isDark} k={k}
+      />
 
       {/* No end-of-list "Ask a parent"/"Add an event" here any more — the
           header now carries that action permanently (see s.headerAddBtn),
@@ -1780,6 +1841,14 @@ function DayView({ cursor, eventsByDate, colors, isDark, members, active, involv
 // real minimum height so a 6-week grid doesn't collapse into thin bands.
 const s = StyleSheet.create({
   root: { flex: 1, padding: KIOSK_SPACE.lg },
+  // Real AgendaView.tsx's own "+N more · Manage →" chip, kiosk-scaled.
+  seriesMoreChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: KIOSK_SPACE.xs, paddingHorizontal: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.md, alignSelf: 'flex-start', marginTop: KIOSK_SPACE.xs,
+  },
+  seriesMoreChipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  seriesMoreChipLink: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   loadingStrip: { alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xxl },
   loadingText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   header: { marginBottom: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },

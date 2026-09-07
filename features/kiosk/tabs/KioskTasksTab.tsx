@@ -38,7 +38,7 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal, useWindowDimensions } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
   CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion, Pencil,
@@ -60,7 +60,7 @@ import { CATEGORY_META } from '@/features/quests/components/questFormShared';
 import { fmtDateShort, withinLast24h } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
-import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -73,7 +73,7 @@ import { CreateQuestModal } from '@/features/hub/senior/CreateQuestModal';
 import { KioskAiChoresEngine } from '../components/KioskAiChoresEngine';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
-import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
@@ -190,6 +190,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
+  // Two-column layout, matching KioskOverviewTab.tsx's own real
+  // twoColRow/centerCol/sideCol split exactly (same 1080px breakpoint,
+  // same stack-below-it behavior) — visual-polish pass only, per explicit
+  // direction to give this tab Overview's own look. "Who has what" and a
+  // new real coin-balance panel move into the sidebar; every other zone
+  // stays in the main column, unchanged in content or logic.
+  const { width: winWidth } = useWindowDimensions();
+  const isNarrowBoardLayout = winWidth < 1080;
   const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const giveBackChore = useChoreStore(s => s.giveBackChore);
@@ -1274,6 +1282,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
         ) : undefined}
       />
 
+      <View style={[s.twoColRow, isNarrowBoardLayout && s.twoColRowStacked]}>
+      <View style={[s.centerCol, isNarrowBoardLayout && s.colFullWidth]}>
+
       {/* ── CubeAI Chores Engine [GAP — audit D3] ───────────────────────
           Same real AutoBalance/Spark/Advice engine the phone's own
           Chores toolbar always shows — entirely absent from kiosk
@@ -1637,66 +1648,6 @@ function KioskBoardView({ active, members, colors, isDark }: {
         </WidgetCard>
       )}
 
-      {/* ── Zone 2: Who has what ──────────────────────────────────────
-          Person-first, matching KioskHeader's avatar language. A status
-          kanban answers "what is stuck where," which is a project-
-          management question; the question a family actually asks at the
-          kitchen counter is "who still has something to do." Each member
-          gets a row with their own tint, so the board is readable as a
-          set of PEOPLE from across the room. Parent/teen-facing — a kid
-          shouldn't get a sibling-comparison leaderboard front and center
-          (same reasoning the old stat strip already applied). */}
-      {isParent && kidStats.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          <WidgetHeader
-            Icon={Check} eyebrow="Roster" title="Who has what"
-            accent={k.sage} k={k} isDark={kioskDark}
-          />
-          {/* Compact roster CHIPS, not a card per person. Live-reported:
-              full-size member cards held very little information (avatar,
-              name, a fraction, a bar) while occupying a whole tile each,
-              so two people filled a row and the screen read sparse and
-              oversized. A chip puts the same information on one line —
-              avatar, name, count, progress — so a family of six fits in
-              the space two cards used, and the zone reads as a roster
-              rather than as two big empty boxes. */}
-          <View style={s.rosterRow}>
-            {kidStats.map(({ member, open, total }) => {
-              const rs = assigneeStyle(member, colors, isDark);
-              const done = total - open;
-              const pct = total > 0 ? done / total : 1;
-              const clear = open === 0;
-              return (
-                <View
-                  key={member.id}
-                  style={[s.rosterChip, { backgroundColor: k.well, borderColor: k.cardBorder, ...kioskElevation(rs.dot, kioskDark) }]}
-                  accessibilityLabel={`${member.name.split(' ')[0]}: ${done} of ${total} chores done`}
-                >
-                  <View style={[s.rosterAvatar, { backgroundColor: rs.badge, borderColor: rs.dot }]}>
-                    <Text style={{ fontSize: 18 }}>{member.emoji ?? '👤'}</Text>
-                  </View>
-                  <View style={s.rosterBody}>
-                    <View style={s.rosterTopLine}>
-                      <Text style={[s.rosterName, { color: k.text }]} numberOfLines={1}>
-                        {member.name.split(' ')[0]}
-                      </Text>
-                      <Text style={[s.rosterFrac, { color: clear ? k.sage : rs.dot }]} numberOfLines={1}>
-                        {clear ? 'done' : `${done}/${total}`}
-                      </Text>
-                    </View>
-                    {/* A slim rule, not a chunky bar — it's a supporting
-                        indicator, not the headline. */}
-                    <View style={[s.rosterTrack, { backgroundColor: k.cardBorder }]}>
-                      <View style={[s.rosterFill, { backgroundColor: clear ? k.sage : rs.dot, width: `${Math.round(pct * 100)}%` }]} />
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </WidgetCard>
-      )}
-
       {/* ── Zone 3: Status lanes ──────────────────────────────────────
           Status demoted to a secondary facet below the person view, and
           each lane is now rendered only when it has something in it —
@@ -1793,6 +1744,77 @@ function KioskBoardView({ active, members, colors, isDark }: {
       )}
 
       </>}
+
+      </View>
+
+      {/* ── Sidebar — matching KioskOverviewTab.tsx's own sideCol
+          (Coin Jars etc). "Who has what" relocated here from the main
+          column (same real kidStats data, unchanged), plus a new real
+          coin-balance panel using the exact same jar-row pattern Overview
+          uses for its own Coin Jars widget (mainCoins + gpCoins off each
+          real FamilyMember — no invented numbers). Parent-facing only,
+          same as the roster always was. */}
+      <View style={[s.sideCol, isNarrowBoardLayout && s.colFullWidth]}>
+        {isParent && kidStats.length > 0 && (
+          <WidgetCard k={k} isDark={kioskDark}>
+            <PanelHead title="Who has what" k={k} />
+            {kidStats.map(({ member, open, total }, i) => {
+              const rs = assigneeStyle(member, colors, isDark);
+              const done = total - open;
+              const clear = open === 0;
+              return (
+                <View
+                  key={member.id}
+                  style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                  accessibilityLabel={`${member.name.split(' ')[0]}: ${done} of ${total} chores done`}
+                >
+                  <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
+                    <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
+                    <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                      {clear ? 'All done' : `${done}/${total} chores`}
+                    </Text>
+                  </View>
+                  <Text style={[s.jarAmt, { color: clear ? k.sage : rs.dot }]} numberOfLines={1}>
+                    {clear ? '✓' : `${open}`}
+                  </Text>
+                </View>
+              );
+            })}
+          </WidgetCard>
+        )}
+
+        {/* Real coin balance — mainCoins + gpCoins off each real
+            FamilyMember, same fields/formula KioskOverviewTab.tsx's own
+            Coin Jars widget uses. Genuinely new content (no equivalent
+            existed anywhere on this tab before), not a mobile-parity
+            port — purely this visual pass's own addition. */}
+        {isParent && kidStats.length > 0 && (
+          <WidgetCard k={k} isDark={kioskDark}>
+            <PanelHead title="Coin balance" k={k} />
+            {kidStats.map(({ member }, i) => {
+              const rs = assigneeStyle(member, colors, isDark);
+              const total = ((member as any).mainCoins ?? 0) + ((member as any).gpCoins ?? 0);
+              return (
+                <View
+                  key={member.id}
+                  style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                >
+                  <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
+                    <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
+                  </View>
+                  <Text style={[s.jarName, { color: k.text, flex: 1 }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
+                  <Text style={[s.jarAmt, { color: k.gold }]} numberOfLines={1}>🪙 {total}</Text>
+                </View>
+              );
+            })}
+          </WidgetCard>
+        )}
+      </View>
+
+      </View>
 
       {/* Per-card History — the full activity log behind the header's
           History button. Kiosk-native (KioskFormDrawer 'drawer' variant)
@@ -2291,6 +2313,23 @@ const s = StyleSheet.create({
   // margin rather than the old bare-View rhythm.
   zone: { marginBottom: KIOSK_SPACE.md },
 
+  // ── Two-column layout, matching KioskOverviewTab.tsx's own real
+  // twoColRow/centerCol/sideCol/colFullWidth values exactly (same 1080px
+  // breakpoint, same stack-below-it behavior) — visual-polish pass only.
+  twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  twoColRowStacked: { flexDirection: 'column' },
+  colFullWidth: { flex: undefined, width: '100%' },
+  centerCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
+  sideCol: { flex: undefined, width: 340, gap: KIOSK_SPACE.md, minWidth: 0 },
+
+  // ── Sidebar jar-row, matching KioskOverviewTab.tsx's own Coin Jars
+  // jarRow/jarAvatar/jarName/jarMeta/jarAmt exactly.
+  jarRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  jarAvatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  jarName: { fontSize: 13.5, fontWeight: '700' },
+  jarMeta: { fontSize: 11.5, marginTop: 2 },
+  jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
+
   // ── Filter bar ────────────────────────────────────────────────────────
   filterBar: { gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md },
   aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },
@@ -2341,34 +2380,6 @@ const s = StyleSheet.create({
   // narrower kiosk instead of letting flexWrap reflow to fewer columns).
   poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   poolCard: { flexGrow: 0, flexShrink: 0, flexBasis: '33.333%', maxWidth: '100%' },
-
-  // People zone — compact roster chips (see the render comment). Each is
-  // ~220px and one line tall, so six people fit where two cards did.
-  rosterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
-  // Kept as a fixed width rather than switching to a percentage flexBasis
-  // like poolCard/gpCard above — a roster chip's own real column count
-  // varies with family size (2 to 8+ members), so there's no fixed
-  // fraction that's "right" here the way a stable 3-column grid is for a
-  // richer card; this stays a genuinely dense, many-per-row flow. Made
-  // flexGrow:0/flexShrink:0 explicit (RN's own default for an unset
-  // flexShrink on a fixed-width child is 1, letting it silently
-  // narrow under pressure) so its real width never drifts.
-  rosterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    flexGrow: 0, flexShrink: 0, width: 220, maxWidth: '100%',
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
-    paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.sm,
-  },
-  rosterAvatar: {
-    width: 36, height: 36, borderRadius: 18, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  rosterBody: { flex: 1, minWidth: 0, gap: 5 },
-  rosterTopLine: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: KIOSK_SPACE.xs },
-  rosterName: { fontSize: KIOSK_TYPO.body, fontWeight: '800', flexShrink: 1 },
-  rosterFrac: { fontSize: KIOSK_TYPO.label, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  rosterTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
-  rosterFill: { height: '100%', borderRadius: 2 },
 
   // Lane column heads — a label plus a count chip, not a run-on string.
   colHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },

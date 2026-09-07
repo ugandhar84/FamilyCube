@@ -78,6 +78,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet } from 'react-native';
 import { Trash2, Clock, Lock, CalendarDays } from 'lucide-react-native';
 import { useEventStore, estimateOccurrenceCount } from '@/store/eventStore';
+import { supabase } from '@/lib/supabase';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtTime, localDateStr, parseLocalDate } from '@/lib/dates';
@@ -422,6 +423,37 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
     // retrofit a plain event into a series in place.
     if (repeatFreq !== 'none' && !event.seriesId) {
       const rule = { frequency: repeatFreq, days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [dateValue.getDay()]) : undefined };
+      // Real EventFormModal.tsx's own check_likely_duplicate_event
+      // pre-flight [fresh-audit gap] — that file's own comment: built
+      // after a recurring ride got created twice (deleted, then
+      // recreated) with no warning first. This exact path (turning a
+      // plain edited event into a brand-new series) functionally creates
+      // new rows the same way a create does, so it's the right place to
+      // run the same real, read-only, best-effort check — fails open
+      // (a network hiccup here must never block a real save).
+      if (patch.time && active.familyId) {
+        try {
+          const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
+            p_family_id: active.familyId, p_title: patch.title, p_start_time: patch.time, p_date: patch.date,
+          });
+          const match = Array.isArray(dupe) ? dupe[0] : dupe;
+          if (match) {
+            const proceed = await new Promise<boolean>(resolve => {
+              Alert.alert(
+                'Possible duplicate',
+                `"${match.title}" already exists on ${match.date}${match.is_series ? ' (a recurring series)' : ''} at this same time. Create this one anyway?`,
+                [
+                  { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                  { text: 'Create anyway', style: 'destructive', onPress: () => resolve(true) },
+                ],
+              );
+            });
+            if (!proceed) return;
+          }
+        } catch (e: any) {
+          console.warn('[KioskEventEditor] check_likely_duplicate_event failed (proceeding):', e?.message);
+        }
+      }
       // Real EventFormModal.tsx's own confirmLargeRecurrence guard
       // [fresh-audit gap] — same real OCCURRENCE_WARNING_THRESHOLD (40)
       // and the same real estimateOccurrenceCount this file's own

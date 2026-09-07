@@ -90,7 +90,7 @@ import {
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
-import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
+import { useEventStore, eventAssignee, isEventSensitive, canViewSensitiveEventDetail, type FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions, eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
 import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirmedEvents';
 import { useUpcomingOpenEvents } from '@/features/hub/useUpcomingOpenEvents';
@@ -141,6 +141,10 @@ import { YourRidesSection } from '@/features/hub/senior/YourRidesSection';
 import { SectionCard, CollapsibleCard } from '@/features/hub/hubComponents';
 import { KidRideBanner } from '@/features/hub/kid/KidRideBanner';
 import { useCountdown } from '@/features/hub/hubUtils';
+import { LendAHandCard } from '@/features/hub/senior/LendAHandCard';
+import { ReceiptSubmissionModal } from '@/features/hub/senior/ReceiptSubmissionModal';
+import * as ImagePicker from 'expo-image-picker';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
 
 interface RadarRow {
   member_id: string;
@@ -738,6 +742,328 @@ export function KioskOverviewTab({
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
   };
 
+  // ── Lend a Hand (SeniorView.tsx's volunteer-dispatch card) ───────────
+  // Real availability settings — persisted FamilyMember fields, read
+  // directly off `active` with the same defaults and written through
+  // updateMember, verbatim from SeniorView.tsx lines ~385-397. Not a
+  // dispatch-suppression case like YourRidesSection's onEnRoute — claiming
+  // here calls claimHelperSlot (a scheduling commitment for a future
+  // event), never tripStore.dispatch, so unlike myDrivingToday above this
+  // needs no kiosk-specific narrowing at all.
+  const updateMember = useFamilyStore(s => s.updateMember);
+  const cheerleaderMode = active.gpCheerleaderMode ?? false;
+  const driveWindowDays = active.gpDriveWindowDays ?? [2, 4];
+  const driveWindowStart = active.gpDriveWindowStart ?? '14:00';
+  const driveWindowEnd = active.gpDriveWindowEnd ?? '17:30';
+  const weeklyRideCap = active.gpWeeklyRideCap ?? 2;
+  const setCheerleaderMode = (v: boolean | ((prev: boolean) => boolean)) =>
+    updateMember(active.id, { gpCheerleaderMode: typeof v === 'function' ? v(cheerleaderMode) : v });
+  const setDriveWindowDays = (v: number[] | ((prev: number[]) => number[])) =>
+    updateMember(active.id, { gpDriveWindowDays: typeof v === 'function' ? v(driveWindowDays) : v });
+  const setDriveWindowStart = (v: string) => updateMember(active.id, { gpDriveWindowStart: v });
+  const setDriveWindowEnd = (v: string) => updateMember(active.id, { gpDriveWindowEnd: v });
+  const setWeeklyRideCap = (v: number) => updateMember(active.id, { gpWeeklyRideCap: v });
+  const [availSettingsOpen, setAvailSettingsOpen] = useState(false);
+  const [helperDispatchExpanded, setHelperDispatchExpanded] = useState(false);
+
+  // withinDriveWindow / hasCar / openRides — verbatim SeniorView.tsx
+  // ~404-464. seniorMyClaimedRides (built above for YourRidesSection) is
+  // the SAME real semantic as SeniorView's own myClaimedRides (an
+  // isOpenToGrandparents event this senior is the confirmed helper/driver
+  // on) — reused rather than re-derived, but ridesThisWeek's real
+  // week-window there is ALL claimed rides including past ones
+  // (SeniorView.tsx line ~496: `myClaimedRides`, not the future-only
+  // `upcomingClaimedRides`), whereas seniorMyClaimedRides above already
+  // excludes past events (its own isSeniorPastEvent filter, needed for
+  // YourRidesSection's own "what's still ahead" list). A past claimed ride
+  // still earlier this same calendar week must still count toward the cap,
+  // so this section computes its own week-scoped list directly off
+  // backlogWindowEvents rather than reusing that already-past-filtered one.
+  const seniorHasCar = active.hasCar ?? false;
+  const seniorWithinDriveWindow = (ev: FamilyEvent): boolean => {
+    if (!ev.date) return true;
+    const evDayOfWeek = new Date(ev.date + 'T12:00').getDay();
+    if (!driveWindowDays.includes(evDayOfWeek)) return false;
+    if (!ev.time) return true;
+    const [evH, evM] = ev.time.split(':').map(Number);
+    const evMins = evH * 60 + evM;
+    const [startH, startM] = driveWindowStart.split(':').map(Number);
+    const [endH, endM] = driveWindowEnd.split(':').map(Number);
+    return evMins >= startH * 60 + startM && evMins <= endH * 60 + endM;
+  };
+  const seniorOpenRides = useMemo(() => seniorHasCar ? backlogWindowEvents.filter(e =>
+    e.isOpenToGrandparents &&
+    !e.approvalPending &&
+    !eventAssignee(e).name &&
+    !(e.grandparentPassedIds ?? []).includes(active.id) &&
+    !cheerleaderMode &&
+    !isSeniorPastEvent(e) &&
+    seniorWithinDriveWindow(e)
+  ) : [], [seniorHasCar, backlogWindowEvents, active.id, cheerleaderMode, driveWindowDays, driveWindowStart, driveWindowEnd]);
+  const [seniorDedupSeriesOpenRides] = dedupeRideSeries(seniorOpenRides);
+
+  // Weekly claim count — SeniorView.tsx lines ~490-497: ALL of this GP's
+  // claimed isOpenToGrandparents rides falling within the current
+  // calendar week (Sun-Sat, localDateStr-based, not myClaimedRides'
+  // future-only slice) — same weekStart/weekEnd formula, not a different
+  // week-boundary convention.
+  const seniorWeekBounds = useMemo(() => {
+    const s = new Date(); s.setDate(s.getDate() - s.getDay());
+    const e = new Date(); e.setDate(e.getDate() + (6 - e.getDay()));
+    return { weekStart: localDateStr(s), weekEnd: localDateStr(e) };
+  }, []);
+  const seniorAllMyClaimedRides = useMemo(() => backlogWindowEvents.filter(e => {
+    if (!e.isOpenToGrandparents) return false;
+    const a = eventAssignee(e);
+    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    return isMine && a.status === 'confirmed';
+  }), [backlogWindowEvents, active.id, active.name]);
+  const ridesThisWeek = useMemo(
+    () => seniorAllMyClaimedRides.filter(e => e.date >= seniorWeekBounds.weekStart && e.date <= seniorWeekBounds.weekEnd).length,
+    [seniorAllMyClaimedRides, seniorWeekBounds],
+  );
+  const atWeeklyCap = ridesThisWeek >= weeklyRideCap;
+
+  // gpInvitations / myPendingOffers — SeniorView.tsx lines ~140-144,
+  // ~401-403, verbatim chore-status filters against the real ChoreTask
+  // list (not the kiosk Quest adapter — this component takes ChoreTask[]
+  // directly, matching its own real prop type).
+  const gpInvitations = useMemo(
+    () => chores.filter(c => c.inviteGrandparents && c.status === 'todo' && !c.sponsorUserId),
+    [chores],
+  );
+  const myPendingOffers = useMemo(
+    () => chores.filter(c => c.status === 'gp_offer_pending' && c.gpOfferById === active.id),
+    [chores, active.id],
+  );
+  // myActiveErrands / myErrandsAwaitingReview — SeniorView.tsx lines
+  // ~365-383, verbatim.
+  const myActiveErrands = useMemo(
+    () => chores.filter(c => c.inviteGrandparents && c.status === 'in_progress' && c.assignedToId === active.id),
+    [chores, active.id],
+  );
+  const myErrandsAwaitingReview = useMemo(
+    () => chores.filter(c =>
+      c.inviteGrandparents && c.status === 'pending_approval' && c.assignedToId === active.id &&
+      (!!c.receiptPhotoUrl || c.receiptAmount != null || !!c.receiptNote)
+    ),
+    [chores, active.id],
+  );
+
+  // hasDispatchItems / dispatchBadgeCount — SeniorView.tsx lines ~791-824.
+  // driveAlerts there also folds in gpWelcomeRequests/gpWelcomeChores —
+  // gpWelcomeChores is confirmed dead (always [], see its own comment
+  // below), so only gpWelcomeRequests is real here. dedupOpenRequests/
+  // dedupVolunteerPool below are this file's own openRequests/volunteerPool
+  // equivalents (built further down, but referenced here the same way
+  // SeniorView.tsx's own hasDispatchItems/dispatchBadgeCount reference
+  // dedupOpenRequests/dedupVolunteerPool computed earlier in that file).
+  const gpWelcomeRequests = useMemo(
+    () => kidRequests.filter(r => r.openToGP && r.status === 'approved' && !r.assignedHelper),
+    [kidRequests],
+  );
+  // gpWelcomeChores — SeniorView.tsx's own comment (lines ~132-139):
+  // openToGP was dropped from chore_tasks entirely (single source of truth
+  // is now inviteGrandparents, already covered by gpInvitations above), so
+  // this list can never match anything — kept as a literal [] rather than
+  // building dead functionality, matching the real file exactly.
+  const gpWelcomeChores = useMemo(() => [] as typeof chores, []);
+
+  // openRequests / volunteerPool — SeniorView.tsx lines ~679-754, verbatim
+  // against dayEvents (that file's own `events`, today-only — NOT
+  // backlogWindowEvents/upcomingEvents, which only feed openRides/
+  // myClaimedRides/myDrivingToday/myPendingAssignments there).
+  // seniorMyDrivingTodayInfo (built above for the read-only "Currently
+  // Driving" card) is the same real myDrivingToday semantic needed for
+  // volunteerPool's own conflict-avoidance check.
+  const seniorMyConfirmedTimes = useMemo(
+    () => seniorMyDrivingTodayInfo.filter(e => !!e.time).map(e => {
+      const [h, m] = e.time!.split(':').map(Number); return h * 60 + m;
+    }),
+    [seniorMyDrivingTodayInfo],
+  );
+  const seniorOpenRequests = useMemo(() => dayEvents.filter(e =>
+    e.date === localDateStr() && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isSeniorPastEvent(e) &&
+    !(e.grandparentPassedIds ?? []).includes(active.id) &&
+    (!isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
+  ), [dayEvents, active.id, active.name, members]);
+  const seniorVolunteerPool = useMemo(() => dayEvents.filter(e => {
+    if (!e.date || e.date !== localDateStr()) return false;
+    if (isWorkEvent(e)) return false;
+    if (!e.helper || e.helperStatus !== 'pending') return false;
+    if (e.helperId ? e.helperId === active.id : e.helper === active.name) return false;
+    if (e.approvalPending) return false;
+    if (isEventSensitive(e, members) && canViewSensitiveEventDetail(e, 'senior', active.id, active.name) !== 'full') return false;
+    const hrs = hoursUntilEvent(e.date, e.time);
+    if (hrs < 0 || hrs > 4) return false;
+    if (e.time) {
+      const [h, m] = e.time.split(':').map(Number);
+      const evMin = h * 60 + m;
+      if (seniorMyConfirmedTimes.some(ct => Math.abs(ct - evMin) < 30)) return false;
+    }
+    return true;
+  }), [dayEvents, active.id, active.name, members, seniorMyConfirmedTimes]);
+  const [seniorDedupSeriesOpenRequests] = dedupeRideSeries(seniorOpenRequests);
+  const [seniorDedupSeriesVolunteerPool] = dedupeRideSeries(seniorVolunteerPool);
+  // Second, id-based cross-list dedupe — SeniorView.tsx applies this same
+  // pass across ALL six of its own dispatch lists together (shownRideIds,
+  // lines ~759-787) so an event id already surfaced in one bucket doesn't
+  // also show in another. Reproduced narrowly here across just this
+  // card's own four lists (openRides/openRequests/volunteerPool, plus
+  // myClaimedRides is excluded from this card entirely — it belongs to
+  // YourRidesSection, already deduped separately above).
+  const { seniorDedupOpenRides, seniorDedupOpenRequests, seniorDedupVolunteerPool } = useMemo(() => {
+    const seen = new Set<string>();
+    const dedupe = (list: FamilyEvent[]) => {
+      const out = list.filter(e => !seen.has(e.id));
+      out.forEach(e => seen.add(e.id));
+      return out;
+    };
+    return {
+      seniorDedupOpenRides: dedupe(seniorDedupSeriesOpenRides),
+      seniorDedupOpenRequests: dedupe(seniorDedupSeriesOpenRequests),
+      seniorDedupVolunteerPool: dedupe(seniorDedupSeriesVolunteerPool),
+    };
+  }, [seniorDedupSeriesOpenRides, seniorDedupSeriesOpenRequests, seniorDedupSeriesVolunteerPool]);
+
+  const driveAlerts = seniorDedupOpenRequests.length + seniorDedupVolunteerPool.length + gpWelcomeRequests.length + gpWelcomeChores.length;
+  const hasDispatchItems = (
+    seniorDedupOpenRides.length > 0 ||
+    gpInvitations.filter(c => !(c.gpWithdrawnIds ?? []).includes(active.id)).length > 0 ||
+    driveAlerts > 0 ||
+    myPendingOffers.length > 0 ||
+    myActiveErrands.length > 0 ||
+    myErrandsAwaitingReview.length > 0
+  ) && !cheerleaderMode;
+  const dispatchBadgeCount = seniorDedupOpenRides.length
+    + gpInvitations.filter(c => !(c.gpWithdrawnIds ?? []).includes(active.id)).length
+    + driveAlerts
+    + myPendingOffers.length
+    + myActiveErrands.length
+    + myErrandsAwaitingReview.length;
+  // Real bug fix this session's own build missed (found on review):
+  // SeniorView.tsx re-expands Helper Dispatch any time hasDispatchItems
+  // newly becomes true (its own comment: chores load async, so a plain
+  // once-at-mount check could see hasDispatchItems as false before data
+  // arrived and never open again) — never auto-collapses something the GP
+  // deliberately closed, only ever opens. Missing this effect meant a
+  // manual collapse on kiosk would stay collapsed forever even once a new
+  // open ride/errand genuinely needed attention.
+  useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, [hasDispatchItems]);
+
+  // assignRequest / claimGPErrand / updateChore — real store actions,
+  // destructured separately from the parent-scoped useChoreStore() call
+  // above (that destructure's own selection was chosen for Household
+  // Backlog's needs, not this card's — updateChore in particular wasn't
+  // pulled there at all).
+  const assignRequest = useKidRequestStore(s => s.assignRequest);
+  const claimGPErrand = useChoreStore(s => s.claimGPErrand);
+  const updateChore = useChoreStore(s => s.updateChore);
+  const withdrawGPOffer = useChoreStore(s => s.withdrawGPOffer);
+  const submitGPErrandReceipt = useChoreStore(s => s.submitGPErrandReceipt);
+  const backoutGpWelcomeChore = useChoreStore(s => s.backoutGpWelcomeChore);
+
+  // onClaimRide/onPassRide — SeniorView.tsx handleClaimRide/handlePassRide
+  // (lines ~530-570), verbatim including the atWeeklyCap guard and the
+  // rideRequired/category-based role derivation. addToDeviceCalendar (the
+  // real onWon side-effect) is deliberately omitted: it writes to the
+  // GP's own personal expo-calendar via Calendar.createEventAsync — kiosk
+  // is a shared countertop device with no single "whose calendar" concept,
+  // so there's no real device calendar this write could correctly target.
+  // Omitted outright rather than faked onto some other member's calendar.
+  const onClaimRide = (evId: string) => {
+    if (atWeeklyCap) {
+      Alert.alert('Weekly cap reached', `You've set a limit of ${weeklyRideCap} rides/week. Update your availability settings to take more.`);
+      return;
+    }
+    const target = backlogWindowEvents.find(e => e.id === evId) ?? allEvents.find(e => e.id === evId);
+    const role: 'helper' | 'driver' = target?.rideRequired && target.category !== 'Ride' ? 'driver' : 'helper';
+    claimHelperSlot(evId, role, active.name, undefined, undefined, (message) => {
+      Alert.alert('Weekly cap reached', message);
+    });
+  };
+  const onPassRide = (evId: string) => {
+    const ev = backlogWindowEvents.find(e => e.id === evId) ?? allEvents.find(e => e.id === evId);
+    if (!ev) return;
+    updateEvent(ev.id, { grandparentPassedIds: [...(ev.grandparentPassedIds ?? []), active.id] });
+  };
+
+  // onHelpRequest — real SeniorView.tsx/HubScreen.tsx: tapping "Ask" just
+  // opens a blank AddEventModal (HubScreen.tsx: `onHelpRequest={() =>
+  // setHelpModal(true)}`, then `<AddEventModal visible={helpModalVisible}
+  // onClose={...} activeMemberId={...} />` — no prefill at all). Kiosk had
+  // no mount of AddEventModal anywhere before this (it's a real,
+  // exported, fully self-contained component — same reuse pattern as
+  // PushbackSheet/DelegateSheet above), so this is a fresh mount with its
+  // own open/close state, not a reuse of anything preexisting.
+  const [helpRequestModalOpen, setHelpRequestModalOpen] = useState(false);
+  const onHelpRequest = () => setHelpRequestModalOpen(true);
+
+  // ── Receipt submission modal (LendAHandCard's "Done · Submit Receipt")
+  // Real SeniorView.tsx state shape + handlers (lines ~300-363), reproduced
+  // verbatim — ReceiptSubmissionModal itself is the same real, exported,
+  // self-contained component that file mounts; only the local
+  // open/photo/amount/note state and the pick/take/submit closures around
+  // it are re-derived here (not exported from anywhere, same reasoning as
+  // handlePullTask/approveQuestProposalHandler above). Kiosk already uses
+  // this same expo-image-picker camera/gallery pattern elsewhere
+  // (KioskChatTab.tsx, KioskReceiptScanSheet.tsx), so a photo-based
+  // receipt flow is proven to work from this device, not a phone-only
+  // assumption carried over unchecked.
+  const [receiptChoreId, setReceiptChoreId] = useState<string | null>(null);
+  const [receiptPhotoUri, setReceiptPhotoUri] = useState<string | null>(null);
+  const [receiptAmountStr, setReceiptAmountStr] = useState('');
+  const [receiptNote, setReceiptNote] = useState('');
+  const [isSubmittingReceipt, setIsSubmittingReceipt] = useState(false);
+  const openReceiptModal = (choreId: string) => {
+    setReceiptChoreId(choreId);
+    setReceiptPhotoUri(null);
+    setReceiptAmountStr('');
+    setReceiptNote('');
+  };
+  const closeReceiptModal = () => setReceiptChoreId(null);
+  const pickReceiptFromGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo library access to attach a receipt.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: false });
+    if (!result.canceled && result.assets[0]) setReceiptPhotoUri(result.assets[0].uri);
+  };
+  const takeReceiptPhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow camera access to scan a receipt.'); return; }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8, allowsEditing: false });
+    if (!result.canceled && result.assets[0]) setReceiptPhotoUri(result.assets[0].uri);
+  };
+  const handleSubmitReceipt = async () => {
+    if (!receiptChoreId) return;
+    let receiptPhotoUrl: string | undefined;
+    if (receiptPhotoUri) {
+      setIsSubmittingReceipt(true);
+      try {
+        const path = `chore-proofs/${familyId ?? 'unknown'}/receipt-${receiptChoreId}-${Date.now()}.jpg`;
+        const blob = await (await fetch(receiptPhotoUri)).blob();
+        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
+        receiptPhotoUrl = urlData.publicUrl;
+      } catch (e) {
+        console.warn('[KioskOverviewTab] receipt photo upload failed', e);
+        setIsSubmittingReceipt(false);
+        Alert.alert('Upload failed', "Couldn't upload the receipt photo — check your connection and try again.");
+        return;
+      }
+      setIsSubmittingReceipt(false);
+    }
+    const amount = parseFloat(receiptAmountStr);
+    submitGPErrandReceipt(receiptChoreId, {
+      receiptPhotoUrl,
+      receiptAmount: isNaN(amount) ? undefined : amount,
+      receiptNote: receiptNote.trim() || undefined,
+    });
+    closeReceiptModal();
+    Alert.alert('Receipt submitted!', 'Parents will see your receipt and reimburse you shortly. Thank you! 💙');
+  };
+
   const chorePool = useMemo(() => getParentQuestPool(), [getParentQuestPool, quests]);
   const activeAssignmentChoreIds = useMemo(() => getActiveAssignmentChoreIds(), [getActiveAssignmentChoreIds, parentAssignments]);
   const adultMemberIds = useMemo(
@@ -1232,6 +1558,40 @@ export function KioskOverviewTab({
         onClose={() => setDelegateTarget(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
+      />
+
+      {/* AddEventModal — LendAHandCard's "Ask" button (onHelpRequest).
+          Real HubScreen.tsx opens this exact same modal blank, no prefill
+          (see onHelpRequest's own comment above). Mounted unconditionally
+          here for the same reason as PushbackSheet/DelegateSheet just
+          above — helpRequestModalOpen is only ever set true from inside
+          the isSenior branch further below, but the modal itself must be
+          mounted regardless of branch. */}
+      <AddEventModal
+        visible={helpRequestModalOpen}
+        onClose={() => setHelpRequestModalOpen(false)}
+        activeMemberId={active.id}
+      />
+
+      {/* ReceiptSubmissionModal — LendAHandCard's "Done · Submit Receipt"
+          flow (ActiveErrandsSection's onOpenReceiptModal). Real, exported,
+          self-contained component (features/hub/senior/
+          ReceiptSubmissionModal.tsx); the photo-pick/upload/submit
+          closures around it are re-derived above (openReceiptModal et
+          al.) since they aren't exported from SeniorView.tsx anywhere.
+          Mounted unconditionally for the same reason as AddEventModal
+          just above — receiptChoreId is only ever set from inside the
+          isSenior branch further below. */}
+      <ReceiptSubmissionModal
+        visible={!!receiptChoreId} onClose={closeReceiptModal}
+        colors={colors} isDark={phoneDark}
+        receiptPhotoUri={receiptPhotoUri} setReceiptPhotoUri={setReceiptPhotoUri}
+        receiptAmountStr={receiptAmountStr} setReceiptAmountStr={setReceiptAmountStr}
+        receiptNote={receiptNote} setReceiptNote={setReceiptNote}
+        onTakePhoto={takeReceiptPhoto} onPickFromGallery={pickReceiptFromGallery}
+        onSubmit={handleSubmitReceipt}
+        isSubmitting={isSubmittingReceipt}
+        active={active}
       />
 
       {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
@@ -2045,6 +2405,41 @@ export function KioskOverviewTab({
               />
             </View>
           </WidgetCard>
+
+          {/* Lend a Hand — real SeniorView.tsx volunteer-dispatch card,
+              kiosk had zero equivalent of before this. Mounted bare, no
+              WidgetCard wrapper: its own root already carries the same
+              self-contained `paddingHorizontal:16` + own rounded-card
+              chrome YourRidesSection above uses (confirmed by reading its
+              actual render), not a WidgetCard-shaped child. Unlike
+              YourRidesSection's onEnRoute, nothing here is suppressed —
+              onClaimRide/onPassRide call claimHelperSlot (a scheduling
+              commitment for a FUTURE event), never tripStore.dispatch, so
+              the kiosk "no live dispatch" rule this session established
+              for YourRidesSection does not apply to this card at all. */}
+          <LendAHandCard
+            cheerleaderMode={cheerleaderMode} setCheerleaderMode={setCheerleaderMode}
+            driveWindowDays={driveWindowDays} setDriveWindowDays={setDriveWindowDays}
+            driveWindowStart={driveWindowStart} setDriveWindowStart={setDriveWindowStart}
+            driveWindowEnd={driveWindowEnd} setDriveWindowEnd={setDriveWindowEnd}
+            weeklyRideCap={weeklyRideCap} setWeeklyRideCap={setWeeklyRideCap}
+            ridesThisWeek={ridesThisWeek} atWeeklyCap={atWeeklyCap}
+            helperDispatchExpanded={helperDispatchExpanded} setHelperDispatchExpanded={setHelperDispatchExpanded}
+            availSettingsOpen={availSettingsOpen} setAvailSettingsOpen={setAvailSettingsOpen}
+            hasDispatchItems={hasDispatchItems} dispatchBadgeCount={dispatchBadgeCount}
+            openRides={seniorDedupOpenRides} gpInvitations={gpInvitations}
+            myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
+            onMarkDoneNoReceipt={(choreId) => submitGPErrandReceipt(choreId, {})}
+            onBackoutErrand={(choreId) => backoutGpWelcomeChore(choreId, active.id)}
+            myErrandsAwaitingReview={myErrandsAwaitingReview}
+            myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => withdrawGPOffer(choreId, active.id)}
+            openRequests={seniorDedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
+            gpWelcomeChores={gpWelcomeChores} volunteerPool={seniorDedupVolunteerPool}
+            active={active} members={members} allNames={allNames} colors={colors} isDark={phoneDark}
+            updateEvent={updateEvent} updateChore={updateChore}
+            assignRequest={assignRequest} claimGPErrand={claimGPErrand}
+            onClaimRide={onClaimRide} onPassRide={onPassRide} onHelpRequest={onHelpRequest}
+          />
         </View>
       )}
 

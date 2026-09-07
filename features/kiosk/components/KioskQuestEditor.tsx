@@ -44,7 +44,7 @@
  * already established for the calendar editor.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Trash2, Lock, ListTodo, Link2, X } from 'lucide-react-native';
 
 import { useChoreStore, type ChoreCategoryType } from '@/store/choreStore';
@@ -57,6 +57,10 @@ import { CallReminderToggle } from '@/features/tasks/components/forms/CallRemind
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import { ALL_CATEGORIES, CATEGORY_META } from '@/features/quests/components/questFormShared';
+import {
+  resolveDomainFromLooseLabel, previewAssignment, previewKidChoreAssignment,
+  type AssignmentSuggestion,
+} from '@/lib/responsibilityCategories';
 import { fmtDate, fmtTime, localDateStr } from '@/lib/dates';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -113,6 +117,14 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
   const [isPool, setIsPool] = useState(false);
   const [assignId, setAssignId] = useState<string | undefined>(undefined);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Responsibility Engine preview — real gap the Chores-tab mobile-parity
+  // audit found (D1): this file had zero trace of the same "who should
+  // this go to" auto-assignment engine EditQuestModal.tsx's own edit form
+  // offers (its lines 430-499, read in full before writing this). Preview
+  // only, same as the phone's own button — nothing is written until the
+  // parent actually saves changes via the real Assign To picker below.
+  const [assignmentSuggestion, setAssignmentSuggestion] = useState<AssignmentSuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
 
   useEffect(() => {
     if (quest) {
@@ -141,6 +153,8 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
       setIsPool(!!quest.isPool);
       setAssignId(quest.assignedToId ?? (quest.assignedToIds?.[0]));
       setConfirmingDelete(false);
+      setAssignmentSuggestion(null);
+      setLoadingSuggestion(false);
     }
   }, [quest?.id]);
 
@@ -360,6 +374,67 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
         </View>
       </View>
 
+      {/* Responsibility Engine — "who would this go to" preview. Real
+          server-side scoring (process-task-assignment / process-kid-
+          chore-assignment, same dryRun RPCs the phone calls), not local
+          heuristics. Adult tasks preview by category; a kid/teen chore
+          previews against the real, already-existing row (age/skill/
+          rotation/effort signals process-kid-chore-assignment reads can
+          only come from a row that already exists, matching why
+          EditQuestModal.tsx itself only offers this in edit mode, never
+          in AddQuestModal's create flow). */}
+      {!!active.familyId && (
+        <View style={s.section}>
+          <Pressable
+            onPress={async () => {
+              setLoadingSuggestion(true);
+              setAssignmentSuggestion(null);
+              const familyId = active.familyId!;
+              const result = isAdultTask
+                ? await previewAssignment({ taskId: quest.id, taskType: 'chore', familyId, category: resolveDomainFromLooseLabel(category) })
+                : await previewKidChoreAssignment({ choreId: quest.id, familyId });
+              setAssignmentSuggestion(result);
+              setLoadingSuggestion(false);
+            }}
+            disabled={loadingSuggestion}
+            style={[s.suggestBtn, { borderColor: k.purpleEdge, backgroundColor: k.purpleSoft, opacity: loadingSuggestion ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Who would this go to?"
+          >
+            {loadingSuggestion ? (
+              <ActivityIndicator size="small" color={k.purple} />
+            ) : (
+              <Text style={[s.suggestBtnText, { color: k.purple }]}>✨ Who would this go to?</Text>
+            )}
+          </Pressable>
+          {!!assignmentSuggestion && (
+            <View style={[s.suggestResult, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+              {assignmentSuggestion.error ? (
+                <Text style={[s.suggestResultText, { color: k.textFaint }]}>{assignmentSuggestion.error}</Text>
+              ) : assignmentSuggestion.decisionType === 'blocked' ? (
+                <Text style={[s.suggestResultText, { color: k.textMuted }]}>
+                  {assignmentSuggestion.reason ?? 'No eligible family member found for this.'}
+                </Text>
+              ) : (
+                <>
+                  <Text style={[s.suggestResultTitle, { color: k.text }]}>
+                    {assignmentSuggestion.decisionType === 'auto' ? '✅ Would auto-assign to '
+                      : assignmentSuggestion.decisionType === 'suggest' ? '💡 Suggested: '
+                      : '🤔 Close call — '}
+                    {assignmentSuggestion.explanation.selected ?? '—'}
+                  </Text>
+                  {assignmentSuggestion.candidates.filter(c => !c.excluded).length > 1 && (
+                    <Text style={[s.suggestResultText, { color: k.textFaint }]}>
+                      {assignmentSuggestion.candidates.filter(c => !c.excluded).map(c => `${c.memberName} (${Math.round(c.score)})`).join(' · ')}
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
       <View style={s.section}>
         <KioskFieldLabel k={k}>DIFFICULTY</KioskFieldLabel>
         <View style={s.pillWrap}>
@@ -572,6 +647,11 @@ const s = StyleSheet.create({
   hint: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
   eventList: { marginTop: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, maxHeight: 220, overflow: 'hidden' },
   eventRow: { paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm, borderBottomWidth: StyleSheet.hairlineWidth },
+  suggestBtn: { alignItems: 'center', justifyContent: 'center', borderRadius: KIOSK_RADIUS.md, paddingVertical: KIOSK_SPACE.sm, borderWidth: 1.5, borderStyle: 'dashed' },
+  suggestBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  suggestResult: { marginTop: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, padding: KIOSK_SPACE.sm },
+  suggestResultTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  suggestResultText: { fontSize: KIOSK_TYPO.label, marginTop: 3 },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   switchLabel: { fontSize: KIOSK_TYPO.body, fontWeight: '600' },
   detailValue: { fontSize: KIOSK_TYPO.body, fontWeight: '600' },

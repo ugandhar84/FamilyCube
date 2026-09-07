@@ -67,6 +67,7 @@ import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
+import { KioskRedoReasonDialog } from '../components/KioskRedoReasonDialog';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
@@ -186,8 +187,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
-  const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
+  const giveBackChore = useChoreStore(s => s.giveBackChore);
+  const startGrandparentQuest = useChoreStore(s => s.startGrandparentQuest);
+  const [redoTargetBoard, setRedoTargetBoard] = useState<{ id: string; title: string } | null>(null);
   const isParent = active.role === 'parent';
   const isKidCreator = active.role === 'kid';
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
@@ -902,7 +906,42 @@ function KioskBoardView({ active, members, colors, isDark }: {
               }}
             />
           </View>
-        ) : (btn || actions.canKidDecline) ? (
+        ) : actions.canAcceptGp ? (
+          // ── GP-quest accept/decline [GAP — audit finding A5] ─────────
+          // A kid/teen assigned a grandparent_quest still at status:'todo'
+          // must explicitly accept before it moves to in-progress — the
+          // phone's own KidQuestCard.tsx (its isGpTodo branch) offers
+          // "I'll take it"/"Decline" here, distinct from the generic
+          // canSubmit "Mark Done" path this card used to fall through to
+          // (which skipped the accept step entirely). Decline routes
+          // through the SAME real dispatch the phone's own KidView.tsx
+          // uses for this exact case (setDeclineQuest -> CantMakeItSheet
+          // -> resolveCantMakeIt) — the identical one-step kiosk dialog
+          // canKidDecline already reuses below, not a new one.
+          <View style={s.actionRow}>
+            <ActionButton
+              label="I'll take it"
+              Icon={Sparkles}
+              accent={k.sage}
+              k={k}
+              isDark={kioskDark}
+              variant="solid"
+              style={s.actionPrimary}
+              accessibilityHint={`Accept ${q.title}`}
+              onPress={() => { registerActivity(); startGrandparentQuest(q.id, active.id); showToast(`Accepted "${q.title}" ✓`); }}
+            />
+            <ActionButton
+              label="Decline"
+              accent={k.danger}
+              k={k}
+              isDark={kioskDark}
+              variant="soft"
+              style={s.actionSecondary}
+              accessibilityHint={`Give a reason and decline ${q.title}`}
+              onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
+            />
+          </View>
+        ) : (btn || actions.canKidDecline || actions.canGiveBack || (actions.canApprove && !!q.assignedToId)) ? (
           <View style={s.actionRow}>
             {btn && (
               <ActionButton
@@ -915,6 +954,29 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 style={s.actionPrimary}
                 accessibilityHint={q.title}
                 onPress={() => { registerActivity(); btn.action(); }}
+              />
+            )}
+            {/* ── Parent Redo, paired with Approve [GAP — audit finding
+                A1] ────────────────────────────────────────────────────
+                The board's own canApprove branch (primaryAction, above)
+                rendered ONLY Approve — a kiosk parent had no way to send
+                a submission back with a reason, unlike the phone's own
+                QuestCard.tsx, which renders Approve and "↩ Redo" side by
+                side. Same real dispatch DeclineModal.tsx's own onConfirm
+                uses (declineQuest -> choreStore.requestRedo), reused via
+                choreAdapter exactly as the phone form does — no new
+                store logic, only the missing UI path to reach it. */}
+            {actions.canApprove && !!q.assignedToId && (
+              <ActionButton
+                label="Redo"
+                Icon={RotateCcw}
+                accent={k.gold}
+                k={k}
+                isDark={kioskDark}
+                variant="soft"
+                style={s.actionSecondary}
+                accessibilityHint={`Send ${q.title} back for a redo, with a reason`}
+                onPress={() => { registerActivity(); setRedoTargetBoard({ id: q.id, title: q.title }); }}
               />
             )}
             {/* Same gate the phone reads (its canDeclinePlain, KidQuestCard
@@ -932,6 +994,30 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 style={s.actionSecondary}
                 accessibilityHint={`Give a reason and put ${q.title} back up for grabs`}
                 onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
+              />
+            )}
+            {/* ── Give it back [GAP — audit finding A4] ─────────────────
+                Lighter-weight than "Can't do this" — a kid who
+                self-claimed a pool chore but hasn't started it yet gets a
+                no-reason-required undo alongside (not instead of) the
+                heavier Can't-Make-It flow, matching QuestCard.tsx's own
+                real canGiveBack/canKidDecline pairing. Never shown
+                alongside canKidDecline for the SAME chore in practice —
+                canGiveBack requires claimedAt (a genuine self-claim),
+                canKidDecline requires !isPool (already assigned) — but
+                both read from real, independent flags rather than one
+                being derived from the other, matching the phone's own
+                shape exactly. */}
+            {actions.canGiveBack && !actions.canKidDecline && (
+              <ActionButton
+                label="Give it back"
+                accent={k.textMuted}
+                k={k}
+                isDark={kioskDark}
+                variant="soft"
+                style={s.actionSecondary}
+                accessibilityHint={`Put ${q.title} back up for grabs, no reason needed`}
+                onPress={() => { registerActivity(); giveBackChore(q.id, active.id); showToast('Given back ✓'); }}
               />
             )}
           </View>
@@ -1348,6 +1434,18 @@ function KioskBoardView({ active, members, colors, isDark }: {
           onClose={() => setDeclineTarget(null)}
         />
       )}
+
+      <KioskRedoReasonDialog
+        visible={!!redoTargetBoard}
+        choreTitle={redoTargetBoard?.title ?? ''}
+        k={k}
+        onClose={() => setRedoTargetBoard(null)}
+        onSend={(reason) => {
+          if (!redoTargetBoard) return;
+          declineQuest(redoTargetBoard.id, active.id, reason, 'custom');
+          showToast('Sent back for a redo ✓');
+        }}
+      />
 
       {isParent && (
         <KioskQuestEditor

@@ -350,6 +350,8 @@ export default function KioskScreen() {
                 members={members}
                 onNavigate={setTab}
                 onIntercom={() => setIntercomOpen(true)}
+                colors={colors}
+                isDark={isDark}
               />
             )}
             {effectiveTab === 'meals' && <KioskMealsTab active={active} members={members} />}

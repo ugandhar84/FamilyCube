@@ -91,7 +91,7 @@ export function WidgetCard({
  * three disconnected fragments.
  */
 export function WidgetHeader({
-  Icon, eyebrow, title, accent, k, isDark, right,
+  Icon, eyebrow, title, accent, k, isDark, right, titleStyle,
 }: {
   Icon: LucideIcon;
   /** Small uppercase kicker above the title ("STOVE & OVEN"). */
@@ -101,6 +101,13 @@ export function WidgetHeader({
   k: KioskColors;
   isDark: boolean;
   right?: ReactNode;
+  /** Overrides the default bold s.headerTitle look for this one instance —
+      live-reported mismatch between "Rides needing attention"'s title
+      weight and the plain content line it sits above in a neighboring
+      widget (Happening Now's "Nothing on the calendar today", 14px/600).
+      Every other WidgetHeader call site omits this and keeps the shared
+      bold title every other widget on the screen uses. */
+  titleStyle?: StyleProp<TextStyle>;
 }) {
   return (
     <View style={s.header}>
@@ -120,7 +127,7 @@ export function WidgetHeader({
         <Text style={[s.eyebrow, { color: k.textFaint }]} numberOfLines={1}>
           {eyebrow.toUpperCase()}
         </Text>
-        <Text style={[s.headerTitle, { color: k.text }]} numberOfLines={1}>
+        <Text style={[s.headerTitle, { color: k.text }, titleStyle]} numberOfLines={1}>
           {title}
         </Text>
       </View>
@@ -319,7 +326,7 @@ export function EmptyNote({ text, k, style }: { text: string; k: KioskColors; st
  * the exact plain bordered square every Approvals row uses.
  */
 export function KioskListRow({
-  k, isFirst, leading, title, meta, badge, value, actions,
+  k, isFirst, leading, title, meta, metaLines = 1, badge, value, actions,
 }: {
   k: KioskColors;
   /** Suppresses the row's own top hairline divider for the first row in a list. */
@@ -329,6 +336,14 @@ export function KioskListRow({
   title: string;
   /** Small dim line under the title — a status phrase, "approved by X", etc. */
   meta?: string;
+  /** Live-reported: a longer meta line (e.g. a ride row's "6:30pm · for
+      Jas · needs a driver") clipped at 1 line the same as every existing
+      caller's short fixed phrases ("Ready for review," "Grandparent jar")
+      — those never needed more, so this stays 1 by default for every
+      existing call site and only a caller with genuinely longer content
+      opts up. `badge`, if present, still sits on this same first line;
+      only meta itself wraps onto a second one. */
+  metaLines?: number;
   /** An inline pill next to `meta` — a name tag, a source label. */
   badge?: string;
   /** Right-aligned value column — a coin figure, or omit for no value slot at all. */
@@ -344,7 +359,7 @@ export function KioskListRow({
         {(!!meta || !!badge) && (
           <View style={s.listRowMetaRow}>
             {!!meta && (
-              <Text style={[s.listRowMeta, { color: k.textFaint }]} numberOfLines={1}>{meta}</Text>
+              <Text style={[s.listRowMeta, { color: k.textFaint, flexShrink: 1 }]} numberOfLines={metaLines}>{meta}</Text>
             )}
             {!!badge && (
               <View style={[s.listRowBadge, { backgroundColor: k.well }]}>

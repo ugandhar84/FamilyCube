@@ -90,6 +90,10 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
+import { deriveEventActions, eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
+import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirmedEvents';
+import { classifyEventUrgency } from '@/features/hub/lib/classifyEventUrgency';
+import { dedupeRideSeries } from '@/features/hub/lib/dedupeRideSeries';
 import { useQuestStore } from '@/store/choreAdapter';
 import { REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
 import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
@@ -97,7 +101,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
-import { fmtTime } from '@/lib/dates';
+import { fmtTime, localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote, KioskListRow, KioskListRowAction } from '../components/KioskOS';
@@ -110,6 +114,7 @@ import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
 import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
+import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
 import type { KioskTabKey } from '../kioskTabs';
 
@@ -155,13 +160,22 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function KioskOverviewTab({
-  active, members, onNavigate, onIntercom,
+  active, members, onNavigate, onIntercom, colors, isDark: phoneDark,
 }: {
   active: FamilyMember;
   members: FamilyMember[];
   /** Jump to another kiosk tab — the mockup's quick-action buttons. */
   onNavigate: (tab: KioskTabKey) => void;
   onIntercom: () => void;
+  /** Real phone-shaped colors object — needed only for mounting
+      KioskEventEditor (its PickerOverlay/LocationAutocompleteInput/
+      MemberPicker/HelperAssignmentSection sub-components all take this
+      real palette, not the kiosk k.* one). Aliased apart from this file's
+      own useKioskColors() isDark below — two genuinely different
+      dark-mode flags, same naming collision KioskTasksTab.tsx's own
+      kioskDark alias already exists to avoid. */
+  colors: any;
+  isDark: boolean;
 }) {
   const { k, isDark } = useKioskColors();
   // Live-requested: "card sizes and text adjust based on rotation without
@@ -223,6 +237,7 @@ export function KioskOverviewTab({
   // summary card (SeniorTasksWidget below) plus a taller, more generous
   // photo feed — not a multi-widget board with inline actions.
   const isSenior = active.role === 'senior';
+  const isTeen = active.role === 'teen';
 
   const dayEvents = useEventStore(s => s.dayEvents);
 
@@ -242,6 +257,9 @@ export function KioskOverviewTab({
   }, [dayEvents]);
   const remindEventAssignee = useEventStore(s => s.remindEventAssignee);
   const claimHelperSlot = useEventStore(s => s.claimHelperSlot);
+  const confirmEventAssignment = useEventStore(s => s.confirmEventAssignment);
+  const declineEventAssignment = useEventStore(s => s.declineEventAssignment);
+  const reassignEvent = useEventStore(s => s.reassignEvent);
   const { quests, approveQuest, declineQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const buyGroceryItem = useGroceryStore(s => s.buyItem);
@@ -278,22 +296,57 @@ export function KioskOverviewTab({
   const todayMeals = useMemo(() => meals.filter(m => m.day === todayMealDay()), [meals]);
   const [openMeal, setOpenMeal] = useState<Meal | null>(null);
   const [viewingRun, setViewingRun] = useState<GroceryRun | null>(null);
+  // Live-requested: "if we click on that card it should show a details
+  // sheet right similar to the mobile app" — mobile's own HelperEventCard
+  // has no tap-to-detail of its own (everything happens inline on the
+  // card), so this reuses the real detail/edit surface kiosk already has
+  // for any calendar event (KioskEventEditor, read-only when the viewer
+  // can't edit) rather than inventing a second, narrower detail view.
+  const [viewingEvent, setViewingEvent] = useState<FamilyEvent | null>(null);
 
   // ── Rides needing attention ──────────────────────────────────────────
-  // The mockup's "Co-Parent Pending Rides" card. A ride needs attention if
-  // it has no assignee at all, or has one who hasn't confirmed. Confirmed
-  // rides are deliberately excluded — the widget's job is "what still needs
-  // a human", not "list every ride".
-  const rides = useMemo(() => {
-    return dayEvents
-      .filter(e => {
-        const a = eventAssignee(e);
-        const looksLikeRide = !!a.name || /pick ?up|drop ?off|ride/i.test(e.title);
-        if (!looksLikeRide) return false;
-        return !a.name || a.status !== 'confirmed';
-      })
-      .slice(0, 2);
-  }, [dayEvents]);
+  // The mockup's "Co-Parent Pending Rides" card, rebuilt onto the SAME
+  // real mechanism the phone's own Household Backlog/"You Were Asked to
+  // Drive" surfaces use — same data source, same buckets, same actions —
+  // rather than this widget's own narrower hand-rolled version.
+  //
+  // Live-reported: "why can't we use that pickup radar" for the "other
+  // parent/teen not seeing action needed" gap. Root cause this widget had
+  // on its own: (1) sourced from dayEvents (today only, capped at 2) —
+  // mobile's real feed (usePendingUnconfirmedEvents) deliberately has NO
+  // date ceiling, since a self/co-parent assignment months out still needs
+  // to surface (that hook's own doc comment describes a live-reported
+  // 67-day-out appointment this exact gap once hid); (2) no mine-vs-
+  // someone-else's split, so every viewer saw the identical generic
+  // Remind/Take-over pair regardless of whether THEY were the one being
+  // asked — a parent who was just assigned a ride never got a Confirm
+  // button, only "Take over" (a reassign, the wrong operation for
+  // accepting your OWN pending assignment); (3) RideRow's onClaim always
+  // wrote the 'driver' field regardless of category — wrong for Medical/
+  // Sports/Ride, whose real accompanying-adult pair is helper/helperId
+  // (driverName/driverId is Study's own separate field, confirmed while
+  // rebuilding KioskEventEditor's category fields); (4) zero surface for
+  // a teen viewer — canAct was hardcoded to isParent.
+  //
+  // classifyEventUrgency (features/hub/lib) is the SAME per-event
+  // classifier ParentView.tsx uses — role-agnostic (just {id, name}), so
+  // calling it with `active` here correctly resolves myPending to "MY own
+  // pending assignments" whether the kiosk's active member is a parent or
+  // a teen, no separate teen-specific derivation needed. dedupeRideSeries
+  // is the same real fix for a recurring ride series otherwise stacking
+  // every future occurrence as its own pending row (only the soonest per
+  // seriesId survives), applied separately to each bucket for the same
+  // reason ParentView.tsx does — the two lists are partitioned by WHO's
+  // assigned, not by occurrence, so each needs its own soonest-occurrence
+  // representative.
+  const familyId = active.familyId ?? '';
+  const { events: pendingUnconfirmed } = usePendingUnconfirmedEvents(familyId);
+  const { myPending: myRidesRaw, coParentPending: coParentRidesRaw } = useMemo(
+    () => classifyEventUrgency(pendingUnconfirmed, { id: active.id, name: active.name }, localDateStr()),
+    [pendingUnconfirmed, active.id, active.name],
+  );
+  const [myRides] = dedupeRideSeries(myRidesRaw);
+  const [coParentRides] = dedupeRideSeries(coParentRidesRaw);
 
   // ── Kids' coin jars (real balances) ──────────────────────────────────
   const kids = useMemo(
@@ -550,6 +603,15 @@ export function KioskOverviewTab({
         members={members}
         onClose={() => setViewingRun(null)}
       />
+
+      <KioskEventEditor
+        event={viewingEvent}
+        active={active}
+        members={members}
+        onClose={() => setViewingEvent(null)}
+        colors={colors}
+        isDark={phoneDark}
+      />
       </>
       )}
 
@@ -623,24 +685,58 @@ export function KioskOverviewTab({
 
             <WidgetCard k={k} isDark={isDark}>
               <WidgetHeader
-                Icon={Car} eyebrow="Pickup radar" title="Rides needing a driver"
+                Icon={Car} eyebrow="Pickup radar" title="Rides needing attention"
                 accent={k.sage} k={k} isDark={isDark}
-                right={rides.length > 0
-                  ? <Chip label={`${rides.length}`} accent={k.gold} isDark={isDark} k={k} />
+                // Live-reported mismatch against the neighboring Happening
+                // Now strip's own content line ("Nothing on the calendar
+                // today", 14px/600) — matched to that weight rather than
+                // this screen's shared bold widget-title look, a
+                // deliberate one-off for this widget only.
+                titleStyle={s.nowStripWhat}
+                right={(myRides.length + coParentRides.length) > 0
+                  ? <Chip label={`${myRides.length + coParentRides.length}`} accent={k.gold} isDark={isDark} k={k} />
                   : undefined}
               />
-              {rides.length === 0 ? (
-                <EmptyNote text="Every ride today has a confirmed driver." k={k} />
+              {myRides.length === 0 && coParentRides.length === 0 ? (
+                <EmptyNote text="Every ride has a confirmed driver." k={k} />
               ) : (
-                <View style={{ gap: KIOSK_SPACE.sm }}>
-                  {rides.map(ev => (
-                    <RideRow
-                      key={ev.id} ev={ev} k={k} isDark={isDark} members={members}
-                      canAct={isParent} actorId={active.id} actorName={active.name}
-                      onRemind={remindEventAssignee}
-                      onClaim={claimHelperSlot}
-                    />
-                  ))}
+                <View>
+                  {/* Same real "You're the driver/helper" vs "Co-parent's
+                      pending rides" split HouseholdBacklogSection.tsx uses
+                      — mine surfaces a real Confirm/Can't (RideRow's isMe
+                      branch), the co-parent's stays read-only-plus-Remind/
+                      Take-over, since it isn't the viewer's own commitment
+                      to accept or decline. Flush KioskListRow rows (own
+                      hairline dividers, no per-row Well spacing) matching
+                      ApprovalRow's own list shape, not boxed cards. */}
+                  {myRides.length > 0 && (
+                    <View style={{ marginBottom: coParentRides.length > 0 ? KIOSK_SPACE.md : 0 }}>
+                      <Text style={[s.rideSectionLabel, { color: k.sage, marginBottom: KIOSK_SPACE.xs }]}>YOU'RE THE DRIVER / HELPER</Text>
+                      {myRides.map((ev, i) => (
+                        <RideRow
+                          key={ev.id} ev={ev} k={k} isFirst={i === 0} members={members}
+                          canAct={isParent} actorId={active.id} actorName={active.name}
+                          onRemind={remindEventAssignee} onClaim={claimHelperSlot}
+                          onConfirm={confirmEventAssignment} onDecline={declineEventAssignment}
+                          onOpenDetail={setViewingEvent}
+                        />
+                      ))}
+                    </View>
+                  )}
+                  {coParentRides.length > 0 && (
+                    <View>
+                      <Text style={[s.rideSectionLabel, { color: k.textFaint, marginBottom: KIOSK_SPACE.xs }]}>CO-PARENT'S PENDING RIDES</Text>
+                      {coParentRides.map((ev, i) => (
+                        <RideRow
+                          key={ev.id} ev={ev} k={k} isFirst={i === 0} members={members}
+                          canAct={isParent} actorId={active.id} actorName={active.name}
+                          onRemind={remindEventAssignee} onClaim={claimHelperSlot}
+                          onConfirm={confirmEventAssignment} onDecline={declineEventAssignment}
+                          onOpenDetail={setViewingEvent}
+                        />
+                      ))}
+                    </View>
+                  )}
                 </View>
               )}
             </WidgetCard>
@@ -865,6 +961,24 @@ export function KioskOverviewTab({
             active={active} quests={quests} k={k} isDark={isDark} style={s.widget}
             onOpenTasks={() => onNavigate('tasks')}
           />
+        ) : isTeen ? (
+          // Live-reported gap: a teen fell all the way through to this
+          // slot's `: null` — zero surface anywhere for "you were assigned
+          // a ride and need to confirm it," the exact real state
+          // TeenCarDispatchSection.tsx's own "You Were Asked to Drive"
+          // card exists for on the phone. Same real myRides list the
+          // parent's Pickup radar widget computes above (classifyEventUrgency
+          // is role-agnostic — it already resolves to THIS teen's own
+          // pending assignments when `active` is a teen), same real
+          // confirmEventAssignment/declineEventAssignment actions. No
+          // Remind/Take-over here — the phone's teen card doesn't offer
+          // those either, only Confirm/Can't.
+          <TeenRideDispatchWidget
+            myRides={myRides} k={k} isDark={isDark} members={members} style={s.widget}
+            actorId={active.id}
+            onConfirm={confirmEventAssignment} onDecline={declineEventAssignment}
+            onOpenDetail={setViewingEvent}
+          />
         ) : null}
 
         {/* ── Grocery snapshot (kid: their own chore board instead) ──
@@ -968,28 +1082,44 @@ function QuickAction({
 
 // ── One ride row ────────────────────────────────────────────────────────
 /**
- * The mockup's Remind / Take Over pair, wired to the real actions.
+ * Three real states, matching mobile's HelperEventCard.tsx exactly (read in
+ * full before this rewrite) rather than this row's own prior generic
+ * Remind/Take-over pair for every case:
  *
- * Both are parent-gated (`canAct`) because both WRITE, and this device
- * stays on an active profile for the whole idle window — anyone walking
- * past the counter would otherwise be able to reassign a ride. That is the
- * same reasoning the prior audit pass applied to reward approvals in
- * KioskStoreTab.
+ *   1. Nobody assigned yet → "I'll drive" (claimHelperSlot — a race-safe
+ *      compare-and-set; two parents tapping two devices at once must have
+ *      the loser told, not silently overwrite the winner).
+ *   2. The VIEWER is the named-but-unconfirmed assignee → Confirm / Can't.
+ *      This is the branch that was missing entirely — "Take over" is a
+ *      REASSIGN, the wrong operation for accepting your own assignment,
+ *      so a viewer who was just assigned only ever saw a button that
+ *      would reassign the ride away from themselves back to themselves,
+ *      never a real accept. Confirm routes through confirmEventAssignment,
+ *      Can't through declineEventAssignment — the same two shared store
+ *      functions every mobile confirm/decline surface uses.
+ *   3. Someone ELSE is named and unconfirmed → Remind / Take over
+ *      (unchanged shape, but the role bug below is fixed).
  *
- * "Take over" goes through claimHelperSlot rather than a plain updateEvent:
- * it is a race-safe compare-and-set, which matters precisely here — two
- * parents can be looking at two devices at the same moment, and the loser
- * of that race must be told, not silently overwrite the winner. The recent
- * ride-assignment fixes (see git log on eventStore/tripStore) live inside
- * these store actions, so routing through them is also what keeps kiosk
- * from regressing them.
+ * eventAssigneeRole(ev) — not a hardcoded 'driver' — decides which real
+ * field pair (helper/helperId vs driverName/driverId) actually gets
+ * written. The prior version always claimed as 'driver' regardless of
+ * category, which is wrong for Medical/Sports/Ride (their real
+ * accompanying-adult pair is helper/helperId — driverName/driverId is
+ * Study's own separate "drive assignment" field, confirmed while
+ * rebuilding KioskEventEditor's category fields).
+ *
+ * Every write here is gated on `canAct` (now: is this event's assignee
+ * concept relevant to this VIEWER'S role, not simply "is a parent") —
+ * anyone walking past the counter while a profile stays active could
+ * otherwise reassign/confirm on someone else's behalf, same reasoning the
+ * prior audit pass applied to reward approvals in KioskStoreTab.
  */
 function RideRow({
-  ev, k, isDark, members, canAct, actorId, actorName, onRemind, onClaim,
+  ev, k, isFirst, members, canAct, actorId, actorName, onRemind, onClaim, onConfirm, onDecline, onOpenDetail,
 }: {
   ev: FamilyEvent;
   k: KioskColors;
-  isDark: boolean;
+  isFirst: boolean;
   members: FamilyMember[];
   canAct: boolean;
   actorId: string;
@@ -999,6 +1129,13 @@ function RideRow({
     id: string, role: 'helper' | 'driver', claimantName: string,
     extra?: Partial<FamilyEvent>, onWon?: () => void, onError?: (m: string) => void,
   ) => void;
+  onConfirm: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
+  onDecline: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
+  /** Opens the same real detail/edit drawer any calendar event gets
+      (KioskEventEditor) — mobile's own HelperEventCard has no tap-to-
+      detail of its own, so this is the closest real equivalent kiosk
+      already has, not a new bespoke detail view. */
+  onOpenDetail: (ev: FamilyEvent) => void;
 }) {
   const a = eventAssignee(ev);
   const [busy, setBusy] = useState(false);
@@ -1006,64 +1143,138 @@ function RideRow({
 
   const forWhom = members.find(m => m.id === ev.memberId)?.name?.trim().split(' ')[0];
   const when = ev.time ? fmtTime(ev.time) : 'All day';
+  const isMe = !!a.id && a.id === actorId;
+  const role = eventAssigneeRole(ev);
 
+  // Live-requested: "lets do similar card design similar to the
+  // approvals" — same flat KioskListRow shape ApprovalRow already uses
+  // (checkbox-style leading dot, inline title/meta/badge, 1-2 neutral text
+  // buttons) instead of this row's own boxed Well-card shell, which is
+  // exactly the "card-in-card" shape ParentApprovalsWidget's own header
+  // comment already documents choosing NOT to use for its own rows.
   return (
-    <Well k={k} accent={a.name ? k.gold : k.primary}>
-      <View style={s.rideTop}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[s.rideTitle, { color: k.text }]} numberOfLines={2}>{ev.title}</Text>
-          <Text style={[s.rideMeta, { color: k.textMuted }]} numberOfLines={1}>
-            {when}{forWhom ? ` · for ${forWhom}` : ''}
-          </Text>
-        </View>
-        <Chip
-          label={a.name ? `${a.name.split(' ')[0]} · unconfirmed` : 'No driver'}
-          accent={a.name ? k.gold : k.primary}
-          isDark={isDark} k={k}
-        />
-      </View>
-
-      {canAct && (
-        <View style={s.rideActions}>
-          {/* Remind only exists when there IS someone to remind. */}
-          {a.name && a.id && (
-            <ActionButton
-              label="Remind" Icon={Bell} accent={k.gold} k={k} isDark={isDark}
-              disabled={busy}
-              style={{ flex: 1 }}
-              accessibilityHint={`Send ${a.name.split(' ')[0]} a reminder about this ride`}
-              onPress={async () => {
-                setBusy(true);
-                const ok = await onRemind(ev.id, a.id!, a.name!, actorId);
-                setNote(ok ? `Reminder sent to ${a.name!.split(' ')[0]}.` : 'Could not send the reminder.');
-                setBusy(false);
-              }}
-            />
-          )}
-          <ActionButton
-            label={a.name ? 'Take over' : "I'll drive"}
-            Icon={Check} accent={k.sage} k={k} isDark={isDark}
-            variant="solid" disabled={busy}
-            style={{ flex: 1 }}
-            accessibilityHint="Assign this ride to yourself"
-            onPress={() => {
-              setBusy(true);
-              onClaim(
-                ev.id, 'driver', actorName, undefined,
-                () => { setNote('You have this ride.'); setBusy(false); },
-                (msg) => { setNote(msg || 'Someone else took this ride first.'); setBusy(false); },
-              );
-            }}
-          />
-        </View>
-      )}
-
+    <View>
+      <Pressable onPress={() => onOpenDetail(ev)} accessibilityRole="button" accessibilityHint={`Opens details for ${ev.title}`}>
+      <KioskListRow
+        k={k}
+        isFirst={isFirst}
+        title={ev.title}
+        meta={`${when}${forWhom ? ` · for ${forWhom}` : ''}`}
+        metaLines={2}
+        badge={a.name ? (isMe ? 'Waiting on you' : `${a.name.split(' ')[0]} · unconfirmed`) : 'No driver'}
+        actions={canAct ? (
+          isMe ? (
+            <>
+              <KioskListRowAction
+                k={k} label="Can't" color={k.danger} disabled={busy}
+                accessibilityLabel="Say you can't do this — it goes back open"
+                onPress={async () => {
+                  setBusy(true);
+                  const ok = await onDecline(ev.id, actorId, role);
+                  setNote(ok ? "Marked — you're off this one." : 'Could not update — please try again.');
+                  setBusy(false);
+                }}
+              />
+              <KioskListRowAction
+                k={k} label="Confirm" color={k.sage} disabled={busy}
+                accessibilityLabel="Confirm you're doing this"
+                onPress={async () => {
+                  setBusy(true);
+                  const ok = await onConfirm(ev.id, actorId, role);
+                  setNote(ok ? 'Confirmed ✓' : 'Could not confirm — please try again.');
+                  setBusy(false);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              {/* Remind only exists when there IS someone to remind. */}
+              {a.name && a.id && (
+                <KioskListRowAction
+                  k={k} label="Remind" color={k.gold} disabled={busy}
+                  accessibilityLabel={`Send ${a.name.split(' ')[0]} a reminder about this ride`}
+                  onPress={async () => {
+                    setBusy(true);
+                    const ok = await onRemind(ev.id, a.id!, a.name!, actorId);
+                    setNote(ok ? `Reminder sent to ${a.name!.split(' ')[0]}.` : 'Could not send the reminder.');
+                    setBusy(false);
+                  }}
+                />
+              )}
+              <KioskListRowAction
+                k={k} label={a.name ? 'Take over' : "I'll drive"} color={k.sage} disabled={busy}
+                accessibilityLabel="Assign this ride to yourself"
+                onPress={() => {
+                  setBusy(true);
+                  onClaim(
+                    ev.id, role, actorName, undefined,
+                    () => { setNote('You have this ride.'); setBusy(false); },
+                    (msg) => { setNote(msg || 'Someone else took this ride first.'); setBusy(false); },
+                  );
+                }}
+              />
+            </>
+          )
+        ) : undefined}
+      />
+      </Pressable>
       {!!note && (
         <Text style={[s.rideNote, { color: k.textMuted }]} numberOfLines={2} accessibilityLiveRegion="polite">
           {note}
         </Text>
       )}
-    </Well>
+    </View>
+  );
+}
+
+/**
+ * TeenRideDispatchWidget — kiosk-native equivalent of
+ * TeenCarDispatchSection.tsx's own "You Were Asked to Drive" card: a
+ * direct assignment must show regardless of anything else (that file's own
+ * comment: "a parent naming this teen specifically means the teen needs to
+ * respond either way"), since a teen otherwise had ZERO surface anywhere
+ * on kiosk for a ride assigned to them — this slot fell all the way
+ * through to `: null` for a teen viewer before this widget existed.
+ *
+ * Reuses RideRow directly (same real Confirm/Can't branch the parent's
+ * Pickup radar widget already has for a viewer's own pending assignment) —
+ * no Remind/Take-over passed in, matching the phone's own teen card, which
+ * offers only Confirm/Can't, never those two parent-only actions.
+ */
+function TeenRideDispatchWidget({ myRides, k, isDark, members, actorId, onConfirm, onDecline, onOpenDetail, style }: {
+  myRides: FamilyEvent[];
+  k: KioskColors;
+  isDark: boolean;
+  members: FamilyMember[];
+  actorId: string;
+  onConfirm: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
+  onDecline: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
+  onOpenDetail: (ev: FamilyEvent) => void;
+  style?: any;
+}) {
+  return (
+    <WidgetCard k={k} isDark={isDark} style={style}>
+      <WidgetHeader
+        Icon={Car} eyebrow="You were asked" title="Rides to confirm"
+        accent={k.primary} k={k} isDark={isDark}
+        right={myRides.length > 0 ? <Chip label={`${myRides.length}`} accent={k.gold} isDark={isDark} k={k} /> : undefined}
+      />
+      {myRides.length === 0 ? (
+        <EmptyNote text="Nothing waiting on you to confirm." k={k} />
+      ) : (
+        <View>
+          {myRides.map((ev, i) => (
+            <RideRow
+              key={ev.id} ev={ev} k={k} isFirst={i === 0} members={members}
+              canAct actorId={actorId} actorName=""
+              onRemind={async () => false} onClaim={() => {}}
+              onConfirm={onConfirm} onDecline={onDecline}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </View>
+      )}
+    </WidgetCard>
   );
 }
 
@@ -1837,6 +2048,7 @@ const s = StyleSheet.create({
   seniorTaskTitle: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   seniorTaskMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
+  rideSectionLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
   rideTop: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
   rideTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   rideMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },

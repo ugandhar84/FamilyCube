@@ -1419,11 +1419,21 @@ function AgendaView({
 
   return (
     <ScrollView contentContainerStyle={s.agendaScroll} showsVerticalScrollIndicator={false}>
-      {days.map(({ dateStr, events }) => {
+      {/* One continuous strip, not a loose stack of day sections floating
+          on the bare page background — mocked and picked over "one card
+          per day" [live-reported: "do you think one long strip of card is
+          good for this page for agenda?" → "mock please" → chose the
+          single-strip option]. Day headers become plain in-card dividers
+          (a hairline border-top, not their own card edge) between groups
+          of events, matching the mock exactly. Each event keeps its own
+          real KioskEventCard shell/border — this only adds the outer
+          frame that was missing, it doesn't double-box the rows. */}
+      <WidgetCard k={k} isDark={isDark} style={s.agendaStrip}>
+      {days.map(({ dateStr, events }, i) => {
         const d = parseDate(dateStr);
         const isToday = dateStr === todayStr;
         return (
-          <View key={dateStr} style={s.agendaGroup}>
+          <View key={dateStr} style={[s.agendaGroup, i > 0 && [s.agendaGroupDivider, { borderTopColor: k.cardBorder }]]}>
             <View style={s.agendaDayHead}>
               <View style={[s.agendaDayBar, { backgroundColor: isToday ? k.primary : k.cardBorder }]} />
               <Text style={[s.agendaDayLabel, { color: isToday ? k.primary : k.text }]} numberOfLines={1}>
@@ -1516,6 +1526,7 @@ function AgendaView({
           </View>
         );
       })}
+      </WidgetCard>
 
       <KioskSeriesManagerSheet
         seriesId={viewingSeriesId}
@@ -2034,7 +2045,14 @@ const s = StyleSheet.create({
     gap: KIOSK_SPACE.md, padding: KIOSK_SPACE.xl,
   },
   agendaEmptyText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '600', textAlign: 'center' },
+  // One continuous card for the whole Agenda list — mocked and picked
+  // over a separate card per day.
+  agendaStrip: { gap: KIOSK_SPACE.lg },
   agendaGroup: { gap: KIOSK_SPACE.sm },
+  // Every group after the first gets a hairline top border instead of its
+  // own card edge — a plain in-card divider between day sections, not a
+  // second frame nested inside the outer WidgetCard.
+  agendaGroupDivider: { borderTopWidth: 1, paddingTop: KIOSK_SPACE.lg, marginTop: -KIOSK_SPACE.sm },
   agendaDayHead: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
   // A bar rather than a dot: at kiosk distance a dot disappears while a bar
   // still reads as structure. Same device the zone headers use.

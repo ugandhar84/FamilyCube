@@ -2382,12 +2382,19 @@ const s = StyleSheet.create({
     flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center',
     paddingVertical: 2,
   },
+  // Same radius as the chore cards (KIOSK_RADIUS.sm), not a full pill —
+  // deliberate departure from Overview's own fully-rounded filter chips
+  // [live-reported: "for the filter pills also match the same radious of
+  // the cards"].
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min - 10,
-    justifyContent: 'center', borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+    justifyContent: 'center', borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5,
   },
-  filterChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', flexShrink: 1 },
+  // Matches Overview's own filterChipText exactly (fontSize:12,
+  // fontWeight:'700') — the same member-pill filter row pattern, just
+  // reused here for Chores' own filter bar.
+  filterChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', flexShrink: 1 },
   // Wraps rather than scrolls — a fixed three-item set, and a three-pill
   // row that scrolls when it doesn't need to reads as broken.
   // Matching the approved reference mock exactly: a gray pill CONTAINER

@@ -300,6 +300,85 @@ export function EmptyNote({ text, k, style }: { text: string; k: KioskColors; st
   );
 }
 
+/**
+ * KioskListRow — the mockup's .task-check/.task-coin/.task-action row shape
+ * (checkbox-or-icon · title+meta+badges · value · 1-2 text buttons), one
+ * flat line no matter how many optional pieces are present.
+ *
+ * Promoted here from KioskOverviewTab.tsx's own local ApprovalRow (the
+ * Approvals panel's real row) once a second consumer — the "Recently
+ * Approved" dispute/reversal cards — needed the identical shape
+ * (live-requested: "we should the same card as the approvals"). Same
+ * promotion reasoning PanelHead's own header documents: a second real
+ * consumer needing byte-identical styling is the signal a local pattern
+ * has stopped being a one-off.
+ *
+ * `leading` replaces the plain checkbox square for a caller that has no
+ * buy/approve action to hang there (Recently Approved has none — Dismiss
+ * and Flag/Reversal aren't a checkbox-shaped action); omit it entirely for
+ * the exact plain bordered square every Approvals row uses.
+ */
+export function KioskListRow({
+  k, isFirst, leading, title, meta, badge, value, actions,
+}: {
+  k: KioskColors;
+  /** Suppresses the row's own top hairline divider for the first row in a list. */
+  isFirst?: boolean;
+  /** Replaces the default plain checkbox square. Omit for that default. */
+  leading?: ReactNode;
+  title: string;
+  /** Small dim line under the title — a status phrase, "approved by X", etc. */
+  meta?: string;
+  /** An inline pill next to `meta` — a name tag, a source label. */
+  badge?: string;
+  /** Right-aligned value column — a coin figure, or omit for no value slot at all. */
+  value?: ReactNode;
+  /** 1-2 small neutral-filled text buttons, right-aligned. */
+  actions?: ReactNode;
+}) {
+  return (
+    <View style={[s.listRow, !isFirst && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+      {leading ?? <View style={[s.listRowCheck, { borderColor: k.cardBorder }]} />}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[s.listRowTitle, { color: k.text }]} numberOfLines={1}>{title}</Text>
+        {(!!meta || !!badge) && (
+          <View style={s.listRowMetaRow}>
+            {!!meta && (
+              <Text style={[s.listRowMeta, { color: k.textFaint }]} numberOfLines={1}>{meta}</Text>
+            )}
+            {!!badge && (
+              <View style={[s.listRowBadge, { backgroundColor: k.well }]}>
+                <Text style={[s.listRowBadgeText, { color: k.textMuted }]} numberOfLines={1}>{badge}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+      {value !== undefined && value}
+      {!!actions && <View style={s.listRowActions}>{actions}</View>}
+    </View>
+  );
+}
+
+/** One of KioskListRow's 1-2 action buttons — the mockup's own .task-action:
+ * a neutral filled surface, never a colored button — only the LABEL color
+ * (e.g. k.danger for a destructive action) differs between actions. */
+export function KioskListRowAction({ k, label, color, onPress, disabled, accessibilityLabel }: {
+  k: KioskColors; label: string; color: string; onPress: () => void; disabled?: boolean; accessibilityLabel?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress} disabled={disabled}
+      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+      style={({ pressed }) => [s.listRowActionBtn, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+    >
+      <Text style={[s.listRowActionLabel, { color }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const s = StyleSheet.create({
   // sm (10) rather than xl (26) — matches the reference mockup's tighter
   // panel radius (`--radius: 10px`). Sits below KIOSK_RADIUS.lg, which
@@ -354,4 +433,34 @@ const s = StyleSheet.create({
   tabTitle: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6 },
   tabSubtitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 3 },
   empty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
+
+  // KioskListRow — exact values from the Approvals panel's own row (the
+  // mockup's .task-check/.task-coin/.task-action), promoted here once the
+  // Recently Approved dispute cards needed the identical shape.
+  listRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12,
+  },
+  // Mockup's .task-check exactly: 22px, 6px radius, 2px border, no fill.
+  listRowCheck: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, flexShrink: 0,
+  },
+  listRowTitle: { fontSize: 14, fontWeight: '700' },
+  listRowMetaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 3,
+  },
+  listRowMeta: { fontSize: 11.5, fontWeight: '600' },
+  listRowBadge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  listRowBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  listRowActions: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+  // Same neutral fill regardless of which action — the mockup's own
+  // .task-action background never changes per action, only the LABEL
+  // color does, so a destructive action isn't a red button, it's a
+  // neutral button with red text.
+  listRowActionBtn: {
+    borderWidth: 1, borderRadius: 7,
+    paddingHorizontal: 12, paddingVertical: 8,
+    minHeight: 0,
+  },
+  listRowActionLabel: { fontSize: 11.5, fontWeight: '700' },
 });

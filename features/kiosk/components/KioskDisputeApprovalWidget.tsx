@@ -48,7 +48,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { parseDbTime } from '@/lib/dates';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { WidgetCard, PanelHead } from './KioskOS';
+import { WidgetCard, PanelHead, KioskListRow, KioskListRowAction } from './KioskOS';
 import { KioskFormDrawer, KioskFieldLabel, kioskInputStyle } from './KioskFormDrawer';
 
 export function KioskDisputeApprovalWidget({ active, members, k, isDark }: {
@@ -80,8 +80,8 @@ export function KioskDisputeApprovalWidget({ active, members, k, isDark }: {
         k={k}
         right={<Text style={[s.panelCount, { color: k.textFaint }]}>{recentlyApproved.length}</Text>}
       />
-      <View style={{ gap: KIOSK_SPACE.sm }}>
-        {recentlyApproved.map(c => (
+      <View>
+        {recentlyApproved.map((c, i) => (
           <DisputeApprovalRow
             key={c.id}
             c={c}
@@ -89,6 +89,7 @@ export function KioskDisputeApprovalWidget({ active, members, k, isDark }: {
             active={active}
             k={k}
             isDark={isDark}
+            isFirst={i === 0}
             flagApprovalForDiscussion={flagApprovalForDiscussion}
             standByApproval={standByApproval}
             requestApprovalReversal={requestApprovalReversal}
@@ -114,8 +115,8 @@ export function KioskDisputeApprovalWidget({ active, members, k, isDark }: {
  *   5. not disputed, viewer is NOT the original approver
  *      → Flag for Discussion / Request Reversal, + Dismiss
  */
-function DisputeApprovalRow({ c, members, active, k, isDark, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal, acknowledgeRecentApproval }: {
-  c: ChoreTask; members: FamilyMember[]; active: FamilyMember; k: KioskColors; isDark: boolean;
+function DisputeApprovalRow({ c, members, active, k, isDark, isFirst, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal, acknowledgeRecentApproval }: {
+  c: ChoreTask; members: FamilyMember[]; active: FamilyMember; k: KioskColors; isDark: boolean; isFirst: boolean;
   flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<void>;
   standByApproval: (choreId: string, byParentId: string) => Promise<void>;
   requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => Promise<void>;
@@ -179,74 +180,71 @@ function DisputeApprovalRow({ c, members, active, k, isDark, flagApprovalForDisc
     );
   }
 
+  // Live-requested: "we should the same card as the approvals" — these
+  // three not-yet-(actively)-disputed states are the same flat one-line
+  // shape Approvals' own rows use (KioskListRow), not a separate boxed
+  // "well" card. The two ACTIVE-dispute states above stay their own
+  // richer cards on purpose — the phone's own ChoreReviewSection.tsx
+  // renders those as visually distinct colored boxes too, since they
+  // carry multi-line explanatory copy and two full-width buttons that a
+  // one-line row shape can't hold without truncating.
   if (c.disputeStatus) {
     return (
-      <View style={[s.row, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-        <Text style={[s.rowTitle, { color: k.textMuted }]}>{c.title}</Text>
-        <Text style={[s.rowMeta, { color: k.textFaint }]}>
-          {c.disputeStatus === 'reversal_requested' ? 'Waiting on' : 'Flagged for'} {approver?.name?.trim().split(' ')[0] ?? 'the other parent'} to respond.
-        </Text>
-      </View>
+      <KioskListRow
+        k={k}
+        isFirst={isFirst}
+        leading={<Coins size={14} color={k.textFaint} />}
+        title={c.title}
+        meta={`${c.disputeStatus === 'reversal_requested' ? 'Waiting on' : 'Flagged for'} ${approver?.name?.trim().split(' ')[0] ?? 'the other parent'} to respond`}
+      />
     );
   }
 
   if (isOriginalApprover) {
     return (
-      <View style={[s.row, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-        <View style={s.rowHead}>
-          <Coins size={14} color={k.textFaint} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[s.rowTitle, { color: k.text }]} numberOfLines={1}>{c.title}</Text>
-            <Text style={[s.rowMeta, { color: k.textMuted }]} numberOfLines={1}>
-              {kid?.name?.trim().split(' ')[0] ?? 'Kid'} earned {totalCoins} coins · approved by you
-            </Text>
-          </View>
-          <Pressable
+      <KioskListRow
+        k={k}
+        isFirst={isFirst}
+        leading={<Coins size={14} color={k.textFaint} />}
+        title={c.title}
+        meta={`${kid?.name?.trim().split(' ')[0] ?? 'Kid'} earned ${totalCoins} coins · approved by you`}
+        actions={
+          <KioskListRowAction
+            k={k} label="Dismiss" color={k.textMuted}
             onPress={() => acknowledgeRecentApproval(c.id, active.id)}
-            hitSlop={8}
-            style={[s.dismissBtn, { backgroundColor: k.card }]}
-          >
-            <Text style={[s.dismissBtnText, { color: k.textMuted }]}>Dismiss</Text>
-          </Pressable>
-        </View>
-      </View>
+          />
+        }
+      />
     );
   }
 
   return (
-    <View style={[s.row, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-      <View style={s.rowHead}>
-        <Coins size={14} color={k.textFaint} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[s.rowTitle, { color: k.text }]} numberOfLines={1}>{c.title}</Text>
-          <Text style={[s.rowMeta, { color: k.textMuted }]} numberOfLines={1}>
-            Approved by {approver?.name?.trim().split(' ')[0] ?? 'a parent'} · {kid?.name?.trim().split(' ')[0] ?? 'kid'} earned {totalCoins} coins
-          </Text>
-        </View>
-        <Pressable
-          onPress={() => acknowledgeRecentApproval(c.id, active.id)}
-          hitSlop={8}
-          style={[s.dismissBtn, { backgroundColor: k.card }]}
-        >
-          <Text style={[s.dismissBtnText, { color: k.textMuted }]}>Dismiss</Text>
-        </Pressable>
-      </View>
-      <View style={s.actionRow}>
-        <Pressable
-          onPress={() => setFlaggingOpen(true)}
-          style={[s.actionBtn, { backgroundColor: k.gold + '18', borderColor: k.gold + '40' }]}
-        >
-          <Flag size={13} color={k.gold} />
-          <Text style={[s.actionBtnText, { color: k.gold }]}>Flag for Discussion</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setReversalOpen(true)}
-          style={[s.actionBtn, { backgroundColor: k.danger + '18', borderColor: k.danger + '40' }]}
-        >
-          <Undo2 size={13} color={k.danger} />
-          <Text style={[s.actionBtnText, { color: k.danger }]}>Request Reversal</Text>
-        </Pressable>
-      </View>
+    <>
+      <KioskListRow
+        k={k}
+        isFirst={isFirst}
+        leading={<Coins size={14} color={k.textFaint} />}
+        title={c.title}
+        meta={`Approved by ${approver?.name?.trim().split(' ')[0] ?? 'a parent'} · ${kid?.name?.trim().split(' ')[0] ?? 'kid'} earned ${totalCoins} coins`}
+        actions={
+          <>
+            <KioskListRowAction
+              k={k} label="Flag" color={k.gold}
+              onPress={() => setFlaggingOpen(true)}
+              accessibilityLabel="Flag for discussion"
+            />
+            <KioskListRowAction
+              k={k} label="Reverse" color={k.danger}
+              onPress={() => setReversalOpen(true)}
+              accessibilityLabel="Request reversal"
+            />
+            <KioskListRowAction
+              k={k} label="Dismiss" color={k.textMuted}
+              onPress={() => acknowledgeRecentApproval(c.id, active.id)}
+            />
+          </>
+        }
+      />
 
       <ReasonSheet
         visible={flaggingOpen}
@@ -270,7 +268,7 @@ function DisputeApprovalRow({ c, members, active, k, isDark, flagApprovalForDisc
         onClose={() => setReversalOpen(false)}
         onSubmit={reason => { setReversalOpen(false); requestApprovalReversal(c.id, active.id, reason || 'No reason given'); }}
       />
-    </View>
+    </>
   );
 }
 
@@ -320,7 +318,12 @@ function ReasonSheet({ visible, title, subtitle, accent, submitLabel, required, 
 
 const s = StyleSheet.create({
   panelCount: { fontSize: 11 },
-  row: { borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm },
+  // Only the two ACTIVE-dispute states (reversal_requested/flagged, viewed
+  // by the original approver) still use this boxed card shape — see
+  // DisputeApprovalRow's own comment for why those two stay visually
+  // distinct rather than joining the flat KioskListRow list. marginVertical
+  // gives them the same breathing room the removed outer `gap` used to.
+  row: { borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm, marginVertical: KIOSK_SPACE.xs },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
   rowTitle: { fontSize: 13, fontWeight: '800' },
   rowMeta: { fontSize: 11.5, marginTop: 2 },
@@ -330,6 +333,4 @@ const s = StyleSheet.create({
     borderWidth: 1, borderRadius: KIOSK_RADIUS.md, paddingVertical: 9, minHeight: KIOSK_HIT.control,
   },
   actionBtnText: { fontSize: 12, fontWeight: '800' },
-  dismissBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  dismissBtnText: { fontSize: 11, fontWeight: '800' },
 });

@@ -100,7 +100,7 @@ import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote, KioskListRow, KioskListRowAction } from '../components/KioskOS';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from '../components/KioskFormDrawer';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskPhotos } from '../useKioskPhotos';
@@ -1218,68 +1218,39 @@ function ApprovalRow({
   };
 
   return (
-    <View style={[s.approvalRow, !isFirst && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-      {/* Mockup's .task-check: a plain bordered square, not a colored
-          icon-in-circle — the row's own accent already reads through the
-          card's left-edge Well accent elsewhere in this app; here it stays
-          neutral, matching the mockup's own quiet checkbox exactly. */}
-      <View style={[s.approvalCheck, { borderColor: k.cardBorder }]} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[s.approvalTitle, { color: k.text }]} numberOfLines={1}>{item.title}</Text>
-        <View style={s.approvalMetaRow}>
-          <Text style={[s.approvalMeta, { color: k.textFaint }]} numberOfLines={1}>{item.meta}</Text>
-          {!!item.who && (
-            <View style={[s.approvalBadge, { backgroundColor: k.well }]}>
-              <Text style={[s.approvalBadgeText, { color: k.textMuted }]} numberOfLines={1}>{item.who}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-      {/* Mock's .task-coin always occupies this slot, even with nothing to
-          show — a real coin figure, or an em-dash at reduced opacity for a
-          kid request (which never carries coins). Keeps every row's coin
-          column aligned instead of requests alone losing their right edge. */}
-      <Text
-        style={[s.approvalCoin, typeof item.coins === 'number' ? { color: k.gold } : { color: k.textFaint, opacity: 0.35 }]}
-        numberOfLines={1}
-      >
-        {typeof item.coins === 'number' ? (item.coins > 0 ? `+${item.coins}` : item.coins) : '—'}
-      </Text>
-      <View style={s.approvalActions}>
-        {/* Visually sized off the mockup's compact .task-action spec, but
-            hitSlop keeps the REAL tappable extent at kiosk's documented
-            48px floor (KIOSK_HIT.min) — the mockup is a cursor-driven web
-            page with no such floor; this is a tablet a kid or grandparent
-            taps at an angle, so the visual size and the tap target are
-            deliberately different here. Filled (not outline) — the
-            mockup's own .task-action is a filled surface-2 rectangle, not
-            a transparent/bordered button. */}
-        {/* Same neutral fill on both — the mockup's .task-action background
-            never changes per action, only the LABEL color does
-            (.task-action.deny{color:var(--danger)}), so Decline/Redo isn't
-            a red button, it's a neutral button with red text. */}
-        <Pressable
-          onPress={decline} disabled={busy}
-          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          style={({ pressed }) => [s.approvalTextBtn, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
-          accessibilityRole="button"
-          accessibilityLabel={item.kind === 'chore' ? 'Redo' : 'Decline'}
+    <KioskListRow
+      k={k}
+      isFirst={isFirst}
+      title={item.title}
+      meta={item.meta}
+      badge={item.who}
+      // Mock's .task-coin always occupies this slot, even with nothing to
+      // show — a real coin figure, or an em-dash at reduced opacity for a
+      // kid request (which never carries coins). Keeps every row's coin
+      // column aligned instead of requests alone losing their right edge.
+      value={
+        <Text
+          style={[s.approvalCoin, typeof item.coins === 'number' ? { color: k.gold } : { color: k.textFaint, opacity: 0.35 }]}
+          numberOfLines={1}
         >
-          <Text style={[s.approvalTextBtnLabel, { color: k.danger }]}>
-            {item.kind === 'chore' ? 'Redo' : 'Decline'}
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={approve} disabled={busy}
-          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          style={({ pressed }) => [s.approvalTextBtn, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && { opacity: 0.6 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Approve"
-        >
-          <Text style={[s.approvalTextBtnLabel, { color: k.text }]}>Approve</Text>
-        </Pressable>
-      </View>
-    </View>
+          {typeof item.coins === 'number' ? (item.coins > 0 ? `+${item.coins}` : item.coins) : '—'}
+        </Text>
+      }
+      actions={
+        <>
+          <KioskListRowAction
+            k={k} onPress={decline} disabled={busy}
+            label={item.kind === 'chore' ? 'Redo' : 'Decline'}
+            color={k.danger}
+          />
+          <KioskListRowAction
+            k={k} onPress={approve} disabled={busy}
+            label="Approve"
+            color={k.text}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -1870,29 +1841,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 13, paddingVertical: 7,
   },
   filterChipText: { fontSize: 12, fontWeight: '700' },
-  approvalRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12,
-  },
-  // Mockup's .task-check exactly: 22px, 6px radius, 2px border, no fill.
-  approvalCheck: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 2, flexShrink: 0,
-  },
-  approvalTitle: { fontSize: 14, fontWeight: '700' },
-  approvalMetaRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 3,
-  },
-  approvalMeta: { fontSize: 11.5, fontWeight: '600' },
-  approvalBadge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
-  approvalBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  // Consumer-specific coin-figure formatting for KioskListRow's `value`
+  // slot — the row shell itself (check/title/meta/badge/actions) is now
+  // KioskListRow, shared with the Recently Approved dispute cards.
   approvalCoin: { fontSize: 14, fontWeight: '700', flexShrink: 0 },
-  approvalActions: { flexDirection: 'row', gap: 6, flexShrink: 0 },
-  approvalTextBtn: {
-    borderWidth: 1, borderRadius: 7,
-    paddingHorizontal: 12, paddingVertical: 8,
-    minHeight: 0,
-  },
-  approvalTextBtnLabel: { fontSize: 11.5, fontWeight: '700' },
 
   // Mockup's .jar/.jar-avatar/.jar-name/.jar-meta/.jar-amt exactly.
   jarRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },

@@ -190,7 +190,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const giveBackChore = useChoreStore(s => s.giveBackChore);
   const startGrandparentQuest = useChoreStore(s => s.startGrandparentQuest);
@@ -1121,7 +1121,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
               onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
             />
           </View>
-        ) : (btn || actions.canKidDecline || actions.canGiveBack || (actions.canApprove && !!q.assignedToId)) ? (
+        ) : (btn || actions.canKidDecline || actions.canGiveBack || (actions.canApprove && !!q.assignedToId) || actions.canReopen) ? (
           <View style={s.actionRow}>
             {btn && (
               <ActionButton
@@ -1157,6 +1157,29 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 style={s.actionSecondary}
                 accessibilityHint={`Send ${q.title} back for a redo, with a reason`}
                 onPress={() => { registerActivity(); setRedoTargetBoard({ id: q.id, title: q.title }); }}
+              />
+            )}
+            {/* Reopen — deriveQuestActions.canReopen (isParentOrSenior &&
+                declined) [fresh-audit finding]. The real reopenQuest store
+                action + this exact condition both exist and work on the
+                phone, but QuestsScreen.tsx defines a full handleReopen
+                handler and never wires it to any button — genuinely
+                unreachable there. Built here anyway per explicit
+                direction: it's a real, safe, working action underneath
+                (reopenQuest just resets status back to 'todo', clearing
+                redoCount/rejectionReason), just one the phone's own UI
+                never surfaced. */}
+            {actions.canReopen && (
+              <ActionButton
+                label="Reopen"
+                Icon={RotateCcw}
+                accent={k.textMuted}
+                k={k}
+                isDark={kioskDark}
+                variant="soft"
+                style={btn ? s.actionSecondary : s.actionPrimary}
+                accessibilityHint={`Reopen ${q.title} so it can be tried again`}
+                onPress={() => { registerActivity(); reopenQuest(q.id, active.id); showToast(`Reopened "${q.title}" ✓`); }}
               />
             )}
             {/* Same gate the phone reads (its canDeclinePlain, KidQuestCard

@@ -434,13 +434,10 @@ export function KioskExpandableCard({
     <View
       style={[
         s.card,
-        // Rounder than the shared card default, matching the approved
-        // reference mock's own softer look — safe to set directly here
-        // (not via a style override at the call site) since this
-        // component is exclusively used by KioskTasksTab.tsx's own chore
-        // cards, confirmed via grep, so it doesn't ripple into any other
-        // kiosk screen's use of the shared s.card shape.
-        { borderRadius: KIOSK_RADIUS.xl },
+        // Plain shared card radius (s.card's own KIOSK_RADIUS.sm) —
+        // matching Overview's own card styling exactly, superseding the
+        // earlier rounder mock-matched radius [live-reported: "card
+        // styles and radious should match with the overview"].
         // No per-row shadow: these rows already live inside a WidgetCard
         // zone that carries its own elevation — stacking a second, accent-
         // tinted shadow on every individual row is what made the board

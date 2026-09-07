@@ -160,7 +160,7 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
           Details" just reveals the same tool row the mock has no way to
           represent (it's static HTML with no per-role/per-feature logic
           to show three real AI actions inline). */}
-      <WidgetCard k={k} isDark={isDark} style={{ borderRadius: KIOSK_RADIUS.xl }}>
+      <WidgetCard k={k} isDark={isDark}>
         <Pressable
           onPress={() => setToolsOpen(o => !o)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}

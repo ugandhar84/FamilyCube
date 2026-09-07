@@ -728,30 +728,22 @@ function KioskBoardView({ active, members, colors, isDark }: {
                       uses (RN correctly routes a touch to the innermost
                       matching target, and hitSlop keeps it reliably
                       tappable without also toggling the card). */}
-                  {!!btn ? (
+                  {/* No Edit fallback here when btn is null (e.g. a parent
+                      viewing a kid's own pool/to-do chore, where
+                      canClaim/canSubmit are kid/teen-only) — the card's own
+                      double-tap already opens the same editor
+                      (onDoubleTap={actions.canEdit ? () => setEditingQuest(q)
+                      : undefined} below), so a second, redundant Edit
+                      button in the header isn't needed [live-reported:
+                      "remove edit button on the card as we have long press
+                      to edit"]. */}
+                  {!!btn && (
                     <ActionButton
                       label={btn.label} Icon={btn.Icon} accent={btn.accent}
                       k={k} isDark={kioskDark} variant="solid"
                       style={s.headerActionBtn}
                       accessibilityHint={q.title}
                       onPress={() => { registerActivity(); btn.action(); }}
-                    />
-                  ) : actions.canEdit && (
-                    // No claim/submit/approve action for THIS viewer (e.g.
-                    // a parent looking at a kid's own to-do/pool chore —
-                    // canClaim/canSubmit are kid/teen-only, canApprove only
-                    // applies once submitted) — real behavior, not a bug;
-                    // the mock's own static "Claim"/"Done" buttons have no
-                    // per-role logic to represent this. A parent's own real
-                    // action here is Edit (deriveQuestActions.canEdit,
-                    // isParent && !done && !declined), so that's what shows
-                    // instead of leaving the header with no button at all.
-                    <ActionButton
-                      label="Edit" Icon={Pencil} accent={k.textMuted}
-                      k={k} isDark={kioskDark} variant="soft"
-                      style={s.headerActionBtn}
-                      accessibilityHint={`Edit ${q.title}`}
-                      onPress={() => { registerActivity(); setEditingQuest(q); }}
                     />
                   )}
                 </View>
@@ -2337,13 +2329,11 @@ const s = StyleSheet.create({
   // blocks at a glance rather than one uniform field of cards.
   // Each zone is a WidgetCard now, so the gap between them is a plain
   // margin rather than the old bare-View rhythm.
-  // Rounder than the shared WidgetCard default (KIOSK_RADIUS.sm=10) —
-  // matches the approved reference mock's own rounded-3xl (24px) panels,
-  // per explicit direction to adopt that newer, softer look. Overridden
-  // per-zone here rather than in KioskOS.tsx's shared s.card, which every
-  // other kiosk screen (Overview, Schedule) also builds from and isn't
-  // part of this ask.
-  zone: { marginBottom: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl },
+  // Back to the shared WidgetCard default radius (KIOSK_RADIUS.sm) —
+  // matching Overview's own card styling exactly, superseding the earlier
+  // rounder mock-matched radius [live-reported: "card styles and radious
+  // should match with the overview"].
+  zone: { marginBottom: KIOSK_SPACE.md },
 
   // ── Two-column layout, matching KioskOverviewTab.tsx's own real
   // twoColRow/centerCol/sideCol/colFullWidth values exactly (same 1080px
@@ -2353,8 +2343,9 @@ const s = StyleSheet.create({
   colFullWidth: { flex: undefined, width: '100%' },
   centerCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
   sideCol: { flex: undefined, width: 340, gap: KIOSK_SPACE.md, minWidth: 0 },
-  // Same rounder radius as `zone` above, for the sidebar's own panels.
-  sidebarPanel: { borderRadius: KIOSK_RADIUS.xl },
+  // Plain WidgetCard default radius, matching Overview's own sidebar
+  // panels (Coin Jars, etc.) — no override needed.
+  sidebarPanel: {},
 
   // ── Sidebar jar-row, matching KioskOverviewTab.tsx's own Coin Jars
   // jarRow/jarAvatar/jarName/jarMeta/jarAmt exactly.
@@ -2380,7 +2371,7 @@ const s = StyleSheet.create({
   filterBar: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
     gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
   },
   aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },
   // A horizontal ScrollView in a flex column stretches to fill leftover
@@ -2430,7 +2421,7 @@ const s = StyleSheet.create({
   // percentage-of-ambiguous-parent-width math to get wrong, and matches
   // the actual approved design besides.
   poolGrid: { gap: KIOSK_SPACE.md },
-  poolCard: { width: '100%', borderRadius: KIOSK_RADIUS.xl },
+  poolCard: { width: '100%' },
 
   // One tidy inline row, not a hero panel — an empty state should be the
   // quietest thing on screen, not the largest.
@@ -2566,8 +2557,8 @@ const s = StyleSheet.create({
   // Plain full-width vertical stack — see poolGrid's own comment above for
   // why the earlier percentage-flexBasis tile-grid attempt is gone.
   gpGrid: { gap: KIOSK_SPACE.md },
-  gpCard: { width: '100%', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.xl },
-  claimCard: { width: '100%', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.xl },
+  gpCard: { width: '100%', gap: KIOSK_SPACE.sm },
+  claimCard: { width: '100%', gap: KIOSK_SPACE.sm },
   claimPhoto: { width: '100%', height: 140, borderRadius: KIOSK_RADIUS.sm },
   claimNoteBox: { borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.sm, gap: 2 },
   claimNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', letterSpacing: 0.4 },

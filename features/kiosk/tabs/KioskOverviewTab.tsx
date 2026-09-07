@@ -84,7 +84,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import {
   Car, UtensilsCrossed, Bell, Check, ChevronRight,
-  Megaphone, BatteryLow, ChefHat, CheckSquare, X,
+  Megaphone, BatteryLow, ChefHat, CheckSquare, X, UserCheck,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
@@ -127,6 +127,14 @@ import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWi
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
 import type { KioskTabKey } from '../kioskTabs';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
+import { MedicationsCard } from '@/features/hub/senior/MedicationsCard';
+import { useMedications } from '@/features/vault/tabs/health/useMedications';
+import { SendBonusCard } from '@/features/hub/senior/SendBonusCard';
+import { DirectPendingCard } from '@/features/hub/parent/backlog/DirectPendingCard';
+import { OutgoingPendingCard } from '@/features/hub/parent/backlog/OutgoingPendingCard';
+import { LockedAssignmentCard } from '@/features/hub/parent/backlog/LockedAssignmentCard';
 
 interface RadarRow {
   member_id: string;
@@ -248,6 +256,14 @@ export function KioskOverviewTab({
   // photo feed — not a multi-widget board with inline actions.
   const isSenior = active.role === 'senior';
   const isTeen = active.role === 'teen';
+  // SendBonusCard's real kid-target scope — SeniorView.tsx's own
+  // `kids = members.filter(m => m.role === 'kid')`, kid-role only (not
+  // teen — a teen isn't a bonus-eligible target on the real phone either).
+  // Named distinctly from this file's own pre-existing `kids` (below, a
+  // wider kid+teen coin-jar list with deleted/pending exclusions) since the
+  // two have genuinely different real scopes, not interchangeable.
+  const gpBonusKids = useMemo(() => members.filter(m => m.role === 'kid'), [members]);
+  const allNames = useMemo(() => members.map(m => m.name), [members]);
 
   const dayEvents = useEventStore(s => s.dayEvents);
   // Real ParentView.tsx's own classifierSource fallback ("upcomingEvents
@@ -535,6 +551,43 @@ export function KioskOverviewTab({
     getMyDirectPending, getMyLockedItems, getMyOutgoingPending,
     completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing,
   } = useChoreStore();
+  const chores = useChoreStore(s => s.chores);
+
+  // ── Senior-only real Hub sections (caregiver review, meds, send-bonus) ─
+  // Kiosk had NO equivalent of any of these before this — SeniorView.tsx's
+  // own real sections, reproduced with the same real store/hook wiring
+  // that file itself uses (verbatim call-site match, not re-derived).
+  const {
+    loaded: approverGrantsLoaded, loadFromStorage: loadApproverGrants,
+    isActiveApprover, getActiveGrantFor,
+  } = useTemporaryApproverStore();
+  useEffect(() => { if (!approverGrantsLoaded) loadApproverGrants(); }, [approverGrantsLoaded]);
+  const hasCaregiverAccess = isActiveApprover(active.id);
+  const caregiverGrant = getActiveGrantFor(active.id);
+
+  // Same shared hook ParentView.tsx/SeniorView.tsx/HealthTab.tsx all use —
+  // single source of truth against family_medications, not a second local
+  // implementation (see useMedications.ts's own header comment on why a
+  // prior hand-rolled duplicate was a real, live-reported bug).
+  const { meds, addMed, toggleMed, deleteMed } = useMedications(familyId, active.id);
+  const medsTaken = useMemo(
+    () => Object.fromEntries(meds.map(m => [m.id, m.taken_date === localDateStr()])) as Record<string, boolean>,
+    [meds],
+  );
+
+  // SendBonusCard's own real local-state shape (SeniorView.tsx lines
+  // ~207-209) — plain picker state, no store beyond awardCoins itself.
+  const [gpKid, setGpKid] = useState<FamilyMember | null>(null);
+  const [gpAmount, setGpAmount] = useState<15 | 25 | 50>(15);
+  const [gpNote, setGpNote] = useState('');
+  const [gpSent, setGpSent] = useState(false);
+  const awardCoins = useFamilyStore(s => s.awardCoins);
+  const sendGpBonus = () => {
+    if (!gpKid) return;
+    awardCoins(gpKid.id, gpAmount, 'gpCoins');
+    setGpSent(true);
+    setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
+  };
 
   const chorePool = useMemo(() => getParentQuestPool(), [getParentQuestPool, quests]);
   const activeAssignmentChoreIds = useMemo(() => getActiveAssignmentChoreIds(), [getActiveAssignmentChoreIds, parentAssignments]);
@@ -1493,6 +1546,7 @@ export function KioskOverviewTab({
         </View>
       ) : (
       /* ══ WIDGET DECK (kid / senior / teen) ═══════════════════════════ */
+      <>
       <View style={s.deck}>
         {/* ── Ride & pickup radar (kid: their own day instead) ──
             A kid can neither remind nor take over a ride — both actions
@@ -1575,6 +1629,123 @@ export function KioskOverviewTab({
           />
         )}
       </View>
+
+      {/* ── Senior-only real Hub sections ─────────────────────────────────
+          Real SeniorView.tsx sections kiosk had zero equivalent of before
+          this — reused directly (same real, exported, self-contained
+          components the phone mounts) rather than reimplemented. Full-width
+          stack below the widget deck (not squeezed into its flex-wrap grid)
+          since these are richer sections than that deck's small glance
+          widgets — same unpadded-WidgetCard treatment the parent branch's
+          HouseholdBacklogSection/ActionNeededSection/AlertBanner already
+          use above, for the same reason (each of these components' own
+          root already carries its own horizontal padding/header chrome). */}
+      {isSenior && (
+        <View style={{ gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.md }}>
+          {/* Caregiver-mode chore review — real SeniorView.tsx gates this
+              behind an active temporary-approver grant (a parent can hand a
+              grandparent approve/decline authority for a window of time,
+              e.g. while traveling). ParentReviewDeck is the exact same
+              review UI a parent's own Hub uses — its actions already route
+              through choreStore.canApprove, which recognizes this grant,
+              so reusing it directly (rather than a second hand-rolled
+              approve/decline surface) is correct, not just convenient. */}
+          {hasCaregiverAccess && (
+            <View>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
+                backgroundColor: isDark ? colors.accent + '18' : colors.accent + '10',
+                borderRadius: 12, padding: 10, borderWidth: 1, borderColor: colors.accent + '30',
+              }}>
+                <Text style={{ fontSize: 16 }}>🔑</Text>
+                <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: colors.accent }}>
+                  You're the temporary approver{caregiverGrant ? ` until ${new Date(caregiverGrant.expiresAt).toLocaleString(undefined, { hour12: true })}` : ''} — you can approve/decline chore submissions below.
+                </Text>
+              </View>
+              <ParentReviewDeck parent={active} members={members} colors={colors} isDark={phoneDark} />
+            </View>
+          )}
+
+          {/* Assigned To You — the real System-A surface (direct/outgoing/
+              locked parent-quest assignments) SeniorView.tsx mounts for a
+              senior exactly as a parent would see their own. Same three
+              real cards + same derived lists (myDirectPending/
+              myLockedItems/myOutgoingPending) the parent branch above
+              already computes off active.id — those useMemos aren't
+              parent-gated themselves, only their old render site was, so
+              no new derivation is needed here, only the render. */}
+          {(myDirectPending.length > 0 || myOutgoingPending.length > 0 || myLockedItems.length > 0) && (
+            <WidgetCard k={k} isDark={isDark}>
+              <WidgetHeader
+                Icon={UserCheck} eyebrow="Household" title="Assigned To You"
+                accent={k.gold} k={k} isDark={isDark}
+                right={<Chip label={`${myDirectPending.length + myOutgoingPending.length + myLockedItems.length}`} accent={k.gold} isDark={isDark} k={k} />}
+              />
+              <View style={{ gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm }}>
+                {myDirectPending.map(a => {
+                  const chore = chores.find(c => c.id === a.choreId);
+                  if (!chore) return null;
+                  return (
+                    <DirectPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={phoneDark}
+                      respondToParentQuest={respondToParentQuest}
+                      onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) =>
+                        setPushbackTarget({ assignmentId, choreTitle, assignedBy, assignedTo })} />
+                  );
+                })}
+                {myOutgoingPending.map(a => {
+                  const chore = chores.find(c => c.id === a.choreId);
+                  if (!chore) return null;
+                  return (
+                    <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={phoneDark}
+                      onRecall={a.status === 'PENDING' && a.assignedBy === active.id ? () => recallParentQuest(a.id, active.id) : undefined}
+                      onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) =>
+                        setPushbackTarget({ assignmentId, choreTitle, assignedBy, assignedTo })} />
+                  );
+                })}
+                {myLockedItems.map(a => {
+                  const chore = chores.find(c => c.id === a.choreId);
+                  if (!chore) return null;
+                  return (
+                    <LockedAssignmentCard key={a.id} a={a} chore={chore} active={active} members={members}
+                      colors={colors} isDark={phoneDark}
+                      onDelegate={(choreId, choreTitle) => setDelegateTarget({ choreId, choreTitle })}
+                      cancelLockedAssignment={(assignmentId) => cancelLockedAssignment(assignmentId, active.id)} />
+                  );
+                })}
+              </View>
+            </WidgetCard>
+          )}
+
+          {/* Medications — real, shared component (also used by ParentView.
+              tsx) against the real family_medications table. Kiosk had no
+              medication surface anywhere before this. */}
+          <WidgetCard k={k} isDark={isDark} padded={false}>
+            <View style={{ paddingVertical: KIOSK_SPACE.sm }}>
+              <MedicationsCard
+                meds={meds} medsTaken={medsTaken} toggleMed={toggleMed}
+                onAddMed={addMed} onRemoveMed={deleteMed}
+                colors={colors} isDark={phoneDark} active={active} allMembers={members}
+              />
+            </View>
+          </WidgetCard>
+
+          {/* Send a Bonus — real, self-contained coin-gift picker, its own
+              gpCoins wallet (a distinct jar from the main coin balance). */}
+          <WidgetCard k={k} isDark={isDark} padded={false}>
+            <View style={{ paddingVertical: KIOSK_SPACE.sm }}>
+              <SendBonusCard
+                kids={gpBonusKids} allNames={allNames} colors={colors} isDark={phoneDark}
+                gpKid={gpKid} setGpKid={setGpKid}
+                gpAmount={gpAmount} setGpAmount={setGpAmount}
+                gpNote={gpNote} setGpNote={setGpNote}
+                gpSent={gpSent} onSend={sendGpBonus}
+                active={active}
+              />
+            </View>
+          </WidgetCard>
+        </View>
+      )}
+      </>
       )}
     </ScrollView>
     </>

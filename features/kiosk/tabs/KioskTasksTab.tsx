@@ -38,7 +38,7 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
   CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion,
@@ -1519,7 +1519,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
-  const { quests, claimQuest, submitQuest, approveQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, updateQuest } = useQuestStore();
   const cheerChore = useChoreStore(s => s.cheerChore);
 
   const kids = members.filter(m => m.role === 'kid' || m.role === 'teen');
@@ -1539,6 +1539,23 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
     ['claimed', 'in_progress'].includes(q.status)
   ), [quests]);
   const pendingReview = useMemo(() => quests.filter(q => q.status === 'pending_approval'), [quests]);
+  // ── GP-Welcome pool: Pass/Reconsider/Backout/Done [GAP — audit A6] ──────
+  // Distinct from myGpQuestsOpen/myGpQuestsAssigned above (this grandparent's
+  // OWN sponsored quests for kids) — this is the reverse: ordinary family
+  // chores a PARENT opened to any grandparent's help (inviteGrandparents),
+  // which this view never checked at all (it never called
+  // deriveQuestActions anywhere, only its own hand-rolled questType/status
+  // filters). Same real gating QuestCard.tsx's own canGpClaimPool/canGpDone
+  // branches use (deriveCardActions.ts:144-146), computed per-quest here
+  // the same way KioskBoardView already does for its own lanes.
+  const gpPoolOpen = useMemo(
+    () => quests.filter(q => deriveQuestActions(q, { id: active.id, role: active.role }).canGpClaimPool),
+    [quests, active.id, active.role],
+  );
+  const gpPoolClaimed = useMemo(
+    () => quests.filter(q => deriveQuestActions(q, { id: active.id, role: active.role }).canGpDone),
+    [quests, active.id, active.role],
+  );
 
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
 
@@ -1548,10 +1565,19 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
    * one renderer now rather than repeating the markup four times — that
    * repetition is exactly how the four copies drifted apart on padding and
    * numberOfLines in the first place.
+   *
+   * secondaryBtn is optional — added for the GP-pool zones below (Help/Pass,
+   * Backout/Done), which each need two real, independent actions on the
+   * same card, matching QuestCard.tsx's own canGpClaimPool/canGpDone
+   * button pairs exactly rather than forcing a two-action decision into
+   * this shared renderer's original one-button shape.
    */
   const gpCard = (
     q: typeof quests[number],
-    opts: { sub?: string; label: string; Icon?: typeof Check; accent: string; onPress: () => void; hint: string },
+    opts: {
+      sub?: string; label: string; Icon?: typeof Check; accent: string; onPress: () => void; hint: string;
+      secondaryBtn?: { label: string; accent: string; onPress: () => void; hint: string };
+    },
   ) => (
     <Well key={q.id} k={k} accent={opts.accent} style={s.gpCard}>
       <View style={[s.catBadge, { backgroundColor: (CATEGORY_META[q.category]?.color ?? k.textFaint) + '18' }]}>
@@ -1561,6 +1587,19 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
       {!!opts.sub && (
         <Text style={[s.cardSub, { color: k.textMuted }]} numberOfLines={1}>{opts.sub}</Text>
       )}
+      <View style={s.gpBtnRow}>
+        {!!opts.secondaryBtn && (
+          <ActionButton
+            label={opts.secondaryBtn.label}
+            accent={opts.secondaryBtn.accent}
+            k={k}
+            isDark={kioskDark}
+            variant="soft"
+            style={s.gpBtnSecondary}
+            accessibilityHint={opts.secondaryBtn.hint}
+            onPress={() => { registerActivity(); opts.secondaryBtn!.onPress(); }}
+          />
+        )}
       <ActionButton
         label={opts.label}
         Icon={opts.Icon}
@@ -1572,6 +1611,7 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
         accessibilityHint={opts.hint}
         onPress={() => { registerActivity(); opts.onPress(); }}
       />
+      </View>
     </Well>
   );
 
@@ -1623,6 +1663,77 @@ function KioskGpTasksView({ active, members, colors, isDark }: {
               label: 'Approve', Icon: Check, accent: k.primary,
               hint: q.title,
               onPress: () => approveQuest(q.id, active.id),
+            }))}
+          </View>
+        </WidgetCard>
+      )}
+
+      {/* ── GP-Welcome pool: Help/Pass, Backout/Done [GAP — audit A6] ────
+          A family chore a PARENT opened to any grandparent's help — real,
+          distinct from "Your sponsored chores" below (this grandparent's
+          OWN chores for the kids). Same real Alert.alert confirm-guards
+          and store calls QuestCard.tsx's own canGpClaimPool/canGpDone
+          branches use. */}
+      {gpPoolOpen.length > 0 && (
+        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+          <WidgetHeader
+            Icon={PartyPopper} eyebrow="Family asked" title="Help with a family chore"
+            accent={k.gold} k={k} isDark={kioskDark}
+            right={<Chip label={`${gpPoolOpen.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
+          />
+          <View style={s.gpGrid}>
+            {gpPoolOpen.map(q => {
+              const gpAlreadyPassed = (q.gpWithdrawnIds ?? []).includes(active.id);
+              return gpCard(q, {
+                sub: memberName(q.assignedToId),
+                label: gpAlreadyPassed ? '🔄 Reconsider?' : "❤️ I'd Love To Help",
+                accent: k.gold,
+                hint: q.title,
+                onPress: () => {
+                  Alert.alert('Help With This?', `Take on "${q.title}"?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: "❤️ I'd Love To Help",
+                      onPress: () => {
+                        useChoreStore.getState().updateChore(q.id, { gpOfferById: undefined } as any);
+                        updateQuest(q.id, { assignedToId: active.id, isPool: false, status: 'in_progress' }, active.id);
+                        useChoreStore.getState().setGpWithdrawn(q.id, active.id, false);
+                        showToast("You're on it ✓");
+                      },
+                    },
+                  ]);
+                },
+                secondaryBtn: gpAlreadyPassed ? undefined : {
+                  label: 'Pass', accent: k.textMuted, hint: `Pass on ${q.title}`,
+                  onPress: () => { useChoreStore.getState().setGpWithdrawn(q.id, active.id, true); },
+                },
+              });
+            })}
+          </View>
+        </WidgetCard>
+      )}
+
+      {gpPoolClaimed.length > 0 && (
+        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
+          <WidgetHeader
+            Icon={Check} eyebrow="You're helping" title="Family chores you claimed"
+            accent={k.sage} k={k} isDark={kioskDark}
+            right={<Chip label={`${gpPoolClaimed.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+          />
+          <View style={s.gpGrid}>
+            {gpPoolClaimed.map(q => gpCard(q, {
+              sub: memberName(q.assignedToId),
+              label: 'Done', accent: k.sage, hint: `Mark ${q.title} done`,
+              onPress: () => { useChoreStore.getState().completeGpWelcomeChore(q.id, active.id); },
+              secondaryBtn: {
+                label: 'Backout', accent: k.danger, hint: `Give ${q.title} back to the pool`,
+                onPress: () => {
+                  Alert.alert('Give This Back?', `"${q.title}" will go back to the open pool for any grandparent to pick up.`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Backout', style: 'destructive', onPress: () => { useChoreStore.getState().backoutGpWelcomeChore(q.id, active.id); } },
+                  ]);
+                },
+              },
             }))}
           </View>
         </WidgetCard>
@@ -1861,5 +1972,7 @@ const s = StyleSheet.create({
   // maxWidth so a fixed-width card can never exceed a narrow portrait
   // pane and clip — same guard applied to every fixed-width card in kiosk.
   gpCard: { width: 320, maxWidth: '100%', gap: KIOSK_SPACE.sm },
-  gpBtn: { alignSelf: 'stretch' },
+  gpBtn: { flex: 2 },
+  gpBtnRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignSelf: 'stretch' },
+  gpBtnSecondary: { flex: 1 },
 });

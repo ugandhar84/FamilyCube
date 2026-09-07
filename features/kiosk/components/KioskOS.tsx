@@ -498,7 +498,11 @@ const s = StyleSheet.create({
   // Mock's exact .panel-head/.panel-title: 11px/700/uppercase/0.12em
   // tracking, right-aligned faint value slot, 10px bottom margin.
   panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  panelTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3, textTransform: 'uppercase' },
+  // Bumped from 11/700 to match the approved Chores reference mock's own
+  // zone label exactly (12px/800) — applied to the shared component since
+  // every other screen's panel headers read more legibly at this size
+  // too, not just a Chores-local override.
+  panelTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1.3, textTransform: 'uppercase' },
   headerIcon: {
     width: 38, height: 38, borderRadius: KIOSK_RADIUS.md,
     alignItems: 'center', justifyContent: 'center',

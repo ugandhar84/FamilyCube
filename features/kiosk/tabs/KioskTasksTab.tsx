@@ -73,7 +73,7 @@ import { CreateQuestModal } from '@/features/hub/senior/CreateQuestModal';
 import { KioskAiChoresEngine } from '../components/KioskAiChoresEngine';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
-import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
@@ -158,9 +158,12 @@ function FilterPill({
       accessibilityState={{ selected }}
       style={({ pressed }) => [
         s.filterChip,
+        // Plain white (k.card), not a tinted well fill — matching the
+        // approved reference mock's own inactive pill exactly (white +
+        // border, no wash).
         selected
           ? { backgroundColor: accent, borderColor: accent }
-          : { backgroundColor: k.well, borderColor: k.cardBorder },
+          : { backgroundColor: k.card, borderColor: k.cardBorder },
         pressed && { opacity: 0.75 },
       ]}
     >
@@ -467,31 +470,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
     [filteredQuests, poolIds],
   );
 
-  // Measured width of the status-lane row (see its onLayout below for why
-  // this is measured rather than read off Dimensions). 0 until first layout,
-  // which falls through to the single-row default — the same thing the grid
-  // did before this existed, so the first frame is unchanged.
-  const [boardWidth, setBoardWidth] = useState(0);
-  const laneBasis = useMemo(() => {
-    const shown = byColumn.filter(c => c.items.length > 0).length;
-    if (shown <= 1 || boardWidth <= 0) return null;
-    // A lane holds one card per row (s.cardGrid), and a kiosk chore card
-    // stops being readable below roughly this width — the same order of
-    // magnitude the pool tiles (s.poolCard, 320) already work from.
-    const MIN_LANE = 260;
-    const gap = KIOSK_SPACE.md;
-    const fit = Math.max(1, Math.floor((boardWidth + gap) / (MIN_LANE + gap)));
-    if (fit >= shown) return null; // everything fits on one row — plain flex:1
-    // Otherwise wrap into `fit` per row. The basis subtracts the real
-    // gutters this row will consume BEFORE dividing — the exact arithmetic
-    // whose absence (a hardcoded gap that didn't match the stylesheet's)
-    // produced the ragged grid documented above. `gap` here reads the same
-    // KIOSK_SPACE.md token s.columns uses, so the two cannot disagree the
-    // way a copied constant did. flexGrow:1 lets a final, short row still
-    // fill the width rather than leaving a hole beside it.
-    const basis = Math.floor((boardWidth - gap * (fit - 1)) / fit);
-    return { flexBasis: basis, maxWidth: basis, flexGrow: 1 };
-  }, [byColumn, boardWidth]);
+  // boardWidth/laneBasis (a measured-width multi-column lane-splitting
+  // calculation) removed — the "In flight" zone is now a flat full-width
+  // vertical stack matching the approved reference mock exactly, which
+  // never had a multi-column lane grid to size in the first place. See
+  // that zone's own render comment for the full reasoning.
 
   // Per-kid summary strip — open count + coins earned today, tinted with
   // that kid's own color (same system Calendar/Agenda already use). The
@@ -730,9 +713,31 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   status label (every status pill deliberately stays
                   outlined, see badgeRow's own comment above). */}
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                {!isAdultAssignee && (
-                  <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
-                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {!isAdultAssignee && (
+                    <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} filled />
+                  )}
+                  {/* Primary action button ALWAYS visible in the collapsed
+                      header, matching the approved reference mock's own
+                      layout exactly (its "Claim"/"Done ✓" buttons are never
+                      hidden behind an expand step) — previously only
+                      rendered inside KioskExpandableCard's expanded body,
+                      requiring a tap to even see whether an action existed.
+                      Nested Pressable inside the header's own tap-to-toggle
+                      Pressable, same pattern the History button already
+                      uses (RN correctly routes a touch to the innermost
+                      matching target, and hitSlop keeps it reliably
+                      tappable without also toggling the card). */}
+                  {!!btn && (
+                    <ActionButton
+                      label={btn.label} Icon={btn.Icon} accent={btn.accent}
+                      k={k} isDark={kioskDark} variant="solid"
+                      style={s.headerActionBtn}
+                      accessibilityHint={q.title}
+                      onPress={() => { registerActivity(); btn.action(); }}
+                    />
+                  )}
+                </View>
                 {/* ── History [GAP] ────────────────────────────────────
                     The inline timeline below is the three-stamp summary;
                     the phone ALSO puts a History icon in this same
@@ -1337,7 +1342,12 @@ function KioskBoardView({ active, members, colors, isDark }: {
           space instead of hugging its pills, the exact bug KioskScheduleTab
           hit and records in its own stylesheet. The status row wraps
           instead of scrolling, since it is a fixed three-item set. */}
-      <View style={s.filterBar}>
+      {/* One shared card wrapping both rows, member pills and status tabs
+          laid out as ONE wrapping row (justify-between) — matching the
+          approved reference mock exactly, which never renders these as
+          two visually separate stacked rows floating on the bare page
+          background the way this used to. */}
+      <View style={[s.filterBar, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -1426,7 +1436,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
             it (QuestFilters.tsx:135), because that view isn't a status
             list at all. */}
         {kidFilter !== 'cheer' && (
-          <View style={s.statusRow} accessibilityRole="tablist">
+          <View style={[s.statusRow, { backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityRole="tablist">
             {KIOSK_STATUS_TABS.map(tab => {
               const on = tabStatus === tab.key;
               return (
@@ -1439,14 +1449,14 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   accessibilityState={{ selected: on }}
                   style={({ pressed }) => [
                     s.statusTab,
-                    on
-                      ? { backgroundColor: k.primary, borderColor: k.primary }
-                      : { backgroundColor: k.card, borderColor: k.cardBorder },
+                    // Active = plain white fill, no border; inactive =
+                    // fully transparent, no border — matching the mock.
+                    on ? { backgroundColor: k.card, ...kioskElevation(k.primary, kioskDark) } : null,
                     pressed && { opacity: 0.75 },
                   ]}
                 >
                   <Text
-                    style={[s.statusTabText, { color: on ? kioskOnAccent(k, k.primary) : k.textMuted }]}
+                    style={[s.statusTabText, { color: on ? k.text : k.textMuted }]}
                     numberOfLines={1}
                   >
                     {tab.label}
@@ -1666,48 +1676,31 @@ function KioskBoardView({ active, members, colors, isDark }: {
           above for the alignment fix). */}
       {byColumn.some(c => c.items.length > 0) && (
         <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          <PanelHead title="In flight" k={k} />
-          {/* ── Lane grid sizing ────────────────────────────────────────
-              The even-division fix documented above s.columns (flex:1 +
-              flexBasis:0 + minWidth:0) is intact and untouched — it is
-              still what makes the lanes an exact grid with no arithmetic to
-              drift. What it CANNOT do on its own is decide how many lanes
-              belong on one row: dividing a narrow portrait pane four ways
-              gives ~150px lanes, and a chore card with a category badge, a
-              two-line title and a coin chip does not survive that.
-              Live check: 4 lanes need ~260px each to stay readable, so the
-              row splits once the measured pane can't afford that.
-
-              Deliberately measured with onLayout rather than
-              Dimensions.get('window') — this pane sits inside the kiosk nav
-              rail, so window width overstates it by the rail's width, which
-              is exactly the stale-constant mistake the RAIL_AND_PADDING
-              note above records. `laneCols` only ever chooses how many
-              lanes share a row; within a row flexbox still divides exactly,
-              so no fractional width is ever computed or rounded here. */}
-          <View
-            style={s.columns}
-            onLayout={e => setBoardWidth(e.nativeEvent.layout.width)}
-          >
-            {byColumn.filter(c => c.items.length > 0).map(col => (
-              <View key={col.key} style={[s.col, laneBasis]}>
-                <View style={s.colHeadRow}>
-                  <Text style={[s.colHead, { color: k.textMuted }]} numberOfLines={1}>
-                    {col.label.toUpperCase()}
-                  </Text>
-                  <View style={[s.colCount, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-                    <Text style={[s.colCountText, { color: k.textMuted }]}>{col.items.length}</Text>
-                  </View>
-                </View>
-                <View style={s.cardGrid}>
-                  {col.items.map(q => (
-                    <View key={q.id} style={s.laneCard}>
-                      {renderQuestCard(q, { showDeclineReason: col.key === 'redo' })}
-                    </View>
-                  ))}
-                </View>
+          <PanelHead
+            title="In flight"
+            k={k}
+            right={<Chip label={`${byColumn.reduce((n, c) => n + c.items.length, 0)}`} accent={k.primary} isDark={kioskDark} k={k} filled />}
+          />
+          {/* Flat full-width vertical stack, matching the approved
+              reference mock's own "By Status • In Flight" zone exactly —
+              one card per row, no per-status lane columns at all. Replaces
+              the earlier multi-column lane grid (s.columns/s.col/
+              laneBasis's own width-measurement threshold logic), which
+              [live-reported, screenshot-confirmed] still produced narrow,
+              truncated side-by-side mini-panels once the two-column page
+              layout gave this zone less width than the threshold was
+              tuned against — the mock never wanted a multi-column split
+              here at all, so match that instead of re-tuning the
+              threshold. Each card still carries its own real status pill
+              (meta.label) in its header, so which lane a chore WOULD have
+              been in is still visible per-card, just not as a separate
+              grouped column. */}
+          <View style={s.gpGrid}>
+            {byColumn.flatMap(col => col.items.map(q => (
+              <View key={q.id} style={s.poolCard}>
+                {renderQuestCard(q, { showDeclineReason: col.key === 'redo' })}
               </View>
-            ))}
+            )))}
           </View>
         </WidgetCard>
       )}
@@ -2342,7 +2335,15 @@ const s = StyleSheet.create({
   jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
   // ── Filter bar ────────────────────────────────────────────────────────
-  filterBar: { gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md },
+  // One shared card (matching the approved reference mock's own
+  // bg-white/60 p-4 rounded-3xl bar) — member pills and status tabs both
+  // live inside it now, laid out as one wrapping row rather than two
+  // stacked rows on the bare page background.
+  filterBar: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+    gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md,
+    padding: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl, borderWidth: 1,
+  },
   aiBannerRow: { alignItems: 'flex-start', marginBottom: KIOSK_SPACE.md },
   // A horizontal ScrollView in a flex column stretches to fill leftover
   // vertical space unless flexGrow is pinned on the ScrollView ITSELF (not
@@ -2362,11 +2363,20 @@ const s = StyleSheet.create({
   filterChipText: { fontSize: KIOSK_TYPO.label, fontWeight: '800', flexShrink: 1 },
   // Wraps rather than scrolls — a fixed three-item set, and a three-pill
   // row that scrolls when it doesn't need to reads as broken.
-  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  // Matching the approved reference mock exactly: a gray pill CONTAINER
+  // (bg-stone-100, p-1.5, rounded-full) wrapping individual tabs — the
+  // active one is a plain white fill with no border, inactive ones are
+  // fully transparent with no border at all, not each pill bordered on
+  // its own the way the member-filter row above is.
+  statusRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    padding: 6, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
   statusTab: {
-    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min - 6,
     justifyContent: 'center', alignItems: 'center',
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
+    borderRadius: KIOSK_RADIUS.full,
   },
   statusTabText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
 
@@ -2383,12 +2393,6 @@ const s = StyleSheet.create({
   // the actual approved design besides.
   poolGrid: { gap: KIOSK_SPACE.md },
   poolCard: { width: '100%', borderRadius: KIOSK_RADIUS.xl },
-
-  // Lane column heads — a label plus a count chip, not a run-on string.
-  colHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
-  colCount: { minWidth: 32, paddingHorizontal: 8, paddingVertical: 2, borderRadius: KIOSK_RADIUS.full, borderWidth: 1, alignItems: 'center' },
-  colCountText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  laneCard: { width: '100%' },
 
   // One tidy inline row, not a hero panel — an empty state should be the
   // quietest thing on screen, not the largest.
@@ -2415,31 +2419,6 @@ const s = StyleSheet.create({
   // (live-reported: "too much height unnecessarily"). Columns now hug
   // their own content; the outer screen ScrollView (see the root return)
   // handles scrolling if a column's real content ever exceeds the screen.
-  // `gap` here MUST equal the COLUMN_GAP constant the cards-per-row
-  // estimate reads — both are KIOSK_SPACE.md; see the block comment on
-  // that constant for why a mismatch produced a visibly ragged grid.
-  // flexWrap added alongside the laneBasis math above: on a wide landscape
-  // kiosk nothing wraps (every lane clears the 260px floor and laneBasis
-  // stays null, so this is the exact single-row grid it always was), while
-  // a narrow portrait pane splits 4 lanes into 2x2 instead of squeezing
-  // four unreadable ~150px columns onto one line. alignItems:'flex-start'
-  // so a short second row doesn't stretch to the tall row's height.
-  columns: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md,
-    alignItems: 'flex-start',
-  },
-  // flex:1 + flexBasis:0 + minWidth:0 is what actually makes the four
-  // columns an even grid: flexBasis:0 means the free space is divided
-  // equally rather than distributed on top of differing content widths
-  // (flex:1 alone still lets a column with a long chore title claim more),
-  // and minWidth:0 lets a column shrink below its content's intrinsic
-  // width instead of forcing the row to overflow.
-  col: { flex: 1, flexBasis: 0, minWidth: 0 },
-  colHead: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.sm },
-  // Cards stack one per row within a lane; the lane itself is flex-sized.
-  // stretching a whole narrow column — live-reported: a single card sat
-  // in a huge empty column with nothing else to fill the space.
-  cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.lg, alignContent: 'flex-start' },
   // The always-visible header is two rows now — title line, then the
   // status/overdue/reward/history badge row. See renderQuestCard's own note
   // for why the badges are their own row rather than beside the title.
@@ -2472,6 +2451,13 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.sm, justifyContent: 'center', marginLeft: 'auto',
   },
   historyBtnText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  // Compact sizing for the primary action button now rendered ALWAYS
+  // VISIBLE in the card header (not just inside the expanded body) —
+  // matching the approved reference mock's own "Claim"/"Done ✓" buttons,
+  // which are never hidden behind an expand step. Shorter than the
+  // expanded body's own full-width action buttons since this sits inline
+  // beside the coin chip in a compact header row.
+  headerActionBtn: { paddingHorizontal: KIOSK_SPACE.md, minHeight: 34 },
   // Matches WidgetHeader's own headerIcon exactly (38x38, KIOSK_RADIUS.md)
   // — the same icon-chip size/shape Overview uses everywhere, rather than
   // this card's own smaller one-off badge. Visual-polish pass only.

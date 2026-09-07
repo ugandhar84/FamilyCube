@@ -410,7 +410,7 @@ export function KioskListRowAction({ k, label, color, onPress, disabled, accessi
  * was already consistent with Overview's).
  */
 export function KioskExpandableCard({
-  accentColor, k, isDark, onDoubleTap, header, children,
+  accentColor, k, isDark, onDoubleTap, header, children, tint, tintBorder,
 }: {
   accentColor: string;
   k: KioskColors;
@@ -418,6 +418,11 @@ export function KioskExpandableCard({
   onDoubleTap?: () => void;
   header: ReactNode;
   children: ReactNode;
+  /** Overrides the card's own background — e.g. a soft danger tint for an
+   *  overdue chore, so it reads as needing attention at a glance rather
+   *  than only via a small pill inside it. */
+  tint?: string;
+  tintBorder?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const lastTap = useRef(0);
@@ -445,8 +450,8 @@ export function KioskExpandableCard({
         // [live-reported: "no where real to mock"]. The accent still shows
         // via the left accent bar below, just without the glow.
         {
-          backgroundColor: k.card,
-          borderColor: k.cardBorder,
+          backgroundColor: tint ?? k.card,
+          borderColor: tintBorder ?? k.cardBorder,
         },
       ]}
     >

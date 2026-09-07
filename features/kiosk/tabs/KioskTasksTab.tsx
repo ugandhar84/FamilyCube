@@ -639,6 +639,13 @@ function KioskBoardView({ active, members, colors, isDark }: {
         k={k}
         isDark={kioskDark}
         onDoubleTap={actions.canEdit ? () => setEditingQuest(q) : undefined}
+        // Overdue chores get their own soft danger tint on the whole card,
+        // not just the small overdue pill inside it — makes the ones that
+        // need attention findable at a glance across a board of many rows
+        // [live-reported: "for overdue cards we can have different tinted
+        // card colors"].
+        tint={overdue ? k.dangerSoft : undefined}
+        tintBorder={overdue ? k.dangerEdge : undefined}
         header={
           <View style={s.cardHeader}>
             <View style={s.cardTopRow}>
@@ -704,80 +711,70 @@ function KioskBoardView({ active, members, colors, isDark }: {
                       </Text>
                     </View>
                   )}
+
+                  {/* History, in the same row as the date/status tags
+                      rather than stacked in its own row on the right
+                      [live-reported: "keep that in the row of the date"] —
+                      still icon-only, still opens the same activity-log
+                      sheet. */}
+                  <Pressable
+                    onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
+                    hitSlop={12}
+                    style={({ pressed }) => [
+                      s.historyBtn,
+                      { backgroundColor: k.well, borderColor: k.cardBorder, marginLeft: 0 },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`History for ${q.title}`}
+                    accessibilityHint="Shows everything that has happened on this chore"
+                  >
+                    <History size={13} color={k.textMuted} />
+                  </Pressable>
                 </View>
               </View>
 
-              {/* Coin chip + History, stacked to the right of title+tags —
-                  matching the mock's own right-aligned coin figure. Wash
-                  variant, not filled: k.gold is a dark saturated brown at
-                  full fill (reads like a button, not a reward chip) — the
-                  mock's own coin pill is a soft amber tint. */}
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {!isAdultAssignee && (
-                    <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
-                  )}
-                  {/* Primary action button ALWAYS visible in the collapsed
-                      header, matching the approved reference mock's own
-                      layout exactly (its "Claim"/"Done ✓" buttons are never
-                      hidden behind an expand step) — previously only
-                      rendered inside KioskExpandableCard's expanded body,
-                      requiring a tap to even see whether an action existed.
-                      Nested Pressable inside the header's own tap-to-toggle
-                      Pressable, same pattern the History button already
-                      uses (RN correctly routes a touch to the innermost
-                      matching target, and hitSlop keeps it reliably
-                      tappable without also toggling the card). */}
-                  {/* No Edit fallback here when btn is null (e.g. a parent
-                      viewing a kid's own pool/to-do chore, where
-                      canClaim/canSubmit are kid/teen-only) — the card's own
-                      double-tap already opens the same editor
-                      (onDoubleTap={actions.canEdit ? () => setEditingQuest(q)
-                      : undefined} below), so a second, redundant Edit
-                      button in the header isn't needed [live-reported:
-                      "remove edit button on the card as we have long press
-                      to edit"]. */}
-                  {!!btn && (
-                    <ActionButton
-                      label={btn.label} Icon={btn.Icon} accent={btn.accent}
-                      k={k} isDark={kioskDark} variant="solid"
-                      style={s.headerActionBtn}
-                      accessibilityHint={q.title}
-                      onPress={() => { registerActivity(); btn.action(); }}
-                    />
-                  )}
-                </View>
-                {/* ── History [GAP] ────────────────────────────────────
-                    The inline timeline below is the three-stamp summary;
-                    the phone ALSO puts a History icon in this same
-                    summary row (KidQuestCard.tsx:137-139) opening the
-                    full activity log — every edit, reassignment, redo
-                    and dispute, not just the three happy-path stamps.
-                    Kiosk had no route to that at all. Opens the
-                    kiosk-native sheet, which reads the SAME
-                    fetchActivityLog('chore', id) rows the phone sheet
-                    does. Sits inside KioskExpandableCard's own header
-                    Pressable, so it needs a real hitSlop to be reliably
-                    hit without toggling the card instead. Text label
-                    added [live-reported: "don't see view details"] —
-                    icon-only with no visible text didn't read as a
-                    details/history affordance while scanning a collapsed
-                    board. */}
-                <Pressable
-                  onPress={() => { registerActivity(); setHistoryTarget({ id: q.id, title: q.title }); }}
-                  hitSlop={12}
-                  style={({ pressed }) => [
-                    s.historyBtn,
-                    { backgroundColor: k.well, borderColor: k.cardBorder, marginLeft: 0 },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`History for ${q.title}`}
-                  accessibilityHint="Shows everything that has happened on this chore"
-                >
-                  <History size={13} color={k.textMuted} />
-                  <Text style={[s.historyBtnText, { color: k.textMuted }]}>Details</Text>
-                </Pressable>
+              {/* Coin chip + primary action, right-aligned beside
+                  title+tags — matching the mock's own right-aligned coin
+                  figure. Wash variant, not filled: k.gold is a dark
+                  saturated brown at full fill (reads like a button, not a
+                  reward chip) — the mock's own coin pill is a soft amber
+                  tint. History moved into the badge row above, alongside
+                  the date/status tags [live-reported: "keep that in the
+                  row of the date"]. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {!isAdultAssignee && (
+                  <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                )}
+                {/* Primary action button ALWAYS visible in the collapsed
+                    header, matching the approved reference mock's own
+                    layout exactly (its "Claim"/"Done ✓" buttons are never
+                    hidden behind an expand step) — previously only
+                    rendered inside KioskExpandableCard's expanded body,
+                    requiring a tap to even see whether an action existed.
+                    Nested Pressable inside the header's own tap-to-toggle
+                    Pressable, same pattern the History button uses (RN
+                    correctly routes a touch to the innermost matching
+                    target, and hitSlop keeps it reliably tappable without
+                    also toggling the card). */}
+                {/* No Edit fallback here when btn is null (e.g. a parent
+                    viewing a kid's own pool/to-do chore, where
+                    canClaim/canSubmit are kid/teen-only) — the card's own
+                    double-tap already opens the same editor
+                    (onDoubleTap={actions.canEdit ? () => setEditingQuest(q)
+                    : undefined} below), so a second, redundant Edit
+                    button in the header isn't needed [live-reported:
+                    "remove edit button on the card as we have long press
+                    to edit"]. */}
+                {!!btn && (
+                  <ActionButton
+                    label={btn.label} Icon={btn.Icon} accent={btn.accent}
+                    k={k} isDark={kioskDark} variant="solid"
+                    style={s.headerActionBtn}
+                    accessibilityHint={q.title}
+                    onPress={() => { registerActivity(); btn.action(); }}
+                  />
+                )}
               </View>
             </View>
           </View>
@@ -1001,6 +998,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           <Pressable
             onPress={() => setEditingQuest(q)}
             style={s.editLink}
+            hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={`Edit details for ${q.title}`}
           >
@@ -2474,12 +2472,14 @@ const s = StyleSheet.create({
   // [live-reported: "don't see view details"] — same real History icon,
   // now with a visible text label so it reads as a details affordance at
   // a glance instead of an unlabeled icon a scanning user could miss.
+  // Icon-only, square rather than a padded pill — no text label to give
+  // the pill shape a reason to stretch wide [live-reported: "we don't
+  // need to show the details label for the history - just icon is
+  // enough"].
   historyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    height: 30, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.sm, justifyContent: 'center', marginLeft: 'auto',
+    width: 30, height: 30, borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 'auto',
   },
-  historyBtnText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   // Compact sizing for the primary action button now rendered ALWAYS
   // VISIBLE in the card header (not just inside the expanded body) —
   // matching the approved reference mock's own "Claim"/"Done ✓" buttons,
@@ -2540,9 +2540,14 @@ const s = StyleSheet.create({
   cardMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
   // Was a bare text link with no padding — a ~14px-tall tap target on a
   // kiosk. Now a real padded control meeting the touch-size floor.
+  // hitSlop (not a box tall enough to meet KIOSK_HIT.min on its own) keeps
+  // this a compact text link that doesn't reserve full-button height for
+  // one line of text [live-reported: "we shouldn't be wasting the card
+  // space fit nicely with the content"] while still meeting the real
+  // touch-target floor via the padded tap area hitSlop adds around it.
   editLink: {
-    alignSelf: 'flex-start', marginBottom: KIOSK_SPACE.xs, minHeight: 44,
-    justifyContent: 'center', paddingHorizontal: KIOSK_SPACE.xs,
+    alignSelf: 'flex-start', marginBottom: KIOSK_SPACE.xs,
+    paddingVertical: 4,
   },
   editLinkText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   assigneeChip: {

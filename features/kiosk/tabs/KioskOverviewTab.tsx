@@ -92,16 +92,20 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions, eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
 import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirmedEvents';
+import { useUpcomingOpenEvents } from '@/features/hub/useUpcomingOpenEvents';
 import { classifyEventUrgency } from '@/features/hub/lib/classifyEventUrgency';
 import { dedupeRideSeries } from '@/features/hub/lib/dedupeRideSeries';
+import { isHomeLocation } from '@/features/hub/hubUtils';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
 import { HouseholdBacklogSection } from '@/features/hub/parent/HouseholdBacklogSection';
+import { ActionNeededSection } from '@/features/hub/parent/ActionNeededSection';
 import { PushbackSheet } from '@/features/hub/parent/PushbackSheet';
 import { DelegateSheet } from '@/features/hub/parent/DelegateSheet';
 import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
-import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime, localDateStr } from '@/lib/dates';
@@ -243,6 +247,13 @@ export function KioskOverviewTab({
   const isTeen = active.role === 'teen';
 
   const dayEvents = useEventStore(s => s.dayEvents);
+  // Real ParentView.tsx's own classifierSource fallback ("upcomingEvents
+  // may be briefly empty right after mount — fall back to ... `events`
+  // rather than showing an empty backlog for a moment") reads this same
+  // top-level `events` field, NOT dayEvents — dayEvents is today-only,
+  // events is the fuller loaded set. Matched exactly below rather than
+  // substituting the narrower dayEvents as an approximation.
+  const allEvents = useEventStore(s => s.events);
 
   // "Happening now" — the mockup's compact top strip (a live dot, an
   // uppercase eyebrow, the current/next event, a right-aligned time), NOT
@@ -270,9 +281,18 @@ export function KioskOverviewTab({
   // other eventStore action on this screen already uses.
   const updateEvent = useEventStore(s => s.updateEvent);
   const updateEventScoped = useEventStore(s => s.updateEventScoped);
+  // addEvent — only needed for ActionNeededSection's RideRequestCard/
+  // RideRequiredEventCard mounts below (real ParentView.tsx destructures
+  // the same addEvent off useEventStore() and threads it into the same two
+  // cards, for their own "assign + create a follow-up event" actions).
+  const addEvent = useEventStore(s => s.addEvent);
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const groceryItems = useGroceryStore(s => s.items);
   const buyGroceryItem = useGroceryStore(s => s.buyItem);
+  // addGroceryItem — only needed for approveItemsAndSync below (real
+  // ParentView.tsx's own wrapper around approveItems that also syncs each
+  // approved grocery/supplies item into the live grocery list).
+  const addGroceryItem = useGroceryStore(s => s.addItem);
   // Real phone behavior (features/grocery/GroceryScreen.tsx filters
   // !isBought the same way in every one of its own list views) — a bought
   // item leaves the active list entirely rather than staying visible
@@ -296,6 +316,9 @@ export function KioskOverviewTab({
   const kidRequests = useKidRequestStore(s => s.requests);
   const approveRequest = useKidRequestStore(s => s.approveRequest);
   const declineRequest = useKidRequestStore(s => s.declineRequest);
+  const approveItems = useKidRequestStore(s => s.approveItems);
+  const rejectItems = useKidRequestStore(s => s.rejectItems);
+  const toggleGPWelcome = useKidRequestStore(s => s.toggleGPWelcome);
 
   // ── Today's meals (real family_meals rows) ───────────────────────────
   // Was a single "Tonight's dinner" summary that, once fixed to be
@@ -349,11 +372,33 @@ export function KioskOverviewTab({
   // reason ParentView.tsx does — the two lists are partitioned by WHO's
   // assigned, not by occurrence, so each needs its own soonest-occurrence
   // representative.
+  //
+  // Real bug this closes: kiosk fed classifyEventUrgency ONLY
+  // usePendingUnconfirmedEvents' own narrow result — that hook's SQL
+  // requires a non-null helper/driver status, so a genuinely UNASSIGNED
+  // event (no helper/driver at all) could never appear in its result, and
+  // classifyEventUrgency's `unassigned` bucket was therefore permanently
+  // empty on kiosk. It also silently dropped every OTHER event in the real
+  // 14-day dispatch window that doesn't already carry a pending helper.
+  // Real ParentView.tsx's own classifierSource (its lines ~177-182) merges
+  // useUpcomingOpenEvents' live 14-day window with
+  // usePendingUnconfirmedEvents (deduped by id, so a far-future pending
+  // assignment outside the 14-day window still reaches the classifier) —
+  // reproduced verbatim here, feeding the SAME single classifyEventUrgency
+  // call the Pickup radar widget and Household Backlog mount both already
+  // read from below, not a second parallel derivation.
   const familyId = active.familyId ?? '';
   const { events: pendingUnconfirmed } = usePendingUnconfirmedEvents(familyId);
-  const { myPending: myRidesRaw, coParentPending: coParentRidesRaw } = useMemo(
-    () => classifyEventUrgency(pendingUnconfirmed, { id: active.id, name: active.name }, localDateStr()),
-    [pendingUnconfirmed, active.id, active.name],
+  const { events: backlogWindowEvents } = useUpcomingOpenEvents(familyId);
+  const classifierSource = useMemo(() => {
+    const base = backlogWindowEvents.length > 0 ? backlogWindowEvents : allEvents;
+    const seen = new Set(base.map(e => e.id));
+    const extra = pendingUnconfirmed.filter(e => !seen.has(e.id));
+    return extra.length > 0 ? [...base, ...extra] : base;
+  }, [backlogWindowEvents, allEvents, pendingUnconfirmed]);
+  const { unassigned, myPending: myRidesRaw, coParentPending: coParentRidesRaw } = useMemo(
+    () => classifyEventUrgency(classifierSource, { id: active.id, name: active.name }, localDateStr()),
+    [classifierSource, active.id, active.name],
   );
   const [myRides] = dedupeRideSeries(myRidesRaw);
   const [coParentRides] = dedupeRideSeries(coParentRidesRaw);
@@ -384,7 +429,7 @@ export function KioskOverviewTab({
   // set is not reusable across two structurally-identical-looking but
   // independently-partitioned lists.
   const {
-    parentAssignments, addParentQuest,
+    parentAssignments, addParentQuest, addChore,
     getParentQuestPool, getActiveAssignmentChoreIds,
     getMyDirectPending, getMyLockedItems, getMyOutgoingPending,
     completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing,
@@ -495,13 +540,26 @@ export function KioskOverviewTab({
   }, [quests, mealWeek]);
 
   // ── Unified approvals queue (parent-only) ────────────────────────────
-  // Three genuinely separate systems today — chore reviews, store
-  // redemptions, kid requests — each with their own screen and their own
-  // "pending" badge, nowhere merged into one ranked list a parent can clear
-  // from the Overview. Built here rather than reusing the now-unreachable
-  // KioskHubTab (its pendingReview/pendingRedemptions memos were the right
-  // reference for the underlying queries, but that tab never merged the
-  // three, and it's dead code besides).
+  // Chore reviews + store redemptions ONLY — two genuinely separate
+  // systems, each with their own screen and their own "pending" badge,
+  // merged into one ranked list a parent can clear from the Overview.
+  // Built here rather than reusing the now-unreachable KioskHubTab (its
+  // pendingReview/pendingRedemptions memos were the right reference for
+  // the underlying queries, but that tab never merged them, and it's dead
+  // code besides).
+  //
+  // Kid requests used to ALSO fold into this merged list as a third,
+  // generic approve/decline item — real-phone-corrected: ActionNeededSection
+  // below is the phone's own real, richer, type-specific surface for kid
+  // requests (InlineReplyCard/RideLateAlertCard/ServiceRequestCard/
+  // GroceryRequestCard/QuestProposalCard/CheckinRow, each rendering the
+  // request's actual type instead of one generic row) — the real Hub never
+  // double-shows a kid request in two places at once, so this widget's own
+  // merge no longer includes them; ActionNeededSection is now the sole
+  // surface for pending kid requests on kiosk, matching that real
+  // separation of concerns. See the pendingKidRequestsForAction derivation
+  // near the ActionNeededSection mount below for the (genuinely different,
+  // richer) real filter that replaces this widget's old simple one.
   const pendingChoreReviews = useMemo(
     () => quests.filter(q => q.status === 'pending_approval'),
     [quests],
@@ -509,12 +567,6 @@ export function KioskOverviewTab({
   const pendingRedemptions = useMemo(
     () => isParent ? redemptions.filter(r => r.status === 'pending') : [],
     [redemptions, isParent],
-  );
-  const pendingKidRequests = useMemo(
-    () => isParent
-      ? kidRequests.filter(r => r.status === 'pending' && (!r.toMemberId || r.toMemberId === active.id))
-      : [],
-    [kidRequests, isParent, active.id],
   );
   const approvals = useMemo(() => {
     if (!isParent) return [] as ApprovalItem[];
@@ -534,18 +586,12 @@ export function KioskOverviewTab({
         coins: -r.deductedCoins,
         urgencyRank: 1,
       })),
-      ...pendingKidRequests.map((req): ApprovalItem => ({
-        id: `request:${req.id}`, kind: 'request', sortAt: req.requestedAt,
-        title: req.detail, who: memberFirst(req.fromMemberId), emoji: memberEmoji(req.fromMemberId),
-        meta: REQUEST_META[req.type]?.label ?? 'Request',
-        urgencyRank: req.urgency === 'emergency' ? 4 : req.urgency === 'urgent' ? 3 : req.urgency === 'soon' ? 2 : 1,
-      })),
     ];
     // Most urgent first; within the same urgency, oldest first — the one
     // that's been waiting longest surfaces before a just-arrived duplicate
     // at the same rank, so nothing quietly ages at the bottom of its tier.
     return items.sort((a, b) => b.urgencyRank - a.urgencyRank || a.sortAt.localeCompare(b.sortAt));
-  }, [isParent, pendingChoreReviews, pendingRedemptions, pendingKidRequests, members]);
+  }, [isParent, pendingChoreReviews, pendingRedemptions, members]);
 
   // ── Chore counts for the hero line ───────────────────────────────────
   const openChores = useMemo(
@@ -560,6 +606,126 @@ export function KioskOverviewTab({
     }).length,
     [dayEvents],
   );
+
+  // ── Action Needed (parent-only) ───────────────────────────────────────
+  // Real ParentView.tsx's own "unassigned ride / kid-request-needing-a-
+  // reply" surface, kiosk had ZERO equivalent of before this. Reads the
+  // SAME `unassigned` bucket the Part 1 classifier fix above now correctly
+  // populates (previously always empty on kiosk — see that block's own
+  // comment). Split into two card-type buckets exactly as ParentView.tsx
+  // does (its lines ~190-219) — purely which CARD to render, not a second
+  // classification pass.
+  const pendingRequests = useMemo(
+    () => unassigned.filter(e => e.category === 'Ride' && !e.rideRequired),
+    [unassigned],
+  );
+  const pendingRideRequiredEvents = useMemo(
+    () => unassigned.filter(e =>
+      e.rideRequired
+      || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
+      || !!e.helperId || !!e.driverId
+    ),
+    [unassigned],
+  );
+  // Real ParentView.tsx's own pendingKidRequests filter (its lines
+  // ~340-375), reproduced here rather than reusing kiosk's OWN older,
+  // simpler pendingKidRequests filter (status==='pending' && toMemberId
+  // scoping only) that used to feed ParentApprovalsWidget above — that
+  // simpler filter is now retired from ParentApprovalsWidget entirely (see
+  // its own comment), and this real, richer filter takes over as the sole
+  // "what counts as a pending kid request" source of truth on kiosk,
+  // feeding ActionNeededSection below.
+  //
+  // One real clause intentionally NOT reproduced: ParentView.tsx also
+  // suppresses a ride-late request while a dispatch trip for that same kid
+  // is actively in progress (its own activeTrip/otherActiveTrips state).
+  // Kiosk's Overview has no dispatch-trip concept at all (onDispatchDirect
+  // and the trip state it tracks are ParentView-only, not mounted on
+  // kiosk anywhere) — there's nothing here to check that clause against,
+  // so it's left out rather than faked. Effect is narrow and fails safe:
+  // a ride-late alert that the phone would hide during an active dispatch
+  // could still show on kiosk in that one window; it never hides something
+  // the phone would show.
+  const pendingKidRequestsForAction = useMemo(() => {
+    if (!isParent) return [] as typeof kidRequests;
+    return kidRequests.filter(r => {
+      if (!['pending', 'partial'].includes(r.status)) return false;
+      if (r.status === 'partial' && (r.items?.length ?? 0) > 0 && !r.items!.some((it: any) => it.status === 'pending')) return false;
+      if (r.type === 'checkin') {
+        const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
+        if (ageHours > 2) return false;
+      }
+      if (r.type === 'delegation' && (r.items?.length ?? 0) === 0 && !r.detail.startsWith('💵')) return false;
+      return true;
+    });
+  }, [isParent, kidRequests]);
+  // Same real formula ParentView.tsx uses (its own actionCount, line
+  // ~389) — deduped-for-count ride buckets (the SAME dedupeRideSeries pass
+  // ActionNeededSection itself runs internally on these two lists, so this
+  // badge and the actual rendered card count can't structurally diverge)
+  // plus the kid-requests count. pending_approval chore reviews are
+  // deliberately excluded — ParentApprovalsWidget's own badge covers those.
+  const [dedupedPendingForCount, dedupedRideRequiredForCount] = dedupeRideSeries(pendingRequests, pendingRideRequiredEvents);
+  const actionCount = dedupedPendingForCount.length + dedupedRideRequiredForCount.length + pendingKidRequestsForAction.length;
+
+  // Three real ParentView.tsx-only handlers (never store actions
+  // themselves — local closures that file defines around real store
+  // actions, its own lines ~409-473), reproduced verbatim here for the
+  // same reason handlePullTask already was above: not exported from
+  // anywhere, so importing isn't possible, only re-deriving from the real
+  // store actions kiosk already has in scope.
+  const approveQuestProposalHandler = (req: any, finalCoins: number, schedule?: { dueDate: string; dueTime: string; alertCall: boolean; alertCallLeadMinutes: number }) => {
+    addChore({
+      title: req.detail,
+      categoryType: 'routine',
+      category: 'Other',
+      basePoints: 0,
+      coinsReward: finalCoins,
+      xpReward: 10,
+      status: 'todo',
+      isPool: true,
+      requiresPhotoProof: false,
+      recurrenceRule: { frequency: 'once' },
+      familyId: (active as any).familyId,
+      createdById: active.id,
+      dueDate: schedule?.dueDate ?? localDateStr(),
+      ...(schedule ? { dueTime: schedule.dueTime, alertCall: schedule.alertCall, alertCallLeadMinutes: schedule.alertCallLeadMinutes } : {}),
+    });
+    approveRequest(req.id, active.id, `Approved as a ${finalCoins}-coin chore!`);
+    try {
+      useChatStore.getState().sendMessage(req.fromMemberId, active.id,
+        `✅ Your chore idea "${req.detail}" was approved for ${finalCoins} coins — go ahead!`);
+    } catch (e) {
+      console.warn('[KioskOverviewTab] approveQuestProposal notification failed', e);
+    }
+  };
+  const declineQuestProposalHandler = (req: any, reason?: string) => {
+    declineRequest(req.id, active.id, reason);
+    try {
+      useChatStore.getState().sendMessage(req.fromMemberId, active.id,
+        `Your chore idea "${req.detail}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
+    } catch (e) {
+      console.warn('[KioskOverviewTab] declineQuestProposal notification failed', e);
+    }
+  };
+  const approveItemsAndSync = async (reqId: string, itemIds: string[], isSuppliesReq: boolean) => {
+    const req = kidRequests.find(r => r.id === reqId);
+    if (!req) return;
+    approveItems(reqId, itemIds, active.id);
+    if (req.items) {
+      const approvedItems = req.items.filter(it => itemIds.includes(it.id));
+      for (const item of approvedItems) {
+        await addGroceryItem({
+          familyId,
+          name: item.name,
+          quantity: item.qty || undefined,
+          category: isSuppliesReq ? 'Supplies' : (item.category ?? 'Other'),
+          storePreference: item.store,
+          addedBy: req.fromMemberId,
+        });
+      }
+    }
+  };
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -908,6 +1074,65 @@ export function KioskOverviewTab({
                 ParentApprovalsWidget above it; renders nothing when there's
                 no recently-approved chore to show (matches the phone). */}
             <KioskDisputeApprovalWidget active={active} members={members} k={k} isDark={isDark} />
+
+            {/* Action Needed — real ParentView.tsx's own "unassigned ride /
+                kid-request-needing-a-reply" surface, kiosk had ZERO
+                equivalent of before this (its own ParentApprovalsWidget
+                above only ever covered chore-review + redemption + a
+                generic plain-approve/decline kid-request row — not these
+                richer, type-specific cards). ActionNeededSection is the
+                same real, exported, self-contained component the phone
+                mounts — imported directly rather than reimplemented, same
+                reuse pattern as every other section on this screen.
+
+                awaitingApproval is a literal [] here, matching the REAL
+                phone exactly (ParentView.tsx itself passes awaitingApproval
+                ={[]} to its own mount — confirmed by reading that call site
+                — so QuestApprovalCard is dead code there too; chore-review
+                approvals live solely in ParentApprovalsWidget's own
+                pendingChoreReviews half). pendingKidRequestsForAction is
+                the real, richer filter (see its own derivation comment
+                above) that replaces ParentApprovalsWidget's old, simpler
+                pendingKidRequests — that widget's own merge no longer
+                includes kid requests at all (see its comment), so this
+                section is now the sole surface for them, matching the real
+                Hub's actual separation of concerns instead of kiosk's old
+                invented three-way merge.
+
+                Mounted directly before Household Backlog, matching
+                ParentView.tsx's own real render order (TodayView →
+                ActionNeededSection → GpCanHelpSection →
+                HouseholdBacklogSection — confirmed by reading that file's
+                JSX) — Action Needed ranks more urgent than Backlog on the
+                real phone's own page, so it surfaces first here too.
+
+                Same unpadded-WidgetCard treatment as the Backlog mount
+                right below: ActionNeededSection's own root is the identical
+                shape (a bare `paddingHorizontal: 16` View wrapping
+                SectionCard's borderless icon+title header — confirmed by
+                reading its actual render, not assumed from Backlog's own
+                comment) — a padded WidgetCard would double that inset, an
+                unwrapped mount would have no card chrome at all. */}
+            <WidgetCard k={k} isDark={isDark} padded={false}>
+              <View style={{ paddingVertical: KIOSK_SPACE.sm }}>
+                <ActionNeededSection
+                  actionCount={actionCount}
+                  pendingRequests={pendingRequests}
+                  pendingRideRequiredEvents={pendingRideRequiredEvents}
+                  awaitingApproval={[]}
+                  pendingKidRequests={pendingKidRequestsForAction}
+                  events={allEvents}
+                  active={active} members={members} allNames={members.map(m => m.name)}
+                  colors={colors} isDark={phoneDark}
+                  updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped}
+                  approveQuest={approveQuest} declineQuest={declineQuest}
+                  approveRequest={approveRequest} declineRequest={declineRequest}
+                  toggleGPWelcome={toggleGPWelcome}
+                  approveItemsAndSync={approveItemsAndSync} rejectItems={rejectItems}
+                  approveQuestProposal={approveQuestProposalHandler} declineQuestProposal={declineQuestProposalHandler}
+                />
+              </View>
+            </WidgetCard>
 
             {/* Household Backlog — real ParentView.tsx section kiosk was
                 missing almost entirely (only its "Rides needing attention"

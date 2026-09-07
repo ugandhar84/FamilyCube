@@ -81,7 +81,7 @@ import { useEventStore, estimateOccurrenceCount } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtTime, localDateStr, parseLocalDate } from '@/lib/dates';
-import { fmtDisplay, SUBJECTS } from '@/features/calendar/components/eventForm/types';
+import { fmtDisplay, SUBJECTS, APPT_TYPES, SPORT_TYPES } from '@/features/calendar/components/eventForm/types';
 import type { EventCategory } from '@/features/calendar/components/eventForm/types';
 import { deriveEventEditPermission } from '@/features/tasks/lib/deriveCardActions';
 import { RecurrenceControl } from '@/features/tasks/components/forms/RecurrenceControl';
@@ -172,11 +172,22 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
   const [category, setCategory] = useState<EventCategory>('Event');
   const [doctorName, setDoctorName] = useState('');
   const [clinicLocation, setClinicLocation] = useState('');
+  // Real EventFormModal.tsx fields [fresh-audit gap] — genuinely dead on
+  // the real phone too (its own submit() never references apptType/
+  // sportType/kitReminder/meetingUrl after capturing them), but the DB
+  // columns exist (confirmed live: sport_type/kit_reminder/meeting_url
+  // already existed before this session's own appt_type migration added
+  // the fourth) and now map through eventStore.ts, so this is the first
+  // real client to actually persist what these fields capture.
+  const [apptType, setApptType] = useState('');
   const [coachName, setCoachName] = useState('');
+  const [sportType, setSportType] = useState('');
+  const [kitReminder, setKitReminder] = useState(false);
   const [venueLocation, setVenueLocation] = useState('');
   const [subject, setSubject] = useState('');
   const [tutorName, setTutorName] = useState('');
   const [isOnline, setIsOnline] = useState(false);
+  const [meetingUrl, setMeetingUrl] = useState('');
   const [pickupLocation, setPickupLocation] = useState('');
   const [dropLocation, setDropLocation] = useState('');
   // Real family-member picker + free-text fallback backing "who's
@@ -232,10 +243,14 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       setCategory(cat);
       setDoctorName(cat === 'Medical' ? (event.doctorName ?? '') : '');
       setClinicLocation(cat === 'Medical' ? (event.location ?? '') : '');
+      setApptType(event.apptType ?? '');
       setCoachName(cat === 'Sports' ? (event.coachName ?? '') : '');
+      setSportType(event.sportType ?? '');
+      setKitReminder(event.kitReminder ?? false);
       setSubject(cat === 'Study' ? (event.subject ?? '') : '');
       const online = cat === 'Study' && event.location === 'Online — Zoom';
       setIsOnline(online);
+      setMeetingUrl(event.meetingUrl ?? '');
       setVenueLocation(
         cat === 'Sports' ? (event.location ?? '')
         : cat === 'Study' && !online ? (event.location ?? '')
@@ -379,7 +394,11 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       // 'private' : 'normal'`).
       privacyLevel: (isPrivateTag || category === 'Medical') ? 'private' : 'normal',
       doctorName: category === 'Medical' ? (doctorName.trim() || undefined) : event.doctorName,
+      apptType: category === 'Medical' ? (apptType || undefined) : event.apptType,
       coachName: category === 'Sports' ? (coachName.trim() || undefined) : event.coachName,
+      sportType: category === 'Sports' ? (sportType || undefined) : event.sportType,
+      kitReminder: category === 'Sports' ? kitReminder : (event.kitReminder ?? false),
+      meetingUrl: (category === 'Study' && isOnline) ? (meetingUrl.trim() || undefined) : event.meetingUrl,
       subject: category === 'Study' ? (subject || undefined) : event.subject,
       pickupLocation: category === 'Ride' ? (pickupLocation.trim() || undefined) : event.pickupLocation,
       dropLocation: category === 'Ride' ? (dropLocation.trim() || undefined) : event.dropLocation,
@@ -643,6 +662,14 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
           </View>
           {category === 'Medical' && (
             <View style={s.section}>
+              {/* Real EventFormModal.tsx field [fresh-audit gap] — see the
+                  apptType state's own comment above. */}
+              <KioskFieldLabel k={k}>APPOINTMENT TYPE</KioskFieldLabel>
+              <View style={s.pillWrap}>
+                {APPT_TYPES.map(t => (
+                  <KioskPill key={t} label={t} selected={apptType === t} onPress={() => setApptType(p => p === t ? '' : t)} accent={k.primary} k={k} />
+                ))}
+              </View>
               <KioskFieldLabel k={k}>DOCTOR</KioskFieldLabel>
               <TextInput value={doctorName} onChangeText={setDoctorName} style={input} placeholderTextColor={k.textFaint} placeholder="Who's the appointment with?" />
               <KioskFieldLabel k={k}>CLINIC</KioskFieldLabel>
@@ -656,6 +683,14 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
           )}
           {category === 'Sports' && (
             <View style={s.section}>
+              {/* Real EventFormModal.tsx field [fresh-audit gap] — see the
+                  sportType state's own comment above. */}
+              <KioskFieldLabel k={k}>SPORT</KioskFieldLabel>
+              <View style={s.pillWrap}>
+                {SPORT_TYPES.map(t => (
+                  <KioskPill key={t} label={t} selected={sportType === t} onPress={() => setSportType(p => p === t ? '' : t)} accent={k.primary} k={k} />
+                ))}
+              </View>
               <KioskFieldLabel k={k}>COACH</KioskFieldLabel>
               <TextInput value={coachName} onChangeText={setCoachName} style={input} placeholderTextColor={k.textFaint} placeholder="Coach's name" />
               <KioskFieldLabel k={k}>VENUE</KioskFieldLabel>
@@ -665,6 +700,10 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
                 helperId={helperId} handleHelperSelect={handleHelperSelect}
                 helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
               />
+              <View style={s.switchRow}>
+                <Text style={[s.switchLabel, { color: k.text }]}>🎒 Kit reminder</Text>
+                <Switch value={kitReminder} onValueChange={setKitReminder} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={kitReminder ? k.primary : k.textFaint} />
+              </View>
             </View>
           )}
           {category === 'Study' && (
@@ -681,7 +720,18 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
                 <Text style={[s.switchLabel, { color: k.text }]}>Online session</Text>
                 <Switch value={isOnline} onValueChange={setIsOnline} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={isOnline ? k.primary : k.textFaint} />
               </View>
-              {!isOnline && (
+              {isOnline ? (
+                <>
+                  {/* Real EventFormModal.tsx field [fresh-audit gap] — see
+                      the meetingUrl state's own comment above. */}
+                  <KioskFieldLabel k={k}>MEETING LINK</KioskFieldLabel>
+                  <TextInput
+                    value={meetingUrl} onChangeText={setMeetingUrl} style={input}
+                    placeholderTextColor={k.textFaint} placeholder="https://zoom.us/j/..."
+                    keyboardType="url" autoCapitalize="none"
+                  />
+                </>
+              ) : (
                 <>
                   <KioskFieldLabel k={k}>VENUE</KioskFieldLabel>
                   <LocationAutocompleteInput value={venueLocation} onChangeText={setVenueLocation} colors={colors} accent={k.primary} placeholder="Where's the session?" />

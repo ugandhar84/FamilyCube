@@ -76,6 +76,18 @@ export interface FamilyEvent {
   doctorName?: string;
   subject?: string;
   coachName?: string;
+  // Real EventFormModal.tsx UI fields that were captured in local form
+  // state and passed into CategoryFields.tsx but never actually
+  // persisted anywhere (confirmed: neither appears in that file's own
+  // submit()/eventInput construction) — a real, pre-existing gap on
+  // mobile itself, not something kiosk regressed. Added here so kiosk's
+  // own edit form can actually save what it captures; mobile's own form
+  // is unaffected (it still discards these on submit, unless/until that
+  // file is separately fixed to persist them too).
+  apptType?: string;
+  sportType?: string;
+  kitReminder?: boolean;
+  meetingUrl?: string;
   conflict?: boolean;
   // A parent dismissed a scheduling-conflict alert for this event as not
   // actually a problem (e.g. the same parent doing two nearby drop-offs
@@ -650,6 +662,10 @@ export function fromRow(row: any): FamilyEvent {
     doctorName:        row.doctor_name ?? undefined,
     subject:           row.subject ?? undefined,
     coachName:         row.coach_name ?? undefined,
+    apptType:          row.appt_type ?? undefined,
+    sportType:         row.sport_type ?? undefined,
+    kitReminder:       row.kit_reminder ?? undefined,
+    meetingUrl:        row.meeting_url ?? undefined,
     pickupLocation:    row.pickup_location ?? undefined,
     dropLocation:      row.drop_location ?? undefined,
     approvalPending:        row.approval_pending ?? false,
@@ -722,6 +738,10 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     doctor_name:           ev.doctorName ?? null,
     subject:               ev.subject ?? null,
     coach_name:            ev.coachName ?? null,
+    appt_type:             ev.apptType ?? null,
+    sport_type:            ev.sportType ?? null,
+    kit_reminder:          ev.kitReminder ?? false,
+    meeting_url:           ev.meetingUrl ?? null,
     pickup_location:       ev.pickupLocation ?? null,
     drop_location:         ev.dropLocation ?? null,
     approval_pending:           ev.approvalPending ?? false,
@@ -1048,6 +1068,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   helper: 'helper_name', helperId: 'helper_id', helperStatus: 'helper_status', helperRequestedBy: 'helper_requested_by',
   declineReason: 'helper_decline_reason', declinedBy: 'helper_declined_by',
   doctorName: 'doctor_name', subject: 'subject', coachName: 'coach_name',
+  apptType: 'appt_type', sportType: 'sport_type', kitReminder: 'kit_reminder', meetingUrl: 'meeting_url',
   pickupLocation: 'pickup_location', dropLocation: 'drop_location',
   approvalPending: 'approval_pending', conflict: 'conflict', conflictAcknowledged: 'conflict_acknowledged',
   tripAlertDismissedAt: 'trip_alert_dismissed_at', tripAlertDismissedBy: 'trip_alert_dismissed_by',

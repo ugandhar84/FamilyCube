@@ -68,6 +68,7 @@ import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
 import { KioskRedoReasonDialog } from '../components/KioskRedoReasonDialog';
+import { GpOfferReviewCard } from '@/features/hub/parent/GpOfferReviewCard';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
@@ -216,6 +217,16 @@ function KioskBoardView({ active, members, colors, isDark }: {
   const currencySymbol = useChoreStore(s => s.householdSettings.currencySymbol);
   const transactions = useChoreStore(s => s.transactions);
   const pendingCashOuts = useMemo(() => getPendingCashOuts(), [getPendingCashOuts, transactions]);
+  // GP-offer review [GAP — audit A9] — a chore at raw status
+  // 'gp_offer_pending' (a grandparent offered to handle an openToGP
+  // chore; nothing is assigned yet). deriveQuestActions.canApprove
+  // explicitly EXCLUDES these (its own gpOnlyReview guard) specifically
+  // so a normal Approve button never renders for them — this board never
+  // checked raw chore status at all, so such a chore would either
+  // silently vanish or render a dead Approve button.
+  const acceptGPOffer = useChoreStore(s => s.acceptGPOffer);
+  const declineGPOffer = useChoreStore(s => s.declineGPOffer);
+  const gpOffersPending = useMemo(() => chores.filter(c => c.status === 'gp_offer_pending'), [chores]);
   const [redoTargetBoard, setRedoTargetBoard] = useState<{ id: string; title: string } | null>(null);
   const isParent = active.role === 'parent';
   const isKidCreator = active.role === 'kid';
@@ -1460,6 +1471,33 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 </Well>
               );
             })}
+          </View>
+        </WidgetCard>
+      )}
+
+      {/* ── Zone 1.7: Grandparent offers [GAP — audit A9] ──────────────
+          GpOfferReviewCard is a real, standalone-exported component
+          (features/hub/parent/GpOfferReviewCard.tsx) — mounted directly,
+          not re-implemented, matching this file's own established
+          pattern of reusing real shared-phone components (SmartTaskComposer,
+          AddQuestModal) with the phone colors prop threaded through. */}
+      {isParent && gpOffersPending.length > 0 && (
+        <WidgetCard k={k} isDark={kioskDark} accent={k.sage} style={s.zone}>
+          <WidgetHeader
+            Icon={Sparkles} eyebrow="Waiting on you" title="Grandparent offers"
+            accent={k.sage} k={k} isDark={kioskDark}
+            right={<Chip label={`${gpOffersPending.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
+          />
+          <View style={s.gpGrid}>
+            {gpOffersPending.map(c => (
+              <View key={c.id} style={s.claimCard}>
+                <GpOfferReviewCard
+                  c={c} members={members} colors={colors} isDark={isDark} active={active}
+                  acceptGPOffer={(choreId, parentId) => { registerActivity(); acceptGPOffer(choreId, parentId); showToast('Offer accepted ✓'); }}
+                  declineGPOffer={(choreId, parentId, reason) => { registerActivity(); declineGPOffer(choreId, parentId, reason); }}
+                />
+              </View>
+            ))}
           </View>
         </WidgetCard>
       )}

@@ -11,6 +11,7 @@ import { SCard, CardHeader } from './shared';
 import { ParsedMedication, ParsedVaccine } from '../usePrescriptionScanner';
 
 import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, MedForm, VaxForm } from './health/types';
+import { useHealthAi } from './health/useHealthAi';
 import AddMedModal from './health/AddMedModal';
 import AddVaxModal from './health/AddVaxModal';
 import HealthAiAssistant from './health/HealthAiAssistant';
@@ -20,7 +21,7 @@ import HealthFilterSheet, { MedFilters, VaxFilters } from './health/HealthFilter
 import HealthRecordsList from './health/HealthRecordsList';
 import { showToast } from '@/components/AppToast';
 
-export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab }: {
+export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab, hideAiAssistant = false }: {
   colors: any; isDark: boolean; kidView?: boolean;
   // Controlled from HealthRecordsScreen.tsx — that screen owns ONE 3-way
   // switch (Medications/Immunizations/Records) instead of this component
@@ -29,6 +30,14 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // confusing/"worse design"). Falls back to local state so this component
   // still works if ever rendered without a controller.
   healthTab?: 'meds' | 'vax'; setHealthTab?: (t: 'meds' | 'vax') => void;
+  // Kiosk-only: KioskHealthAiWidget now mounts the same real useHealthAi
+  // hook as its own standalone CubeAI card above this component
+  // [live-reported: "i want to move the cube ai as a separate section
+  // similar to the chores"], so this component's own inline AI pill would
+  // otherwise double up with it. Defaults to false — mobile's own
+  // HealthRecordsScreen.tsx never passes this, so its behavior is
+  // completely unchanged.
+  hideAiAssistant?: boolean;
 }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
@@ -80,11 +89,11 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     search: '', members: [], status: 'pending', dueSoonDays: 30,
   });
 
-  // AI state
-  const [aiQuery, setAiQuery]   = useState('');
-  const [aiResult, setAiResult] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiShared, setAiShared]   = useState(false);
+  // AI state — extracted into useHealthAi so kiosk can mount the same
+  // real Q&A flow as its own standalone CubeAI card (KioskHealthAiWidget)
+  // instead of only ever rendering inline here.
+  const { aiQuery, setAiQuery, aiResult, setAiResult, aiLoading, aiShared, setAiShared, askAI, shareAiToChat } =
+    useHealthAi({ members, activeMemberId: activeMember?.id });
 
   // AI banner open state
   const [aiOpen, setAiOpen] = useState(false);
@@ -430,46 +439,6 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     return now > scheduled;
   };
 
-  const askAI = async (q?: string) => {
-    const text = (q ?? aiQuery).trim();
-    if (!text) return;
-    setAiLoading(true);
-    setAiResult('');
-    setAiShared(false);
-    setAiQuery('');
-    try {
-      const { data, error } = await supabase.functions.invoke('family-ai', {
-        body: {
-          action: 'health_qa',
-          question: text,
-          family: members.map(m => ({ name: m.name, role: m.role })),
-        },
-      });
-      if (error || !data?.result?.answer) {
-        // Fallback response
-        setAiResult(
-          `Health guidance for: "${text}"\n\n` +
-          `• This is general information only — not medical advice.\n` +
-          `• For children and seniors, consult your family doctor for personalized guidance.\n` +
-          `• In an emergency, call 911 or go to the nearest ER.\n\n` +
-          `Consider logging this question and the doctor's answer in your health notes.`
-        );
-      } else {
-        setAiResult(data.result.answer);
-      }
-    } catch {
-      setAiResult('Unable to reach Health AI right now. Please try again shortly.');
-    }
-    setAiLoading(false);
-  };
-
-  const shareAiToChat = () => {
-    if (!aiResult) return;
-    const msg = `🩺 *Health AI Response*\n\n${aiResult}\n\n⚠️ For informational use only — consult a healthcare provider for medical decisions.`;
-    useChatStore.getState().sendMessage('all', activeMember?.id ?? '', msg);
-    setAiShared(true);
-  };
-
   const openFilterSheet = () => {
     // Seed draft from current applied filters
     setDraftMed({ search: medSearch, members: medMemberFilter, categories: medCatFilter,
@@ -710,7 +679,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
           squeezed. Kids have no AI pill at all — search then just takes
           the full row on its own. ── */}
       <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: aiOpen ? 'wrap' : 'nowrap' }}>
-        {!kidView && (
+        {!kidView && !hideAiAssistant && (
           <View style={aiOpen ? { width: '100%' } : undefined}>
             <HealthAiAssistant
               colors={colors}

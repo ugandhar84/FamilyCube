@@ -54,7 +54,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } fr
 import { Heart, Pill, Syringe, FolderOpen } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote } from '../components/KioskOS';
 import { useKioskActivity } from '../KioskActivityContext';
 import { useUIStore } from '@/store/uiStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -65,6 +65,7 @@ import type { Medication, Vaccine } from '@/features/vault/tabs/health/types';
 import type { MedRecord } from '@/features/vault/records/types';
 import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
+import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
 
 type Segment = 'meds' | 'vax' | 'records';
 
@@ -149,6 +150,14 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       vaxQ.order('date', { ascending: false }),
       recordsQ ?? Promise.resolve({ data: [] as MedRecord[], error: null }),
     ]);
+    // Errors were previously swallowed silently — a failed fetch (RLS,
+    // network) looked identical to "no data" and just made the whole
+    // sidebar vanish with zero visible feedback [live-reported: "i didn't
+    // find these widgets"], making a real bug indistinguishable from an
+    // empty household.
+    if (medsRes.error) console.warn('[KioskHealthTab] sidebar meds fetch failed:', medsRes.error);
+    if (vaxRes.error) console.warn('[KioskHealthTab] sidebar vax fetch failed:', vaxRes.error);
+    if ('error' in recordsRes && recordsRes.error) console.warn('[KioskHealthTab] sidebar records fetch failed:', recordsRes.error);
     if (medsRes.data) setSideMeds(medsRes.data as Medication[]);
     if (vaxRes.data) setSideVaxes(vaxRes.data as Vaccine[]);
     if (recordsRes.data) setSideRecords(recordsRes.data as MedRecord[]);
@@ -235,8 +244,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     return flagged;
   }, [sideRecords, isKid]);
 
-  const hasSidebar = !isKid && (medsByMember.length > 0 || refillsSoon.length > 0 || vaxDueSoon.length > 0 || recordsNeedingAttention.length > 0);
-
   return (
     <View style={s.root}>
       <ScrollView
@@ -252,6 +259,18 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
 
         <View style={[s.twoColRow, isNarrowLayout && s.twoColRowStacked]}>
         <View style={[s.centerCol, isNarrowLayout && s.colFullWidth]}>
+
+        {/* CubeAI as its own separate section, matching Chores' own
+            KioskAiChoresEngine placement [live-reported: "i want to move
+            the cube ai as a separate section similar to the chores"] —
+            was only ever available inline inside HealthTabComp's meds/vax
+            view before this. Same !kidView gate HealthAiAssistant's own
+            phone mount uses (kids don't get the AI pill there either). */}
+        {!isKid && (
+          <View style={{ marginBottom: KIOSK_SPACE.md }}>
+            <KioskHealthAiWidget members={members} activeMemberId={activeMemberId ?? undefined} isDark={kioskDark} k={k} />
+          </View>
+        )}
 
         {SEGMENTS.length > 1 && (
           <View style={s.segmentRow} accessibilityRole="tablist">
@@ -296,7 +315,12 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             ? <RecordsTabComp colors={colors} isDark={isDark} />
             : <HealthTabComp colors={colors} isDark={isDark} kidView={isKid}
                 healthTab={tab === 'vax' ? 'vax' : 'meds'}
-                setHealthTab={t => setTab(t)} />}
+                setHealthTab={t => setTab(t)}
+                // KioskHealthAiWidget above already mounts the same real
+                // useHealthAi hook as its own standalone card — without
+                // this, the AI pill would render a second time inline
+                // here too.
+                hideAiAssistant={!isKid} />}
         </WidgetCard>
 
         </View>
@@ -305,13 +329,22 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             only, same as Chores' roster panels always were, and shown
             across all three segments since it summarizes the whole Health
             area rather than tracking whichever segment happens to be
-            selected. */}
-        {hasSidebar && (
+            selected.
+
+            Every panel now ALWAYS renders (with an EmptyNote fallback)
+            instead of disappearing when its own list is empty — a panel
+            that vanishes on zero results is indistinguishable from a
+            panel that's missing or broken [live-reported: "i didn't find
+            these widgets" — turned out to be exactly this: an empty
+            household made every panel silently disappear] → "on lets show
+            the widgets with empty component to avoid confusion". */}
+        {!isKid && (
           <View style={[s.sideCol, isNarrowLayout && s.colFullWidth]}>
-            {medsByMember.length > 0 && (
-              <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-                <PanelHead title="Who takes what" k={k} />
-                {medsByMember.map(({ member, meds, takenToday, overdue, overdueMeds }, i) => {
+            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+              <PanelHead title="Who takes what" k={k} />
+              {medsByMember.length === 0 ? (
+                <EmptyNote text="No active medications yet." k={k} />
+              ) : medsByMember.map(({ member, meds, takenToday, overdue, overdueMeds }, i) => {
                   const rs = assigneeStyle(member, colors, isDark);
                   const clear = overdue === 0 && takenToday === meds.length;
                   // Name the specific overdue medication instead of just a
@@ -348,106 +381,105 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     </View>
                   );
                 })}
-              </WidgetCard>
-            )}
+            </WidgetCard>
 
-            {refillsSoon.length > 0 && (
-              <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-                <PanelHead
-                  title="Refills due soon"
-                  k={k}
-                  right={<Chip label={`${refillsSoon.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
-                />
-                {refillsSoon.map(({ med, daysLeft }, i) => {
-                  const member = members.find(m => m.id === med.member_id);
-                  return (
-                    <View
-                      key={med.id}
-                      style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    >
-                      <View style={[s.jarAvatar, { backgroundColor: k.goldSoft, borderColor: k.goldEdge, borderWidth: 1.5 }]}>
-                        <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💊'}</Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{med.name}</Text>
-                        <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                          {member?.name.split(' ')[0] ?? 'Someone'}
-                        </Text>
-                      </View>
-                      <Text style={[s.jarAmt, { color: k.gold, fontSize: 13 }]} numberOfLines={1}>
-                        {daysLeft === 0 ? 'Today' : `${daysLeft}d`}
+            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+              <PanelHead
+                title="Refills due soon"
+                k={k}
+                right={refillsSoon.length > 0 ? <Chip label={`${refillsSoon.length}`} accent={k.gold} isDark={kioskDark} k={k} /> : undefined}
+              />
+              {refillsSoon.length === 0 ? (
+                <EmptyNote text="No refills due in the next 7 days." k={k} />
+              ) : refillsSoon.map(({ med, daysLeft }, i) => {
+                const member = members.find(m => m.id === med.member_id);
+                return (
+                  <View
+                    key={med.id}
+                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                  >
+                    <View style={[s.jarAvatar, { backgroundColor: k.goldSoft, borderColor: k.goldEdge, borderWidth: 1.5 }]}>
+                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💊'}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{med.name}</Text>
+                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                        {member?.name.split(' ')[0] ?? 'Someone'}
                       </Text>
                     </View>
-                  );
-                })}
-              </WidgetCard>
-            )}
+                    <Text style={[s.jarAmt, { color: k.gold, fontSize: 13 }]} numberOfLines={1}>
+                      {daysLeft === 0 ? 'Today' : `${daysLeft}d`}
+                    </Text>
+                  </View>
+                );
+              })}
+            </WidgetCard>
 
-            {vaxDueSoon.length > 0 && (
-              <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-                <PanelHead
-                  title="Immunizations due"
-                  k={k}
-                  right={<Chip label={`${vaxDueSoon.length}`} accent={k.sage} isDark={kioskDark} k={k} />}
-                />
-                {vaxDueSoon.map(({ vax, daysLeft }, i) => {
-                  const member = members.find(m => m.id === vax.member_id);
-                  return (
-                    <View
-                      key={vax.id}
-                      style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    >
-                      <View style={[s.jarAvatar, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, borderWidth: 1.5 }]}>
-                        <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💉'}</Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{vax.title}</Text>
-                        <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                          {member?.name.split(' ')[0] ?? 'Someone'}
-                        </Text>
-                      </View>
-                      <Text style={[s.jarAmt, { color: k.sage, fontSize: 13 }]} numberOfLines={1}>
-                        {daysLeft <= 0 ? 'Due' : `${daysLeft}d`}
+            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+              <PanelHead
+                title="Immunizations due"
+                k={k}
+                right={vaxDueSoon.length > 0 ? <Chip label={`${vaxDueSoon.length}`} accent={k.sage} isDark={kioskDark} k={k} /> : undefined}
+              />
+              {vaxDueSoon.length === 0 ? (
+                <EmptyNote text="No immunizations due in the next 30 days." k={k} />
+              ) : vaxDueSoon.map(({ vax, daysLeft }, i) => {
+                const member = members.find(m => m.id === vax.member_id);
+                return (
+                  <View
+                    key={vax.id}
+                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                  >
+                    <View style={[s.jarAvatar, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, borderWidth: 1.5 }]}>
+                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💉'}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{vax.title}</Text>
+                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                        {member?.name.split(' ')[0] ?? 'Someone'}
                       </Text>
                     </View>
-                  );
-                })}
-              </WidgetCard>
-            )}
+                    <Text style={[s.jarAmt, { color: k.sage, fontSize: 13 }]} numberOfLines={1}>
+                      {daysLeft <= 0 ? 'Due' : `${daysLeft}d`}
+                    </Text>
+                  </View>
+                );
+              })}
+            </WidgetCard>
 
-            {recordsNeedingAttention.length > 0 && (
-              <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-                <PanelHead
-                  title="Records needing attention"
-                  k={k}
-                  right={<Chip label={`${recordsNeedingAttention.length}`} accent={k.danger} isDark={kioskDark} k={k} />}
-                />
-                {recordsNeedingAttention.map(({ rec, urgency, followUps }, i) => {
-                  const member = members.find(m => m.id === rec.member_id);
-                  const urgent = urgency === 'urgent';
-                  return (
-                    <View
-                      key={rec.id}
-                      style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    >
-                      <View style={[s.jarAvatar, { backgroundColor: urgent ? k.dangerSoft : k.goldSoft, borderColor: urgent ? k.dangerEdge : k.goldEdge, borderWidth: 1.5 }]}>
-                        <Text style={{ fontSize: 15 }}>{member?.emoji ?? '📄'}</Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
-                        <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                          {member?.name.split(' ')[0] ?? 'Someone'}
-                          {urgency === 'urgent' ? ' · Urgent' : urgency === 'attention' ? ' · Needs review' : followUps > 0 ? ` · ${followUps} follow-up${followUps > 1 ? 's' : ''}` : ''}
-                        </Text>
-                      </View>
-                      <Text style={[s.jarAmt, { color: urgent ? k.danger : k.gold, fontSize: 13 }]} numberOfLines={1}>
-                        {urgent ? '!' : '·'}
+            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+              <PanelHead
+                title="Records needing attention"
+                k={k}
+                right={recordsNeedingAttention.length > 0 ? <Chip label={`${recordsNeedingAttention.length}`} accent={k.danger} isDark={kioskDark} k={k} /> : undefined}
+              />
+              {recordsNeedingAttention.length === 0 ? (
+                <EmptyNote text="Nothing flagged — everything's up to date." k={k} />
+              ) : recordsNeedingAttention.map(({ rec, urgency, followUps }, i) => {
+                const member = members.find(m => m.id === rec.member_id);
+                const urgent = urgency === 'urgent';
+                return (
+                  <View
+                    key={rec.id}
+                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                  >
+                    <View style={[s.jarAvatar, { backgroundColor: urgent ? k.dangerSoft : k.goldSoft, borderColor: urgent ? k.dangerEdge : k.goldEdge, borderWidth: 1.5 }]}>
+                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '📄'}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
+                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                        {member?.name.split(' ')[0] ?? 'Someone'}
+                        {urgency === 'urgent' ? ' · Urgent' : urgency === 'attention' ? ' · Needs review' : followUps > 0 ? ` · ${followUps} follow-up${followUps > 1 ? 's' : ''}` : ''}
                       </Text>
                     </View>
-                  );
-                })}
-              </WidgetCard>
-            )}
+                    <Text style={[s.jarAmt, { color: urgent ? k.danger : k.gold, fontSize: 13 }]} numberOfLines={1}>
+                      {urgent ? '!' : '·'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </WidgetCard>
           </View>
         )}
 

@@ -1027,7 +1027,40 @@ function KioskEventCard({
                 </View>
               )}
             </View>
-            <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{ev.title}</Text>
+            {/* Title + "For:" + driver/passenger, ONE row instead of the
+                title sitting alone with those clusters on their own row
+                below [live-reported: "title + For? + Driver assnee
+                passesngers"] — only the SIMPLE case (real assignees, not
+                the parent's assign picker, which still needs its own
+                full-width row of tappable targets below). Location stays
+                on its own line below (metaCombinedRow) since it's often
+                too long a string to share this line without crowding the
+                title out. */}
+            <View style={s.titleForRow}>
+              <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{ev.title}</Text>
+              {forLabel && allAssignees.length > 0 && (
+                <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
+                  {allAssignees.length > 1 ? (
+                    <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
+                  ) : (
+                    <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
+                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
+                  )}
+                </View>
+              )}
+              {!!helperName && (
+                helperMember ? (
+                  <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
+                    <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
+                      siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
+                  </View>
+                ) : (
+                  // A genuinely external non-member (a coach, a neighbour) has
+                  // no avatar to draw — same fallback the phone card takes.
+                  <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
+                )
+              )}
+            </View>
             {density === 'day' && !!ev.time && (
               <Text style={[s.cardTime, { color: k.textMuted }]} numberOfLines={1}>
                 {fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}
@@ -1082,55 +1115,16 @@ function KioskEventCard({
           </View>
         )}
 
-        {/* For/passenger + driver on ONE row when both are the simple case
-            (real assignees, not the parent's assign picker, which still
-            gets its own row below — a row of tappable avatar targets reads
-            better with room to breathe). Live-reported: each of these used
-            to be its own full-width row with a lot of empty space either
-            side of one small avatar+name cluster, on a card that already
-            has plenty of horizontal room — wasteful, not glanceable.
-            Phone: EventCard.tsx:579-613 (for/patient), :617-631 (driver). */}
-        {(forLabel && allAssignees.length > 0) || !!helperName ? (
+        {/* Location only, its own row — For/passenger and driver now share
+            the title's own row above (titleForRow) [live-reported: "title +
+            For? + Driver assnee passesngers" → "same row"]. Location stays
+            here since it's often too long a string to share the title's
+            line without crowding it out. */}
+        {!!ev.location && (
           <View style={s.metaCombinedRow}>
-            {forLabel && allAssignees.length > 0 && (
-              <View style={s.forCluster}>
-                <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{forLabel}:</Text>
-                {/* Live-requested: "on the cards we should remove the name
-                    where we literally have avatars" — the avatar (or ring
-                    of avatars) already identifies who, via FamilyAvatar's
-                    own initials/photo; a name label right next to it was
-                    redundant. accessibilityLabel below carries the name(s)
-                    for screen readers, so nothing is lost for that case. */}
-                {allAssignees.length > 1 ? (
-                  <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
-                    <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
-                  </View>
-                ) : (
-                  <View accessible accessibilityLabel={`${forLabel}: ${allAssignees[0].name}`}>
-                    <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
-                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
-                  </View>
-                )}
-              </View>
-            )}
-            {!!helperName && (
-              <View style={s.forCluster}>
-                <Text style={[s.metaLabel, { color: k.textFaint }]} numberOfLines={1}>{helperLabelFor(cat)}:</Text>
-                {helperMember ? (
-                  <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
-                    <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
-                      siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
-                  </View>
-                ) : (
-                  // A genuinely external non-member (a coach, a neighbour) has
-                  // no avatar to draw — same fallback the phone card takes.
-                  <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
-                )}
-              </View>
-            )}
-            {!!ev.location && <KioskLocationLink addr={ev.location} k={k} label="Location" />}
+            <KioskLocationLink addr={ev.location} k={k} label="Location" />
           </View>
-        ) : null}
+        )}
 
         {/* Unassigned event: either a parent's assign picker (its own row —
             a row of tappable targets needs its own room) or a plain dash.
@@ -2116,6 +2110,11 @@ const s = StyleSheet.create({
   // unweighted or 600 at most, panel-title 700 but 11px): the TITLE is the
   // one bold, prominent thing on the card; everything else steps down.
   cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', letterSpacing: -0.2 },
+  // Title + For/driver avatars, explicitly a ROW (not a column — the
+  // title's own text wraps vertically inside it via numberOfLines, but the
+  // row itself lays its children out side by side) [live-reported: "row
+  // not a column"].
+  titleForRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
   cardTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontVariant: ['tabular-nums'] },
   claimBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,

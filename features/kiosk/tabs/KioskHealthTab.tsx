@@ -72,7 +72,7 @@ import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
 import { KioskAddMedForm } from '../components/KioskAddMedForm';
 import { KioskAddVaxForm } from '../components/KioskAddVaxForm';
 import AddRecordModal from '@/features/vault/records/AddRecordModal';
-import ScanReviewSheet from '@/features/vault/tabs/health/ScanReviewSheet';
+import { KioskScanReviewForm } from '../components/KioskScanReviewForm';
 import { showToast } from '@/components/AppToast';
 import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
 
@@ -202,7 +202,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [showScanSheet, setShowScanSheet] = useState(false);
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
-  const [scanning, setScanning] = useState(false);
 
   // Every save function below is wrapped in try/catch so it can never
   // reject — AddMedModal/AddVaxModal/AddRecordModal/ScanReviewSheet all
@@ -638,7 +637,12 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         <AddRecordModal visible={showAddRecord} onClose={() => setShowAddRecord(false)}
           onSave={addRecord} colors={colors} isDark={isDark}
           members={members} activeMemberId={activeMemberId ?? null} />
-        <ScanReviewSheet
+        {/* Kiosk-native shell (KioskFormDrawer, matching
+            KioskReceiptScanSheet's own established pattern), same real
+            scan/save logic underneath [live-reported: "same for the
+            kiosik scan ai related model we should use" / "i asked like
+            receipt scan like model for the scan"]. */}
+        <KioskScanReviewForm
           visible={showScanSheet}
           scanMode={scanMode}
           activeMemberId={activeMember?.id ?? ''}
@@ -648,7 +652,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           onClose={() => setShowScanSheet(false)}
           onSaveMed={saveScannedMed}
           onSaveVax={saveScannedVax}
-          onScanningChange={setScanning}
         />
 
         </View>

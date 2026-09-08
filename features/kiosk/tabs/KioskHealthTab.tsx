@@ -51,20 +51,28 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
-import { Heart, Pill, Syringe, FolderOpen } from 'lucide-react-native';
+import { Heart, Pill, Syringe, FolderOpen, Plus, ScanLine } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote, ActionButton } from '../components/KioskOS';
 import { useKioskActivity } from '../KioskActivityContext';
 import { useUIStore } from '@/store/uiStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { supabase } from '@/lib/supabase';
 import { today as todayStr } from '@/features/vault/tabs/health/types';
-import type { Medication, Vaccine } from '@/features/vault/tabs/health/types';
+import type { Medication, Vaccine, MedForm, VaxForm } from '@/features/vault/tabs/health/types';
 import type { MedRecord } from '@/features/vault/records/types';
+import type { ParsedMedication, ParsedVaccine } from '@/features/vault/usePrescriptionScanner';
+import type { RecordForm } from '@/features/vault/records/types';
+import type * as DocumentPicker from 'expo-document-picker';
 import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
+import AddMedModal from '@/features/vault/tabs/health/AddMedModal';
+import AddVaxModal from '@/features/vault/tabs/health/AddVaxModal';
+import AddRecordModal from '@/features/vault/records/AddRecordModal';
+import ScanReviewSheet from '@/features/vault/tabs/health/ScanReviewSheet';
+import { showToast } from '@/components/AppToast';
 import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
 
 type Segment = 'meds' | 'vax' | 'records';
@@ -168,6 +176,150 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   // the sidebar reasonably fresh after a visit to the real add/edit modals
   // inside HealthTabComp without needing a second realtime channel.
   useEffect(() => { loadSidebar(); }, [tab, loadSidebar]);
+
+  // ── Add Med / Add Vax / Add Record / Scan Rx / Scan Vax ────────────────
+  // [live-reported: "there we should have add med add vax scan recod on
+  // the section heading right corner.. get all the add form from the
+  // mobile equevalent.." / "where are scan arx, ask ai scan vax etc in
+  // cubeai and other f[eatures]"] — HealthTabComp/RecordsTabComp still own
+  // their OWN full add/scan flows too (their own "+" affordances keep
+  // working exactly as before); this is a second, faster entry point right
+  // in the section heading, using the SAME real modal components and save
+  // logic HealthTab.tsx/RecordsTab.tsx call, not a re-implementation.
+  //
+  // The save functions below are the exact real insert logic ported
+  // verbatim from HealthTab.tsx's own addMed/addVax/saveScannedMed/
+  // saveScannedVax and RecordsTab.tsx's own addRecord (same tables, same
+  // columns, same defaults) — this file has no shared meds/vax/records
+  // store to call into (see the file header), so "reuse the real logic"
+  // here means "insert the identical row," same as the sidebar's own
+  // read-only fetch mirrors HealthTab.tsx's load(). After any save,
+  // loadSidebar() re-runs so the sidebar panels reflect the new row
+  // immediately rather than waiting for the next tab-change re-fetch.
+  const [showAddMed, setShowAddMed] = useState(false);
+  const [showAddVax, setShowAddVax] = useState(false);
+  const [showAddRecord, setShowAddRecord] = useState(false);
+  const [showScanSheet, setShowScanSheet] = useState(false);
+  const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
+  const [scanning, setScanning] = useState(false);
+
+  const addMed = useCallback(async (memberId: string, form: MedForm) => {
+    const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
+    const { data, error } = await supabase.from('family_medications').insert({
+      family_id: familyId,
+      member_id: memberId,
+      assigned_by: activeMember?.id ?? null,
+      name: form.name.trim(),
+      dosage: form.dosage.trim(),
+      dosage_unit: form.dosage_unit,
+      frequency: form.frequency,
+      frequency_times: times,
+      category: form.category,
+      prescribing_doctor: form.prescribing_doctor || null,
+      pharmacy: form.pharmacy || null,
+      refill_date: form.refill_date || null,
+      pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
+      instructions: form.instructions || null,
+      is_ongoing: !form.end_date,
+      is_active: true,
+      start_date: form.start_date || todayStr(),
+      end_date: form.end_date || null,
+      escalation_enabled: form.escalation_enabled,
+      escalation_after_min: parseInt(form.escalation_after_min) || 60,
+    }).select().single();
+    if (error) { console.warn('[KioskHealthTab] addMed failed:', error); return; }
+    if (data) { showToast('Medication added'); loadSidebar(); }
+  }, [familyId, activeMember?.id, loadSidebar]);
+
+  const addVax = useCallback(async (memberId: string, form: VaxForm) => {
+    const { data, error } = await supabase.from('family_vaccines').insert({
+      family_id: familyId,
+      member_id: memberId,
+      title: form.title.trim(),
+      vaccine_type: form.vaccine_type || null,
+      date: form.date,
+      next_due_date: form.next_due_date || null,
+      series_current: parseInt(form.series_current) || 1,
+      series_total: parseInt(form.series_total) || 1,
+      administered_by: form.administered_by || null,
+      location: form.location || null,
+      notes: form.notes || null,
+      done: false,
+    }).select().single();
+    if (error) { console.warn('[KioskHealthTab] addVax failed:', error); return; }
+    if (data) { showToast('Vaccine added'); loadSidebar(); }
+  }, [familyId, loadSidebar]);
+
+  const addRecord = useCallback(async (
+    memberId: string,
+    form: RecordForm,
+    file: DocumentPicker.DocumentPickerAsset | null,
+  ) => {
+    let file_path: string | null = null;
+    let file_name: string | null = null;
+    let file_size: number | null = null;
+    if (file) {
+      const ext = file.name.split('.').pop() ?? 'bin';
+      const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
+      const blob = await fetch(file.uri).then(r => r.blob());
+      const { data: up, error: upErr } = await supabase.storage
+        .from('medical-records')
+        .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+      if (!upErr && up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
+    }
+    const { data, error } = await supabase.from('medical_records').insert({
+      family_id: familyId, member_id: memberId,
+      uploaded_by: activeMember?.id ?? null,
+      title: form.title.trim(), tag: form.tag,
+      record_date: form.record_date, notes: form.notes.trim() || null,
+      file_path, file_name, file_size,
+      ai_analyzed: false, ai_tags: [],
+    }).select().single();
+    if (error) { console.warn('[KioskHealthTab] addRecord failed:', error); return; }
+    if (data) { showToast('Record added'); loadSidebar(); }
+  }, [familyId, activeMember?.id, loadSidebar]);
+
+  const saveScannedMed = useCallback(async (reviewMed: ParsedMedication, reviewMemberId: string) => {
+    const { data, error } = await supabase.from('family_medications').insert({
+      family_id: familyId,
+      member_id: reviewMemberId,
+      assigned_by: activeMember?.id ?? null,
+      name: reviewMed.name.trim() || 'Unknown medication',
+      dosage: reviewMed.dosage.trim(),
+      dosage_unit: 'mg',
+      frequency: reviewMed.frequency || 'As directed',
+      frequency_times: ['08:00'],
+      category: 'other',
+      prescribing_doctor: reviewMed.prescriber || null,
+      pharmacy: reviewMed.pharmacy || null,
+      instructions: reviewMed.instructions || null,
+      is_ongoing: !reviewMed.duration || reviewMed.duration.toLowerCase().includes('ongoing'),
+      is_active: true,
+      escalation_enabled: false,
+      escalation_after_min: 60,
+    }).select().single();
+    if (error) { console.warn('[KioskHealthTab] saveScannedMed failed:', error); return; }
+    if (data) { showToast('Medication added'); loadSidebar(); }
+  }, [familyId, activeMember?.id, loadSidebar]);
+
+  const saveScannedVax = useCallback(async (reviewVax: ParsedVaccine, reviewMemberId: string) => {
+    const { data, error } = await supabase.from('family_vaccines').insert({
+      family_id: familyId,
+      member_id: reviewMemberId,
+      title: reviewVax.vaccine_name.trim() || 'Unknown vaccine',
+      vaccine_type: reviewVax.manufacturer || null,
+      date: reviewVax.administered_date ?? todayStr(),
+      next_due_date: reviewVax.next_due_date ?? null,
+      series_current: reviewVax.dose_number ?? 1,
+      series_total: reviewVax.total_doses ?? 1,
+      administered_by: reviewVax.administered_by || null,
+      location: reviewVax.site || null,
+      notes: reviewVax.lot_number ? `Lot: ${reviewVax.lot_number}` : null,
+      done: true,
+    }).select().single();
+    if (error) { console.warn('[KioskHealthTab] saveScannedVax failed:', error); return; }
+    if (data) { showToast('Vaccine added'); loadSidebar(); }
+  }, [familyId, loadSidebar]);
 
   // "Who takes what" — one row per member with at least one active
   // medication, same jar-row pattern Chores' own "Who has what" uses.
@@ -310,6 +462,47 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           <WidgetHeader
             Icon={Heart} eyebrow="Household" title={current.label}
             accent={accent} k={k} isDark={kioskDark}
+            // Real "Add"/"Scan" entry points in the section heading's own
+            // right corner [live-reported: "there we should have add med
+            // add vax scan recod on the section heading right corner..
+            // get all the add form from the mobile equevalent.."] — the
+            // SAME real modals/save logic HealthTab.tsx/RecordsTab.tsx
+            // already use, mounted a second time here as a faster path;
+            // HealthTabComp/RecordsTabComp keep their own "+" affordances
+            // too. Parent-only, same as every other write action added to
+            // kiosk this session (e.g. Chores' "New Chore").
+            right={!isKid ? (
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {tab === 'meds' && (
+                  <ActionButton
+                    label="Scan" Icon={ScanLine} accent={k.danger}
+                    k={k} isDark={kioskDark} variant="soft"
+                    onPress={() => { registerActivity(); setScanMode('rx'); setShowScanSheet(true); }}
+                    accessibilityHint="Scan a prescription label with the camera"
+                  />
+                )}
+                {tab === 'vax' && (
+                  <ActionButton
+                    label="Scan" Icon={ScanLine} accent={k.sage}
+                    k={k} isDark={kioskDark} variant="soft"
+                    onPress={() => { registerActivity(); setScanMode('vaccine'); setShowScanSheet(true); }}
+                    accessibilityHint="Scan a vaccine record with the camera"
+                  />
+                )}
+                <ActionButton
+                  label={tab === 'meds' ? 'Add Med' : tab === 'vax' ? 'Add Vax' : 'Add Record'}
+                  Icon={Plus} accent={accent}
+                  k={k} isDark={kioskDark} variant="solid"
+                  onPress={() => {
+                    registerActivity();
+                    if (tab === 'meds') setShowAddMed(true);
+                    else if (tab === 'vax') setShowAddVax(true);
+                    else setShowAddRecord(true);
+                  }}
+                  accessibilityHint={`Opens the ${tab === 'meds' ? 'add medication' : tab === 'vax' ? 'add immunization' : 'add record'} form`}
+                />
+              </View>
+            ) : undefined}
           />
           {tab === 'records'
             ? <RecordsTabComp colors={colors} isDark={isDark} />
@@ -322,6 +515,29 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                 // here too.
                 hideAiAssistant={!isKid} />}
         </WidgetCard>
+
+        {/* Real mobile modals/scan sheet, mounted the same way HealthTab.tsx/
+            RecordsTab.tsx mount them — same components, same props, this
+            file's own state only controls visible/onClose. */}
+        <AddMedModal visible={showAddMed} onClose={() => setShowAddMed(false)}
+          onSave={addMed} members={members} colors={colors} isDark={isDark} />
+        <AddVaxModal visible={showAddVax} onClose={() => setShowAddVax(false)}
+          onSave={addVax} members={members} colors={colors} isDark={isDark} />
+        <AddRecordModal visible={showAddRecord} onClose={() => setShowAddRecord(false)}
+          onSave={addRecord} colors={colors} isDark={isDark}
+          members={members} activeMemberId={activeMemberId ?? null} />
+        <ScanReviewSheet
+          visible={showScanSheet}
+          scanMode={scanMode}
+          activeMemberId={activeMember?.id ?? ''}
+          members={members}
+          colors={colors}
+          isDark={isDark}
+          onClose={() => setShowScanSheet(false)}
+          onSaveMed={saveScannedMed}
+          onSaveVax={saveScannedVax}
+          onScanningChange={setScanning}
+        />
 
         </View>
 

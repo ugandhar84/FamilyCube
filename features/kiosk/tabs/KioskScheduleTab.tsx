@@ -2128,7 +2128,12 @@ const s = StyleSheet.create({
   // now, matching Overview/Meals' own discipline (jar-name 700, jar-meta
   // unweighted or 600 at most, panel-title 700 but 11px): the TITLE is the
   // one bold, prominent thing on the card; everything else steps down.
-  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', letterSpacing: -0.2, textAlign: 'left' },
+  // Matches Overview's own WidgetHeader title exactly (e.g. "Rides needing
+  // attention": subheading size, weight 800, -0.2 letter-spacing)
+  // [live-reported: "we must use the same subtitle typo here on the title
+  // like Rides needing attention in overview" → "not the status pills im
+  // saying the title itself"] — was weight 700.
+  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', letterSpacing: -0.2, textAlign: 'left' },
   // Title + For/driver avatars, explicitly a ROW (not a column — the
   // title's own text wraps vertically inside it via numberOfLines, but the
   // row itself lays its children out side by side) [live-reported: "row

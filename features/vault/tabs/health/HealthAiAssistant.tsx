@@ -14,7 +14,7 @@ export default function HealthAiAssistant({
   colors, isDark, aiOpen, toggleAiOpen, aiSlideAnim,
   scanning, onScanRx, onScanVaccine,
   aiQuery, setAiQuery, aiLoading, aiResult, setAiResult, aiShared, setAiShared,
-  askAI, shareAiToChat,
+  askAI, shareAiToChat, isSensitive = false,
 }: {
   colors: any;
   isDark: boolean;
@@ -33,6 +33,14 @@ export default function HealthAiAssistant({
   setAiShared: (v: boolean) => void;
   askAI: (q?: string) => void;
   shareAiToChat: () => void;
+  // useHealthAi's own sensitive-topic check (sexual health, self-harm,
+  // substance use, abuse — plain keyword match against the question+
+  // answer) [live-reported: "if the Ai is reponse is related to secual
+  // shouln't be enabling with the sharewith family in the reponse"].
+  // Optional/defaulted so any other caller of this component that hasn't
+  // been updated to pass it keeps today's exact behavior (Share always
+  // shown).
+  isSensitive?: boolean;
 }) {
   return (
     <View style={{ gap: 12 }}>
@@ -193,7 +201,15 @@ export default function HealthAiAssistant({
                         urgentColor={colors.danger} soonColor={colors.amber} />
                     </View>
                     <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
-                      {aiShared
+                      {isSensitive ? (
+                        // No share affordance at all for a sensitive-topic
+                        // answer — posting it to the whole family chat
+                        // (every member, including kids) isn't this
+                        // button's call to make.
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, fontStyle: 'italic' }}>
+                          Not shared automatically — this topic is private.
+                        </Text>
+                      ) : aiShared
                         ? <View style={[h.sharedBtn, { backgroundColor: colors.success }]}>
                             <Check size={13} color={colors.textInverse} />
                             <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Posted to Family Chat</Text>

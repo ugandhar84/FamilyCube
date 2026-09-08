@@ -92,7 +92,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // AI state — extracted into useHealthAi so kiosk can mount the same
   // real Q&A flow as its own standalone CubeAI card (KioskHealthAiWidget)
   // instead of only ever rendering inline here.
-  const { aiQuery, setAiQuery, aiResult, setAiResult, aiLoading, aiShared, setAiShared, askAI, shareAiToChat } =
+  const { aiQuery, setAiQuery, aiResult, setAiResult, aiLoading, aiShared, setAiShared, askAI, shareAiToChat, isSensitive } =
     useHealthAi({ members, activeMemberId: activeMember?.id });
 
   // AI banner open state
@@ -699,6 +699,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
               setAiShared={setAiShared}
               askAI={askAI}
               shareAiToChat={shareAiToChat}
+              isSensitive={isSensitive}
             />
           </View>
         )}

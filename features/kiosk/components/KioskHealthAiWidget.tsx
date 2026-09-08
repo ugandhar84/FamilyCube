@@ -21,7 +21,7 @@
  */
 import { useState } from 'react';
 import { View, Text, Pressable, TextInput, ActivityIndicator } from 'react-native';
-import { Bot, Send, Share2 } from 'lucide-react-native';
+import { Bot, Send, Share2, X } from 'lucide-react-native';
 import { WidgetCard, ActionButton } from './KioskOS';
 import { KIOSK_RADIUS, KIOSK_SPACE, KIOSK_TYPO } from '../kioskTheme';
 import type { KioskColors } from '../kioskPalette';
@@ -34,7 +34,7 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
   isDark: boolean;
   k: KioskColors;
 }) {
-  const { aiQuery, setAiQuery, aiResult, aiLoading, aiShared, askAI, shareAiToChat } =
+  const { aiQuery, setAiQuery, aiResult, aiLoading, aiShared, askAI, shareAiToChat, dismiss, isSensitive } =
     useHealthAi({ members, activeMemberId });
   const [open, setOpen] = useState(false);
 
@@ -109,18 +109,47 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
 
             {!!aiResult && !aiLoading && (
               <View style={{ borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, borderColor: k.cardBorder, backgroundColor: k.well, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm }}>
-                <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.text, lineHeight: KIOSK_TYPO.caption * 1.4 }}>{aiResult}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.xs }}>
+                  <Text style={{ flex: 1, fontSize: KIOSK_TYPO.caption, color: k.text, lineHeight: KIOSK_TYPO.caption * 1.4 }}>{aiResult}</Text>
+                  {/* Clear/dismiss the answer — mobile's own
+                      HealthAiAssistant.tsx has this exact same reset
+                      behind its own X button [live-reported: "we should
+                      have clear /dismiss button to clear the ai
+                      reponse"]. */}
+                  <Pressable
+                    onPress={dismiss}
+                    hitSlop={8}
+                    style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: k.card, alignItems: 'center', justifyContent: 'center' }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear this answer"
+                  >
+                    <X size={12} color={k.textMuted} />
+                  </Pressable>
+                </View>
                 <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint, fontStyle: 'italic' }}>
                   General information only — not medical advice.
                 </Text>
-                <ActionButton
-                  label={aiShared ? 'Shared to Family Chat ✓' : 'Share to Family Chat'}
-                  Icon={Share2} accent={k.sage}
-                  k={k} isDark={isDark} variant="soft"
-                  disabled={aiShared}
-                  onPress={shareAiToChat}
-                  accessibilityHint="Posts this answer to the family chat"
-                />
+                {isSensitive ? (
+                  // No share affordance at all for a sensitive-topic
+                  // answer (sexual health, self-harm, substance use,
+                  // abuse) — posting it to the whole family chat, every
+                  // member including kids, isn't this button's call to
+                  // make [live-reported: "if the Ai is reponse is related
+                  // to secual shouln't be enabling with the sharewith
+                  // family in the reponse"].
+                  <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textMuted, fontStyle: 'italic' }}>
+                    Not shared automatically — this topic is private.
+                  </Text>
+                ) : (
+                  <ActionButton
+                    label={aiShared ? 'Shared to Family Chat ✓' : 'Share to Family Chat'}
+                    Icon={Share2} accent={k.sage}
+                    k={k} isDark={isDark} variant="soft"
+                    disabled={aiShared}
+                    onPress={shareAiToChat}
+                    accessibilityHint="Posts this answer to the family chat"
+                  />
+                )}
               </View>
             )}
           </View>

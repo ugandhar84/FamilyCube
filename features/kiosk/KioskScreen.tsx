@@ -51,6 +51,7 @@ import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityCon
 import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { KioskAskFamDrawer } from './components/KioskAskFamDrawer';
 import { ParentStatsColumn } from './components/ParentStatsColumn';
+import { KioskKidTeenStatsColumn } from './components/KioskKidTeenStatsColumn';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { useKioskFonts } from './kioskFonts';
@@ -258,9 +259,17 @@ export default function KioskScreen() {
               across every tab, not just disappear the moment a parent
               navigates away from Overview (the earlier version's actual
               bug: hiding this rail only on Overview meant every OTHER tab
-              still forced a real "leave the shell" navigation). Every
-              other role keeps this rail exactly as it always has. */}
-          {!isParent && (
+              still forced a real "leave the shell" navigation). Kid/teen
+              get the identical treatment now (KioskKidTeenStatsColumn,
+              mounted just below) — live-requested: "did we miss that
+              leftside colum strip for the profile and the tab navigations
+              similar to the parent?" / "we should use the parent style tab
+              navigation and the left side column" / "i dont want nav
+              rail". Only senior keeps this plain rail, matching that
+              role's own deliberately simpler "one-decision-at-a-time"
+              design (see KioskOverviewTab.tsx's own header comment on
+              why senior stays unlike kid/teen/parent). */}
+          {isSenior && (
           <View style={[s.rail, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
             <ScrollView
               contentContainerStyle={s.railGroup}
@@ -337,6 +346,19 @@ export default function KioskScreen() {
           {isParent && (
             <ParentStatsColumn
               active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
+              onNavigate={setTab}
+              onAskFam={() => setAskFamOpen(true)}
+            />
+          )}
+
+          {/* Kid/teen's own persistent shell — identical relationship to
+              the rail above as ParentStatsColumn: replaces it on every
+              tab, mounted once regardless of which tab is active. Senior
+              is unaffected (still isSenior-gated onto the plain rail
+              above). */}
+          {(isTeen || isKidRole) && (
+            <KioskKidTeenStatsColumn
+              active={active} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
               onAskFam={() => setAskFamOpen(true)}
             />

@@ -28,8 +28,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
-  CalendarClock, CheckSquare, Sparkles, RotateCcw,
-  Coins, CheckCircle2, Camera, type LucideIcon,
+  CalendarClock, CheckSquare, RotateCcw,
+  Coins, CheckCircle2, Camera, ClipboardList, Clock3, XCircle, Check, ChevronRight, type LucideIcon,
 } from 'lucide-react-native';
 
 import type { FamilyMember } from '@/store/familyStore';
@@ -38,6 +38,9 @@ import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { useRewardStore } from '@/store/rewardStore';
+import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
+import { KidRequestsSheet } from './KioskKidQuickActions';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
@@ -45,10 +48,9 @@ import { showToast } from '@/components/AppToast';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { useKioskFonts, KIOSK_FONT } from '../kioskFonts';
-import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn, questTimeline, kioskQuestMeta } from '../kidQuestLanes';
-import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
+import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
+import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
-import { CollapsibleQuestCard } from '@/features/quests/components/CollapsibleQuestCard';
 
 // ════════════════════════════════════════════════════════════════════════
 // My Schedule — today, resting on "now"
@@ -293,16 +295,12 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   // and the board being the only place with buttons. See
   // KioskTasksTab.tsx's own primaryAction for the source this mirrors.
   //
-  // The LABELS now match the phone card's wording rather than kiosk's own
-  // terse verbs, since matching that card is the point: its submit button
-  // reads "Mark Done → Get Paid" (or "Take Photo to Get Paid" when the
-  // chore requires proof), and its redo button "Revise & Resubmit"
-  // (KidQuestCard.tsx:263-306). Kiosk drops the phone's own leading glyph
-  // (✓/↩) on both — each button already renders a real Icon component
-  // right next to the label, so a second, textual checkmark/arrow read as
-  // a duplicate. The ACTIONS are unchanged — the same claimQuest /
-  // submitQuest / approveQuest from choreAdapter this widget already
-  // wired.
+  // Labels match the reference mock's own simple wording ("Mark Done",
+  // not the phone card's "Mark Done → Get Paid" — live-requested: "no
+  // need to -> getpaind - we can just put mark done label"). The ACTIONS
+  // are unchanged — the same claimQuest / submitQuest / approveQuest from
+  // choreAdapter this widget already wired; only the button text is
+  // simplified to match the mock's visual reference.
   //
   // Photo-required chores are the one place kiosk can't match the phone:
   // the phone opens SubmitProofSheet (a camera capture) before paying out.
@@ -327,12 +325,12 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
     if (actions.canSubmit) {
       if (q.photoRequired) {
         return {
-          label: 'Take Photo to Get Paid', accent: k.sage, Icon: Camera,
+          label: 'Take Photo', accent: k.sage, Icon: Camera,
           action: () => { onOpenTasks(); },
         };
       }
       return {
-        label: 'Mark Done → Get Paid', accent: k.sage, Icon: CheckCircle2,
+        label: 'Mark Done', accent: k.sage, Icon: CheckCircle2,
         action: () => { submitQuest(q.id, undefined, active.id); showToast('Submitted for review ✓'); },
       };
     }
@@ -371,12 +369,14 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
 
   return (
     <WidgetCard k={k} isDark={isDark} style={style}>
-      <WidgetHeader
-        Icon={CheckSquare} eyebrow="Chores" title="My chores"
-        accent={k.gold} k={k} isDark={isDark}
-        right={totalMine > 0
-          ? <Chip label={`${totalMine} open`} accent={k.gold} isDark={isDark} k={k} />
-          : undefined}
+      {/* Mock's own flat "MY TASKS ... N open" heading — PanelHead (same
+          uppercase/tracked style FamilySchedulePanel/My Balance/My
+          Requests already use in this redesign), not WidgetHeader's icon-
+          chip shape [live-requested: "TASKs seticon should match to the
+          100% mock styles and headings etc.."]. */}
+      <PanelHead
+        title="My tasks" k={k}
+        right={<Text style={[s.panelOpenCount, { color: k.textFaint }]} numberOfLines={1}>{totalMine} open</Text>}
       />
 
       {/* Status TABS. Used to be a plain four-up display strip; each cell
@@ -397,10 +397,20 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
               onPress={() => setActiveBucket(b.key)}
               style={[
                 s.statusCell,
+                // Mock's own .chip.active convention: a selected filter
+                // fills solid with the page's own text/ink colors, not an
+                // accent tint — every OTHER chip (selected or not) stays
+                // the same neutral surface, only the count/label color
+                // carries the per-status accent. Matches the mock's real
+                // chip look while keeping this strip's own count-forward
+                // 4-cell layout (a deliberate, already-tuned kiosk-scale
+                // touch target, not the mock's small text pill)
+                // [live-requested: "all the cards and the action styles
+                // should match the mock"].
                 {
-                  backgroundColor: isSelected ? accent + (isDark ? '33' : '22') : on ? accent + (isDark ? '1F' : '14') : k.well,
-                  borderColor: isSelected ? accent : on ? accent + (isDark ? '45' : '38') : k.cardBorder,
-                  borderWidth: isSelected ? 2 : 1,
+                  backgroundColor: isSelected ? k.text : k.well,
+                  borderColor: isSelected ? k.text : on ? accent + (isDark ? '45' : '38') : k.cardBorder,
+                  borderWidth: 1,
                 },
               ]}
               accessibilityRole="tab"
@@ -408,13 +418,13 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
               accessibilityLabel={`${b.items.length} ${b.label}`}
             >
               <Text
-                style={[s.statusCount, { color: on || isSelected ? accent : k.textFaint }]}
+                style={[s.statusCount, { color: isSelected ? k.card : on ? accent : k.textFaint }]}
                 numberOfLines={1}
               >
                 {b.items.length}
               </Text>
               <Text
-                style={[s.statusLabel, { color: on || isSelected ? accent : k.textFaint }]}
+                style={[s.statusLabel, { color: isSelected ? k.card : on ? accent : k.textFaint }]}
                 numberOfLines={1}
               >
                 {STATUS_STRIP_SHORT_LABEL[b.key] ?? b.label}
@@ -424,114 +434,46 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
         })}
       </View>
 
-      {/* The selected tab's chores. Live-reported: an inner ScrollView here
-          (and, on retry, a FlatList with nestedScrollEnabled) didn't
-          reliably claim the scroll gesture from the Overview's own outer
-          ScrollView (KioskOverviewTab.tsx) — scrolling here scrolled the
-          whole Hub instead. Nested vertical scroll-in-scroll is unreliable
-          on RN regardless of which list component or Android-only prop is
-          used, so this sidesteps it entirely: a flat, non-scrolling list
-          capped to 3 rows (matching "Up for grabs" below, which already
-          uses the same cap-and-link pattern for its own overflow), with a
-          "See N more" link into the real Tasks tab — which has its own,
-          legitimately scrollable, non-nested board — instead of trying to
-          scroll inside this card at all. Each visible row still gets the
-          SAME primary action button the Chores board shows (Claim /
-          Submit / Resubmit / Approve, via the same deriveQuestActions gate
-          just above) — this was previously read-only title+coins with no
-          way to act without switching tabs. */}
+      {/* The selected tab's chores. Was a non-scrolling 3-row cap + "See N
+          more" link — this widget used to live in the Overview's own
+          flex-wrap deck, where an inner ScrollView never reliably claimed
+          the scroll gesture from that screen's outer ScrollView. Now
+          mounted directly in centerCol instead (same real column
+          FamilySchedulePanel/"Meals this week"/"Grocery list" already
+          live in), so it uses the identical proven pattern those already
+          use successfully on this exact screen: a bounded-height
+          ScrollView + nestedScrollEnabled, 5 rows visible by default, the
+          rest reachable by scrolling instead of a "See more" link
+          [live-requested: "match with mock my taks and all make them
+          scollable - 5 items are default show"]. Every visible row still
+          gets the SAME primary action button the Chores board shows
+          (Claim / Submit / Resubmit / Approve, via the same
+          deriveQuestActions gate just above). */}
       {selected && (
         selected.items.length === 0 ? (
           <EmptyNote text={`Nothing in ${selected.label} right now.`} k={k} style={{ marginBottom: KIOSK_SPACE.sm }} />
         ) : (
-          <View style={{ gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm }}>
-            {selected.items.slice(0, 3).map(q => (
-              <ChoreCardRow
-                key={q.id}
-                q={q}
-                k={k}
-                isDark={isDark}
-                btn={primaryAction(q)}
-                showDecline={canDecline(q)}
-                onDecline={() => setDeclineTarget({ id: q.id, title: q.title })}
-              />
-            ))}
-            {selected.items.length > 3 && (
-              <Pressable onPress={onOpenTasks} accessibilityRole="button" accessibilityLabel={`See ${selected.items.length - 3} more in ${selected.label}`}>
-                <Text style={[s.poolMore, { color: accentFor(selected.key) }]} numberOfLines={1}>
-                  See {selected.items.length - 3} more in {selected.label} →
-                </Text>
-              </Pressable>
-            )}
-          </View>
+          <ScrollView style={s.choreListScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            <View style={{ gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm }}>
+              {selected.items.map(q => (
+                <ChoreCardRow
+                  key={q.id}
+                  q={q}
+                  k={k}
+                  isDark={isDark}
+                  btn={primaryAction(q)}
+                  showDecline={canDecline(q)}
+                  onDecline={() => setDeclineTarget({ id: q.id, title: q.title })}
+                />
+              ))}
+            </View>
+          </ScrollView>
         )
       )}
 
-      {/* Up for grabs. Kept to the top three so this stays a glance — the
-          Chores tab is one tap away for the rest, and the count on the
-          header says how many there really are. */}
-      <View style={s.poolHead}>
-        <Sparkles size={16} color={k.purple} />
-        <Text style={[s.poolHeadText, { color: k.purple }]} numberOfLines={1}>Up for grabs</Text>
-        <Chip
-          label={`${pool.length}`}
-          accent={pool.length > 0 ? k.purple : k.textFaint}
-          isDark={isDark} k={k}
-        />
-      </View>
-
-      {pool.length === 0 ? (
-        <EmptyNote text="No bounty chores right now." k={k} />
-      ) : (
-        <View style={{ gap: KIOSK_SPACE.xs }}>
-          {/* Claim right here — the whole point of surfacing "up for grabs"
-              on a shared kiosk widget is that a kid standing at the counter
-              shouldn't have to switch to the Chores tab just to take one.
-              Same real action the board itself uses: claimQuest(id,
-              active.id), the exact race-safe claim every other kiosk claim
-              button calls — a sibling claiming the same bounty a moment
-              earlier is resolved store-side, not re-derived here. */}
-          {pool.slice(0, 3).map(q => (
-            <Well key={q.id} k={k} accent={k.purple} style={s.poolRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.poolTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
-                {q.coins > 0 && (
-                  <Text style={[s.poolCoins, { color: k.gold }]} numberOfLines={1}>
-                    {q.coins}
-                    <Text style={[s.poolCoinsUnit, { color: k.textMuted }]}> coins</Text>
-                  </Text>
-                )}
-              </View>
-              <Pressable
-                onPress={() => {
-                  claimQuest(q.id, active.id);
-                  showToast(`Claimed "${q.title}" ✓`);
-                }}
-                style={({ pressed }) => [
-                  s.poolClaimBtn,
-                  { backgroundColor: k.purple, opacity: pressed ? 0.75 : 1 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`Claim ${q.title}`}
-                accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
-              >
-                <Text style={[s.poolClaimText, { color: kioskOnAccent(k, k.purple) }]} numberOfLines={1}>
-                  Claim
-                </Text>
-              </Pressable>
-            </Well>
-          ))}
-          {pool.length > 3 && (
-            <Text style={[s.poolMore, { color: k.textFaint }]} numberOfLines={1}>
-              and {pool.length - 3} more up for grabs
-            </Text>
-          )}
-        </View>
-      )}
-
       <ActionButton
-        label={pool.length > 3 ? 'See all bounty chores' : 'Open my chores'}
-        accent={pool.length > 0 ? k.purple : k.gold}
+        label="Open my chores"
+        accent={k.gold}
         k={k} isDark={isDark}
         variant="soft"
         onPress={onOpenTasks}
@@ -553,6 +495,251 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
           byMemberId={active.id}
           k={k}
           onClose={() => setDeclineTarget(null)}
+        />
+      )}
+    </WidgetCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// My Balance — self-scoped coin panel for the kid/teen Overview's sideCol,
+// matching the reference mock's own left-rail "Balance" block but placed
+// in the sideCol per this app's real layout (see KioskOverviewTab.tsx's
+// own isParent branch — a real third rail column doesn't exist there,
+// only centerCol + sideCol; kid/teen follow that exact same shape rather
+// than inventing a third column [live-requested: "we should keep the side
+// bar for the navigation tabs like parent" / "follow this as the parents
+// coumn strip left side"]).
+//
+// Real data only: mainCoins/gpCoins (same fields KidPiggyBankSheet and the
+// parent's own Coin Jars row already read), weekChoreCounts (same map the
+// parent's jar row already computes and passes in — not re-derived here),
+// and streak (FamilyMember.streak, server-populated). "Last redeemed" is a
+// real derivation from rewardStore's own redemption history, not invented
+// copy — the same store the parent's redemption-approval queue reads.
+// ════════════════════════════════════════════════════════════════════════
+
+function daysAgoLabel(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
+export function KioskMyBalancePanel({
+  active, weekChoreCounts, k, isDark, onOpenStore,
+}: {
+  active: FamilyMember;
+  weekChoreCounts: Map<string, { done: number; total: number }>;
+  k: KioskColors;
+  isDark: boolean;
+  onOpenStore: () => void;
+}) {
+  const redemptions = useRewardStore(s => s.redemptions);
+  const main = (active as any).mainCoins ?? 0;
+  const gp = (active as any).gpCoins ?? 0;
+  const total = main + gp;
+  const streak = (active as any).streak ?? 0;
+  const progress = weekChoreCounts.get(active.id);
+
+  const lastRedeemed = useMemo(() => {
+    const mine = redemptions
+      .filter(r => r.memberId === active.id)
+      .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt));
+    return mine[0];
+  }, [redemptions, active.id]);
+
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      <PanelHead title="My balance" k={k} />
+      <Text style={[s.balanceAmt, { color: k.gold }]} numberOfLines={1}>
+        {total}<Text style={[s.balanceUnit, { color: k.textMuted }]}> coins</Text>
+      </Text>
+      <Text style={[s.balanceSub, { color: k.textFaint }]} numberOfLines={1}>
+        {[
+          progress ? `${progress.done}/${progress.total} chores this week` : null,
+          streak > 0 ? `${streak} day streak` : null,
+          lastRedeemed ? `last redeemed ${daysAgoLabel(lastRedeemed.redeemedAt)}` : null,
+        ].filter(Boolean).join(' · ') || 'No activity yet this week'}
+      </Text>
+      {/* Quiet text link, not a filled button — same convention parent's
+          own Coin Jars/Meals sideCol panels already use for their own
+          "Open reward store"/"Open list" links [live-requested: "rewards
+          store is text link >"]. */}
+      <Pressable
+        onPress={onOpenStore}
+        style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
+        accessibilityRole="button"
+        accessibilityLabel="Open reward store"
+        accessibilityHint="Open the reward store to spend coins"
+      >
+        <Text style={[s.panelTextLinkText, { color: k.gold }]}>Reward Store</Text>
+        <ChevronRight size={14} color={k.gold} />
+      </Pressable>
+    </WidgetCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// My Requests — compact always-visible sideCol list, same real
+// kidRequestStore data/filtering KidRequestsSheet already uses (that
+// sheet's own `mine`/statusOf logic, ported here verbatim rather than
+// re-derived) but shown inline (jarRow-style rows, top 3 + "See all" link)
+// instead of behind a sheet tap — matching the mock's own always-visible
+// "My Requests" panel placement.
+// ════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════
+// Up for Grabs — standalone sideCol panel (pulled out of KidChoresWidget,
+// which used to render this as a sub-section of the same "My tasks" card)
+// matching the mock's own separate .panel exactly: flat divided rows, a
+// gold "+N" coin amount, a sage-tinted "Claim" pill
+// [live-requested screenshot: "from MOCK" / "i would prefer mock style
+// side widget in place of coins upgrab"]. Same real poolQuestsIn/
+// claimQuest logic KidChoresWidget's own pool section used — relocated,
+// not re-derived.
+// ════════════════════════════════════════════════════════════════════════
+
+export function KioskUpForGrabsPanel({
+  active, members, k, isDark, onOpenTasks,
+}: {
+  active: FamilyMember;
+  members: FamilyMember[];
+  k: KioskColors;
+  isDark: boolean;
+  onOpenTasks: () => void;
+}) {
+  const { quests, claimQuest } = useQuestStore();
+  const visible = useMemo(
+    () => visibleQuestsFor(quests, members, { id: active.id, role: active.role }),
+    [quests, members, active.id, active.role],
+  );
+  const pool = useMemo(() => poolQuestsIn(visible), [visible]);
+
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      <PanelHead
+        title="Up for grabs" k={k}
+        right={<Text style={[s.panelOpenCount, { color: pool.length > 0 ? k.sage : k.textFaint }]} numberOfLines={1}>{pool.length}</Text>}
+      />
+      {pool.length === 0 ? (
+        <EmptyNote text="No bounty chores right now." k={k} />
+      ) : (
+        // Same 5-default-visible, scroll-for-the-rest pattern as My Tasks.
+        <ScrollView style={s.poolListScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {pool.map((q, i) => (
+            <View key={q.id} style={[s.poolFlatRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.poolFlatTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
+                <Text style={[s.poolFlatMeta, { color: k.textFaint }]} numberOfLines={1}>
+                  {q.assignedToId ? 'Claimed' : 'No one claimed yet'}
+                </Text>
+              </View>
+              {q.coins > 0 && (
+                <Text style={[s.poolFlatCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
+              )}
+              {/* Claim right here — the whole point of surfacing "up for
+                  grabs" on a shared kiosk widget is that a kid standing at
+                  the counter shouldn't have to switch to the Chores tab
+                  just to take one. Same real action the board itself uses:
+                  claimQuest(id, active.id), the exact race-safe claim
+                  every other kiosk claim button calls — a sibling claiming
+                  the same bounty a moment earlier is resolved store-side,
+                  not re-derived here. */}
+              <Pressable
+                onPress={() => {
+                  claimQuest(q.id, active.id);
+                  showToast(`Claimed "${q.title}" ✓`);
+                }}
+                style={({ pressed }) => [s.poolFlatClaimBtn, { backgroundColor: k.sageSoft }, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Claim ${q.title}`}
+                accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
+              >
+                <Text style={[s.poolFlatClaimText, { color: k.sage }]} numberOfLines={1}>Claim</Text>
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+    </WidgetCard>
+  );
+}
+
+function requestStatusOf(status: string, k: KioskColors): { label: string; accent: string; Icon: LucideIcon } {
+  if (status === 'approved' || status === 'completed') return { label: 'Approved', accent: k.sage, Icon: CheckCircle2 };
+  if (status === 'declined' || status === 'cancelled' || status === 'expired') return { label: status === 'expired' ? 'Expired' : 'Declined', accent: k.danger, Icon: XCircle };
+  if (status === 'partial') return { label: 'Partly approved', accent: k.gold, Icon: CheckCircle2 };
+  return { label: 'Waiting', accent: k.blue, Icon: Clock3 };
+}
+
+export function KioskMyRequestsPanel({
+  active, members, k, isDark,
+}: {
+  active: FamilyMember;
+  members: FamilyMember[];
+  k: KioskColors;
+  isDark: boolean;
+}) {
+  const requests = useKidRequestStore(s => s.requests);
+  // "See all" opens the real KidRequestsSheet (same component
+  // KioskKidQuickActions' own "My Requests" hero tile used to open,
+  // exported from there rather than re-implemented) — this panel is the
+  // new always-visible top-3 glance, the sheet is still the real full-
+  // history surface.
+  const [showAll, setShowAll] = useState(false);
+
+  // Same 30-day window KidRequestsSheet already uses — see that
+  // component's own comment for why (matches the phone's real ceiling).
+  const mine = useMemo(() => {
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return requests
+      .filter(r => r.fromMemberId === active.id && !!r.requestedAt)
+      .filter(r => new Date(r.requestedAt).getTime() >= since)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  }, [requests, active.id]);
+
+  const nameOf = (id?: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0];
+
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      <PanelHead
+        title="My requests" k={k}
+        right={mine.length > 0 ? <Chip label={`${mine.length}`} accent={k.blue} isDark={isDark} k={k} /> : undefined}
+      />
+      {mine.length === 0 ? (
+        <EmptyNote text="You haven't asked for anything in the last 30 days." k={k} />
+      ) : (
+        // Same 5-default-visible, scroll-for-the-rest pattern as My
+        // Chores/Up for Grabs — was a hard top-3 + "See more" link.
+        <ScrollView style={s.reqListScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {mine.map((r, i) => {
+            const st = requestStatusOf(r.status, k);
+            const meta = REQUEST_META[r.type];
+            const answered = nameOf(r.respondedBy);
+            return (
+              <View key={r.id} style={[s.reqCompactRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                <Text style={s.reqCompactEmoji} numberOfLines={1}>{meta?.emoji ?? '📋'}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[s.reqCompactTitle, { color: k.text }]} numberOfLines={1}>{r.detail || meta?.label || 'Request'}</Text>
+                  <Text style={[s.reqCompactMeta, { color: st.accent }]} numberOfLines={1}>
+                    {st.label}{answered ? ` · ${answered}` : ''}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+      {mine.length > 5 && (
+        <Pressable onPress={() => setShowAll(true)} accessibilityRole="button" accessibilityLabel="See your full request history">
+          <Text style={[s.poolMore, { color: k.blue }]} numberOfLines={1}>See full history →</Text>
+        </Pressable>
+      )}
+      {showAll && (
+        <KidRequestsSheet
+          active={active} members={members} k={k} isDark={isDark}
+          onClose={() => setShowAll(false)}
         />
       )}
     </WidgetCard>
@@ -638,6 +825,23 @@ const CHORE_CARD_TYPO = {
   button: 12,
 } as const;
 
+/**
+ * ChoreCardRow — matches the reference mock's own flat `.task` row exactly
+ * (live-referenced screenshot): a checkbox square (empty / gold-outlined
+ * while pending / solid-sage-filled once done), title + meta line (with a
+ * "PENDING" badge inline when in review), the coin amount on the right in
+ * gold, and ONE flat action button — not the phone's richer status-tinted
+ * card (coin badge + status pill + collapsible timeline this used to
+ * mirror) [live-requested: "all the cards and the action styles should
+ * match the mock", followed by the actual mock screenshot as the concrete
+ * reference]. Every real action underneath is unchanged — `btn`/
+ * `showDecline`/`onDecline` still come from the exact same
+ * deriveQuestActions-gated primaryAction/canDecline this widget's parent
+ * computes; this is a visual-only rebuild, same as every other piece of
+ * this redesign. The declined/redo note (q.declineReason) still shows —
+ * dropping a parent's real feedback to match the mock's own read-only
+ * reference would lose real information the mock never had to represent.
+ */
 function ChoreCardRow({
   q, k, isDark, btn, showDecline, onDecline,
 }: {
@@ -648,129 +852,130 @@ function ChoreCardRow({
   showDecline: boolean;
   onDecline: () => void;
 }) {
-  const meta = kioskQuestMeta(q, k);
-  const timeline = questTimeline(q);
   const inReview = q.status === 'pending_approval';
+  const isDone = q.status === 'approved' || q.status === 'done';
 
-  // docs/kitchen-hub-mockup.html's own font stack for this card ("Inter
-  // handles dense schedule/chore text" — its own footer note), per
-  // element's weight in that file: .chorecard .name/.coinpill and
-  // .taskchip .t-title are 800 (extrabold); .chorecard .sub and .taskchip
-  // .t-meta are 600 (semibold). Falls back to `undefined` (the OS system
-  // font, with the numeric fontWeight the styles below still carry) until
-  // the face finishes loading — same pattern ArcadeScreen.tsx uses for
-  // Baloo 2, never a blocked/blank render while a Google Font downloads.
   const fontsLoaded = useKioskFonts();
   const fontExtrabold = fontsLoaded ? KIOSK_FONT.inter.extrabold : undefined;
   const fontSemibold = fontsLoaded ? KIOSK_FONT.inter.semibold : undefined;
 
   return (
-    <CollapsibleQuestCard
-      accentColor={meta.accent}
-      cardBg={k.card}
-      cardBord={k.cardBorder}
-      header={
-        // Two explicit rows, not one flex-wrapping row — a title long
-        // enough to wrap used to push the coin badge and status pill to
-        // unpredictable positions (sometimes both trailing the title's
-        // second line, sometimes split across two lines themselves)
-        // depending on exact pixel widths. Row 1 is the title alone, at
-        // its own full width; row 2 is always coins + status together,
-        // so the header reads as a fixed, predictable 2-line shape no
-        // matter how long a chore's name is. Live-reported reference
-        // screenshot (the phone's own KidQuestCard) shows this exact
-        // shape — comfortably sized pills on their own row, not squeezed
-        // onto the title's row — which is what this now matches.
-        <View style={s.choreCardHeader}>
-          <Text style={[s.choreTitle, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={2}>{q.title}</Text>
-          <View style={s.choreCardBadgeRow}>
-            {q.coins > 0 && (
-              <View
-                style={[s.coinBadge, { backgroundColor: k.well, borderColor: k.goldEdge }]}
-                accessibilityLabel={`Worth ${q.coins} coins`}
-              >
-                <Coins size={13} color={k.gold} />
-                <Text style={[s.coinBadgeText, { color: k.gold, fontFamily: fontExtrabold }]} numberOfLines={1}>{q.coins}</Text>
-              </View>
-            )}
-            <View
-              style={[s.statusPill, { backgroundColor: k.well, borderColor: meta.accent }]}
-              accessibilityLabel={`Status: ${meta.label.toLowerCase()}`}
-            >
-              <meta.Icon size={12} color={meta.accent} />
-              <Text style={[s.statusPillText, { color: meta.accent, fontFamily: fontExtrabold }]} numberOfLines={1}>{meta.label}</Text>
-            </View>
-          </View>
-        </View>
-      }
-    >
-      {/* Live-reported: back to a real expandable card — tap the chevron to
-          reveal the timeline, in-review helper, parent's decline note, and
-          the action buttons, rather than a pinnedFooter that showed them
-          always-open. Everything below is real collapsible `children`. */}
-      {!!timeline && (
-        <Text style={[s.choreTimeline, { color: k.textFaint, fontFamily: fontSemibold }]} numberOfLines={2}>{timeline}</Text>
-      )}
+    <View style={s.taskRow}>
+      <View
+        style={[
+          s.taskCheck,
+          { borderColor: isDone ? k.sage : inReview ? k.gold : k.cardBorder },
+          isDone && { backgroundColor: k.sage },
+        ]}
+      >
+        {isDone && <Check size={13} color={kioskOnAccent(k, k.sage)} strokeWidth={3} />}
+      </View>
 
-      {inReview && (
-        <Text style={[s.choreHelper, { color: k.gold, fontFamily: fontSemibold }]} numberOfLines={2}>
-          Waiting on a parent to review this chore.
+      <View style={s.taskMain}>
+        <Text
+          style={[s.taskTitle, { color: isDone ? k.textFaint : k.text, fontFamily: fontExtrabold }, isDone && { textDecorationLine: 'line-through' }]}
+          numberOfLines={2}
+        >
+          {q.title}
         </Text>
+        <View style={s.taskMetaRow}>
+          {!!q.dueDate && !isDone && (
+            <Text style={[s.taskMeta, { color: k.textFaint, fontFamily: fontSemibold }]} numberOfLines={1}>
+              {q.dueDate}
+            </Text>
+          )}
+          {inReview && (
+            <View style={[s.taskBadge, { backgroundColor: k.goldSoft }]}>
+              <Text style={[s.taskBadgeText, { color: k.gold, fontFamily: fontExtrabold }]} numberOfLines={1}>PENDING</Text>
+            </View>
+          )}
+        </View>
+        {inReview && (
+          <Text style={[s.choreHelper, { color: k.gold, fontFamily: fontSemibold }]} numberOfLines={2}>
+            Waiting on a parent to review this chore.
+          </Text>
+        )}
+        {!!q.declineReason && (
+          <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
+            <Text style={[s.choreDeclineLabel, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>Parent's note</Text>
+            <Text style={[s.choreDeclineText, { color: k.text, fontFamily: fontSemibold }]} numberOfLines={4}>{q.declineReason}</Text>
+          </View>
+        )}
+      </View>
+
+      {q.coins > 0 && !isDone && (
+        <Text style={[s.taskCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
       )}
 
-      {!!q.declineReason && (
-        <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
-          <Text style={[s.choreDeclineLabel, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>Parent's note</Text>
-          <Text style={[s.choreDeclineText, { color: k.text, fontFamily: fontSemibold }]} numberOfLines={4}>{q.declineReason}</Text>
+      {/* Mock's own disabled "Awaiting review" ghost pill for a chore with
+          no available action (in review, waiting on a parent). */}
+      {!isDone && !btn && inReview && (
+        <View style={[s.taskActionBtn, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
+          <Text style={[s.taskActionText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
+            Awaiting review
+          </Text>
         </View>
       )}
 
-      {btn && (
-        <View style={s.choreActions}>
+      {!isDone && btn && (
+        <View style={s.taskActionPair}>
           <Pressable
             onPress={btn.action}
             style={({ pressed }) => [
-              s.choreBtn, s.choreBtnPrimary,
-              { backgroundColor: btn.accent, borderColor: btn.accent },
-              pressed && { opacity: 0.75 },
+              s.taskActionBtn,
+              { backgroundColor: k.well, borderColor: k.cardBorder },
+              pressed && { backgroundColor: btn.accent, borderColor: btn.accent },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${btn.label}: ${q.title}`}
             accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
           >
-            <btn.Icon size={13} color={kioskOnAccent(k, btn.accent)} />
-            <Text
-              style={[s.choreBtnText, { color: kioskOnAccent(k, btn.accent), fontFamily: fontExtrabold }]}
-              numberOfLines={1}
-            >
+            <Text style={[s.taskActionText, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={1}>
               {btn.label}
             </Text>
           </Pressable>
-
           {showDecline && (
             <Pressable
               onPress={onDecline}
               style={({ pressed }) => [
-                s.choreBtn, s.choreBtnGhost,
-                { borderColor: k.dangerEdge, backgroundColor: k.card },
-                pressed && { opacity: 0.75 },
+                s.taskActionBtn,
+                { backgroundColor: k.well, borderColor: k.cardBorder },
+                pressed && { backgroundColor: k.danger, borderColor: k.danger },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Can't do this: ${q.title}`}
               accessibilityHint="Give a reason and put this chore back up for grabs"
             >
-              <Text style={[s.choreBtnText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
+              <Text style={[s.taskActionText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
                 Can't do this
               </Text>
             </Pressable>
           )}
         </View>
       )}
-    </CollapsibleQuestCard>
+      {isDone && (
+        <Text style={[s.taskDoneCoin, { color: k.textFaint }]} numberOfLines={1}>+{q.coins}</Text>
+      )}
+    </View>
   );
 }
 
 const s = StyleSheet.create({
+  // My balance.
+  balanceAmt: { fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
+  balanceUnit: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  balanceSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+
+  // My requests (compact sideCol rows). 5 rows visible by default.
+  reqListScroll: { maxHeight: 270 },
+  reqCompactRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
+  },
+  reqCompactEmoji: { fontSize: 18 },
+  reqCompactTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  reqCompactMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 1 },
+
   // My schedule.
   evRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
@@ -785,6 +990,13 @@ const s = StyleSheet.create({
   // else on this card; subheading is still clearly the largest thing in
   // the cell without dominating the whole widget.
   statusStrip: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
+  // ~76px per collapsed ChoreCardRow (2-line header + padding/border) + xs
+  // gap, so 5 rows visible by default before scrolling — same bounded-
+  // height + nestedScrollEnabled pattern FamilySchedulePanel/"Meals this
+  // week"/"Grocery list" already use successfully in this same centerCol.
+  choreListScroll: { maxHeight: 400 },
+  // ~50px per poolRow + xs gap, 5 rows visible by default.
+  poolListScroll: { maxHeight: 270 },
   statusCell: {
     flex: 1, minWidth: 0, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', gap: 2,
@@ -809,78 +1021,65 @@ const s = StyleSheet.create({
   // Text sizes below are CHORE_CARD_TYPO, not KIOSK_TYPO — see that
   // constant's own comment for why this card needed its own scale rather
   // than the shared kiosk tokens.
-  choreCardHeader: { gap: 6 },
-  choreCardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
-  choreTitle: { fontSize: CHORE_CARD_TYPO.title, fontWeight: '800' },
-  // Badges/pills sit on `k.card`, not on a tint of their own accent: they
-  // are already inside a status-tinted card, and a tint on a tint muddies
-  // both. A solid card-colored chip reads as lifted off the wash.
-  coinBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  panelOpenCount: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
+  // Same values as KioskOverviewTab.tsx's own panelTextLink/panelTextLinkText.
+  panelTextLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
   },
-  coinBadgeText: { fontSize: CHORE_CARD_TYPO.badge, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 5,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1,
+  panelTextLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Flat mock-matched task row (ChoreCardRow) — mock's own .task/.task-
+  // check/.task-title/.task-meta/.badge/.task-coin/.task-action shapes.
+  taskRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm,
+    paddingVertical: KIOSK_SPACE.sm,
   },
-  statusPillText: { fontSize: CHORE_CARD_TYPO.statusPill, fontWeight: '800', letterSpacing: 0.3 },
-  choreTimeline: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
-  choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700' },
-  // The parent's decline note on a needs-redo chore — real collapsible
-  // detail (children, not pinnedFooter) revealed by the chevron tap.
+  taskCheck: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center', marginTop: 2,
+  },
+  taskMain: { flex: 1, minWidth: 0, gap: 2 },
+  taskTitle: { fontSize: CHORE_CARD_TYPO.title, fontWeight: '800' },
+  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: 1 },
+  taskMeta: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
+  taskBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
+  taskBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  taskCoin: { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'], marginTop: 2 },
+  taskDoneCoin: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], marginTop: 2 },
+  choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700', marginTop: 2 },
+  // The parent's decline note on a needs-redo chore — real information the
+  // mock's own read-only reference has no field for; kept, not dropped.
   choreDeclineNote: {
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    padding: KIOSK_SPACE.sm, gap: 2,
+    padding: KIOSK_SPACE.sm, gap: 2, marginTop: KIOSK_SPACE.xs,
   },
   choreDeclineLabel: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '900', letterSpacing: 0.3 },
   choreDeclineText: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600', lineHeight: CHORE_CARD_TYPO.meta * 1.4 },
-  // Side-by-side, primary weighted 2:1 over the outlined decline — the same
-  // flex ratio the phone card uses for this exact pair. Real collapsible
-  // content (children), revealed by the chevron tap — see ChoreCardRow.
-  // Live-reported: "don't use bulky buttons" — pill-shaped (full radius)
-  // and hugging KIOSK_HIT.min (kiosk's touch floor, still the non-
-  // negotiable minimum) rather than a taller rectangular block with extra
-  // padding on top of it, so this reads as a light, friendly tap target
-  // instead of a heavy panel.
-  choreActions: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.sm },
-  choreBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    height: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
-    borderRadius: KIOSK_RADIUS.full, borderWidth: 1.5,
-  },
-  choreBtnPrimary: { flex: 2 },
-  choreBtnGhost: { flex: 1 },
-  choreBtnText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800', flexShrink: 1 },
-
-  poolHead: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    marginBottom: KIOSK_SPACE.xs,
-  },
-  poolHeadText: { flex: 1, fontSize: KIOSK_TYPO.label, fontWeight: '900', letterSpacing: 0.4 },
-  // Taller than the old title+coins-only row now that each one also carries
-  // its own Claim button — minHeight alone doesn't add real breathing room
-  // once content wraps to two lines (title stacked over coins), so this
-  // uses vertical padding instead of just a floor.
-  poolRow: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    minHeight: KIOSK_HIT.min + 8, paddingVertical: KIOSK_SPACE.xs,
-  },
-  // Caption, not body: this row carries a Claim button on the same line,
-  // and at body size a real chore name truncates against it.
-  poolTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  poolCoins: { fontSize: KIOSK_TYPO.caption, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
-  poolCoinsUnit: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  poolMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-  // Shrunk from KIOSK_SPACE.md horizontal padding + KIOSK_TYPO.label text:
-  // that combination alone was wide enough to push a chore's title into
-  // truncating on the same row. minWidth (not padding alone) is what keeps
-  // this a real touch target at the new, tighter padding.
-  poolClaimBtn: {
-    minHeight: KIOSK_HIT.min, minWidth: 64, paddingHorizontal: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.sm,
+  // Mock's own .task-action — a flat outlined pill that fills solid with
+  // the button's own accent (Mark Done -> sage, Can't do this -> danger)
+  // only when pressed, matching .task-action:hover's real behavior as
+  // closely as a touch UI (no hover state) can.
+  taskActionPair: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginTop: KIOSK_SPACE.xs, flexWrap: 'wrap' },
+  taskActionBtn: {
+    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  poolClaimText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  taskActionText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800' },
+
+  poolMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  // Up for Grabs — flat mock-matched rows (KioskUpForGrabsPanel): divided
+  // by a hairline, gold "+N" coin amount, sage-tinted Claim pill.
+  poolFlatRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
+    paddingVertical: KIOSK_SPACE.sm,
+  },
+  poolFlatTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  poolFlatMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 1 },
+  poolFlatCoin: { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  poolFlatClaimBtn: {
+    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  poolFlatClaimText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
 });

@@ -124,7 +124,7 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
-import { KidTodayWidget, KidChoresWidget } from '../components/KioskKidWidgets';
+import { KidChoresWidget, KioskMyBalancePanel, KioskMyRequestsPanel, KioskUpForGrabsPanel } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
@@ -1364,7 +1364,21 @@ export function KioskOverviewTab({
   return (
     <>
     <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-      {!isParent && (
+      {/* Greeting hero — senior-only now. Kid/teen moved onto the same
+          twoColRow/centerCol/sideCol layout parent already uses (see that
+          block's own header comment below), which has no greeting hero at
+          all — the now-strip replaces it, matching parent's real shape
+          exactly [live-requested: "remove the greeings hero completely"].
+          Intercom/Check-In/Piggy/Cheer/Requests quick tiles that used to
+          live inside this hero for kid moved to real homes instead of
+          being dropped: Piggy Bank's real balance data now lives in
+          KioskMyBalancePanel (sideCol), My Requests in
+          KioskMyRequestsPanel (sideCol), and Intercom/Check-In/Cheer
+          Squad stay real, functioning tiles inside KioskKidQuickActions'
+          own "Your stuff" card (unchanged, still mounted below). Today's
+          Meals (a real, valuable widget, not mock-driven) moved into
+          kid/teen's own centerCol instead of being dropped. */}
+      {isSenior && (
       <>
       <View style={s.heroRow}>
         <WidgetCard k={k} isDark={isDark} style={s.hero}>
@@ -1604,17 +1618,47 @@ export function KioskOverviewTab({
           `active.role === 'kid'` (not teen). */}
       {isKid && <KioskKidQuickActions active={active} members={members} />}
 
-      {/* ══ PARENT: two-column page (matches the reference mockup's own
-          layout exactly — a wide center column of "things to act on"
-          stacked full-width, next to a narrower sidebar of "glanceable
-          household state" stacked full-width) — NOT the flex-wrap grid of
-          equal-width cards every other role still uses below. Kid/senior/
-          teen are unaffected: their compositions were never part of what
-          the mockup depicted for this screen, and stay on the original
-          deck. */}
-      {isParent ? (
+      {/* ══ PARENT / KID / TEEN: two-column page (matches the reference
+          mockup's own layout exactly — a wide center column of "things to
+          act on" stacked full-width, next to a narrower sidebar of
+          "glanceable state" stacked full-width) — NOT the flex-wrap grid
+          of equal-width cards senior still uses below.
+          [live-requested: "we should follow the mock for the child
+          accounts overview" / "and teens too" / "we should keep the side
+          bar for the navigation tabs like parent" / "refer the parent
+          overview as well most of them built there"] — kid/teen now share
+          this EXACT same twoColRow/centerCol/sideCol structure parent
+          already uses (not a third rail column — this app's real layout
+          only ever had two), populated with their own real data instead of
+          parent's household-management content. Every kid/teen section
+          below reuses this session's own already-correct real logic
+          (KidTodayWidget/KidChoresWidget's real store-backed derivations,
+          kidRequestStore, mainCoins/gpCoins/weekChoreCounts/streak) —
+          nothing invented, nothing simplified from what the mock's own
+          data implied. Senior is unaffected: its composition was never
+          part of what the mockup depicted for this screen, and stays on
+          the original deck below. */}
+      {(isParent || isKid || isTeen) ? (
         <View style={[s.twoColRow, isNarrowParentLayout && s.twoColRowStacked]}>
           <View style={[s.centerCol, isNarrowParentLayout && s.colFullWidth]}>
+            {/* Check In / Cheer Squad — kid-only real mobile features
+                (KidCheckinRow/CheerSquadSection are mounted from
+                KidView.tsx alone; no teen equivalent exists on the real
+                phone, so this row is deliberately NOT extended to teen).
+                No Intercom here [live-requested: "no need of intercom
+                there"] — that stayed a household-broadcast action, and
+                this two-column layout has no hero row to share it with
+                anymore. Piggy Bank/My Requests (the other two tiles that
+                used to live in the removed hero) moved to real sideCol
+                homes below (KioskMyBalancePanel/KioskMyRequestsPanel)
+                instead of duplicating them here. */}
+            {isKid && (
+              <View style={s.kidQuickRow}>
+                <KioskKidCheckInTile active={active} />
+                <KioskKidMineTile kind="cheer" active={active} members={members} />
+              </View>
+            )}
+
             {/* ══ HAPPENING NOW ═══════════════════════════════════════════
                 Matches the mockup's own .now-strip exactly: a compact
                 single-line panel (live dot, uppercase eyebrow, current/
@@ -1660,8 +1704,67 @@ export function KioskOverviewTab({
               )}
             </WidgetCard>
 
-            <FamilySchedulePanel dayEvents={dayEvents} k={k} isDark={isDark} />
+            {/* Teen ride dispatch — same real slot/logic parent's Pickup
+                Radar occupies below (classifyEventUrgency is role-
+                agnostic; myRides already resolves to a teen's OWN pending
+                assignments when active is a teen), moved up here so it
+                sits above the schedule the same way parent's own Pickup
+                Radar leads its centerCol. Kid has no ride-dispatch
+                equivalent on the real phone (a kid can't drive), so this
+                is teen-only, matching TeenRideDispatchWidget's existing
+                gate. */}
+            {isTeen && (
+              <TeenRideDispatchWidget
+                myRides={myRides} k={k} isDark={isDark} members={members}
+                actorId={active.id}
+                onConfirm={confirmEventAssignment} onDecline={declineEventAssignment}
+                onOpenDetail={setViewingEvent}
+              />
+            )}
 
+            {isParent && (
+            <FamilySchedulePanel dayEvents={dayEvents} k={k} isDark={isDark} />
+            )}
+
+            {/* My Schedule — kid/teen's own real per-person timeline, same
+                real FamilySchedulePanel component parent uses (identical
+                .tl-item current/done visual logic, identical auto-scroll-
+                to-ongoing behavior) filtered to just this member's own
+                events instead of the whole family
+                [live-requested: "otr Today schedule similar to the mOCK" /
+                "they shouldn't have Family schedule it is My schedule"].
+                Not KidTodayWidget's own boxed-row rendering — that
+                component's real filtering/focus logic is preserved
+                unchanged elsewhere (My Chores' sibling schedule use, if
+                any), this is a second real presentation of the identical
+                dayEvents data, not a competing derivation. */}
+            {(isKid || isTeen) && (
+              <FamilySchedulePanel
+                dayEvents={dayEvents} k={k} isDark={isDark}
+                memberId={active.id}
+                title="My schedule"
+                emptyText="Nothing on your calendar today — enjoy it."
+              />
+            )}
+
+            {/* My Chores/Tasks — the exact real KidChoresWidget logic
+                (deriveQuestActions gating, claim/submit/resubmit/approve,
+                the up-for-grabs pool, the "Can't do this" decline dialog)
+                this app already had, unchanged — only its outer container
+                moves from the flex-wrap deck's WidgetCard-with-style-prop
+                shape into this centerCol, matching parent's own Approvals
+                widget's placement in the same column. Kid AND teen both
+                get this (teen's own real "chore" vocabulary — Quest —
+                already flows through the identical store/component). */}
+            {(isKid || isTeen) && (
+              <KidChoresWidget
+                active={active} members={members} k={k} isDark={isDark}
+                onOpenTasks={() => onNavigate('tasks')}
+              />
+            )}
+
+            {isParent && (
+            <>
             <WidgetCard k={k} isDark={isDark}>
               <WidgetHeader
                 Icon={Car} eyebrow="Pickup radar" title="Rides needing attention"
@@ -1868,15 +1971,17 @@ export function KioskOverviewTab({
                 />
               </View>
             </WidgetCard>
+            </>
+            )}
 
-            {/* Find — mounted here (parent-only) so it genuinely shares
-                centerCol's own width with Rides/Approvals above it by
-                construction, the same fix that resolved Happening Now's
-                width mismatch earlier. Kid/teen get their own separate
-                mount of this same component in the flex-wrap deck below
-                (s.widget-sized, matching its siblings there) — not a
-                duplicated implementation, just two mount points for one
-                component with a caller-supplied width. */}
+            {/* Find — shared by parent/kid/teen now that all three render
+                this same centerCol (previously parent-only here; kid/teen
+                had their own separate mount in the flex-wrap deck, which
+                they no longer reach). Same component, same width-sharing
+                fix as before — genuinely shares centerCol's own width with
+                the widgets above it by construction, not a caller-supplied
+                fixed width. Senior still gets its own separate mount in
+                the deck below (its own branch, unaffected by this). */}
             <RadarStrip
               members={members} k={k} isDark={isDark}
               onOpen={() => onNavigate('findfam')}
@@ -1884,11 +1989,42 @@ export function KioskOverviewTab({
           </View>
 
           <View style={[s.sideCol, isNarrowParentLayout && s.colFullWidth]}>
+            {/* My Balance / My Requests — kid/teen's own sideCol content,
+                real self-scoped data (mainCoins/gpCoins/weekChoreCounts/
+                streak/rewardStore redemptions for Balance; kidRequestStore
+                for Requests) — NOT the parent's multi-kid Coin Jars panel
+                below, which shows every kid's balance and would leak a
+                sibling's coins to a kid who has no reason to see them. */}
+            {(isKid || isTeen) && (
+              <KioskMyBalancePanel
+                active={active} weekChoreCounts={weekChoreCounts} k={k} isDark={isDark}
+                onOpenStore={() => onNavigate('store')}
+              />
+            )}
+            {/* Up for Grabs — own sideCol panel now, matching the mock's
+                own separate .panel exactly (was a sub-section inside My
+                Tasks) [live-referenced screenshot: "from MOCK" /
+                "i would prefer mock style side widget in place of coins
+                upgrab"]. Same real poolQuestsIn/claimQuest logic. */}
+            {(isKid || isTeen) && (
+              <KioskUpForGrabsPanel
+                active={active} members={members} k={k} isDark={isDark}
+                onOpenTasks={() => onNavigate('tasks')}
+              />
+            )}
+            {(isKid || isTeen) && (
+              <KioskMyRequestsPanel
+                active={active} members={members} k={k} isDark={isDark}
+              />
+            )}
+
             {/* Mockup's .jar row exactly: a colored square with the kid's
                 INITIAL (not an emoji), name + a real "N/M chores this week"
                 progress line (not the coin-source split this used to show),
-                a bare gold number on the right (no "coins" unit label). */}
-            {kids.length > 0 && (
+                a bare gold number on the right (no "coins" unit label).
+                Parent-only — shows every kid's balance, not appropriate
+                for a kid/teen viewer to see a sibling's coins. */}
+            {isParent && kids.length > 0 && (
               <WidgetCard k={k} isDark={isDark}>
                 <PanelHead title="Coin jars" k={k} />
                 <View>
@@ -2057,52 +2193,20 @@ export function KioskOverviewTab({
       /* ══ WIDGET DECK (kid / senior / teen) ═══════════════════════════ */
       <>
       <View style={s.deck}>
-        {/* ── Ride & pickup radar (kid: their own day instead) ──
-            A kid can neither remind nor take over a ride — both actions
-            were already parent-gated — so for them this slot was a
-            read-only household-logistics feed with nothing to do about it.
-            Same slot, their own schedule. */}
-        {isKid ? (
-          <KidTodayWidget
-            active={active} k={k} isDark={isDark} style={s.widget}
-            onOpenSchedule={() => onNavigate('schedule')}
-          />
-        ) : isSenior ? (
-          <SeniorTasksWidget
-            active={active} quests={quests} k={k} isDark={isDark} style={s.widget}
-            onOpenTasks={() => onNavigate('tasks')}
-          />
-        ) : isTeen ? (
-          // Live-reported gap: a teen fell all the way through to this
-          // slot's `: null` — zero surface anywhere for "you were assigned
-          // a ride and need to confirm it," the exact real state
-          // TeenCarDispatchSection.tsx's own "You Were Asked to Drive"
-          // card exists for on the phone. Same real myRides list the
-          // parent's Pickup radar widget computes above (classifyEventUrgency
-          // is role-agnostic — it already resolves to THIS teen's own
-          // pending assignments when `active` is a teen), same real
-          // confirmEventAssignment/declineEventAssignment actions. No
-          // Remind/Take-over here — the phone's teen card doesn't offer
-          // those either, only Confirm/Can't.
-          <TeenRideDispatchWidget
-            myRides={myRides} k={k} isDark={isDark} members={members} style={s.widget}
-            actorId={active.id}
-            onConfirm={confirmEventAssignment} onDecline={declineEventAssignment}
-            onOpenDetail={setViewingEvent}
-          />
-        ) : null}
-
-        {/* ── Grocery snapshot (kid: their own chore board instead) ──
-            The household grocery list is a shopping concern. In its slot a
-            kid gets the thing a shared kitchen surface is actually best
-            at: their chore status at a glance plus the pool bounties
-            anyone can claim. */}
-        {isKid ? (
-          <KidChoresWidget
-            active={active} members={members} k={k} isDark={isDark} style={s.widget}
-            onOpenTasks={() => onNavigate('tasks')}
-          />
-        ) : null}
+        {/* This deck is senior-only now — kid/teen moved onto the same
+            twoColRow/centerCol/sideCol layout parent uses (see that
+            block's own header comment above); the outer branch above this
+            one is `(isParent || isKid || isTeen) ? twoColRow : deck`, so
+            only isSenior ever reaches here. KidTodayWidget/KidChoresWidget/
+            TeenRideDispatchWidget's old mount points in this deck are
+            gone — their real logic is unchanged, just relocated to
+            centerCol (KidTodayWidget's own filtering logic lives on via
+            FamilySchedulePanel's memberId prop; KidChoresWidget and
+            TeenRideDispatchWidget are mounted directly in centerCol now). */}
+        <SeniorTasksWidget
+          active={active} quests={quests} k={k} isDark={isDark} style={s.widget}
+          onOpenTasks={() => onNavigate('tasks')}
+        />
 
         {/* ── Family Feed ──
             Renamed from "Family photos" and changed from a single auto-
@@ -2117,26 +2221,11 @@ export function KioskOverviewTab({
             compact branch (FeedList) for the layout itself.
 
             Taller for senior — with only one other widget in their deck
-            (SeniorTasksWidget) instead of the parent/kid deck's three, the
-            photo feed is deliberately the generous, warm centerpiece of
-            their Overview rather than a small compact strip squeezed in
-            among logistics widgets that aren't theirs. */}
-        <KioskMemorySlideshow compact height={isSenior ? 340 : 200} style={isSenior ? s.widgetWide : s.widget} />
-
-        {/* ── Find (kid/teen only — no equivalent rail tab for senior) ──
-            Previously a full-width strip shared by every role, below the
-            whole page. Split into two mount points instead: this one for
-            kid/teen (own s.widget-sized card, same as its siblings in
-            this flex-wrap deck), a separate one inside centerCol for
-            parent (see that mount's own comment for why). Not duplicated
-            logic — the same RadarStrip component, just two call sites
-            with different widths. */}
-        {!isSenior && (
-          <RadarStrip
-            members={members} k={k} isDark={isDark} style={s.widget}
-            onOpen={() => onNavigate('findfam')}
-          />
-        )}
+            (SeniorTasksWidget), the photo feed is deliberately the
+            generous, warm centerpiece of their Overview rather than a
+            small compact strip squeezed in among logistics widgets that
+            aren't theirs. */}
+        <KioskMemorySlideshow compact height={340} style={s.widgetWide} />
       </View>
 
       {/* ── Senior-only real Hub sections ─────────────────────────────────
@@ -3116,16 +3205,37 @@ function FamilyFeedStrip({ k, isDark, onOpen }: { k: KioskColors; isDark: boolea
  * guessed fixed row height, since row height genuinely varies (a row with
  * a "who" line or a location line is taller than one without either).
  */
-function FamilySchedulePanel({ dayEvents, k, isDark }: {
+function FamilySchedulePanel({ dayEvents, k, isDark, memberId, title = 'Family schedule', emptyText = 'Nothing on the calendar today.' }: {
   dayEvents: FamilyEvent[]; k: KioskColors; isDark: boolean;
+  /** Filters to one member's own events (same memberIds-falls-back-to-
+   *  memberId test KioskKidWidgets.tsx's own `involves()` uses, so this
+   *  and KidTodayWidget can never disagree about whose event is whose) —
+   *  omit for the real whole-family view (parent). When set, each row's
+   *  own "who" line is hidden — it's redundant once every row is already
+   *  known to be this one person's. [live-requested: "otr Today schedule
+   *  similar to the mOCK" / "they shouldn't have Family schedule it is My
+   *  schedule" — kid/teen get this exact same real timeline component,
+   *  filtered to themselves and retitled, instead of a second
+   *  reimplementation.] */
+  memberId?: string;
+  title?: string;
+  emptyText?: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const rowOffsets = useRef<Map<string, number>>(new Map());
   const hasScrolled = useRef(false);
 
+  const scoped = useMemo(() => {
+    if (!memberId) return dayEvents;
+    return dayEvents.filter(ev => {
+      const ids = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
+      return ids.includes(memberId);
+    });
+  }, [dayEvents, memberId]);
+
   const sorted = useMemo(
-    () => [...dayEvents].sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? '')),
-    [dayEvents],
+    () => [...scoped].sort((a, b) => (a.allDay ? '' : a.time ?? '').localeCompare(b.allDay ? '' : b.time ?? '')),
+    [scoped],
   );
   const nowHHMM = new Date().toTimeString().slice(0, 5);
   const rowState = (ev: FamilyEvent) => {
@@ -3140,7 +3250,7 @@ function FamilySchedulePanel({ dayEvents, k, isDark }: {
   // scroll position out from under someone reading it.
   useEffect(() => {
     hasScrolled.current = false;
-  }, [dayEvents]);
+  }, [scoped]);
   const maybeScrollToOngoing = () => {
     if (hasScrolled.current) return;
     const firstOpenIdx = sorted.findIndex(ev => !rowState(ev).isDone);
@@ -3165,15 +3275,15 @@ function FamilySchedulePanel({ dayEvents, k, isDark }: {
           events after in order — same convention every other real
           calendar surface in this app already uses for all-day items. */}
       <PanelHead
-        title="Family schedule" k={k} style={{ marginBottom: 4 }}
+        title={title} k={k} style={{ marginBottom: 4 }}
         right={
           <Text style={[s.panelCount, { color: k.textFaint }]}>
             {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </Text>
         }
       />
-      {dayEvents.length === 0 ? (
-        <EmptyNote text="Nothing on the calendar today." k={k} />
+      {scoped.length === 0 ? (
+        <EmptyNote text={emptyText} k={k} />
       ) : (
         <ScrollView ref={scrollRef} style={s.scheduleScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
           {sorted.map((ev, i) => {
@@ -3215,7 +3325,7 @@ function FamilySchedulePanel({ dayEvents, k, isDark }: {
                   {ev.allDay || !ev.time ? 'All day' : fmtTime(ev.time)}
                 </Text>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  {!!a.name && (
+                  {!memberId && !!a.name && (
                     <Text style={[s.tlWho, { color: k.textFaint }]} numberOfLines={1}>{a.name}</Text>
                   )}
                   <Text
@@ -3433,6 +3543,9 @@ const s = StyleSheet.create({
   // own (WidgetCard's default) — the column itself sets the width, so a
   // card doesn't also need flexBasis fighting its container.
   twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  // Check In / Cheer Squad — kid-only, top of centerCol, replacing their
+  // old spot in the now-removed greeting hero's quickRow.
+  kidQuickRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md },
   // Below isNarrowParentLayout's threshold: stack instead of split — a
   // fractional flex share of an already-narrow row is what actually causes
   // cramped/clipped content on rotation, not any single component's own

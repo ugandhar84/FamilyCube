@@ -807,7 +807,7 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
  * surface is a glance — but the window itself is now the phone's full
  * 30-day ceiling outright, so a request from three weeks ago still shows.
  */
-function KidRequestsSheet({ active, members, k, isDark, onClose }: {
+export function KidRequestsSheet({ active, members, k, isDark, onClose }: {
   active: FamilyMember; members: FamilyMember[]; k: KioskColors; isDark: boolean;
   onClose: () => void;
 }) {

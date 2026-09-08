@@ -99,7 +99,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     },
                   ]}
                 >
-                  <seg.Icon size={20} color={isActive ? seg.tint : k.textMuted} />
+                  <seg.Icon size={15} color={isActive ? seg.tint : k.textMuted} />
                   <Text
                     numberOfLines={1}
                     style={[s.segmentLabel, { color: isActive ? seg.tint : k.textMuted }]}
@@ -131,11 +131,16 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
 const s = StyleSheet.create({
   root: { flex: 1 },
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-  segmentRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md, flexWrap: 'wrap' },
+  // Same compact sizing as Chores' filter pills / Schedule's mode switch
+  // [live-reported: "follow the health also same design pattern like we
+  // did for chores and the schedule" → "AIso same like chores"] — was a
+  // much heavier control (KIOSK_HIT.control height, KIOSK_RADIUS.md,
+  // body-size text).
+  segmentRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md, flexWrap: 'wrap' },
   segment: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-    borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, minHeight: KIOSK_HIT.control,
-    paddingHorizontal: KIOSK_SPACE.md, flex: 1, minWidth: 180,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5, minHeight: KIOSK_HIT.min - 10,
+    paddingHorizontal: KIOSK_SPACE.sm, flex: 1, minWidth: 140,
   },
-  segmentLabel: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  segmentLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
 });

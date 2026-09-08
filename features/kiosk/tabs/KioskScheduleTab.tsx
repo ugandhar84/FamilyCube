@@ -988,119 +988,125 @@ function KioskEventCard({
       accessibilityHint="Opens this event"
     >
       <View style={s.cardBody}>
-        {/* Header — time chip (agenda only), category badge, conflict flag,
-            title. Phone: EventCard.tsx:536-546. */}
+        {/* Header — time chip (agenda only) + category badge/conflict/sync
+            on one row starting at the card's own left edge, THEN the title
+            below starting at that same left edge — not the title sitting
+            in a column that only starts after the time chip, which made it
+            visibly indented past "All day" [live-reported: "see this the
+            labor daty is not aligned with all day"]. Phone:
+            EventCard.tsx:536-546. */}
         <View style={s.cardHead}>
-          {density === 'agenda' && (
-            <View style={[s.timeChip, { backgroundColor: cs.soft }]}>
-              <Text style={[s.timeChipText, { color: cs.fg }]} numberOfLines={1}>
-                {ev.time ? fmtTime(ev.time) : 'All day'}
-              </Text>
-            </View>
-          )}
-          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-            <View style={s.badgeRow}>
-              <View style={[s.catBadge, { backgroundColor: cs.soft }]}>
-                <Text style={[s.catBadgeText, { color: cs.fg }]} numberOfLines={1}>{cat.toUpperCase()}</Text>
+          <View style={s.badgeRow}>
+            {density === 'agenda' && (
+              <View style={[s.timeChip, { backgroundColor: cs.soft }]}>
+                <Text style={[s.timeChipText, { color: cs.fg }]} numberOfLines={1}>
+                  {ev.time ? fmtTime(ev.time) : 'All day'}
+                </Text>
               </View>
-              {/* Live-requested: "the icon on them to show recurent" —
-                  neither platform marks a recurring event visually before
-                  this; added since Agenda's own collapseSeries means one
-                  card can now stand in for a whole series, and the icon is
-                  what tells a viewer that's happening. Plain icon, no
-                  label/pill — it needs no explanation, matching the quiet
-                  weight every other secondary signal on this card now has. */}
-              {!!ev.seriesId && (
-                <Repeat size={13} color={k.textFaint} accessibilityLabel="Repeating event" />
-              )}
-              {isConf && <AlertTriangle size={16} color={k.gold} />}
-              {showSync && (
-                <View
-                  style={[s.syncBadge, { backgroundColor: k.well }]}
-                  accessibilityRole="text"
-                  accessibilityLabel={`Synced from ${ev.lastExternalSyncAccount ?? providerLabel}`}
-                >
-                  <RefreshCw size={11} color={k.textFaint} />
-                  <Text style={[s.syncText, { color: k.textFaint }]} numberOfLines={1}>
-                    {ev.lastExternalSyncAccount ?? providerLabel}
-                  </Text>
-                </View>
-              )}
+            )}
+            <View style={[s.catBadge, { backgroundColor: cs.soft }]}>
+              <Text style={[s.catBadgeText, { color: cs.fg }]} numberOfLines={1}>{cat.toUpperCase()}</Text>
             </View>
-            {/* Title + "For:" + driver/passenger, ONE row instead of the
-                title sitting alone with those clusters on their own row
-                below [live-reported: "title + For? + Driver assnee
-                passesngers"] — only the SIMPLE case (real assignees, not
-                the parent's assign picker, which still needs its own
-                full-width row of tappable targets below). Location stays
-                on its own line below (metaCombinedRow) since it's often
-                too long a string to share this line without crowding the
-                title out. */}
-            <View style={s.titleForRow}>
-              <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{ev.title}</Text>
-              {forLabel && allAssignees.length > 0 && (
-                <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
-                  {allAssignees.length > 1 ? (
-                    <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
-                  ) : (
-                    <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
-                      siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
-                  )}
-                </View>
-              )}
-              {!!helperName && (
-                helperMember ? (
-                  <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
-                    <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
-                      siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
-                  </View>
+            {/* Live-requested: "the icon on them to show recurent" —
+                neither platform marks a recurring event visually before
+                this; added since Agenda's own collapseSeries means one
+                card can now stand in for a whole series, and the icon is
+                what tells a viewer that's happening. Plain icon, no
+                label/pill — it needs no explanation, matching the quiet
+                weight every other secondary signal on this card now has. */}
+            {!!ev.seriesId && (
+              <Repeat size={13} color={k.textFaint} accessibilityLabel="Repeating event" />
+            )}
+            {isConf && <AlertTriangle size={16} color={k.gold} />}
+            {showSync && (
+              <View
+                style={[s.syncBadge, { backgroundColor: k.well }]}
+                accessibilityRole="text"
+                accessibilityLabel={`Synced from ${ev.lastExternalSyncAccount ?? providerLabel}`}
+              >
+                <RefreshCw size={11} color={k.textFaint} />
+                <Text style={[s.syncText, { color: k.textFaint }]} numberOfLines={1}>
+                  {ev.lastExternalSyncAccount ?? providerLabel}
+                </Text>
+              </View>
+            )}
+            {/* Ride-claim / helper-status affordance, same row as the time
+                chip [live-reported: "staus shpyld be same row of time"] —
+                same real behavior, just relocated from titleForRow.
+                marginLeft:'auto' pushes it to the row's far right rather
+                than crowding in right after the tags. Pre-existing
+                behavior, kept as-is and still routed through the race-safe
+                claimHelperSlot — see AgendaView's header note. */}
+            {onClaim ? (
+              <Pressable
+                onPress={onClaim}
+                style={({ pressed }) => [s.claimBtn, { backgroundColor: pressed ? k.primaryPress : k.primary }, { marginLeft: 'auto' }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Claim the ride for ${ev.title}`}
+                accessibilityHint="Assigns this ride to you"
+              >
+                <Car size={16} color={k.onPrimary} />
+                <Text style={[s.claimBtnText, { color: k.onPrimary }]} numberOfLines={1}>Claim ride</Text>
+              </Pressable>
+            ) : helperAssignee.status ? (
+              <View style={[s.statusPill, {
+                backgroundColor: helperAssignee.status === 'confirmed' ? k.sageSoft
+                  : helperAssignee.status === 'rejected' ? k.dangerSoft : k.goldSoft,
+              }, { marginLeft: 'auto' }]}
+                accessibilityRole="text"
+                accessibilityLabel={
+                  helperAssignee.status === 'confirmed' ? 'Driver confirmed'
+                    : helperAssignee.status === 'rejected' ? 'Driver declined' : 'Driver pending'
+                }
+              >
+                <Text style={[s.statusPillText, {
+                  color: helperAssignee.status === 'confirmed' ? k.sage
+                    : helperAssignee.status === 'rejected' ? k.danger : k.gold,
+                }]} numberOfLines={1}>
+                  {helperAssignee.status === 'confirmed' ? 'Confirmed' : helperAssignee.status === 'rejected' ? "Can't do" : 'Pending'}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          {/* Title + "For:" + driver/passenger, ONE row instead of the
+              title sitting alone with those clusters on their own row
+              below [live-reported: "title + For? + Driver assnee
+              passesngers"] — only the SIMPLE case (real assignees, not
+              the parent's assign picker, which still needs its own
+              full-width row of tappable targets below). Location stays
+              on its own line below (metaCombinedRow) since it's often
+              too long a string to share this line without crowding the
+              title out. */}
+          <View style={s.titleForRow}>
+            <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{ev.title}</Text>
+            {forLabel && allAssignees.length > 0 && (
+              <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
+                {allAssignees.length > 1 ? (
+                  <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
                 ) : (
-                  // A genuinely external non-member (a coach, a neighbour) has
-                  // no avatar to draw — same fallback the phone card takes.
-                  <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
-                )
-              )}
-            </View>
-            {density === 'day' && !!ev.time && (
-              <Text style={[s.cardTime, { color: k.textMuted }]} numberOfLines={1}>
-                {fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}
-              </Text>
+                  <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
+                    siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
+                )}
+              </View>
+            )}
+            {!!helperName && (
+              helperMember ? (
+                <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
+                  <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
+                    siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
+                </View>
+              ) : (
+                // A genuinely external non-member (a coach, a neighbour) has
+                // no avatar to draw — same fallback the phone card takes.
+                <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
+              )
             )}
           </View>
-
-          {/* Kiosk's own ride-claim / helper-status affordance. Pre-existing
-              behavior, kept as-is and still routed through the race-safe
-              claimHelperSlot — see AgendaView's header note. */}
-          {onClaim ? (
-            <Pressable
-              onPress={onClaim}
-              style={({ pressed }) => [s.claimBtn, { backgroundColor: pressed ? k.primaryPress : k.primary }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Claim the ride for ${ev.title}`}
-              accessibilityHint="Assigns this ride to you"
-            >
-              <Car size={16} color={k.onPrimary} />
-              <Text style={[s.claimBtnText, { color: k.onPrimary }]} numberOfLines={1}>Claim ride</Text>
-            </Pressable>
-          ) : helperAssignee.status ? (
-            <View style={[s.statusPill, {
-              backgroundColor: helperAssignee.status === 'confirmed' ? k.sageSoft
-                : helperAssignee.status === 'rejected' ? k.dangerSoft : k.goldSoft,
-            }]}
-              accessibilityRole="text"
-              accessibilityLabel={
-                helperAssignee.status === 'confirmed' ? 'Driver confirmed'
-                  : helperAssignee.status === 'rejected' ? 'Driver declined' : 'Driver pending'
-              }
-            >
-              <Text style={[s.statusPillText, {
-                color: helperAssignee.status === 'confirmed' ? k.sage
-                  : helperAssignee.status === 'rejected' ? k.danger : k.gold,
-              }]} numberOfLines={1}>
-                {helperAssignee.status === 'confirmed' ? 'Confirmed' : helperAssignee.status === 'rejected' ? "Can't do" : 'Pending'}
-              </Text>
-            </View>
-          ) : null}
+          {density === 'day' && !!ev.time && (
+            <Text style={[s.cardTime, { color: k.textMuted }]} numberOfLines={1}>
+              {fmtTime(ev.time)}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}
+            </Text>
+          )}
         </View>
 
         {/* Scheduling conflict banner. Phone: EventCard.tsx:571-576. */}
@@ -2081,7 +2087,13 @@ const s = StyleSheet.create({
     minHeight: KIOSK_HIT.control, width: '100%', maxWidth: 720, alignSelf: 'center',
   },
   cardBody: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.xs },
-  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
+  // Column, not a row — the time chip (badgeRow) and the title
+  // (titleForRow) now stack, sharing the SAME left edge, instead of the
+  // time chip sitting beside a column that only starts after it (which
+  // put the title visibly right of "All day" instead of under it)
+  // [live-reported: "the labor daty is not aligned with all day" →
+  // "i said underneath of all day"].
+  cardHead: { gap: 4 },
   // Soft fill, no border — Overview's own badge convention (approvalBadge:
   // {borderRadius:5, paddingHorizontal:7, paddingVertical:2}, no border at
   // all), not a bordered "button" shape. The screenshot's weight came from

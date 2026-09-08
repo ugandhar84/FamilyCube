@@ -62,6 +62,7 @@ import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { supabase } from '@/lib/supabase';
 import { today as todayStr } from '@/features/vault/tabs/health/types';
 import type { Medication, Vaccine } from '@/features/vault/tabs/health/types';
+import type { MedRecord } from '@/features/vault/records/types';
 import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
 
@@ -127,6 +128,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const [sideMeds, setSideMeds] = useState<Medication[]>([]);
   const [sideVaxes, setSideVaxes] = useState<Vaccine[]>([]);
+  const [sideRecords, setSideRecords] = useState<MedRecord[]>([]);
 
   const loadSidebar = useCallback(async () => {
     if (familyId === 'family-1') return;
@@ -136,9 +138,20 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     const vaxQ = isKid && activeMember?.id
       ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
       : supabase.from('family_vaccines').select('*').eq('family_id', familyId);
-    const [medsRes, vaxRes] = await Promise.all([medsQ, vaxQ]);
+    // Records segment is parent-only (kids never reach it — same SEGMENTS
+    // gate above), so this query never needs a member_id filter the way
+    // meds/vax do above.
+    const recordsQ = isKid
+      ? null
+      : supabase.from('medical_records').select('*').eq('family_id', familyId).order('record_date', { ascending: false });
+    const [medsRes, vaxRes, recordsRes] = await Promise.all([
+      medsQ.order('created_at', { ascending: false }),
+      vaxQ.order('date', { ascending: false }),
+      recordsQ ?? Promise.resolve({ data: [] as MedRecord[], error: null }),
+    ]);
     if (medsRes.data) setSideMeds(medsRes.data as Medication[]);
     if (vaxRes.data) setSideVaxes(vaxRes.data as Vaccine[]);
+    if (recordsRes.data) setSideRecords(recordsRes.data as MedRecord[]);
   }, [familyId, isKid, activeMember?.id]);
 
   useEffect(() => { loadSidebar(); }, [loadSidebar]);
@@ -162,8 +175,8 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       .map(member => {
         const meds = byId.get(member.id)!;
         const takenToday = meds.filter(m => m.taken_date === todayStr()).length;
-        const overdue = meds.filter(isMedOverdue).length;
-        return { member, meds, takenToday, overdue };
+        const overdueMeds = meds.filter(isMedOverdue);
+        return { member, meds, takenToday, overdue: overdueMeds.length, overdueMeds };
       });
   }, [sideMeds, members]);
 
@@ -194,7 +207,35 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       .sort((a, b) => a.daysLeft - b.daysLeft);
   }, [sideVaxes, isKid]);
 
-  const hasSidebar = !isKid && (medsByMember.length > 0 || refillsSoon.length > 0 || vaxDueSoon.length > 0);
+  // "Records needing attention" — real AI-derived signal
+  // (ai_analysis_json.urgency), not an invented heuristic. A record only
+  // gets flagged here when the SAME analysis pipeline RecordsTab.tsx's own
+  // AiReviewSheet already ran on it marked it 'urgent' or 'attention', or
+  // left an unresolved follow-up item/next step. Parent-only, same as
+  // every other sidebar panel.
+  const recordsNeedingAttention = useMemo(() => {
+    if (isKid) return [] as { rec: MedRecord; urgency: string; followUps: number }[];
+    const flagged: { rec: MedRecord; urgency: string; followUps: number }[] = [];
+    for (const rec of sideRecords) {
+      const a = rec.ai_analysis_json;
+      if (!a) continue;
+      const urgency: string = a.urgency;
+      const followUps = 'follow_up_items' in a ? a.follow_up_items?.length ?? 0
+        : 'next_steps' in a ? a.next_steps?.length ?? 0 : 0;
+      if (urgency !== 'urgent' && urgency !== 'attention' && followUps === 0) continue;
+      flagged.push({ rec, urgency, followUps });
+    }
+    // Urgent first, then attention, then plain follow-ups; most recent
+    // within each tier.
+    const rank = (u: string) => u === 'urgent' ? 0 : u === 'attention' ? 1 : 2;
+    flagged.sort((a, b) => {
+      const r = rank(a.urgency) - rank(b.urgency);
+      return r !== 0 ? r : new Date(b.rec.record_date).getTime() - new Date(a.rec.record_date).getTime();
+    });
+    return flagged;
+  }, [sideRecords, isKid]);
+
+  const hasSidebar = !isKid && (medsByMember.length > 0 || refillsSoon.length > 0 || vaxDueSoon.length > 0 || recordsNeedingAttention.length > 0);
 
   return (
     <View style={s.root}>
@@ -270,26 +311,37 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             {medsByMember.length > 0 && (
               <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
                 <PanelHead title="Who takes what" k={k} />
-                {medsByMember.map(({ member, meds, takenToday, overdue }, i) => {
+                {medsByMember.map(({ member, meds, takenToday, overdue, overdueMeds }, i) => {
                   const rs = assigneeStyle(member, colors, isDark);
                   const clear = overdue === 0 && takenToday === meds.length;
+                  // Name the specific overdue medication instead of just a
+                  // count — "Amoxicillin overdue" tells a parent what to
+                  // actually go do, a bare red "1" doesn't. Falls back to
+                  // "N overdue" only when a member has more than one
+                  // overdue med at once (naming all of them would overflow
+                  // the row).
+                  const overdueLabel = overdue === 1
+                    ? `${overdueMeds[0].name} overdue`
+                    : overdue > 1
+                      ? `${overdue} meds overdue`
+                      : clear ? 'All taken today' : `${takenToday}/${meds.length} taken today`;
                   return (
                     <View
                       key={member.id}
                       style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                      accessibilityLabel={`${member.name.split(' ')[0]}: ${takenToday} of ${meds.length} taken today${overdue > 0 ? `, ${overdue} overdue` : ''}`}
+                      accessibilityLabel={`${member.name.split(' ')[0]}: ${takenToday} of ${meds.length} taken today${overdue > 0 ? `, ${overdueMeds.map(m => m.name).join(', ')} overdue` : ''}`}
                     >
                       <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
                         <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
-                        <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                          {clear ? 'All taken today' : `${takenToday}/${meds.length} taken today`}
+                        <Text style={[s.jarMeta, { color: overdue > 0 ? k.danger : k.textFaint }]} numberOfLines={1}>
+                          {overdueLabel}
                         </Text>
                       </View>
                       {overdue > 0 ? (
-                        <Text style={[s.jarAmt, { color: k.danger }]} numberOfLines={1}>{overdue}</Text>
+                        <Text style={[s.jarAmt, { color: k.danger }]} numberOfLines={1}>!</Text>
                       ) : (
                         <Text style={[s.jarAmt, { color: k.sage }]} numberOfLines={1}>✓</Text>
                       )}
@@ -356,6 +408,40 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                       </View>
                       <Text style={[s.jarAmt, { color: k.sage, fontSize: 13 }]} numberOfLines={1}>
                         {daysLeft <= 0 ? 'Due' : `${daysLeft}d`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </WidgetCard>
+            )}
+
+            {recordsNeedingAttention.length > 0 && (
+              <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+                <PanelHead
+                  title="Records needing attention"
+                  k={k}
+                  right={<Chip label={`${recordsNeedingAttention.length}`} accent={k.danger} isDark={kioskDark} k={k} />}
+                />
+                {recordsNeedingAttention.map(({ rec, urgency, followUps }, i) => {
+                  const member = members.find(m => m.id === rec.member_id);
+                  const urgent = urgency === 'urgent';
+                  return (
+                    <View
+                      key={rec.id}
+                      style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                    >
+                      <View style={[s.jarAvatar, { backgroundColor: urgent ? k.dangerSoft : k.goldSoft, borderColor: urgent ? k.dangerEdge : k.goldEdge, borderWidth: 1.5 }]}>
+                        <Text style={{ fontSize: 15 }}>{member?.emoji ?? '📄'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
+                        <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                          {member?.name.split(' ')[0] ?? 'Someone'}
+                          {urgency === 'urgent' ? ' · Urgent' : urgency === 'attention' ? ' · Needs review' : followUps > 0 ? ` · ${followUps} follow-up${followUps > 1 ? 's' : ''}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={[s.jarAmt, { color: urgent ? k.danger : k.gold, fontSize: 13 }]} numberOfLines={1}>
+                        {urgent ? '!' : '·'}
                       </Text>
                     </View>
                   );

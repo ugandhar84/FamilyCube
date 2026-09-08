@@ -436,20 +436,27 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 removed when this landed; the EMPTY-state button stays, since
                 that one is a first-action prompt inside an otherwise blank
                 view, not a persistent control. */}
-            {canCreate && (
-              <Pressable onPress={openCreator} style={[s.headerAddBtn, { backgroundColor: k.primary }]}
-                accessibilityRole="button"
-                accessibilityLabel={isKidCreator ? 'Ask a parent' : 'Add an event'}
-                accessibilityHint={isKidCreator
-                  ? 'Sends a request to a parent to add something to the schedule'
-                  : 'Opens the composer to add a new event'}>
-                <Plus size={22} color={k.onPrimary} />
-                <Text style={[s.headerAddBtnText, { color: k.onPrimary }]} numberOfLines={1}>
-                  {isKidCreator ? 'Ask a parent' : 'Add an event'}
-                </Text>
-              </Pressable>
-            )}
           </View>
+
+          {/* Moved out of navRow to its own slot at headerTop's far right
+              (headerTop is justify-content:space-between) — it used to sit
+              right after "Today" with a lot of empty header space to its
+              right, since the mode switch that used to fill that space
+              moved down into the filter row [live-reported: "add event +
+              should be right most of that card"]. */}
+          {canCreate && (
+            <Pressable onPress={openCreator} style={[s.headerAddBtn, { backgroundColor: k.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel={isKidCreator ? 'Ask a parent' : 'Add an event'}
+              accessibilityHint={isKidCreator
+                ? 'Sends a request to a parent to add something to the schedule'
+                : 'Opens the composer to add a new event'}>
+              <Plus size={22} color={k.onPrimary} />
+              <Text style={[s.headerAddBtnText, { color: k.onPrimary }]} numberOfLines={1}>
+                {isKidCreator ? 'Ask a parent' : 'Add an event'}
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         {/* ROW 1 — "My Schedule" / "All" scope, the phone's own toggle

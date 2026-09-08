@@ -75,7 +75,7 @@
  * this was confirmed as.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet, Platform } from 'react-native';
 import { Trash2, Clock, Lock, CalendarDays } from 'lucide-react-native';
 import { useEventStore, estimateOccurrenceCount } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
@@ -91,7 +91,7 @@ import { RecurrenceControl } from '@/features/tasks/components/forms/RecurrenceC
 // bottom sheet, spinner display) — was previously a bare DateTimePicker
 // with no header/Done affordance, a genuine functional gap vs. mobile's
 // real form UI, not just a visual difference.
-import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import HelperAssignmentSection from '@/features/calendar/components/eventForm/HelperAssignmentSection';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
@@ -114,7 +114,7 @@ function timeStrToDate(t: string | undefined): Date | null {
 export function KioskEventEditor({ event, active, members, onClose, colors, isDark }: {
   event: FamilyEvent | null; active: FamilyMember; members: FamilyMember[]; onClose: () => void; colors: any; isDark: boolean;
 }) {
-  const { k } = useKioskColors();
+  const { k, isDark: kioskDark } = useKioskColors();
   const updateEvent = useEventStore(s => s.updateEvent);
   const deleteEvent = useEventStore(s => s.deleteEvent);
   // Same real store actions EventFormModal.tsx's own applyScope/handleDelete
@@ -644,13 +644,19 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
             <KioskFieldLabel k={k}>DATE &amp; TIME</KioskFieldLabel>
             <View style={s.row}>
               <Pressable
-                onPress={() => { setShowDatePicker(true); setShowTimePicker(false); }}
+                onPress={() => {
+                  if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: dateValue, onChange: setDateValue });
+                  else { setShowDatePicker(p => !p); setShowTimePicker(false); }
+                }}
                 style={[input, s.timeBtn, { flex: 3, backgroundColor: showDatePicker ? k.primary + '18' : k.well, borderColor: showDatePicker ? k.primary : k.cardBorder }]}
               >
                 <Text style={[s.timeBtnText, { color: k.text }]}>{fmtDisplay(dateValue)}</Text>
               </Pressable>
               <Pressable
-                onPress={() => { setShowTimePicker(true); setShowDatePicker(false); }}
+                onPress={() => {
+                  if (Platform.OS === 'android') openAndroidPicker({ mode: 'time', value: timeValue ?? new Date(), onChange: setTimeValue });
+                  else { setShowTimePicker(p => !p); setShowDatePicker(false); }
+                }}
                 style={[input, s.timeBtn, { flex: 2, backgroundColor: showTimePicker ? k.primary + '18' : k.well, borderColor: showTimePicker ? k.primary : k.cardBorder }]}
               >
                 <Clock size={16} color={timeValue ? k.primary : k.textFaint} />
@@ -660,17 +666,22 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
               </Pressable>
             </View>
           </View>
-          {/* Same shared PickerOverlay every mobile event form uses — one
-              overlay, toggled by which button was tapped, not two separate
-              bare pickers. */}
-          <PickerOverlay
-            showDate={showDatePicker} showTime={showTimePicker}
-            value={showDatePicker ? dateValue : (timeValue ?? new Date())}
-            onChangeDate={setDateValue}
-            onChangeTime={setTimeValue}
-            onDone={() => { setShowDatePicker(false); setShowTimePicker(false); }}
-            accentColor={k.primary} colors={colors}
-            dateLabel="📅 Event Date" timeLabel="🕐 Event Time"
+          {/* Kiosk-only inline picker (KioskDateTimePicker), not the shared
+              PickerOverlay every mobile event form uses — same rationale
+              as KioskAddMedForm.tsx's own header: iOS renders inline in
+              the form, Android opens its own native dialog. PickerOverlay
+              itself is untouched. */}
+          <KioskDateTimePicker
+            mode="date" visible={showDatePicker} k={k} isDark={kioskDark}
+            value={dateValue}
+            onChange={setDateValue}
+            onDone={() => setShowDatePicker(false)}
+          />
+          <KioskDateTimePicker
+            mode="time" visible={showTimePicker} k={k} isDark={kioskDark}
+            value={timeValue ?? new Date()}
+            onChange={setTimeValue}
+            onDone={() => setShowTimePicker(false)}
           />
           {/* Live-requested: "match all fileds similar to the mobile app" —
               same 9-category picker EventFormModal.tsx's own CategoryFields

@@ -62,7 +62,7 @@ import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 import { WidgetCard, PanelHead, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
-import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { KioskAddChoreForm } from '../components/KioskAddChoreForm';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { KioskKidCheerList } from '../components/KioskKidQuickActions';
@@ -1932,7 +1932,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
       />
 
       {showManualQuest && (
-        <AddQuestModal
+        <KioskAddChoreForm
           visible={showManualQuest}
           onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
           activeMemberId={active.id}

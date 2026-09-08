@@ -1,0 +1,1357 @@
+/**
+ * KioskAddChoreForm — kiosk-owned fork of
+ * features/quests/components/AddQuestModal.tsx, giving "New Chore"/Smart
+ * Tasker's manual-entry path the same right-side drawer shape every other
+ * kiosk form uses [live-reported: "smart tasker also right side form" /
+ * "im asking the move that to right side narrow form similar to add
+ * medication"].
+ *
+ * This is a deliberate full-file fork, not a shell-only wrap — AddQuestModal
+ * has no clean seam to swap just its outer chrome (same lesson learned from
+ * ScanReviewSheet.tsx earlier this session: TaskFormShell/DueDateTimePicker,
+ * the two pieces that actually own a Modal, are baked in as plain imports
+ * used throughout the file, not passed in as props). The ONLY real change
+ * from the original: two import lines swapped —
+ *   TaskFormShell    → KioskTaskFormShell (aliased to the same local name)
+ *   DueDateTimePicker → KioskDueDateTimePicker (same alias trick)
+ * — both kiosk-only forks of their own shared mobile shells, rebuilt on
+ * KioskFormDrawer's/KioskDateTimePicker's real drawer shape instead of a
+ * bottom sheet / floating spinner card. Every other line of real field
+ * logic (category, suggestions, assignment engine, grocery/recurrence/
+ * assign sections, voice dictation, AI category resolution, coin/
+ * difficulty/photo-required fields, the review step, addQuest/
+ * createParticipants save calls) is byte-identical to the original file.
+ *
+ * AddQuestModal.tsx itself is completely untouched — this is a NEW file,
+ * not an edit to the original, so mobile's own New Chore flow is
+ * unaffected. The accepted tradeoff, same as documented in
+ * KioskTaskFormShell.tsx's own header: this file can drift from
+ * AddQuestModal.tsx if that file's real field logic changes later and this
+ * fork isn't updated to match.
+ */
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  TextInput, Modal, ActivityIndicator, Platform, Alert,
+} from 'react-native';
+import { Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/lib/ThemeContext';
+import { useFamilyStore } from '@/store/familyStore';
+// questStore commented out — chores system is the single source of truth
+// import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
+import type { QuestCategory, QuestDifficulty, QuestType } from '@/store/questStore';
+import { BRAND } from '@/components/FamilyCubeLogo';
+import { TYPO } from '@/constants/theme';
+import { localDateStr, fmtDate, fmtTime } from '@/lib/dates';
+import { supabase } from '@/lib/supabase';
+import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
+import { useGroceryStore } from '@/store/groceryStore';
+import { showToast } from '@/components/AppToast';
+import { useEventStore } from '@/store/eventStore';
+// Relative imports resolved back to their real home
+// (features/quests/components/) — this file is a kiosk-owned fork living
+// in features/kiosk/components/, but these are plain shared
+// helpers/sub-sections with no shell/Modal of their own, safe to import
+// directly rather than forking too.
+import { QUEST_SUGGESTIONS, ALL_CATEGORIES, CATEGORY_META, fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFormShared';
+import {
+  resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, applyAssignment, questCategoryFromDomain,
+  type ResponsibilityCategory, type AssignmentSuggestion,
+} from '@/lib/responsibilityCategories';
+import { AddQuestGrocerySection } from '@/features/quests/components/AddQuestGrocerySection';
+import { AddQuestRecurrenceSection } from '@/features/quests/components/AddQuestRecurrenceSection';
+import { AddQuestAssignSection } from '@/features/quests/components/AddQuestAssignSection';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { familyAi } from '@/lib/familyAiService';
+
+// ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
+// The same voice box and call-reminder toggle AddEventModal uses — plain,
+// self-contained pieces with no Modal/shell of their own, safe to import
+// directly. The stepper shell and due-date picker, in contrast, each own a
+// real Modal (TaskFormShell's bottom sheet, DueDateTimePicker's floating
+// spinner card) — those two are swapped for kiosk-only forks instead
+// [live-reported: "im asking the move that to right side narrow form
+// similar to add medication"]. TaskFormShell.tsx/DueDateTimePicker.tsx
+// themselves are untouched.
+import { KioskTaskFormShell as TaskFormShell } from './KioskTaskFormShell';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { KioskDueDateTimePicker as DueDateTimePicker } from './KioskDueDateTimePicker';
+import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
+
+// Word-boundary match, not bare substring containment — "load" must not
+// match inside "unload". A plain .includes() let "Unload the dishwasher"
+// show up as a suggestion right alongside the already-selected
+// "Load the dishwasher", since "load" is a real substring of "unload".
+function wordMatches(haystack: string, needle: string): boolean {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}`, 'i').test(haystack);
+}
+
+// Scenario 9.4 — soft duplicate-detection for a new POOL quest. Deliberately
+// cheap (no real fuzzy-matching library): a case-insensitive trimmed exact
+// match, OR a simple whitespace-normalized comparison catching things like
+// "Take out trash" vs "take out the trash " that differ only by filler
+// words/spacing. Good enough to catch the common "two parents typed the same
+// chore minutes apart" case without false-positiving on genuinely distinct
+// titles that merely share a word.
+function normalizeTitle(t: string): string {
+  return t.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+const FILLER_WORDS = new Set(['the', 'a', 'an', 'to', 'of', 'for', 'and']);
+function coreWords(t: string): string[] {
+  return normalizeTitle(t).split(' ').filter(w => w && !FILLER_WORDS.has(w));
+}
+function isLikelyDuplicateTitle(a: string, b: string): boolean {
+  const na = normalizeTitle(a), nb = normalizeTitle(b);
+  if (na === nb) return true;
+  const wa = coreWords(a), wb = coreWords(b);
+  if (wa.length === 0 || wb.length === 0) return false;
+  const setB = new Set(wb);
+  const shared = wa.filter(w => setB.has(w)).length;
+  const overlap = shared / Math.max(wa.length, wb.length);
+  // Same core words (ignoring filler) in the same rough proportion — e.g.
+  // "Take out trash" vs "Take out the trash" (shared 3/3) or "Trash" vs
+  // "Take out trash" would NOT match (shared 1/3, below threshold) since a
+  // single shared word between very different-length titles is too weak a
+  // signal to be worth interrupting the parent over.
+  return overlap >= 0.75;
+}
+
+// ─── Add Quest Modal ──────────────────────────────────────────────────────────
+export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQuestType, prefill, initialStep }: {
+  visible: boolean; onClose: () => void; activeMemberId: string; defaultQuestType?: QuestType;
+  // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
+  // "Edit in full form" handoff) — only covers what the AI response
+  // actually produces; every other field keeps its normal default so the
+  // rest of the form behaves exactly as if a parent had started fresh.
+  prefill?: { title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string };
+  // Opens straight on the review step instead of step 1 — for a handoff
+  // from Smart Tasker/voice intake that already detected title/coins/
+  // assignee/etc. Mirrors AddEventModal's own initialStep prop (added for
+  // the identical reason: restarting at step 1 with prefill values already
+  // in state looked exactly like the parsed data had been silently
+  // dropped, live-reported as "submit opens a blank manual form").
+  initialStep?: 'review';
+}) {
+  const { colors, isDark } = useTheme();
+  const { addQuest, createParticipants } = useQuestStore();
+  const members = useFamilyStore(s => s.members);
+  const kids    = members.filter(m => m.role === 'kid');
+
+  const [title,        setTitle]        = useState(prefill?.title ?? '');
+  const [coins,        setCoins]        = useState(prefill?.coins !== undefined ? String(prefill.coins) : '30');
+  const [category,     setCategory]     = useState<QuestCategory>('Other');
+  // category always has a real value (defaults to 'Kitchen'), but that
+  // default was never a deliberate choice — process-task-assignment
+  // requires category and scores off it directly, so submitting on the
+  // unexamined default risks a quest going out with a category that
+  // doesn't actually match what it is. Require an explicit tap.
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [assignIds,    setAssignIds]    = useState<string[]>(prefill?.assignedToId ? [prefill.assignedToId] : []);
+  const [isPool,       setIsPool]       = useState(false);
+  const [maxClaimants, setMaxClaimants] = useState<number>(1); // pool: how many kids can claim
+  const [photoReq,     setPhotoReq]     = useState(prefill?.photoRequired ?? false);
+  const [desc,         setDesc]         = useState('');
+  const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
+  const [bonusCoins,   setBonusCoins]   = useState('');
+  const [saving,       setSaving]       = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [descTouched,  setDescTouched]  = useState(false);
+  const [isAdultTask,       setIsAdultTask]       = useState(false);
+  const [customCategories,  setCustomCategories]  = useState<CustomCategory[]>([]);
+  const [customSuggestions, setCustomSuggestions] = useState<{ title: string; hint: string }[]>([]);
+
+  // Responsibility Engine — optional subcategory refinement + live
+  // assignment preview. Purely additive/informational: unlike
+  // EventFormModal's GP/teen toggles, this form's inviteGrandparent has a
+  // real side effect (zeroes coins), so it's deliberately NOT auto-toggled
+  // from taxonomy defaults here — a parent decides that explicitly.
+  const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
+  const [subcategoryOptions, setSubcategoryOptions] = useState<ResponsibilityCategory[]>([]);
+  // applySuggestion sets both category and subcategoryId together — the
+  // category-change effect below must not immediately null the subcategory
+  // it just received, only when a category chip was tapped directly.
+  const suggestionSetSubcategory = React.useRef(false);
+  // Separate from the ref above (that one's specifically for the
+  // subcategory-reset effect) — this guards the title-driven
+  // category-fallback effect from re-triggering right after a suggestion
+  // pill already set title+category together deliberately.
+  const suggestionJustApplied = React.useRef(false);
+  const [assignmentSuggestion, setAssignmentSuggestion] = useState<AssignmentSuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+
+  // Routine chore setup
+  const [isRoutine,    setIsRoutine]    = useState(false);
+  const [routineType,  setRoutineType]  = useState<'citizenship' | 'routine' | 'bounty' | 'shopping'>('routine');
+  // Defaults to 'once' — 'daily' must be an explicit tap on the Repeats
+  // picker (only shown once Recurring Chore / an adult task's own Repeats
+  // row is engaged). Defaulting this to 'daily' silently made every new
+  // quest recurring even when the user never touched the recurrence UI at
+  // all, since line ~347 below feeds routineFreq into `recurrence`
+  // unconditionally regardless of whether isRoutine/isAdultTask ever showed
+  // the picker.
+  const [routineFreq,  setRoutineFreq]  = useState<'daily' | 'weekly' | 'monthly' | 'first_come' | 'once'>('once');
+  // Which weekdays a Weekly routine chore recurs on (0=Sun..6=Sat) — same
+  // shape/picker as EventFormModal's repeatDays. Empty = every 7 days from
+  // whenever it was last approved, matching the pre-existing behavior.
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
+  // Which day of the month a Monthly routine chore recurs on (1-28, or 31
+  // as "last day of the month") — undefined = whatever day-of-month it was
+  // first approved on, matching the pre-existing behavior.
+  const [recurrenceDayOfMonth, setRecurrenceDayOfMonth] = useState<number | undefined>(undefined);
+
+  // Live QA audit found "shopping is always adult-only" was UI copy/intent
+  // only — a kid could be selected as assignee for a shopping run and it
+  // would save, submit, and pay out with zero rejection anywhere in the
+  // stack (addChore/updateChore have no categoryType==='shopping' guard).
+  // Mirrors toggleAdultTask's existing kid-filtering behavior: switching
+  // INTO shopping strips any already-selected kid/teen from assignIds, the
+  // same way turning on the separate "Adult Task" toggle already does.
+  useEffect(() => {
+    if (routineType === 'shopping') {
+      setAssignIds(prev => prev.filter(id => {
+        const role = members.find(m => m.id === id)?.role;
+        return role === 'parent' || role === 'senior';
+      }));
+    }
+  }, [routineType]);
+
+  // Shopping quest item list
+  const [shoppingLines, setShoppingLines] = useState<string[]>(['']);
+  const [shoppingStore, setShoppingStore] = useState('');
+  const [shoppingBudget, setShoppingBudget] = useState('');
+  const [shoppingItemsOpen, setShoppingItemsOpen] = useState(false);
+  const addShoppingLine    = () => setShoppingLines(l => [...l, '']);
+  const updateShoppingLine = (i: number, v: string) => setShoppingLines(l => l.map((x, idx) => idx === i ? v : x));
+  const removeShoppingLine = (i: number) => setShoppingLines(l => l.filter((_, idx) => idx !== i));
+
+  // Grandparent invitation (Workflow 2 — parent proposes, GP sees claimable invite)
+  const [inviteGrandparent, setInviteGrandparent] = useState(false);
+  // Live QA finding: "teens only" had NO working toggle anywhere in this
+  // form — the is_open_to_teens column/field existed but was actually
+  // read/written exclusively by the ride-scheduling system, never by
+  // chores. A parent believing this restriction existed had zero real
+  // enforcement: any kid could see and claim a chore meant to be
+  // teen-restricted. This wires up a real one, reusing the same field
+  // name correctly for chores now.
+  const [teensOnly, setTeensOnly] = useState(false);
+
+  // Grocery run attachment (Errand / Shopping categories)
+  const [linkGroceries,    setLinkGroceries]    = useState(false);
+  const [groceryItems,     setGroceryItems]     = useState<{ id: string; name: string; quantity?: string; storePreference?: string }[]>([]);
+  const [groceryListOpen,  setGroceryListOpen]  = useState(false);
+  const [expandedStores,   setExpandedStores]   = useState<Set<string>>(new Set());
+  const [selectedItemIds,  setSelectedItemIds]  = useState<Set<string>>(new Set());
+  const [newGroceryLines,  setNewGroceryLines]  = useState<{ name: string; qty: string; store: string }[]>([]);
+  const [loadingGroceries, setLoadingGroceries] = useState(false);
+  const [focusedLineIdx,   setFocusedLineIdx]   = useState<number | null>(null);
+  const [focusedField,     setFocusedField]     = useState<'name' | 'store' | null>(null);
+  const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
+  const suggPressing = React.useRef(false);
+
+  // ── Stepper ──────────────────────────────────────────────────────────────
+  // Redesign from one long flat scroll (every field always visible
+  // regardless of chore type) into a small paged flow — same fields, same
+  // state, same submit/validation logic below, purely a layout change. Step
+  // 2 (grocery list) only exists at all for Errand/Shopping categories —
+  // every other chore type sees one fewer step, which is the actual
+  // "context-aware" win: irrelevant steps are skipped, not just collapsed.
+  const [step, setStep] = useState(0);
+  const activeMember = members.find(m => m.id === activeMemberId);
+  const familyId = activeMember?.familyId ?? '';
+  // Scenario 1.5 — a Teen creator gets the same broad self-creation rights
+  // as a parent, but "Parent Only" (delegating an adult-only task to
+  // another parent/senior) and "Invite Grandparent" (a GP-sponsored quest)
+  // are both parent-oriented concepts that don't make sense coming from a
+  // Teen — hide them and leave the Teen in the ordinary
+  // self-assign-or-leave-in-pool flow AddQuestAssignSection already
+  // supports for every non-adult-task quest.
+  const creatorIsTeen = activeMember?.role === 'teen';
+
+  // Voice → AI prefill, Step 1 only. Same interaction shape as Ask Cube's
+  // mic: tap to record, the live transcript lands in an editable text box,
+  // the user reviews/edits it, and only an explicit tap on "Send" fires the
+  // AI call — never automatic on speech-end. useVoiceDictation is the same
+  // plain transcribe-only hook Ask Cube itself uses (no AI involved in the
+  // capture step); only the final transcript TEXT the user approved is ever
+  // sent to extractResponsibility, never audio.
+  const voice = useVoiceDictation();
+  const [voiceDraft, setVoiceDraft] = useState('');
+  const [isPrefilling, setIsPrefilling] = useState(false);
+
+  const applyVoiceTranscript = async (transcript: string) => {
+    const trimmed = transcript.trim();
+    if (!trimmed) return;
+    setIsPrefilling(true);
+    try {
+      const result = await familyAi.extractResponsibility(trimmed, members.map(m => ({ id: m.id, name: m.name })));
+      const task = result.task;
+      if (!task) {
+        Alert.alert("Couldn't quite catch that", 'Try again, or type it in below.');
+        return;
+      }
+      // Same guard applySuggestion uses — without it, the title-driven
+      // category-fallback effect below (which resets to 'Other' when
+      // nothing in the suggestion bank matches the new title) would
+      // immediately stomp the category this same update is about to set.
+      suggestionJustApplied.current = true;
+      setTitle(task.title);
+      setTitleTouched(true);
+      if (task.requirements?.length) setDesc(task.requirements.join('. ').slice(0, 150));
+      if (task.startAt) {
+        const d = new Date(task.startAt);
+        if (!isNaN(d.getTime())) setDueDate(d);
+      }
+      if (task.forMemberName) {
+        const match = members.find(m => m.name.toLowerCase() === task.forMemberName!.toLowerCase());
+        if (match) setAssignIds([match.id]);
+      }
+      // extractResponsibility's `category` is a coarse responsibility-engine
+      // domain string (e.g. "household", "errand"), not one of this form's
+      // ~20 QuestCategory options directly — only map it when
+      // questCategoryFromDomain has a confident, unambiguous target (Errand,
+      // School, Finance, Health, Social); a domain like "household" fans out
+      // to too many possible categories to guess one, so it's left for the
+      // title-driven inference (or a manual tap) instead of forcing a
+      // possibly-wrong specific category.
+      const mappedCategory = questCategoryFromDomain(task.category);
+      if (mappedCategory) {
+        setCategory(mappedCategory as QuestCategory);
+        setCategoryTouched(true);
+      }
+      setVoiceDraft('');
+      voice.reset();
+    } catch (e: any) {
+      Alert.alert('Something went wrong', e?.message ?? "Couldn't process that — try again, or type it in below.");
+    } finally {
+      setIsPrefilling(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!familyId) return;
+    fetchCustomCategories(familyId, 'quest').then(setCustomCategories);
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!familyId || category !== 'Other') return;
+    fetchCustomSuggestions(familyId, 'quest', 'Other').then(setCustomSuggestions);
+  }, [familyId, category]);
+
+  // Subcategory options for the current category's mapped taxonomy domain —
+  // resets whenever the top-level category changes.
+  useEffect(() => {
+    if (suggestionSetSubcategory.current) {
+      suggestionSetSubcategory.current = false;
+    } else {
+      setSubcategoryId(null);
+    }
+    setAssignmentSuggestion(null);
+    const domain = resolveDomainFromLooseLabel(category);
+    fetchSubcategoriesForDomain(domain).then(setSubcategoryOptions);
+  }, [category]);
+
+  const isGroceryCategory = category === 'Errand' || category === 'Shopping';
+
+  // Step list — 'grocery' only exists for Errand/Shopping, so most chores
+  // are a 4-step flow (What, When, Type & Assign, Review) not 5. Recomputed
+  // on every render off category, not memoized — this array is only ever
+  // used to know the current step's id and total count, both cheap.
+  const stepIds = ['what', ...(isGroceryCategory ? ['grocery'] : []), 'when', 'assign', 'review'] as const;
+
+  // Jump straight to Review once, on mount, for a Smart Tasker/voice-intake
+  // handoff that already detected title/coins/assignee/etc. — 'review' is
+  // always the last id regardless of whether the grocery step is present,
+  // so this reads the real length rather than a hardcoded index. A plain
+  // useState initializer can't do this since stepIds itself depends on
+  // category, which isn't known until after prefill's initial values (title
+  // only, never category) have already been applied above.
+  const jumpedToReview = React.useRef(false);
+  useEffect(() => {
+    if (initialStep === 'review' && !jumpedToReview.current) {
+      jumpedToReview.current = true;
+      setStep(stepIds.length - 1);
+    }
+  }, [initialStep, stepIds.length]);
+  type StepId = typeof stepIds[number];
+  const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
+  // If the grocery step existed (step index 1) and the category changes away
+  // from Errand/Shopping mid-flow, step index 1 now means 'when' instead —
+  // clamp back to a safe index rather than leaving the user on a step whose
+  // meaning just changed under them.
+  useEffect(() => {
+    setStep(s => Math.min(s, stepIds.length - 1));
+  }, [isGroceryCategory]);
+
+  const stepTitles: Record<StepId, string> = {
+    what: 'What is it?', grocery: 'Shopping list', when: 'When is it due?',
+    assign: 'Who & how', review: 'Review',
+  };
+
+  // Coins/bonus only make sense for kids & teens — disable when all assignees are adults
+  const assignedToAdultsOnly = assignIds.length > 0 &&
+    assignIds.every(id => {
+      const role = members.find(m => m.id === id)?.role;
+      return role === 'parent' || role === 'senior';
+    });
+
+  useEffect(() => {
+    if (!linkGroceries || !familyId) return;
+    setLoadingGroceries(true);
+    supabase.from('grocery_items')
+      .select('id, name, quantity, store_preference')
+      .eq('family_id', familyId).eq('is_bought', false).order('store_preference')
+      .then(({ data }) => {
+        setGroceryItems((data ?? []).map((r: any) => ({
+          id: r.id, name: r.name, quantity: r.quantity ?? undefined, storePreference: r.store_preference ?? undefined,
+        })));
+        setLoadingGroceries(false);
+      });
+  }, [linkGroceries, familyId]);
+
+  // Suggestions drive category now, not the other way around — this must
+  // never filter by the currently selected category (that was the actual
+  // bug: on a fresh form category defaults to 'Other', so filtering by it
+  // meant real suggestions never showed at all, only the family's own
+  // sparse custom bank). Search across the FULL cross-category bank by
+  // title text; picking a result is what sets category, via applySuggestion.
+  const suggestions = useMemo(() => {
+    if (routineType === 'shopping') {
+      const q = title.trim().toLowerCase();
+      const pool = QUEST_SUGGESTIONS.filter(s => s.category === 'Shopping' || s.category === 'Errand');
+      if (!q) return pool.slice(0, 8);
+      return pool.filter(s => wordMatches(s.title, q)).slice(0, 8);
+    }
+    const q = title.trim().toLowerCase();
+    if (!q) return QUEST_SUGGESTIONS.slice(0, 8);
+    const words = q.split(/\s+/);
+    const matches = QUEST_SUGGESTIONS.filter(s => words.every(w => wordMatches(s.title, w)));
+    // Nothing in the built-in bank matches — fall back to this family's own
+    // custom suggestions (things they've named before under "Other").
+    if (matches.length > 0) return matches.slice(0, 8);
+    return customSuggestions.filter(s => wordMatches(s.title, q)).slice(0, 8);
+  }, [title, routineType, customSuggestions]);
+
+  // If what's being typed matches nothing anywhere in the suggestion bank
+  // (e.g. "Going for vacation" while "Yard" is selected — not a yard task,
+  // not matched anywhere else either), the selected category no longer
+  // reflects what this quest actually is — fall back to Other rather than
+  // leaving a category selection that's now clearly wrong. Only fires once
+  // there's real text (a couple characters) and skips while a category is
+  // already Other/custom (nowhere further to fall back to), and skips
+  // right after a suggestion pill set both together deliberately.
+  useEffect(() => {
+    if (suggestionJustApplied.current) { suggestionJustApplied.current = false; return; } // a suggestion tap just set title+category together
+    const q = title.trim().toLowerCase();
+    if (q.length < 3) return;
+    if (customCategories.some(cc => cc.key === category)) return;
+    // Already on Other (the default, possibly still unconfirmed) — real
+    // typed text with nothing to match against anyway means Other genuinely
+    // is correct, so this counts as a confirmed choice rather than leaving
+    // Submit blocked forever for a task that's legitimately "Other".
+    if (category === 'Other') {
+      if (!categoryTouched) setCategoryTouched(true);
+      return;
+    }
+    const anyMatchAnywhere = QUEST_SUGGESTIONS.some(s => wordMatches(s.title, q));
+    if (!anyMatchAnywhere) {
+      setCategory('Other');
+      setCategoryTouched(true);
+    }
+  }, [title]);
+
+  const applySuggestion = (s: typeof QUEST_SUGGESTIONS[0]) => {
+    suggPressing.current = false;
+    setTitle(s.title);
+    // Carries the taxonomy signal along with the suggestion pick itself —
+    // this is what replaced the separate "Specifically…" chip row. Falls
+    // back to null (→ resolved domain) for the handful of suggestions with
+    // no clean taxonomy match. Must be set before setCategory so the
+    // category-change effect (which normally nulls subcategoryId on a
+    // manual chip tap) knows to skip its reset this one time.
+    suggestionSetSubcategory.current = true;
+    suggestionJustApplied.current = true;
+    setSubcategoryId(s.subcategoryId ?? null);
+    setCategory(s.category);
+    setCategoryTouched(true);
+    setCoins(String(s.coins));
+    setDesc(s.desc);
+    setTitleFocused(false);
+  };
+
+  // Undoes exactly what applySuggestion set, so clearing the pill doesn't
+  // leave a stale category/description/coins behind with an empty title.
+  const clearSelectedSuggestion = () => {
+    suggestionJustApplied.current = true; // don't let the auto-fallback-to-Other effect fire on this title change
+    setTitle('');
+    setDesc('');
+    setCoins('30');
+    setCategory('Other');
+    setCategoryTouched(false);
+    setSubcategoryId(null);
+  };
+
+  // Due date/time — default to tomorrow 6 PM, or the AI-extracted date if prefilled
+  const defaultDue = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
+  const [dueDate,      setDueDate]      = useState<Date>(() => prefill?.dueDate ? new Date(prefill.dueDate + 'T18:00:00') : defaultDue());
+  const [showDatePick, setShowDatePick] = useState(false);
+  const [showTimePick, setShowTimePick] = useState(false);
+  // Call-style reminder — opt-in, rings the assignee via CallKit/
+  // ConnectionService this many minutes before dueTime.
+  const [alertCall,           setAlertCall]           = useState(false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
+  // Spec 8.2 — optional tie to an upcoming calendar event this quest
+  // logistically supports (e.g. "Pack for the trip" -> "Family Trip").
+  const [linkedEventId, setLinkedEventId] = useState<string | undefined>(undefined);
+  const [showEventPicker, setShowEventPicker] = useState(false);
+
+
+
+  const reset = () => {
+    setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
+    setCategory('Other'); setCategoryTouched(false);
+    setAssignIds([]); setIsPool(false); setMaxClaimants(1);
+    setPhotoReq(false); setDueDate(defaultDue()); setIsAdultTask(false);
+    setShowDatePick(false); setShowTimePick(false);
+    setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
+    setFocusedLineIdx(null); setFocusedField(null);
+    setIsRoutine(false); setRoutineType('routine'); setRoutineFreq('once'); setRecurrenceDays([]); setRecurrenceDayOfMonth(undefined);
+    setInviteGrandparent(false);
+    setStep(0);
+    voice.reset();
+    setVoiceDraft('');
+  };
+
+  // Coins disabled when: adult task, GP invite, or all assignees are adults
+  const coinsDisabled = isAdultTask || inviteGrandparent || assignedToAdultsOnly;
+
+  // When adult task toggled on: clear kids from selection, disable pool, zero coins
+  const toggleAdultTask = (val: boolean) => {
+    setIsAdultTask(val);
+    if (val) {
+      setIsPool(false);
+      setAssignIds(prev => prev.filter(id => members.find(m => m.id === id)?.role === 'parent'));
+      setCoins('0');
+      setBonusCoins('');
+      // routineFreq defaults to 'daily' for the kid-chore path — reset to
+      // one-time so switching into Parent Only doesn't silently inherit a
+      // recurrence the user never actually chose for this task.
+      setRoutineFreq('once');
+    }
+  };
+
+  // When GP invite toggled: zero coins (GPs don't earn coins)
+  const toggleGPInvite = (val: boolean) => {
+    setInviteGrandparent(val);
+    if (val) { setCoins('0'); setBonusCoins(''); }
+  };
+
+  // Live QA finding (docs/qa_form_combinations_audit.html, High): a kid
+  // could already be selected in assignIds before Teens Only is toggled
+  // on — the raw setTeensOnly passed directly as toggleTeensOnly never
+  // cleared them, leaving a chore's isOpenToTeens flag directly
+  // contradicting its own assignee. Same cleanup shape as
+  // toggleAdultTask above.
+  const toggleTeensOnly = (val: boolean) => {
+    setTeensOnly(val);
+    if (val) setAssignIds(prev => prev.filter(id => members.find(m => m.id === id)?.role !== 'kid'));
+  };
+
+  // Scenario 9.4 — before creating a new POOL quest, check for an
+  // already-open (not claimed, not completed) pool chore with a very
+  // similar title and offer a soft, dismissible Merge/Keep Both prompt.
+  // Directly-assigned quests skip this entirely: the "two people who didn't
+  // know about each other" ambiguity is specific to the shared, anyone-can-
+  // claim pool — a quest handed to one specific kid has no such risk.
+  const willBePool = !isAdultTask && (isPool || assignIds.length === 0);
+  const findSimilarOpenPoolChore = () => {
+    if (!willBePool || !title.trim()) return null;
+    const openPoolChores = useChoreStore.getState().chores.filter(c =>
+      c.isPool && c.status === 'todo' && !c.isDisabled);
+    return openPoolChores.find(c => isLikelyDuplicateTitle(c.title, title)) ?? null;
+  };
+
+  const submit = async () => {
+    if (!title.trim() || !desc.trim()) return;
+    const dupe = findSimilarOpenPoolChore();
+    if (dupe) {
+      Alert.alert(
+        'Similar chore already exists',
+        `"${dupe.title}" is already open in the pool — merge or keep both?`,
+        [
+          {
+            text: 'Merge',
+            style: 'cancel',
+            // Merge = the existing quest already covers it. Cancel this new
+            // one and do nothing else — no DB write, just close the modal.
+            onPress: () => { reset(); onClose(); },
+          },
+          {
+            text: 'Keep Both',
+            // Keep Both = proceed with creating the new one exactly as if
+            // no duplicate had been detected. Never a hard block.
+            onPress: () => { void doCreate(); },
+          },
+        ],
+      );
+      return;
+    }
+    await doCreate();
+  };
+
+  const doCreate = async () => {
+    setSaving(true);
+    const bonus       = parseInt(bonusCoins) || 0;
+    const isMulti     = !isPool && assignIds.length > 1;
+    const filledItems = shoppingLines.map(s => s.trim()).filter(Boolean);
+    // Collect grocery-list selected item names to also store on the quest card
+    const selectedGroceryNames = groceryItems
+      .filter(i => selectedItemIds.has(i.id))
+      .map(i => i.name.trim())
+      .filter(Boolean);
+    const newLineNames = newGroceryLines.map(l => l.name.trim()).filter(Boolean);
+    const allItemNames = [
+      ...filledItems,
+      ...selectedGroceryNames,
+      ...newLineNames,
+    ].filter((v, i, a) => a.indexOf(v) === i); // dedupe
+
+    // Adult tasks stay parent_only regardless of GP invite — inviteGrandparents flag handles visibility
+    const resolvedQuestType: QuestType = isAdultTask
+      ? 'parent_only'
+      : isRoutine
+        ? (routineType as QuestType)
+        : (defaultQuestType ?? 'general');
+    // A parent directly assigning an adult task to a co-parent (not
+    // themselves) goes through the existing PENDING/Accept negotiation
+    // system (addParentQuest below) instead of landing pre-assigned — so
+    // the chore itself is created unassigned here; addParentQuest sets the
+    // assignee once the assignment row exists.
+    const isDirectCoParentAssign = isAdultTask && !isPool && !isMulti
+      && assignIds.length === 1 && assignIds[0] !== activeMemberId;
+    const newQ = await addQuest({
+      title: title.trim(), description: desc.trim(), category: routineType === 'shopping' ? 'Shopping' : category,
+      priority: 'medium', difficulty: difficulty || undefined,
+      coins: coinsDisabled ? 0 : (parseInt(coins) || 30), xpReward: 20,
+      // bonusCoins must be present in this initial payload (not just the
+      // later updateQuest below) — addChore's teen-reward co-sign threshold
+      // check reads coins+bonusCoins at creation time, so a bonus applied
+      // only afterward would let a teen's real total reward slip past the
+      // threshold unflagged. See store/choreAdapter.ts's questInputToChoreInput.
+      bonusCoins: bonus > 0 ? bonus : undefined,
+      assignedToId: isPool || isMulti || isDirectCoParentAssign ? undefined : (assignIds[0] || undefined),
+      assignedToIds: isMulti ? assignIds : [],
+      isPool: !isAdultTask && (isPool || assignIds.length === 0), isDaily: false,
+      recurrence: routineType === 'shopping' ? 'once' : (routineFreq === 'daily' ? 'daily' : routineFreq === 'weekly' ? 'weekly' : routineFreq === 'monthly' ? 'monthly' : 'once'),
+      recurrenceDays: routineFreq === 'weekly' && recurrenceDays.length > 0 ? recurrenceDays : undefined,
+      recurrenceDayOfMonth: routineFreq === 'monthly' ? recurrenceDayOfMonth : undefined,
+      status: 'todo',
+      dueDate: localDateStr(dueDate),
+      dueTime: fmtTimeLabel(dueDate),
+      alertCall, alertCallLeadMinutes,
+      photoRequired: routineType === 'shopping' ? true : photoReq,
+      createdById: activeMemberId,
+      isAdultTask,
+      questType: resolvedQuestType,
+      // Shopping fields passed through to choreAdapter
+      shoppingItems:  allItemNames.length > 0 ? allItemNames : undefined,
+      shoppingStore:  shoppingStore.trim() || undefined,
+      shoppingBudget: shoppingBudget.trim() ? parseFloat(shoppingBudget) : undefined,
+      inviteGrandparents: inviteGrandparent || undefined,
+      isOpenToTeens: teensOnly || undefined,
+      linkedEventId: linkedEventId,
+    } as any);
+    if (newQ?.id) {
+      if (isDirectCoParentAssign) {
+        await useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, assignIds[0], 'DIRECT');
+      }
+      if (bonus > 0) useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
+      // Create participant rows: multi-assign → one per kid; pool → none (kids create on claim)
+      if (isMulti && assignIds.length > 0) {
+        await createParticipants(newQ.id, assignIds);
+      }
+      // Store maxClaimants for pool quests
+      if (isPool) {
+        useQuestStore.getState().updateQuest(newQ.id, { maxClaimants });
+      }
+
+      // Zero-touch auto-assignment: only when nobody was already explicitly
+      // assigned (pool quests with no one picked yet) — an explicit pick or
+      // multi-assign already has its answer. Fire-and-forget: the quest is
+      // already saved above, a slow/failed engine call must never block or
+      // fail the save. Adult tasks and kid chores both use a real row now
+      // that newQ.id exists, so — unlike the preview button, which restricts
+      // kid-chore preview to edit-mode only — both paths can run for real here.
+      if (familyId && isPool && assignIds.length === 0) {
+        const assignCategory = subcategoryId ?? resolveDomainFromLooseLabel(category);
+        const applyPromise = isAdultTask
+          ? applyAssignment({ taskId: newQ.id, taskType: 'chore', familyId, category: assignCategory })
+          : supabase.functions.invoke('process-kid-chore-assignment', { body: { choreId: newQ.id, familyId, dryRun: false } })
+              .then(({ data, error }) => (error || data?.error) ? null : (data as AssignmentSuggestion));
+        applyPromise.then(async res => {
+          if (res?.decisionType !== 'auto' || !res.selectedMemberId) return;
+          // An auto-assigned adult task needs the same Accept/Snooze/
+          // Pushback opportunity a manually-picked assignee gets — writing
+          // assignedToId directly here (as kid-chore auto-assign correctly
+          // still does below) skipped the whole negotiation system for any
+          // adult task the engine picked, landing pre-accepted with only a
+          // Done/Reassign button.
+          if (isAdultTask && res.selectedMemberId !== activeMemberId) {
+            // addParentQuest itself now fires the delegate notification
+            // (store/choreStore.ts's own 'parent_quest_delegated' call,
+            // added in the full notification-coverage audit) for every
+            // DIRECT-mode call site, this one included — no longer needs a
+            // duplicate here.
+            await useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
+          } else {
+            supabase.rpc('reassign_chore', {
+              p_chore_id: newQ.id, p_new_member_id: res.selectedMemberId, p_by_member_id: activeMemberId,
+            }).then(({ error }) => {
+              if (error) { console.warn('[AddQuestModal] auto-assign reassign_chore failed', error.message); return; }
+              // Was a raw RPC bypassing choreStore.updateChore entirely —
+              // the auto-picked kid/GP never got a "you were assigned a
+              // quest" push, identical in shape to quest_assigned's own
+              // "new chore just for you" ping.
+              if (familyId) {
+                supabase.functions.invoke('quest-event-notifier', {
+                  body: {
+                    event: 'quest_assigned', questId: newQ.id, questTitle: title.trim(),
+                    familyId, assigneeId: res.selectedMemberId, coins: coinsDisabled ? 0 : (parseInt(coins) || 30),
+                  },
+                }).catch((e: any) => console.warn('[AddQuestModal] auto-assign notify failed', e?.message));
+              }
+            });
+          }
+        });
+      }
+    }
+
+    // Record custom suggestion for this family if it's a custom/Other category
+    const isCustomCat = customCategories.some(cc => cc.key === category) || category === 'Other';
+    if (isCustomCat && title.trim() && familyId) {
+      recordCustomSuggestion(familyId, 'quest', category, title.trim());
+    }
+
+    // Create grocery run(s) if grocery list was linked
+    if (isGroceryCategory && linkGroceries && familyId) {
+      const validNewLines = newGroceryLines.filter(l => l.name.trim());
+      const hasExisting = selectedItemIds.size > 0;
+      if (hasExisting || validNewLines.length > 0) {
+        try {
+          // Was one INSERT per new grocery line, sequentially awaited in a
+          // loop — a real trip's grocery list is easily 10-30+ lines. Single
+          // multi-row insert instead, then group the returned ids back by
+          // store client-side (the store grouping is just bookkeeping, not
+          // something the DB needs to do row-by-row).
+          const newItemsByStore: Record<string, string[]> = {};
+          if (validNewLines.length > 0) {
+            const { data: insertedRows } = await supabase
+              .from('grocery_items')
+              .insert(validNewLines.map(line => ({
+                family_id: familyId, name: line.name.trim(), quantity: line.qty.trim() || null,
+                store_preference: line.store.trim() || null, added_by: activeMemberId,
+                is_bought: false, ai_generated: false,
+              })))
+              .select('id, store_preference');
+            for (const row of (insertedRows ?? [])) {
+              const store = row.store_preference?.trim() || 'Any store';
+              if (!newItemsByStore[store]) newItemsByStore[store] = [];
+              newItemsByStore[store].push(row.id);
+            }
+          }
+          const existingByStore: Record<string, string[]> = {};
+          for (const id of selectedItemIds) {
+            const item = groceryItems.find(i => i.id === id);
+            const store = item?.storePreference || 'Any store';
+            if (!existingByStore[store]) existingByStore[store] = [];
+            existingByStore[store].push(id);
+          }
+          const allStores = new Set([...Object.keys(existingByStore), ...Object.keys(newItemsByStore)]);
+          for (const store of allStores) {
+            const itemIds = [...(existingByStore[store] ?? []), ...(newItemsByStore[store] ?? [])];
+            if (!itemIds.length) continue;
+            const { data: runRow, error: runErr } = await supabase
+              .from('grocery_runs')
+              .insert({ family_id: familyId, name: title.trim(), store: store === 'Any store' ? 'Store' : store, status: 'draft', created_by: activeMemberId, planned_at: localDateStr(dueDate) })
+              .select('id').single();
+            if (!runErr && runRow?.id) {
+              // Was a raw bulk insert into grocery_run_items — that table has
+              // no realtime subscription anywhere in the app, and this run
+              // was itself just created via a raw insert too (not
+              // createRun()), so useGroceryStore's own `runs[].runItems`
+              // never picked up these items until something happened to open
+              // the run's detail sheet. addItemToRun now self-heals via its
+              // own loadRunDetail() call, so routing through it here closes
+              // that gap instead of leaving the store silently stale.
+              const groceryStore = useGroceryStore.getState();
+              for (const itemId of itemIds) {
+                await groceryStore.addItemToRun(runRow.id, itemId);
+              }
+            }
+          }
+          const newNames  = validNewLines.map(l => l.name.trim()).filter(Boolean);
+          const newStores = [...allStores].filter(s => s !== 'Any store');
+          if (newNames.length || newStores.length) appendToCache(newNames, newStores);
+        } catch (e: any) {
+          console.warn('[AddQuestModal] grocery run creation failed', e?.message);
+        }
+      }
+    }
+
+    setSaving(false);
+    // Scenario 1.13 — a teen whose reward exceeded the household co-sign
+    // threshold got zero indication of it: the modal just closed the same
+    // as any other quest, with the flag silently set server-side. The quest
+    // is still fully created and workable — only the coin payout is held —
+    // but the teen deserves to know that up front rather than discovering
+    // it later from a locked 🔒 pill on the card.
+    if (creatorIsTeen && (newQ as any)?.rewardPendingReview) {
+      Alert.alert(
+        'Reward needs a parent’s OK',
+        `This chore's reward is above the family's usual limit, so a parent will need to approve the payout once it's done. The chore itself is ready to go now.`,
+      );
+    }
+    showToast('Chore created');
+    reset();
+    onClose();
+  };
+
+  const pillBg  = isDark ? colors.surface : '#F1F5F9';
+  const pillBdr = isDark ? colors.border  : '#E2E8F0';
+
+  return (
+    <TaskFormShell
+      visible={visible}
+      onClose={() => { reset(); onClose(); }}
+      stepIds={stepIds}
+      stepTitles={stepTitles}
+      step={step}
+      setStep={setStep}
+      accentColor={BRAND.purple}
+      headerTitle={defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Chore' : 'New Chore'}
+      headerSubtitle={defaultQuestType === 'grandparent_quest' ? 'Create a special chore for the grandkids' : 'Assign a chore, bounty, or task'}
+    >
+
+            {currentStepId === 'what' && <>
+            {/* Title */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Chore Title *</Text>
+            <TextInput
+              style={[aq.input, { color: colors.textPrimary,
+                // Neutral border until the parent has actually left this
+                // field empty at least once — required-but-untouched
+                // shouldn't read as an error before anyone's had a chance
+                // to type anything. colors.surface (tan) against the
+                // sheet's white colors.card background gives the field its
+                // own visible shape, with borderMed (28% tint) instead of
+                // the near-invisible 15%-opacity default border.
+                borderColor: (!title.trim() && titleTouched) ? colors.danger : colors.borderMed,
+                backgroundColor: colors.surface }]}
+              placeholder={routineType === 'shopping' ? 'e.g. Grocery run, Pick up dry cleaning…' : 'e.g. Wash the dishes, Take out trash…'}
+              placeholderTextColor={colors.textTertiary}
+              value={title}
+              onChangeText={setTitle}
+              onFocus={() => setTitleFocused(true)}
+              onBlur={() => { setTitleFocused(false); setTitleTouched(true); }}
+              returnKeyType="next"
+            />
+
+            {/* Voice → AI prefill — shared with AddEventModal (see
+                VoicePrefillBox). */}
+            <VoicePrefillBox
+              voice={voice} voiceDraft={voiceDraft} setVoiceDraft={setVoiceDraft}
+              isPrefilling={isPrefilling} onSend={applyVoiceTranscript}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+            />
+
+            {/* Dynamic suggestion pills — always visible */}
+            {suggestions.length > 0 && (
+              <View style={{ marginTop: -6, marginBottom: 12 }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
+                  {title.trim() ? 'Matching suggestions' : routineType === 'shopping' ? '🛍️ Shopping errands — tap to fill' : 'Quick picks — tap to fill'}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {suggestions.map((s, i) => {
+                      const isSelected = title.toLowerCase() === s.title.toLowerCase();
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          style={[aq.suggPill, {
+                            backgroundColor: isSelected ? BRAND.purple + '25' : colors.surface,
+                            borderColor:     isSelected ? BRAND.purple : colors.border,
+                          }]}
+                          onPress={() => 'coins' in s ? applySuggestion(s) : setTitle(s.title)}
+                        >
+                          <Text style={{ fontSize: TYPO.micro, color: isSelected ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>
+                            {s.title}
+                          </Text>
+                          {'coins' in s && !isSelected && (
+                          <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>
+                            +{s.coins}🪙
+                          </Text>
+                          )}
+                          {isSelected && (
+                            <Pressable
+                              onPress={clearSelectedSuggestion}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              style={{ marginLeft: 6 }}
+                            >
+                              <Ionicons name="close-circle" size={15} color={BRAND.purple} />
+                            </Pressable>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Category — follows from what's typed/picked above rather than
+                leading the form: picking a suggestion sets it automatically,
+                and typing something that matches nothing anywhere falls it
+                back to Other (see the title-driven effect near the top of
+                this component). Still directly tappable to override. */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Category *{'  '}
+              {!categoryTouched && <Text style={{ fontWeight: '400', color: colors.textTertiary }}>auto-set from what you type</Text>}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key as QuestCategory)).map(cc => cc.key as QuestCategory)].map(c => {
+                  const meta = CATEGORY_META[c] ?? { emoji: '✨', color: BRAND.purple };
+                  const active = category === c;
+                  return (
+                    <TouchableOpacity
+                      key={c}
+                      onPress={() => { setCategory(c); setCategoryTouched(true); }}
+                      style={{
+                        borderRadius: 16, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 8,
+                        alignItems: 'center', gap: 3, minWidth: 64,
+                        backgroundColor: active ? meta.color + '18' : pillBg,
+                        borderColor: active ? meta.color : pillBdr,
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, opacity: active ? 1 : 0.6 }}>{meta.emoji}</Text>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: active ? meta.color : colors.textSecondary }}>
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            {/* Description — mandatory, max 150 chars */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Description *{'  '}
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+            </Text>
+            <TextInput
+              style={[aq.input, aq.descInput, { color: colors.textPrimary,
+                borderColor: (!desc.trim() && descTouched) ? colors.danger : colors.borderMed,
+                backgroundColor: colors.surface }]}
+              placeholder="Describe exactly what's expected so there's no confusion…"
+              placeholderTextColor={colors.textTertiary}
+              value={desc}
+              onChangeText={t => setDesc(t.slice(0, 150))}
+              onBlur={() => setDescTouched(true)}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+              {desc.length}/150
+            </Text>
+            </>}
+
+            {/* ── Assignment suggestion — calls the live Responsibility Engine
+                 (process-task-assignment) so a parent can see who this would
+                 likely go to before saving. Always a dry run.
+                 Adult tasks only: process-task-assignment scores directly
+                 from a category string, but process-kid-chore-assignment
+                 (the kid-scoring engine) needs an EXISTING chore_tasks row
+                 to read from — it can't preview before the chore is
+                 created. Rather than fake a kid-assignment preview this
+                 form can't actually produce, the button only appears for
+                 isAdultTask, where a real preview is genuinely possible. ── */}
+            {currentStepId === 'assign' && familyId && isAdultTask && assignIds.length === 0 && (
+              <View style={{ marginBottom: 14 }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    setLoadingSuggestion(true);
+                    setAssignmentSuggestion(null);
+                    const result = await previewAssignment({
+                      taskId: `preview-${Date.now()}`,
+                      taskType: 'chore',
+                      familyId,
+                      category: subcategoryId ?? resolveDomainFromLooseLabel(category),
+                    });
+                    setAssignmentSuggestion(result);
+                    setLoadingSuggestion(false);
+                  }}
+                  disabled={loadingSuggestion}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
+                    borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
+                    opacity: loadingSuggestion ? 0.6 : 1, marginBottom: 8,
+                  }}
+                >
+                  {loadingSuggestion
+                    ? <ActivityIndicator size="small" color={BRAND.purple} />
+                    : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
+                        ✨ Who would this go to?
+                      </Text>
+                  }
+                </TouchableOpacity>
+
+                {assignmentSuggestion && (
+                  <View style={{
+                    borderRadius: 14, padding: 12,
+                    backgroundColor: isDark ? colors.surface : '#F8FAFC',
+                    borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+                  }}>
+                    {assignmentSuggestion.error ? (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+                        {assignmentSuggestion.error}
+                      </Text>
+                    ) : assignmentSuggestion.decisionType === 'blocked' ? (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                        {assignmentSuggestion.reason ?? 'No eligible family member found for this.'}
+                      </Text>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+                          {assignmentSuggestion.decisionType === 'auto' ? '✅ Would auto-assign to ' :
+                           assignmentSuggestion.decisionType === 'suggest' ? '💡 Suggested: ' : '🤔 Close call — '}
+                          {assignmentSuggestion.explanation.selected ?? '—'}
+                        </Text>
+                        {assignmentSuggestion.candidates.filter(c => !c.excluded).length > 1 && (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }}>
+                            {assignmentSuggestion.candidates
+                              .filter(c => !c.excluded)
+                              .map(c => `${c.memberName} (${Math.round(c.score)})`)
+                              .join(' · ')}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ── Grocery list attachment (Errand / Shopping) ── */}
+            {currentStepId === 'grocery' && isGroceryCategory && (
+              <AddQuestGrocerySection
+                colors={colors} isDark={isDark}
+                linkGroceries={linkGroceries} setLinkGroceries={setLinkGroceries} setGroceryListOpen={setGroceryListOpen}
+                loadingGroceries={loadingGroceries} groceryItems={groceryItems}
+                expandedStores={expandedStores} setExpandedStores={setExpandedStores}
+                selectedItemIds={selectedItemIds} setSelectedItemIds={setSelectedItemIds}
+                newGroceryLines={newGroceryLines} setNewGroceryLines={setNewGroceryLines}
+                focusedLineIdx={focusedLineIdx} setFocusedLineIdx={setFocusedLineIdx}
+                focusedField={focusedField} setFocusedField={setFocusedField}
+                cachedItemNames={cachedItemNames} cachedStores={cachedStores}
+              />
+            )}
+
+            {currentStepId === 'assign' && <>
+            {/* Coins + Bonus + Photo required — one compact row.
+                coinsLocked: citizenship chores are always free — no coin reward */}
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              <View style={{ width: 78, opacity: (isRoutine && routineType === 'citizenship') || coinsDisabled ? 0.4 : 1 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: colors.border,
+                    backgroundColor: (isRoutine && routineType === 'citizenship') || coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
+                  keyboardType="number-pad"
+                  value={(isRoutine && routineType === 'citizenship') || coinsDisabled ? '0' : coins}
+                  onChangeText={(isRoutine && routineType === 'citizenship') || coinsDisabled ? undefined : setCoins}
+                  editable={!((isRoutine && routineType === 'citizenship') || coinsDisabled)}
+                />
+              </View>
+              <View style={{ width: 78, opacity: (isRoutine && routineType === 'citizenship') || coinsDisabled ? 0.4 : 1 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border,
+                    backgroundColor: (isRoutine && routineType === 'citizenship') || coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
+                  keyboardType="number-pad"
+                  placeholder="+coins"
+                  placeholderTextColor={colors.textTertiary}
+                  value={(isRoutine && routineType === 'citizenship') || coinsDisabled ? '' : bonusCoins}
+                  onChangeText={(isRoutine && routineType === 'citizenship') || coinsDisabled ? undefined : (t => setBonusCoins(t.replace(/[^0-9]/g, '')))}
+                  editable={!((isRoutine && routineType === 'citizenship') || coinsDisabled)}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[aq.label, { color: 'transparent' }]}>·</Text>
+                <TouchableOpacity
+                  style={[aq.toggleRow, { paddingHorizontal: 10,
+                    borderColor: photoReq ? BRAND.purple : pillBdr, backgroundColor: photoReq ? BRAND.purple + '18' : pillBg }]}
+                  onPress={() => setPhotoReq(p => !p)}
+                >
+                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: photoReq ? BRAND.purple : colors.textSecondary, textAlign: 'center' }} numberOfLines={1}>
+                    {photoReq ? '📷 Required' : '📷 Optional'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {(!(isRoutine && routineType === 'citizenship') && !!bonusCoins && parseInt(bonusCoins) > 0) ? (
+              <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginTop: 3 }}>
+                Total: {(parseInt(coins)||0)+(parseInt(bonusCoins)||0)}🪙
+              </Text>
+            ) : (isRoutine && routineType === 'citizenship') ? (
+              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 3 }}>no reward</Text>
+            ) : null}
+
+            {/* Hardness — its own row now that Coins/Bonus/Photo share one above */}
+            <View style={{ marginTop: 10, marginBottom: 14 }}>
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Hardness <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
+              <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                {([
+                  { key: 'easy',   label: '😊',  color: '#10B981' },
+                  { key: 'medium', label: '💪',  color: BRAND.amber },
+                  { key: 'hard',   label: '🔥',  color: '#EF4444' },
+                  { key: 'hero',   label: '⚡',  color: BRAND.purple },
+                ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
+                  <TouchableOpacity
+                    key={d.key}
+                    style={[aq.diffChip, {
+                      borderColor: difficulty === d.key ? d.color : pillBdr,
+                      backgroundColor: difficulty === d.key ? d.color + '22' : pillBg,
+                    }]}
+                    onPress={() => setDifficulty(prev => prev === d.key ? '' : d.key)}
+                  >
+                    <Text style={{ fontSize: TYPO.label }}>{d.label}</Text>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary, marginLeft: 2 }}>
+                      {d.key.charAt(0).toUpperCase() + d.key.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            </>}
+
+            {currentStepId === 'when' && <>
+            {/* Due Date & Time — shared with EditQuestModal, which used to
+                keep a byte-identical copy of this block (see
+                DueDateTimePicker). */}
+            <DueDateTimePicker
+              value={dueDate} setValue={setDueDate}
+              showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+              showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+              fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+              accentColor={BRAND.purple}
+            />
+
+            {/* Linked event (spec 8.2) — optional tie to an upcoming calendar
+                event this quest logistically supports, e.g. "Pack for the
+                trip" -> "Family Trip". Display-only, no cascading behavior. */}
+            {(() => {
+              const upcomingEvents = useEventStore.getState().events
+                .filter(e => e.date >= localDateStr(new Date()))
+                .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+                .slice(0, 30);
+              const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
+              return (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
+                  <TouchableOpacity
+                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                    onPress={() => setShowEventPicker(p => !p)}
+                  >
+                    <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                      {linkedEvent ? linkedEvent.title : 'None'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showEventPicker && (
+                    <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
+                      <ScrollView keyboardShouldPersistTaps="always">
+                        <TouchableOpacity
+                          style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
+                        >
+                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                        </TouchableOpacity>
+                        {upcomingEvents.length === 0 ? (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
+                        ) : upcomingEvents.map(ev => (
+                          <TouchableOpacity
+                            key={ev.id}
+                            style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
+                          >
+                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                              {ev.title}
+                            </Text>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
+            {/* Call-style reminder — shared with the Schedule form and
+                EditQuestModal (see CallReminderToggle). */}
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlertCall}
+              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              variant="icon" pillStyle={aq.datePill}
+            />
+            </>}
+
+            {currentStepId === 'assign' && <>
+            <AddQuestRecurrenceSection
+              colors={colors} isDark={isDark}
+              isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
+              inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
+              teensOnly={teensOnly} toggleTeensOnly={toggleTeensOnly}
+              hideAdultToggles={creatorIsTeen}
+              hasGrandparents={members.some(m => m.role === 'senior')}
+              routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
+              recurrenceDays={recurrenceDays} setRecurrenceDays={setRecurrenceDays}
+              recurrenceDayOfMonth={recurrenceDayOfMonth} setRecurrenceDayOfMonth={setRecurrenceDayOfMonth}
+              isRoutine={isRoutine} setIsRoutine={setIsRoutine}
+              routineType={routineType} setRoutineType={setRoutineType}
+              setCoins={setCoins}
+              shoppingStore={shoppingStore} setShoppingStore={setShoppingStore}
+              shoppingBudget={shoppingBudget} setShoppingBudget={setShoppingBudget}
+              shoppingItemsOpen={shoppingItemsOpen} setShoppingItemsOpen={setShoppingItemsOpen}
+              shoppingLines={shoppingLines} updateShoppingLine={updateShoppingLine} removeShoppingLine={removeShoppingLine} addShoppingLine={addShoppingLine}
+            />
+
+            <AddQuestAssignSection
+              colors={colors} isDark={isDark}
+              members={members} activeMemberId={activeMemberId}
+              isAdultTask={isAdultTask} setIsAdultTask={setIsAdultTask}
+              isPool={isPool} setIsPool={setIsPool}
+              assignIds={assignIds} setAssignIds={setAssignIds}
+              inviteGrandparent={inviteGrandparent}
+              teensOnly={teensOnly}
+              maxClaimants={maxClaimants} setMaxClaimants={setMaxClaimants}
+              coins={coins}
+              pillBg={pillBg}
+            />
+            </>}
+
+            {currentStepId === 'review' && (() => {
+              const assignee = isPool ? null : members.find(m => m.id === assignIds[0]);
+              const assignedLabel = isPool
+                ? `Open pool${maxClaimants ? ` · up to ${maxClaimants === 0 ? '∞' : maxClaimants} kids` : ''}`
+                : assignIds.length === 0 ? 'Unassigned'
+                : assignIds.length > 1 ? `${assignIds.length} kids`
+                : (assignee?.id === activeMemberId ? 'Me' : assignee?.name ?? '—');
+              const rewardLabel = coinsDisabled ? 'No coins (adult task)'
+                : `${coins || '30'}🪙${bonusCoins && parseInt(bonusCoins) > 0 ? ` + ${bonusCoins} bonus` : ''}`;
+              const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              const recurLabel = routineFreq === 'once' ? 'One-time'
+                : routineFreq === 'daily' ? 'Daily'
+                : routineFreq === 'weekly' ? `Weekly${recurrenceDays.length ? ` · ${recurrenceDays.map(d => WEEKDAY_LABELS[d]).join('/')}` : ''}`
+                : routineFreq === 'monthly' ? `Monthly${recurrenceDayOfMonth ? ` · ${recurrenceDayOfMonth === 31 ? 'last day' : `the ${recurrenceDayOfMonth}${['th','st','nd','rd'][recurrenceDayOfMonth % 10 > 3 || [11,12,13].includes(recurrenceDayOfMonth % 100) ? 0 : recurrenceDayOfMonth % 10]}`}` : ''}`
+                : 'First come, first served';
+              // Same review-blocking guard the submit button used before —
+              // review is the one step that can't be "reached and skipped
+              // past" the way earlier steps could, since it's also where
+              // the actual create button lives now.
+              const canSubmit = !!title.trim() && !!desc.trim() && categoryTouched;
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: pillBdr, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 14, gap: 10 }}>
+                    <View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Chore</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }} numberOfLines={2}>
+                        {title.trim() || '—'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Who</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {assignedLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>When</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {fmtDateLabel(dueDate)} · {fmtTimeLabel(dueDate)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Reward</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {rewardLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Repeats</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {recurLabel}
+                        </Text>
+                      </View>
+                    </View>
+                    {!!desc.trim() && (
+                      <View>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Description</Text>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={3}>
+                          {desc.trim()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {!canSubmit && (
+                    <Text style={{ fontSize: TYPO.label, color: colors.danger, textAlign: 'center' }}>
+                      {!title.trim() ? 'Add a title on the first step.'
+                        : !desc.trim() ? 'Add a description on the first step.'
+                        : 'Confirm a category on the first step.'}
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={[aq.submitBtn, { backgroundColor: canSubmit ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+                    onPress={submit} disabled={saving || !canSubmit}
+                  >
+                    {saving
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Chore to Board</Text>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
+    </TaskFormShell>
+  );
+}
+export const aq = StyleSheet.create({
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%' },
+  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  title:      { fontSize: TYPO.subheading, fontWeight: '900' },
+  label:      { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 5 },
+  input:      { borderWidth: 1.5, borderRadius: 14, padding: 13, fontSize: TYPO.body, marginBottom: 12 },
+  catChip:    { borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+  toggleRow:  { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center' },
+  avatarCheck:{ position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' },
+  datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
+  pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },
+  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxWidth: 220 },
+  diffChip:   { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 },
+  descInput:  { minHeight: 72, marginBottom: 4 },
+  submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
+  avatar:     { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+});
+

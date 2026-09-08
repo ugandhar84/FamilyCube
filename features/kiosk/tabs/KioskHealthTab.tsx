@@ -72,7 +72,7 @@ import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
 import { KioskAddMedForm } from '../components/KioskAddMedForm';
 import { KioskAddVaxForm } from '../components/KioskAddVaxForm';
 import AddRecordModal from '@/features/vault/records/AddRecordModal';
-import ScanReviewSheet from '@/features/vault/tabs/health/ScanReviewSheet';
+import { KioskScanReviewForm } from '../components/KioskScanReviewForm';
 import { showToast } from '@/components/AppToast';
 import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
 
@@ -202,7 +202,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [showScanSheet, setShowScanSheet] = useState(false);
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
-  const [scanning, setScanning] = useState(false);
 
   // Every save function below is wrapped in try/catch so it can never
   // reject — AddMedModal/AddVaxModal/AddRecordModal/ScanReviewSheet all
@@ -638,7 +637,16 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         <AddRecordModal visible={showAddRecord} onClose={() => setShowAddRecord(false)}
           onSave={addRecord} colors={colors} isDark={isDark}
           members={members} activeMemberId={activeMemberId ?? null} />
-        <ScanReviewSheet
+        {/* Kiosk-native narrow side drawer with its own 3-step stepper
+            (Choose source → Cover sensitive info → Review & save), matching
+            KioskFormDrawer's own drawer shape [live-reported: "instead
+            bottom sheet in the koisek show the narrow window side like
+            receipt scan style" → "with stepper"]. Same real scan/save
+            logic underneath — see KioskScanReviewForm.tsx's own header for
+            why this owns its own Modal instead of reusing KioskFormDrawer
+            directly (the redact step needs full-bleed rendering
+            KioskFormDrawer's fixed padded body can't give it). */}
+        <KioskScanReviewForm
           visible={showScanSheet}
           scanMode={scanMode}
           activeMemberId={activeMember?.id ?? ''}
@@ -648,7 +656,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           onClose={() => setShowScanSheet(false)}
           onSaveMed={saveScannedMed}
           onSaveVax={saveScannedVax}
-          onScanningChange={setScanning}
         />
 
         </View>

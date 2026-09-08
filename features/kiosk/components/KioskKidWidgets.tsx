@@ -40,6 +40,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
+import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
 import { KidRequestsSheet } from './KioskKidQuickActions';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtTime } from '@/lib/dates';
@@ -48,7 +49,7 @@ import { showToast } from '@/components/AppToast';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { useKioskFonts, KIOSK_FONT } from '../kioskFonts';
-import { COLUMN_STATUSES, visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
+import { visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
 
@@ -204,31 +205,6 @@ export function KidTodayWidget({ active, k, isDark, onOpenSchedule, style }: {
 // My Chores — status breakdown + up-for-grabs bounties
 // ════════════════════════════════════════════════════════════════════════
 
-// kioskQuestMeta (the icon + uppercase pill label + accent per status,
-// itself a translation of KidQuestCard.tsx's questStatusMeta) moved to
-// ../kidQuestLanes when the Chores board needed the IDENTICAL pill in its
-// own card header — a second copy is exactly how the two kiosk surfaces
-// would end up disagreeing about what a given status looks like. See that
-// file for the full phone→kiosk color mapping and why declined is gold
-// rather than red. `accentFor` below still derives its lane tints from the
-// same convention.
-//
-// questTimeline (the claimed → submitted → approved line) moved to
-// ../kidQuestLanes when the Chores board needed the identical line inside
-// its own card body — see that file for the formatter's provenance. Nothing
-// about the string it produces changed; this file is a pure import site now.
-
-// Live-reported: "give the chore filter names too short" — the status
-// strip's counter pills wrapped to 2 uneven lines for the longer labels
-// ("In Progress", "Needs Redo") even at kiosk's smallest allowed text
-// size. COLUMN_STATUSES.label itself stays as-is (it's the Chores board's
-// OWN wording, reused deliberately rather than reinvented — see
-// kidQuestLanes.ts), so this is a display-only alias scoped to just this
-// one cramped 4-up strip.
-const STATUS_STRIP_SHORT_LABEL: Record<string, string> = {
-  todo: 'To Do', progress: 'Active', redo: 'Redo', review: 'Review',
-};
-
 export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -260,34 +236,36 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   const pool = useMemo(() => poolQuestsIn(visible), [visible]);
   const poolIds = useMemo(() => new Set(pool.map(q => q.id)), [pool]);
 
-  // The board's own four buckets, in the board's own words — a kid should
-  // not have to translate between "Needs Redo" here and something else one
-  // tab over. Each bucket now carries its own quest list (not just a
-  // count) so the strip can act as a real tab bar: tapping one filters the
-  // list below to just those chores, matching what a kid would expect from
-  // a row of four numbered pills that look tappable.
-  const buckets = useMemo(() => {
-    const mine = visible.filter(q => !poolIds.has(q.id) && q.assignedToId === active.id);
-    return COLUMN_STATUSES.map(col => ({
-      key: col.key,
-      label: col.label,
-      items: mine.filter(q => col.statuses.includes(q.status)),
-    }));
-  }, [visible, poolIds, active.id]);
+  // Mock's own 4-pill filter set exactly: All / Needs review / To do /
+  // Done — a real, different shape from the Chores board's own 4
+  // COLUMN_STATUSES lanes (todo/progress/redo/review), which have no
+  // direct 1:1 mapping onto the mock's simpler 3 named filters (the mock
+  // has no separate "in progress" or "needs redo" pill, and no "Done"
+  // lane existed in this widget at all before now — completed chores were
+  // simply never shown here). Folded without losing any real status:
+  // "To do" = todo + in-progress/claimed (not yet submitted), "Needs
+  // review" = pending_approval + declined (needs a parent's attention
+  // either way), "Done" = approved/done (a real bucket, newly added to
+  // this widget rather than continuing to exclude completed chores
+  // entirely) [live-requested: "still MY tasks section is not matching
+  // with MOCK filterpills"].
+  const FILTERS: { key: string; label: string; statuses: string[] }[] = [
+    { key: 'all',    label: 'All',          statuses: [] },
+    { key: 'review', label: 'Needs review', statuses: ['pending_approval', 'declined'] },
+    { key: 'todo',   label: 'To do',        statuses: ['todo', 'claimed', 'in_progress'] },
+    { key: 'done',   label: 'Done',         statuses: ['approved', 'done'] },
+  ];
 
-  /**
-   * Lane accent. Was: todo=gold, progress=BLUE, redo=DANGER-RED, review=sage
-   * — a kiosk-invented mapping that disagreed with the phone card on three
-   * of four lanes (see kioskQuestMeta's comment for the phone's real map).
-   * Now derived from the same convention: progress is sage (the phone's
-   * teal "in progress"), redo is gold (the phone deliberately does NOT use
-   * red there), review is gold, todo is purple.
-   */
-  const accentFor = (key: string) =>
-    key === 'todo' ? k.purple
-      : key === 'progress' ? k.sage
-      : key === 'redo' ? k.gold
-      : k.gold;
+  const mine = useMemo(
+    () => visible.filter(q => !poolIds.has(q.id) && q.assignedToId === active.id),
+    [visible, poolIds, active.id],
+  );
+
+  const buckets = useMemo(() => FILTERS.map(f => ({
+    key: f.key,
+    label: f.label,
+    items: f.key === 'all' ? mine : mine.filter(q => f.statuses.includes(q.status)),
+  })), [mine]);
 
   // The exact same per-status action the Chores board offers — same
   // deriveQuestActions gate, same store calls, same toast copy — so a kid
@@ -357,14 +335,16 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   // object pinned open — the dialog re-looks-up the live chore on submit.
   const [declineTarget, setDeclineTarget] = useState<{ id: string; title: string } | null>(null);
 
-  const totalMine = buckets.reduce((n, b) => n + b.items.length, 0);
+  // mine.length, not a sum across buckets — "all" is one of the buckets
+  // now (matching the mock's own always-present All pill), so summing
+  // every bucket's own item count would double-count each chore once for
+  // "all" and again for whichever specific status it's actually in.
+  const totalMine = mine.length;
 
-  // Selected tab. Defaults to the first bucket that actually has something
-  // in it (falling back to "To Do") so opening this widget doesn't land on
-  // an empty tab when there's real work sitting in a later one.
-  const [activeBucket, setActiveBucket] = useState<string>(() =>
-    buckets.find(b => b.items.length > 0)?.key ?? COLUMN_STATUSES[0].key,
-  );
+  // Mock's own default selected pill is "All" — matches its screenshot
+  // (the All pill shown active/filled) rather than auto-jumping to
+  // whichever status has something in it.
+  const [activeBucket, setActiveBucket] = useState<string>('all');
   const selected = buckets.find(b => b.key === activeBucket) ?? buckets[0];
 
   return (
@@ -384,55 +364,43 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
           listed (scrollable, capped height) right below — a kid could
           only glance at counts before, with no way to see WHICH chores
           were "in progress" without leaving this widget for the full
-          Chores tab. Selected tab gets a solid fill + bottom-accent bar so
-          it reads as "currently open," not just "has a nonzero count." */}
-      <View style={s.statusStrip}>
-        {buckets.map(b => {
-          const on = b.items.length > 0;
-          const isSelected = b.key === activeBucket;
-          const accent = accentFor(b.key);
-          return (
-            <Pressable
-              key={b.key}
-              onPress={() => setActiveBucket(b.key)}
-              style={[
-                s.statusCell,
-                // Mock's own .chip.active convention: a selected filter
-                // fills solid with the page's own text/ink colors, not an
-                // accent tint — every OTHER chip (selected or not) stays
-                // the same neutral surface, only the count/label color
-                // carries the per-status accent. Matches the mock's real
-                // chip look while keeping this strip's own count-forward
-                // 4-cell layout (a deliberate, already-tuned kiosk-scale
-                // touch target, not the mock's small text pill)
-                // [live-requested: "all the cards and the action styles
-                // should match the mock"].
-                {
-                  backgroundColor: isSelected ? k.text : k.well,
-                  borderColor: isSelected ? k.text : on ? accent + (isDark ? '45' : '38') : k.cardBorder,
-                  borderWidth: 1,
-                },
-              ]}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isSelected }}
-              accessibilityLabel={`${b.items.length} ${b.label}`}
-            >
-              <Text
-                style={[s.statusCount, { color: isSelected ? k.card : on ? accent : k.textFaint }]}
-                numberOfLines={1}
+          Chores tab.
+
+          Rebuilt to match the mock's own exact .chip/.chip.active shape
+          (screenshot reference) — a single-row scroller of flat pills,
+          label + inline "(N)" count, all the same neutral surface/text
+          color; only the SELECTED pill fills solid with k.text/k.card
+          (page ink), no per-status accent tinting anywhere — not the
+          earlier 4-cell grid with big stacked numbers and per-status
+          accent colors [live-requested: "still MY tasks section is not
+          matching with MOCK filterpills"]. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.statusStripScroll}>
+        <View style={s.statusStrip}>
+          {buckets.map(b => {
+            const isSelected = b.key === activeBucket;
+            return (
+              <Pressable
+                key={b.key}
+                onPress={() => setActiveBucket(b.key)}
+                style={[
+                  s.chip,
+                  { backgroundColor: isSelected ? k.text : k.well, borderColor: isSelected ? k.text : k.cardBorder },
+                ]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${b.label}, ${b.items.length}`}
               >
-                {b.items.length}
-              </Text>
-              <Text
-                style={[s.statusLabel, { color: isSelected ? k.card : on ? accent : k.textFaint }]}
-                numberOfLines={1}
-              >
-                {STATUS_STRIP_SHORT_LABEL[b.key] ?? b.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <Text
+                  style={[s.chipText, { color: isSelected ? k.card : k.text }]}
+                  numberOfLines={1}
+                >
+                  {b.label} <Text style={{ opacity: 0.6 }}>({b.items.length})</Text>
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {/* The selected tab's chores. Was a non-scrolling 3-row cap + "See N
           more" link — this widget used to live in the Overview's own
@@ -631,13 +599,47 @@ export function KioskUpForGrabsPanel({
             <View key={q.id} style={[s.poolFlatRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[s.poolFlatTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
-                <Text style={[s.poolFlatMeta, { color: k.textFaint }]} numberOfLines={1}>
-                  {q.assignedToId ? 'Claimed' : 'No one claimed yet'}
-                </Text>
+                {/* Meta + coins on the same row now, same "coins live next
+                    to the status text" pattern My Tasks' own rows use
+                    [live-requested: "move the coins nooneclaime yet row
+                    with blinking.."].
+                    Real time-limited bonus (q.bonusExpiresAt) gets the
+                    exact real FlashBonusBadge — same component/live
+                    countdown/pulse-faster-when-critical the Quests tab's
+                    own QuestCard uses, not a kiosk reinvention.
+                    [live-asked: "i think there is a timer right for this
+                    claim and i belive we have some fomo logic to expire
+                    it and auto assing with penalty and push bonus etc.."
+                    / "is it parent triggerd or auto cron?" — verified by
+                    reading the actual code, not assumed: PARENT-TRIGGERED
+                    ONLY, no auto-cron. bonusCoins/bonusExpiresAt are only
+                    ever set client-side when a parent applies
+                    KioskAiChoresEngine.tsx's own Spark suggestion
+                    (updateQuest). A server-side quest-sweep-cron function
+                    DOES exist and once had exactly this "expire the FOMO
+                    bonus → force-reassign + coin penalty" logic — but that
+                    function's own header comment documents it was
+                    deleted: it queried a `quests` table the real app
+                    never uses (chore_tasks is the real table, with no
+                    bonus_coins/bonus_expires_at columns at all), so those
+                    branches were "dropped entirely rather than ported
+                    onto columns that don't exist." Today, nothing
+                    actually happens when this countdown hits zero except
+                    the badge disappearing — it's a real field with no
+                    server-side enforcement behind it, not a UI bug on my
+                    part to fix here.] Otherwise a plain, non-pulsing coin
+                    amount — nothing time-limited about it. */}
+                <View style={s.poolFlatMetaRow}>
+                  <Text style={[s.poolFlatMeta, { color: k.textFaint }]} numberOfLines={1}>
+                    {q.assignedToId ? 'Claimed' : 'No one claimed yet'}
+                  </Text>
+                  {q.bonusExpiresAt && q.bonusCoins > 0 ? (
+                    <FlashBonusBadge bonusCoins={q.coins + q.bonusCoins} expiresAt={q.bonusExpiresAt} />
+                  ) : q.coins > 0 ? (
+                    <Text style={[s.poolFlatCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
+                  ) : null}
+                </View>
               </View>
-              {q.coins > 0 && (
-                <Text style={[s.poolFlatCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
-              )}
               {/* Claim right here — the whole point of surfacing "up for
                   grabs" on a shared kiosk widget is that a kid standing at
                   the counter shouldn't have to switch to the Chores tab
@@ -879,15 +881,71 @@ function ChoreCardRow({
           {q.title}
         </Text>
         <View style={s.taskMetaRow}>
-          {!!q.dueDate && !isDone && (
-            <Text style={[s.taskMeta, { color: k.textFaint, fontFamily: fontSemibold }]} numberOfLines={1}>
-              {q.dueDate}
-            </Text>
-          )}
+          {/* Mock's own simple meta line ("Every day · kitchen", "Due
+              tonight", "Completed Wednesday") — real recurrence/description/
+              due-date fields, not invented copy: description (a kid's own
+              real note on the chore) or a plain recurrence label when
+              there's no description, falling back to the due date; a
+              completed chore instead shows when it was approved.
+              App-wide date format standard: "Mar 25, 2026" (abbreviated
+              month, not full — live-requested: "date format should be
+              Mar 25, 2026 12h format"), real 12-hour time. Was a raw
+              "YYYY-MM-DD" q.dueDate string / a bare weekday name for the
+              completed line — both real formatting bugs against that
+              standard, not intentional. dueTime is already stored as a
+              real display-formatted 12h string (e.g. "3:30 PM", via
+              questFormShared's own fmtTimeLabel at write time —
+              AddQuestModal.tsx's own `dueTime: fmtTimeLabel(dueDate)`),
+              used as-is rather than re-parsed. */}
+          <Text style={[s.taskMeta, { color: k.textFaint, fontFamily: fontSemibold, flexShrink: 1 }]} numberOfLines={1}>
+            {(() => {
+              if (isDone) {
+                return q.approvedAt
+                  ? `Completed ${new Date(q.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : '';
+              }
+              // Due date/time takes priority whenever the chore actually
+              // has one — was losing to the recurrence label for any
+              // repeating chore (most real chores ARE recurring — "Feed
+              // Biscuit," "Make my bed," etc.), which hid the real due
+              // date/time behind "Every day" every time [live-requested:
+              // "i still dint see due time"]. AddQuestModal always writes
+              // dueTime alongside dueDate from the same picker value
+              // (fmtTimeLabel(dueDate)), so a quest with a due date
+              // essentially always has a real due time too. Recurrence
+              // label is now only the fallback for a chore that somehow
+              // has no due date/time at all, then description, then
+              // nothing.
+              const dueLabel = q.dueDate
+                ? `Due ${new Date(q.dueDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  + (q.dueTime ? ` · ${q.dueTime}` : '')
+                : null;
+              const recurLabel = q.isDaily || q.recurrence === 'daily' ? 'Every day'
+                : q.recurrence === 'weekly' ? 'Every week'
+                : q.recurrence === 'monthly' ? 'Every month'
+                : null;
+              return dueLabel || recurLabel || q.description || '';
+            })()}
+          </Text>
           {inReview && (
             <View style={[s.taskBadge, { backgroundColor: k.goldSoft }]}>
               <Text style={[s.taskBadgeText, { color: k.gold, fontFamily: fontExtrabold }]} numberOfLines={1}>PENDING</Text>
             </View>
+          )}
+          {/* Coins — moved inline with due date/time instead of stacked
+              in the right-hand action column [live-requested: "coins can
+              be shown in the row of duedate and time right"]. Sits right
+              after the meta text/PENDING badge with the row's own normal
+              gap spacing, not pushed out to the far right edge — that
+              read as too far separated from the status it's paired with
+              [live-requested: "pending status and the coins move closure
+              to the due date and time" / "why coins pushed too far from
+              status?"]. */}
+          {!isDone && q.coins > 0 && (
+            <Text style={[s.taskCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
+          )}
+          {isDone && (
+            <Text style={[s.taskDoneCoin, { color: k.textFaint }]} numberOfLines={1}>+{q.coins}</Text>
           )}
         </View>
         {inReview && (
@@ -903,59 +961,61 @@ function ChoreCardRow({
         )}
       </View>
 
-      {q.coins > 0 && !isDone && (
-        <Text style={[s.taskCoin, { color: k.gold }]} numberOfLines={1}>+{q.coins}</Text>
-      )}
+      {/* Action(s) — right-aligned column, coins moved up into the meta
+          row (due date/time) instead [live-requested: "buttons are
+          positions weired" / "coins can be shown in the row of duedate
+          and time right"]. This app's real chores can carry a SECOND
+          "Can't do this" button alongside the primary one, so the two are
+          stacked here rather than trying to fit both on one line. */}
+      <View style={s.taskRightCol}>
 
-      {/* Mock's own disabled "Awaiting review" ghost pill for a chore with
-          no available action (in review, waiting on a parent). */}
-      {!isDone && !btn && inReview && (
-        <View style={[s.taskActionBtn, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
-          <Text style={[s.taskActionText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
-            Awaiting review
-          </Text>
-        </View>
-      )}
-
-      {!isDone && btn && (
-        <View style={s.taskActionPair}>
-          <Pressable
-            onPress={btn.action}
-            style={({ pressed }) => [
-              s.taskActionBtn,
-              { backgroundColor: k.well, borderColor: k.cardBorder },
-              pressed && { backgroundColor: btn.accent, borderColor: btn.accent },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`${btn.label}: ${q.title}`}
-            accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
-          >
-            <Text style={[s.taskActionText, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={1}>
-              {btn.label}
+        {/* Mock's own disabled "Awaiting review" ghost pill for a chore
+            with no available action (in review, waiting on a parent). */}
+        {!isDone && !btn && inReview && (
+          <View style={[s.taskActionBtn, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
+            <Text style={[s.taskActionText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
+              Awaiting review
             </Text>
-          </Pressable>
-          {showDecline && (
+          </View>
+        )}
+
+        {!isDone && btn && (
+          <View style={s.taskActionPair}>
             <Pressable
-              onPress={onDecline}
+              onPress={btn.action}
               style={({ pressed }) => [
                 s.taskActionBtn,
                 { backgroundColor: k.well, borderColor: k.cardBorder },
-                pressed && { backgroundColor: k.danger, borderColor: k.danger },
+                pressed && { backgroundColor: btn.accent, borderColor: btn.accent },
               ]}
               accessibilityRole="button"
-              accessibilityLabel={`Can't do this: ${q.title}`}
-              accessibilityHint="Give a reason and put this chore back up for grabs"
+              accessibilityLabel={`${btn.label}: ${q.title}`}
+              accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
             >
-              <Text style={[s.taskActionText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
-                Can't do this
+              <Text style={[s.taskActionText, { color: k.text, fontFamily: fontExtrabold }]} numberOfLines={1}>
+                {btn.label}
               </Text>
             </Pressable>
-          )}
-        </View>
-      )}
-      {isDone && (
-        <Text style={[s.taskDoneCoin, { color: k.textFaint }]} numberOfLines={1}>+{q.coins}</Text>
-      )}
+            {showDecline && (
+              <Pressable
+                onPress={onDecline}
+                style={({ pressed }) => [
+                  s.taskActionBtn,
+                  { backgroundColor: k.well, borderColor: k.cardBorder },
+                  pressed && { backgroundColor: k.danger, borderColor: k.danger },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Can't do this: ${q.title}`}
+                accessibilityHint="Give a reason and put this chore back up for grabs"
+              >
+                <Text style={[s.taskActionText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
+                  Can't do this
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -985,11 +1045,23 @@ const s = StyleSheet.create({
   evTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   evMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2 },
 
-  // My chores. statusCount was KIOSK_TYPO.heading — a display-scale number
-  // in a small widget cell read as oversized/"zoomed" next to everything
-  // else on this card; subheading is still clearly the largest thing in
-  // the cell without dominating the whole widget.
-  statusStrip: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.sm },
+  // My tasks filter pills — mock's own flat .chip/.chip.active shape,
+  // matched to its real CSS values (not the generic KIOSK_SPACE/HIT
+  // tokens, which read visibly chunkier — KIOSK_HIT.min's 48px floor
+  // alone made this pill roughly 50% taller than the mock's real ~31px
+  // pill) [live-requested: "it is not matchign the pill shapes & sizes of
+  // text with the mock"]: .chip{font-size:12px;font-weight:700;
+  // padding:7px 13px;border-radius:999px}. A filter chip is a lighter,
+  // denser control by the mock's own design — this doesn't carry kiosk's
+  // usual 48px touch-target floor, same as it doesn't in the reference.
+  statusStripScroll: { marginBottom: KIOSK_SPACE.sm },
+  statusStrip: { flexDirection: 'row', gap: 8 },
+  chip: {
+    borderRadius: 999, borderWidth: 1,
+    paddingHorizontal: 13, paddingVertical: 7,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chipText: { fontSize: 12, fontWeight: '700' },
   // ~76px per collapsed ChoreCardRow (2-line header + padding/border) + xs
   // gap, so 5 rows visible by default before scrolling — same bounded-
   // height + nestedScrollEnabled pattern FamilySchedulePanel/"Meals this
@@ -997,13 +1069,6 @@ const s = StyleSheet.create({
   choreListScroll: { maxHeight: 400 },
   // ~50px per poolRow + xs gap, 5 rows visible by default.
   poolListScroll: { maxHeight: 270 },
-  statusCell: {
-    flex: 1, minWidth: 0, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', gap: 2,
-    paddingVertical: KIOSK_SPACE.xs, paddingHorizontal: 4, minHeight: KIOSK_HIT.min,
-  },
-  statusCount: { fontSize: KIOSK_TYPO.subheading, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  statusLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', textAlign: 'center' },
   // ── Rich chore card (ChoreCardRow) ────────────────────────────────────
   // (The old bucketScroll/bucketRow/bucketTitle styles are gone: the
   // selected-tab list now renders ChoreCardRow, whose title gets a full
@@ -1044,8 +1109,16 @@ const s = StyleSheet.create({
   taskMeta: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
   taskBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
   taskBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
-  taskCoin: { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'], marginTop: 2 },
-  taskDoneCoin: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], marginTop: 2 },
+  // Mock's own .task-coin exactly: font-size:14px; font-weight:600 (not
+  // extrabold — the coin amount is quieter than the mock's title/action
+  // text, carrying its color rather than heavy weight for emphasis).
+  taskCoin: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'], textAlign: 'right' },
+  taskDoneCoin: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'], marginTop: 2 },
+  // Coins + action(s), stacked as one right-aligned column — see
+  // ChoreCardRow's own comment on why these no longer sit as three loose
+  // row siblings (coin amount + up to two buttons never fit on one line
+  // at kiosk scale without wrapping oddly).
+  taskRightCol: { alignItems: 'flex-end', gap: KIOSK_SPACE.xs, flexShrink: 0 },
   choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700', marginTop: 2 },
   // The parent's decline note on a needs-redo chore — real information the
   // mock's own read-only reference has no field for; kept, not dropped.
@@ -1059,27 +1132,38 @@ const s = StyleSheet.create({
   // the button's own accent (Mark Done -> sage, Can't do this -> danger)
   // only when pressed, matching .task-action:hover's real behavior as
   // closely as a touch UI (no hover state) can.
-  taskActionPair: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginTop: KIOSK_SPACE.xs, flexWrap: 'wrap' },
+  // Column, not row — two buttons side by side in this narrow right-hand
+  // column wrapped awkwardly at kiosk scale; stacked instead, matching
+  // the coin amount right above them.
+  taskActionPair: { gap: KIOSK_SPACE.xs },
   taskActionBtn: {
     minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch',
   },
   taskActionText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800' },
 
   poolMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-  // Up for Grabs — flat mock-matched rows (KioskUpForGrabsPanel): divided
-  // by a hairline, gold "+N" coin amount, sage-tinted Claim pill.
+  // Up for Grabs — flat mock-matched rows (KioskUpForGrabsPanel), matched
+  // to the mock's own real CSS values same as My Tasks' pills/coin above:
+  // .bounty-title{font-size:13.5px;font-weight:700},
+  // .bounty-meta{font-size:11.5px}, .bounty-coin{font-size:15px;
+  // font-weight:600}, .claimbtn{font-size:11px;font-weight:700;
+  // padding:7px 11px;border-radius:7px} — not the generic KIOSK_TYPO/HIT
+  // tokens, which read visibly chunkier (same 48px-floor mismatch as the
+  // filter pills) [live-requested: "now upfor grabs match the sme
+  // stylings"].
   poolFlatRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     paddingVertical: KIOSK_SPACE.sm,
   },
-  poolFlatTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
-  poolFlatMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 1 },
-  poolFlatCoin: { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  poolFlatTitle: { fontSize: 13.5, fontWeight: '700' },
+  poolFlatMetaRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: 1 },
+  poolFlatMeta: { fontSize: 11.5, fontWeight: '600' },
+  poolFlatCoin: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   poolFlatClaimBtn: {
-    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: 11, paddingVertical: 7, borderRadius: 7,
     alignItems: 'center', justifyContent: 'center',
   },
-  poolFlatClaimText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  poolFlatClaimText: { fontSize: 11, fontWeight: '700' },
 });

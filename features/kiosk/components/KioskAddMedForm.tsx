@@ -61,7 +61,7 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
   colors: any;
   isDark: boolean;
 }) {
-  const { k } = useKioskColors();
+  const { k, isDark: kioskDark } = useKioskColors();
   const [form, setForm] = useState<MedForm>(BLANK_MED);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
   const [saving, setSaving] = useState(false);
@@ -138,6 +138,9 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
   }, [form.category, form.name, globalSuggestions]);
 
   const input = kioskInputStyle(k);
+  // Real "no past dates" floor — today at local midnight, so today itself
+  // still selectable, only strictly-past days are blocked.
+  const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
   const handleSave = async () => {
     setSubmitAttempted(true);
@@ -234,7 +237,7 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
         <Pressable
           onPress={() => {
             if (Platform.OS === 'android') {
-              openAndroidPicker({ mode: 'date', value: new Date(form.start_date + 'T00:00:00'), onChange: d => set('start_date', fmtDate(d)) });
+              openAndroidPicker({ mode: 'date', value: new Date(form.start_date + 'T00:00:00'), minimumDate: todayMidnight, onChange: d => set('start_date', fmtDate(d)) });
             } else {
               setShowStartPicker(p => !p); setShowEndPicker(false);
             }
@@ -247,7 +250,7 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
         <Pressable
           onPress={() => {
             if (Platform.OS === 'android') {
-              openAndroidPicker({ mode: 'date', value: form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00'), onChange: d => set('end_date', fmtDate(d)) });
+              openAndroidPicker({ mode: 'date', value: form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00'), minimumDate: new Date(form.start_date + 'T00:00:00'), onChange: d => set('end_date', fmtDate(d)) });
             } else {
               setShowEndPicker(p => !p); setShowStartPicker(false);
             }
@@ -260,18 +263,43 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
           </Text>
         </Pressable>
       </View>
+      {/* "Intelligent checks" [live-reported: "we should not show the past
+          dates for the reminders start and end dates < starts date - we
+          must have all sort of intellegent checks validations"] — real
+          new validation beyond what AddMedModal.tsx itself enforces
+          (confirmed by reading it: mobile has NO minimumDate anywhere on
+          this form at all), added here since it's a genuine, low-risk
+          improvement in a kiosk-only file. Start date can't be in the
+          past; end date can't be before whatever start date is currently
+          set — both enforced at the picker level (minimumDate, so the
+          invalid dates are literally not selectable) rather than only
+          after the fact. */}
+      {form.end_date && form.end_date < form.start_date && (
+        <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.danger, fontWeight: '700', marginBottom: KIOSK_SPACE.xs }}>
+          End date can't be before the start date.
+        </Text>
+      )}
       {/* iOS-only inline calendars, right below the two date buttons —
           Android already opened its own native dialog above and never
           gets here (KioskDateTimePicker itself returns null on Android). */}
       <KioskDateTimePicker
-        mode="date" visible={showStartPicker} k={k}
+        mode="date" visible={showStartPicker} k={k} isDark={kioskDark}
         value={new Date(form.start_date + 'T00:00:00')}
-        onChange={d => set('start_date', fmtDate(d))}
+        minimumDate={todayMidnight}
+        onChange={d => {
+          set('start_date', fmtDate(d));
+          // Push the end date forward too if it would now be before the
+          // new start date, rather than silently leaving an invalid range.
+          if (form.end_date && form.end_date < fmtDate(d)) set('end_date', fmtDate(d));
+        }}
+        onDone={() => setShowStartPicker(false)}
       />
       <KioskDateTimePicker
-        mode="date" visible={showEndPicker} k={k}
+        mode="date" visible={showEndPicker} k={k} isDark={kioskDark}
         value={form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00')}
+        minimumDate={new Date(form.start_date + 'T00:00:00')}
         onChange={d => set('end_date', fmtDate(d))}
+        onDone={() => setShowEndPicker(false)}
       />
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.xs, flexWrap: 'wrap', marginTop: (showStartPicker || showEndPicker) && Platform.OS === 'ios' ? KIOSK_SPACE.sm : 0, marginBottom: KIOSK_SPACE.md }}>
         {form.reminder_times.map((time, idx) => (
@@ -291,12 +319,13 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
       </View>
       {Platform.OS === 'ios' && showTimePickerIdx !== null && (
         <KioskDateTimePicker
-          mode="time" k={k}
+          mode="time" k={k} isDark={kioskDark}
           value={(() => {
             const [h, m] = form.reminder_times[showTimePickerIdx].split(':').map(Number);
             const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d;
           })()}
           onChange={d => setReminderTime(showTimePickerIdx, `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)}
+          onDone={() => setShowTimePickerIdx(null)}
         />
       )}
 
@@ -337,7 +366,7 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
           <Pressable
             onPress={() => {
               if (Platform.OS === 'android') {
-                openAndroidPicker({ mode: 'date', value: refillDate ?? new Date(), onChange: setRefillDate });
+                openAndroidPicker({ mode: 'date', value: refillDate ?? new Date(), minimumDate: todayMidnight, onChange: setRefillDate });
               } else {
                 setShowRefillPicker(p => !p);
               }
@@ -350,8 +379,8 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
             </Text>
           </Pressable>
           {Platform.OS === 'ios' && (
-            <KioskDateTimePicker mode="date" visible={showRefillPicker} k={k}
-              value={refillDate ?? new Date()} onChange={setRefillDate} />
+            <KioskDateTimePicker mode="date" visible={showRefillPicker} k={k} isDark={kioskDark}
+              value={refillDate ?? new Date()} minimumDate={todayMidnight} onChange={setRefillDate} onDone={() => setShowRefillPicker(false)} />
           )}
         </View>
         <View style={{ flex: 1 }}>

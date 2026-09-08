@@ -31,7 +31,7 @@ export function KioskAddVaxForm({ visible, onClose, onSave, members, colors, isD
   colors: any;
   isDark: boolean;
 }) {
-  const { k } = useKioskColors();
+  const { k, isDark: kioskDark } = useKioskColors();
   const [form, setForm] = useState<VaxForm>(BLANK_VAX);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
   const [saving, setSaving] = useState(false);
@@ -139,14 +139,14 @@ export function KioskAddVaxForm({ visible, onClose, onSave, members, colors, isD
             <Text style={{ color: k.text, fontSize: KIOSK_TYPO.body }}>{fmtDateDisplay(adminDate)}</Text>
           </Pressable>
           {Platform.OS === 'ios' && (
-            <KioskDateTimePicker mode="date" visible={showAdminPick} k={k} value={adminDate} onChange={setAdminDate} />
+            <KioskDateTimePicker mode="date" visible={showAdminPick} k={k} isDark={kioskDark} value={adminDate} onChange={setAdminDate} onDone={() => setShowAdminPick(false)} />
           )}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint, marginBottom: 4 }}>Next Due (optional)</Text>
           <Pressable
             onPress={() => {
-              if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: nextDate ?? new Date(), onChange: setNextDate });
+              if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: nextDate ?? adminDate, minimumDate: adminDate, onChange: setNextDate });
               else setShowNextPick(p => !p);
             }}
             style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
@@ -157,10 +157,19 @@ export function KioskAddVaxForm({ visible, onClose, onSave, members, colors, isD
             </Text>
           </Pressable>
           {Platform.OS === 'ios' && (
-            <KioskDateTimePicker mode="date" visible={showNextPick} k={k} value={nextDate ?? new Date()} onChange={setNextDate} />
+            <KioskDateTimePicker mode="date" visible={showNextPick} k={k} isDark={kioskDark} value={nextDate ?? adminDate} minimumDate={adminDate} onChange={setNextDate} onDone={() => setShowNextPick(false)} />
           )}
         </View>
       </View>
+      {/* Real validation: next due can't be before the vaccine was
+          administered [live-reported: "we must have all sort of
+          intellegent checks validations"] — enforced via minimumDate on
+          both pickers above, so the invalid range isn't even selectable. */}
+      {nextDate && nextDate < adminDate && (
+        <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.danger, fontWeight: '700', marginBottom: KIOSK_SPACE.sm }}>
+          Next due date can't be before the administered date.
+        </Text>
+      )}
 
       {/* ── Dose series ── */}
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md }}>

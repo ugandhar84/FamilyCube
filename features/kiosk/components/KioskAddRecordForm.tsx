@@ -20,15 +20,17 @@
  * is unchanged — this only replaces AddRecordModal's UI shell.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Alert } from 'react-native';
-import { FileText as FileTextIcon, Camera, Image as ImageIcon, FolderOpen, X, Shield, Lock } from 'lucide-react-native';
+import { FileText as FileTextIcon, Camera, Image as ImageIcon, FolderOpen, X, Shield, Lock, Calendar as CalendarIcon } from 'lucide-react-native';
 import PhotoRedactModal, { RedactableImage } from '@/components/PhotoRedactModal';
 import { RecordForm, TAGS, BLANK_FORM, fmtSize } from '@/features/vault/records/types';
+import { fmtDate, fmtDateDisplay } from '@/features/vault/tabs/health/types';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_RADIUS, KIOSK_TYPO, KIOSK_HIT } from '../kioskTheme';
 
@@ -57,6 +59,7 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
   const [saving, setSaving] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{ asset: ImagePicker.ImagePickerAsset; redactImg: RedactableImage } | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -165,11 +168,34 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
           ))}
         </View>
 
-        {/* Record date */}
+        {/* Record date — real picker instead of a typed YYYY-MM-DD field
+            [live-reported: "all forms we must have this calender date
+            wherever applicable"]. No minimumDate here: a medical record's
+            own date is very often in the past (an old lab result being
+            scanned in today), unlike a medication's own forward-looking
+            start/end schedule. */}
         <KioskFieldLabel k={k}>RECORD DATE</KioskFieldLabel>
-        <TextInput value={form.record_date} onChangeText={v => setForm(f => ({ ...f, record_date: v }))}
-          placeholder="YYYY-MM-DD" placeholderTextColor={k.textFaint}
-          style={[input, { marginBottom: KIOSK_SPACE.md }]} />
+        <Pressable
+          onPress={() => {
+            const current = form.record_date ? new Date(form.record_date + 'T00:00:00') : new Date();
+            if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: current, onChange: d => setForm(f => ({ ...f, record_date: fmtDate(d) })) });
+            else setShowDatePicker(p => !p);
+          }}
+          style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }]}
+        >
+          <CalendarIcon size={14} color={k.textMuted} />
+          <Text style={{ color: k.text, fontSize: KIOSK_TYPO.body }}>
+            {form.record_date ? fmtDateDisplay(new Date(form.record_date + 'T00:00:00')) : 'Pick date'}
+          </Text>
+        </Pressable>
+        {Platform.OS === 'ios' && (
+          <KioskDateTimePicker mode="date" visible={showDatePicker} k={k} isDark={isDark}
+            value={form.record_date ? new Date(form.record_date + 'T00:00:00') : new Date()}
+            onChange={d => setForm(f => ({ ...f, record_date: fmtDate(d) }))}
+            onDone={() => setShowDatePicker(false)}
+          />
+        )}
+        <View style={{ marginBottom: KIOSK_SPACE.md }} />
 
         {/* File attach */}
         <KioskFieldLabel k={k}>ATTACH FILE — ENABLES AI ANALYSIS</KioskFieldLabel>

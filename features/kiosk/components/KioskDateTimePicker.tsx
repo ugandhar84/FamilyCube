@@ -26,21 +26,35 @@
  *     Android's own system calendar/clock dialog — the real native
  *     picker for that OS, not PickerOverlay's spinner-in-a-floating-card.
  */
-import { Platform, View } from 'react-native';
+import { Platform, View, Text, Pressable } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import type { KioskColors } from '../kioskPalette';
-import { KIOSK_RADIUS } from '../kioskTheme';
+import { KIOSK_RADIUS, KIOSK_SPACE, KIOSK_TYPO } from '../kioskTheme';
 
-export function KioskDateTimePicker({ mode, value, onChange, minimumDate, k, visible = true }: {
+export function KioskDateTimePicker({ mode, value, onChange, minimumDate, k, isDark, visible = true, onDone }: {
   mode: 'date' | 'time';
   value: Date;
   onChange: (d: Date) => void;
   minimumDate?: Date;
   k: KioskColors;
+  // Real isDark from useKioskColors(), not guessed from a color value.
+  // [live-reported: "in dark theme the calender digits are not even
+  // visible"] — the previous version compared k.text against a hardcoded
+  // hex literal ('#FDFCF9') that didn't actually match this palette's own
+  // dark-mode text color, so themeVariant silently resolved to 'light'
+  // in dark mode — iOS then painted its own light-on-white calendar
+  // digits over this component's dark k.well background, unreadable.
+  isDark: boolean;
   /** iOS only — Android has no persistent inline view to hide/show; its
    *  picker is a one-shot imperative dialog instead (see openAndroidPicker
    *  below), so this prop only matters for the iOS branch. */
   visible?: boolean;
+  /** Closes the picker (sets the caller's own visible/showXPicker state
+   *  false) — PickerOverlay's floating card always had a "Done" button to
+   *  dismiss it; going inline dropped that affordance entirely, leaving no
+   *  way to close the calendar once opened [live-reported: "show done one
+   *  the calender also to close it"]. */
+  onDone: () => void;
 }) {
   if (Platform.OS === 'android') return null; // Android uses openAndroidPicker below instead.
   if (!visible) return null;
@@ -52,9 +66,20 @@ export function KioskDateTimePicker({ mode, value, onChange, minimumDate, k, vis
         display="inline"
         minimumDate={minimumDate}
         onChange={(_, d) => { if (d) onChange(d); }}
-        themeVariant={k.text === '#FDFCF9' ? 'dark' : 'light'}
+        themeVariant={isDark ? 'dark' : 'light'}
         accentColor={k.primary}
       />
+      <Pressable
+        onPress={onDone}
+        style={{
+          alignSelf: 'flex-end', margin: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xs,
+          borderRadius: KIOSK_RADIUS.sm, backgroundColor: k.primary,
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Done"
+      >
+        <Text style={{ color: k.onPrimary, fontWeight: '800', fontSize: KIOSK_TYPO.label }}>Done</Text>
+      </Pressable>
     </View>
   );
 }

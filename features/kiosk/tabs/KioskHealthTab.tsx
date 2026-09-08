@@ -203,51 +203,70 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
   const [scanning, setScanning] = useState(false);
 
+  // Every save function below is wrapped in try/catch so it can never
+  // reject — AddMedModal/AddVaxModal/AddRecordModal/ScanReviewSheet all
+  // `await onSave(...)` with no try/catch of their own before calling
+  // their own setSaving(false)/onClose(), so an uncaught throw here would
+  // leave THEIR modal stuck in its "saving" state forever [live-reported:
+  // "i scanned the photo in the records and then app got frozen after
+  // add" — traced to exactly this pattern in addRecord's file-upload
+  // step; applied the same guard to the other four save functions since
+  // they share the identical risk against their own modal's saving state].
   const addMed = useCallback(async (memberId: string, form: MedForm) => {
-    const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
-    const { data, error } = await supabase.from('family_medications').insert({
-      family_id: familyId,
-      member_id: memberId,
-      assigned_by: activeMember?.id ?? null,
-      name: form.name.trim(),
-      dosage: form.dosage.trim(),
-      dosage_unit: form.dosage_unit,
-      frequency: form.frequency,
-      frequency_times: times,
-      category: form.category,
-      prescribing_doctor: form.prescribing_doctor || null,
-      pharmacy: form.pharmacy || null,
-      refill_date: form.refill_date || null,
-      pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
-      instructions: form.instructions || null,
-      is_ongoing: !form.end_date,
-      is_active: true,
-      start_date: form.start_date || todayStr(),
-      end_date: form.end_date || null,
-      escalation_enabled: form.escalation_enabled,
-      escalation_after_min: parseInt(form.escalation_after_min) || 60,
-    }).select().single();
-    if (error) { console.warn('[KioskHealthTab] addMed failed:', error); return; }
-    if (data) { showToast('Medication added'); loadSidebar(); }
+    try {
+      const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
+      const { data, error } = await supabase.from('family_medications').insert({
+        family_id: familyId,
+        member_id: memberId,
+        assigned_by: activeMember?.id ?? null,
+        name: form.name.trim(),
+        dosage: form.dosage.trim(),
+        dosage_unit: form.dosage_unit,
+        frequency: form.frequency,
+        frequency_times: times,
+        category: form.category,
+        prescribing_doctor: form.prescribing_doctor || null,
+        pharmacy: form.pharmacy || null,
+        refill_date: form.refill_date || null,
+        pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
+        instructions: form.instructions || null,
+        is_ongoing: !form.end_date,
+        is_active: true,
+        start_date: form.start_date || todayStr(),
+        end_date: form.end_date || null,
+        escalation_enabled: form.escalation_enabled,
+        escalation_after_min: parseInt(form.escalation_after_min) || 60,
+      }).select().single();
+      if (error) { console.warn('[KioskHealthTab] addMed failed:', error); showToast('Could not save the medication'); return; }
+      if (data) { showToast('Medication added'); loadSidebar(); }
+    } catch (e) {
+      console.warn('[KioskHealthTab] addMed threw:', e);
+      showToast('Could not save the medication');
+    }
   }, [familyId, activeMember?.id, loadSidebar]);
 
   const addVax = useCallback(async (memberId: string, form: VaxForm) => {
-    const { data, error } = await supabase.from('family_vaccines').insert({
-      family_id: familyId,
-      member_id: memberId,
-      title: form.title.trim(),
-      vaccine_type: form.vaccine_type || null,
-      date: form.date,
-      next_due_date: form.next_due_date || null,
-      series_current: parseInt(form.series_current) || 1,
-      series_total: parseInt(form.series_total) || 1,
-      administered_by: form.administered_by || null,
-      location: form.location || null,
-      notes: form.notes || null,
-      done: false,
-    }).select().single();
-    if (error) { console.warn('[KioskHealthTab] addVax failed:', error); return; }
-    if (data) { showToast('Vaccine added'); loadSidebar(); }
+    try {
+      const { data, error } = await supabase.from('family_vaccines').insert({
+        family_id: familyId,
+        member_id: memberId,
+        title: form.title.trim(),
+        vaccine_type: form.vaccine_type || null,
+        date: form.date,
+        next_due_date: form.next_due_date || null,
+        series_current: parseInt(form.series_current) || 1,
+        series_total: parseInt(form.series_total) || 1,
+        administered_by: form.administered_by || null,
+        location: form.location || null,
+        notes: form.notes || null,
+        done: false,
+      }).select().single();
+      if (error) { console.warn('[KioskHealthTab] addVax failed:', error); showToast('Could not save the vaccine'); return; }
+      if (data) { showToast('Vaccine added'); loadSidebar(); }
+    } catch (e) {
+      console.warn('[KioskHealthTab] addVax threw:', e);
+      showToast('Could not save the vaccine');
+    }
   }, [familyId, loadSidebar]);
 
   const addRecord = useCallback(async (
@@ -255,70 +274,105 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     form: RecordForm,
     file: DocumentPicker.DocumentPickerAsset | null,
   ) => {
-    let file_path: string | null = null;
-    let file_name: string | null = null;
-    let file_size: number | null = null;
-    if (file) {
-      const ext = file.name.split('.').pop() ?? 'bin';
-      const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
-      const blob = await fetch(file.uri).then(r => r.blob());
-      const { data: up, error: upErr } = await supabase.storage
-        .from('medical-records')
-        .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
-      if (!upErr && up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
+    // [live-reported: "i scanned the photo in the records and then app
+    // got frozen after add"] — the file-upload step below had NO error
+    // handling: a thrown exception (a bad file:// URI, a storage-upload
+    // failure) propagated straight up through AddRecordModal's own
+    // handleSave, which awaits onSave with no try/catch of its own —
+    // meaning setSaving(false)/onClose() never ran and the modal stayed
+    // stuck in its "saving, disabled" state forever, reading as a freeze.
+    // Wrapping this whole function in try/catch guarantees onSave always
+    // resolves (never rejects) so the modal can always close, and any
+    // real failure is at least visible in the console + a toast instead
+    // of silently hanging.
+    try {
+      let file_path: string | null = null;
+      let file_name: string | null = null;
+      let file_size: number | null = null;
+      if (file) {
+        try {
+          const ext = file.name.split('.').pop() ?? 'bin';
+          const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
+          const blob = await fetch(file.uri).then(r => r.blob());
+          const { data: up, error: upErr } = await supabase.storage
+            .from('medical-records')
+            .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+          if (upErr) console.warn('[KioskHealthTab] addRecord upload failed:', upErr);
+          else if (up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
+        } catch (uploadErr) {
+          // Photo upload failed (bad URI, network) — still save the
+          // record itself without the attachment rather than losing the
+          // whole entry the way an uncaught throw here would have.
+          console.warn('[KioskHealthTab] addRecord photo upload threw:', uploadErr);
+          showToast('Could not attach the photo — record saved without it');
+        }
+      }
+      const { data, error } = await supabase.from('medical_records').insert({
+        family_id: familyId, member_id: memberId,
+        uploaded_by: activeMember?.id ?? null,
+        title: form.title.trim(), tag: form.tag,
+        record_date: form.record_date, notes: form.notes.trim() || null,
+        file_path, file_name, file_size,
+        ai_analyzed: false, ai_tags: [],
+      }).select().single();
+      if (error) { console.warn('[KioskHealthTab] addRecord failed:', error); showToast('Could not save the record'); return; }
+      if (data) { showToast('Record added'); loadSidebar(); }
+    } catch (e) {
+      console.warn('[KioskHealthTab] addRecord threw:', e);
+      showToast('Could not save the record');
     }
-    const { data, error } = await supabase.from('medical_records').insert({
-      family_id: familyId, member_id: memberId,
-      uploaded_by: activeMember?.id ?? null,
-      title: form.title.trim(), tag: form.tag,
-      record_date: form.record_date, notes: form.notes.trim() || null,
-      file_path, file_name, file_size,
-      ai_analyzed: false, ai_tags: [],
-    }).select().single();
-    if (error) { console.warn('[KioskHealthTab] addRecord failed:', error); return; }
-    if (data) { showToast('Record added'); loadSidebar(); }
   }, [familyId, activeMember?.id, loadSidebar]);
 
   const saveScannedMed = useCallback(async (reviewMed: ParsedMedication, reviewMemberId: string) => {
-    const { data, error } = await supabase.from('family_medications').insert({
-      family_id: familyId,
-      member_id: reviewMemberId,
-      assigned_by: activeMember?.id ?? null,
-      name: reviewMed.name.trim() || 'Unknown medication',
-      dosage: reviewMed.dosage.trim(),
-      dosage_unit: 'mg',
-      frequency: reviewMed.frequency || 'As directed',
-      frequency_times: ['08:00'],
-      category: 'other',
-      prescribing_doctor: reviewMed.prescriber || null,
-      pharmacy: reviewMed.pharmacy || null,
-      instructions: reviewMed.instructions || null,
-      is_ongoing: !reviewMed.duration || reviewMed.duration.toLowerCase().includes('ongoing'),
-      is_active: true,
-      escalation_enabled: false,
-      escalation_after_min: 60,
-    }).select().single();
-    if (error) { console.warn('[KioskHealthTab] saveScannedMed failed:', error); return; }
-    if (data) { showToast('Medication added'); loadSidebar(); }
+    try {
+      const { data, error } = await supabase.from('family_medications').insert({
+        family_id: familyId,
+        member_id: reviewMemberId,
+        assigned_by: activeMember?.id ?? null,
+        name: reviewMed.name.trim() || 'Unknown medication',
+        dosage: reviewMed.dosage.trim(),
+        dosage_unit: 'mg',
+        frequency: reviewMed.frequency || 'As directed',
+        frequency_times: ['08:00'],
+        category: 'other',
+        prescribing_doctor: reviewMed.prescriber || null,
+        pharmacy: reviewMed.pharmacy || null,
+        instructions: reviewMed.instructions || null,
+        is_ongoing: !reviewMed.duration || reviewMed.duration.toLowerCase().includes('ongoing'),
+        is_active: true,
+        escalation_enabled: false,
+        escalation_after_min: 60,
+      }).select().single();
+      if (error) { console.warn('[KioskHealthTab] saveScannedMed failed:', error); showToast('Could not save the scanned medication'); return; }
+      if (data) { showToast('Medication added'); loadSidebar(); }
+    } catch (e) {
+      console.warn('[KioskHealthTab] saveScannedMed threw:', e);
+      showToast('Could not save the scanned medication');
+    }
   }, [familyId, activeMember?.id, loadSidebar]);
 
   const saveScannedVax = useCallback(async (reviewVax: ParsedVaccine, reviewMemberId: string) => {
-    const { data, error } = await supabase.from('family_vaccines').insert({
-      family_id: familyId,
-      member_id: reviewMemberId,
-      title: reviewVax.vaccine_name.trim() || 'Unknown vaccine',
-      vaccine_type: reviewVax.manufacturer || null,
-      date: reviewVax.administered_date ?? todayStr(),
-      next_due_date: reviewVax.next_due_date ?? null,
-      series_current: reviewVax.dose_number ?? 1,
-      series_total: reviewVax.total_doses ?? 1,
-      administered_by: reviewVax.administered_by || null,
-      location: reviewVax.site || null,
-      notes: reviewVax.lot_number ? `Lot: ${reviewVax.lot_number}` : null,
-      done: true,
-    }).select().single();
-    if (error) { console.warn('[KioskHealthTab] saveScannedVax failed:', error); return; }
-    if (data) { showToast('Vaccine added'); loadSidebar(); }
+    try {
+      const { data, error } = await supabase.from('family_vaccines').insert({
+        family_id: familyId,
+        member_id: reviewMemberId,
+        title: reviewVax.vaccine_name.trim() || 'Unknown vaccine',
+        vaccine_type: reviewVax.manufacturer || null,
+        date: reviewVax.administered_date ?? todayStr(),
+        next_due_date: reviewVax.next_due_date ?? null,
+        series_current: reviewVax.dose_number ?? 1,
+        series_total: reviewVax.total_doses ?? 1,
+        administered_by: reviewVax.administered_by || null,
+        location: reviewVax.site || null,
+        notes: reviewVax.lot_number ? `Lot: ${reviewVax.lot_number}` : null,
+        done: true,
+      }).select().single();
+      if (error) { console.warn('[KioskHealthTab] saveScannedVax failed:', error); showToast('Could not save the scanned vaccine'); return; }
+      if (data) { showToast('Vaccine added'); loadSidebar(); }
+    } catch (e) {
+      console.warn('[KioskHealthTab] saveScannedVax threw:', e);
+      showToast('Could not save the scanned vaccine');
+    }
   }, [familyId, loadSidebar]);
 
   // "Who takes what" — one row per member with at least one active

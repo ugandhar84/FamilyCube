@@ -358,7 +358,7 @@ export default function KioskScreen() {
               above). */}
           {(isTeen || isKidRole) && (
             <KioskKidTeenStatsColumn
-              active={active} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
+              active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
               onAskFam={() => setAskFamOpen(true)}
             />

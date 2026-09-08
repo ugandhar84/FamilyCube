@@ -20,10 +20,27 @@
  * KidCheckinRow/CheerSquadSection are real KidView.tsx-only mobile
  * features with no teen equivalent (confirmed: grepped the whole hub/
  * kiosk tree, zero teen matches), so this column does not invent one.
+ *
+ * My balance sits directly under the identity card — real mainCoins/
+ * gpCoins/streak/redemption fields, same as Overview's own
+ * KioskMyBalancePanel — for BOTH kid and teen [live-requested: "we can
+ * move my balace under the profile hero section" / "one small widget" /
+ * "i asked for teens too"].
+ *
+ * Teen ADDITIONALLY gets a real 8-destination ask-a-parent grid lower down
+ * in this column, in the slot kid instead uses for Check In
+ * [live-requested: "heer instead of balance we must show the quick
+ * actions right.. for teens" / "show the quick actions in a grid incons
+ * possble ones in my place of my balce widget"] — the same real
+ * ASK_PARENT_OPTIONS data + open(key) action kid's own "Your stuff" card
+ * (KioskKidQuickActions) and KioskTasksTab's picker both already use;
+ * role-agnostic (confirmed by reading it: no kid-only assumption anywhere
+ * in that hook or ASK_PARENT_OPTIONS), so this is a genuine reuse, not a
+ * new flow.
  */
 import { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Sparkles } from 'lucide-react-native';
+import { Sparkles, MessageCircleQuestion } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useRewardStore } from '@/store/rewardStore';
@@ -31,14 +48,16 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { weekOf } from '@/features/vault/tabs/meals/types';
 import { WidgetCard } from './KioskOS';
 import { KioskKidCheckInTile } from './KioskKidQuickActions';
+import { useKioskAskParent, ASK_PARENT_OPTIONS } from './KioskAskParentFlow';
 import { useKioskColors, kioskRoleAccent } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { railForRole, type KioskTabKey } from '../kioskTabs';
 
 export function KioskKidTeenStatsColumn({
-  active, familyName, activeTab, onNavigate, onAskFam,
+  active, members, familyName, activeTab, onNavigate, onAskFam,
 }: {
   active: FamilyMember;
+  members: FamilyMember[];
   familyName: string;
   activeTab: KioskTabKey;
   onNavigate: (tab: KioskTabKey) => void;
@@ -46,6 +65,13 @@ export function KioskKidTeenStatsColumn({
 }) {
   const { k, isDark } = useKioskColors();
   const isKid = active.role === 'kid';
+
+  // Real 8-destination ask-a-parent flow — same hook/options
+  // KioskKidQuickActions' own "Your stuff" grid and KioskTasksTab's picker
+  // both already use, opened here directly per-tile (no picker step) for
+  // teen's own quick-actions entry point instead of the balance card kid
+  // gets in this same slot.
+  const { open: openAskParent, node: askParentNode } = useKioskAskParent({ active, members });
 
   const redemptions = useRewardStore(s => s.redemptions);
   const main = (active as any).mainCoins ?? 0;
@@ -98,6 +124,27 @@ export function KioskKidTeenStatsColumn({
         </View>
       </WidgetCard>
 
+      {/* My balance, moved to sit directly under the identity card
+          (always visible, not inside the scrollable tab-list area below)
+          [live-requested: "we can move my balace under the profile hero
+          section" / "one small widget" / "i asked for teens too"] — same
+          real mainCoins/gpCoins/streak/redemption fields
+          KioskMyBalancePanel (Overview centerCol) already reads. Kid AND
+          teen both get this; teen's own quick-actions grid lower down is
+          a SEPARATE addition, not a replacement for its own balance. */}
+      <WidgetCard k={k} isDark={isDark} style={s.balanceHeroCard}>
+        <Text style={[s.balanceAmt, { color: k.gold }]} numberOfLines={1}>
+          {total}<Text style={[s.balanceUnit, { color: k.textMuted }]}> coins</Text>
+        </Text>
+        <Text style={[s.balanceSub, { color: k.textFaint }]} numberOfLines={2}>
+          {[
+            progress ? `${progress.done}/${progress.total} chores this week` : null,
+            streak > 0 ? `${streak} day streak` : null,
+            lastRedeemed ? 'redeemed recently' : null,
+          ].filter(Boolean).join(' · ') || 'No activity yet this week'}
+        </Text>
+      </WidgetCard>
+
       <ScrollView style={s.statsColScrollBody} contentContainerStyle={s.statsColScroll} showsVerticalScrollIndicator={false}>
         <WidgetCard k={k} isDark={isDark} padded={false}>
           <View style={{ borderRadius: KIOSK_RADIUS.sm, overflow: 'hidden' }}>
@@ -129,28 +176,56 @@ export function KioskKidTeenStatsColumn({
           </View>
         </WidgetCard>
 
-        {/* My balance — same real mainCoins/gpCoins/streak/redemption
-            fields KioskMyBalancePanel (Overview centerCol) already reads,
-            surfaced here too since this column is now visible on EVERY
-            tab, not just Overview. */}
-        <WidgetCard k={k} isDark={isDark}>
-          <Text style={[s.balanceAmt, { color: k.gold }]} numberOfLines={1}>
-            {total}<Text style={[s.balanceUnit, { color: k.textMuted }]}> coins</Text>
-          </Text>
-          <Text style={[s.balanceSub, { color: k.textFaint }]} numberOfLines={2}>
-            {[
-              progress ? `${progress.done}/${progress.total} chores this week` : null,
-              streak > 0 ? `${streak} day streak` : null,
-              lastRedeemed ? 'redeemed recently' : null,
-            ].filter(Boolean).join(' · ') || 'No activity yet this week'}
-          </Text>
-          {pendingRequestCount > 0 && (
-            <View style={[s.statsRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder, marginTop: KIOSK_SPACE.sm }]}>
+        {/* Teen: real 8-destination ask-a-parent grid — a genuine
+            ADDITION for teen in this scrollable section, not a
+            replacement for its own balance (balance moved up under the
+            identity card for BOTH kid and teen; teen additionally gets
+            this grid here since kid instead gets Check In in this same
+            slot) [live-requested: "heer instead of balance we must show
+            the quick actions right.. for teens" / "show the quick
+            actions in a grid incons possble ones in my place of my balce
+            widget" / "i asked for teens too"]. Same real
+            ASK_PARENT_OPTIONS data + open(key) action kid's own "Your
+            stuff" card (KioskKidQuickActions) and KioskTasksTab's picker
+            both already use — tapping a tile jumps straight to that real
+            destination modal, no intermediate picker step, same as kid's
+            own grid. */}
+        {!isKid && (
+          <WidgetCard k={k} isDark={isDark}>
+            <Text style={[s.gridTitle, { color: k.textMuted }]} numberOfLines={1}>MY STUFF</Text>
+            <View style={s.askGrid}>
+              {ASK_PARENT_OPTIONS.map(opt => (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => openAskParent(opt.key)}
+                  style={({ pressed }) => [
+                    s.askTile,
+                    { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={opt.label}
+                  accessibilityHint={opt.desc}
+                >
+                  <opt.Icon size={18} color={opt.accent(k)} />
+                  <Text style={[s.askTileLabel, { color: k.text }]} numberOfLines={2}>{opt.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </WidgetCard>
+        )}
+
+        {/* Pending requests — real kidRequestStore count, kept as its own
+            small card now that the coin/streak summary moved up to sit
+            directly under the identity card instead. Shown for both kid
+            and teen (a teen's own requests count is just as real). */}
+        {pendingRequestCount > 0 && (
+          <WidgetCard k={k} isDark={isDark}>
+            <View style={s.statsRow}>
               <Text style={[s.statsLabel, { color: k.textMuted }]} numberOfLines={2}>Requests waiting on a parent</Text>
               <Text style={[s.statsValue, { color: k.text }]}>{pendingRequestCount}</Text>
             </View>
-          )}
-        </WidgetCard>
+          </WidgetCard>
+        )}
 
         {/* Check In — real KidView.tsx-only feature (KidCheckinRow), no
             teen equivalent on the real phone. */}
@@ -174,6 +249,8 @@ export function KioskKidTeenStatsColumn({
         </View>
         <Text style={[s.messageKidsSub, { color: k.card }]}>Quick answers about your family's day</Text>
       </Pressable>
+
+      {askParentNode}
     </View>
   );
 }
@@ -185,6 +262,8 @@ const s = StyleSheet.create({
   statsColScrollBody: { flex: 1 },
   statsColScroll: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
   statsIdentityCard: { paddingVertical: 22, paddingHorizontal: 20 },
+  // One small widget, directly under the identity card.
+  balanceHeroCard: { paddingVertical: KIOSK_SPACE.md },
   statsIdentity: { alignItems: 'flex-start' },
   statsAvatar: {
     width: 44, height: 44, borderRadius: KIOSK_RADIUS.md,
@@ -193,6 +272,16 @@ const s = StyleSheet.create({
   statsAvatarEmoji: { fontSize: 20 },
   statsName: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
   statsSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  // Teen's Ask a Parent grid — 2-up (the narrow 240px column has no room
+  // for 4-up like KioskKidQuickActions' own wider "Your stuff" card),
+  // real ASK_PARENT_OPTIONS icon + label per tile.
+  gridTitle: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.5, marginBottom: KIOSK_SPACE.sm },
+  askGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  askTile: {
+    flexBasis: '47%', flexGrow: 1, minHeight: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.xs,
+  },
+  askTileLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', textAlign: 'center' },
   statsRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,

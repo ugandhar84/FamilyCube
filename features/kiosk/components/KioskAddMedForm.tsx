@@ -16,15 +16,21 @@
  * scroll, and a kiosk's own screen is large enough that a phone-width
  * step-by-step flow isn't needed the way it is on a phone's narrow sheet.
  *
- * Reuses two real, already-proven-safe-inside-kiosk phone components rather
- * than re-inventing them: MemberPicker (features/calendar/components/
- * eventForm/MemberPicker.tsx, already mounted by KioskQuestEditor.tsx) for
- * the assignee row, and PickerOverlay (features/calendar/components/
- * eventForm/PickerOverlay.tsx, already mounted by KioskEventEditor.tsx) for
- * every date/time picker — both are the same real components the phone's
- * own event/quest forms use, avoiding the native-DateTimePicker-inside-a-
- * second-Modal stacking problem KioskFormDrawer's own header comment warns
- * about.
+ * Reuses one real, already-proven-safe-inside-kiosk phone component:
+ * MemberPicker (features/calendar/components/eventForm/MemberPicker.tsx,
+ * already mounted by KioskQuestEditor.tsx) for the assignee row.
+ *
+ * Date/time pickers use KioskDateTimePicker (kiosk-only), NOT the shared
+ * PickerOverlay every mobile form uses [live-reported: "forms dates are
+ * using the date pickets like date time pickers inline not the bottom
+ * sheet date / time pickers"] — PickerOverlay's centered floating-card
+ * Modal read as a small popup/bottom-sheet rather than being embedded in
+ * the form. PickerOverlay is shared by ~9 real screens app-wide and the
+ * user was explicit ("i dont want to modify anything in the mobile app"),
+ * so this is a separate kiosk-only component instead of changing that
+ * shared one. See KioskDateTimePicker.tsx's own header for the real iOS/
+ * Android platform split (inline calendar vs. native dialog) driving its
+ * design — a true inline calendar view only exists on iOS.
  *
  * The real save function (KioskHealthTab.tsx's addMed) is unchanged — this
  * file only replaces AddMedModal's UI shell, not KioskHealthTab's own
@@ -33,12 +39,12 @@
  * HealthTab.tsx's real addMed verbatim.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Switch } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Switch, Platform } from 'react-native';
 import { Pill, Calendar, Phone } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { fmtTime } from '@/lib/dates';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
-import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import {
   MedForm, BLANK_MED, MED_SUGGESTIONS, getCatColors, FREQ_LABELS,
   fmtDate, fmtDateDisplay, doseCountForFrequency,
@@ -225,25 +231,74 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
       {/* ── Reminder schedule ── */}
       <KioskFieldLabel k={k}>REMINDER SCHEDULE</KioskFieldLabel>
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.sm }}>
-        <Pressable onPress={() => setShowStartPicker(true)} style={[input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === 'android') {
+              openAndroidPicker({ mode: 'date', value: new Date(form.start_date + 'T00:00:00'), onChange: d => set('start_date', fmtDate(d)) });
+            } else {
+              setShowStartPicker(p => !p); setShowEndPicker(false);
+            }
+          }}
+          style={[input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+        >
           <Calendar size={14} color={k.textMuted} />
           <Text style={{ color: k.text, fontSize: KIOSK_TYPO.body }}>{fmtDateDisplay(new Date(form.start_date + 'T00:00:00'))}</Text>
         </Pressable>
-        <Pressable onPress={() => setShowEndPicker(true)} style={[input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === 'android') {
+              openAndroidPicker({ mode: 'date', value: form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00'), onChange: d => set('end_date', fmtDate(d)) });
+            } else {
+              setShowEndPicker(p => !p); setShowStartPicker(false);
+            }
+          }}
+          style={[input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+        >
           <Calendar size={14} color={form.end_date ? k.textMuted : k.textFaint} />
           <Text style={{ color: form.end_date ? k.text : k.textFaint, fontSize: KIOSK_TYPO.body }}>
             {form.end_date ? fmtDateDisplay(new Date(form.end_date + 'T00:00:00')) : 'Ongoing'}
           </Text>
         </Pressable>
       </View>
-      <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.xs, flexWrap: 'wrap', marginBottom: KIOSK_SPACE.md }}>
+      {/* iOS-only inline calendars, right below the two date buttons —
+          Android already opened its own native dialog above and never
+          gets here (KioskDateTimePicker itself returns null on Android). */}
+      <KioskDateTimePicker
+        mode="date" visible={showStartPicker} k={k}
+        value={new Date(form.start_date + 'T00:00:00')}
+        onChange={d => set('start_date', fmtDate(d))}
+      />
+      <KioskDateTimePicker
+        mode="date" visible={showEndPicker} k={k}
+        value={form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00')}
+        onChange={d => set('end_date', fmtDate(d))}
+      />
+      <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.xs, flexWrap: 'wrap', marginTop: (showStartPicker || showEndPicker) && Platform.OS === 'ios' ? KIOSK_SPACE.sm : 0, marginBottom: KIOSK_SPACE.md }}>
         {form.reminder_times.map((time, idx) => (
           <KioskPill key={idx}
             label={form.reminder_times.length > 1 ? `Dose ${idx + 1} · ${fmtTime(time)}` : `Reminder · ${fmtTime(time)}`}
             selected={showTimePickerIdx === idx}
-            onPress={() => setShowTimePickerIdx(idx)} accent={catColor} k={k} />
+            onPress={() => {
+              if (Platform.OS === 'android') {
+                const [h, m] = time.split(':').map(Number);
+                const d = new Date(); d.setHours(h || 8, m || 0, 0, 0);
+                openAndroidPicker({ mode: 'time', value: d, onChange: nd => setReminderTime(idx, `${String(nd.getHours()).padStart(2, '0')}:${String(nd.getMinutes()).padStart(2, '0')}`) });
+              } else {
+                setShowTimePickerIdx(prev => prev === idx ? null : idx);
+              }
+            }} accent={catColor} k={k} />
         ))}
       </View>
+      {Platform.OS === 'ios' && showTimePickerIdx !== null && (
+        <KioskDateTimePicker
+          mode="time" k={k}
+          value={(() => {
+            const [h, m] = form.reminder_times[showTimePickerIdx].split(':').map(Number);
+            const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d;
+          })()}
+          onChange={d => setReminderTime(showTimePickerIdx, `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)}
+        />
+      )}
 
       {/* Ring-like-a-call toggle */}
       <View style={{
@@ -279,12 +334,25 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.md }}>
         <View style={{ flex: 1.5 }}>
           <KioskFieldLabel k={k}>REFILL DATE</KioskFieldLabel>
-          <Pressable onPress={() => setShowRefillPicker(true)} style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === 'android') {
+                openAndroidPicker({ mode: 'date', value: refillDate ?? new Date(), onChange: setRefillDate });
+              } else {
+                setShowRefillPicker(p => !p);
+              }
+            }}
+            style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+          >
             <Calendar size={14} color={refillDate ? k.textMuted : k.textFaint} />
             <Text style={{ color: refillDate ? k.text : k.textFaint, fontSize: KIOSK_TYPO.body }}>
               {refillDate ? fmtDateDisplay(refillDate) : 'Pick date'}
             </Text>
           </Pressable>
+          {Platform.OS === 'ios' && (
+            <KioskDateTimePicker mode="date" visible={showRefillPicker} k={k}
+              value={refillDate ?? new Date()} onChange={setRefillDate} />
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <KioskFieldLabel k={k}>PILLS LEFT</KioskFieldLabel>
@@ -323,45 +391,6 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
         )}
       </View>
 
-      {/* ── Date/time pickers, shared real component ── */}
-      <PickerOverlay
-        showDate={showStartPicker} showTime={false}
-        value={new Date(form.start_date + 'T00:00:00')}
-        onChangeDate={d => set('start_date', fmtDate(d))}
-        onChangeTime={() => {}}
-        onDone={() => setShowStartPicker(false)}
-        accentColor={catColor} colors={colors} dateLabel="📅 Start Date"
-      />
-      <PickerOverlay
-        showDate={showEndPicker} showTime={false}
-        value={form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00')}
-        onChangeDate={d => set('end_date', fmtDate(d))}
-        onChangeTime={() => {}}
-        onDone={() => setShowEndPicker(false)}
-        accentColor={catColor} colors={colors} dateLabel="📅 End Date"
-      />
-      <PickerOverlay
-        showDate={false} showTime={showTimePickerIdx !== null}
-        value={(() => {
-          if (showTimePickerIdx === null) return new Date();
-          const [h, m] = form.reminder_times[showTimePickerIdx].split(':').map(Number);
-          const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d;
-        })()}
-        onChangeDate={() => {}}
-        onChangeTime={d => {
-          if (showTimePickerIdx !== null) setReminderTime(showTimePickerIdx, `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-        }}
-        onDone={() => setShowTimePickerIdx(null)}
-        accentColor={catColor} colors={colors} timeLabel="🕐 Reminder Time"
-      />
-      <PickerOverlay
-        showDate={showRefillPicker} showTime={false}
-        value={refillDate ?? new Date()}
-        onChangeDate={setRefillDate}
-        onChangeTime={() => {}}
-        onDone={() => setShowRefillPicker(false)}
-        accentColor={catColor} colors={colors} dateLabel="📅 Refill Date"
-      />
     </KioskFormDrawer>
   );
 }

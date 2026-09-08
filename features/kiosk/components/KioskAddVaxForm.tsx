@@ -7,12 +7,17 @@
  * by/location, notes), real save logic (KioskHealthTab.tsx's addVax,
  * already verified to match HealthTab.tsx's own addVax with no missing
  * side effects) unchanged.
+ *
+ * Date pickers use KioskDateTimePicker (kiosk-only), not the shared
+ * PickerOverlay — see KioskAddMedForm.tsx's own header for the full
+ * rationale (PickerOverlay is shared by ~9 real mobile screens, and the
+ * user was explicit about not touching any mobile file).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import { Syringe, Calendar } from 'lucide-react-native';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
-import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import { VaxForm, BLANK_VAX, VAX_TYPES, VAX_SUGGESTIONS, fmtDate, fmtDateDisplay } from '@/features/vault/tabs/health/types';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
@@ -123,19 +128,37 @@ export function KioskAddVaxForm({ visible, onClose, onSave, members, colors, isD
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint, marginBottom: 4 }}>Date Administered</Text>
-          <Pressable onPress={() => setShowAdminPick(true)} style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: adminDate, onChange: setAdminDate });
+              else setShowAdminPick(p => !p);
+            }}
+            style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+          >
             <Calendar size={14} color={k.textMuted} />
             <Text style={{ color: k.text, fontSize: KIOSK_TYPO.body }}>{fmtDateDisplay(adminDate)}</Text>
           </Pressable>
+          {Platform.OS === 'ios' && (
+            <KioskDateTimePicker mode="date" visible={showAdminPick} k={k} value={adminDate} onChange={setAdminDate} />
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint, marginBottom: 4 }}>Next Due (optional)</Text>
-          <Pressable onPress={() => setShowNextPick(true)} style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === 'android') openAndroidPicker({ mode: 'date', value: nextDate ?? new Date(), onChange: setNextDate });
+              else setShowNextPick(p => !p);
+            }}
+            style={[input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+          >
             <Calendar size={14} color={nextDate ? k.gold : k.textFaint} />
             <Text style={{ color: nextDate ? k.text : k.textFaint, fontSize: KIOSK_TYPO.body }}>
               {nextDate ? fmtDateDisplay(nextDate) : 'Pick date'}
             </Text>
           </Pressable>
+          {Platform.OS === 'ios' && (
+            <KioskDateTimePicker mode="date" visible={showNextPick} k={k} value={nextDate ?? new Date()} onChange={setNextDate} />
+          )}
         </View>
       </View>
 
@@ -181,19 +204,6 @@ export function KioskAddVaxForm({ visible, onClose, onSave, members, colors, isD
         placeholder="Reactions, lot number, clinic notes…" placeholderTextColor={k.textFaint} multiline
         style={[input, { height: 68, textAlignVertical: 'top' }]} />
 
-      {/* ── Date pickers, shared real component ── */}
-      <PickerOverlay
-        showDate={showAdminPick} showTime={false}
-        value={adminDate} onChangeDate={setAdminDate} onChangeTime={() => {}}
-        onDone={() => setShowAdminPick(false)}
-        accentColor={k.sage} colors={colors} dateLabel="📅 Date Administered"
-      />
-      <PickerOverlay
-        showDate={showNextPick} showTime={false}
-        value={nextDate ?? new Date()} onChangeDate={setNextDate} onChangeTime={() => {}}
-        onDone={() => setShowNextPick(false)}
-        accentColor={k.gold} colors={colors} dateLabel="📅 Next Due Date"
-      />
     </KioskFormDrawer>
   );
 }

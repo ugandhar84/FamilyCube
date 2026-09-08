@@ -61,6 +61,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { supabase } from '@/lib/supabase';
+import { claimChannel } from '@/lib/realtimeChannel';
 import { today as todayStr } from '@/features/vault/tabs/health/types';
 import type { Medication, Vaccine, MedForm, VaxForm } from '@/features/vault/tabs/health/types';
 import type { MedRecord } from '@/features/vault/records/types';
@@ -71,7 +72,7 @@ import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
 import { KioskAddMedForm } from '../components/KioskAddMedForm';
 import { KioskAddVaxForm } from '../components/KioskAddVaxForm';
-import AddRecordModal from '@/features/vault/records/AddRecordModal';
+import { KioskAddRecordForm } from '../components/KioskAddRecordForm';
 import { KioskScanReviewForm } from '../components/KioskScanReviewForm';
 import { showToast } from '@/components/AppToast';
 import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
@@ -177,6 +178,31 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   // the sidebar reasonably fresh after a visit to the real add/edit modals
   // inside HealthTabComp without needing a second realtime channel.
   useEffect(() => { loadSidebar(); }, [tab, loadSidebar]);
+
+  // ── Realtime — same real tables/filters HealthTab.tsx's own
+  // health-${familyId} channel and RecordsTab.tsx's own medrec-${familyId}
+  // channel subscribe to [live-reported: "see the all channels it is
+  // ubscriber for rel time data to reflect and cahe etc similar to mobile
+  // app.."] — the sidebar's own fetch was purely one-shot before this,
+  // so a change made from ANOTHER device (or even this same device's
+  // HealthTabComp, which subscribes under its own topic name) never
+  // reached the sidebar until the next segment-tab switch. A distinct
+  // topic name (kiosk-health-sidebar-*, not health-*/medrec-*) is
+  // deliberate: HealthTabComp/RecordsTabComp are mounted in the SAME
+  // tree and already hold the real health-${familyId}/medrec-${familyId}
+  // topics, and claimChannel() returns null for a second subscribe
+  // attempt on an already-active topic — reusing their exact topic name
+  // here would silently give the sidebar no realtime channel at all.
+  useEffect(() => {
+    if (familyId === 'family-1') return;
+    const ch = claimChannel(`kiosk-health-sidebar-${familyId}`);
+    if (!ch) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'family_medications', filter: `family_id=eq.${familyId}` }, () => loadSidebar())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_vaccines', filter: `family_id=eq.${familyId}` }, () => loadSidebar())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'medical_records', filter: `family_id=eq.${familyId}` }, () => loadSidebar())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [familyId, loadSidebar]);
 
   // ── Add Med / Add Vax / Add Record / Scan Rx / Scan Vax ────────────────
   // [live-reported: "there we should have add med add vax scan recod on
@@ -634,7 +660,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           onSave={addMed} members={members} colors={colors} isDark={isDark} />
         <KioskAddVaxForm visible={showAddVax} onClose={() => setShowAddVax(false)}
           onSave={addVax} members={members} colors={colors} isDark={isDark} />
-        <AddRecordModal visible={showAddRecord} onClose={() => setShowAddRecord(false)}
+        <KioskAddRecordForm visible={showAddRecord} onClose={() => setShowAddRecord(false)}
           onSave={addRecord} colors={colors} isDark={isDark}
           members={members} activeMemberId={activeMemberId ?? null} />
         {/* Kiosk-native narrow side drawer with its own 3-step stepper

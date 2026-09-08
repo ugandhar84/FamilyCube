@@ -36,6 +36,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Switch } from 'react-native';
 import { Pill, Calendar, Phone } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { fmtTime } from '@/lib/dates';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import {
@@ -238,7 +239,7 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
       <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.xs, flexWrap: 'wrap', marginBottom: KIOSK_SPACE.md }}>
         {form.reminder_times.map((time, idx) => (
           <KioskPill key={idx}
-            label={form.reminder_times.length > 1 ? `Dose ${idx + 1} · ${time}` : `Reminder · ${time}`}
+            label={form.reminder_times.length > 1 ? `Dose ${idx + 1} · ${fmtTime(time)}` : `Reminder · ${fmtTime(time)}`}
             selected={showTimePickerIdx === idx}
             onPress={() => setShowTimePickerIdx(idx)} accent={catColor} k={k} />
         ))}

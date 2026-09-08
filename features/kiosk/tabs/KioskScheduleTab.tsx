@@ -2046,8 +2046,11 @@ const s = StyleSheet.create({
   },
   agendaEmptyText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '600', textAlign: 'center' },
   // One continuous card for the whole Agenda list — mocked and picked
-  // over a separate card per day.
-  agendaStrip: { gap: KIOSK_SPACE.lg },
+  // over a separate card per day. Capped at the same 760 (720 event-row
+  // width + the card's own KIOSK_SPACE.md*2 padding) and centered, so the
+  // strip's own edge doesn't run wider than the event rows it contains
+  // [live-reported: "i think we should reduce the width of the card?"].
+  agendaStrip: { gap: KIOSK_SPACE.lg, width: '100%', maxWidth: 760, alignSelf: 'center' },
   agendaGroup: { gap: KIOSK_SPACE.sm },
   // Every group after the first gets a hairline top border instead of its
   // own card edge — a plain in-card divider between day sections, not a

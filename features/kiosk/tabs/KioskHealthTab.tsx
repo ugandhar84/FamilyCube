@@ -58,6 +58,7 @@ import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote, ActionB
 import { useKioskActivity } from '../KioskActivityContext';
 import { useUIStore } from '@/store/uiStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useEventStore } from '@/store/eventStore';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { supabase } from '@/lib/supabase';
 import { today as todayStr } from '@/features/vault/tabs/health/types';
@@ -238,7 +239,50 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         escalation_after_min: parseInt(form.escalation_after_min) || 60,
       }).select().single();
       if (error) { console.warn('[KioskHealthTab] addMed failed:', error); showToast('Could not save the medication'); return; }
-      if (data) { showToast('Medication added'); loadSidebar(); }
+      if (data) {
+        // Real side effects HealthTab.tsx's own addMed performs, ported
+        // verbatim — a first pass here only did the insert and silently
+        // dropped these three, a real logic gap traced while wiring the
+        // kiosk-native form rebuild [live-reported: "add model or edit
+        // models like a add groceries model type.."].
+        if (memberId !== activeMember?.id) {
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'medication_added', familyId, memberIds: [memberId], persist: true,
+              excludeMemberId: activeMember?.id,
+              payload: { memberId, medName: form.name.trim(), dosage: form.dosage.trim() ? `${form.dosage} ${form.dosage_unit}` : undefined, byName: activeMember?.name },
+            },
+          }).catch(e => console.warn('[KioskHealthTab] addMed notify failed:', e?.message));
+        }
+        supabase.rpc('upsert_med_suggestion', {
+          p_name: form.name.trim(),
+          p_category: form.category,
+          p_hint: form.category,
+        }).then(() => {});
+        // One independent recurring calendar series PER dose time, same
+        // as HealthTab.tsx's own addMed — a med now actually shows up on
+        // the member's Schedule instead of being a silent DB flag.
+        times.forEach(time => {
+          useEventStore.getState().addRecurringEvent(
+            {
+              title: `Take ${form.name.trim()}`,
+              date: form.start_date || todayStr(),
+              time,
+              memberId,
+              type: 'reminder',
+              category: 'Medication',
+              notes: form.instructions || undefined,
+              alertCall: form.alert_call,
+              alertCallLeadMinutes: 0,
+            },
+            {
+              frequency: 'daily',
+              ...(form.end_date ? { endDate: form.end_date } : {}),
+            }
+          );
+        });
+        showToast('Medication added'); loadSidebar();
+      }
     } catch (e) {
       console.warn('[KioskHealthTab] addMed threw:', e);
       showToast('Could not save the medication');

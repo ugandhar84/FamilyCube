@@ -2109,12 +2109,17 @@ const s = StyleSheet.create({
   // now, matching Overview/Meals' own discipline (jar-name 700, jar-meta
   // unweighted or 600 at most, panel-title 700 but 11px): the TITLE is the
   // one bold, prominent thing on the card; everything else steps down.
-  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', letterSpacing: -0.2 },
+  cardTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700', letterSpacing: -0.2, textAlign: 'left' },
   // Title + For/driver avatars, explicitly a ROW (not a column — the
   // title's own text wraps vertically inside it via numberOfLines, but the
   // row itself lays its children out side by side) [live-reported: "row
-  // not a column"].
-  titleForRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  // not a column"]. alignItems: flex-start (not center) keeps the title
+  // pinned to the top/left of the row instead of vertically centering
+  // against the avatar's fixed 26px height [live-reported: "can we make
+  // left alignment of title?"] — on a 2-line title that centering visibly
+  // shifted its first line down and right of where a plain left-aligned
+  // title would sit.
+  titleForRow: { flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm },
   cardTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', fontVariant: ['tabular-nums'] },
   claimBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,

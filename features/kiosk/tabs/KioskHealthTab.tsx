@@ -471,20 +471,30 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             // HealthTabComp/RecordsTabComp keep their own "+" affordances
             // too. Parent-only, same as every other write action added to
             // kiosk this session (e.g. Chores' "New Chore").
+            // Compact sizing (s.headerActionBtn), matching Chores' own
+            // header action buttons — the default ActionButton size
+            // (KIOSK_HIT.control/52px tall) read as way too loud for two
+            // buttons crammed into a header corner [live-reported: "we
+            // need to reduce the buttons add and scan sizes it is
+            // scremaing.. too much"]. Scan drops its text label to
+            // icon-only for the same reason (Add stays labeled since it's
+            // the primary action of the two).
             right={!isKid ? (
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {tab === 'meds' && (
                   <ActionButton
-                    label="Scan" Icon={ScanLine} accent={k.danger}
+                    label="" Icon={ScanLine} accent={k.danger}
                     k={k} isDark={kioskDark} variant="soft"
+                    style={s.headerActionBtn}
                     onPress={() => { registerActivity(); setScanMode('rx'); setShowScanSheet(true); }}
                     accessibilityHint="Scan a prescription label with the camera"
                   />
                 )}
                 {tab === 'vax' && (
                   <ActionButton
-                    label="Scan" Icon={ScanLine} accent={k.sage}
+                    label="" Icon={ScanLine} accent={k.sage}
                     k={k} isDark={kioskDark} variant="soft"
+                    style={s.headerActionBtn}
                     onPress={() => { registerActivity(); setScanMode('vaccine'); setShowScanSheet(true); }}
                     accessibilityHint="Scan a vaccine record with the camera"
                   />
@@ -493,6 +503,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   label={tab === 'meds' ? 'Add Med' : tab === 'vax' ? 'Add Vax' : 'Add Record'}
                   Icon={Plus} accent={accent}
                   k={k} isDark={kioskDark} variant="solid"
+                  style={s.headerActionBtn}
                   onPress={() => {
                     registerActivity();
                     if (tab === 'meds') setShowAddMed(true);
@@ -613,15 +624,18 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   <View
                     key={med.id}
                     style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                    // Name dropped from the visible row — the avatar
+                    // already identifies who, same as every other
+                    // avatar+name pattern in kiosk [live-reported: "on
+                    // medical card remove name as we already have
+                    // avtar"]. Still carried here for screen readers.
+                    accessibilityLabel={`${med.name}, ${member?.name.split(' ')[0] ?? 'someone'}, refill due ${daysLeft === 0 ? 'today' : `in ${daysLeft} days`}`}
                   >
                     <View style={[s.jarAvatar, { backgroundColor: k.goldSoft, borderColor: k.goldEdge, borderWidth: 1.5 }]}>
                       <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💊'}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{med.name}</Text>
-                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                        {member?.name.split(' ')[0] ?? 'Someone'}
-                      </Text>
                     </View>
                     <Text style={[s.jarAmt, { color: k.gold, fontSize: 13 }]} numberOfLines={1}>
                       {daysLeft === 0 ? 'Today' : `${daysLeft}d`}
@@ -645,15 +659,13 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   <View
                     key={vax.id}
                     style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                    accessibilityLabel={`${vax.title}, ${member?.name.split(' ')[0] ?? 'someone'}, ${daysLeft <= 0 ? 'due now' : `due in ${daysLeft} days`}`}
                   >
                     <View style={[s.jarAvatar, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, borderWidth: 1.5 }]}>
                       <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💉'}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{vax.title}</Text>
-                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                        {member?.name.split(' ')[0] ?? 'Someone'}
-                      </Text>
                     </View>
                     <Text style={[s.jarAmt, { color: k.sage, fontSize: 13 }]} numberOfLines={1}>
                       {daysLeft <= 0 ? 'Due' : `${daysLeft}d`}
@@ -674,20 +686,23 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
               ) : recordsNeedingAttention.map(({ rec, urgency, followUps }, i) => {
                 const member = members.find(m => m.id === rec.member_id);
                 const urgent = urgency === 'urgent';
+                const statusText = urgency === 'urgent' ? 'Urgent' : urgency === 'attention' ? 'Needs review' : followUps > 0 ? `${followUps} follow-up${followUps > 1 ? 's' : ''}` : '';
                 return (
                   <View
                     key={rec.id}
                     style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+                    accessibilityLabel={`${rec.title}, ${member?.name.split(' ')[0] ?? 'someone'}${statusText ? `, ${statusText}` : ''}`}
                   >
                     <View style={[s.jarAvatar, { backgroundColor: urgent ? k.dangerSoft : k.goldSoft, borderColor: urgent ? k.dangerEdge : k.goldEdge, borderWidth: 1.5 }]}>
                       <Text style={{ fontSize: 15 }}>{member?.emoji ?? '📄'}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
-                      <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
-                        {member?.name.split(' ')[0] ?? 'Someone'}
-                        {urgency === 'urgent' ? ' · Urgent' : urgency === 'attention' ? ' · Needs review' : followUps > 0 ? ` · ${followUps} follow-up${followUps > 1 ? 's' : ''}` : ''}
-                      </Text>
+                      {!!statusText && (
+                        <Text style={[s.jarMeta, { color: urgent ? k.danger : k.textFaint }]} numberOfLines={1}>
+                          {statusText}
+                        </Text>
+                      )}
                     </View>
                     <Text style={[s.jarAmt, { color: urgent ? k.danger : k.gold, fontSize: 13 }]} numberOfLines={1}>
                       {urgent ? '!' : '·'}
@@ -708,6 +723,12 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
 const s = StyleSheet.create({
   root: { flex: 1 },
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
+
+  // Compact header action buttons (Scan/Add), matching Chores' own
+  // s.headerActionBtn — the default ActionButton size (52px tall) read as
+  // too heavy for two buttons in a header corner [live-reported: "we need
+  // to reduce the buttons add and scan sizes it is scremaing.. too much"].
+  headerActionBtn: { paddingHorizontal: KIOSK_SPACE.sm, minHeight: 34 },
 
   // Same twoColRow/centerCol/sideCol/colFullWidth values as
   // KioskTasksTab.tsx/KioskOverviewTab.tsx, verbatim (same 1080px

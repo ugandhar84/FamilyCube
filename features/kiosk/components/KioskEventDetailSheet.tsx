@@ -275,7 +275,16 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
       {assignee.name && !ev.approvalPending && (
         <View style={[s.helperCard, { backgroundColor: bgCol, borderColor: borderCol }]}>
           <View style={s.row}>
-            <View style={{ position: 'relative' }}>
+            {/* Role label FIRST, then the avatar [live-reported: "show like
+                Driven by + Avtar"] — was avatar-then-label. Name text
+                dropped — the avatar already identifies who this is, same
+                as every other avatar+name pattern in kiosk [live-reported:
+                "remove names only keep avatars related persons"].
+                accessibilityLabel below carries the name for screen
+                readers. helperLabel ("Driver"/"Helper") stays — it's a
+                ROLE label, not a redundant name. */}
+            <Text style={[s.helperLabel, { color: k.textMuted }]}>{helperLabel}</Text>
+            <View style={{ position: 'relative' }} accessible accessibilityLabel={`${helperLabel}: ${assignee.name}`}>
               <FamilyAvatar
                 name={assignee.name} emoji={helperMember?.emoji} avatarUrl={(helperMember as any)?.avatarUrl}
                 siblings={members.map(m => m.name)} size={36}
@@ -288,13 +297,11 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
                 </View>
               )}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.helperLabel, { color: k.textMuted }]}>{helperLabel}</Text>
-              <Text style={[s.helperName, { color: showAlarm ? k.danger : k.text }]}>{assignee.name.split(' ')[0]}</Text>
-              {showAlarm && !!ev.declineReason && (
-                <Text style={[s.declineReason, { color: k.danger }]}>"{ev.declineReason}"</Text>
-              )}
-            </View>
+            {showAlarm && !!ev.declineReason && (
+              <View style={{ flex: 1 }}>
+                <Text style={[s.declineReason, { color: k.danger }]} numberOfLines={2}>"{ev.declineReason}"</Text>
+              </View>
+            )}
             {assignee.status === 'confirmed' && <StatusPill k={k} label="Confirmed ✓" color={k.sage} bg={k.sageSoft} />}
             {isPending && <StatusPill k={k} label="⏳ Awaiting" color={k.gold} bg={k.goldSoft} />}
             {isRejected && !showAlarm && <StatusPill k={k} label="No driver yet" color={k.textFaint} bg={k.well} />}
@@ -599,7 +606,6 @@ const s = StyleSheet.create({
   alarmBadge: { position: 'absolute', top: -3, right: -3, borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   alarmBadgeText: { fontSize: 9, color: '#fff', fontWeight: '900' },
   helperLabel: { fontSize: KIOSK_TYPO.label },
-  helperName: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   declineReason: { fontSize: KIOSK_TYPO.label, marginTop: 2 },
   // Matches the Schedule card's own catBadge exactly (KioskScheduleTab.tsx)
   // [live-reported: "the sheet radio is not matching with the other card

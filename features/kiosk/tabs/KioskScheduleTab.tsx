@@ -57,7 +57,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { localDateStr, fmtTime } from '@/lib/dates';
 import { buildMonthGrid, toDateStr, parseDate, addDays, MONTH_LABELS, collapseSeries } from '../../calendar/components/calendarDateHelpers';
-import { assigneeStyle, MultiPersonTimeFill, OverlappingAvatars } from '@/features/calendar/components/EventCard';
+import { assigneeStyle, MultiPersonTimeFill } from '@/features/calendar/components/EventCard';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskEventDetailSheet } from '../components/KioskEventDetailSheet';
 import { KioskSeriesManagerSheet } from '../components/KioskSeriesManagerSheet';
@@ -1086,27 +1086,58 @@ function KioskEventCard({
               title out. */}
           <View style={s.titleForRow}>
             <Text style={[s.cardTitle, { color: k.text, flex: 1 }]} numberOfLines={2}>{ev.title}</Text>
-            {forLabel && allAssignees.length > 0 && (
-              <View accessible accessibilityLabel={`${forLabel}: ${allAssignees.map(m => m.name).join(', ')}`}>
-                {allAssignees.length > 1 ? (
-                  <OverlappingAvatars members={allAssignees} siblings={siblingNames} size={26} ringColor={rs.dot} borderColor={k.card} />
-                ) : (
-                  <FamilyAvatar name={allAssignees[0].name} emoji={allAssignees[0].emoji} avatarUrl={(allAssignees[0] as any).avatarUrl}
-                    siblings={siblingNames} size={26} ringColor={rs.dot} ringWidth={2} />
-                )}
-              </View>
-            )}
-            {!!helperName && (
-              helperMember ? (
-                <View accessible accessibilityLabel={`${helperLabelFor(cat)}: ${helperMember.name}`}>
-                  <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
-                    siblings={siblingNames} size={26} ringColor={k.blue} ringWidth={2} />
+            {/* Every party on this event — assignees AND the driver/helper
+                — in ONE overlapping cluster, not two separate groups
+                sitting side by side [live-reported: "for and driver /
+                accomaniy avtar can be overlapped" → "i mean all the
+                parties in that event should be on verlapped avats"].
+                OverlappingAvatars assumes one shared ringColor for the
+                whole group, which would lose the real distinction between
+                "for" (rs.dot) and driver/helper (k.blue), so this builds
+                the same overlap pattern locally with a per-member ring
+                color instead. helperMember is skipped if they're already
+                one of allAssignees, so the same person doesn't render
+                twice. */}
+            {(() => {
+              const parties: { id: string; name: string; emoji?: string; avatarUrl?: string; ring: string }[] = [
+                ...allAssignees.map(m => ({ id: m.id, name: m.name, emoji: m.emoji, avatarUrl: (m as any).avatarUrl, ring: rs.dot })),
+                ...(helperMember && !allAssignees.some(m => m.id === helperMember.id)
+                  ? [{ id: helperMember.id, name: helperMember.name, emoji: helperMember.emoji, avatarUrl: (helperMember as any).avatarUrl, ring: k.blue }]
+                  : []),
+              ];
+              if (parties.length === 0) {
+                // A genuinely external non-member driver/helper (a coach, a
+                // neighbour) has no avatar to draw — same fallback the
+                // phone card takes.
+                return !!helperName && <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>;
+              }
+              const label = [
+                forLabel && allAssignees.length > 0 ? `${forLabel}: ${allAssignees.map(m => m.name).join(', ')}` : '',
+                helperMember ? `${helperLabelFor(cat)}: ${helperMember.name}` : '',
+              ].filter(Boolean).join(', ');
+              return (
+                <View style={{ flexDirection: 'row' }} accessible accessibilityLabel={label}>
+                  {parties.map((p, i) => (
+                    <View
+                      key={p.id}
+                      style={{
+                        marginLeft: i === 0 ? 0 : -11, zIndex: i,
+                        borderRadius: 15, borderWidth: 2, borderColor: k.card,
+                      }}
+                    >
+                      <FamilyAvatar name={p.name} emoji={p.emoji} avatarUrl={p.avatarUrl}
+                        siblings={siblingNames} size={26} ringColor={p.ring} ringWidth={1.5} />
+                    </View>
+                  ))}
                 </View>
-              ) : (
-                // A genuinely external non-member (a coach, a neighbour) has
-                // no avatar to draw — same fallback the phone card takes.
-                <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
-              )
+              );
+            })()}
+            {/* External (non-member) helper alongside real assignee
+                avatars — the text fallback above only covers the
+                no-avatars-at-all case, so also show it here when
+                assignees exist but the helper has no member record. */}
+            {!!helperName && !helperMember && allAssignees.length > 0 && (
+              <Text style={[s.helperName, { color: k.text }]} numberOfLines={1}>{helperName}</Text>
             )}
           </View>
           {density === 'day' && !!ev.time && (

@@ -92,11 +92,15 @@ export const RAIL_TEEN: KioskRailItem[] = RAIL_DEFAULT.filter(
 
 /**
  * Senior / grandparent: the calm subset, matching the phone's TABS_SENIOR
- * (no Store, no FindFam). Meals is included — a grandparent cooking dinner
- * is one of the most likely real uses of a kitchen display in the product.
+ * (no Store, no FindFam). Meals was here (a grandparent cooking dinner
+ * seemed like a plausible real use of a kitchen display) but was removed
+ * per explicit later correction: "we dont need meals for seniours" — now
+ * matching real mobile, which never gave senior a Meals entry point at
+ * all (no 'meals' pill in AppsQuickAccessPills' PILLS, no Meals link in
+ * SeniorView.tsx).
  */
 export const RAIL_SENIOR: KioskRailItem[] = [
-  OVERVIEW, MEALS, TASKS, CHAT, MEMORIES, PROFILE,
+  OVERVIEW, TASKS, CHAT, MEMORIES, PROFILE,
 ];
 
 export function railForRole(role: string | undefined): KioskRailItem[] {

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Animated, Alert,
 } from 'react-native';
-import { ChefHat, RefreshCw, MessageSquare, Check, ShoppingBag } from 'lucide-react-native';
+import { ChefHat, RefreshCw, MessageSquare, Check, ShoppingBag, Lock } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TouchableOpacity } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -31,15 +31,25 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const isKid = (activeMember as any)?.role === 'kid';
+  // Meal add/edit/delete + the CubeAI planner are now parent-only
+  // [live-requested: "remove meal editing /add/delete only give readonly
+  // access .. with recipie share.. kube ai we can blur and show the
+  // overleay parents ony access? / even mobile should do same"] — a
+  // deliberate widening of the OLD isKid-only restriction to also cover
+  // teen (this used to give teen full edit access, same as parent; this
+  // is a genuine behavior change). Recipe viewing/sharing (onRecipe,
+  // RecipeModal's own Share) stays available to everyone — it was never
+  // an edit action.
+  const isKidOrTeen = (activeMember as any)?.role === 'kid' || (activeMember as any)?.role === 'teen';
   const curWeek     = weekOf();
   const addQuest    = useQuestStore().addQuest;
 
   const [meals, setMeals]       = useState<Meal[]>([]);
   const [loading, setLoading]   = useState(true);
 
-  // AI state
-  const [aiOpen, setAiOpen]       = useState(true);
+  // AI state — collapsed by default for everyone [live-requested: "the ai
+  // strip card always show as collapse by default for parent or kids"].
+  const [aiOpen, setAiOpen]       = useState(false);
   const [aiPref, setAiPref]       = useState('Kid-friendly, high-protein, 30 min max');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError]     = useState<string | null>(null);
@@ -368,14 +378,34 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   return (
     <>
       {/* ── CubeAI Planner Banner (flat) ─────────────────────────────── */}
-      <AiPlannerBanner
-        colors={colors} isDark={isDark}
-        aiOpen={aiOpen} setAiOpen={setAiOpen}
-        pulseOpacity={pulseOpacity} pulseScale={pulseScale}
-        aiPref={aiPref} setAiPref={setAiPref}
-        aiLoading={aiLoading} aiError={aiError}
-        generateMealPlan={generateMealPlan}
-      />
+      {/* Parent-only action, but kid/teen still SEE the banner — a
+          translucent "Parents only" overlay rather than hidden outright
+          [live-requested: "kube ai we can blur and show the overleay
+          parents ony access? / even mobile should do same"]. Content
+          stays legible underneath (a teaser, not a blackout) — same rule
+          kiosk's own overlay follows: "ai whatever you show banner is
+          fully dark not like a teaser". */}
+      <View style={{ position: 'relative' }}>
+        <View pointerEvents={isKidOrTeen ? 'none' : 'auto'} style={isKidOrTeen ? { opacity: 0.55 } : undefined}>
+          <AiPlannerBanner
+            colors={colors} isDark={isDark}
+            aiOpen={aiOpen} setAiOpen={setAiOpen}
+            pulseOpacity={pulseOpacity} pulseScale={pulseScale}
+            aiPref={aiPref} setAiPref={setAiPref}
+            aiLoading={aiLoading} aiError={aiError}
+            generateMealPlan={generateMealPlan}
+          />
+        </View>
+        {isKidOrTeen && (
+          <View pointerEvents="none" style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16,
+            alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#00000066',
+          }}>
+            <Lock size={18} color="#fff" />
+            <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Parents only</Text>
+          </View>
+        )}
+      </View>
 
       {/* ── Meal Selection Phase (flat) ─────────────────────────── */}
       {pendingOptions && (
@@ -415,9 +445,9 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
             <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
               colors={colors} isDark={isDark}
               onRecipe={m => setActiveRecipe(m)}
-              onEdit={m => setEditMeal(m)}
-              onDelete={isKid ? undefined : m => deleteMeal(m.id)}
-              onAdd={() => setAddDay(day)}
+              onEdit={isKidOrTeen ? undefined : m => setEditMeal(m)}
+              onDelete={isKidOrTeen ? undefined : m => deleteMeal(m.id)}
+              onAdd={isKidOrTeen ? undefined : () => setAddDay(day)}
             />
           ))}
         </View>
@@ -471,6 +501,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
         onClose={() => setActiveRecipe(null)}
         onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
         senderId={activeMember?.id ?? ''}
+        hideAddToGrocery={isKidOrTeen}
         colors={colors} isDark={isDark} />
     </>
   );

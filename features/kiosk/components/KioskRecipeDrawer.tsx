@@ -67,7 +67,7 @@ export function typeAccent(k: KioskColors, type: string): string {
 }
 
 export function KioskRecipeDrawer({
-  visible, onClose, meal, members, k, onEdit, onDelete, familyId, senderId,
+  visible, onClose, meal, members, k, onEdit, onDelete, familyId, senderId, hideAddToGrocery,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -83,6 +83,11 @@ export function KioskRecipeDrawer({
    *  footer entirely (matches every other optional-affordance prop here). */
   familyId?: string;
   senderId?: string;
+  /** Hides just the "Add to Grocery" button, keeping "Share Recipe" —
+   * kid/teen [live-requested: "remove add to grocey for the teens and
+   * kids from recipie strip"], since grocery add is parent-only now but
+   * recipe sharing was never an edit action. */
+  hideAddToGrocery?: boolean;
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [addingCart, setAddingCart] = useState(false);
@@ -268,19 +273,25 @@ export function KioskRecipeDrawer({
                 real active member/family in scope). */}
             {!!familyId && !!senderId && (
               <View style={[s.footer, { borderTopColor: k.cardBorder }]}>
-                <Pressable
-                  onPress={handleAddToCart}
-                  disabled={addingCart || cartDone}
-                  style={[s.footerBtn, { backgroundColor: cartDone ? k.sage : k.blue }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={cartDone ? 'Added to grocery list' : 'Add ingredients to grocery list'}
-                >
-                  {addingCart
-                    ? <ActivityIndicator size="small" color={k.onAccent} />
-                    : cartDone
-                      ? <><Check size={15} color={k.onAccent} /><Text style={[s.footerBtnText, { color: k.onAccent }]}>Added!</Text></>
-                      : <><ShoppingBag size={15} color={k.onAccent} /><Text style={[s.footerBtnText, { color: k.onAccent }]}>Add to Grocery</Text></>}
-                </Pressable>
+                {/* Add to Grocery — parent-only [live-requested: "remove
+                    add to grocey for the teens and kids from recipie
+                    strip"]. Share Recipe stays for everyone below — it
+                    was never a grocery-edit action. */}
+                {!hideAddToGrocery && (
+                  <Pressable
+                    onPress={handleAddToCart}
+                    disabled={addingCart || cartDone}
+                    style={[s.footerBtn, { backgroundColor: cartDone ? k.sage : k.blue }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={cartDone ? 'Added to grocery list' : 'Add ingredients to grocery list'}
+                  >
+                    {addingCart
+                      ? <ActivityIndicator size="small" color={k.onAccent} />
+                      : cartDone
+                        ? <><Check size={15} color={k.onAccent} /><Text style={[s.footerBtnText, { color: k.onAccent }]}>Added!</Text></>
+                        : <><ShoppingBag size={15} color={k.onAccent} /><Text style={[s.footerBtnText, { color: k.onAccent }]}>Add to Grocery</Text></>}
+                  </Pressable>
+                )}
                 <Pressable
                   onPress={shareRecipe}
                   style={[s.footerBtn, { backgroundColor: accent }]}

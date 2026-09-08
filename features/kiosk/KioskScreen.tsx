@@ -42,7 +42,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
 import { useEventStore, eventAssignee, isEventSensitive } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { fmtTime } from '@/lib/dates';
+import { fmtTime, localDateStr } from '@/lib/dates';
 import AskCubeChat from '@/components/AskCubeChat';
 import { KioskHeader } from './KioskHeader';
 import { KioskLockScreen } from './KioskLockScreen';
@@ -177,6 +177,21 @@ export default function KioskScreen() {
   // conditional return is a hook-order violation the moment that condition
   // flips (here, the one render before members load).
   const dayEvents = useEventStore(s => s.dayEvents);
+  // Kiosk never called selectDate() itself — it only ever read whatever
+  // `dayEvents` snapshot the phone's own CalendarScreen happened to leave
+  // in the shared eventStore. selectDate() is also the ONLY place that
+  // calls ensureRealtime() for the calendar channel (eventStore.ts's own
+  // selectDate, line ~1611), so without this, a brand-new event added
+  // elsewhere never reaches kiosk until something else (a phone re-
+  // opening its calendar) happens to call selectDate again and the 5-min
+  // SWR cache (DAY_TTL_MS) expires — live-reported as "why there is no
+  // todays event ive one today" / "in kiosk also shows but after long
+  // time open the overview". Calling it here on mount both fetches
+  // today's real events fresh and subscribes kiosk to the same realtime
+  // channel the phone uses, so a new event appears without a long wait.
+  useEffect(() => {
+    useEventStore.getState().selectDate(localDateStr());
+  }, []);
   const { quests } = useQuestStore();
   const ambientChoreCount = useMemo(
     () => quests.filter(q => q.status === 'todo' || q.status === 'in_progress' || q.status === 'claimed').length,

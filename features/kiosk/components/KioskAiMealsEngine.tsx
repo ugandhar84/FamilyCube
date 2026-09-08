@@ -73,7 +73,9 @@ export function KioskAiMealsEngine({
   };
   const curWeek = weekOf();
 
-  const [aiOpen, setAiOpen]       = useState(true);
+  // Collapsed by default for everyone [live-requested: "the ai strip card
+  // always show as collapse by default for parent or kids"].
+  const [aiOpen, setAiOpen]       = useState(false);
   const [aiPref, setAiPref]       = useState('Kid-friendly, high-protein, 30 min max');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError]     = useState<string | null>(null);

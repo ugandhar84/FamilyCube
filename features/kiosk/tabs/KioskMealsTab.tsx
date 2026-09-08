@@ -55,12 +55,13 @@ import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
   findNodeHandle, UIManager, Dimensions, Alert,
 } from 'react-native';
-import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon, Lock } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore, type GroceryItem, type GroceryRun } from '@/store/groceryStore';
+import { useKidRequestStore, type KidRequestItem } from '@/store/kidRequestStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { localDateStr } from '@/lib/dates';
@@ -84,6 +85,17 @@ import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
+// 6 rows visible per store section before it scrolls [live-requested:
+// "in meals groceries make the scroll after 6 items per store"].
+const STORE_SECTION_VISIBLE_ROWS = 6;
+
+// Same real marker KidModals.tsx's own SUPPLIES_PREFIX uses to tell a
+// supplies request apart from a grocery request (both are
+// type: 'delegation' with item rows) — duplicated here rather than
+// imported, same as KioskGroceryRequestSheet.tsx's own copy, to stay
+// byte-identical without pulling in KidModals.tsx's other exports.
+const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
+
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
   const { meals, loading, week, reload: reloadMeals } = useKioskMeals();
@@ -98,6 +110,17 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // addedBy === this kid, same identity GroceryScreen's own kid-request
   // grouping already keys off.
   const isKid = active.role === 'kid';
+  // Meal add/edit/delete AND grocery add/edit/checkoff/move are now
+  // parent-only — widened from the old isKid-only restriction to also
+  // cover teen [live-requested: "remove meal editing /add/delete only
+  // give readonly access .. with recipie share.. kube ai we can blur and
+  // show the overleay parents ony access? / even mobile should do same" /
+  // "as i said we shoun't give the access to grocey add in the melas page
+  // they just can see their approved groceries by parents / kids and
+  // teens both"] — a deliberate divergence from real mobile's own
+  // isKid-only gate (which gave teen full edit access), not a kiosk-only
+  // fork left unexplained.
+  const isKidOrTeen = active.role === 'kid' || active.role === 'teen';
   // Meal lines were read-only — tapping one now opens its full recipe in
   // the same side drawer the Overview hero's Breakfast/Lunch/Dinner cards
   // already use (KioskRecipeDrawer), so the two surfaces that both show a
@@ -141,6 +164,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // see KioskStoreMoveSheet's own header for why this mirrors the phone's
   // ItemCard.tsx onMoveStore button rather than its drag-and-drop layer.
   const [movingItem, setMovingItem] = useState<GroceryItem | undefined>(undefined);
+  // Bulk move — reuses the same KioskStoreMoveSheet, just with multiple
+  // ids instead of one [live-requested: "then introduce multiple items
+  // move like we have long press already use it"].
+  const [bulkMoving, setBulkMoving] = useState(false);
 
   // Bulk multi-select for delete — same real long-press-to-select mode
   // BulkSelectToolbar.tsx gates on (isSelecting = selectedIds.size > 0),
@@ -706,15 +733,32 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
               eating" right below it — live-requested: "cube meal planner
               section length should match to the what weare eating" — so
               it sits inside colWide instead of spanning the full row.
-              Parent-only, matching this tab's own !isKid scoping
-              everywhere else. */}
-          {!isKid && !!familyId && (
+              Parent-only action, but kid/teen still SEE the panel —
+              visually obscured with a "Parents only" overlay rather than
+              hidden outright [live-requested: "kube ai we can blur and
+              show the overleay parents ony access?"]. Not a literal
+              expo-blur BlurView: KioskScheduleTab.tsx's own header
+              comment documents that kiosk's whole design layer
+              deliberately avoids frosted glass ("reads as mud on the
+              kiosk's warm near-black dark ground") in favor of solid
+              fills — this reduces opacity + disables touch instead,
+              staying consistent with that same rule while still reading
+              as "there but off-limits." */}
+          {!!familyId && (
             <WidgetCard k={k} isDark={isDark} style={s.aiStripCard}>
-              <KioskAiMealsEngine
-                familyId={familyId}
-                members={members}
-                onPlanSaved={() => reloadMeals()}
-              />
+              <View pointerEvents={isKidOrTeen ? 'none' : 'auto'} style={isKidOrTeen ? s.aiStripLocked : undefined}>
+                <KioskAiMealsEngine
+                  familyId={familyId}
+                  members={members}
+                  onPlanSaved={() => reloadMeals()}
+                />
+              </View>
+              {isKidOrTeen && (
+                <View style={s.aiStripOverlay} pointerEvents="none">
+                  <Lock size={18} color={k.card} />
+                  <Text style={[s.aiStripOverlayText, { color: k.card }]}>Parents only</Text>
+                </View>
+              )}
             </WidgetCard>
           )}
 
@@ -806,8 +850,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                           not just a top-level "Add Meal" button
                           [live-requested: "we must match the mobile app
                           functionality and experiance except visual of
-                          kiosk"]. Parent-only. */}
-                      {!isKid && (
+                          kiosk"]. Parent-only (widened from kid-only to
+                          also cover teen — "remove meal editing
+                          /add/delete only give readonly access"). */}
+                      {!isKidOrTeen && (
                         <Pressable
                           onPress={() => setAddDay(day)}
                           hitSlop={10}
@@ -822,12 +868,12 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                     <View style={{ flex: 1, minWidth: 0 }}>
                       {dayMeals.length === 0 ? (
                         <Pressable
-                          onPress={() => !isKid && setAddDay(day)}
-                          disabled={isKid}
-                          style={({ pressed }) => [s.mealLine, pressed && !isKid && { opacity: 0.7 }]}
+                          onPress={() => !isKidOrTeen && setAddDay(day)}
+                          disabled={isKidOrTeen}
+                          style={({ pressed }) => [s.mealLine, pressed && !isKidOrTeen && { opacity: 0.7 }]}
                         >
                           <Text style={[s.mealMeta, { color: k.textFaint }]}>
-                            {isKid ? 'Nothing planned' : 'Nothing planned — tap to add'}
+                            {isKidOrTeen ? 'Nothing planned' : 'Nothing planned — tap to add'}
                           </Text>
                         </Pressable>
                       ) : dayMeals.map((m, i) => (
@@ -867,9 +913,25 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
         {/* ══ GROCERY LIST ════════════════════════════════════════════ */}
         <View style={s.colNarrow}>
+          {/* Kid/teen: read-only "My requested groceries" — their own
+              grocery-type kidRequestStore requests with per-item pending/
+              approved/declined status, and bought-or-not once approved
+              [live-requested: "as i said we shoun't give the access to
+              grocey add in the melas page they just can see their
+              approved groceries by parents / kids and teens both" /
+              "and that item status if the parent or someone brought
+              that"] — NOT the shared live grocery_items list (no add,
+              search, receipt scan, price-check, or drag-to-move for
+              these two roles at all). Parent (and senior — this whole
+              tab is already unreachable for senior on kiosk per
+              kioskTabs.ts's RAIL_SENIOR) keeps the full live panel below,
+              unchanged. */}
+          {isKidOrTeen ? (
+            <KidGroceryRequestsPanel active={active} k={k} isDark={isDark} groceryItems={items} boughtItems={boughtItems} members={members} />
+          ) : (
           <WidgetCard k={k} isDark={isDark}>
             <PanelHead
-              title={isKid ? 'My grocery items' : 'Grocery list'}
+              title="Grocery list"
               k={k}
               right={
                 <View style={s.panelHeadRight}>
@@ -1128,32 +1190,51 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                         </Pressable>
                       )}
                     </View>
-                    {storeItems.map((it, i) => (
-                      <KioskDraggableItemRow
-                        key={it.id}
-                        itemId={it.id}
-                        k={k}
-                        dragEnabled={dragEnabled}
-                        draggingId={draggingId}
-                        dragAbsoluteY={dragAbsoluteY}
-                        onDrop={handleDrop}
-                      >
-                        <GroceryRow
-                          item={it}
-                          priceInfo={priceMap[it.name]}
+                    {/* Cap to 6 rows visible, rest scroll [live-requested:
+                        "in meals groceries make the scroll after 6 items
+                        per store"]. Drag-to-move-store measures absolute
+                        page Y across every section (registerSectionLayout/
+                        dragAbsoluteY), which a per-section scroll would
+                        throw off the moment that section scrolls — so drag
+                        is disabled for a store's rows once it grows past
+                        the visible cap (still fully reachable via each
+                        row's own Move sheet, onMove above), matching a
+                        deliberate scroll-vs-drag tradeoff rather than
+                        leaving drag silently broken for a long list. */}
+                    {(() => {
+                      const overflowing = storeItems.length > STORE_SECTION_VISIBLE_ROWS;
+                      const rows = storeItems.map((it, i) => (
+                        <KioskDraggableItemRow
+                          key={it.id}
+                          itemId={it.id}
                           k={k}
-                          isDark={isDark}
-                          divider={i > 0}
-                          onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
-                          onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
-                          onMove={isKid ? undefined : () => setMovingItem(it)}
-                          selecting={isSelecting}
-                          selected={selectedIds.has(it.id)}
-                          onToggleSelect={isKid ? undefined : () => toggleSelectItem(it.id)}
-                          onLongPress={isKid ? undefined : () => toggleSelectItem(it.id)}
-                        />
-                      </KioskDraggableItemRow>
-                    ))}
+                          dragEnabled={dragEnabled && !overflowing}
+                          draggingId={draggingId}
+                          dragAbsoluteY={dragAbsoluteY}
+                          onDrop={handleDrop}
+                        >
+                          <GroceryRow
+                            item={it}
+                            priceInfo={priceMap[it.name]}
+                            k={k}
+                            isDark={isDark}
+                            divider={i > 0}
+                            onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
+                            onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
+                            onMove={isKid ? undefined : () => setMovingItem(it)}
+                            selecting={isSelecting}
+                            selected={selectedIds.has(it.id)}
+                            onToggleSelect={isKid ? undefined : () => toggleSelectItem(it.id)}
+                            onLongPress={isKid ? undefined : () => toggleSelectItem(it.id)}
+                          />
+                        </KioskDraggableItemRow>
+                      ));
+                      return overflowing ? (
+                        <ScrollView style={s.storeSectionScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                          {rows}
+                        </ScrollView>
+                      ) : rows;
+                    })()}
                   </View>
                 ))}
               </View>
@@ -1228,6 +1309,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
               </View>
             )}
           </WidgetCard>
+          )}
         </View>
       </View>
     </ScrollView>
@@ -1248,6 +1330,20 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
           accessibilityLabel="Select all"
         >
           <Text style={[s.bulkBtnText, { color: k.onAccent }]}>Select All</Text>
+        </Pressable>
+        {/* Move — same real updateItem(storePreference) write per-row
+            "Move" already makes, just applied to every selected id
+            [live-requested: "then introduce multiple items move like we
+            have long press already use it"] — the alternative to
+            drag-to-move-store once a store section's own scroll cap
+            disables that gesture for it. */}
+        <Pressable
+          onPress={() => setBulkMoving(true)}
+          style={[s.bulkBtn, { borderColor: k.onAccent + '4D' }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Move ${selectedIds.size} items to a different store`}
+        >
+          <Text style={[s.bulkBtnText, { color: k.onAccent }]}>Move ({selectedIds.size})</Text>
         </Pressable>
         <Pressable
           onPress={() => {
@@ -1285,8 +1381,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       meal={openMeal}
       members={members}
       k={k}
-      onEdit={isKid ? undefined : (m) => { setOpenMeal(null); setEditingMeal(m); }}
-      onDelete={isKid ? undefined : (m) => { setOpenMeal(null); deleteMeal(m); }}
+      onEdit={isKidOrTeen ? undefined : (m) => { setOpenMeal(null); setEditingMeal(m); }}
+      onDelete={isKidOrTeen ? undefined : (m) => { setOpenMeal(null); deleteMeal(m); }}
+      hideAddToGrocery={isKidOrTeen}
       familyId={familyId}
       senderId={active.id}
     />
@@ -1324,6 +1421,15 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         itemId={movingItem.id}
         itemName={movingItem.name}
         currentStore={movingItem.storePreference}
+      />
+    )}
+
+    {bulkMoving && (
+      <KioskStoreMoveSheet
+        visible={bulkMoving}
+        onClose={() => { setBulkMoving(false); setSelectedIds(new Set()); }}
+        itemIds={Array.from(selectedIds)}
+        itemName={`${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''}`}
       />
     )}
 
@@ -1388,6 +1494,105 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
  * of opening the edit sheet — same behavior swap ItemCard.tsx's real
  * `selecting ? onToggleSelect : onPress` makes.
  */
+// ════════════════════════════════════════════════════════════════════════
+// KidGroceryRequestsPanel — the whole shared live grocery_items list
+// replaced with a read-only view of THIS kid/teen's own grocery-type
+// kidRequestStore requests [live-requested: "as i said we shoun't give
+// the access to grocey add in the melas page they just can see their
+// approved groceries by parents / kids and teens both"]. Real per-item
+// data only: KidRequestItem.status (pending/approved/rejected, set by the
+// real parent approveItemsAndSync/rejectItems flow — ParentView.tsx/
+// KioskOverviewTab.tsx's own approveItemsAndSync), and — once approved —
+// whether the matching real grocery_items row has since been bought and
+// by whom [live-requested: "and that item status if the parent or
+// someone brought that"]. There is no stored link from a KidRequestItem
+// to the grocery_items row it produced (approveItemsAndSync just calls
+// addItem with the same name/addedBy — verified by reading it), so the
+// match here is the same normalized-name + addedBy key addItem's own
+// dedupe already uses: exact enough for a real family's actual list
+// (two different people rarely request the identically-named item on the
+// same request), and never invents a status when it can't find a match.
+// ════════════════════════════════════════════════════════════════════════
+
+function KidGroceryRequestsPanel({ active, k, isDark, groceryItems, boughtItems, members }: {
+  active: FamilyMember;
+  k: KioskColors;
+  isDark: boolean;
+  groceryItems: GroceryItem[];
+  boughtItems: GroceryItem[];
+  members: FamilyMember[];
+}) {
+  const requests = useKidRequestStore(s => s.requests);
+  const nameOf = (id?: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0];
+  const norm = (s: string) => s.toLowerCase().trim();
+
+  // Real grocery requests: type === 'delegation' with real item rows, NOT
+  // a supplies request (same isGrocery derivation ActionNeededSection.tsx
+  // already uses — grocery/supplies share the same 'delegation' type and
+  // are told apart only by the SUPPLIES_PREFIX marker on `detail`; there
+  // is no dedicated 'grocery' RequestType). Every item THIS member sent,
+  // newest request first — flattened from KidRequest.items rather than
+  // one row per request, since a single grocery request usually bundles
+  // several items each with their own independent approve/reject status.
+  const myItems = useMemo(() => {
+    const mine = requests
+      .filter(r => r.type === 'delegation' && !r.detail.startsWith(SUPPLIES_PREFIX)
+        && r.fromMemberId === active.id && !!r.items?.length)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+    return mine.flatMap(r => (r.items ?? []).map(it => ({ reqId: r.id, requestedAt: r.requestedAt, item: it })));
+  }, [requests, active.id]);
+
+  const findLiveStatus = (it: KidRequestItem): { bought: boolean; boughtBy?: string } | null => {
+    const key = norm(it.name);
+    const pending = groceryItems.find(g => g.addedBy === active.id && norm(g.name) === key);
+    if (pending) return { bought: false };
+    const bought = boughtItems.find(g => g.addedBy === active.id && norm(g.name) === key);
+    if (bought) return { bought: true, boughtBy: bought.boughtBy };
+    return null; // approved but not yet matched (e.g. bought >7 days ago) — status unknown, not claimed either way
+  };
+
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      <PanelHead
+        title="My requested groceries"
+        k={k}
+        right={myItems.length > 0 ? <Text style={[s.panelCount, { color: k.textFaint }]}>{myItems.length}</Text> : undefined}
+      />
+      {myItems.length === 0 ? (
+        <EmptyNote text="Ask a parent to add something and it'll show up here." k={k} />
+      ) : (
+        <ScrollView style={s.myGroceryScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {myItems.map(({ reqId, item }, i) => {
+            const live = item.status === 'approved' ? findLiveStatus(item) : null;
+            const statusLabel = item.status === 'pending'
+              ? 'Waiting on a parent'
+              : item.status === 'rejected'
+                ? `Declined${item.rejectedBy ? ` by ${nameOf(item.rejectedBy)}` : ''}`
+                : live?.bought
+                  ? `Bought${live.boughtBy ? ` by ${nameOf(live.boughtBy)}` : ''}`
+                  : `Approved${item.approvedBy ? ` by ${nameOf(item.approvedBy)}` : ''}`;
+            const statusColor = item.status === 'pending' ? k.gold
+              : item.status === 'rejected' ? k.danger
+              : live?.bought ? k.sage
+              : k.blue;
+            return (
+              <View key={`${reqId}-${item.id}`} style={[s.myGroceryRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                <Text style={s.myGroceryEmoji} numberOfLines={1}>{item.emoji ?? itemEmoji(item.name) ?? '🛒'}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[s.myGroceryName, { color: k.text }]} numberOfLines={1}>
+                    {item.name}{item.qty ? ` · ${item.qty}` : ''}
+                  </Text>
+                  <Text style={[s.myGroceryStatus, { color: statusColor }]} numberOfLines={1}>{statusLabel}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+    </WidgetCard>
+  );
+}
+
 function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove, selecting, selected, onToggleSelect, onLongPress }: {
   item: GroceryItem;
   priceInfo?: { price: number | null; source: string };
@@ -1565,8 +1770,29 @@ const s = StyleSheet.create({
   // convention as Overview's own panelCount (approvals/sharing readouts).
   panelCount: { fontSize: 11 },
   panelHeadRight: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  // KidGroceryRequestsPanel — 6 rows visible, rest scroll, same convention
+  // as the other bounded kid/teen sideCol lists.
+  myGroceryScroll: { maxHeight: 312 },
+  myGroceryRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 11,
+    paddingVertical: 11, minHeight: KIOSK_HIT.control,
+  },
+  myGroceryEmoji: { fontSize: 20 },
+  myGroceryName: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  myGroceryStatus: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', marginTop: 2 },
   scanBtn: { padding: 2 },
-  aiStripCard: { marginBottom: KIOSK_SPACE.md },
+  aiStripCard: { marginBottom: KIOSK_SPACE.md, position: 'relative', overflow: 'hidden' },
+  // Content stays clearly visible underneath (a teaser, not a blackout)
+  // [live-reported: "ai whatever you show banner is fully dark not like
+  // a teaser"] — the overlay's own translucent scrim is what carries the
+  // "off-limits" read, not darkening the real content itself.
+  aiStripLocked: { opacity: 0.55 },
+  aiStripOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#00000066',
+  },
+  aiStripOverlayText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   dayAddBtn: {
     alignSelf: 'flex-start', marginTop: 4, width: 22, height: 22, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
@@ -1659,6 +1885,8 @@ const s = StyleSheet.create({
   // sub-header background does while a drag is over this section —
   // borderRadius/padding only actually visible once the tint applies.
   storeSection: { borderRadius: KIOSK_RADIUS.sm, marginHorizontal: -6, paddingHorizontal: 6 },
+  // 6 rows visible (~52px each) before a store section scrolls the rest.
+  storeSectionScroll: { maxHeight: 312 },
   storeHeadRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
   pinBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
   pinBtnText: { fontSize: 10.5, fontWeight: '700' },

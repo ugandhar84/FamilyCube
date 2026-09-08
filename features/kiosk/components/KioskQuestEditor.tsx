@@ -44,7 +44,7 @@
  * already established for the calendar editor.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, Switch, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Trash2, Lock, ListTodo, Link2, X } from 'lucide-react-native';
 
 import { useChoreStore, type ChoreCategoryType } from '@/store/choreStore';
@@ -54,7 +54,6 @@ import { useEventStore } from '@/store/eventStore';
 import { showToast } from '@/components/AppToast';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
-import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import { ALL_CATEGORIES, CATEGORY_META } from '@/features/quests/components/questFormShared';
 import {
@@ -65,6 +64,7 @@ import { fmtDate, fmtTime, localDateStr } from '@/lib/dates';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 
 const DIFFICULTIES: { key: 'easy' | 'medium' | 'hard' | 'hero'; label: string }[] = [
   { key: 'easy', label: 'Easy' },
@@ -518,13 +518,25 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
           <KioskFieldLabel k={k}>DUE DATE &amp; TIME</KioskFieldLabel>
           <View style={s.row}>
             <Pressable
-              onPress={() => setShowDuePicker('date')}
+              onPress={() => {
+                if (Platform.OS === 'android') {
+                  openAndroidPicker({ mode: 'date', value: dueDateValue ?? new Date(), onChange: d => setDueDateValue(prev => { const next = new Date(d); if (prev) next.setHours(prev.getHours(), prev.getMinutes(), 0, 0); return next; }) });
+                } else {
+                  setShowDuePicker(p => p === 'date' ? null : 'date');
+                }
+              }}
               style={[input, s.timeBtn, { flex: 3, backgroundColor: showDuePicker === 'date' ? k.primary + '18' : k.well, borderColor: showDuePicker === 'date' ? k.primary : k.cardBorder }]}
             >
               <Text style={[s.timeBtnText, { color: dueDateValue ? k.text : k.textFaint }]}>{dueDateValue ? fmtDate(localDateStr(dueDateValue)) : 'No due date'}</Text>
             </Pressable>
             <Pressable
-              onPress={() => setShowDuePicker('time')}
+              onPress={() => {
+                if (Platform.OS === 'android') {
+                  openAndroidPicker({ mode: 'time', value: dueDateValue ?? new Date(), onChange: d => setDueDateValue(prev => { const next = prev ? new Date(prev) : new Date(); next.setHours(d.getHours(), d.getMinutes(), 0, 0); return next; }) });
+                } else {
+                  setShowDuePicker(p => p === 'time' ? null : 'time');
+                }
+              }}
               style={[input, s.timeBtn, { flex: 2, backgroundColor: showDuePicker === 'time' ? k.primary + '18' : k.well, borderColor: showDuePicker === 'time' ? k.primary : k.cardBorder }]}
             >
               <Text style={[s.timeBtnText, { color: dueDateValue ? k.text : k.textFaint }]}>
@@ -537,14 +549,25 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
               </Pressable>
             )}
           </View>
-          <PickerOverlay
-            showDate={showDuePicker === 'date'} showTime={showDuePicker === 'time'}
+          {/* Kiosk-only inline picker (KioskDateTimePicker), not the shared
+              PickerOverlay every mobile form uses [live-reported: "see here
+              thedate time pickers are not similar to the parent add
+              medication.."] — same rationale as KioskAddMedForm.tsx's own
+              header comment: PickerOverlay's centered floating-card Modal
+              reads as a small popup rather than being embedded in the
+              form. iOS gets a true inline calendar; Android opens its own
+              native dialog above and never reaches this component. */}
+          <KioskDateTimePicker
+            mode="date" visible={showDuePicker === 'date'} k={k} isDark={isDark}
             value={dueDateValue ?? new Date()}
-            onChangeDate={setDueDateValue}
-            onChangeTime={setDueDateValue}
+            onChange={d => setDueDateValue(prev => { const next = new Date(d); if (prev) next.setHours(prev.getHours(), prev.getMinutes(), 0, 0); return next; })}
             onDone={() => setShowDuePicker(null)}
-            accentColor={k.primary} colors={colors}
-            dateLabel="📅 Due Date" timeLabel="🕐 Due Time"
+          />
+          <KioskDateTimePicker
+            mode="time" visible={showDuePicker === 'time'} k={k} isDark={isDark}
+            value={dueDateValue ?? new Date()}
+            onChange={d => setDueDateValue(prev => { const next = prev ? new Date(prev) : new Date(); next.setHours(d.getHours(), d.getMinutes(), 0, 0); return next; })}
+            onDone={() => setShowDuePicker(null)}
           />
         </View>
       )}

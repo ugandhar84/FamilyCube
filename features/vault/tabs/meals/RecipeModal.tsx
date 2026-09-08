@@ -8,10 +8,14 @@ import { rm } from './styles';
 
 // ─── Recipe Modal ─────────────────────────────────────────────────────────────
 
-export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, senderId, colors, isDark }: {
+export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, senderId, colors, isDark, hideAddToGrocery }: {
   meal: Meal | null; visible: boolean; onClose: () => void;
   onAddToGrocery: (items: string[]) => Promise<void>;
   senderId: string; colors: any; isDark: boolean;
+  /** Kid/teen [live-requested: "remove add to grocey for the teens and
+   * kids from recipie strip"] — Share Recipe stays, it was never a
+   * grocery-edit action. */
+  hideAddToGrocery?: boolean;
 }) {
   const [addingCart, setAddingCart] = useState(false);
   const [cartDone,   setCartDone]   = useState(false);
@@ -129,14 +133,16 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
 
         {/* Footer buttons */}
         <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16, flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
-            style={[rm.fab, { backgroundColor: cartDone ? colors.success : colors.teal, flex: 1 }]}>
-            {addingCart
-              ? <ActivityIndicator size="small" color="#fff" />
-              : cartDone
-                ? <><Check size={15} color="#fff" /><Text style={rm.fabTxt}>Added to Grocery!</Text></>
-                : <><ShoppingBag size={15} color="#fff" /><Text style={rm.fabTxt}>Add to Grocery</Text></>}
-          </TouchableOpacity>
+          {!hideAddToGrocery && (
+            <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
+              style={[rm.fab, { backgroundColor: cartDone ? colors.success : colors.teal, flex: 1 }]}>
+              {addingCart
+                ? <ActivityIndicator size="small" color="#fff" />
+                : cartDone
+                  ? <><Check size={15} color="#fff" /><Text style={rm.fabTxt}>Added to Grocery!</Text></>
+                  : <><ShoppingBag size={15} color="#fff" /><Text style={rm.fabTxt}>Add to Grocery</Text></>}
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={shareRecipe} style={[rm.fab, { backgroundColor: colors.accent, flex: 1 }]}>
             <Send size={15} color="#fff" />
             <Text style={rm.fabTxt}>Share Recipe</Text>

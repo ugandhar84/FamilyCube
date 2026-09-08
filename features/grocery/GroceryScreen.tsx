@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun } from '@/store/groceryStore';
+import { useKidRequestStore, type KidRequestItem } from '@/store/kidRequestStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import { PinStoreLocationSheet } from './components/PinStoreLocationSheet';
@@ -45,7 +46,7 @@ import { RecentlyBoughtSection } from './components/RecentlyBoughtSection';
 import { ReturnModeToolbar, BulkSelectToolbar } from './components/SelectionToolbars';
 import AssigneePickerSheet from './components/AssigneePickerSheet';
 import { RunsTabBody } from './components/RunsTabBody';
-import { mapBoughtRow } from './components/types';
+import { mapBoughtRow, itemEmoji } from './components/types';
 import { s } from './components/styles';
 import { showToast } from '@/components/AppToast';
 
@@ -190,7 +191,22 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isKid = (activeMember as any)?.role === 'kid';
+  // Read-only for kid AND teen now — widened from the old isKid-only
+  // restriction [live-requested: "as i said we shoun't give the access to
+  // grocey add in the melas page they just can see their approved
+  // groceries by parents / kids and teens both" / "even mobile should do
+  // same"]. See KidGroceryRequestsView below for the actual replacement
+  // screen this renders instead of everything below.
+  const isKidOrTeen = isKid || (activeMember as any)?.role === 'teen';
   const familyId = (activeMember as any)?.familyId ?? 'family-1';
+  // TEMP diagnostic — live-reported: kiosk-added grocery items never show
+  // on mobile. Suspect: this fallback masking activeMember.familyId being
+  // unset here, so mobile silently reads/writes against the fake
+  // 'family-1' bucket instead of the real family kiosk uses. Remove once
+  // confirmed.
+  if (__DEV__ && !(activeMember as any)?.familyId) {
+    console.warn('[GroceryScreen] activeMember.familyId is missing — falling back to family-1', { activeMemberId, activeMember });
+  }
 
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
@@ -376,6 +392,28 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
       scrollRef.current?.scrollTo({ y: scrollYRef.current, animated: false });
     }, 16);
   };
+
+  // Kid/teen: the whole List/Runs/History/Insights screen below is
+  // replaced with one simple read-only view of their own grocery
+  // requests and status — not a live editable list at all
+  // [live-requested: "Replace with their own request/approval history
+  // only"]. Every hook/effect above this point still runs unconditionally
+  // (React hook-order rules — this is a return-only branch, not an early
+  // bail before the hooks), so nothing here risks a hook-count mismatch;
+  // the state those hooks populate (items, boughtItems, etc.) just goes
+  // unused for this branch, same cost as any other unrendered prop.
+  if (isKidOrTeen) {
+    return (
+      <KidGroceryRequestsView
+        activeMemberId={activeMember?.id ?? ''}
+        members={members}
+        colors={colors}
+        isDark={isDark}
+        hideHeader={hideHeader}
+        insets={insets}
+      />
+    );
+  }
 
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
@@ -692,6 +730,123 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         colors={colors}
         isDark={isDark}
       />
+    </View>
+  );
+}
+
+// ─── Kid/teen read-only grocery view ────────────────────────────────────
+// Replaces the whole List/Runs/History/Insights screen for these two
+// roles [live-requested: "as i said we shoun't give the access to grocey
+// add in the melas page they just can see their approved groceries by
+// parents / kids and teens both" / "and that item status if the parent
+// or someone brought that"]. Real per-item data only: KidRequestItem
+// .status (pending/approved/rejected, set by the real parent
+// approveItemsAndSync/rejectItems flow — ParentView.tsx's own
+// approveItemsAndSync), and — once approved — whether the matching real
+// grocery_items row has since been bought and by whom. There is no
+// stored link from a KidRequestItem to the grocery_items row it produced
+// (approveItemsAndSync just calls addItem with the same name/addedBy —
+// verified by reading it), so the match here is the same normalized-name
+// + addedBy key addItem's own dedupe already uses — same approach as
+// kiosk's own KidGroceryRequestsPanel (features/kiosk/tabs/
+// KioskMealsTab.tsx), kept in sync with that one deliberately.
+const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
+
+function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideHeader, insets }: {
+  activeMemberId: string;
+  members: any[];
+  colors: any;
+  isDark: boolean;
+  hideHeader: boolean;
+  insets: { top: number };
+}) {
+  const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? 'family-1';
+  const groceryItems = useGroceryStore(s => s.items);
+  const load = useGroceryStore(s => s.load);
+  const requests = useKidRequestStore(s => s.requests);
+  const [boughtItems, setBoughtItems] = useState<GroceryItem[]>([]);
+
+  useEffect(() => { if (familyId) load(familyId); }, [familyId, load]);
+
+  useEffect(() => {
+    if (!familyId) return;
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    supabase.from('grocery_items')
+      .select('*').eq('family_id', familyId).eq('is_bought', true)
+      .gte('bought_at', since).order('bought_at', { ascending: false }).limit(50)
+      .then(({ data }) => setBoughtItems((data ?? []).map(mapBoughtRow)));
+  }, [familyId, groceryItems.length]);
+
+  const nameOf = (id?: string) => members.find((m: any) => m.id === id)?.name?.trim().split(' ')[0];
+  const norm = (str: string) => str.toLowerCase().trim();
+
+  const myItems = useMemo(() => {
+    const mine = requests
+      .filter(r => r.type === 'delegation' && !r.detail.startsWith(SUPPLIES_PREFIX)
+        && r.fromMemberId === activeMemberId && !!r.items?.length)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+    return mine.flatMap(r => (r.items ?? []).map(it => ({ reqId: r.id, item: it })));
+  }, [requests, activeMemberId]);
+
+  const findLiveStatus = (it: KidRequestItem): { bought: boolean; boughtBy?: string } | null => {
+    const key = norm(it.name);
+    const pending = groceryItems.find(g => g.addedBy === activeMemberId && norm(g.name) === key);
+    if (pending) return { bought: false };
+    const bought = boughtItems.find(g => g.addedBy === activeMemberId && norm(g.name) === key);
+    if (bought) return { bought: true, boughtBy: bought.boughtBy };
+    return null;
+  };
+
+  return (
+    <View style={[s.root, { backgroundColor: colors.background }]}>
+      {!hideHeader && (
+        <View style={{ backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, paddingTop: insets.top + 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
+            <Ionicons name="cart" size={22} color={colors.primary} />
+            <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>My Requested Groceries</Text>
+          </View>
+        </View>
+      )}
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}>
+        {myItems.length === 0 ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
+            <Ionicons name="cart-outline" size={32} color={colors.textTertiary} />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textTertiary, textAlign: 'center' }}>
+              Ask a parent to add something and it'll show up here.
+            </Text>
+          </View>
+        ) : myItems.map(({ reqId, item }) => {
+          const live = item.status === 'approved' ? findLiveStatus(item) : null;
+          const statusLabel = item.status === 'pending'
+            ? 'Waiting on a parent'
+            : item.status === 'rejected'
+              ? `Declined${item.rejectedBy ? ` by ${nameOf(item.rejectedBy)}` : ''}`
+              : live?.bought
+                ? `Bought${live.boughtBy ? ` by ${nameOf(live.boughtBy)}` : ''}`
+                : `Approved${item.approvedBy ? ` by ${nameOf(item.approvedBy)}` : ''}`;
+          const statusColor = item.status === 'pending' ? colors.amber
+            : item.status === 'rejected' ? colors.danger
+            : live?.bought ? colors.success
+            : colors.accent;
+          return (
+            <View key={`${reqId}-${item.id}`} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+              paddingVertical: 12, paddingHorizontal: 14,
+            }}>
+              <Text style={{ fontSize: 22 }}>{item.emoji ?? itemEmoji(item.name) ?? '🛒'}</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                  {item.name}{item.qty ? ` · ${item.qty}` : ''}
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: statusColor, marginTop: 2 }} numberOfLines={1}>
+                  {statusLabel}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }

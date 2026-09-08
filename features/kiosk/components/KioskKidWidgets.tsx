@@ -42,6 +42,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
 import { KidRequestsSheet } from './KioskKidQuickActions';
+import { useKioskAskParent, ASK_PARENT_OPTIONS } from './KioskAskParentFlow';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
@@ -439,15 +440,20 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
         )
       )}
 
-      <ActionButton
-        label="Open my chores"
-        accent={k.gold}
-        k={k} isDark={isDark}
-        variant="soft"
+      {/* Quiet text link, not a filled button — same convention this
+          sideCol's own "Reward Store" link (and parent's Coin Jars/Meals
+          panels) already use [live-requested: "open my chores should be
+          text link with >"]. */}
+      <Pressable
         onPress={onOpenTasks}
-        style={{ marginTop: KIOSK_SPACE.sm }}
+        style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
+        accessibilityRole="button"
+        accessibilityLabel="Open my chores"
         accessibilityHint="Open the chores board"
-      />
+      >
+        <Text style={[s.panelTextLinkText, { color: k.gold }]}>Open my chores</Text>
+        <ChevronRight size={14} color={k.gold} />
+      </Pressable>
 
       {/* "Can't do this" reason picker. Built on KioskFormDrawer, so it
           participates in idle-lock via KioskModalHost the same way every
@@ -469,81 +475,59 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   );
 }
 
+// KioskMyBalancePanel (a self-scoped coin panel in this sideCol) was
+// removed per live feedback ("KioskMyBalancePanel - remove this
+// completly"). Kid/teen balance now shows only in the persistent left
+// column (KioskKidTeenStatsColumn.tsx, under the identity card). Teen's
+// quick-actions grid lives in KioskMyStuffPanel below.
+
 // ════════════════════════════════════════════════════════════════════════
-// My Balance — self-scoped coin panel for the kid/teen Overview's sideCol,
-// matching the reference mock's own left-rail "Balance" block but placed
-// in the sideCol per this app's real layout (see KioskOverviewTab.tsx's
-// own isParent branch — a real third rail column doesn't exist there,
-// only centerCol + sideCol; kid/teen follow that exact same shape rather
-// than inventing a third column [live-requested: "we should keep the side
-// bar for the navigation tabs like parent" / "follow this as the parents
-// coumn strip left side"]).
-//
-// Real data only: mainCoins/gpCoins (same fields KidPiggyBankSheet and the
-// parent's own Coin Jars row already read), weekChoreCounts (same map the
-// parent's jar row already computes and passes in — not re-derived here),
-// and streak (FamilyMember.streak, server-populated). "Last redeemed" is a
-// real derivation from rewardStore's own redemption history, not invented
-// copy — the same store the parent's redemption-approval queue reads.
+// My Stuff — teen-only sideCol panel, the real 8-destination ask-a-parent
+// grid [live-requested: "heer instead of balance we must show the quick
+// actions right.. for teens" / "name as My STUFF that section" / "4 per
+// row we can keep if possible.."]. Same real ASK_PARENT_OPTIONS data +
+// open(key) action kid's own "Your stuff" card (KioskKidQuickActions) and
+// KioskTasksTab's picker both already use; role-agnostic (confirmed by
+// reading it: no kid-only assumption in the hook or ASK_PARENT_OPTIONS).
 // ════════════════════════════════════════════════════════════════════════
 
-function daysAgoLabel(iso: string): string {
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  if (days <= 0) return 'today';
-  if (days === 1) return 'yesterday';
-  return `${days} days ago`;
-}
-
-export function KioskMyBalancePanel({
-  active, weekChoreCounts, k, isDark, onOpenStore,
+export function KioskMyStuffPanel({
+  active, members, k, isDark,
 }: {
   active: FamilyMember;
-  weekChoreCounts: Map<string, { done: number; total: number }>;
+  members: FamilyMember[];
   k: KioskColors;
   isDark: boolean;
-  onOpenStore: () => void;
 }) {
-  const redemptions = useRewardStore(s => s.redemptions);
-  const main = (active as any).mainCoins ?? 0;
-  const gp = (active as any).gpCoins ?? 0;
-  const total = main + gp;
-  const streak = (active as any).streak ?? 0;
-  const progress = weekChoreCounts.get(active.id);
-
-  const lastRedeemed = useMemo(() => {
-    const mine = redemptions
-      .filter(r => r.memberId === active.id)
-      .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt));
-    return mine[0];
-  }, [redemptions, active.id]);
+  const { open: openAskParent, node: askParentNode } = useKioskAskParent({ active, members });
 
   return (
     <WidgetCard k={k} isDark={isDark}>
-      <PanelHead title="My balance" k={k} />
-      <Text style={[s.balanceAmt, { color: k.gold }]} numberOfLines={1}>
-        {total}<Text style={[s.balanceUnit, { color: k.textMuted }]}> coins</Text>
-      </Text>
-      <Text style={[s.balanceSub, { color: k.textFaint }]} numberOfLines={1}>
-        {[
-          progress ? `${progress.done}/${progress.total} chores this week` : null,
-          streak > 0 ? `${streak} day streak` : null,
-          lastRedeemed ? `last redeemed ${daysAgoLabel(lastRedeemed.redeemedAt)}` : null,
-        ].filter(Boolean).join(' · ') || 'No activity yet this week'}
-      </Text>
-      {/* Quiet text link, not a filled button — same convention parent's
-          own Coin Jars/Meals sideCol panels already use for their own
-          "Open reward store"/"Open list" links [live-requested: "rewards
-          store is text link >"]. */}
-      <Pressable
-        onPress={onOpenStore}
-        style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
-        accessibilityRole="button"
-        accessibilityLabel="Open reward store"
-        accessibilityHint="Open the reward store to spend coins"
-      >
-        <Text style={[s.panelTextLinkText, { color: k.gold }]}>Reward Store</Text>
-        <ChevronRight size={14} color={k.gold} />
-      </Pressable>
+      <PanelHead title="My stuff" k={k} />
+      {/* 2 rows of the 4-per-row grid visible before scrolling, the rest
+          scroll — 8 real options fit exactly 2 rows at 4-up. */}
+      <ScrollView style={s.askGridScroll} showsVerticalScrollIndicator={false}>
+        <View style={s.askGrid}>
+          {ASK_PARENT_OPTIONS.map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => openAskParent(opt.key)}
+              style={({ pressed }) => [
+                s.askTile,
+                { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={opt.label}
+              accessibilityHint={opt.desc}
+            >
+              <opt.Icon size={18} color={opt.accent(k)} />
+              <Text style={[s.askTileLabel, { color: k.text }]} numberOfLines={2}>{opt.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+
+      {askParentNode}
     </WidgetCard>
   );
 }
@@ -1021,11 +1005,6 @@ function ChoreCardRow({
 }
 
 const s = StyleSheet.create({
-  // My balance.
-  balanceAmt: { fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
-  balanceUnit: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
-  balanceSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-
   // My requests (compact sideCol rows). 5 rows visible by default.
   reqListScroll: { maxHeight: 270 },
   reqCompactRow: {
@@ -1093,6 +1072,20 @@ const s = StyleSheet.create({
     marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
   },
   panelTextLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  // Teen's "My Stuff" panel — 2 rows of the 4-per-row grid visible before
+  // scrolling, the rest scroll. Tile height bumped taller than the base
+  // KIOSK_HIT.control per "can you make my stuff widger lil tollor?" /
+  // "lil more taller please".
+  askGridScroll: { maxHeight: (KIOSK_HIT.control + 26) * 2 + KIOSK_SPACE.xs },
+  askGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  askTile: {
+    flexBasis: '22%', flexGrow: 1, minHeight: KIOSK_HIT.control + 26, borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: KIOSK_SPACE.md, paddingHorizontal: KIOSK_SPACE.xs,
+  },
+  // Smaller than KIOSK_TYPO.micro (12) per "also reduce the lable text to
+  // smaller" — a literal size, matching the same deliberate-exception
+  // pattern this file already uses for the filter chip text above.
+  askTileLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
   // Flat mock-matched task row (ChoreCardRow) — mock's own .task/.task-
   // check/.task-title/.task-meta/.badge/.task-coin/.task-action shapes.
   taskRow: {

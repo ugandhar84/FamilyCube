@@ -5,9 +5,15 @@ import { dc } from './styles';
 
 // ─── Day Meal Card ────────────────────────────────────────────────────────────
 
+// onEdit/onAdd optional, matching onDelete's existing pattern — omit all
+// three for a read-only viewer (kid/teen) [live-requested: "remove meal
+// editing /add/delete only give readonly access .. with recipie share..
+// kube ai we can blur and show the overleay parents ony access? / even
+// mobile should do same"]. onRecipe (view + share) stays required/always
+// available — recipe viewing/sharing was never an edit action.
 export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd, colors, isDark }: {
   day: string; meals: Meal[];
-  onRecipe: (m: Meal) => void; onEdit: (m: Meal) => void; onDelete?: (m: Meal) => void; onAdd: () => void;
+  onRecipe: (m: Meal) => void; onEdit?: (m: Meal) => void; onDelete?: (m: Meal) => void; onAdd?: () => void;
   colors: any; isDark: boolean;
 }) {
   const isToday = new Date().toLocaleDateString('en-US', { weekday: 'short' }) === day;
@@ -26,10 +32,12 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
             </View>
           )}
         </View>
-        <TouchableOpacity onPress={onAdd} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 2 }}>
-          <Plus size={13} color={accentColor} />
-          <Text style={{ fontSize: 11, fontWeight: '700', color: accentColor }}>Add</Text>
-        </TouchableOpacity>
+        {onAdd && (
+          <TouchableOpacity onPress={onAdd} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 2 }}>
+            <Plus size={13} color={accentColor} />
+            <Text style={{ fontSize: 11, fontWeight: '700', color: accentColor }}>Add</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Meal rows — plain rows with hairline separators, no nested boxes */}
@@ -78,9 +86,11 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
                   <TouchableOpacity onPress={() => onRecipe(meal)} style={dc.iconBtn}>
                     <BookOpen size={14} color={colors.accent} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => onEdit(meal)} style={dc.iconBtn}>
-                    <Pencil size={14} color={colors.textSecondary} />
-                  </TouchableOpacity>
+                  {onEdit && (
+                    <TouchableOpacity onPress={() => onEdit(meal)} style={dc.iconBtn}>
+                      <Pencil size={14} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  )}
                   {onDelete && (
                     <TouchableOpacity onPress={() => onDelete(meal)} style={dc.iconBtn}>
                       <Trash2 size={14} color={colors.danger + 'AA'} />

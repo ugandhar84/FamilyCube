@@ -40,9 +40,11 @@
  *
  * Pickup time pre-fills at drop-off + 90 minutes, same as the phone, and
  * 'both' keeps the same-day / different-day question (sleepaway trip,
- * multi-day camp). Date and time pickers are the shared PickerOverlay every
- * app form uses — KioskEventEditor already uses it on kiosk, so this is not
- * a new dependency for this surface.
+ * multi-day camp). Date and time pickers use KioskDateTimePicker
+ * (kiosk-only), not the shared PickerOverlay every mobile form uses
+ * [live-reported: "see here thedate time pickers are not similar to the
+ * parent add medication.."] — same rationale as KioskAddMedForm.tsx's own
+ * header comment.
  *
  * ── What is NOT ported ──────────────────────────────────────────────────
  *   • Voice intake (useVoiceIntake in the phone header) — same reasoning as
@@ -55,13 +57,12 @@
  *     passes editEvent today, so the branch would be dead code.
  */
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, Switch, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, Switch, StyleSheet, Platform } from 'react-native';
 import { Car, Check, Phone, ChevronLeft } from 'lucide-react-native';
-import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent, EventType } from '@/store/eventStore';
-import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import {
   SUGGESTIONS, localDateStr, fmtTime, fmtDisplay, fmtTimeDisplay,
 } from '@/features/calendar/components/eventForm/types';
@@ -100,12 +101,7 @@ const RIDE_OPTIONS: { key: RideChoice; icon: string; label: string; sub: string 
 export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
 }) {
-  const { k } = useKioskColors();
-  // PickerOverlay is a shared app component and takes the APP palette (it
-  // is the same spinner sheet every phone form uses, and kiosk's own
-  // KioskEventEditor already hands it useTheme() colors for exactly this
-  // reason). Everything kiosk draws itself uses `k`.
-  const { colors } = useTheme();
+  const { k, isDark } = useKioskColors();
   const addEvent = useEventStore(s => s.addEvent);
   const members = useFamilyStore(s => s.members);
   const active = members.find(m => m.id === activeMemberId);
@@ -359,7 +355,13 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                     // TextInput on the same screen — see KioskPill's own
                     // comment in KioskFormDrawer.tsx for why a same-screen
                     // TextInput blur can eat an onPress here on Android.
-                    onPressIn={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
+                    onPressIn={() => {
+                      if (Platform.OS === 'android') {
+                        openAndroidPicker({ mode: 'date', value: eventDate, minimumDate: new Date(), onChange: d => { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); } });
+                      } else {
+                        setShowDatePick(p => !p); setShowTimePick(false);
+                      }
+                    }}
                     style={[s.dateBtn, {
                       flex: 3,
                       backgroundColor: showDatePick ? accent + '1A' : k.well,
@@ -375,7 +377,13 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                     </Text>
                   </Pressable>
                   <Pressable
-                    onPressIn={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
+                    onPressIn={() => {
+                      if (Platform.OS === 'android') {
+                        openAndroidPicker({ mode: 'time', value: eventDate, onChange: d => { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); } });
+                      } else {
+                        setShowTimePick(p => !p); setShowDatePick(false);
+                      }
+                    }}
                     style={[s.dateBtn, {
                       flex: 2,
                       backgroundColor: showTimePick ? accent + '1A' : k.well,
@@ -391,14 +399,24 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                     </Text>
                   </Pressable>
                 </View>
-                <PickerOverlay
-                  showDate={showDatePick} showTime={showTimePick}
+                {/* Kiosk-only inline picker (KioskDateTimePicker), not the
+                    shared PickerOverlay every mobile form uses
+                    [live-reported: "see here thedate time pickers are not
+                    similar to the parent add medication.."] — same
+                    rationale as KioskAddMedForm.tsx's own header comment.
+                    iOS gets a true inline calendar; Android opens its own
+                    native dialog above and never reaches this. */}
+                <KioskDateTimePicker
+                  mode="date" visible={showDatePick} k={k} isDark={isDark}
+                  value={eventDate} minimumDate={new Date()}
+                  onChange={d => { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); }}
+                  onDone={() => setShowDatePick(false)}
+                />
+                <KioskDateTimePicker
+                  mode="time" visible={showTimePick} k={k} isDark={isDark}
                   value={eventDate}
-                  onChangeDate={d => { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); }}
-                  onChangeTime={d => { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); }}
-                  onDone={() => { setShowDatePick(false); setShowTimePick(false); }}
-                  accentColor={accent} colors={colors}
-                  minimumDate={new Date()}
+                  onChange={d => { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); }}
+                  onDone={() => setShowTimePick(false)}
                 />
               </View>
 
@@ -511,7 +529,15 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                       <Text style={[s.dayText, { color: k.text }]} numberOfLines={1}>Same day</Text>
                     </Pressable>
                     <Pressable
-                      onPressIn={() => { if (!pickupDate) setPickupDate(eventDate); setShowPickupDatePick(true); }}
+                      onPressIn={() => {
+                        const seed = pickupDate ?? eventDate;
+                        if (!pickupDate) setPickupDate(seed);
+                        if (Platform.OS === 'android') {
+                          openAndroidPicker({ mode: 'date', value: seed, minimumDate: eventDate, onChange: d => setPickupDate(new Date(d)) });
+                        } else {
+                          setShowPickupDatePick(true);
+                        }
+                      }}
                       style={[s.dayBtn, {
                         backgroundColor: pickupDate ? accent + '1A' : k.well,
                         borderColor: pickupDate ? accent : k.cardBorder,
@@ -533,20 +559,23 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                 </View>
               )}
 
-              <PickerOverlay
-                showDate={showPickupDatePick} showTime={false}
-                value={pickupDate ?? eventDate}
-                onChangeDate={d => setPickupDate(new Date(d))}
-                onChangeTime={() => {}}
+              <KioskDateTimePicker
+                mode="date" visible={showPickupDatePick} k={k} isDark={isDark}
+                value={pickupDate ?? eventDate} minimumDate={eventDate}
+                onChange={d => setPickupDate(new Date(d))}
                 onDone={() => setShowPickupDatePick(false)}
-                accentColor={accent} colors={colors}
-                minimumDate={eventDate}
               />
 
               <View style={s.section}>
                 <KioskFieldLabel k={k}>PICKUP TIME</KioskFieldLabel>
                 <Pressable
-                  onPressIn={() => setShowPickupTimePick(true)}
+                  onPressIn={() => {
+                    if (Platform.OS === 'android') {
+                      openAndroidPicker({ mode: 'time', value: pickupTime ?? eventDate, onChange: d => { const m = new Date(pickupTime ?? eventDate); m.setHours(d.getHours(), d.getMinutes()); setPickupTime(m); } });
+                    } else {
+                      setShowPickupTimePick(true);
+                    }
+                  }}
                   style={[s.dateBtn, { backgroundColor: accent + '1A', borderColor: accent, alignSelf: 'flex-start', paddingHorizontal: KIOSK_SPACE.xl }]}
                   accessibilityRole="button"
                   accessibilityLabel={pickupTime ? `Pickup at ${fmtTimeDisplay(pickupTime)}` : 'Set pickup time'}
@@ -559,13 +588,11 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
                 </Pressable>
               </View>
 
-              <PickerOverlay
-                showDate={false} showTime={showPickupTimePick}
+              <KioskDateTimePicker
+                mode="time" visible={showPickupTimePick} k={k} isDark={isDark}
                 value={pickupTime ?? eventDate}
-                onChangeDate={() => {}}
-                onChangeTime={d => { const m = new Date(pickupTime ?? eventDate); m.setHours(d.getHours(), d.getMinutes()); setPickupTime(m); }}
+                onChange={d => { const m = new Date(pickupTime ?? eventDate); m.setHours(d.getHours(), d.getMinutes()); setPickupTime(m); }}
                 onDone={() => setShowPickupTimePick(false)}
-                accentColor={accent} colors={colors}
               />
 
               <View style={s.section}>

@@ -43,10 +43,19 @@ import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill } from './KioskFormDrawer';
 
-export function KioskStoreMoveSheet({ visible, onClose, itemId, itemName, currentStore }: {
+export function KioskStoreMoveSheet({ visible, onClose, itemId, itemIds, itemName, currentStore }: {
   visible: boolean;
   onClose: () => void;
-  itemId: string;
+  /** Single-item move (existing per-row "Move" action). */
+  itemId?: string;
+  /** Multi-item move — the long-press bulk-select toolbar's own "Move"
+   * action [live-requested: "then introduce multiple items move like we
+   * have long press already use it" — the store-section scroll cap
+   * disables per-row drag-to-move-store once a section overflows, so
+   * that same real bulk-select mode (already built for Delete) needed a
+   * Move action too, rather than leaving move unreachable for a long
+   * store section]. Takes priority over `itemId` when both are passed. */
+  itemIds?: string[];
   itemName: string;
   currentStore?: string;
 }) {
@@ -54,6 +63,7 @@ export function KioskStoreMoveSheet({ visible, onClose, itemId, itemName, curren
   const updateItem = useGroceryStore(s => s.updateItem);
   const pastStores = useGroceryStore(s => s.pastStores);
   const accent = k.primary;
+  const targetIds = itemIds && itemIds.length > 0 ? itemIds : (itemId ? [itemId] : []);
 
   const storePool = useMemo(
     () => [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])],
@@ -61,7 +71,7 @@ export function KioskStoreMoveSheet({ visible, onClose, itemId, itemName, curren
   );
 
   const move = async (store: string | undefined) => {
-    await updateItem(itemId, { storePreference: store });
+    await Promise.all(targetIds.map(id => updateItem(id, { storePreference: store })));
     onClose();
   };
 

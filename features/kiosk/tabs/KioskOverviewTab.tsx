@@ -124,7 +124,7 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
-import { KidChoresWidget, KioskMyBalancePanel, KioskMyRequestsPanel, KioskUpForGrabsPanel } from '../components/KioskKidWidgets';
+import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
@@ -322,6 +322,17 @@ export function KioskOverviewTab({
     if (!familyId) return;
     dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes, eventId });
   };
+  // Kid/teen's own real Enroute ride — the same tripViews derivation above,
+  // just scoped to a trip where THIS member is the pickup, read-only
+  // [live-requested: "it should also show Enroute for thir rides as
+  // readonly right.. if that is not there dont show at all if there it
+  // should synamically come on to opf the my schedule with readonly
+  // details"]. No confirm/dismiss/alert-parent actions here (that's
+  // KidRideBanner.tsx's own real interactive surface on the phone) — this
+  // is purely a glance at the same live tripStore state parent's own
+  // Pickup Radar already reads, matching the mock's own real-time feel
+  // without inventing a second interactive ride flow on kiosk.
+  const myEnrouteTrip = tripViews.find(v => rawActiveTrips.find(t => t.id === v.tripId)?.pickupMemberId === active.id);
 
   // ── Conflict detection + never-dispatched escalation (AlertBanner) ───
   // Kiosk had ZERO equivalent of this before — real ParentView.tsx's own
@@ -1371,9 +1382,9 @@ export function KioskOverviewTab({
           exactly [live-requested: "remove the greeings hero completely"].
           Intercom/Check-In/Piggy/Cheer/Requests quick tiles that used to
           live inside this hero for kid moved to real homes instead of
-          being dropped: Piggy Bank's real balance data now lives in
-          KioskMyBalancePanel (sideCol), My Requests in
-          KioskMyRequestsPanel (sideCol), and Intercom/Check-In/Cheer
+          being dropped: Piggy Bank's real balance data now lives in the
+          persistent left column (KioskKidTeenStatsColumn.tsx), My
+          Requests in KioskMyRequestsPanel (sideCol), and Intercom/Check-In/Cheer
           Squad stay real, functioning tiles inside KioskKidQuickActions'
           own "Your stuff" card (unchanged, still mounted below). Today's
           Meals (a real, valuable widget, not mock-driven) moved into
@@ -1648,10 +1659,10 @@ export function KioskOverviewTab({
                 No Intercom here [live-requested: "no need of intercom
                 there"] — that stayed a household-broadcast action, and
                 this two-column layout has no hero row to share it with
-                anymore. Piggy Bank/My Requests (the other two tiles that
-                used to live in the removed hero) moved to real sideCol
-                homes below (KioskMyBalancePanel/KioskMyRequestsPanel)
-                instead of duplicating them here. */}
+                anymore. Piggy Bank (the persistent left column) and My
+                Requests (KioskMyRequestsPanel, sideCol) — the other two
+                tiles that used to live in the removed hero — moved to
+                real homes instead of duplicating them here. */}
             {isKid && (
               <View style={s.kidQuickRow}>
                 <KioskKidCheckInTile active={active} />
@@ -1669,28 +1680,23 @@ export function KioskOverviewTab({
                 width — visibly wider than Family Schedule right below it,
                 which only spans centerCol's own share). */}
             <WidgetCard k={k} isDark={isDark} style={s.nowStrip}>
-              {/* Live-requested (kept, final call): green (k.sage) for the
-                  dot AND the label, matching this app's own established
-                  "live" color everywhere else it appears (KioskHeader's
-                  own live dot, the kid/senior hero's Live chip) — a
-                  deliberate real-app choice over the mock's own role-
-                  accent (navy for Parent). Halo stays a static soft ring
-                  (box-shadow: 0 0 0 4px accent at 18% opacity in the mock)
-                  — NOT animated; the mock's one @keyframes pulse belongs
-                  to an unrelated kid-request "waiting" status dot
-                  elsewhere. A plain View can't express a symmetric CSS
-                  box-shadow ring, so the halo is a second, larger, tinted
-                  circle layered behind the solid dot. */}
+              {/* Dynamic label, revisiting the earlier "always literal
+                  HAPPENING NOW" call [live-requested: "are we still
+                  considering scetion name happening now? or up next if
+                  happening now it should show that hr or time based
+                  event should filter and show"] — nowHappening's own
+                  isNow already distinguishes an event actually in
+                  progress from just the next upcoming one; the label (and
+                  the "live" dot's color) now reflects that instead of
+                  claiming something is live when nothing actually is. */}
               <View style={s.nowStripDotWrap}>
-                <View style={[s.nowStripDotHalo, { backgroundColor: k.sage + (isDark ? '30' : '2E') }]} />
-                <View style={[s.nowStripDot, { backgroundColor: k.sage }]} />
+                <View style={[s.nowStripDotHalo, { backgroundColor: (nowHappening?.isNow ? k.sage : k.textFaint) + (isDark ? '30' : '2E') }]} />
+                <View style={[s.nowStripDot, { backgroundColor: nowHappening?.isNow ? k.sage : k.textFaint }]} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                {/* Mock's own now-label is a literal, always-on "Happening
-                    now" — not derived from any state. Matched exactly per
-                    live confirmation, rather than the richer isNow/upcoming
-                    distinction this file computed on its own. */}
-                <Text style={[s.nowStripLabel, { color: k.sage }]}>HAPPENING NOW</Text>
+                <Text style={[s.nowStripLabel, { color: nowHappening?.isNow ? k.sage : k.textFaint }]}>
+                  {nowHappening?.isNow ? 'HAPPENING NOW' : 'UP NEXT'}
+                </Text>
                 <Text style={[s.nowStripWhat, { color: k.text }]} numberOfLines={1}>
                   {nowHappening ? nowHappening.event.title : 'Nothing on the calendar today'}
                 </Text>
@@ -1724,6 +1730,34 @@ export function KioskOverviewTab({
 
             {isParent && (
             <FamilySchedulePanel dayEvents={dayEvents} k={k} isDark={isDark} />
+            )}
+
+            {/* Enroute — read-only glance at a real, live tripStore trip
+                where THIS member is the pickup, sitting directly on top of
+                My Schedule [live-requested: "it should also show Enroute
+                for thir rides as readonly right.. if that is not there
+                dont show at all if there it should synamically come on to
+                opf the my schedule with readonly details"]. Dynamically
+                appears/disappears with myEnrouteTrip — no dispatch/
+                confirm/dismiss actions here (that's KidRideBanner.tsx's
+                own real interactive surface on the phone); same sage
+                "live" banner language as this sideCol's own Grocery
+                run banner above, just non-pressable. */}
+            {(isKid || isTeen) && myEnrouteTrip && (
+              <View
+                style={[
+                  s.groceryRunBanner,
+                  { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' },
+                ]}
+                accessibilityRole="text"
+                accessibilityLabel={`${myEnrouteTrip.driverName} is on the way, ${myEnrouteTrip.etaMinutes} minutes`}
+              >
+                <View style={[s.liveDot, { backgroundColor: k.sage }]} />
+                <Text style={[s.groceryRunBannerText, { color: k.sage }]} numberOfLines={1}>
+                  {myEnrouteTrip.driverName} is on the way · {myEnrouteTrip.etaMinutes}m
+                </Text>
+                <Car size={14} color={k.sage} />
+              </View>
             )}
 
             {/* My Schedule — kid/teen's own real per-person timeline, same
@@ -1989,17 +2023,19 @@ export function KioskOverviewTab({
           </View>
 
           <View style={[s.sideCol, isNarrowParentLayout && s.colFullWidth]}>
-            {/* My Balance / My Requests — kid/teen's own sideCol content,
-                real self-scoped data (mainCoins/gpCoins/weekChoreCounts/
-                streak/rewardStore redemptions for Balance; kidRequestStore
-                for Requests) — NOT the parent's multi-kid Coin Jars panel
-                below, which shows every kid's balance and would leak a
-                sibling's coins to a kid who has no reason to see them. */}
-            {(isKid || isTeen) && (
-              <KioskMyBalancePanel
-                active={active} weekChoreCounts={weekChoreCounts} k={k} isDark={isDark}
-                onOpenStore={() => onNavigate('store')}
-              />
+            {/* My Stuff — teen-only quick-actions grid [live-requested:
+                "heer instead of balance we must show the quick actions
+                right.. for teens"]. Real balance now lives only in the
+                persistent left column (KioskKidTeenStatsColumn.tsx) —
+                KioskMyBalancePanel was removed from here entirely per
+                live feedback ("KioskMyBalancePanel - remove this
+                completly"). My Requests below is kid/teen's own
+                sideCol content, real kidRequestStore data — NOT the
+                parent's multi-kid Coin Jars panel below, which shows
+                every kid's balance and would leak a sibling's coins to
+                a kid who has no reason to see them. */}
+            {isTeen && (
+              <KioskMyStuffPanel active={active} members={members} k={k} isDark={isDark} />
             )}
             {/* Up for Grabs — own sideCol panel now, matching the mock's
                 own separate .panel exactly (was a sub-section inside My
@@ -2776,12 +2812,13 @@ function TeenRideDispatchWidget({ myRides, k, isDark, members, actorId, onConfir
   return (
     <WidgetCard k={k} isDark={isDark} style={style}>
       <WidgetHeader
-        Icon={Car} eyebrow="You were asked" title="Rides to confirm"
-        accent={k.primary} k={k} isDark={isDark}
+        Icon={Car} eyebrow="Pickup radar" title="Rides needing attention"
+        accent={k.sage} k={k} isDark={isDark}
+        titleStyle={s.nowStripWhat}
         right={myRides.length > 0 ? <Chip label={`${myRides.length}`} accent={k.gold} isDark={isDark} k={k} /> : undefined}
       />
       {myRides.length === 0 ? (
-        <EmptyNote text="Nothing waiting on you to confirm." k={k} />
+        <EmptyNote text="Every ride has a confirmed driver." k={k} />
       ) : (
         <View>
           {myRides.map((ev, i) => (
@@ -3682,7 +3719,10 @@ const s = StyleSheet.create({
   // Bounded so a full remaining-week list scrolls inside the sidebar card
   // rather than pushing Grocery/Family Feed further down — 4 rows'
   // (~180px) worth before it scrolls.
-  mealsWeekScroll: { maxHeight: 200 },
+  // 3 rows visible before scrolling (was 6) — today plus the next two
+  // days, rest scroll [live-requested: "and meals also limit to 3 that is
+  // today and then rest scroll"].
+  mealsWeekScroll: { maxHeight: 175 },
   // 5 rows' worth (~65px each incl. padding) before it scrolls, same
   // bounded-ScrollView reasoning as Meals This Week's own list.
   approvalsScroll: { maxHeight: 320 },
@@ -3691,7 +3731,11 @@ const s = StyleSheet.create({
   scheduleScroll: { maxHeight: 320 },
   // 6 rows' worth (each a single-line KIOSK_HIT.control-height checkable
   // row, 52px) before it scrolls, same bounded-ScrollView reasoning.
-  groceryScroll: { maxHeight: 312 },
+  // 5 rows visible before scrolling (was 6) — a long real grocery list
+  // was pushing the whole sideCol (and page) far past the screen
+  // [live-reported: "grocerries has lot of the list" / "i think limit to
+  // 5 then"].
+  groceryScroll: { maxHeight: 260 },
 
   // Real fixed 3-per-row grid — flexGrow:0/flexShrink:0/flexBasis:33.333%,
   // the same "every cell is exactly one third regardless of neighbors'

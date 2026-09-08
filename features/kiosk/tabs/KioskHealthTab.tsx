@@ -69,8 +69,8 @@ import type { RecordForm } from '@/features/vault/records/types';
 import type * as DocumentPicker from 'expo-document-picker';
 import HealthTabComp from '@/features/vault/tabs/HealthTab';
 import RecordsTabComp from '@/features/vault/tabs/RecordsTab';
-import AddMedModal from '@/features/vault/tabs/health/AddMedModal';
-import AddVaxModal from '@/features/vault/tabs/health/AddVaxModal';
+import { KioskAddMedForm } from '../components/KioskAddMedForm';
+import { KioskAddVaxForm } from '../components/KioskAddVaxForm';
 import AddRecordModal from '@/features/vault/records/AddRecordModal';
 import ScanReviewSheet from '@/features/vault/tabs/health/ScanReviewSheet';
 import { showToast } from '@/components/AppToast';
@@ -625,12 +625,15 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                 hideAiAssistant={!isKid} />}
         </WidgetCard>
 
-        {/* Real mobile modals/scan sheet, mounted the same way HealthTab.tsx/
-            RecordsTab.tsx mount them — same components, same props, this
-            file's own state only controls visible/onClose. */}
-        <AddMedModal visible={showAddMed} onClose={() => setShowAddMed(false)}
+        {/* Kiosk-native Add Med/Vax forms (KioskFormDrawer shell, matching
+            KioskGroceryItemSheet's own pattern), not the phone's stepper
+            modal [live-reported: "add model or edit models like a add
+            groceries model type.."] — same real fields, same real save
+            logic (addMed/addVax below), see each form's own header for
+            the exact rationale. */}
+        <KioskAddMedForm visible={showAddMed} onClose={() => setShowAddMed(false)}
           onSave={addMed} members={members} colors={colors} isDark={isDark} />
-        <AddVaxModal visible={showAddVax} onClose={() => setShowAddVax(false)}
+        <KioskAddVaxForm visible={showAddVax} onClose={() => setShowAddVax(false)}
           onSave={addVax} members={members} colors={colors} isDark={isDark} />
         <AddRecordModal visible={showAddRecord} onClose={() => setShowAddRecord(false)}
           onSave={addRecord} colors={colors} isDark={isDark}

@@ -357,11 +357,17 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
 
   const isGroceryCategory = category === 'Errand' || category === 'Shopping';
 
-  // Step list — 'grocery' only exists for Errand/Shopping, so most chores
-  // are a 4-step flow (What, When, Type & Assign, Review) not 5. Recomputed
-  // on every render off category, not memoized — this array is only ever
-  // used to know the current step's id and total count, both cheap.
-  const stepIds = ['what', ...(isGroceryCategory ? ['grocery'] : []), 'when', 'assign', 'review'] as const;
+  // Step list — kiosk-only reduction from the mobile 4/5-step flow (What,
+  // When, Assign, Review [+Grocery]) down to 3/4 steps: 'what' now also
+  // carries the real 'when' content (due date/time, linked event, call
+  // reminder) on the same screen, since kiosk's wide drawer has the room
+  // to show both without scrolling past a single field group. Mobile's
+  // own AddQuestModal.tsx is untouched — this merge is chrome-only, no
+  // step's underlying fields/validation changed. 'grocery' still only
+  // exists for Errand/Shopping. Recomputed on every render off category,
+  // not memoized — this array is only ever used to know the current
+  // step's id and total count, both cheap.
+  const stepIds = ['what', ...(isGroceryCategory ? ['grocery'] : []), 'assign', 'review'] as const;
 
   // Jump straight to Review once, on mount, for a Smart Tasker/voice-intake
   // handoff that already detected title/coins/assignee/etc. — 'review' is
@@ -380,7 +386,7 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
   type StepId = typeof stepIds[number];
   const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
   // If the grocery step existed (step index 1) and the category changes away
-  // from Errand/Shopping mid-flow, step index 1 now means 'when' instead —
+  // from Errand/Shopping mid-flow, step index 1 now means 'assign' instead —
   // clamp back to a safe index rather than leaving the user on a step whose
   // meaning just changed under them.
   useEffect(() => {
@@ -388,7 +394,7 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
   }, [isGroceryCategory]);
 
   const stepTitles: Record<StepId, string> = {
-    what: 'What is it?', grocery: 'Shopping list', when: 'When is it due?',
+    what: 'What & when', grocery: 'Shopping list',
     assign: 'Who & how', review: 'Review',
   };
 
@@ -967,6 +973,80 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
             <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
               {desc.length}/150
             </Text>
+
+            {/* ── When it's due — merged onto this same step (kiosk-only
+                 reduction, see stepIds comment above); mobile's own
+                 AddQuestModal.tsx keeps this as its separate 'when' step. ── */}
+            {/* Due Date & Time — shared with EditQuestModal, which used to
+                keep a byte-identical copy of this block (see
+                DueDateTimePicker). */}
+            <DueDateTimePicker
+              value={dueDate} setValue={setDueDate}
+              showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+              showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+              fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+              accentColor={BRAND.purple}
+            />
+
+            {/* Linked event (spec 8.2) — optional tie to an upcoming calendar
+                event this quest logistically supports, e.g. "Pack for the
+                trip" -> "Family Trip". Display-only, no cascading behavior. */}
+            {(() => {
+              const upcomingEvents = useEventStore.getState().events
+                .filter(e => e.date >= localDateStr(new Date()))
+                .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+                .slice(0, 30);
+              const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
+              return (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
+                  <TouchableOpacity
+                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                    onPress={() => setShowEventPicker(p => !p)}
+                  >
+                    <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                      {linkedEvent ? linkedEvent.title : 'None'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showEventPicker && (
+                    <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
+                      <ScrollView keyboardShouldPersistTaps="always">
+                        <TouchableOpacity
+                          style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
+                        >
+                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                        </TouchableOpacity>
+                        {upcomingEvents.length === 0 ? (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
+                        ) : upcomingEvents.map(ev => (
+                          <TouchableOpacity
+                            key={ev.id}
+                            style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
+                          >
+                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                              {ev.title}
+                            </Text>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
+            {/* Call-style reminder — shared with the Schedule form and
+                EditQuestModal (see CallReminderToggle). */}
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlertCall}
+              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              variant="icon" pillStyle={aq.datePill}
+            />
             </>}
 
             {/* ── Assignment suggestion — calls the live Responsibility Engine
@@ -1136,79 +1216,6 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
                 ))}
               </View>
             </View>
-            </>}
-
-            {currentStepId === 'when' && <>
-            {/* Due Date & Time — shared with EditQuestModal, which used to
-                keep a byte-identical copy of this block (see
-                DueDateTimePicker). */}
-            <DueDateTimePicker
-              value={dueDate} setValue={setDueDate}
-              showDatePick={showDatePick} setShowDatePick={setShowDatePick}
-              showTimePick={showTimePick} setShowTimePick={setShowTimePick}
-              fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
-              accentColor={BRAND.purple}
-            />
-
-            {/* Linked event (spec 8.2) — optional tie to an upcoming calendar
-                event this quest logistically supports, e.g. "Pack for the
-                trip" -> "Family Trip". Display-only, no cascading behavior. */}
-            {(() => {
-              const upcomingEvents = useEventStore.getState().events
-                .filter(e => e.date >= localDateStr(new Date()))
-                .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
-                .slice(0, 30);
-              const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
-              return (
-                <View style={{ marginBottom: 14 }}>
-                  <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
-                  <TouchableOpacity
-                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
-                    onPress={() => setShowEventPicker(p => !p)}
-                  >
-                    <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
-                      {linkedEvent ? linkedEvent.title : 'None'}
-                    </Text>
-                  </TouchableOpacity>
-                  {showEventPicker && (
-                    <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
-                      <ScrollView keyboardShouldPersistTaps="always">
-                        <TouchableOpacity
-                          style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                          onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
-                        >
-                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
-                        </TouchableOpacity>
-                        {upcomingEvents.length === 0 ? (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
-                        ) : upcomingEvents.map(ev => (
-                          <TouchableOpacity
-                            key={ev.id}
-                            style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                            onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
-                          >
-                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
-                              {ev.title}
-                            </Text>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
-                </View>
-              );
-            })()}
-
-            {/* Call-style reminder — shared with the Schedule form and
-                EditQuestModal (see CallReminderToggle). */}
-            <CallReminderToggle
-              alertCall={alertCall} setAlertCall={setAlertCall}
-              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-              accentColor={BRAND.purple} colors={colors} isDark={isDark}
-              variant="icon" pillStyle={aq.datePill}
-            />
             </>}
 
             {currentStepId === 'assign' && <>

@@ -144,7 +144,7 @@ import { useCountdown } from '@/features/hub/hubUtils';
 import { LendAHandCard } from '@/features/hub/senior/LendAHandCard';
 import { ReceiptSubmissionModal } from '@/features/hub/senior/ReceiptSubmissionModal';
 import * as ImagePicker from 'expo-image-picker';
-import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { KioskAddEventForm as AddEventModal } from '../components/KioskAddEventForm';
 
 interface RadarRow {
   member_id: string;

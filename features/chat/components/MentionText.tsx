@@ -4,6 +4,23 @@ import { COLLAPSE_LINES } from './constants';
 
 // ─── Mention text renderer ────────────────────────────────────────────────────
 
+/**
+ * Plain-string version of a mention token — for the handful of PLAIN Text
+ * spots that show a short preview of a message's raw text rather than
+ * routing it through the real <MentionText> renderer (the reply-quote
+ * strip above the composer, and the quoted-message snippet inside a reply
+ * bubble): @[Name|id] -> "@Name" / @[Everyone|everyone] -> "@everyone".
+ * Without this, either preview showed the literal, unresolved bracket
+ * syntax verbatim (live-reported: "@[Everyone|everyone] yeah even chat
+ * showing this") — a real gap now that a message can actually contain a
+ * working mention (see chatStore.ts's own comment on why mentions never
+ * really fired before this session).
+ */
+export function stripMentionBrackets(text: string): string {
+  return text.replace(/@\[([^\]]+)\|([^\]]+)\]/g, (_match, name: string, id: string) =>
+    id === 'everyone' ? '@everyone' : `@${name.split(' ')[0]}`);
+}
+
 export function highlightSearch(raw: string, query: string, baseStyle: any): React.ReactNode {
   if (!query.trim()) return <Text style={baseStyle}>{raw}</Text>;
   const q = query.toLowerCase();
@@ -35,12 +52,22 @@ export function MentionText({ text, memberMap, myId, searchQuery, textStyle, num
       {parts.map((part, i) => {
         const m = part.match(/^@\[([^\]]+)\|([^\]]+)\]$/);
         if (m) {
-          const [, , id] = m;
+          const [, name, id] = m;
+          // 'everyone' is a synthetic member id, not a real one — there's
+          // no memberMap entry to look up (real mentions), so it renders
+          // straight from the token's own embedded name instead
+          // (live-requested: "lets make that as @ everyone" — a real,
+          // highlighted mention rather than plain unresolved "@all" text).
+          // Always highlighted as a real mention since it always includes
+          // the viewer, never as the "me" gold variant specifically —
+          // that color means "you personally were named," which @everyone
+          // both is and isn't.
+          const isEveryone = id === 'everyone';
           const member = memberMap[id];
-          const isMe   = id === myId;
+          const isMe   = !isEveryone && id === myId;
           return (
             <Text key={i} style={{ fontWeight: '800', color: isMe ? '#fbbf24' : '#a78bfa' }}>
-              @{member?.name?.split(' ')[0] ?? 'unknown'}
+              @{isEveryone ? 'everyone' : (member?.name?.split(' ')[0] ?? 'unknown')}
             </Text>
           );
         }

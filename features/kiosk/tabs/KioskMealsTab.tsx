@@ -26,15 +26,21 @@
  * fixed kitchen display isn't the device you carry to the store, so kiosk
  * only ever READS run status (the "Shopping now at {store}" banner above).
  *
- * Two deliberate scope decisions:
+ * One deliberate scope decision remains:
  *   · NO stove/oven timer widget. The mockup has one; the owner ruled it
  *     out of scope. Nothing here schedules or counts anything.
- *   · NO AI meal generation. That flow (MealsTab's CubeAI planner, the
- *     family-ai edge function, a multi-step select-and-confirm phase) is a
- *     considered, multi-screen interaction that does not shrink onto a
- *     glanceable kitchen panel usefully. Kiosk READS the plan and manages
- *     the grocery list against it; planning the week stays on the phone.
- *     The empty state says so rather than dead-ending.
+ *
+ * AI meal generation (MealsTab's CubeAI planner: the family-ai edge
+ * function, the multi-step select-and-confirm phase) was originally scoped
+ * OUT for the same "doesn't shrink onto a glanceable kitchen panel usefully"
+ * reasoning as the timer — reversed on request, matching the same
+ * treatment KioskAiChoresEngine already gives the Chores tab's own CubeAI
+ * engine [live-requested: "need to ai section similar to the chores ,, to
+ * match the mobile functionality"]. It lives behind a "Plan with AI"
+ * button (parent-only) that opens KioskAiMealsEngine as a right-side
+ * drawer — not inline on the panel — so the glanceable meal-plan/grocery
+ * view stays the default state, and the considered multi-step flow only
+ * takes over the screen when a parent deliberately asks for it.
  *
  * Role scoping: adding, editing, deleting, and checking off grocery items
  * is open to everyone (a kid noticing the milk is gone is exactly the
@@ -49,18 +55,23 @@ import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
   findNodeHandle, UIManager, Dimensions, Alert,
 } from 'react-native';
-import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore, type GroceryItem, type GroceryRun } from '@/store/groceryStore';
-import { categorizeItem } from '@/features/vault/tabs/meals/types';
+import { useEventStore } from '@/store/eventStore';
+import { useQuestStore } from '@/store/choreAdapter';
+import { localDateStr } from '@/lib/dates';
+import { categorizeItem, DAYS as MEAL_DAYS } from '@/features/vault/tabs/meals/types';
+import { KioskMealFormDrawer, type MealFormPatch } from '../components/KioskMealFormDrawer';
 import { CAT_ICON, itemEmoji, mapBoughtRow } from '@/features/grocery/components/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { WidgetCard, PanelHead, Well, TabTitle, EmptyNote } from '../components/KioskOS';
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
+import { KioskAiMealsEngine } from '../components/KioskAiMealsEngine';
 import { useKioskActivity } from '../KioskActivityContext';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
@@ -75,7 +86,7 @@ import { registerStoreGeofences } from '@/lib/storeGeofencing';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
-  const { meals, loading, week } = useKioskMeals();
+  const { meals, loading, week, reload: reloadMeals } = useKioskMeals();
   const { registerActivity } = useKioskActivity();
   // The full household grocery list is hidden from kids on kiosk
   // specifically (live-reported: "remove groceries for kids" — a kiosk-
@@ -92,6 +103,30 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // already use (KioskRecipeDrawer), so the two surfaces that both show a
   // meal behave identically rather than one being tappable and one not.
   const [openMeal, setOpenMeal] = useState<Meal | null>(null);
+
+  // Manual Add/Edit meal — real mobile-parity affordances (MealsTab.tsx's
+  // own AddMealSheet/EditMealModal, unified into MealFormSheet.tsx), forked
+  // into KioskMealFormDrawer as a right-side drawer [live-requested:
+  // "there should be manual addition/view/edit/delete right similar to
+  // the mobile but side forms here in kiosk" / "edit / add also sidebar
+  // treatment please"]. addDay set = add mode for that day; editingMeal
+  // set = edit mode — same dual-mode contract MealFormSheet.tsx itself uses.
+  const [addDay, setAddDay] = useState<string | null>(null);
+  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
+  const [savingMeal, setSavingMeal] = useState(false);
+  const [showDayPicker, setShowDayPicker] = useState(false);
+
+  // Meal-plan search — real, new capability (useKioskMeals only ever loads
+  // THIS week; MealsTab.tsx's own view is the same single-week window) —
+  // queries family_meals across every week for this family, matching the
+  // meal name or its real calendar date, INCLUDING past weeks
+  // (live-requested: "lets also add the search function in what we are
+  // eating results should be with date and the meals..including past").
+  // Debounced and only runs while the box has real text — the default,
+  // empty-query view stays the current day-grouped `byDay` list untouched.
+  const [mealQuery, setMealQuery] = useState('');
+  const [mealSearchResults, setMealSearchResults] = useState<Meal[] | null>(null);
+  const [mealSearchLoading, setMealSearchLoading] = useState(false);
 
   // Full CRUD parity with the phone's own grocery list (live-requested:
   // "100% parity except start run, since it stays at kitchen") — undefined
@@ -153,10 +188,24 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   const restoreItem = useGroceryStore(s => s.restoreItem);
   const runs = useGroceryStore(s => s.runs);
 
-  const visibleItems = useMemo(
-    () => isKid ? items.filter(it => it.addedBy === active.id) : items,
-    [items, isKid, active.id],
-  );
+  // Real, new feature (mobile's own GroceryScreen has no search at all) —
+  // matches name, store, AND notes, so a meal-sourced item ("From Grilled
+  // Chicken & Veggies", written by KioskRecipeDrawer's own Add to Grocery)
+  // is findable by the meal's name, not just the ingredient's own name
+  // (live-requested: "in the groceries we should be able to search with
+  // meal name" / "or any search we should hae that").
+  const [groceryQuery, setGroceryQuery] = useState('');
+
+  const visibleItems = useMemo(() => {
+    const scoped = isKid ? items.filter(it => it.addedBy === active.id) : items;
+    const q = groceryQuery.trim().toLowerCase();
+    if (!q) return scoped;
+    return scoped.filter(it =>
+      it.name.toLowerCase().includes(q) ||
+      (it.notes ?? '').toLowerCase().includes(q) ||
+      (it.storePreference ?? '').toLowerCase().includes(q)
+    );
+  }, [items, isKid, active.id, groceryQuery]);
 
   // Real phone grouping (features/grocery/GroceryScreen.tsx's
   // categorisedItems + groupedItems, read in full) — live-reported: "i
@@ -321,6 +370,179 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   const familyId = (members[0] as any)?.familyId as string | undefined;
 
+  // ── Manual meal Add/Edit/Delete — ported verbatim from MealsTab.tsx's
+  // own identically-named functions (read in full before writing this),
+  // relocated here so KioskMealFormDrawer can call the same real
+  // family_meals table / calendar-sync / cooking-quest logic instead of a
+  // second implementation. MealsTab.tsx itself is untouched.
+
+  // "6:00 PM" -> "18:00" (24h, for calendar_events.start_time).
+  const parseTimeLabelTo24h = (label: string | null | undefined): string | null => {
+    if (!label) return null;
+    const m = label.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    if (m[3] === 'PM' && h !== 12) h += 12;
+    if (m[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m[2]}`;
+  };
+
+  const addMinutesToTime = (hhmm: string, minutes: number): string => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const total = (h * 60 + m + minutes) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
+
+  // Shared "Mon"/"Tue"/etc -> real YYYY-MM-DD for THIS week.
+  const dayNameToDate = (day: string): string => {
+    const DAYS_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const todayIdx = new Date().getDay(); // 0=Sun
+    const dayIdx = DAYS_ORDER.indexOf(day);
+    const daysUntil = ((dayIdx - (todayIdx === 0 ? 6 : todayIdx - 1) + 7) % 7);
+    const d = new Date();
+    d.setDate(d.getDate() + daysUntil);
+    return localDateStr(d);
+  };
+
+  // Same day-name -> real date derivation as dayNameToDate above, but
+  // anchored on a meal's own `week_of` (that week's real Monday) instead
+  // of "today" — dayNameToDate only ever resolves to THIS week, which is
+  // wrong for a search result from a past (or future) week's plan.
+  const weekOfAndDayToDate = (weekOfStr: string, day: string): Date => {
+    const DAYS_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayIdx = Math.max(0, DAYS_ORDER.indexOf(day));
+    const d = new Date(weekOfStr + 'T00:00:00');
+    d.setDate(d.getDate() + dayIdx);
+    return d;
+  };
+
+  // Materializes/updates/removes a meal's linked calendar_events row —
+  // same "funnel every syncable domain through calendar_events" pattern
+  // chores' addChore/updateChore/deleteChore got, so a timed meal rides
+  // the existing 2-way calendar sync engine for free.
+  const syncMealCalendarEvent = async (meal: { id: string; day: string; title: string; start_time?: string | null; prep_minutes?: number | null; linked_event_id?: string | null }): Promise<string | null> => {
+    const time24 = parseTimeLabelTo24h(meal.start_time);
+    const { addEvent, updateEvent, deleteEvent } = useEventStore.getState();
+
+    if (!time24) {
+      if (meal.linked_event_id) deleteEvent(meal.linked_event_id);
+      return null;
+    }
+    const date = dayNameToDate(meal.day);
+    const endTime = addMinutesToTime(time24, meal.prep_minutes || 30);
+    if (meal.linked_event_id) {
+      updateEvent(meal.linked_event_id, { title: meal.title, date, time: time24, endTime });
+      return meal.linked_event_id;
+    }
+    return addEvent({
+      title: meal.title, date, time: time24, endTime,
+      type: 'reminder', category: 'Meal',
+      createdBy: active.id,
+    });
+  };
+
+  const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null) => {
+    const dueDate = dayNameToDate(day);
+    useQuestStore.getState().addQuest({
+      title:            `🍳 Cook ${mealTitle}`,
+      description:      `Prepare ${mealTitle} for the family on ${day}.`,
+      category:         'Cooking',
+      priority:         'medium',
+      coins:            15,
+      xpReward:         20,
+      assignedToId:     chefId,
+      assignedToIds:    [chefId],
+      isPool:           false,
+      isDaily:          false,
+      recurrence:       'once',
+      status:           'todo',
+      dueDate,
+      estimatedMinutes: prepMins ?? undefined,
+      createdById:      active.id,
+      photoRequired:    false,
+      isAdultTask:      members.find(m => m.id === chefId)?.role === 'parent' || members.find(m => m.id === chefId)?.role === 'senior',
+    });
+  };
+
+  const saveMeal = async (patch: MealFormPatch) => {
+    if (!familyId) return;
+    setSavingMeal(true);
+    try {
+      if (editingMeal) {
+        const prevChefId = editingMeal.chef_id;
+        const linkedEventId = await syncMealCalendarEvent({ ...editingMeal, ...patch });
+        const fullPatch = { ...patch, linked_event_id: linkedEventId };
+        await supabase.from('family_meals').update(fullPatch).eq('id', editingMeal.id);
+        if (patch.chef_id && patch.chef_id !== prevChefId) {
+          createCookingQuest(patch.title, patch.chef_id, editingMeal.day, patch.prep_minutes);
+        }
+        setEditingMeal(null);
+      } else if (addDay) {
+        const newId = `${familyId}-${week}-${addDay}-manual-${Date.now()}`;
+        const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
+        await supabase.from('family_meals').insert({
+          id: newId,
+          family_id: familyId, week_of: week, day: addDay,
+          ...patch, ai_generated: false, linked_event_id: linkedEventId,
+        });
+        if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+        setAddDay(null);
+      }
+      reloadMeals();
+    } finally {
+      setSavingMeal(false);
+    }
+  };
+
+  const deleteMeal = async (meal: Meal) => {
+    if (meal.linked_event_id) useEventStore.getState().deleteEvent(meal.linked_event_id);
+    await supabase.from('family_meals').delete().eq('id', meal.id);
+    reloadMeals();
+  };
+
+  // Meal-plan search — debounced (same 400ms window useKioskMeals' own
+  // realtime reload uses), queries EVERY week's family_meals row for this
+  // family (no .eq('week_of', ...) filter — that's the whole point,
+  // reaching past weeks useKioskMeals never loads), matched by meal
+  // title. A typed date-like query (e.g. "Mar 12", "3/12", "12") also
+  // matches via the real per-row date derived below, so "search with
+  // date and the meals" works both ways — search a meal to find its date,
+  // or search a date to find what was eaten.
+  useEffect(() => {
+    const q = mealQuery.trim();
+    if (!q || !familyId) { setMealSearchResults(null); return; }
+    setMealSearchLoading(true);
+    const t = setTimeout(() => {
+      // One bounded fetch (last 400 rows across every week for this
+      // family — comfortably years of meals at 1-2/day), filtered client-
+      // side against BOTH the meal title and its real derived date, so
+      // "search with date and the meals" works either direction: search a
+      // meal name to find when it was eaten, or search a date/day (e.g.
+      // "Mar 12", "Wed") to find what was eaten then.
+      supabase.from('family_meals')
+        .select('*').eq('family_id', familyId)
+        .order('week_of', { ascending: false })
+        .limit(400)
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn('[KioskMealsTab] meal search failed', error.message);
+            setMealSearchResults([]);
+          } else {
+            const qLower = q.toLowerCase();
+            const hits = ((data ?? []) as Meal[]).filter(m => {
+              if (m.title.toLowerCase().includes(qLower)) return true;
+              const d = weekOfAndDayToDate(m.week_of, m.day);
+              const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
+              return label.includes(qLower) || m.day.toLowerCase().includes(qLower);
+            });
+            setMealSearchResults(hits.sort((a, b) => b.week_of.localeCompare(a.week_of)));
+          }
+          setMealSearchLoading(false);
+        });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [mealQuery, familyId]);
+
   // Same load call GroceryScreen makes on mount. Idempotent — the store's
   // own guard short-circuits if it's already subscribed for this family, so
   // this costs nothing when the phone's grocery screen already loaded it.
@@ -437,8 +659,12 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   };
 
   // Days ordered from today forward, so a kitchen display opens on tonight
-  // rather than on Monday. Only days with a planned meal are rendered —
-  // seven mostly-empty day cards is what the phone's full planner is for.
+  // rather than on Monday. Was filtered to only days with a planned meal —
+  // reversed to show all 7, each with its own Add affordance, matching
+  // real mobile functionality (DayCard.tsx renders all of DAYS, every one
+  // with an onAdd) now that manual add/edit/delete lives on kiosk too
+  // (live-requested: "we must match the mobile app functionality and
+  // experiance except visual of kiosk").
   const byDay = useMemo(() => {
     const map = new Map<string, typeof meals>();
     for (const m of meals) {
@@ -447,8 +673,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       map.set(m.day, list);
     }
     return daysFromToday()
-      .map(day => ({ day, meals: map.get(day) ?? [] }))
-      .filter(d => d.meals.length > 0);
+      .map(day => ({ day, meals: map.get(day) ?? [] }));
   }, [meals]);
 
   const today = todayMealDay();
@@ -473,6 +698,26 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       <View style={s.columns}>
         {/* ══ MEAL PLAN ═══════════════════════════════════════════════ */}
         <View style={s.colWide}>
+          {/* ── CubeAI Meal Planner ──────────────────────────────────────
+              Inline strip above the plan, same as mobile's own always-
+              inline placement — NOT a side drawer (live-clarified: "oh Ai
+              repose can be inline but the open and view the recipies
+              should be side form"). Same column width as "What we're
+              eating" right below it — live-requested: "cube meal planner
+              section length should match to the what weare eating" — so
+              it sits inside colWide instead of spanning the full row.
+              Parent-only, matching this tab's own !isKid scoping
+              everywhere else. */}
+          {!isKid && !!familyId && (
+            <WidgetCard k={k} isDark={isDark} style={s.aiStripCard}>
+              <KioskAiMealsEngine
+                familyId={familyId}
+                members={members}
+                onPlanSaved={() => reloadMeals()}
+              />
+            </WidgetCard>
+          )}
+
           <WidgetCard k={k} isDark={isDark}>
             <PanelHead
               title="What we're eating"
@@ -482,13 +727,64 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                 : undefined}
             />
 
-            {loading ? (
-              <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
-            ) : byDay.length === 0 ? (
-              <EmptyNote
-                text="No meals planned for this week yet. Plan the week from the Meals screen on a phone — the plan appears here automatically."
-                k={k}
+            {/* Search — real, new capability (mobile's own MealsTab has no
+                search at all): matches meal name OR date/day, across every
+                week including past ones, not just the current-week list
+                below (live-requested: "lets also add the search function
+                in what we are eating results should be with date and the
+                meals..including past"). Empty query keeps the normal
+                day-grouped view untouched. */}
+            <View style={[s.searchRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+              <Search size={14} color={k.textFaint} />
+              <TextInput
+                value={mealQuery}
+                onChangeText={setMealQuery}
+                onFocus={registerActivity}
+                placeholder="Search meals or a date…"
+                placeholderTextColor={k.textFaint}
+                style={[s.searchInput, { color: k.text }]}
+                returnKeyType="search"
+                accessibilityLabel="Search meal plan"
               />
+              {!!mealQuery && (
+                <Pressable onPress={() => setMealQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+                  <XIcon size={14} color={k.textFaint} />
+                </Pressable>
+              )}
+            </View>
+
+            {mealQuery.trim() ? (
+              mealSearchLoading ? (
+                <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
+              ) : !mealSearchResults?.length ? (
+                <EmptyNote text={`No meals match "${mealQuery.trim()}".`} k={k} />
+              ) : (
+                <View style={{ gap: KIOSK_SPACE.xs }}>
+                  {mealSearchResults.map((m, i) => {
+                    const d = weekOfAndDayToDate(m.week_of, m.day);
+                    const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    return (
+                      <Pressable
+                        key={m.id}
+                        onPress={() => setOpenMeal(m)}
+                        style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${m.title} on ${dateLabel}`}
+                      >
+                        <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={1}>{m.title}</Text>
+                          <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={1}>
+                            {[dateLabel, m.type ? cap(m.type) : null, chefName(m.chef_id, members)].filter(Boolean).join(' · ')}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )
+            ) : loading ? (
+              <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
             ) : (
               <View style={{ gap: KIOSK_SPACE.sm }}>
                 {byDay.map(({ day, meals: dayMeals }) => (
@@ -505,9 +801,36 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                       >
                         {day === today ? 'TONIGHT' : day.toUpperCase()}
                       </Text>
+                      {/* Per-day add — real mobile parity (DayCard.tsx's own
+                          onAdd, present on every day including empty ones),
+                          not just a top-level "Add Meal" button
+                          [live-requested: "we must match the mobile app
+                          functionality and experiance except visual of
+                          kiosk"]. Parent-only. */}
+                      {!isKid && (
+                        <Pressable
+                          onPress={() => setAddDay(day)}
+                          hitSlop={10}
+                          style={s.dayAddBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add a meal for ${day}`}
+                        >
+                          <Plus size={13} color={k.textFaint} />
+                        </Pressable>
+                      )}
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      {dayMeals.map((m, i) => (
+                      {dayMeals.length === 0 ? (
+                        <Pressable
+                          onPress={() => !isKid && setAddDay(day)}
+                          disabled={isKid}
+                          style={({ pressed }) => [s.mealLine, pressed && !isKid && { opacity: 0.7 }]}
+                        >
+                          <Text style={[s.mealMeta, { color: k.textFaint }]}>
+                            {isKid ? 'Nothing planned' : 'Nothing planned — tap to add'}
+                          </Text>
+                        </Pressable>
+                      ) : dayMeals.map((m, i) => (
                         <View key={m.id}>
                           {i > 0 && <View style={[s.mealDivider, { backgroundColor: k.cardBorder }]} />}
                           <Pressable
@@ -568,6 +891,35 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
                 </View>
               }
             />
+
+            {/* Search — matches item name, store, AND notes (which now
+                carries "From {meal title}" for anything added via a
+                recipe's Add to Grocery, or "CubeAI weekly plan" for the
+                AI planner's own bulk add) — a real, new capability mobile
+                doesn't have (live-requested: "in the groceries we should
+                be able to search with meal name" / "or any search we
+                should hae that"). Shown to everyone, including a kid
+                searching their own already-approved items. */}
+            {items.length > 0 && (
+              <View style={[s.searchRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+                <Search size={14} color={k.textFaint} />
+                <TextInput
+                  value={groceryQuery}
+                  onChangeText={setGroceryQuery}
+                  onFocus={registerActivity}
+                  placeholder="Search groceries or meals…"
+                  placeholderTextColor={k.textFaint}
+                  style={[s.searchInput, { color: k.text }]}
+                  returnKeyType="search"
+                  accessibilityLabel="Search grocery list"
+                />
+                {!!groceryQuery && (
+                  <Pressable onPress={() => setGroceryQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+                    <XIcon size={14} color={k.textFaint} />
+                  </Pressable>
+                )}
+              </View>
+            )}
 
             {/* Live-asked: "does the kiosk person see other person is
                 live in shopping?" — separate, ephemeral signal from the
@@ -699,7 +1051,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
             {visibleItems.length === 0 ? (
               <EmptyNote
-                text={isKid
+                text={groceryQuery.trim()
+                  ? `No items match "${groceryQuery.trim()}".`
+                  : isKid
                   ? "None of your grocery requests have been approved yet."
                   : "Nothing on the list. Add something above."}
                 k={k}
@@ -931,6 +1285,26 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       meal={openMeal}
       members={members}
       k={k}
+      onEdit={isKid ? undefined : (m) => { setOpenMeal(null); setEditingMeal(m); }}
+      onDelete={isKid ? undefined : (m) => { setOpenMeal(null); deleteMeal(m); }}
+      familyId={familyId}
+      senderId={active.id}
+    />
+
+    <KioskMealFormDrawer
+      visible={!!addDay || !!editingMeal}
+      day={addDay}
+      editingMeal={editingMeal}
+      members={members}
+      colors={{
+        accent: k.purple, background: k.bg, border: k.cardBorder,
+        danger: k.danger, surface: k.well, teal: k.sage, amber: k.gold,
+        textPrimary: k.text, textSecondary: k.textMuted, textTertiary: k.textFaint,
+      }}
+      isDark={isDark}
+      onClose={() => { setAddDay(null); setEditingMeal(null); }}
+      onSave={saveMeal}
+      saving={savingMeal}
     />
 
     {!!familyId && (
@@ -984,6 +1358,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       members={members}
       onClose={() => setViewingRun(null)}
     />
+
     </>
   );
 }
@@ -1191,6 +1566,11 @@ const s = StyleSheet.create({
   panelCount: { fontSize: 11 },
   panelHeadRight: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
   scanBtn: { padding: 2 },
+  aiStripCard: { marginBottom: KIOSK_SPACE.md },
+  dayAddBtn: {
+    alignSelf: 'flex-start', marginTop: 4, width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   // Mock-exact active-run banner, same shape/colors as Overview's Grocery
   // card so the two surfaces read as one feature, not two.
@@ -1219,6 +1599,13 @@ const s = StyleSheet.create({
   mealMeta: { fontSize: 11.5, marginTop: 2 },
 
   addRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xs },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 8,
+    marginBottom: KIOSK_SPACE.sm,
+  },
+  searchInput: { flex: 1, fontSize: KIOSK_TYPO.caption, padding: 0 },
   addInput: {
     flex: 1, minHeight: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     paddingHorizontal: KIOSK_SPACE.md, fontSize: KIOSK_TYPO.body, fontWeight: '600',

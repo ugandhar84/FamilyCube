@@ -1,7 +1,20 @@
 // FamilyCube — Edge Function: mention-notify
 // Called fire-and-forget from chatStore when a chat message contains @mentions.
-// Resolves @firstName matches against family members, sends push to mentioned
+// Resolves real member ids against family members, sends push to mentioned
 // members (skips the sender), persists in-app notification via family-notifier.
+//
+// Real, pre-existing bug fixed here: this used to match `mentions` (raw
+// @word text) against member FIRST NAMES — but chatStore.ts's own stored
+// mention format is @[Name|id], and its extraction regex could never
+// actually match that bracket form (see chatStore.ts's own comment), so
+// `mentions` reaching this function was always empty for every mention
+// sent through the real picker — this function has likely never actually
+// fired for a real mention. chatStore.ts now extracts the real member id
+// out of the bracket token instead of the display name, so this matches
+// by id — exact, not a first-name string comparison, and it's what lets
+// the synthetic id 'everyone' (an @everyone mention) resolve to every
+// real channel member below rather than needing its own separate code
+// path (live-requested: "lets make that as @ everyone").
 //
 // Deploy: supabase functions deploy mention-notify
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -26,7 +39,7 @@ serve(async (req) => {
       channelId,
       senderId,
       text,
-      mentions,  // string[] — the raw @handle words extracted by chatStore
+      mentions,  // string[] — real member ids (or the synthetic 'everyone') extracted by chatStore
     } = await req.json() as {
       messageId: string;
       channelId: string;
@@ -80,13 +93,15 @@ serve(async (req) => {
     // uses the identical rule instead of a second hand-copied version.
     const inChannel = await resolveChannelMembership(supabase, channelId, allMembers as any);
 
-    // ── 3. Match @mentions against member first names (case-insensitive),
-    //      scoped to actual channel participants ───────────────────────────────
-    const mentionedMembers = members.filter(m => {
-      if (!inChannel(m.id)) return false;
-      const firstName = m.name.split(' ')[0].toLowerCase();
-      return mentions.some((handle: string) => handle.toLowerCase() === firstName);
-    });
+    // ── 3. Match @mentions by real member id, scoped to actual channel
+    //      participants. 'everyone' is a synthetic id meaning "every real
+    //      member of this channel" (excluding the sender, already applied
+    //      above) rather than one specific member. ─────────────────────────
+    const mentionIds = new Set(mentions);
+    const isEveryoneMentioned = mentionIds.has('everyone');
+    const mentionedMembers = members.filter(m =>
+      inChannel(m.id) && (isEveryoneMentioned || mentionIds.has(m.id)),
+    );
 
     if (!mentionedMembers.length) return json({ ok: true, notified: 0 });
 
@@ -116,7 +131,15 @@ serve(async (req) => {
           messageId, channelId,
           senderName: sender.name,
           senderId,
-          preview: text.length > 80 ? text.slice(0, 77) + '…' : text,
+          isEveryone: isEveryoneMentioned,
+          // Same @[Name|id] -> "@Name" stripping as chat-notify's own
+          // preview — a push body has no rich-text mention renderer
+          // (live-reported: "push is coming weired").
+          preview: (() => {
+            const displayText = text.replace(/@\[([^\]]+)\|([^\]]+)\]/g, (_m: string, name: string, id: string) =>
+              id === 'everyone' ? '@everyone' : `@${name.split(' ')[0]}`);
+            return displayText.length > 80 ? displayText.slice(0, 77) + '…' : displayText;
+          })(),
         },
       }),
     });

@@ -55,6 +55,7 @@ import { MessageActionSheet } from './components/MessageActionSheet';
 import { GroceryModal } from './components/GroceryModal';
 import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
 import { formatDay, QUICK_REACTIONS, buildGroupChannels, REPLY_KIND_LABEL } from './components/constants';
+import { stripMentionBrackets } from './components/MentionText';
 import { s } from './components/styles';
 import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
 import { Pin, PinOff } from 'lucide-react-native';
@@ -416,11 +417,22 @@ export default function ChatScreen() {
           : members.filter(m => m.role !== 'senior').map(m => m.id),
     [dmOtherId, channelId, members, activeMemberId]);
 
+  // Synthetic "Everyone" entry — a real, first-class mention (id
+  // 'everyone', matched by chatStore/mention-notify below) rather than
+  // plain unresolved text like the old "@all" (live-requested: "lets make
+  // that as @ everyone"). Shown first, and only in a real group channel —
+  // "everyone" in a 1-on-1 DM is just the other person, which their own
+  // name already covers.
+  const isGroupChannel = !dmOtherId;
+  const everyoneEntry = { id: 'everyone', name: 'Everyone', emoji: '📣', role: 'group' };
   const mentionSuggestions = mentionQuery !== null
-    ? members.filter(m =>
-        m.id !== activeMemberId
-        && currentChannelMemberIds.includes(m.id)
-        && m.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+    ? [
+        ...(isGroupChannel && 'everyone'.includes(mentionQuery.toLowerCase()) ? [everyoneEntry] : []),
+        ...members.filter(m =>
+          m.id !== activeMemberId
+          && currentChannelMemberIds.includes(m.id)
+          && m.name.toLowerCase().includes(mentionQuery.toLowerCase())),
+      ]
     : [];
 
   const handleTextChange = (val: string) => {
@@ -1129,7 +1141,7 @@ export default function ChatScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Reply to {memberMap[replyingTo.senderId]?.name?.split(' ')[0]}</Text>
                   <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>
-                    {replyingTo.text ||
+                    {(replyingTo.text ? stripMentionBrackets(replyingTo.text) : null) ||
                       (replyingTo.voiceUri ? REPLY_KIND_LABEL.voice
                         : replyingTo.mediaType === 'video' ? REPLY_KIND_LABEL.video
                         : replyingTo.imageUri ? REPLY_KIND_LABEL.image

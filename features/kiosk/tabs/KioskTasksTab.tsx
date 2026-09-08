@@ -18,11 +18,14 @@
  * every useKioskLockSuspended declaration are all unchanged.
  *
  * `colors` is still a prop and still threaded down, because this tab hosts
- * a handful of SHARED PHONE components (SmartTaskComposer, AddQuestModal,
- * AddEventModal, assigneeStyle) that take the app palette and cannot be
- * restyled without forking them. Both palettes resolve off the same
- * useTheme() isDark, so a kiosk frame around app-palette content is
- * consistent within a mode.
+ * a handful of components that take the app palette (assigneeStyle) and
+ * because KioskSmartTaskComposer/KioskAddChoreForm (kiosk-owned forks of
+ * SmartTaskComposer.tsx/AddQuestModal.tsx — only their shell chrome
+ * differs, real field logic is byte-identical) still use the same real
+ * `colors` prop internally. KioskAddEventForm is the kiosk fork of
+ * AddEventModal.tsx, same treatment.
+ * Both palettes resolve off the same useTheme() isDark, so a kiosk frame
+ * around app-palette content is consistent within a mode.
  *
  * The one exception this used to also carry — CollapsibleQuestCard's own
  * phone-scale shell (BlurView/LinearGradient glass effect, borderRadius 28,
@@ -61,9 +64,9 @@ import { fmtDateShort, withinLast24h } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import { KioskQuestEditor } from '../components/KioskQuestEditor';
 import { WidgetCard, PanelHead, Well, Chip, TabTitle, ActionButton, EmptyNote, KioskExpandableCard } from '../components/KioskOS';
-import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import KioskSmartTaskComposer from '../components/KioskSmartTaskComposer';
 import { KioskAddChoreForm } from '../components/KioskAddChoreForm';
-import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { KioskAddEventForm as AddEventModal } from '../components/KioskAddEventForm';
 import { useKioskAskParent } from '../components/KioskAskParentFlow';
 import { KioskKidCheerList } from '../components/KioskKidQuickActions';
 import { KioskCantDoThisDialog } from '../components/KioskCantDoThisDialog';
@@ -1664,8 +1667,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
           GpOfferReviewCard is a real, standalone-exported component
           (features/hub/parent/GpOfferReviewCard.tsx) — mounted directly,
           not re-implemented, matching this file's own established
-          pattern of reusing real shared-phone components (SmartTaskComposer,
-          AddQuestModal) with the phone colors prop threaded through. */}
+          pattern of reusing real shared-phone component logic (see
+          KioskSmartTaskComposer/KioskAddChoreForm) with the phone colors
+          prop threaded through. */}
       {isParent && gpOffersPending.length > 0 && (
         <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
           <PanelHead
@@ -1912,7 +1916,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
           useKioskAskParent hook, used here and by the Overview. */}
       {askParentNode}
 
-      <SmartTaskComposer
+      <KioskSmartTaskComposer
         visible={showComposer}
         members={members}
         activeMemberId={active.id}

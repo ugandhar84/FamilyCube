@@ -190,20 +190,27 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
     }
   };
 
-  const addGroceryItems = async (names: string[]) => {
+  // `source` writes a human-readable note onto each item so a shopper
+  // later sees WHERE a mystery item came from (which AI plan, or which
+  // specific meal) — ItemCard.tsx's own subtitle line already renders
+  // item.notes, it just never had anything meaningful passed in here
+  // (live-requested: "we should show the who added ai , which meal in the
+  // tiny text under that groceries... basically we should show that what
+  // is the source of this.. in groceries").
+  const addGroceryItems = async (names: string[], source?: string) => {
     const { addItem, items: existing, familyId: sfId } = useGroceryStore.getState();
     const effectiveFamilyId = sfId ?? familyId;
     const existingNames = new Set(existing.map(i => i.name.toLowerCase().trim()));
     for (const name of names) {
       if (!existingNames.has(name.toLowerCase().trim())) {
-        await addItem({ familyId: effectiveFamilyId, name, quantity: '1', category: categorizeItem(name), addedBy: activeMember?.id ?? '', aiGenerated: true });
+        await addItem({ familyId: effectiveFamilyId, name, quantity: '1', category: categorizeItem(name), addedBy: activeMember?.id ?? '', aiGenerated: true, notes: source });
       }
     }
   };
 
   const addAllToCart = async () => {
     if (!groceryList.length) return;
-    await addGroceryItems(groceryList);
+    await addGroceryItems(groceryList, 'CubeAI weekly plan');
     setAddedCart(true);
   };
 
@@ -462,7 +469,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
       {/* Modals */}
       <RecipeModal meal={activeRecipe} visible={!!activeRecipe}
         onClose={() => setActiveRecipe(null)}
-        onAddToGrocery={addGroceryItems}
+        onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
         senderId={activeMember?.id ?? ''}
         colors={colors} isDark={isDark} />
     </>

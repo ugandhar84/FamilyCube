@@ -506,7 +506,20 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       const dt = startAtLocal ? new Date(startAtLocal) : new Date();
       const time = d.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined;
       const base = {
-        title: d.title, type: 'event' as const, category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',
+        // eventCategoryFromDomain(d.category) resolves a known taxonomy
+        // domain (transport/medical/school/sports/work) to a real
+        // EventCategory. For domains it doesn't map (household/financial/
+        // social/errand/etc) it returns null — falling back to the raw
+        // `d.category` string here used to write that unmapped domain
+        // straight into calendar_events.category, which only accepts the
+        // fixed event_categories.key set and violates
+        // calendar_events_category_fk for anything else (live-reported:
+        // "insert or update on table calendar_events violates foreign key
+        // constraint calendar_events_category_fk"). 'Other' is always a
+        // valid key, matching how EventFormModal/VoiceIntakeReviewSheet's
+        // own eventCategoryFromDomain(...) ?? 'Other' fallback already
+        // behaves for the same case.
+        title: d.title, type: 'event' as const, category: eventCategoryFromDomain(d.category) ?? 'Other',
         allDay: !d.startAt, memberId: d.memberId ?? undefined, notes: d.notes ?? undefined,
         approvalPending: false, conflict: false,
         // Only ever set by the edge function when the user explicitly asked

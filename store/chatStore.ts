@@ -1012,8 +1012,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
         if (keysError) console.warn('[chatStore] chat_message_keys insert failed', keysError.message);
       }
-      // Fire mention-notify if message contains @mentions
-      const mentions = [...(text ?? '').matchAll(/@(\w+)/g)].map(m => m[1]);
+      // Fire mention-notify if message contains @mentions.
+      //
+      // Real, pre-existing bug found here: this used to match /@(\w+)/g —
+      // which can only ever match a bare "@word", never this app's actual
+      // stored mention format @[Name|id] (ChatScreen.tsx's handleSend
+      // always substitutes the picker's chosen mention into that bracket
+      // form before calling sendMessage; `[` breaks \w+ so the regex
+      // silently matched nothing against it). Every mention sent through
+      // the real picker therefore never fired mention-notify at all — the
+      // ONLY thing that ever matched here was literal, hand-typed "@word"
+      // text like RecipeModal.tsx's old "@all" prefix, which then failed
+      // mention-notify's OWN first-name lookup anyway (no member literally
+      // named "all"), making the whole path a no-op end to end. Extracting
+      // the real member id out of the bracket form fixes both: real
+      // mentions actually notify now, and mention-notify below is
+      // rewritten to match by id instead of first name — which also lets
+      // the synthetic 'everyone' id flow through as a genuine mention
+      // (live-requested: "lets make that as @ everyone").
+      const mentions = [...(text ?? '').matchAll(/@\[[^\]]+\|([^\]]+)\]/g)].map(m => m[1]);
       if (mentions.length > 0) {
         supabase.functions
           .invoke('mention-notify', { body: { messageId: msgId, channelId, senderId, text, mentions } })

@@ -1,4 +1,15 @@
 /**
+ * KioskSmartTaskComposer — kiosk-only fork of SmartTaskComposer.tsx (the
+ * "just describe it" quick task composer), same minimal-diff fork pattern
+ * as KioskAddChoreForm.tsx/AddQuestModal.tsx: only the shell-owning import
+ * is swapped (AppBottomSheet -> KioskAppBottomSheet, aliased to the same
+ * local name), every other line of real logic is byte-identical
+ * [live-reported: "smart tasker also right side form" / "the what do you
+ * need also should be side form"]. SmartTaskComposer.tsx itself is
+ * completely untouched.
+ *
+ * Original doc comment, unchanged below:
+ *
  * SmartTaskComposer — "just describe it" task creator matching the
  * reference mock's live auto-detection UX: one free-text box, re-classified
  * as the user types, with every auto-filled field marked "✨ auto" until
@@ -15,13 +26,21 @@
  *
  * previewAssignment (process-task-assignment, dry-run) still surfaces a
  * "who would this go to" suggestion inline once a category is known.
+ *
+ * The two inline DateTimePicker spinners (return-time / due-time) are left
+ * exactly as-is — they already render self-contained inline (no floating
+ * overlay Modal of their own), so they work fine inside
+ * KioskAppBottomSheet's scrollable body without needing the
+ * KioskDateTimePicker/openAndroidPicker treatment other kiosk forms use.
  */
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { Mic, Calendar, ClipboardList, Sparkles, AlertTriangle, PenLine, X } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AppBottomSheet from '@/components/AppBottomSheet';
+import { KioskAppBottomSheet as AppBottomSheet } from './KioskAppBottomSheet';
+import { KioskDueDateTimePicker } from './KioskDueDateTimePicker';
+import { fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFormShared';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
@@ -29,7 +48,7 @@ import { familyAi } from '@/lib/familyAiService';
 import { eventCategoryFromDomain, questCategoryFromDomain, previewAssignment, applyAssignment, type AssignmentSuggestion } from '@/lib/responsibilityCategories';
 import { CATEGORIES } from '@/features/calendar/components/eventForm/types';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
-import { detectLocalTask, type LocalDetectionResult } from '../lib/localTaskDetection';
+import { detectLocalTask, type LocalDetectionResult } from '@/features/tasks/lib/localTaskDetection';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { localDateStr, todayLocal, nextHourRoundedStr, fmtTime } from '@/lib/dates';
@@ -59,7 +78,7 @@ function AutoBadge() {
   );
 }
 
-export default function SmartTaskComposer({
+export default function KioskSmartTaskComposer({
   visible, members, activeMemberId, familyId, onClose, onCreated, onOpenFullForm,
 }: {
   visible: boolean;
@@ -94,7 +113,15 @@ export default function SmartTaskComposer({
   const [touchedCategory, setTouchedCategory] = useState(false);
   const [touchedWhen, setTouchedWhen] = useState(false);
   const [whenDate, setWhenDate] = useState<Date | null>(null);
-  const [showWhenPicker, setShowWhenPicker] = useState(false);
+  // Kiosk-only: split into separate date/time pickers (KioskDueDateTimePicker
+  // — iOS inline calendar / Android native dialog per field), matching
+  // KioskAddChoreForm's own Due Date & Time field and KioskAddMedForm's
+  // date fields, instead of the mobile-only combined datetime spinner
+  // (live-requested: "we need date and time separate pickers.. siliar to
+  // the addmed"). SmartTaskComposer.tsx itself keeps its single
+  // showWhenPicker + combined-spinner DateTimePicker, untouched.
+  const [showWhenDatePick, setShowWhenDatePick] = useState(false);
+  const [showWhenTimePick, setShowWhenTimePick] = useState(false);
   const [showReturnPicker, setShowReturnPicker] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -216,7 +243,7 @@ export default function SmartTaskComposer({
     setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false); setTouchedReturnTime(false);
     setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
     setTouchedRecurrence(false); setRecurFreq('once'); setRecurDays([]); setRecurDayOfMonth(undefined);
-    setTouchedWhen(false); setWhenDate(null); setShowWhenPicker(false); setShowReturnPicker(false);
+    setTouchedWhen(false); setWhenDate(null); setShowWhenDatePick(false); setShowWhenTimePick(false); setShowReturnPicker(false);
     setHelperId(undefined); setTouchedHelper(false);
     setDoctorName(''); setClinicLocation(''); setCoachName(''); setVenueLocation('');
     setTutorName(''); setGeneralLocation('');
@@ -974,7 +1001,7 @@ export default function SmartTaskComposer({
                 {showReturnTime && (
                   <View style={{ gap: 6 }}>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Return time <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
-                    <Pressable onPress={() => { setShowWhenPicker(false); setShowReturnPicker(true); }}
+                    <Pressable onPress={() => { setShowWhenDatePick(false); setShowWhenTimePick(false); setShowReturnPicker(true); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? colors.surface : colors.inputBg,
                         borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, alignSelf: 'flex-start' }}>
                       <Calendar size={14} color={colors.textSecondary} />
@@ -1391,34 +1418,31 @@ export default function SmartTaskComposer({
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>When</Text>
                   {!touchedWhen && <AutoBadge />}
                 </View>
-                <Pressable onPress={() => { setShowReturnPicker(false); setShowWhenPicker(true); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? colors.surface : colors.inputBg,
-                    borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, alignSelf: 'flex-start' }}>
-                  <Calendar size={14} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-                    {resolvedWhen.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                  </Text>
-                </Pressable>
-                {showWhenPicker && (
-                  <View style={{ backgroundColor: isDark ? colors.surface : colors.inputBg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
-                    <DateTimePicker
-                      value={resolvedWhen}
-                      mode="datetime" display="spinner"
-                      // Same "no past dates" rule EventFormModal.tsx's own
-                      // main Date/Time picker enforces (minimumDate={new
-                      // Date()}) — live-requested: date/time validation
-                      // "similar to medical" (KioskAddMedForm's own
-                      // minimumDate treatment) applied here too.
-                      minimumDate={new Date()}
-                      onChange={(_, d) => { if (d) { setWhenDate(d); setTouchedWhen(true); } }}
-                      textColor={colors.textPrimary}
-                      style={{ height: 180, width: '100%' }}
-                    />
-                    <Pressable onPress={() => setShowWhenPicker(false)} style={{ alignSelf: 'flex-end', padding: 10 }}>
-                      <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.caption }}>Done</Text>
-                    </Pressable>
-                  </View>
-                )}
+                {/* Kiosk-only: separate date pill + time pill
+                    (KioskDueDateTimePicker — iOS inline calendar / Android
+                    native dialog per field), same component
+                    KioskAddChoreForm's own Due Date & Time field and
+                    KioskAddMedForm's date fields use, instead of one
+                    combined date+time spinner (live-requested: "we need
+                    date and time separate pickers.. siliar to the addmed").
+                    minimumDate={new Date()} keeps the same "no past dates"
+                    rule EventFormModal.tsx's own Date/Time picker enforces
+                    (live-requested: date/time validation "similar to
+                    medical" — KioskAddMedForm's own minimumDate
+                    treatment). */}
+                <KioskDueDateTimePicker
+                  value={resolvedWhen}
+                  setValue={(next) => {
+                    setWhenDate(next as Date);
+                    setTouchedWhen(true);
+                  }}
+                  showDatePick={showWhenDatePick} setShowDatePick={setShowWhenDatePick}
+                  showTimePick={showWhenTimePick} setShowTimePick={setShowWhenTimePick}
+                  fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+                  accentColor={colors.primary}
+                  label=""
+                  minimumDate={new Date()}
+                />
 
                 {/* Call reminder — VoIP-style ringing alert (call-reminder-
                     sweeper cron), distinct from ordinary push notifications.

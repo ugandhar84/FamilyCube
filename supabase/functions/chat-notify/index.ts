@@ -42,7 +42,7 @@ serve(async (req) => {
       channelId: string;
       senderId:  string;
       text:      string;
-      mentions?: string[]; // already-notified-via-mention-notify member first names, to avoid double-pinging them
+      mentions?: string[]; // real member ids (or the synthetic 'everyone'), already-notified-via-mention-notify — used to avoid double-pinging them
     };
 
     if (!senderId || !channelId) {
@@ -69,17 +69,37 @@ serve(async (req) => {
 
     const inChannel = await resolveChannelMembership(supabase, channelId, allMembers as any);
     // Exclude the sender, and anyone already pinged by mention-notify for
-    // this same message — they don't need two separate pushes for one send.
-    const mentionedFirstNames = new Set((mentions ?? []).map(h => h.toLowerCase()));
-    const recipients = (allMembers as any[]).filter(m =>
+    // this same message — they don't need two separate pushes for one
+    // send. `mentions` is now real member ids (chatStore.ts extracts the
+    // id out of the stored @[Name|id] token, not the display name — see
+    // that file's own comment on why matching by first name was always
+    // wrong/dead code here), plus the synthetic id 'everyone' when an
+    // @everyone mention is present, which every recipient here already
+    // counts as — so an @everyone message correctly skips this whole
+    // plain-chat push entirely and lets mention-notify's own (now-working)
+    // 'everyone' push be the only one that fires, rather than double-
+    // pinging the whole family once from each function.
+    const mentionedIds = new Set(mentions ?? []);
+    const isEveryoneMentioned = mentionedIds.has('everyone');
+    const recipients = isEveryoneMentioned ? [] : (allMembers as any[]).filter(m =>
       m.id !== senderId &&
       inChannel(m.id) &&
-      !mentionedFirstNames.has(m.name.split(' ')[0].toLowerCase()),
+      !mentionedIds.has(m.id),
     );
     if (!recipients.length) return json({ ok: true, notified: 0 });
 
     const channelLabel = GROUP_LABELS[channelId];
-    const preview = text.length > 80 ? text.slice(0, 77) + '…' : text;
+    // Strip @[Name|id] mention tokens down to plain "@Name" before slicing
+    // for the push preview — a push notification body has no rich-text
+    // renderer the way MentionText.tsx does client-side, so the raw
+    // bracket syntax showed up literally (live-reported: "push is coming
+    // weired" / "@[Everyone|everyone] yeah even chat showing this" —
+    // same underlying gap, fixed here for the push preview and separately
+    // for the chat app's own reply-quote previews, the other two PLAIN
+    // Text spots that show raw message text).
+    const displayText = text.replace(/@\[([^\]]+)\|([^\]]+)\]/g, (_m: string, name: string, id: string) =>
+      id === 'everyone' ? '@everyone' : `@${name.split(' ')[0]}`);
+    const preview = displayText.length > 80 ? displayText.slice(0, 77) + '…' : displayText;
 
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
     await fetch(notifierUrl, {

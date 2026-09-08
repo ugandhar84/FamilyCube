@@ -573,7 +573,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     case 'chat_mention':
       return {
-        title: `💬 ${p.senderName} mentioned you`,
+        title: p.isEveryone ? `💬 ${p.senderName} mentioned everyone` : `💬 ${p.senderName} mentioned you`,
         body: p.preview as string ?? 'You were mentioned in family chat',
         sound: 'default',
         data: { screen: 'Chat', channelId: p.channelId },

@@ -58,12 +58,20 @@ export function KioskDateTimePicker({ mode, value, onChange, minimumDate, k, isD
 }) {
   if (Platform.OS === 'android') return null; // Android uses openAndroidPicker below instead.
   if (!visible) return null;
+  // `display="inline"` only gives a true embedded calendar GRID for
+  // mode="date"/"datetime" — iOS has no distinct inline layout for a bare
+  // mode="time" picker, so asking for "inline" there falls back to
+  // whatever the OS/library defaults to instead of a deliberate choice.
+  // Explicit `display="spinner"` for time keeps the familiar rolling-wheel
+  // time picker (live-asked: "why time is not a spinner here?") while date
+  // stays the real inline calendar this component exists for.
+  const display = mode === 'time' ? 'spinner' : 'inline';
   return (
     <View style={{ borderRadius: KIOSK_RADIUS.md, borderWidth: 1, borderColor: k.cardBorder, backgroundColor: k.well, overflow: 'hidden' }}>
       <DateTimePicker
         value={value}
         mode={mode}
-        display="inline"
+        display={display}
         minimumDate={minimumDate}
         onChange={(_, d) => { if (d) onChange(d); }}
         themeVariant={isDark ? 'dark' : 'light'}

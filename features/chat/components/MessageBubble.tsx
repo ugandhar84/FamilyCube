@@ -8,7 +8,7 @@ import { Play, CheckCheck, AlertTriangle, MapPin, FileText, RefreshCw } from 'lu
 import { ChatMessage } from '@/store/chatStore';
 import { VoiceNoteBubble } from './VoiceComponents';
 import { SwipeableBubble } from './SwipeableBubble';
-import { CollapsibleText } from './MentionText';
+import { CollapsibleText, stripMentionBrackets } from './MentionText';
 import { formatTime, detectAlertTint, SHARE_KIND_META, REPLY_KIND_LABEL, BUBBLE_R, BUBBLE_SM } from './constants';
 
 // ─── Video thumbnail — first-frame still, not playing ──────────────────────
@@ -377,7 +377,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
                     color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
-                    {msg.replyTo.text || REPLY_KIND_LABEL[msg.replyTo.kind ?? 'voice']}
+                    {(msg.replyTo.text ? stripMentionBrackets(msg.replyTo.text) : null) || REPLY_KIND_LABEL[msg.replyTo.kind ?? 'voice']}
                   </Text>
                 </View>
               </Pressable>

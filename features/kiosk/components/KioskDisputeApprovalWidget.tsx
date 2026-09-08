@@ -309,7 +309,12 @@ function ReasonSheet({ visible, title, subtitle, accent, submitLabel, required, 
           value={text}
           onChangeText={setText}
           multiline
-          autoFocus
+          // Kiosk forms shouldn't pop the on-screen keyboard on open — the
+          // wall-mounted tablet is usually walked up to, not typed on
+          // immediately (live-reported: "on the forms dont auto focus on
+          // the texts inputs and open keyboard"). Matches KioskAskSheet's
+          // own explicit autoFocus={false}.
+          autoFocus={false}
         />
       </View>
     </KioskFormDrawer>

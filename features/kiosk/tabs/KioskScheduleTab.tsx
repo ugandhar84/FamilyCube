@@ -61,9 +61,9 @@ import { assigneeStyle, MultiPersonTimeFill } from '@/features/calendar/componen
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskEventDetailSheet } from '../components/KioskEventDetailSheet';
 import { KioskSeriesManagerSheet } from '../components/KioskSeriesManagerSheet';
-import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import KioskSmartTaskComposer from '../components/KioskSmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
-import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { KioskAddEventForm as AddEventModal } from '../components/KioskAddEventForm';
 import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
@@ -678,7 +678,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       />
       <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
 
-      <SmartTaskComposer
+      <KioskSmartTaskComposer
         visible={showComposer}
         members={members}
         activeMemberId={active.id}

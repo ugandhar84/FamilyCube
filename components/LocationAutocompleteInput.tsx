@@ -21,6 +21,17 @@ interface LocationAutocompleteInputProps {
   maxLength?: number;
   style?: any;
   onBlur?: () => void;
+  /** Whether the text input grabs focus (and pops the keyboard) as soon as
+   * it mounts in edit mode. Defaults to false — this field previously
+   * always auto-focused, popping the keyboard the instant it mounted
+   * (which for a field whose editable box starts open whenever it has no
+   * value yet, meant essentially every fresh event/location form opened
+   * with the keyboard already up, unprompted) — a real UX bug on both
+   * mobile and kiosk (live-reported: "on the forms dont auto focus on the
+   * texts inputs and open keyboard" / "location field" / "fix on both
+   * mobile and the kiosek"). Pass true explicitly for a flow where
+   * grabbing focus immediately is actually wanted. */
+  autoFocus?: boolean;
 }
 
 export function LocationAutocompleteInput({
@@ -34,6 +45,7 @@ export function LocationAutocompleteInput({
   maxLength = 150,
   style,
   onBlur,
+  autoFocus = false,
 }: LocationAutocompleteInputProps) {
   const ac = accent ?? colors.primary;
   const { height: screenH } = useWindowDimensions();
@@ -193,7 +205,7 @@ export function LocationAutocompleteInput({
             autoCorrect={false}
             returnKeyType="done"
             maxLength={maxLength}
-            autoFocus
+            autoFocus={autoFocus}
           />
           {value.length > 0 && (
             <TouchableOpacity onPress={clear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

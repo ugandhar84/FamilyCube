@@ -200,7 +200,12 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
           placeholderTextColor={k.textFaint}
           value={name}
           onChangeText={setName}
-          autoFocus={!isEdit}
+          // Kiosk forms shouldn't pop the on-screen keyboard on open — the
+          // wall-mounted tablet is usually walked up to, not typed on
+          // immediately (live-reported: "on the forms dont auto focus on
+          // the texts inputs and open keyboard"). Matches KioskAskSheet's
+          // own explicit autoFocus={false}.
+          autoFocus={false}
           accessibilityLabel="Item name"
         />
       </View>

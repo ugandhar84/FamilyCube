@@ -40,8 +40,21 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
   };
 
   const shareRecipe = () => {
+    // Real fixes here:
+    //  1. "@all" was a literal, unresolved string, not a real mention —
+    //     now uses the app's actual @[Name|id] token format with the real,
+    //     first-class synthetic id 'everyone' (MentionText.tsx renders it
+    //     as a genuine highlighted mention chip; mention-notify resolves
+    //     'everyone' server-side to every real member of the channel) —
+    //     live-requested: "@all it should be alieas to mention evenryone
+    //     in the chat" / "lets make that as @ everyone".
+    //  2. Only ingredients were ever included — not a complete recipe.
+    //     Now includes the same steps the modal itself shows (real
+    //     prep_steps, falling back to the same generated `steps` above)
+    //     [live-requested: "oh when i share it should show the complete
+    //     receipe in the chat"].
     const stars = '⭐'.repeat(meal.kid_friendly_rating ?? 3);
-    const msg = `@all 🍽️ *${meal.title}* ${meal.emoji ?? ''}\n⏱ ${meal.prep_minutes ?? '?'} min · ${stars}\n\n*Ingredients:*\n${meal.ingredients.map(i => `• ${i}`).join('\n')}`;
+    const msg = `@[Everyone|everyone] 🍽️ *${meal.title}* ${meal.emoji ?? ''}\n⏱ ${meal.prep_minutes ?? '?'} min · ${stars}\n\n*Ingredients:*\n${meal.ingredients.map(i => `• ${i}`).join('\n')}\n\n*Steps:*\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
     useChatStore.getState().sendMessage('all', senderId, msg);
     onClose();
   };

@@ -299,7 +299,7 @@ function StorePicker({ store, accent, colors, onChange }: {
 }
 
 export default function AskCubeProposalCard({
-  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, onChangeStore, onChangeDateTime, added, discarded,
+  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, onChangeStore, onChangeDateTime, added, discarded, discardedLabel,
 }: {
   proposal: AskCubeProposal;
   members: FamilyMember[];
@@ -337,6 +337,11 @@ export default function AskCubeProposalCard({
   // "Discarded" pill in place of the action buttons, matching the pattern
   // `added` already established for the confirm path.
   discarded?: boolean;
+  // Overrides the "Discarded" pill text — used when `discarded` is standing
+  // in for an auto-superseded card (replaced by a later revision) rather
+  // than a user-rejected one, so the label doesn't misleadingly imply the
+  // change was declined.
+  discardedLabel?: string;
 }) {
   const { colors, isDark } = useTheme();
   const meta = KIND_META[proposal.kind];
@@ -409,7 +414,7 @@ export default function AskCubeProposalCard({
     </View>
   ) : discarded ? (
     <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.surface, marginTop: 4 }}>
-      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary }}>Discarded</Text>
+      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary }}>{discardedLabel ?? 'Discarded'}</Text>
     </View>
   ) : (
     // Live-reported: this card could flip to "created" (toast fired, real

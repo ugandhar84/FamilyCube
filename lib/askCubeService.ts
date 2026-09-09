@@ -72,7 +72,7 @@ export const askCube = {
   // mutated local component state), so every proposal silently reset back
   // to "pending" the next time the thread loaded, regardless of what the
   // user had already decided (user-reported).
-  async setProposalStatus(messageId: string, statuses: ('pending' | 'created' | 'discarded')[]) {
+  async setProposalStatus(messageId: string, statuses: ('pending' | 'created' | 'discarded' | 'superseded')[]) {
     const { error } = await supabase.from('ask_cube_messages')
       .update({ proposal_statuses: statuses })
       .eq('id', messageId);

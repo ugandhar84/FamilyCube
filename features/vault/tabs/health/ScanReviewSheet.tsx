@@ -390,6 +390,25 @@ export default function ScanReviewSheet({
                 <TouchableOpacity
                   style={{ flex: 2, paddingVertical: 14, borderRadius: 16, alignItems: 'center', backgroundColor: accent }}
                   onPress={async () => {
+                    // Was: ALWAYS re-captured the active image through
+                    // ViewShot, even with zero redaction boxes drawn — a
+                    // real re-encode risk every single scan, not just a
+                    // redacted one. ViewShot.capture() renders whatever is
+                    // currently laid out in that flex:1/resizeMode:"contain"
+                    // view; if the view hadn't fully settled its layout at
+                    // the exact moment capture() fired (real timing risk
+                    // right after a sheet/modal opens), the result can be a
+                    // degenerate/corrupt JPEG that LOOKS like a normal-sized
+                    // base64 string but Gemini legitimately rejects — live-
+                    // reported via edge logs as a consistent, repeatable
+                    // "Unable to process input image" on an image that a
+                    // human could see fine on screen (the ORIGINAL picked
+                    // photo was presumably fine; only the re-capture wasn't).
+                    // Skip the capture entirely when nothing was redacted —
+                    // the original picked image goes straight through
+                    // unmodified, same as any other page in a multi-page
+                    // scan that was never the active redact target.
+                    if (activeBoxes.length === 0) { await scan(pendingImages); return; }
                     const toBase64 = async (uri: string) => {
                       const r = await fetch(uri); const b = await r.arrayBuffer(); const u = new Uint8Array(b);
                       let s = ''; for (let i = 0; i < u.byteLength; i++) s += String.fromCharCode(u[i]); return btoa(s);

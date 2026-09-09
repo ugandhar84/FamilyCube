@@ -3130,7 +3130,26 @@ conversation text, so never reference "the suggestions below" in your actual rep
       let lastContentIdx = lines.length - 1;
       while (lastContentIdx >= 0 && lines[lastContentIdx].trim() === '') lastContentIdx--;
       const lastLine = lines[lastContentIdx]?.trim() ?? '';
-      const match = lastLine.match(/^SUGGESTIONS:\s*(\[.*\])\s*$/);
+      // Real live QA bug: the model sometimes wraps the array onto its own
+      // line ("SUGGESTIONS:\n[...]") even though the prompt asks for one
+      // line — the old regex only matched "SUGGESTIONS: [...]" on a single
+      // line, so a wrapped one never matched, and the raw "SUGGESTIONS:"
+      // label plus JSON array text leaked straight into the visible chat
+      // bubble instead of becoming pills. Check the last line alone first
+      // (the common case, and JSON.parse below still validates it); only if
+      // that fails, check whether the last TWO non-blank lines together
+      // form "SUGGESTIONS:" + "[...]" split across the wrap.
+      let match = lastLine.match(/^SUGGESTIONS:\s*(\[.*\])\s*$/);
+      let matchStartIdx = lastContentIdx;
+      if (!match && /^\[.*\]$/.test(lastLine)) {
+        let prevIdx = lastContentIdx - 1;
+        while (prevIdx >= 0 && lines[prevIdx].trim() === '') prevIdx--;
+        const prevLine = lines[prevIdx]?.trim() ?? '';
+        if (/^SUGGESTIONS:$/.test(prevLine)) {
+          match = [`SUGGESTIONS: ${lastLine}`, lastLine];
+          matchStartIdx = prevIdx;
+        }
+      }
       if (match) {
         try {
           const parsed = JSON.parse(match[1]);
@@ -3138,7 +3157,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
             followUps = parsed.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, 3);
           }
         } catch { /* malformed — drop the line, keep no suggestions rather than surfacing broken JSON */ }
-        finalText = lines.slice(0, lastContentIdx).join('\n').trimEnd();
+        finalText = lines.slice(0, matchStartIdx).join('\n').trimEnd();
       }
     }
 

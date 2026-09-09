@@ -102,7 +102,16 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
         { text: 'Parse this prescription or vaccine record and return the structured JSON.' },
       ],
     }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    // Was 1024, then 2048 — still not enough. Live-reported via edge logs:
+    // a real immunization card listing 10+ vaccines produced a genuinely
+    // long "additional_items_note" (the model correctly tried to name every
+    // extra vaccine found) and got cut off mid-string at 2048 tokens,
+    // failing extractJson with no closing brace to recover. additional_
+    // items_note has no real upper bound (a busy multi-dose vaccine card
+    // can legitimately need to list a dozen+ items), so this needs real
+    // headroom, not just a bump — matches parse-flyer's own 16384 budget
+    // for the same class of "list everything visible" extraction.
+    generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
   };
 
   const res = await fetchWithTimeout(url, {
@@ -121,36 +130,52 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
   return text;
 }
 
-async function callGeminiFallback(key: string, imageData: string, mimeType: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-  const body = {
-    contents: [{
-      role: 'user',
-      parts: [
-        { inlineData: { mimeType, data: imageData } },
-        { text: SYSTEM_PROMPT + '\n\nParse this prescription or vaccine record and return the structured JSON.' },
-      ],
-    }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
-  };
-
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, 20_000);
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Gemini-1.5 HTTP ${res.status}: ${err.slice(0, 200)}`);
-  }
-  const j = await res.json();
-  const text: string = j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  if (!text) throw new Error('Gemini-1.5 returned empty content');
-  return text;
-}
-
 // ── JSON extraction ────────────────────────────────────────────────────────────
+
+// A response cut off mid-string (e.g. maxOutputTokens hit while listing a
+// long additional_items_note) still has every field BEFORE the cutoff
+// intact — the core doc_type/medication/vaccine data a busy vaccine card
+// needs was very likely already written before the model got to the long
+// trailing note. Rather than lose the whole scan over one truncated
+// trailing field, close the dangling string/object and drop whatever key
+// was mid-write, keeping everything that completed. Best-effort: only
+// used as a last resort when a straight parse and the brace-matching
+// fallback below have both already failed.
+function tryRepairTruncated(cleaned: string): Record<string, unknown> | null {
+  // Track string state WHILE scanning forward and remember the last comma
+  // seen outside a string — plain lastIndexOf(',') would find a comma
+  // INSIDE the dangling string itself (e.g. a truncated note reading
+  // "...Varicella, Hep A, Tdap" has commas that are part of the text, not
+  // real field separators) and cut there instead, still leaving a
+  // dangling open quote that fails to parse.
+  let inString = false;
+  let lastSafeComma = -1;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    if (c === '"' && cleaned[i - 1] !== '\\') inString = !inString;
+    else if (c === ',' && !inString) lastSafeComma = i;
+  }
+  let repaired = cleaned;
+  if (inString) {
+    // Drop back to the last complete key/value pair and close there
+    // instead of guessing where the dangling string was headed.
+    if (lastSafeComma === -1) return null;
+    repaired = repaired.slice(0, lastSafeComma);
+  } else {
+    // Not mid-string — likely cut off right after a value, possibly with
+    // a trailing comma from an unfinished next field.
+    repaired = repaired.replace(/,\s*$/, '');
+  }
+  // Balance braces: close as many '{' as remain unclosed.
+  const opens = (repaired.match(/\{/g) ?? []).length;
+  const closes = (repaired.match(/\}/g) ?? []).length;
+  repaired += '}'.repeat(Math.max(0, opens - closes));
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
+}
 
 function extractJson(raw: string): Record<string, unknown> {
   // Strip markdown fences if present
@@ -160,7 +185,31 @@ function extractJson(raw: string): Record<string, unknown> {
   } catch {
     // Try to find the JSON object within the response
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch { /* fall through to truncation repair below */ }
+    }
+    // The object never closed at all (maxOutputTokens cut it off mid-
+    // string/mid-field) — match[0] above only matches a response that DOES
+    // contain a trailing '}', which a genuinely truncated one won't.
+    // Live-reported via edge logs: a real immunization card with 10+
+    // vaccines got cut off mid-"additional_items_note" string, losing the
+    // whole scan (including the already-complete doc_type/vaccine fields)
+    // over one long trailing note.
+    const repaired = tryRepairTruncated(cleaned);
+    if (repaired) {
+      console.warn('[parse-prescription] extractJson: recovered truncated response, dropped incomplete trailing field');
+      return repaired;
+    }
+    // Was a bare "Could not parse JSON from AI response" with no visibility
+    // into WHY — live-reported failure had no JSON object anywhere in the
+    // response at all (Gemini most likely returned plain-text commentary/a
+    // refusal instead of the requested JSON), and there was no way to tell
+    // that apart from a genuinely malformed-JSON case without this. Logged
+    // (not returned to the client — could contain document text) so edge
+    // logs show the actual model output on the next occurrence.
+    console.error('[parse-prescription] extractJson: no JSON object found, raw response:', cleaned.slice(0, 500));
     throw new Error('Could not parse JSON from AI response');
   }
 }
@@ -189,21 +238,42 @@ serve(async (req) => {
 
     let rawText = '';
     let usedModel = 'gemini-2.5-flash';
+    let parsed: Record<string, unknown> | undefined;
 
     try {
       rawText = await callGeminiVision(geminiKey, primary, extras);
+      // extractJson throwing here (e.g. a response truncated by
+      // maxOutputTokens, or a model reply that isn't valid JSON at all) is
+      // just as real a per-model failure as an HTTP error — previously
+      // this throw wasn't caught by this try block, so it skipped the
+      // 1.5-flash fallback entirely and fell straight to the outer 500
+      // handler, turning a single bad 2.5-flash reply into a hard failure
+      // instead of a retry (live-reported: "couldn't parse JSON" error).
+      parsed = extractJson(rawText);
     } catch (e1) {
-      console.warn('[parse-prescription] gemini-2.5-flash failed, trying 1.5-flash:', e1);
-      usedModel = 'gemini-1.5-flash';
+      console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
+      usedModel = 'gemini-2.5-flash-retry';
       try {
-        rawText = await callGeminiFallback(geminiKey, imageBase64, mimeType);
+        // Was callGeminiFallback — a differently-shaped request (no
+        // systemInstruction, no extraPages, half the token budget) that
+        // dropped the extra scanned pages entirely on retry. Live-reported:
+        // the primary call failed with Gemini's own "Unable to process
+        // input image" (a transient vision-pipeline error, not a real
+        // problem with the image — retrying the exact same image later
+        // succeeded), then this differently-built retry came back 200 OK
+        // but with plain-text content extractJson couldn't find a JSON
+        // object in at all. Re-calling callGeminiVision with the SAME
+        // request shape (all pages, same token budget, same system
+        // instruction) gives a transient failure a real chance to resolve,
+        // instead of falling back to a request shape that's more likely to
+        // produce a different kind of bad response.
+        rawText = await callGeminiVision(geminiKey, primary, extras);
+        parsed = extractJson(rawText);
       } catch (e2) {
         console.error('[parse-prescription] all models failed:', e2);
         return json({ error: 'AI parsing failed. Please enter details manually.' }, 422);
       }
     }
-
-    const parsed = extractJson(rawText);
 
     return json({ ...parsed, _model: usedModel });
   } catch (err: any) {

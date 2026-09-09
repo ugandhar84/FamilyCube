@@ -18,26 +18,34 @@ export type UseCaseKey =
 
 export type AIChainConfig = Record<UseCaseKey, ModelSlot[]>;
 
+// gemini-1.5-flash (previously every fallback slot's second Gemini attempt)
+// is retired on the current v1beta API surface — HTTP 404 "models/
+// gemini-1.5-flash is not found for API version v1beta" (live-reported via
+// edge logs: a real image scan failed its primary gemini-2.5-flash attempt,
+// then the "fallback" slot could never have succeeded either, since that
+// model no longer exists at all). Retrying the SAME gemini-2.5-flash model
+// is a real retry against a transient failure (network blip, momentary
+// image-processing error) — falling through to a dead model name never was.
 const DEFAULTS: AIChainConfig = {
   mood_scan:      [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 12 }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 12 }],
   symptom_scan:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 10 }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
   vet_chat:       [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 10 }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
   health_records: [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 15 },
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 15 },
                    { provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 20 }],
   pet_timeline:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 8  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 12 },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 15 }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 15 }],
   general_vision: [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 5  },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 8  }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  }],
   general_text:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-1.5-flash', timeoutSecs: 10 }],
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
 };
 
 let cached: AIChainConfig | null = null;

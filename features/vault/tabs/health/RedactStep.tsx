@@ -225,6 +225,16 @@ export function RedactStep({
           <TouchableOpacity
             style={{ flex: 2, paddingVertical: 14, borderRadius: 16, alignItems: 'center', backgroundColor: accent }}
             onPress={async () => {
+              // Was: ALWAYS re-captured the active image through ViewShot,
+              // even with zero redaction boxes drawn — see ScanReviewSheet.
+              // tsx's own copy of this same fix for the full explanation
+              // (live-reported via edge logs: a consistent, repeatable
+              // "Unable to process input image" from Gemini on the SAME
+              // photo every retry — a degenerate re-capture, not a real
+              // problem with the originally picked image). Skip the
+              // capture when nothing was redacted; send the original
+              // picked image straight through.
+              if (activeBoxes.length === 0) { onScan(pendingImages); return; }
               const toBase64 = async (uri: string) => {
                 const r = await fetch(uri); const b = await r.arrayBuffer(); const u = new Uint8Array(b);
                 let s = ''; for (let i = 0; i < u.byteLength; i++) s += String.fromCharCode(u[i]); return btoa(s);

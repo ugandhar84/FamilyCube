@@ -102,14 +102,16 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
         { text: 'Parse this prescription or vaccine record and return the structured JSON.' },
       ],
     }],
-    // Was 1024 — too tight for a 3-image multi-page scan against this
-    // fairly verbose schema (both medication AND vaccine sections, plus
-    // additional_items_note), risking a response cut off mid-JSON. A
-    // truncated response can't be repaired by extractJson's regex fallback
-    // (the closing brace is simply missing), so it surfaced as "Could not
-    // parse JSON from AI response" instead of a real result (live-reported:
-    // slow scan followed by a parse-JSON error).
-    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+    // Was 1024, then 2048 — still not enough. Live-reported via edge logs:
+    // a real immunization card listing 10+ vaccines produced a genuinely
+    // long "additional_items_note" (the model correctly tried to name every
+    // extra vaccine found) and got cut off mid-string at 2048 tokens,
+    // failing extractJson with no closing brace to recover. additional_
+    // items_note has no real upper bound (a busy multi-dose vaccine card
+    // can legitimately need to list a dozen+ items), so this needs real
+    // headroom, not just a bump — matches parse-flyer's own 16384 budget
+    // for the same class of "list everything visible" extraction.
+    generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
   };
 
   const res = await fetchWithTimeout(url, {
@@ -130,6 +132,51 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
 
 // ── JSON extraction ────────────────────────────────────────────────────────────
 
+// A response cut off mid-string (e.g. maxOutputTokens hit while listing a
+// long additional_items_note) still has every field BEFORE the cutoff
+// intact — the core doc_type/medication/vaccine data a busy vaccine card
+// needs was very likely already written before the model got to the long
+// trailing note. Rather than lose the whole scan over one truncated
+// trailing field, close the dangling string/object and drop whatever key
+// was mid-write, keeping everything that completed. Best-effort: only
+// used as a last resort when a straight parse and the brace-matching
+// fallback below have both already failed.
+function tryRepairTruncated(cleaned: string): Record<string, unknown> | null {
+  // Track string state WHILE scanning forward and remember the last comma
+  // seen outside a string — plain lastIndexOf(',') would find a comma
+  // INSIDE the dangling string itself (e.g. a truncated note reading
+  // "...Varicella, Hep A, Tdap" has commas that are part of the text, not
+  // real field separators) and cut there instead, still leaving a
+  // dangling open quote that fails to parse.
+  let inString = false;
+  let lastSafeComma = -1;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    if (c === '"' && cleaned[i - 1] !== '\\') inString = !inString;
+    else if (c === ',' && !inString) lastSafeComma = i;
+  }
+  let repaired = cleaned;
+  if (inString) {
+    // Drop back to the last complete key/value pair and close there
+    // instead of guessing where the dangling string was headed.
+    if (lastSafeComma === -1) return null;
+    repaired = repaired.slice(0, lastSafeComma);
+  } else {
+    // Not mid-string — likely cut off right after a value, possibly with
+    // a trailing comma from an unfinished next field.
+    repaired = repaired.replace(/,\s*$/, '');
+  }
+  // Balance braces: close as many '{' as remain unclosed.
+  const opens = (repaired.match(/\{/g) ?? []).length;
+  const closes = (repaired.match(/\}/g) ?? []).length;
+  repaired += '}'.repeat(Math.max(0, opens - closes));
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
+}
+
 function extractJson(raw: string): Record<string, unknown> {
   // Strip markdown fences if present
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
@@ -138,7 +185,23 @@ function extractJson(raw: string): Record<string, unknown> {
   } catch {
     // Try to find the JSON object within the response
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch { /* fall through to truncation repair below */ }
+    }
+    // The object never closed at all (maxOutputTokens cut it off mid-
+    // string/mid-field) — match[0] above only matches a response that DOES
+    // contain a trailing '}', which a genuinely truncated one won't.
+    // Live-reported via edge logs: a real immunization card with 10+
+    // vaccines got cut off mid-"additional_items_note" string, losing the
+    // whole scan (including the already-complete doc_type/vaccine fields)
+    // over one long trailing note.
+    const repaired = tryRepairTruncated(cleaned);
+    if (repaired) {
+      console.warn('[parse-prescription] extractJson: recovered truncated response, dropped incomplete trailing field');
+      return repaired;
+    }
     // Was a bare "Could not parse JSON from AI response" with no visibility
     // into WHY — live-reported failure had no JSON object anywhere in the
     // response at all (Gemini most likely returned plain-text commentary/a

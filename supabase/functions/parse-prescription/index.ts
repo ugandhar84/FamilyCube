@@ -128,42 +128,6 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
   return text;
 }
 
-// Was gemini-1.5-flash — retired on the current v1beta API surface (live-
-// reported via edge logs: "HTTP 404: models/gemini-1.5-flash is not found
-// for API version v1beta"), so this "fallback" could never actually
-// succeed, no matter why the primary call failed. Retrying the SAME
-// gemini-2.5-flash model is a real retry against a transient failure
-// (network blip, momentary "Unable to process input image" from Gemini's
-// own vision pipeline) — falling through to a dead model name never was.
-async function callGeminiFallback(key: string, imageData: string, mimeType: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
-  const body = {
-    contents: [{
-      role: 'user',
-      parts: [
-        { inlineData: { mimeType, data: imageData } },
-        { text: SYSTEM_PROMPT + '\n\nParse this prescription or vaccine record and return the structured JSON.' },
-      ],
-    }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-  };
-
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, 20_000);
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Gemini retry HTTP ${res.status}: ${err.slice(0, 200)}`);
-  }
-  const j = await res.json();
-  const text: string = j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  if (!text) throw new Error('Gemini retry returned empty content');
-  return text;
-}
-
 // ── JSON extraction ────────────────────────────────────────────────────────────
 
 function extractJson(raw: string): Record<string, unknown> {
@@ -175,6 +139,14 @@ function extractJson(raw: string): Record<string, unknown> {
     // Try to find the JSON object within the response
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
+    // Was a bare "Could not parse JSON from AI response" with no visibility
+    // into WHY — live-reported failure had no JSON object anywhere in the
+    // response at all (Gemini most likely returned plain-text commentary/a
+    // refusal instead of the requested JSON), and there was no way to tell
+    // that apart from a genuinely malformed-JSON case without this. Logged
+    // (not returned to the client — could contain document text) so edge
+    // logs show the actual model output on the next occurrence.
+    console.error('[parse-prescription] extractJson: no JSON object found, raw response:', cleaned.slice(0, 500));
     throw new Error('Could not parse JSON from AI response');
   }
 }
@@ -219,7 +191,20 @@ serve(async (req) => {
       console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
       usedModel = 'gemini-2.5-flash-retry';
       try {
-        rawText = await callGeminiFallback(geminiKey, imageBase64, mimeType);
+        // Was callGeminiFallback — a differently-shaped request (no
+        // systemInstruction, no extraPages, half the token budget) that
+        // dropped the extra scanned pages entirely on retry. Live-reported:
+        // the primary call failed with Gemini's own "Unable to process
+        // input image" (a transient vision-pipeline error, not a real
+        // problem with the image — retrying the exact same image later
+        // succeeded), then this differently-built retry came back 200 OK
+        // but with plain-text content extractJson couldn't find a JSON
+        // object in at all. Re-calling callGeminiVision with the SAME
+        // request shape (all pages, same token budget, same system
+        // instruction) gives a transient failure a real chance to resolve,
+        // instead of falling back to a request shape that's more likely to
+        // produce a different kind of bad response.
+        rawText = await callGeminiVision(geminiKey, primary, extras);
         parsed = extractJson(rawText);
       } catch (e2) {
         console.error('[parse-prescription] all models failed:', e2);

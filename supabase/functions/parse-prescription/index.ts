@@ -128,8 +128,15 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
   return text;
 }
 
+// Was gemini-1.5-flash — retired on the current v1beta API surface (live-
+// reported via edge logs: "HTTP 404: models/gemini-1.5-flash is not found
+// for API version v1beta"), so this "fallback" could never actually
+// succeed, no matter why the primary call failed. Retrying the SAME
+// gemini-2.5-flash model is a real retry against a transient failure
+// (network blip, momentary "Unable to process input image" from Gemini's
+// own vision pipeline) — falling through to a dead model name never was.
 async function callGeminiFallback(key: string, imageData: string, mimeType: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
   const body = {
     contents: [{
       role: 'user',
@@ -149,11 +156,11 @@ async function callGeminiFallback(key: string, imageData: string, mimeType: stri
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');
-    throw new Error(`Gemini-1.5 HTTP ${res.status}: ${err.slice(0, 200)}`);
+    throw new Error(`Gemini retry HTTP ${res.status}: ${err.slice(0, 200)}`);
   }
   const j = await res.json();
   const text: string = j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  if (!text) throw new Error('Gemini-1.5 returned empty content');
+  if (!text) throw new Error('Gemini retry returned empty content');
   return text;
 }
 
@@ -209,8 +216,8 @@ serve(async (req) => {
       // instead of a retry (live-reported: "couldn't parse JSON" error).
       parsed = extractJson(rawText);
     } catch (e1) {
-      console.warn('[parse-prescription] gemini-2.5-flash failed, trying 1.5-flash:', e1);
-      usedModel = 'gemini-1.5-flash';
+      console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
+      usedModel = 'gemini-2.5-flash-retry';
       try {
         rawText = await callGeminiFallback(geminiKey, imageBase64, mimeType);
         parsed = extractJson(rawText);

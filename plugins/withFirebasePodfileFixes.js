@@ -17,7 +17,25 @@ const fs = require('fs');
 const path = require('path');
 
 const SPM_MARKER = '$RNFirebaseDisableSPM = true';
-const MODULAR_HEADERS_MARKER = 'use_modular_headers!';
+// Was a blanket `use_modular_headers!` — applies modular headers to EVERY
+// pod in the Podfile, including React Native's own internal pods, which
+// collides with them on newer Xcode/Clang (confirmed: "Redefinition of
+// module 'react_runtime'" between React-jsitooling and React-RuntimeHermes
+// once modular headers are on globally — this is a well-documented React
+// Native + use_modular_headers! interaction, see facebook/react-native#44502
+// and expo/expo#29004, not something specific to this app). Scoping
+// `:modular_headers => true` to just the Firebase/GoogleUtilities
+// dependency chain (the actual pods that need it — GoogleUtilities'
+// non-modular headers are what FirebaseCoreInternal's Swift code needs
+// modular access to) avoids touching React's own pods entirely. Pod list
+// confirmed via a community fix for this exact collision (expo/expo#29004).
+const MODULAR_HEADERS_PODS = [
+  'FirebaseCoreInternal', 'FirebaseCrashlytics', 'GoogleUtilities', 'nanopb',
+  'FirebaseCore', 'FirebaseInstallations', 'GoogleDataTransport',
+  'FirebaseSessions', 'FirebaseCoreExtension', 'FirebaseRemoteConfig',
+  'FirebaseABTesting',
+];
+const MODULAR_HEADERS_MARKER = MODULAR_HEADERS_PODS.map(p => `pod '${p}', :modular_headers => true`).join('\n  ');
 
 module.exports = function withFirebasePodfileFixes(config) {
   return withDangerousMod(config, [
@@ -49,10 +67,9 @@ module.exports = function withFirebasePodfileFixes(config) {
       }
 
       // RNCallKeep doesn't ship a Clang module map, so Swift can't import it
-      // via the bridging header when use_modular_headers! is active globally.
-      // This post_install hook generates a minimal modulemap at the path Xcode
-      // expects, which satisfies the module lookup without changing any pod's
-      // own sources.
+      // via the bridging header — DEFINES_MODULE tells CocoaPods to generate
+      // one for this specific target, independent of whether modular headers
+      // are on globally or scoped (see MODULAR_HEADERS_PODS above).
       const RN_CALLKEEP_MODULEMAP_MARKER = 'RNCallKeep.modulemap';
       if (!contents.includes(RN_CALLKEEP_MODULEMAP_MARKER)) {
         const postInstallHook = `

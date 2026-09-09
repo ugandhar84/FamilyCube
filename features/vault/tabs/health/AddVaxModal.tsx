@@ -22,10 +22,27 @@ const STEP_TITLES: Record<Step, string> = {
   basics: 'What & Who', dates: 'Dates & Series', notes: 'Provider & Notes',
 };
 
-export default function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
+// A YYYY-MM-DD string (as VaxForm.date/next_due_date store it) parsed as
+// LOCAL midnight, matching fmtDate/lib/dates.ts's own convention — a plain
+// `new Date(str)` parses YYYY-MM-DD as UTC midnight, which can silently
+// land on the previous day in a negative-UTC-offset timezone.
+function parseLocalDateStr(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d) : new Date();
+}
+
+export default function AddVaxModal({ visible, onClose, onSave, members, colors, isDark, editing }: {
   visible: boolean; onClose: () => void;
-  onSave: (memberId: string, form: VaxForm) => Promise<void>;
+  // memberId + form as before for a new record; vaxId is passed through
+  // unchanged so the caller's onSave can tell a create from an update
+  // apart (undefined = create).
+  onSave: (memberId: string, form: VaxForm, vaxId?: string) => Promise<void>;
   members: any[]; colors: any; isDark: boolean;
+  // Seeds the form from an existing saved vaccine (or a freshly-scanned,
+  // not-yet-saved one) instead of BLANK_VAX — [live-requested: "we should
+  // have vacc edit feature also once we add"], this same modal now does
+  // double duty as the edit-an-existing-vaccine screen, not just add.
+  editing?: { vaxId?: string; memberId: string; form: VaxForm };
 }) {
   const [form, setForm]               = useState<VaxForm>(BLANK_VAX);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
@@ -59,7 +76,24 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
     setVaxTouched({}); setVaxSubmitAttempted(false); setStepIndex(0);
   };
 
-  useEffect(() => { if (visible) setStepIndex(0); }, [visible]);
+  // Seed from `editing` every time the sheet opens with one, instead of
+  // BLANK_VAX — mirrors BLANK_VAX's own field set exactly so nothing is
+  // silently dropped switching between add and edit.
+  useEffect(() => {
+    if (!visible) return;
+    setStepIndex(0);
+    if (editing) {
+      setForm(editing.form);
+      setSelectedMember(editing.memberId);
+      setAdminDate(editing.form.date ? parseLocalDateStr(editing.form.date) : new Date());
+      setNextDate(editing.form.next_due_date ? parseLocalDateStr(editing.form.next_due_date) : null);
+    } else {
+      setForm(BLANK_VAX);
+      setSelectedMember(members[0]?.id ?? '');
+      setAdminDate(new Date());
+      setNextDate(null);
+    }
+  }, [visible, editing]);
 
   const handleClose = () => { reset(); onClose(); };
 
@@ -83,7 +117,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
       ...form,
       date: fmtDate(adminDate),
       next_due_date: nextDate ? fmtDate(nextDate) : '',
-    });
+    }, editing?.vaxId);
     setSaving(false);
     reset();
     onClose();
@@ -125,7 +159,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
               )}
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-                  {stepIndex === 0 ? 'Log Vaccine' : STEP_TITLES[step]}
+                  {stepIndex === 0 ? (editing ? 'Edit Vaccine' : 'Log Vaccine') : STEP_TITLES[step]}
                 </Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
                   Step {stepIndex + 1} of {STEPS.length}
@@ -415,7 +449,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
                   style={[aStyles.saveBtn, { backgroundColor: colors.teal }]} disabled={saving}>
                   {saving
                     ? <ActivityIndicator size="small" color={colors.textInverse} />
-                    : <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>Save Vaccine</Text>}
+                    : <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>{editing ? 'Save Changes' : 'Save Vaccine'}</Text>}
                 </TouchableOpacity>
               )}
             </View>

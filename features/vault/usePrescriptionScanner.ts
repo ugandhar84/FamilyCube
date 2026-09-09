@@ -32,17 +32,24 @@ export type DocType = 'medication' | 'vaccine' | 'both';
 
 export interface ScanResult {
   doc_type: DocType;
-  medication?: ParsedMedication;
-  vaccine?: ParsedVaccine;
+  /** One entry per medication/vaccine found on the document — was a single
+   * optional object each (only the first item on a multi-item document),
+   * now arrays so a discharge summary or multi-dose vaccine card can save
+   * every listed item instead of just the first (live-requested: "app is
+   * trying to add only one vaccine at a time"). Always present (possibly
+   * empty) for the relevant doc_type rather than optional/undefined, so
+   * callers can map over it without an extra null check. */
+  medications: ParsedMedication[];
+  vaccines: ParsedVaccine[];
   /** "low" means the model had trouble reading a field (often the dosage/
    * dose number) and left it blank rather than guessing — surface
    * confidenceNote so the user knows to double-check the original document
    * before trusting this as a real health record. */
   confidence?: 'high' | 'low';
   confidenceNote?: string;
-  /** The document had more than one medication/vaccine listed but this
-   * schema only extracts one entry per scan — additionalItemsNote
-   * describes what else was found so nothing is silently lost. */
+  /** The document had more items than could be confidently extracted (e.g.
+   * some were too blurry) — additionalItemsNote describes what was left
+   * out so nothing is silently lost. */
   additionalItemsFound?: boolean;
   additionalItemsNote?: string;
 }
@@ -133,10 +140,20 @@ export function usePrescriptionScanner() {
         setScanError(`Not a medical document — ${what}\n\nPlease upload a prescription, pharmacy label, or immunization record.`);
         return;
       }
+      // Defensive normalization — the prompt asks for "medications"/
+      // "vaccines" arrays, but if the model ever regresses to the old
+      // singular "medication"/"vaccine" object shape (or a truncation
+      // repair salvaged just the array's first item as a bare object),
+      // treat it as a one-item array rather than silently dropping it.
+      const toArray = <T,>(arr: unknown, single: unknown): T[] => {
+        if (Array.isArray(arr)) return arr as T[];
+        if (single && typeof single === 'object') return [single as T];
+        return [];
+      };
       setScanResult({
         doc_type: json.doc_type ?? 'medication',
-        medication: json.medication,
-        vaccine: json.vaccine,
+        medications: toArray<ParsedMedication>(json.medications, json.medication),
+        vaccines: toArray<ParsedVaccine>(json.vaccines, json.vaccine),
         confidence: json.confidence,
         confidenceNote: json.confidence_note,
         additionalItemsFound: json.additional_items_found,

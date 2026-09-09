@@ -27,14 +27,16 @@ Given an image or PDF of a document, first decide if it contains ANY medical con
 If the document does NOT contain medical content (e.g. it is a receipt, ID, utility bill, food menu, random photo, homework, etc.), return ONLY:
 { "doc_type": "none", "reason": "one short sentence describing what the document actually is" }
 
-If the document DOES contain medical content, decide if it is primarily a MEDICATION prescription, a VACCINE record, or both, then extract the key fields.
+If the document DOES contain medical content, decide if it is primarily a MEDICATION prescription, a VACCINE record, or both, then extract EVERY medication and/or EVERY vaccine listed — not just the first one.
 
-If the document lists MORE THAN ONE medication or vaccine (common on discharge summaries or multi-dose vaccine cards),
-do NOT silently pick one or merge them into a single entry — this is medication data and dropping a drug silently is
-a real safety issue, not just a minor omission. Instead set doc_type's medication/vaccine field to the FIRST/primary
-one, and add a top-level "additional_items_found": true with "additional_items_note": a one-sentence description of
-what else was on the document (e.g. "Also lists Amoxicillin 250mg — not extracted, please add separately"), so nothing
-is lost even though this schema only extracts one entry per call.
+Discharge summaries and multi-dose vaccine cards commonly list several medications or several vaccines on one
+document. Extract ALL of them as separate entries in the "medications"/"vaccines" arrays below — dropping a drug or
+a dose silently is a real safety issue, not just a minor omission, so never silently pick only one or merge multiple
+items into a single entry. If a document is genuinely too crowded/long to extract every single item with confidence
+(e.g. 15+ entries and some are only partially legible), extract as many complete, confident entries as you can and
+add a top-level "additional_items_found": true with "additional_items_note": a one-sentence description of what
+else was on the document but not extracted (e.g. "Also lists 3 more vaccines in the bottom row that were too blurry
+to read reliably — please add those separately").
 
 For a MEDICATION prescription, extract:
 - name: drug/medication name (brand or generic)
@@ -72,12 +74,15 @@ Return ONLY a valid JSON object with no markdown fences or commentary:
   "confidence_note": "only present when confidence is low — one short sentence on what's unclear and why the user should double-check the original document",
   "additional_items_found": false,
   "additional_items_note": "only present when additional_items_found is true",
-  "medication": { ... },
-  "vaccine": { ... }
+  "medications": [ { ... } ],
+  "vaccines": [ { ... } ]
 }
 
-Include only the section(s) relevant to the document type.
-If a field is not visible or not applicable, use null or an empty string.
+"medications" and "vaccines" are ARRAYS — one entry per medication/vaccine found, in the order they appear on the
+document (top to bottom, left to right). A document with a single medication and nothing else still returns
+"medications" as a one-element array, never a bare object. Include only the array(s) relevant to the document type
+(a pure vaccine card returns "vaccines" only, no "medications" key at all).
+If a field is not visible or not applicable for a given entry, use null or an empty string for that field.
 Set confidence to "low" whenever ANY field (especially dosage/dose_number) was hard to read, the image quality was
 poor, or you had to choose between two plausible readings — this signal is what lets a parent know to double-check
 the original document before trusting a health record, so use it honestly rather than defaulting to "high."`;
@@ -142,34 +147,58 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
 // used as a last resort when a straight parse and the brace-matching
 // fallback below have both already failed.
 function tryRepairTruncated(cleaned: string): Record<string, unknown> | null {
-  // Track string state WHILE scanning forward and remember the last comma
-  // seen outside a string — plain lastIndexOf(',') would find a comma
-  // INSIDE the dangling string itself (e.g. a truncated note reading
-  // "...Varicella, Hep A, Tdap" has commas that are part of the text, not
-  // real field separators) and cut there instead, still leaving a
-  // dangling open quote that fails to parse.
+  // Track string state AND a bracket-nesting stack while scanning forward,
+  // remembering the last comma seen outside a string at each nesting
+  // depth. Now that the schema includes "medications"/"vaccines" ARRAYS (a
+  // busy multi-item document can truncate mid-way through the 2nd or 3rd
+  // array element, not just mid a top-level field), naive brace-only
+  // counting doesn't work: closing an unclosed '[' needs a ']' BEFORE the
+  // enclosing '}', in the correct order — repair must track '{' vs '['
+  // separately, not just count total opens/closes.
   let inString = false;
-  let lastSafeComma = -1;
+  const stack: ('{' | '[')[] = [];
+  // lastSafeCommaAtDepth[i] = index of the last top-of-stack-depth-i comma
+  // seen outside a string — i.e. a comma that safely separates complete
+  // sibling elements/fields at that nesting level.
+  const lastSafeCommaAtDepth: number[] = [];
   for (let i = 0; i < cleaned.length; i++) {
     const c = cleaned[i];
-    if (c === '"' && cleaned[i - 1] !== '\\') inString = !inString;
-    else if (c === ',' && !inString) lastSafeComma = i;
+    if (c === '"' && cleaned[i - 1] !== '\\') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{' || c === '[') stack.push(c);
+    else if (c === '}' || c === ']') stack.pop();
+    else if (c === ',') lastSafeCommaAtDepth[stack.length] = i;
   }
+  if (stack.length === 0) return null; // nothing actually unclosed — not our case
   let repaired = cleaned;
   if (inString) {
-    // Drop back to the last complete key/value pair and close there
-    // instead of guessing where the dangling string was headed.
-    if (lastSafeComma === -1) return null;
-    repaired = repaired.slice(0, lastSafeComma);
+    // Cut back to the last comma at the CURRENT nesting depth (where the
+    // dangling string actually started) — not just the last comma anywhere,
+    // which could be a shallower or deeper sibling's separator instead of
+    // this one's, giving a structurally wrong cut point.
+    const cut = lastSafeCommaAtDepth[stack.length];
+    if (cut === undefined) return null;
+    repaired = repaired.slice(0, cut);
   } else {
-    // Not mid-string — likely cut off right after a value, possibly with
-    // a trailing comma from an unfinished next field.
+    // Not mid-string — cut off right after a value, possibly with a
+    // trailing comma from an unfinished next field/element.
     repaired = repaired.replace(/,\s*$/, '');
   }
-  // Balance braces: close as many '{' as remain unclosed.
-  const opens = (repaired.match(/\{/g) ?? []).length;
-  const closes = (repaired.match(/\}/g) ?? []).length;
-  repaired += '}'.repeat(Math.max(0, opens - closes));
+  // Re-derive the stack after the cut (the slice may have popped some
+  // opens along with the dropped dangling content) and close everything
+  // still open, innermost-first, using the correct bracket for each.
+  let closeStack: ('{' | '[')[] = [];
+  let scanString = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const c = repaired[i];
+    if (c === '"' && repaired[i - 1] !== '\\') { scanString = !scanString; continue; }
+    if (scanString) continue;
+    if (c === '{' || c === '[') closeStack.push(c);
+    else if (c === '}' || c === ']') closeStack.pop();
+  }
+  while (closeStack.length) {
+    repaired += closeStack.pop() === '{' ? '}' : ']';
+  }
   try {
     return JSON.parse(repaired);
   } catch {

@@ -86,6 +86,7 @@ import { fmtDisplay, SUBJECTS, APPT_TYPES, SPORT_TYPES } from '@/features/calend
 import type { EventCategory } from '@/features/calendar/components/eventForm/types';
 import { deriveEventEditPermission } from '@/features/tasks/lib/deriveCardActions';
 import { RecurrenceControl } from '@/features/tasks/components/forms/RecurrenceControl';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 // Same picker mobile's own AddEventModal/EditEventModal use (PickerOverlay
 // wraps @react-native-community/datetimepicker in a proper "Done"-headed
 // bottom sheet, spinner display) — was previously a bare DateTimePicker
@@ -136,6 +137,12 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [alertCall, setAlertCall] = useState(false);
+  // [fresh-audit gap] alertCall's own lead-time (On time/10/15/30 min
+  // before) was never captured here — the toggle existed but always saved
+  // whatever alertCallLeadMinutes the row already had (or nothing), unlike
+  // every other add/edit form (KioskAddEventForm, KioskQuestEditor, mobile
+  // EventFormModal) which all use this same real CallReminderToggle.
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
   // Real EventFormModal.tsx field [fresh-audit gap] — a kiosk-only parent
   // had no way to mark/unmark an event private (or view whether it
   // already was), even though kiosk correctly redacts private events
@@ -228,6 +235,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       setLocation(event.location ?? '');
       setNotes(event.notes ?? '');
       setAlertCall(event.alertCall ?? false);
+      setAlertCallLeadMinutes(event.alertCallLeadMinutes ?? 10);
       setIsPrivateTag(event.privacyLevel === 'private');
       setShowDatePicker(false);
       setShowTimePicker(false);
@@ -389,6 +397,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       location: foldedLocation,
       notes: notes.trim() || undefined,
       alertCall,
+      alertCallLeadMinutes,
       // Medical stays always-private regardless of the toggle, matching
       // the real form's own privacyLevel folding exactly (EventFormModal.
       // tsx line 651: `(isPrivateTag || category === 'Medical') ?
@@ -511,6 +520,7 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
     const patch: Partial<FamilyEvent> = {};
     if (notes !== (event.notes ?? '')) patch.notes = notes.trim() || undefined;
     if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
+    if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
     if (Object.keys(patch).length > 0) updateEvent(event.id, patch);
     onClose();
   };
@@ -600,9 +610,13 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
               placeholderTextColor={k.textFaint}
             />
           </View>
-          <View style={s.switchRow}>
-            <Text style={[s.switchLabel, { color: k.text }]}>Call reminder</Text>
-            <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={alertCall ? k.primary : k.textFaint} />
+          <View style={s.section}>
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlertCall}
+              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+              accentColor={k.primary} colors={colors} isDark={isDark}
+              variant="icon"
+            />
           </View>
         </>
       ) : (
@@ -865,9 +879,13 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
               placeholderTextColor={k.textFaint}
             />
           </View>
-          <View style={s.switchRow}>
-            <Text style={[s.switchLabel, { color: k.text }]}>Call reminder</Text>
-            <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ false: k.cardBorder, true: k.primary + '80' }} thumbColor={alertCall ? k.primary : k.textFaint} />
+          <View style={s.section}>
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlertCall}
+              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+              accentColor={k.primary} colors={colors} isDark={isDark}
+              variant="icon"
+            />
           </View>
           {/* Real EventFormModal.tsx field [fresh-audit gap]. Medical is
               always private on its own (see saveFull's own comment) —

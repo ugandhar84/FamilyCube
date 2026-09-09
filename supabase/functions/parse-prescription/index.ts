@@ -102,7 +102,14 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
         { text: 'Parse this prescription or vaccine record and return the structured JSON.' },
       ],
     }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    // Was 1024 — too tight for a 3-image multi-page scan against this
+    // fairly verbose schema (both medication AND vaccine sections, plus
+    // additional_items_note), risking a response cut off mid-JSON. A
+    // truncated response can't be repaired by extractJson's regex fallback
+    // (the closing brace is simply missing), so it surfaced as "Could not
+    // parse JSON from AI response" instead of a real result (live-reported:
+    // slow scan followed by a parse-JSON error).
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
   };
 
   const res = await fetchWithTimeout(url, {
@@ -131,7 +138,7 @@ async function callGeminiFallback(key: string, imageData: string, mimeType: stri
         { text: SYSTEM_PROMPT + '\n\nParse this prescription or vaccine record and return the structured JSON.' },
       ],
     }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
   };
 
   const res = await fetchWithTimeout(url, {
@@ -189,21 +196,29 @@ serve(async (req) => {
 
     let rawText = '';
     let usedModel = 'gemini-2.5-flash';
+    let parsed: Record<string, unknown> | undefined;
 
     try {
       rawText = await callGeminiVision(geminiKey, primary, extras);
+      // extractJson throwing here (e.g. a response truncated by
+      // maxOutputTokens, or a model reply that isn't valid JSON at all) is
+      // just as real a per-model failure as an HTTP error — previously
+      // this throw wasn't caught by this try block, so it skipped the
+      // 1.5-flash fallback entirely and fell straight to the outer 500
+      // handler, turning a single bad 2.5-flash reply into a hard failure
+      // instead of a retry (live-reported: "couldn't parse JSON" error).
+      parsed = extractJson(rawText);
     } catch (e1) {
       console.warn('[parse-prescription] gemini-2.5-flash failed, trying 1.5-flash:', e1);
       usedModel = 'gemini-1.5-flash';
       try {
         rawText = await callGeminiFallback(geminiKey, imageBase64, mimeType);
+        parsed = extractJson(rawText);
       } catch (e2) {
         console.error('[parse-prescription] all models failed:', e2);
         return json({ error: 'AI parsing failed. Please enter details manually.' }, 422);
       }
     }
-
-    const parsed = extractJson(rawText);
 
     return json({ ...parsed, _model: usedModel });
   } catch (err: any) {

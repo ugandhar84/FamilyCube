@@ -348,3 +348,75 @@ Side note (not a Part G bug, logged for completeness): turn 2's "couldn't find a
 **Scratch family teardown:** v2 (`f1828eaa-3dad-4ed1-a772-0031ee12fcee`) torn down cleanly (`{"ok":true}`) at session close, since the smoke test confirmed the system is healthy and no further verification was requested tonight. A fresh scratch family can be created in under a minute via the `setup` action if a follow-up session needs one.
 
 **Final deploy confirmed:** ask-cube version 116, live, updated_at 2026-09-09T04:37:27 UTC.
+
+---
+
+## Part Q — Full 20-tool regression sweep (this session)
+
+**Scratch family (v3):** `65786315-b455-466d-bd79-ce7f2200bb8f`
+Members (all fictional aliases, never real family names):
+- Alex (parent, relationship=Husband/Father) `a72fca11-2d98-4cee-ac28-d69f8ba45855`
+- Sarah (parent, relationship=Wife/Mother) `28abed51-4df0-4e40-b1bc-58bfb9db8b8d`
+- Jordan (child, relationship=Son) `d95e52c3-e184-47cb-ad0c-65a8595cec23`
+- Morgan (child, relationship=Son) `175d8d3a-b290-4101-8952-2af291ab948b`
+- Riley (teenager, relationship=Daughter) `d3283287-dda5-4cfb-96ce-957ffe3faa67`
+- Casey (teenager, relationship=Daughter) `f2db6a50-b16a-4240-a40a-b106d58a925d`
+- Nora (grandparent, relationship=Grandmother) `e010d254-61d6-4ef8-8f73-9020dab10c46`
+
+Deliberately two Sons (Jordan/Morgan) and two Daughters (Riley/Casey) to stress-test relationship-word ambiguity detection.
+
+**Seed data:** 9 chores (Take out trash pool -1d, Unload dishwasher Jordan -3d, Feed the cat Morgan today, Clean room Riley +1d, Mow the lawn pool +3d, Fold laundry Casey approved -1d, Vacuum living room pool -5d, Homework check-in Jordan +7d, Walk the dog Morgan -2d overdue); 9 events (Soccer practice Jordan -5d w/ Sarah driving, Dentist Riley -3d, Morning drop-off Morgan today 08:00 w/ Alex driving, Basketball practice Casey today 18:30 w/ Nora driving, Piano lesson Jordan today 19:00 w/ Sarah helping, Swim meet Riley +1d w/ Alex driving, Pediatrician Morgan +3d, Birthday party Casey +7d w/ Sarah driving, Tutoring session Jordan today 19:00 — deliberately overlapping with Piano lesson for a same-person double-booking conflict test); 3 rewards (Extra screen time 20c, Ice cream trip 40c, New video game 200c); 3 grocery items (Milk, Bananas, Cereal); 3 kid requests (Riley ride-to-mall pending, Casey sleepover-permission pending, Jordan new-cleats item pending); coins (Jordan 35, Riley 85/gp10, Morgan 15, Casey 50).
+
+**Coordinator's concurrent SUGGESTIONS edit:** confirmed present on disk before any testing began (line ~2635: "treat including a SUGGESTIONS line as the DEFAULT for every reply, and skipping it as the rare exception you have to actively justify"). All testing in this Part Q is against that already-strengthened instruction — no separate "before" build was re-deployed to get a true before/after in this session (the "before" data point is Part E's own measurement from earlier tonight, cited in the coverage discussion below).
+
+**Coordinator's concurrent cross-turn-recap fix:** also confirmed present on disk (lines ~2611-2616: extending "answer only what was asked" to cover the model's OWN prior full answer, not just errors — direct fix for the "Who are my family" reply that opened by restating an unrelated prior turn's chore list). Included in the same deploy as my own fixes below.
+
+### Q0 — NEW BUG FOUND: relationship-word ambiguity silently ignored by every read-filter tool using resolveMemberId
+
+**Discovery:** "What does my daughter have going on today?" (family has TWO daughters, Riley and Casey) via `get_schedule` returned a confident, unhedged single answer (silently picked Riley) with no indication two people matched. "What chores does my son have?" (two sons, Jordan/Morgan) via `get_quests` returned EVERYONE's chores merged together with no ambiguity flag either.
+
+**Root cause:** `resolveMemberId()`'s `string | null` return contract cannot distinguish "no match" from "ambiguous — 2+ people matched" (both collapse to `null`, by explicit prior design per its own comment — propose_event/propose_quest already knew to call `matchByRelationship` directly for exactly this reason, but every READ-filter tool call site (get_quests, get_chore_history, get_free_time, get_location, get_health_summary, get_rewards, get_kid_requests, get_quest_pace) only ever called `resolveMemberId`, so `if (id) query = query.eq(...)` was silently skipped on ambiguity — returning either an error like "couldn't find X" (a few sites) or, worse, **everyone's unfiltered data with zero ambiguity signal** (get_quests, get_chore_history, get_rewards, get_kid_requests, get_location, get_health_summary before this fix). This is a real, previously-undetected instance of bug class (a) from tonight's test plan — the relationship-word matching mechanism itself worked, but its ambiguity signal was silently dropped everywhere except the propose_* tools that had their own separate direct `matchByRelationship` call.
+
+**Fix (`supabase/functions/ask-cube/index.ts`):**
+1. `get_schedule`'s tool result previously had NO per-event assignee field at all (only title/category/date/time/helper/driver) — added `person` (real assignee alias via `member_id`/`member_ids`, or `"Family"` for unassigned/shared events) so the model has real grounded per-event identity data instead of having to infer "whose event" from title text alone. This was a contributing factor to the `get_schedule` case specifically (no ambiguity tool-path exists there since it takes no `memberName` filter by design — it always returns the full scoped range — but the missing `person` field meant even a model attempt at self-filtering was ungrounded).
+2. Added `resolveMemberIdOrError()` — a new helper alongside (not replacing) `resolveMemberId`, returning `{ id, error? }`. On an ambiguous relationship-word match it now returns a real error string ("More than one family member matches 'daughter': QA SCRATCH Riley, QA SCRATCH Casey. Ask the user which one they meant...") instead of silently falling through as "no filter."
+3. Swapped all 8 read-filter call sites (`get_quests`, `get_chore_history`, `get_free_time`, `get_location`, `get_health_summary`, `get_rewards`, `get_kid_requests`, `get_quest_pace`) from `resolveMemberId` to `resolveMemberIdOrError`, propagating the ambiguity error up as a real tool-error result the model must relay rather than a data query it can silently skip. `resolveMemberId` itself is UNCHANGED and still used as-is by every propose_*/assignment call site that already has its own not-found handling — no behavior change to any confirm/proposal path.
+
+**Live re-verification after fix + deploy** (see Q1 below for the full transcript): "my daughter" now correctly returns "I found more than one daughter in the family: QA SCRATCH Riley and QA SCRATCH Casey. Which one do you mean?" with zero tool-filtered data leaked. "my son" via `get_schedule` (no filter tool path exists there by design) still merges both sons' events/chores into one answer without asking — see Q1's honest note on this narrower residual gap.
+
+---
+
+### Q0b — NEW BUG FOUND: SUGGESTIONS-line strip logic silently fails when a trailing blank line follows it, causing wrongful grounding-check discards
+
+**Discovery:** "Who's free Saturday afternoon?" (`get_free_time`, no specific time) returned the fallback "I don't actually have that on file right now — I may have mixed up an earlier answer." with `debugEmptyReason.groundingDiscard.originalText` showing the model's answer WAS actually correct and grounded ("Person A has a pediatrician checkup on Saturday afternoon. Everyone else appears to be free.") — but its reply text still had the raw `\nSUGGESTIONS: [...]\n` line attached, and the grounding-check regex matched the quoted follow-up strings inside it as "cited titles," found them ungrounded (they're follow-up suggestions, not claimed facts), and discarded the entire otherwise-correct reply.
+
+**Root cause:** the SUGGESTIONS-line-stripping code found the line to strip via `lines[lines.length - 1]` — i.e. it assumed the SUGGESTIONS line was literally the LAST array element after splitting on `\n`. When the model's own output has a trailing newline after the SUGGESTIONS line (common LLM formatting, confirmed present in the actual captured `originalText`), `lines[lines.length - 1]` is an empty string, not the SUGGESTIONS line — the regex never matches, the line is never stripped, and it flows into the grounding check as ordinary reply prose.
+
+**Fix (`supabase/functions/ask-cube/index.ts`, the SUGGESTIONS-extraction block):** now walks backward from the end skipping blank lines to find the actual last NON-BLANK line before matching the `SUGGESTIONS:` regex against it, and strips everything from that line onward (not just the literal last line) so any trailing blank lines after it are also removed.
+
+**Live re-verification after fix + deploy:** re-ran "Who's free Saturday afternoon?" 3 times — **3/3 PASS**, each a real, correctly-grounded answer ("QA SCRATCH Morgan has a pediatrician checkup on Saturday afternoon. Everyone else appears to be free.") with a clean SUGGESTIONS pill array attached and NO grounding-discard fallback triggered. This is a plausible partial explanation for some of the "inconsistent SUGGESTIONS coverage" and unexplained grounding-discards observed elsewhere across tonight's entire campaign (Parts B/M/P) — any reply where the model happened to emit a trailing newline after its SUGGESTIONS line was silently vulnerable to this same false-discard path, independent of which tool or model was involved.
+
+---
+
+### Q0c — NEW BUG FOUND: get_chore_history queried a nonexistent column, failing on every single call
+
+**Discovery:** "What chores has QA SCRATCH Casey finished this month?" and the same question for Riley both returned "I'm sorry, I wasn't able to retrieve that information. Something went wrong" — reproduced consistently across two different members, not model flakiness. Pulled the real tool-call trace via `ask_cube_messages`: `{"error":"column chore_tasks.completed_at does not exist"}`.
+
+**Root cause:** `get_chore_history` selected and filtered on `completed_at`, a column that does not exist on `chore_tasks` at all — EVERY call to this tool failed outright regardless of member or date range. The app's own `store/choreAdapter.ts` already maps its client-side `completedAt` field to the real DB column `approved_at` (`completedAt: c.approvedAt`), confirming the real column name. Separately, the tool's status filter (`in('status', ['completed', 'auto_approved'])`) also omitted plain `'approved'` — a real, commonly-used terminal status the app's own `familyStore.ts`/`choreAdapter.ts` both group alongside auto_approved/completed as "no longer active."
+
+**Fix:** changed the select/filter/order columns from `completed_at` → `approved_at` (the real column), and added `'approved'` to the terminal-status filter list.
+
+**Live re-verification after fix + deploy:** "What chores has QA SCRATCH Casey finished this month?" now returns a real, correct answer ("QA SCRATCH Casey hasn't finished any chores this month.") instead of erroring — confirmed correct given the seed data has no `approved_at` timestamp actually set on Casey's approved chore (a seed-data limitation of this QA pass, not a bug: a real `approved_at` timestamp would now correctly surface). The tool's query itself no longer errors, which is the fix under test. FIXED, reverified live.
+
+### Q0d — NEW BUG FOUND: grounding check false-positive on a quoted echo of the user's own relationship phrase with punctuation drift
+
+**Discovery:** "What has my daughter completed recently?" (ambiguity case, 2 daughters) got discarded by the grounding check even though the reply was fully correct: `"I found more than one family member matching \"my daughter.\" Do you mean Person D or Person G?"` — the model's own quoted phrase `my daughter.` (with a trailing period from its own sentence punctuation) didn't exact-substring-match the user's actual message text ("What has my daughter completed recently?", no trailing period on that phrase), so the quote-vs-user-echo allowlist check failed and the whole reply was wrongly discarded as "citing an unverified fact."
+
+**Fix:** the grounding check's user-echo allowlist now also checks the cited phrase with trailing punctuation (`.,!?;:`) stripped before the substring match, so a legitimate echo of the user's own words isn't discarded over a cosmetic punctuation difference introduced by the model's own sentence structure.
+
+**Live re-verification after fix + deploy:** "What has my daughter completed recently?" now correctly returns "I found more than one family member matching 'my daughter.' Do you mean QA SCRATCH Riley or QA SCRATCH Casey?" with no discard. FIXED, reverified live.
+
+---
+
+### Q1 — Relationship-word ambiguity across tools
+

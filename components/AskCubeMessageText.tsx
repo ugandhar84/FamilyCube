@@ -88,10 +88,17 @@ function renderLine(
   const tokens = splitOnChoreTitles(tokenizeBold(body), chores);
   const inline = tokens.map((t, i) => t.choreId
     ? (
+      // Live-reported: bold + underline + accent color stacked on a chore
+      // link read as too heavy/loud next to the plain event lines around it
+      // — three visual signals competing for one link. Down to one clear
+      // signal (underline in the link color), keeping the surrounding
+      // text's own weight (still genuinely bold if the model actually
+      // bolded it) instead of always forcing extra-bold on top of the link
+      // styling.
       <Text
         key={`${lineKey}-${i}`}
         onPress={onChorePress ? () => onChorePress(t.choreId!) : undefined}
-        style={{ fontWeight: t.bold ? '800' : '700', color: linkColor, textDecorationLine: 'underline' }}>
+        style={{ fontWeight: t.bold ? '700' : '400', color: linkColor, textDecorationLine: 'underline' }}>
         {t.text}
       </Text>
     )
@@ -103,10 +110,21 @@ function renderLine(
   const isHeaderLine = !bulletMatch && tokens.length === 1 && tokens[0].bold;
 
   if (bulletMatch) {
+    // Live-reported: the chat bubble wasn't shrinking to its actual content
+    // width — it was ballooning out toward its maxWidth cap even for a
+    // short reply. Root cause: `flex: 1` on this bullet's text told React
+    // Native to greedily fill whatever space its row happens to have,
+    // which during the PARENT bubble's own intrinsic-width measurement
+    // pass reports an ambiguous/maximal width demand instead of "as wide as
+    // my wrapped text actually needs to be" — inflating the whole bubble.
+    // `flexShrink: 1` (not `flex: 1`) gives the same real behavior that
+    // actually matters here — long text still wraps inside the row instead
+    // of overflowing — without forcing the row to claim more width than
+    // its content needs when the bubble is sizing itself.
     return (
       <View key={lineKey} style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
         <Text style={{ fontSize: TYPO.body, color, lineHeight: 22 }}>•</Text>
-        <Text style={{ flex: 1, fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
+        <Text style={{ flexShrink: 1, fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
       </View>
     );
   }

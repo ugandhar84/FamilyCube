@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle } from 'lucide-react-native';
+import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle, Trash2 } from 'lucide-react-native';
 import { localDateStr, todayLocal } from '@/lib/dates';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
@@ -197,12 +197,27 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
 
   // Resume the most recent thread when the sheet opens, instead of always
   // starting fresh — matches the "persist to a real table" decision.
+  //
+  // Live-reported: a confirmed/discarded proposal card would flip correctly
+  // (toast fired, real DB write happened) then "briefly change and revert
+  // randomly after some time." Root cause: this effect refetches from the
+  // server every single time the sheet becomes visible again — closing and
+  // reopening AskFam shortly after tapping Confirm/Discard could win a race
+  // against setProposalStatus's own fire-and-forget write (never awaited by
+  // the UI), so this refetch pulled back the OLD "pending" status from the
+  // DB and clobbered the correct local state the user had just set. Only
+  // refetch when actually landing on a DIFFERENT conversation than what's
+  // already showing — reopening the same thread trusts the local state
+  // already in memory (which reflects every decision made so far, whether
+  // or not its own persist write has landed yet) instead of unconditionally
+  // discarding it for a maybe-stale server snapshot.
   useEffect(() => {
     if (!visible) return;
     (async () => {
       const latest = await askCube.getLatestConversation(activeMember.id);
-      if (latest) await loadConversation(latest);
+      if (latest && latest !== conversationId) await loadConversation(latest);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, activeMember.id]);
 
   // "New chat" — omit conversationId on the next send() to start a genuinely
@@ -235,6 +250,35 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     setHistoryVisible(false);
     if (id === conversationId) return; // already showing it
     await loadConversation(id);
+  };
+
+  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // and mobile from history" — AskCubeChat.tsx is the one shared component
+  // both surfaces render, so this one handler covers both. Deleting the
+  // conversation currently on screen also clears it back to the empty
+  // "New chat" state, same as startNewChat — otherwise the deleted
+  // thread's messages would keep showing until the user manually started
+  // a new chat, looking like the delete silently failed.
+  const deleteConversationFromHistory = (id: string, title: string | null) => {
+    Alert.alert(
+      'Delete conversation?',
+      `"${title?.trim() || 'New chat'}" will be permanently deleted. This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await askCube.deleteConversation(id);
+              setConversations(prev => prev.filter(c => c.id !== id));
+              if (id === conversationId) startNewChat();
+            } catch {
+              Alert.alert('Couldn\'t delete', 'Something went wrong — try again.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   // Empty-state starter prompts — personalized to real upcoming data instead
@@ -313,10 +357,23 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         const interval = setInterval(() => {
           i += step;
           setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: fullText.slice(0, i) } : m));
-          scrollRef.current?.scrollToEnd({ animated: true });
+          // Live-reported visual bug: calling scrollToEnd({ animated: true })
+          // on EVERY 16ms tick fired a new scroll animation before the
+          // previous one finished, while the message's own height was
+          // simultaneously growing character-by-character (new lines
+          // wrapping in) — the animated scroll position and the still-
+          // resizing content fought each other, and the follow-up pills
+          // (rendered right after, revealed once this loop finishes) could
+          // end up painted at a stale offset overlapping the growing text
+          // instead of sitting cleanly below it. Un-animated during the
+          // rapid-fire reveal avoids stacking animations against a moving
+          // target; the final post-reveal scroll below (already animated)
+          // is what actually settles the view once content is stable.
+          scrollRef.current?.scrollToEnd({ animated: false });
           if (i >= fullText.length) { clearInterval(interval); resolve(); }
         }, 16);
       });
+      scrollRef.current?.scrollToEnd({ animated: true });
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, revealDone: true } : m));
     } catch (e: any) {
       setMessages(prev => [...prev, { id: `local-${Date.now()}-err`, role: 'assistant', content: "Sorry, I couldn't reach the server — try again in a moment.", timestamp: new Date().toISOString() }]);
@@ -524,6 +581,14 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         // behaves for the same case.
         title: d.title, type: 'event' as const, category: eventCategoryFromDomain(d.category) ?? 'Other',
         allDay: !d.startAt, memberId: d.memberId ?? undefined, notes: d.notes ?? undefined,
+        // Live-reported: "I want to date my wife" drafted the event but
+        // never attached her — a true co-attendee (e.g. a spouse on a date
+        // night) is a real second member of the event, not a helper/driver,
+        // so it goes in memberIds (the same multi-attendee array the manual
+        // event form already writes to), never folded into helper fields.
+        // ask-cube's propose_event only sets this (d.memberIds) when it
+        // actually resolved a real coAttendeeName to more than one member.
+        memberIds: d.memberIds ?? undefined,
         approvalPending: false, conflict: false,
         // Only ever set by the edge function when the user explicitly asked
         // for a reminder (ask-cube/index.ts's system prompt) — mirrors the
@@ -1064,6 +1129,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       {formatConversationTimestamp(c.updatedAt)}
                     </Text>
                   </View>
+                  <Pressable
+                    onPress={() => deleteConversationFromHistory(c.id, c.title)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
+                    <Trash2 size={16} color={colors.textTertiary} />
+                  </Pressable>
                 </Pressable>
               );
             })}

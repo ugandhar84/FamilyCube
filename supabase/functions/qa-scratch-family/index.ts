@@ -58,6 +58,12 @@ const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
   'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests',
+  // Added for QA visibility into ask-cube's own turn-by-turn tool-call
+  // trace (role/content/tool_calls/tool_name per row) — read-only, needed
+  // to diagnose whether a hollow/odd reply came from the model skipping a
+  // tool call entirely vs. some other cause, without relying on server logs
+  // the QA harness has no access to.
+  'ask_cube_messages',
 ]);
 
 // families.id / members.id are real `uuid` columns (confirmed live —
@@ -257,6 +263,20 @@ serve(async (req) => {
         ...(gpCoins != null ? { gp_coins: gpCoins } : {}),
       }).eq('id', memberId).like('name', `${SCRATCH_MARK}%`);
       if (error) throw new Error(`set_coins failed: ${error.message}`);
+      return json({ ok: true });
+    }
+
+    // 'set_member_relationship' → sets a scratch member's relationship/
+    // sub_role columns directly, mirroring set_coins's simplicity — needed
+    // because 'setup' has no field for these and the app's own edit-member
+    // UI is the only other write path, which QA can't drive headlessly.
+    if (action === 'set_member_relationship') {
+      const { memberId, relationship, subRole } = body;
+      const { error } = await admin.from('members').update({
+        ...(relationship !== undefined ? { relationship } : {}),
+        ...(subRole !== undefined ? { sub_role: subRole } : {}),
+      }).eq('id', memberId).like('name', `${SCRATCH_MARK}%`);
+      if (error) throw new Error(`set_member_relationship failed: ${error.message}`);
       return json({ ok: true });
     }
 

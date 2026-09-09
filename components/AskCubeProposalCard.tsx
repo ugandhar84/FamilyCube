@@ -412,13 +412,30 @@ export default function AskCubeProposalCard({
       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary }}>Discarded</Text>
     </View>
   ) : (
+    // Live-reported: this card could flip to "created" (toast fired, real
+    // DB write happened) and then visually revert to showing Discard/
+    // Confirm again "randomly after some time" — the parent card's own
+    // pointerEvents:'none' lock (set once added/discarded is true) is a
+    // known-inconsistent guard on its own across RN/iOS versions for
+    // already-mounted nested Pressables. Belt-and-suspenders: these two
+    // buttons now also carry their own explicit `disabled` derived from the
+    // same added/discarded flags, and onPress no-ops defensively even if a
+    // stray tap somehow lands after a decision was already recorded — a
+    // duplicate create/discard can never fire twice regardless of whether
+    // the wrapper-level pointerEvents lock held in a given render.
     <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-      <Pressable onPress={onDiscard}
-        style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
+      <Pressable
+        onPress={() => { if (!added && !discarded) onDiscard(); }}
+        disabled={added || discarded}
+        style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+          opacity: (added || discarded) ? 0.5 : 1 }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
       </Pressable>
-      <Pressable onPress={onCreate}
-        style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent }}>
+      <Pressable
+        onPress={() => { if (!added && !discarded) onCreate(); }}
+        disabled={added || discarded}
+        style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent,
+          opacity: (added || discarded) ? 0.5 : 1 }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
           {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
             : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
@@ -824,6 +841,31 @@ export default function AskCubeProposalCard({
       {!!d._unresolvedHelperName && (
         <Text style={{ fontSize: TYPO.micro, color: colors.danger }}>
           Couldn't find "{d._unresolvedHelperName}" — no helper assigned
+        </Text>
+      )}
+      {/* Live-reported: "I want to date my wife" drafted the event but
+          never showed/attached her — a co-attendee is a real second member
+          on the event (memberIds), not a helper/driver, so it gets its own
+          row rather than reusing the "with X" helper display above, which
+          would misleadingly suggest a helper/driver role instead of an
+          equal participant. */}
+      {!!d.memberIds && d.memberIds.length > 1 && (() => {
+        const coAttendee = d.memberIds.map((id: string) => memberName(members, id)).find((n?: string) => n && n !== assignee);
+        return coAttendee ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Users size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>and {coAttendee}</Text>
+          </View>
+        ) : null;
+      })()}
+      {!!d._unresolvedCoAttendeeName && (
+        <Text style={{ fontSize: TYPO.micro, color: colors.danger }}>
+          Couldn't find "{d._unresolvedCoAttendeeName}" — only you're on this event
+        </Text>
+      )}
+      {!!d._ambiguousCoAttendeeNames?.length && (
+        <Text style={{ fontSize: TYPO.micro, color: colors.danger }}>
+          More than one match ({d._ambiguousCoAttendeeNames.join(', ')}) — ask who you meant, nobody was added
         </Text>
       )}
       <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />

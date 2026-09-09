@@ -94,4 +94,18 @@ export const askCube = {
   async startNewConversation() {
     return undefined; // omitting conversationId on the next send() starts a fresh thread
   },
+
+  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // and mobile from history" — there was previously no way to remove a
+  // conversation once it existed, on either surface (AskCubeChat.tsx's
+  // history sheet is the one shared component both use). RLS on
+  // ask_cube_conversations is FOR ALL scoped to
+  // member_id = resolve_active_member_id() (see the PIN-only-access fix
+  // migration), so a plain client-side delete is already correctly scoped
+  // to the member's own conversations — no edge function needed. messages
+  // cascade via the table's own ON DELETE CASCADE foreign key.
+  async deleteConversation(id: string) {
+    const { error } = await supabase.from('ask_cube_conversations').delete().eq('id', id);
+    if (error) throw error;
+  },
 };

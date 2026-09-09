@@ -53,16 +53,117 @@ function buildAliasMap(members: { id: string; name: string }[]): AliasMap {
 
 function realNameToAlias(map: AliasMap, members: { id: string; name: string }[], text: string): string {
   let out = text;
+  // Real live QA bug: this used to interleave each member's full-name
+  // replace with their first-name replace, one member at a time. When two+
+  // members share the same leading token (a common nickname, or — as QA's
+  // own scratch family happened to surface it — every scratch member's name
+  // starting with "QA SCRATCH ...", so "QA" was every single member's
+  // naive "first name") an EARLIER member's first-name pass corrupts the
+  // string before a LATER member's full-name pass ever gets a chance to
+  // match it whole, leaving a mangled result like "Person A SCRATCH Sarah"
+  // instead of a clean "Person A". Fixed by doing every member's FULL name
+  // replacement first (longest names first, so no partial match steals a
+  // substring another full name needed), and only afterward doing
+  // first-name replacements — and skipping a first-name replacement
+  // entirely when that first name isn't actually unique among the family
+  // (so a shared/ambiguous leading token is left alone rather than
+  // collapsing multiple people onto the same alias).
+  const byNameLengthDesc = [...members].sort((a, b) => b.name.length - a.name.length);
+  for (const m of byNameLengthDesc) {
+    const alias = map.toAlias.get(m.id);
+    if (!alias) continue;
+    out = out.split(m.name).join(alias);
+  }
+  const firstNameCounts = new Map<string, number>();
+  for (const m of members) {
+    const firstName = m.name.split(' ')[0];
+    firstNameCounts.set(firstName, (firstNameCounts.get(firstName) ?? 0) + 1);
+  }
   for (const m of members) {
     const alias = map.toAlias.get(m.id);
     if (!alias) continue;
-    // Longest-name-first isn't needed here since each replace is scoped to
-    // one member's exact name string, not a shared prefix.
-    out = out.split(m.name).join(alias);
     const firstName = m.name.split(' ')[0];
-    if (firstName !== m.name) out = out.split(firstName).join(alias);
+    if (firstName === m.name) continue;
+    if ((firstNameCounts.get(firstName) ?? 0) > 1) continue; // ambiguous shared token — never collapse it onto one alias
+    out = out.split(firstName).join(alias);
   }
   return out;
+}
+
+// Real live QA bug (Part D — form validation edge cases): propose_quest and
+// propose_update's coin-change branch both passed args.coins straight
+// through with zero validation — a negative value (-50) or an absurd one
+// (1,000,000) landed in a real, confirmable proposal draft rather than
+// being rejected or clamped. Coins are a small reward currency (seeded
+// rewards/chores in this app top out in the tens, occasionally low
+// hundreds for a big one-off task) — clamp to a sane [1, 500] range rather
+// than accepting anything a user (or a kid, on chores they can propose)
+// might type. Returns the clamped number, never null/NaN, so callers don't
+// need a separate "was this valid" branch — a garbage input becomes a sane
+// value instead of silently vanishing into a 0-coin or negative-coin chore.
+// Server-side equivalents of the "Aug 23" / "9:00 PM" formatting the system
+// prompt already tells the MODEL to use in its own prose — needed here too
+// for the raw-JSON/empty-reply fallback (see its own comment), the one
+// place server code builds a reply sentence out of tool data directly
+// instead of trusting the model's own natural-language phrasing.
+function formatFriendlyDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function formatFriendlyTime(timeStr: string): string {
+  const m = /^(\d{2}):(\d{2})/.exec(timeStr);
+  if (!m) return timeStr;
+  const h = parseInt(m[1], 10), min = m[2];
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${min} ${period}`;
+}
+
+// Live-reported: a real event's stored title can itself contain a stray
+// date/time phrase someone typed or a past request baked in (e.g.
+// "Pickup Maya from Soccer get 4 PM tomorrow"), which then gets displayed
+// right next to the event's REAL, correct date/time field — producing a
+// visibly self-contradictory line like "...get 4 PM tomorrow — today,
+// 4:00 PM". A prose instruction asking the model to notice and drop the
+// conflicting fragment on its own wasn't reliable enough (still showed
+// through live) — this does it mechanically instead: strip a trailing
+// "get <time> <relative day>" / "at <time> <relative day>" / bare
+// "tomorrow"/"today"/"tonight" fragment off the END of a title before it's
+// ever shown, so there's nothing left for the model to get wrong. Only
+// trims a trailing fragment (never touches the middle of a title, where a
+// legitimate word like "today" could be part of an intentional title) and
+// never touches the actual stored title in the database — this is purely
+// a display-time cleanup, the real row is untouched unless the user
+// explicitly asks AskFam to rename it via propose_update.
+function cleanEventTitle(title: string): string {
+  return title
+    .replace(/\s*[-–—]?\s*(get|at)\s+\d{1,2}(:\d{2})?\s*(am|pm)?\s*(today|tomorrow|tonight)\s*$/i, '')
+    .replace(/\s*[-–—]?\s*(today|tomorrow|tonight)\s*$/i, '')
+    .trim();
+}
+
+function clampCoins(value: unknown, fallback = 20): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.round(Math.min(500, Math.max(1, n)));
+}
+
+// Real live QA bug (Part D): an empty-or-whitespace-only title (e.g. a user
+// typing "   " for a chore/event name) was never checked — it would flow
+// straight into a proposal with a blank title a user could accidentally
+// confirm, creating a nameless row. Returns null for a blank/missing title
+// so call sites can flag it instead of drafting it. Also caps length: a
+// live test with a 700+ character title landed unchanged in a real,
+// confirmable proposal — titles here are short chore/event names shown in
+// list rows and notifications, not free-text notes, so anything beyond a
+// generous 120 chars is truncated (with an ellipsis marker) rather than
+// rejected outright — a user who genuinely pastes something huge still
+// gets a usable, sane title instead of a rejected request.
+function validTitle(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
 }
 
 function aliasToRealName(map: AliasMap, text: string | null | undefined): string {
@@ -161,7 +262,7 @@ const TOOLS = [
         properties: {
           date: { type: 'string', description: 'YYYY-MM-DD to check' },
           time: { type: 'string', description: 'HH:MM 24-hour, if a specific time was asked about — omit to just list the day\'s free gaps between events for everyone' },
-          memberName: { type: 'string', description: 'Check just this one person\'s availability — omit to check everyone' },
+          memberName: { type: 'string', description: 'Check just this one person\'s availability — omit to check everyone. Accepts a relationship word ("my son", "my wife") the same as a real name.' },
         },
         required: ['date'],
       },
@@ -176,7 +277,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           status:   { type: 'string', enum: ['todo', 'in_progress', 'pending_approval', 'approved', 'done', 'declined', 'any'] },
-          memberName: { type: 'string', description: 'Filter to one family member by name, or omit for everyone' },
+          memberName: { type: 'string', description: 'Filter to one family member — a real name OR a relationship word ("my son", "my mother"), or omit for everyone' },
         },
       },
     },
@@ -189,9 +290,22 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          memberName: { type: 'string', description: 'Required — whose pace to check' },
+          memberName: { type: 'string', description: 'Required — whose pace to check. A real name OR a relationship word ("my son") both work.' },
         },
         required: ['memberName'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_family_members',
+      description: 'Get the list of family members with their name, role, and relationship. Use for a plain identity question — "who is my wife", "who is my son", "who\'s in this family", "what\'s my mother\'s name" — NOT for scheduling/chore data (use the other tools for that). This is the only way to actually answer "who is X" since a relationship word like "my wife" has no meaning on its own without looking up who that actually is.',
+      parameters: {
+        type: 'object',
+        properties: {
+          relationshipWord: { type: 'string', description: 'A relationship word to filter to just that person, if the question named one ("my wife" -> "wife", "my son" -> "son"). Omit to list everyone.' },
+        },
       },
     },
   },
@@ -205,7 +319,7 @@ const TOOLS = [
         properties: {
           startDate: { type: 'string', description: 'YYYY-MM-DD' },
           endDate:   { type: 'string', description: 'YYYY-MM-DD' },
-          memberName: { type: 'string' },
+          memberName: { type: 'string', description: 'Filter to one family member — a real name OR a relationship word ("my son", "my mother"), or omit for everyone' },
         },
         required: ['startDate', 'endDate'],
       },
@@ -215,11 +329,11 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_location',
-      description: 'Get a family member\'s current/last-known location status (e.g. "at home", "in transit", "at School", distance from home). Use for "where is X", "is everyone home", "has X left yet".',
+      description: 'Get a family member\'s current/last-known location status (e.g. "at home", "in transit", "at School", distance from home). Use for "where is X", "is everyone home", "has X left yet". Also the only location signal available for a "what\'s nearby" / "near us" style question (e.g. planning a weekend outing) — it never returns a raw address, only an aliased status/zone label, and should only be called for that purpose when the user actually asked a location-based question, with your reply then plainly stating you used their location info.',
       parameters: {
         type: 'object',
         properties: {
-          memberName: { type: 'string', description: 'Whose location to check — omit for everyone' },
+          memberName: { type: 'string', description: 'Whose location to check — a real name OR a relationship word ("my wife"). Omit for everyone.' },
         },
       },
     },
@@ -232,7 +346,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          memberName: { type: 'string', description: 'Whose health info to check — required, this is sensitive data' },
+          memberName: { type: 'string', description: 'Whose health info to check — required, this is sensitive data. A real name OR a relationship word ("my son") both work.' },
         },
         required: ['memberName'],
       },
@@ -246,7 +360,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          memberName: { type: 'string', description: 'Whose balance/eligibility to check — omit to just list the catalog' },
+          memberName: { type: 'string', description: 'Whose balance/eligibility to check — a real name OR a relationship word ("my daughter"). Omit to just list the catalog.' },
         },
       },
     },
@@ -260,7 +374,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           status:     { type: 'string', enum: ['pending', 'approved', 'declined', 'any'], description: 'Omit for pending only, the normal case' },
-          memberName: { type: 'string', description: 'Filter to one kid by name, or omit for everyone' },
+          memberName: { type: 'string', description: 'Filter to one kid — a real name OR a relationship word ("my son", "my daughter"), or omit for everyone' },
         },
       },
     },
@@ -273,7 +387,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          rewardSearch: { type: 'string', description: 'Words to match the reward\'s title, e.g. "movie night"' },
+          rewardSearch: { type: 'string', description: 'Words to match the reward\'s title, e.g. "movie night" — use just the reward\'s own name, never append a generic word like "reward"/"prize" that is not actually part of the title (e.g. for "can I redeem the New video game reward?" pass "New video game", not "New video game reward").' },
           memberName:   { type: 'string', description: 'Who is redeeming it — required, coins are deducted from this specific person' },
         },
         required: ['rewardSearch', 'memberName'],
@@ -291,8 +405,8 @@ const TOOLS = [
           title:      { type: 'string' },
           category:   { type: 'string', enum: ['Medical', 'Sports', 'Study', 'Ride', 'Work', 'Event', 'Birthday', 'Errand', 'Other'] },
           startAt:    { type: 'string', description: 'Local date+time in the family\'s own timezone, formatted YYYY-MM-DDTHH:MM:SS with NO trailing "Z" and NO UTC offset (e.g. "2026-09-02T23:22:00", never "2026-09-02T23:22:00Z" or "...-05:00"). The client parses this as a plain wall-clock time in the device\'s own zone — a "Z" suffix or explicit offset gets silently reinterpreted and lands at the wrong hour, which is exactly the class of bug this note exists to prevent (live-reported: an event set for 11:22 PM landed an hour early on the synced calendar).' },
-          memberName: { type: 'string', description: 'Which family member this is for, if named' },
-          helperName: { type: 'string', description: 'A SECOND family member who is accompanying, helping, driving, or assigned to handle this event, if the request names one — e.g. "doctor appointment for Ugandhar accompanied by Praveena" -> memberName "Ugandhar", helperName "Praveena". Covers "accompanied by X", "with X", "X is driving", "X is taking them", "X is helping", "assigned to X" (as the helper, when memberName already covers who the event is FOR) phrasing. This is a real assignment (shows as a helper/driver on the event, pending their confirmation), not a note — never fold this person\'s name into `notes` instead of setting this field when one is clearly named as accompanying/helping/driving/assigned.' },
+          memberName: { type: 'string', description: 'Which family member this is for, if named — a real name OR a relationship word ("my son", "my wife") both work.' },
+          helperName: { type: 'string', description: 'A SECOND family member who is accompanying, helping, driving, or assigned to handle this event, if the request names one — e.g. "doctor appointment for Sam accompanied by Alex" -> memberName "Sam", helperName "Alex". Covers "accompanied by X", "with X", "X is driving", "X is taking them", "X is helping", "assigned to X" (as the helper, when memberName already covers who the event is FOR) phrasing. This is a real assignment (shows as a helper/driver on the event, pending their confirmation), not a note — never fold this person\'s name into `notes` instead of setting this field when one is clearly named as accompanying/helping/driving/assigned.' },
           notes:      { type: 'string' },
           alertCallLeadMinutes: {
             type: 'number',
@@ -305,6 +419,10 @@ const TOOLS = [
           recurrenceDays: {
             type: 'array', items: { type: 'number' },
             description: 'weekly recurrence only — which weekdays it repeats on, 0=Sunday..6=Saturday (e.g. "every Thursday" -> [4], "every weekday" -> [1,2,3,4,5]). Required if recurrenceFrequency is "weekly".',
+          },
+          coAttendeeName: {
+            type: 'string',
+            description: 'A SECOND person this event is jointly FOR, as an equal participant — never a helper/driver/accompanying role. Covers "date night with my wife", "dinner with my husband", "me and my son", "movie night for me and Alex" — anyone phrased as a co-participant rather than someone assisting/driving/accompanying (use helperName for those instead). Also covers relationship words directly ("my wife", "my mother", "my son") — resolved the same way memberName is, against this family\'s real members, not just literal first names. When the event is plainly for the requester AND one other named/implied person together, set memberName to omitted/the requester is implicit, and put the other person here.',
           },
         },
         required: ['title', 'category'],
@@ -319,7 +437,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          title:         { type: 'string', description: 'The task itself, cleaned up — strip framing verbs ("create a chore for X to...", "remind Y to...") AND the assignee\'s name out of this field entirely; the name goes in memberName below, never left sitting in the title too. "Create a chore for Jas takeout trash from her room" -> title "Take out trash from her room", memberName "Jas" — not title "Jas takeout trash from her room" with memberName left unset.' },
+          title:         { type: 'string', description: 'The task itself, cleaned up — strip framing verbs ("create a chore for X to...", "remind Y to...") AND the assignee\'s name out of this field entirely; the name goes in memberName below, never left sitting in the title too. "Create a chore for Mia takeout trash from her room" -> title "Take out trash from her room", memberName "Mia" — not title "Mia takeout trash from her room" with memberName left unset.' },
           coins:         { type: 'number' },
           memberName:    { type: 'string', description: 'Who this is assigned to, if named anywhere in the request — omit ONLY when truly nobody is named, which means the open pool. A name mentioned via "for X"/"assign to X"/"X should..." still counts as named even if the rest of the sentence reads awkwardly without it — always extract it here rather than leaving it folded into the title.' },
           dueDate:       { type: 'string', description: 'YYYY-MM-DD, if a deadline was implied — resolve "today"/"tonight"/"tomorrow" yourself using the current date' },
@@ -346,14 +464,14 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'propose_update',
-      description: 'Propose a change to an ALREADY-EXISTING event or chore the user refers to by description (e.g. "add a note to the soccer practice", "change the dishwasher chore\'s coins to 30", "move Alex\'s dentist reminder to 30 min before", "the trash chore — make it due Thursday instead", "assign the dishes chore to Cherry", "reassign Jas\'s pickup ride to Praveena"). Looks the record up by title/member/rough date so it is NOT duplicated as a new item — use this instead of propose_event/propose_quest whenever the user is clearly talking about something already created rather than asking to add something new. This also covers reminder-only changes (was a separate tool before — no longer) and reassigning to a different family member (assignToMemberName). Does NOT change anything itself — returns a proposal the user must confirm. Only include the fields the user actually asked to change; never invent changes to fields they did not mention.',
+      description: 'Propose a change to an ALREADY-EXISTING event or chore the user refers to by description (e.g. "add a note to the soccer practice", "change the dishwasher chore\'s coins to 30", "move Alex\'s dentist reminder to 30 min before", "the trash chore — make it due Thursday instead", "assign the dishes chore to Ben", "reassign Mia\'s pickup ride to Alex"). Looks the record up by title/member/rough date so it is NOT duplicated as a new item — use this instead of propose_event/propose_quest whenever the user is clearly talking about something already created rather than asking to add something new. This also covers reminder-only changes (was a separate tool before — no longer) and reassigning to a different family member (assignToMemberName). Does NOT change anything itself — returns a proposal the user must confirm. Only include the fields the user actually asked to change; never invent changes to fields they did not mention.',
       parameters: {
         type: 'object',
         properties: {
           targetType:   { type: 'string', enum: ['event', 'chore'], description: 'Which table to search — infer from context (e.g. "soccer practice"/"appointment" is an event, "dishwasher chore"/"trash duty" is a chore). Ask the user only if genuinely ambiguous.' },
           targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher". For reschedule/move/postpone requests where the user only gave a generic noun ("the appointment", "the meeting"), still pass that generic noun here rather than leaving it blank or switching to propose_event — a weak search is better than silently creating a duplicate.' },
           memberName:   { type: 'string', description: 'Whose event/chore this is CURRENTLY, if named — narrows the search when multiple records could match. This does NOT reassign anything; use assignToMemberName for that.' },
-          assignToMemberName: { type: 'string', description: 'Only if the user asked to REASSIGN this event/chore to a different family member, e.g. "assign the dishes chore to Cherry" or "move Jas\'s pickup ride to Praveena instead" — the name of the NEW assignee. Omit entirely if the user did not ask to change who it belongs to.' },
+          assignToMemberName: { type: 'string', description: 'Only if the user asked to REASSIGN this event/chore to a different family member, e.g. "assign the dishes chore to Ben" or "move Mia\'s pickup ride to Alex instead" — the name of the NEW assignee. Omit entirely if the user did not ask to change who it belongs to.' },
           nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("this week", "Tuesday") — omit if not implied, search proceeds from today forward either way' },
           title:        { type: 'string', description: 'New title, only if the user asked to rename it' },
           date:         { type: 'string', description: 'Event only — new date, YYYY-MM-DD, only if the user asked to reschedule it' },
@@ -454,7 +572,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'propose_kid_request_action',
-      description: 'Propose approving or declining an already-existing kid request (a ride, help/tutor, permission, appointment, check-in, or other request a kid sent to a parent — NOT a chore, use propose_chore_action for those). Does NOT perform the action — returns a proposal card the user must confirm. Parent/approver only. Use whenever the user asks to approve/decline/accept/reject a specific kid request by description, e.g. "approve Jas\'s ride request", "decline the tutor request from Leo", "say yes to the permission request about the sleepover". Looks the request up by requester name and/or description the same way propose_update does — never guess which request if more than one matches.',
+      description: 'Propose approving or declining an already-existing kid request (a ride, help/tutor, permission, appointment, check-in, or other request a kid sent to a parent — NOT a chore, use propose_chore_action for those). Does NOT perform the action — returns a proposal card the user must confirm. Parent/approver only. Use whenever the user asks to approve/decline/accept/reject a specific kid request by description, e.g. "approve Mia\'s ride request", "decline the tutor request from Leo", "say yes to the permission request about the sleepover". Looks the request up by requester name and/or description the same way propose_update does — never guess which request if more than one matches.',
       parameters: {
         type: 'object',
         properties: {
@@ -500,6 +618,24 @@ async function callGemini(messages: any[], tools: unknown[]) {
     return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content ?? '' }] };
   });
   const geminiTools = [{ functionDeclarations: tools.map((t: any) => t.function) }];
+  // ROOT CAUSE of a real, escalating live outage found via QA: gemini-2.5-
+  // flash is a "thinking" model — with no thinkingBudget cap, its internal
+  // reasoning tokens can consume the ENTIRE generation budget, leaving
+  // nothing for the actual visible answer/functionCall. Reproduced live and
+  // deterministically: candidate.finishReason came back 'STOP' (not
+  // MAX_TOKENS, not SAFETY — a "successful" completion) with usageMetadata
+  // showing prompt tokens counted but NO candidatesTokenCount at all — i.e.
+  // Gemini genuinely finished having generated zero visible output tokens.
+  // This got dramatically more frequent as the request's total input size
+  // grew (empirically ~0% failure at a small ~8-event scratch family,
+  // reliably reproducible at ~30-40% once seeded up to 58 events / ~19.8k
+  // prompt tokens) — consistent with a fixed/shared thinking-token budget
+  // getting exhausted more often the more context there is to reason over,
+  // not a family-data-shape bug. Capping thinkingBudget and giving
+  // maxOutputTokens real headroom fixes this at the source, on top of (not
+  // instead of) the empty-reply retry loop already in the main request loop
+  // below, which remains a real, valuable safety net for the cases this
+  // doesn't fully eliminate.
   const res = await fetch(`${GEMINI_URL}?key=${GEMINI_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -507,13 +643,28 @@ async function callGemini(messages: any[], tools: unknown[]) {
       contents: history,
       tools: geminiTools,
       systemInstruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
-      generationConfig: { temperature: 0.3 },
+      generationConfig: { temperature: 0.3, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 512 } },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const candidate = data.candidates?.[0];
   const parts = candidate?.content?.parts ?? [];
+  // Real live QA investigation: a genuinely empty reply (no functionCall,
+  // no text) was reproduced deterministically once the family's dataset
+  // grew large (~58 events) — Gemini's own response was 200 OK but carried
+  // no usable parts. candidate.finishReason (SAFETY/MAX_TOKENS/RECITATION/
+  // etc.) explains WHY when that happens; surfacing it here (server-log
+  // only, never sent to the client) is the only way to actually diagnose
+  // this instead of guessing, since this deployment has no other log access.
+  let _debugEmptyReason: any = undefined;
+  if (!parts.length) {
+    _debugEmptyReason = {
+      finishReason: candidate?.finishReason, safetyRatings: candidate?.safetyRatings,
+      promptFeedback: data?.promptFeedback, usageMetadata: data?.usageMetadata,
+    };
+    console.warn('[ask-cube] Gemini returned no usable parts', _debugEmptyReason);
+  }
   // Was .find(...) + a hardcoded single-element tool_calls array — Gemini
   // can return MULTIPLE functionCall parts in one response (e.g. the
   // system prompt's own "call get_schedule AND get_quests together, same
@@ -535,14 +686,42 @@ async function callGemini(messages: any[], tools: unknown[]) {
     };
   }
   const text = parts.map((p: any) => p.text ?? '').join('');
-  return { role: 'assistant', content: text };
+  return { role: 'assistant', content: text, _debugEmptyReason };
 }
 
-async function callModel(messages: unknown[], tools: unknown[]) {
-  try { return await callGemini(messages as any[], tools); }
-  catch (err) {
+// Real gap found during QA: there was previously no way to tell, from
+// either the logs or the response, which of the two models actually
+// answered a given turn — every failure/oddity got attributed to "the
+// model" generically even though Gemini (primary) and DeepSeek (fallback,
+// only used when Gemini's call itself throws) can behave quite
+// differently, and a live QA pass has no way to interpret a bad answer
+// correctly without knowing which one produced it. modelUsed is threaded
+// through to the final response's __meta field (stripped before it
+// reaches the app's own AskCubeResponse type — see its call site) purely
+// for server-log/QA visibility, never surfaced to the end user.
+//
+// Reverted back to Gemini-primary (2026-09-08 night): DeepSeek was briefly
+// made primary during a real Gemini quota exhaustion, but DeepSeek had zero
+// hours of real runtime in this app before that swap, and immediately
+// surfaced its own formatting-driven false positive against the grounding
+// check (bolded section headers misread as invented facts — now fixed,
+// see the grounding-check filter below). Gemini had many more hours of
+// live verification tonight across every other fix (list formatting, alias
+// de-aliasing, confirm-card/draft-revision/pending-state logic, holiday
+// suggestions, etc.) before its quota ran out, so it's the better-tested
+// choice to lead with once quota recovers — DeepSeek stays wired as a real
+// fallback (not removed) for exactly the scenario that forced this swap in
+// the first place: if Gemini's own call throws (quota exhausted again, or
+// any other failure), this still fails over to DeepSeek rather than going
+// straight to the empty-reply fallback.
+async function callModel(messages: unknown[], tools: unknown[]): Promise<{ reply: any; modelUsed: 'gemini' | 'deepseek' }> {
+  try {
+    const reply = await callGemini(messages as any[], tools);
+    return { reply, modelUsed: 'gemini' };
+  } catch (err) {
     console.warn('[ask-cube] Gemini failed, falling back to DeepSeek:', (err as Error).message);
-    return callDeepSeek(messages, tools);
+    const reply = await callDeepSeek(messages, tools);
+    return { reply, modelUsed: 'deepseek' };
   }
 }
 
@@ -551,6 +730,57 @@ async function callModel(messages: unknown[], tools: unknown[]) {
 // name here may be a real name OR an alias ("Person A") — the model only
 // ever sees aliases for sensitive tools, but for schedule/quest tools it
 // still sees real names today, so this resolves either.
+// Live-requested: "if i say my son or daughter or my mother or father...it
+// should identify" — relationship words ("my wife," "my mother," "my son")
+// previously had no path to resolve at all, since this only ever matched
+// literal name text. FamilyMember already stores a real, purely-descriptive
+// `relationship` field (e.g. 'Mother', 'Stepson' — set once, from whoever
+// added them, not dynamically per-viewer) and `subRole` (e.g. 'Dad', 'Mom')
+// — this is real existing data, not a new field. A relative word maps to
+// one or more of these labels; if exactly one member matches, resolve to
+// them; if MORE than one matches (two sons, a blended-family case with two
+// "Dad"s, etc.), this deliberately returns null with a distinct signal
+// (ambiguousCandidateNames) rather than guessing which one, so the caller
+// can ask the user to clarify instead of silently assigning the wrong
+// person — the same "never silently misassign" principle as the existing
+// name-matching logic just below.
+const RELATIONSHIP_WORD_MAP: Record<string, string[]> = {
+  wife: ['wife', 'spouse'], husband: ['husband', 'spouse'], spouse: ['spouse', 'wife', 'husband'],
+  mother: ['mother', 'mom'], mom: ['mother', 'mom'], father: ['father', 'dad'], dad: ['father', 'dad'],
+  son: ['son'], daughter: ['daughter'],
+  brother: ['brother'], sister: ['sister'],
+  grandmother: ['grandmother', 'grandma'], grandma: ['grandmother', 'grandma'],
+  grandfather: ['grandfather', 'grandpa'], grandpa: ['grandfather', 'grandpa'],
+  'mother-in-law': ['mother-in-law', 'mother in law'], 'father-in-law': ['father-in-law', 'father in law'],
+  'sister-in-law': ['sister-in-law', 'sister in law'], 'brother-in-law': ['brother-in-law', 'brother in law'],
+  stepson: ['stepson'], stepdaughter: ['stepdaughter'], stepmother: ['stepmother', 'stepmom'], stepfather: ['stepfather', 'stepdad'],
+  aunt: ['aunt'], uncle: ['uncle'], cousin: ['cousin'], niece: ['niece'], nephew: ['nephew'],
+};
+
+// Returns the raw member rows a relationship word matched, WITHOUT
+// resolving alias/name first — resolveMemberId (below) calls this only
+// after its own alias/name match already came up empty, and folds the
+// result into its existing string|null contract so none of this function's
+// many existing call sites need to change shape. Kept separate (rather than
+// inlined into resolveMemberId) so a caller that specifically needs to
+// react to ambiguity (propose_event/propose_quest, to ask the user which
+// person they meant instead of silently picking one) can call this
+// directly for that signal.
+async function matchByRelationship(supabase: any, familyId: string, name: string): Promise<{ id: string | null; ambiguousCandidateNames?: string[] }> {
+  const lower = name.toLowerCase().trim().replace(/^my\s+/, ''); // "my wife" -> "wife"
+  const relWords = RELATIONSHIP_WORD_MAP[lower];
+  if (!relWords) return { id: null };
+  const { data } = await supabase.from('members').select('id, name, relationship, sub_role').eq('family_id', familyId);
+  const relMatches = (data ?? []).filter((m: any) => {
+    const rel = (m.relationship ?? '').toLowerCase().trim();
+    const sub = (m.sub_role ?? '').toLowerCase().trim();
+    return relWords.includes(rel) || relWords.includes(sub);
+  });
+  if (relMatches.length === 1) return { id: relMatches[0].id };
+  if (relMatches.length > 1) return { id: null, ambiguousCandidateNames: relMatches.map((m: any) => m.name) };
+  return { id: null };
+}
+
 async function resolveMemberId(supabase: any, familyId: string, name: string, aliasMap?: AliasMap): Promise<string | null> {
   if (aliasMap) {
     const byAlias = memberIdForAlias(aliasMap, name);
@@ -570,7 +800,16 @@ async function resolveMemberId(supabase: any, familyId: string, name: string, al
     const first = full.split(' ')[0];
     return full === lower || first === lower;
   });
-  return match?.id ?? null;
+  if (match) return match.id;
+  // Live-requested: "my wife/son/mother/father...it should identify" —
+  // falls back to relationship-word matching only when a literal name/alias
+  // match already failed. Ambiguous relationship matches (two sons, etc.)
+  // still come back null here — this contract can't express "ambiguous," so
+  // propose_event/propose_quest call matchByRelationship directly when they
+  // need to tell the difference between "no match" and "matched more than
+  // one person" and ask the user to clarify instead of guessing.
+  const rel = await matchByRelationship(supabase, familyId, name);
+  return rel.id;
 }
 
 // Viewer-role scoping — matches HubTimelineSection's belongsToMe: a kid/teen
@@ -601,12 +840,19 @@ async function executeTool(
   today: string, nowHHMM: string,
 ) {
   if (name === 'get_schedule') {
+    // No date-range length limit — a user genuinely asking for months-old
+    // data ("what did we have going on back in March") must keep working,
+    // this only bounds the ROW COUNT the query can return for a wide range
+    // (same real-world safety cap get_chore_history already has at
+    // `.limit(50)` below), so an unusually broad ask doesn't return an
+    // unbounded result set into the model's own context.
     const { data, error } = await supabase.from('calendar_events')
       .select('title, category, date, start_time, member_id, member_ids, helper_name, helper_status, driver_name, driver_status')
       .eq('family_id', familyId)
       .gte('date', args.startDate).lte('date', args.endDate)
       .is('deleted_at', null)
-      .order('date').order('start_time');
+      .order('date').order('start_time')
+      .limit(200);
     if (error) return { error: error.message };
     const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
     return { events: scoped.map((e: any) => ({
@@ -614,7 +860,7 @@ async function executeTool(
       // ("Take Sarah to Dr. Patel") — realNameToAlias scrubs it the same
       // way memberName/helper/driver already were, closing a gap where
       // free-text fields bypassed the aliasing scheme entirely.
-      title: realNameToAlias(aliasMap, members, e.title), category: e.category, date: e.date, time: e.start_time,
+      title: cleanEventTitle(realNameToAlias(aliasMap, members, e.title)), category: e.category, date: e.date, time: e.start_time,
       helper: e.helper_name ? realNameToAlias(aliasMap, members, e.helper_name) : null,
       helperStatus: e.helper_status,
       driver: e.driver_name ? realNameToAlias(aliasMap, members, e.driver_name) : null,
@@ -749,6 +995,38 @@ async function executeTool(
     };
   }
 
+  if (name === 'get_family_members') {
+    // Live-requested: "who is my wife" had no answer at all — there was no
+    // tool that could ever surface "which real person does a relationship
+    // word actually refer to," only tools that ACT on an already-resolved
+    // member id. A relationship word like "wife" has no meaning on its own
+    // without looking up who that actually is, and the model had nothing
+    // to call for that. Returns real names + relationship/role, aliased the
+    // same way every other tool result is — this is genuinely who's in the
+    // family, not sensitive data like health/location, so it's available
+    // to every viewer, not parent-only.
+    const { data, error } = await supabase.from('members')
+      .select('id, name, role, relationship, sub_role').eq('family_id', familyId);
+    if (error) return { error: error.message };
+    let rows = data ?? [];
+    if (args.relationshipWord) {
+      const rel = await matchByRelationship(supabase, familyId, args.relationshipWord);
+      if (rel.ambiguousCandidateNames) {
+        return { error: `More than one family member matches "${args.relationshipWord}": ${rel.ambiguousCandidateNames.map((n: string) => realNameToAlias(aliasMap, members, n)).join(', ')}. Ask which one they meant.` };
+      }
+      if (!rel.id) {
+        return { error: `Couldn't find anyone in this family matching "${args.relationshipWord}". Tell the user plainly rather than guessing.` };
+      }
+      rows = rows.filter((m: any) => m.id === rel.id);
+    }
+    return {
+      members: rows.map((m: any) => ({
+        person: aliasMap.toAlias.get(m.id) ?? 'Unknown',
+        role: m.role, relationship: m.relationship ?? null, subRole: m.sub_role ?? null,
+      })),
+    };
+  }
+
   if (name === 'get_quests') {
     let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId);
     if (args.status && args.status !== 'any') query = query.eq('status', args.status);
@@ -810,7 +1088,15 @@ async function executeTool(
     if (viewerRole !== 'parent') return { error: 'Location is only available to parents.' };
     // address deliberately not selected — status/safe_zone_name/distance are
     // the only fields this tool has ever returned to the model.
-    let query = supabase.from('member_locations').select('member_id, status, safe_zone_name, distance_from_home_miles, updated_at').eq('family_id', familyId);
+    // Real live bug (QA-flagged): this queried a column called `updated_at`,
+    // which doesn't exist on member_locations — GpsTab.tsx (the real,
+    // working GPS feature) has always used `last_updated` for this. Every
+    // get_location call was failing outright with a Postgres "column does
+    // not exist" error; the model degraded gracefully around the error
+    // (correctly avoided fabricating anything) but never actually returned
+    // real location data — "where is everyone" / "is X home" effectively
+    // never worked end-to-end via AskFam.
+    let query = supabase.from('member_locations').select('member_id, status, safe_zone_name, distance_from_home_miles, last_updated').eq('family_id', familyId);
     if (args.memberName) {
       const id = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
       if (id) query = query.eq('member_id', id);
@@ -828,7 +1114,7 @@ async function executeTool(
         person: aliasMap.toAlias.get(r.member_id) ?? 'Unknown',
         status: r.status, place: placeToAlias(placeAliasMap, r.safe_zone_name ?? null),
         distanceFromHomeMiles: r.distance_from_home_miles ?? null,
-        updatedAt: r.updated_at,
+        updatedAt: r.last_updated,
       })),
     };
   }
@@ -915,20 +1201,27 @@ async function executeTool(
       // Only ever include a field the model actually supplied a value for —
       // an omitted field means "not asked to change," never "clear it."
       const changes: Record<string, any> = {};
-      if (typeof args.title === 'string') changes.title = args.title;
+      // A title CHANGE (as opposed to creation) must not silently blank out
+      // an existing chore's title — only apply it when the new value is
+      // non-blank (see clampCoins/validTitle's own comment for the QA
+      // finding); a whitespace-only "new title" the model was somehow
+      // given is treated the same as not asking to change the title at all.
+      if (typeof args.title === 'string' && validTitle(args.title)) changes.title = args.title.trim();
       if (typeof args.dueDate === 'string') changes.dueDate = args.dueDate;
       if (typeof args.dueTime === 'string' && /^\d{2}:\d{2}$/.test(args.dueTime)) changes.dueTime = args.dueTime;
       if (typeof args.notes === 'string') changes.description = args.notes;
       // ChoreTask's real field is coinsReward (store/choreStore.ts), not
       // "coins" — updateChore's DB patch builder keys off `'coinsReward' in
       // updates` via plain `in` checks, so a mismatched key here would
-      // silently no-op the write with no error at all.
-      if (typeof args.coins === 'number') changes.coinsReward = args.coins;
+      // silently no-op the write with no error at all. Clamped the same way
+      // as propose_quest's creation path — a negative or absurd coin value
+      // must never reach a confirmable change proposal.
+      if (typeof args.coins === 'number') changes.coinsReward = clampCoins(args.coins, 20);
       if (typeof args.leadMinutes === 'number') { changes.alertCall = true; changes.alertCallLeadMinutes = args.leadMinutes; }
       // Real reassignment — was previously impossible: memberName only ever
       // narrowed the SEARCH, and no argument existed anywhere for "change
       // who this belongs to," so a request like "assign the dishes chore
-      // to Cherry" resolved the right chore but the `changes` sent back
+      // to Ben" resolved the right chore but the `changes` sent back
       // never touched assignedToId at all — the client wrote a no-op
       // reassignment while the chat still reported success [live-reported:
       // "when i asked assing the event or chore to family memebr it is not
@@ -1172,6 +1465,12 @@ async function executeTool(
   }
 
   if (name === 'propose_event') {
+    // A blank/whitespace-only title must never reach a draftable proposal
+    // (Part D QA finding — see clampCoins/validTitle's own comment).
+    const eventTitle = validTitle(args.title);
+    if (!eventTitle) {
+      return { error: 'The event title is empty or missing. Ask the user what they want to call this event before proposing it.' };
+    }
     let memberId: string | null = null;
     // Distinguish "no name given" (fine — open/unassigned) from "a name was
     // given but didn't match anyone" (a misspelling or a name that doesn't
@@ -1202,6 +1501,40 @@ async function executeTool(
         unresolvedHelperName = args.helperName;
       }
     }
+    // Live-requested: "i want to date my wife" drafted the event but never
+    // assigned her to it — memberName/helperName had no field for a SECOND
+    // person who's an equal co-participant (not a helper/driver/
+    // accompanying role). coAttendeeName resolves the same way memberName
+    // does (including the new relationship-word matching — "my wife" etc.)
+    // and feeds the event's real memberIds array (the same multi-attendee
+    // column the manual event-creation UI already writes to), never
+    // helper/driver fields, which would incorrectly frame a spouse/co-
+    // parent as someone assisting rather than a joint participant.
+    let coAttendeeId: string | null = null;
+    let unresolvedCoAttendeeName: string | null = null;
+    let coAttendeeAmbiguousNames: string[] | undefined;
+    if (args.coAttendeeName) {
+      coAttendeeId = await resolveMemberId(supabase, familyId, args.coAttendeeName, aliasMap);
+      if (!coAttendeeId) {
+        const rel = await matchByRelationship(supabase, familyId, args.coAttendeeName);
+        if (rel.ambiguousCandidateNames) coAttendeeAmbiguousNames = rel.ambiguousCandidateNames;
+        else unresolvedCoAttendeeName = args.coAttendeeName;
+      }
+    }
+    // ROOT CAUSE of the live "I want to date my wife" bug: coAttendeeName
+    // resolved correctly (coAttendeeId set), but when no explicit memberName
+    // was given — the normal, expected phrasing for "me and my wife", where
+    // the requester is implicit — memberId stayed null. [memberId,
+    // coAttendeeId] then collapsed to a single-element array after the null
+    // was filtered out, so `memberIds.length > 1` below was never true and
+    // the whole memberIds field got silently dropped from the proposal,
+    // leaving the co-attendee completely unassigned despite resolving fine.
+    // Fix: once a co-attendee is set, the event is a joint one — fall back
+    // to the requester (viewerId) as the implicit primary participant so
+    // both people actually land in memberIds, matching what the tool's own
+    // schema description promises ("the requester is implicit").
+    const effectiveMemberId = memberId ?? (coAttendeeId ? viewerId : null);
+    const memberIds = [...new Set([effectiveMemberId, coAttendeeId].filter((id): id is string => !!id))];
     // alertCallLeadMinutes is opt-in — undefined/null means "no reminder
     // requested," matching the manual EventFormModal's own alertCall
     // boolean staying false by default. Only set alertCall true when the
@@ -1221,13 +1554,16 @@ async function executeTool(
       : null;
     return {
       __proposal: 'event',
-      title: args.title, category: args.category ?? 'Other',
+      title: eventTitle, category: args.category ?? 'Other',
       startAt: args.startAt ?? null, memberId, notes: args.notes ?? null,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
       recurrenceRule,
       helperId, helperName,
+      ...(memberIds.length > 1 ? { memberIds } : {}),
       ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
       ...(unresolvedHelperName ? { _unresolvedHelperName: unresolvedHelperName } : {}),
+      ...(unresolvedCoAttendeeName ? { _unresolvedCoAttendeeName: unresolvedCoAttendeeName } : {}),
+      ...(coAttendeeAmbiguousNames ? { _ambiguousCoAttendeeNames: coAttendeeAmbiguousNames } : {}),
     };
   }
 
@@ -1237,6 +1573,13 @@ async function executeTool(
     if (args.memberName) {
       memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
       if (!memberId) unresolvedName = args.memberName;
+    }
+    // A blank/whitespace-only title must never reach a draftable proposal —
+    // tell the model plainly so it asks the user for a real title instead
+    // (see clampCoins/validTitle's own comment for the full QA finding).
+    const title = validTitle(args.title);
+    if (!title) {
+      return { error: 'The chore title is empty or missing. Ask the user what they want to call this chore before proposing it.' };
     }
     const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
     // HH:MM only — anything else the model might send (e.g. "8pm", "20:00:00")
@@ -1252,7 +1595,7 @@ async function executeTool(
       : null;
     return {
       __proposal: 'quest',
-      title: args.title, coins: args.coins ?? 20, memberId,
+      title, coins: clampCoins(args.coins), memberId,
       dueDate: args.dueDate ?? null, dueTime, photoRequired: args.photoRequired ?? false,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
       recurrenceRule,
@@ -1300,8 +1643,18 @@ async function executeTool(
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
     const search = args.targetSearch ?? '';
 
+    // Real live QA bug: the real column is `requires_photo` (confirmed in
+    // store/choreStore.ts, e.g. `requires_photo: task.requiresPhoto` on
+    // insert) — this used to select a nonexistent `photo_required` column,
+    // which made EVERY propose_chore_action 'complete' call error out
+    // silently. The model then fabricated a plausible-sounding but FALSE
+    // explanation ("requires a photo to submit") instead of surfacing the
+    // real failure — live-reproduced on a chore that was seeded with
+    // requires_photo = false. Fixed the column name; the model's
+    // hallucinate-on-tool-error behavior is separately addressed by the
+    // "never invent a reason for a tool error" instruction added below.
     let query = supabase.from('chore_tasks')
-      .select('id, title, status, is_pool, assigned_to_id, created_by_id, photo_required')
+      .select('id, title, status, is_pool, assigned_to_id, created_by_id, requires_photo')
       .eq('family_id', familyId)
       .ilike('title', `%${search}%`);
     if (memberId) query = query.eq('assigned_to_id', memberId);
@@ -1337,7 +1690,7 @@ async function executeTool(
       if (chore.assigned_to_id !== viewerId) {
         return { error: `"${chore.title}" isn't currently held by the person chatting, so they can't mark it complete themselves. Tell the user plainly.` };
       }
-      if (chore.photo_required) {
+      if (chore.requires_photo) {
         return { error: `"${chore.title}" requires a photo to submit — that has to be done from the Tasks tab, not through chat. Tell the user plainly.` };
       }
     } else if (action === 'cancel') {
@@ -1401,7 +1754,15 @@ async function executeTool(
 
 // ─── Main loop ───────────────────────────────────────────────────────────
 
-const MAX_TOOL_ROUNDS = 4; // guard against a runaway tool-call loop
+// Bumped 4 -> 6: live QA found Gemini nondeterministically (not on every
+// call) returns a completely empty reply with no tool_calls for certain
+// terse data questions ("is anything late?", sometimes "what's overdue?")
+// — the empty-reply retry nudge above recovers it most of the time within
+// 2 rounds, but a couple of extra rounds of headroom meaningfully raises
+// the live success rate for the rare case it takes longer, at negligible
+// cost since a normal turn (tool call -> tool result -> final answer)
+// still finishes in 2 rounds regardless of this cap.
+const MAX_TOOL_ROUNDS = 6; // guard against a runaway tool-call loop
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -1478,6 +1839,33 @@ serve(async (req) => {
     const { data: priorMessages } = await supabase.from('ask_cube_messages')
       .select('role, content, tool_calls, tool_call_id, tool_name')
       .eq('conversation_id', conversationId).order('created_at').limit(30);
+
+    // Real structural gap (two live-reported bugs): whether a proposal card
+    // is still pending, already confirmed, or discarded was something the
+    // model had to INFER purely by re-reading its own prose reply text in
+    // history — there was no explicit signal for "here is the exact draft
+    // still open right now." That's how "Sure" (answering an unrelated
+    // yes/no question) got treated as confirming a card that didn't exist,
+    // and how "change the time" (meant for the just-drafted card) drifted
+    // onto an unrelated real chore instead. proposal_statuses is already
+    // the real, client-persisted source of truth for this per message (see
+    // askCubeService.ts's setProposalStatus/setProposalData) — fetch the
+    // single most recent message in this conversation that still has at
+    // least one 'pending' entry and hand it to the model as unambiguous
+    // structured state, separate from the prose history it has to
+    // otherwise interpret.
+    const { data: pendingRow } = await supabase.from('ask_cube_messages')
+      .select('proposal, proposal_statuses, proposal_status')
+      .eq('conversation_id', conversationId).eq('role', 'assistant')
+      .not('proposal', 'is', null).order('created_at', { ascending: false }).limit(5);
+    let activePendingProposal: { kind: string; data: any } | null = null;
+    for (const row of pendingRow ?? []) {
+      const list: any[] = Array.isArray(row.proposal) ? row.proposal : [];
+      const statuses: string[] = Array.isArray(row.proposal_statuses) ? row.proposal_statuses
+        : list.map(() => row.proposal_status ?? 'pending');
+      const idx = statuses.findIndex(s => s === 'pending');
+      if (idx !== -1 && list[idx]) { activePendingProposal = { kind: list[idx].kind, data: list[idx].data }; break; }
+    }
 
     // Every raw tool-call/tool-result pair from every past turn was being
     // replayed to the model on every single new message — a conversation a
@@ -1595,6 +1983,86 @@ serve(async (req) => {
       upcomingWeekdayDates[DOW_NAMES[target]] = d.toISOString().slice(0, 10);
     }
     const upcomingWeekdaysStr = DOW_NAMES.map(n => `${n}=${upcomingWeekdayDates[n]}`).join(', ');
+    // Live-reported: "this week" had NO precomputed range at all (unlike
+    // "this weekend" and every bare weekday name above) — left entirely to
+    // the model's own judgment for get_schedule's startDate/endDate, and it
+    // was visibly under-scoping the window (a reply that had shown 5+ real
+    // events for "this week" earlier the same night shrank to just 2-3 on a
+    // later ask, with no change in the family's actual data). Precomputing
+    // the end of THIS week the same way weekendSaturdayStr is anchored —
+    // through the upcoming Sunday, even when today already IS Sunday —
+    // removes this as a place the model can silently narrow the range.
+    const daysToSunday = dow === 0 ? 0 : 7 - dow;
+    const thisWeekSunday = new Date(todayDate);
+    thisWeekSunday.setDate(thisWeekSunday.getDate() + daysToSunday);
+    const weekEndSundayStr = thisWeekSunday.toISOString().slice(0, 10);
+
+    // Live-requested: "assume common public holidays" + long-weekend/
+    // vacation suggestions. Computed here as literal dates for THIS year
+    // and next (so a request made in December about "New Year's" still
+    // resolves), the same "precompute it, don't let the model guess" policy
+    // as today/weekendSaturdayStr/upcomingWeekdayDates above — a US federal
+    // holiday calendar is the only one assumed (no family locale field
+    // exists to branch on yet). Nth-weekday holidays (Thanksgiving,
+    // Memorial/Labor Day, MLK Day, Presidents' Day) are computed; fixed-date
+    // ones are literal. This is a real-date table, not a suggestion source
+    // by itself — combined with the family's OWN calendar (get_schedule)
+    // to flag long weekends, never used to invent nearby places or events.
+    function nthWeekdayOfMonth(year: number, month0: number, weekday: number, n: number): Date {
+      const first = new Date(Date.UTC(year, month0, 1));
+      const offset = (weekday - first.getUTCDay() + 7) % 7;
+      return new Date(Date.UTC(year, month0, 1 + offset + (n - 1) * 7));
+    }
+    function lastWeekdayOfMonth(year: number, month0: number, weekday: number): Date {
+      const last = new Date(Date.UTC(year, month0 + 1, 0));
+      const offset = (last.getUTCDay() - weekday + 7) % 7;
+      return new Date(Date.UTC(year, month0 + 1, last.getUTCDate() - offset));
+    }
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    function usFederalHolidays(year: number): Record<string, string> {
+      return {
+        "New Year's Day":        iso(new Date(Date.UTC(year, 0, 1))),
+        'MLK Day':               iso(nthWeekdayOfMonth(year, 0, 1, 3)),
+        "Presidents' Day":       iso(nthWeekdayOfMonth(year, 1, 1, 3)),
+        'Memorial Day':          iso(lastWeekdayOfMonth(year, 4, 1)),
+        'Juneteenth':            iso(new Date(Date.UTC(year, 5, 19))),
+        'Independence Day':      iso(new Date(Date.UTC(year, 6, 4))),
+        'Labor Day':             iso(nthWeekdayOfMonth(year, 8, 1, 1)),
+        'Columbus Day':          iso(nthWeekdayOfMonth(year, 9, 1, 2)),
+        'Veterans Day':          iso(new Date(Date.UTC(year, 10, 11))),
+        'Thanksgiving':          iso(nthWeekdayOfMonth(year, 10, 4, 4)),
+        'Christmas':             iso(new Date(Date.UTC(year, 11, 25))),
+      };
+    }
+    const thisYear = todayDate.getFullYear();
+    const holidayTable = { ...usFederalHolidays(thisYear), ...Object.fromEntries(
+      Object.entries(usFederalHolidays(thisYear + 1)).map(([k, v]) => [`${k} (next year)`, v]),
+    ) };
+    // Only surface holidays from today forward within the next ~4 months —
+    // a full two-year table dumped into the prompt is mostly noise the
+    // model never needs and just spends tokens on.
+    const fourMonthsOut = iso(new Date(todayDate.getTime() + 120 * 86400000));
+    const upcomingHolidaysStr = Object.entries(holidayTable)
+      .filter(([, date]) => date >= today && date <= fourMonthsOut)
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([name, date]) => `${name.replace(' (next year)', '')}=${date}`)
+      .join(', ') || 'none in the next 4 months';
+    // A holiday landing next to a weekend makes a long weekend — flag which
+    // upcoming holidays do, so the model doesn't have to reason about
+    // day-of-week math itself (same anchor-everything policy as above).
+    // Mon-holiday + the Sat/Sun right before it, OR Fri-holiday + the
+    // Sat/Sun right after it, are the two shapes that actually create one.
+    const longWeekendsStr = Object.entries(holidayTable)
+      .filter(([, date]) => date >= today && date <= fourMonthsOut)
+      .map(([name, date]) => {
+        const d = new Date(`${date}T00:00:00Z`);
+        const wd = d.getUTCDay();
+        if (wd === 1) return `${name.replace(' (next year)', '')} (Mon ${date}) makes a long weekend with the Sat/Sun right before it`;
+        if (wd === 5) return `${name.replace(' (next year)', '')} (Fri ${date}) makes a long weekend with the Sat/Sun right after it`;
+        return null;
+      })
+      .filter((x): x is string => !!x)
+      .join('; ') || 'none in the next 4 months';
 
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}. The current time
 right now is ${nowTimeStr} (${nowHHMM} 24-hour). Use this as the anchor for ANY request phrased relative to the
@@ -1607,9 +2075,30 @@ for it. "End of the week" means the upcoming Friday shown below (treat it the sa
 day-of-month with no month named ("the 15th", "by the 3rd") means the next occurrence of that date from ${today}
 forward — the same month if that date hasn't passed yet this month, otherwise next month; if you're not confident
 which month that resolves to, ask rather than guessing, since a wrong month is a much bigger miss than a wrong day.
-A named holiday or general phrase ("the holidays", "over Labor Day", "New Year's") has no precomputed date given to
-you anywhere in this prompt — do not guess a specific calendar date for one of these on your own. Ask the user for
+Common US federal holidays over the next 4 months are precomputed here, so a named one of these DOES have a real
+date you can use directly: ${upcomingHolidaysStr}. Use the exact date shown for any of these names in a
+propose_*/get_* date field — never recompute a holiday's date yourself. Any OTHER named holiday or vague phrase not
+in that list ("the holidays" generically, a religious/cultural holiday not shown above, "spring break," a specific
+school's own break) still has no precomputed date — do not guess a calendar date for one of these; ask the user for
 the actual date (or date range) they mean before calling any propose_*/get_* tool with a date field.
+Long-weekend detection (holiday next to a weekend) is also precomputed, don't reason about the day-of-week math
+yourself: ${longWeekendsStr}. When the user asks something like "any long weekends coming up," "when's our next
+break," or "should we plan something for [a holiday shown above]," use this directly rather than checking each
+holiday's weekday by hand.
+Holiday/trip/vacation/itinerary requests ("what should we do for the long weekend," "plan a trip for Labor Day,"
+"any ideas for the break") are real and should be engaged with, but you have NO maps/places tool and NO knowledge of
+the family's actual home city or region — never invent or name a specific real place, attraction, restaurant, hotel,
+or "near you" suggestion; doing so would be a fabricated claim about a location you don't actually know. Instead:
+(1) check the family's OWN calendar via get_schedule across the relevant date range for anything already on it
+(a Holiday-category event, a break already entered, other commitments to plan around), (2) if the user asks what's
+"nearby" or "near us," you may ask them to confirm you can use their location — only member_locations' aliased
+safe-zone/status info (via get_location, parent-only) is available, never a raw address, and only after they've
+asked something location-based, never proactively — then plainly state you're using their location info in your
+reply so it's never a silent use, (3) otherwise ask what destination, city, or type of activity they have in mind
+rather than guessing one, and (4) once a destination or activity is named (by the user, or confirmed from location
+context), you can help build out a real plan using your actual tools — propose_event for the trip/activity itself,
+propose_grocery_items for packing/supply lists, propose_quest for prep chores ("pack bags," "check the cooler”) —
+this is genuine itinerary help, just never fabricated place names.
 "This weekend" always means Saturday ${weekendSaturdayStr} — use this exact date for any propose_event/propose_quest/
 propose_update whose due date or start date is described as "this weekend," regardless of what day today happens to
 be (even if today is itself a Saturday or Sunday, "this weekend" still refers to this same weekend's Saturday, never
@@ -1617,6 +2106,13 @@ a week further out). If the user says "this weekend" but the request is clearly 
 weekend" as a general statement, not a single task/event), you may reason about Sat–Sun as a range for your reply
 text, but any single date you actually WRITE to a due date/start date field must still be ${weekendSaturdayStr}
 unless the user explicitly names Sunday instead.
+"This week"/"what's going on this week"/"what's coming up this week" always means the FULL range from today
+(${today}) through this week's Sunday (${weekEndSundayStr}), inclusive — call get_schedule (and get_quests, per the
+broad-question rule above) with exactly startDate: "${today}", endDate: "${weekEndSundayStr}" for this phrasing.
+Never narrow this to just today/tomorrow, and never guess a different end date yourself — a live-reported bug was
+this range silently shrinking to only 2-3 items on one ask when the same family's data genuinely had 5+ real events
+in the full week, because nothing anchored what "this week" actually spans. Use this exact range every time this
+phrasing is asked, regardless of how many items happen to come back.
 A bare weekday name with no other qualifier ("Monday", "on Thursday", "by Friday") always means the UPCOMING
 occurrence of that day, precomputed here so you never have to do this date math yourself: ${upcomingWeekdaysStr}.
 Use the exact date shown for that weekday name in every date/dueDate/nearDate field you write — never recompute it
@@ -1637,7 +2133,12 @@ For a PAST-looking read-only question ("what did I miss last night", "what happe
 done last week") — never a propose_* call, only get_schedule/get_chore_history — compute the actual past date range
 yourself from today (${today}): "yesterday"/"last night" is the single day before today, "last week" is the 7 days
 ending yesterday. These tools accept any startDate/endDate you pass, past included, so call them with the real past
-range rather than defaulting to today or refusing for lack of an anchor.
+range rather than defaulting to today or refusing for lack of an anchor — there is no fixed lookback limit (a
+request for last month, last quarter, or further back all still work; call the tool with that real range). get_schedule
+is capped at 200 rows and get_chore_history at 50 for a single call, purely as a size safety limit — if a very wide
+range plausibly returned MORE than that (e.g. "everything since January" for an active family), say so plainly in
+your reply ("here's what I found, though there may be more beyond the first 200/50 — narrow the date range for a
+complete list") rather than presenting a possibly-partial result as if it were the complete history.
 Every date/time anchor above (${today}, ${nowHHMM}) is the CURRENT USER'S own local time — you have no visibility
 into any other family member's timezone at all. If asked to convert or reason about what time it currently is for a
 DIFFERENT family member ("what time will it be for grandma, she's out west", "set it for 8am her time, she's in a
@@ -1671,8 +2172,15 @@ For a plain greeting/acknowledgment/sign-off like this:
   action to suggest because nothing was actually asked about, so the suggestions mechanism described later in this
   prompt does not apply here. Skip it entirely, the same as any other reply with no natural next action.
 If a greeting/acknowledgment/sign-off is immediately followed by (or contains) an actual question or request ("hey,
-what's on my schedule today", "thanks! also can Jas redeem movie night"), answer THAT using the normal rules above —
+what's on my schedule today", "thanks! also can Mia redeem movie night"), answer THAT using the normal rules above —
 the greeting/ack/sign-off part itself just doesn't need any of this on its own, only the real request attached to it.
+If a tool call comes back with a genuine error (e.g. a database/technical failure, not a normal "no match" or a
+deliberate refusal message written for you to relay), NEVER invent a plausible-sounding reason of your own for why
+the action can't be done — a real live bug had a chore-completion tool fail with a technical database error, and the
+model then told the user the chore "requires a photo to submit" (a completely fabricated explanation that happened
+to sound plausible but was never true). If a tool error isn't already phrased as a user-facing message you should
+relay verbatim, tell the user plainly that something went wrong and you couldn't complete the check/action right
+now — never guess at or invent a specific-sounding reason you have no actual evidence for.
 NEVER answer a data question (what's pending, what's on the calendar, who's assigned what) using a tool result from
 an EARLIER turn in this conversation, even if it looks relevant — chores and events change constantly, so a result
 from even a few messages ago may already be stale/wrong. Always make a fresh tool call for a new data question,
@@ -1682,18 +2190,27 @@ if you don't have a fresh, real tool result to point to, you don't have an answe
 A broad question like "what's going on today/this week", "what's on our plate", "anything I should know about", or
 "what's overdue"/"is anything overdue"/"is anyone behind" is asking about BOTH the calendar AND chores, not just
 one — call get_schedule AND get_quests together (same turn, both calls before you reply) for these, not just
-whichever one the phrasing happens to mention first. "Overdue" applies to a PAST-due calendar event just as much as
-a late chore (e.g. "Pickup Maya from Soccer" or a birthday dinner whose start time already passed today) — never
-treat "overdue" as chore-only vocabulary. Only skip one of them if the user's question is unambiguously about just
-the calendar ("what's on the calendar Tuesday") or just chores ("what chores are left") specifically.
+whichever one the phrasing happens to mention first. Only skip one of them if the user's question is unambiguously
+about just the calendar ("what's on the calendar Tuesday") or just chores ("what chores are left") specifically.
+"Overdue" is genuinely chore/task vocabulary — a chore or reward redemption that's past its due date with nothing
+done about it. A calendar event whose start time is simply earlier today (a 4 PM pickup, an 8 PM dinner, on a day
+that's now later than that) is NOT "overdue" in that same sense — it already happened (or the window for it passed)
+as a normal, unremarkable part of the day, not a missed/undone obligation someone needs to act on. Do NOT lump
+already-passed same-day events into one blended "overdue" list together with actually-overdue chores — that reads
+as alarming/confusing to a parent scanning quickly ("why is Grandma's birthday dinner listed as overdue?"). Instead,
+for a broad overdue/behind question, structure your answer in two clearly separate parts: (1) chores/tasks that are
+GENUINELY overdue (past due date, not done) — the real answer to what's actually behind; (2) only if truly useful,
+a brief separate mention of what's already happened today on the calendar, worded neutrally ("Today's calendar:
+Pickup Maya from Soccer at 4:00 PM, Birthday dinner at 8:00 PM — both already passed"), never under the "overdue"
+label itself. If NOTHING is genuinely overdue chore-wise, say that plainly as the headline ("Nothing is overdue
+right now") — don't bury a true "all caught up" answer under a list of ordinary past-today events.
 After calling the relevant tool(s) for a data question, your reply must actually STATE what you found — a real
 answer, not a vague acknowledgment. Never reply with something like "Here's what I found — let me know if you'd
 like more detail" (or any similar hollow phrasing) that names nothing concrete; if you called a tool and got real
-rows back, name the actual overdue/pending items (or say plainly there aren't any, e.g. "Nothing chore-wise is
-overdue, but Praveena's Pickup Maya from Soccer at 4:00 PM and two 8:00 PM events already passed today"). If you
-called a tool and it genuinely returned nothing relevant, say that plainly ("Nothing looks overdue right now") —
-either way, the answer sentence itself must contain the actual finding, never a placeholder inviting a follow-up
-about content you never stated in the first place.
+rows back, name the actual overdue/pending items (or say plainly there aren't any). If you called a tool and it
+genuinely returned nothing relevant, say that plainly ("Nothing looks overdue right now") — either way, the answer
+sentence itself must contain the actual finding, never a placeholder inviting a follow-up about content you never
+stated in the first place.
 Location and health tools are sensitive and parent-only — if a non-parent asks, explain you can't share that.
 PARENT-ONLY ACTIONS, stated once here so it's unambiguous regardless of how the request is phrased. Two different
 boundaries — don't blur them: (1) approving or declining ANY chore (including a kid trying to approve/mark-approved
@@ -1719,7 +2236,7 @@ is meaningfully higher than priorAvgHoursToComplete (their own past pace, not so
 just broke, briefly and kindly suggest something a parent could actually DO — a specific, low-pressure encouragement
 idea (a smaller first step, checking in without pressure, a fresh coin/streak incentive) — not just restating the
 numbers back at the parent. Keep it to 1-2 sentences of actual suggestion, not a data dump. If the parent explicitly
-asks to compare two named kids' pace ("who's been slower, Jas or Cherry"), that IS a legitimate use — call
+asks to compare two named kids' pace ("who's been slower, Mia or Ben"), that IS a legitimate use — call
 get_quest_pace once per named kid (it only ever takes one memberName) and compare their real results side by side;
 never answer a two-person comparison from just one call or from assumption.
 
@@ -1739,7 +2256,7 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   to read back what's already on the list. If asked "what's already on the list" or "did we already add milk",
   say plainly you can't check the current list from chat and point to the Grocery tab, rather than guessing.
 - get_rewards only ever returns the CURRENT catalog and current balance — there is no tool that returns PAST
-  redemption history. If asked something like "how many times did Jas redeem X this month" or to compare two kids'
+  redemption history. If asked something like "how many times did Mia redeem X this month" or to compare two kids'
   past redemptions, say plainly that redemption history isn't available from chat rather than guessing a count.
 - A vague craving/goal ("something with more protein", "a quick dinner") -> immediately call propose_meal 2-3 times
   with different specific dish ideas of your own invention (real dish names, real ingredient lists, realistic prep
@@ -1847,11 +2364,15 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
 - "Swap X and Y's chores/rides" or any request naming TWO records that both need to change is two separate updates,
   not one — call propose_update (or propose_chore_action) once per record, once per person, so both actually change;
   a single call can only ever touch one record and one new assignee.
-- propose_event only supports ONE primary assignee (memberName) plus optionally one helper/driver (helperName, for
-  someone accompanying/assisting) — there is no way to make a NEW event belong equally to two people at once. If the
-  user asks to put one new event on two different people's calendars as equal owners ("put this on Jas's calendar
-  AND Cherry's"), say plainly you can only set one primary person per event (and mention the helper field only fits
-  an accompanying/driving relationship, not a second equal owner) — don't silently drop one of the two names.
+- propose_event supports a SECOND person as a real equal co-participant via coAttendeeName — distinct from helperName
+  (accompanying/driving/assisting role). Use coAttendeeName whenever the event is jointly for two people as equals:
+  "date night with my wife", "dinner for me and my husband", "movie night — me and Alex". This also covers
+  relationship words directly ("my wife", "my mother", "my son", "my father-in-law") — resolved against this
+  family's real members the same way a name would be, not just literal first names; if a relationship word could
+  match more than one person (e.g. two sons), the tool reports that back rather than guessing — mention it plainly
+  and ask which person they meant rather than assuming. If the user names more than TWO people total for one new
+  event ("put this on Mia's AND Ben's AND Casey's calendar"), say plainly you can only set a primary person plus one
+  co-attendee per event — don't silently drop names beyond the first two.
 - CRITICAL — carry context across your OWN follow-up questions: if you just named a specific record and asked the
   user for a value (a date, a time, a name, an amount), and their very next message is JUST that value with no
   further context (e.g. you said "what would you like me to set the due date to?" and they reply "tomorrow 9pm", or
@@ -1868,6 +2389,30 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   candidates and asked which one they meant — "the second one", "the first", "no, the other kid" selects from THAT
   list by position/description; map it back to the specific record from your own last message and proceed with it
   (don't ask them to repeat the name in full).
+- CRITICAL: every memberName/helperName/coAttendeeName/chefName-style field on EVERY tool in this file accepts a
+  RELATIONSHIP WORD, not just a literal first name — "my son", "my daughter", "my wife", "my husband", "my mother",
+  "my father", "my mother-in-law", "my grandmother", etc. all resolve against this family's real stored data (each
+  member's relationship/role fields), the exact same way a literal name does. Do NOT refuse a request just because
+  it names someone by relationship instead of by name ("what are my son's chores", "date night with my wife",
+  "remind my mother about her appointment") — pass the relationship phrase itself (e.g. "my son", or just "son") as
+  that field's value exactly as you would a name, and call the tool. Never tell the user you can only look someone
+  up "by specific name" or ask them to give a name instead — that's incorrect and was a real, live-reported gap.
+  If a relationship word genuinely matches more than one person in this family (two sons, etc.), the tool result
+  will tell you that explicitly — only THEN ask the user which specific person they meant, never before trying.
+- A plain IDENTITY question — "who is my wife", "who's my son", "who's in this family", "what's my mother's name" —
+  is asking WHO a relationship word actually refers to, not asking for schedule/chore/reward data about them. Use
+  get_family_members for this (with relationshipWord set to the word they used, e.g. "wife"), never any other tool,
+  and never guess or say you don't know — this tool exists specifically to answer exactly this. If it comes back
+  with nobody matching, say so plainly rather than inventing a name.
+  A bare relationship phrase on its own — "my daughter", "my son", just the words with nothing else — is ALSO an
+  identity question by itself ("who is my daughter"), even right after a turn where you discussed a DIFFERENT
+  person's chores/schedule/data. Do NOT assume it's continuing the previous topic (e.g. "which kid's chores do you
+  want now") unless the user's own last message was genuinely a question you asked THEM that a name would answer —
+  a bare relationship phrase with no verb, no "chores"/"schedule"/etc, and nothing in YOUR prior message asking them
+  to name someone, is a fresh get_family_members lookup, full stop. NEVER invent a limitation that isn't real (e.g.
+  claiming you "can only look up chores by a specific name" when the user asked a plain identity question with no
+  mention of chores at all) — a real, live-reported bug was exactly this: a fabricated refusal glued onto the
+  correct answer in the same reply, which is incoherent regardless of whether the second half was right.
 - A pronoun/possessive ("his appointment", "move her chore", "cancel their event") is only safe to resolve on your
   own when exactly one plausible person fits — e.g. the family has only one son and "his" clearly means him, or the
   pronoun matches whoever was just named a message ago. If TWO OR MORE family members could plausibly be "he"/"she"/
@@ -1876,7 +2421,7 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   unfiltered by member — risking a match against the WRONG sibling's identically-titled event/chore). Ask a single
   short question naming the candidates instead ("Do you mean Aiden's or Noah's dentist appointment?") before calling
   propose_update/propose_cancel_event/propose_chore_action.
-- The same applies to an ITEM pronoun ("cancel it", "move it to next week", "tell Cherry no on that one") — "it"/
+- The same applies to an ITEM pronoun ("cancel it", "move it to next week", "tell Ben no on that one") — "it"/
   "that"/"that one" refers to whatever record was actually being discussed a message or two ago, not a literal
   search term. Resolve it to the real title/topic from the recent conversation before calling any propose_* tool.
   NEVER pass the pronoun itself as targetSearch/detailSearch (e.g. searching for the literal word "it") — an ilike
@@ -1905,7 +2450,7 @@ if a kid asks this, tell them plainly only a parent can approve chores, don't pr
 chore done" -> action: 'complete', but only for a chore with no photo requirement — if propose_chore_action reports
 one is needed, tell the user plainly they need to submit it with a photo from the Tasks tab instead. "Cancel/remove
 the garage chore" -> action: 'cancel'. A BULK request naming a whole person's workload rather than one chore ("mark
-all of Jas's chores done", "approve everything pending") means: call get_quests first to see the actual distinct
+all of Mia's chores done", "approve everything pending") means: call get_quests first to see the actual distinct
 matching chores, then call propose_chore_action once per distinct chore (each with its own specific targetSearch),
 not once with a vague/blank targetSearch hoping it matches everything — a single call only ever proposes an action
 on ONE chore. The same applies to a bulk/vague CANCEL EVENT request with no real title to search on ("cancel all her
@@ -1914,7 +2459,7 @@ distinct events, then call propose_cancel_event once per real event you found, n
 "fun stuff" as targetSearch (that has nothing to match against and risks a wrong or empty result). These only PROPOSE, they do not create, change, or perform anything
 When the user wants to approve/decline a KID REQUEST (a ride, help/tutor, permission, appointment, check-in, or
 other request a kid sent — never a chore, propose_chore_action covers those), use propose_kid_request_action.
-"Approve Jas's ride request" -> action: 'approve'. "Decline the tutor request from Leo" -> action: 'decline'.
+"Approve Mia's ride request" -> action: 'approve'. "Decline the tutor request from Leo" -> action: 'decline'.
 Parent/approver only — if a kid asks this, tell them plainly only a parent can approve/decline requests, don't
 propose it anyway. A BULK request naming more than one pending request at once ("let both kids go to the
 sleepover", "approve everything pending") means calling get_kid_requests first to see the real distinct pending
@@ -1940,19 +2485,19 @@ than implying the approval itself carries a changed detail.
   plainly and point to the right in-app screen if you know it (PIN: Profile tab; reward catalog: Store tab, parent
   view) rather than misusing propose_update/propose_event/any other tool to fake an action you can't actually take.
   Never invent a proposal for something none of your tools genuinely do. This includes "give/award X coins" said as
-  a direct, immediate grant with nothing to complete ("give Jas 10 coins for helping with the yard") — there is no
+  a direct, immediate grant with nothing to complete ("give Mia 10 coins for helping with the yard") — there is no
   tool that just hands out coins outright. Do NOT fake this with propose_quest (that always creates a NEW pending
   chore the kid has to claim/complete, which is not what a direct grant means and would be confusing since the task
   is already done). Say plainly that you can't grant coins directly from chat and a parent can adjust their balance
   from the Profile/Store tab, unless the user is actually describing a real chore to create going forward.
-- You have no way to directly message, notify, or speak to another family member outside this chat ("tell Jas I
-  love her", "let Cherry know practice moved") — there is no send-a-message tool. The only place a note actually
+- You have no way to directly message, notify, or speak to another family member outside this chat ("tell Mia I
+  love her", "let Ben know practice moved") — there is no send-a-message tool. The only place a note actually
   reaches someone is the optional 'note' field on propose_kid_request_action (goes to the kid whose request it is)
   or 'notes' on an event/chore (visible to whoever views that record, not a push notification). If asked to relay
   something with no such record to attach it to, say plainly you can't send messages to family members and suggest
   the Chat tab instead — never reply as if the message was actually delivered.
 - There is no tool to look up a family member's stored birthday or any other profile detail. If a request depends
-  on knowing one ("remind me a week before Cherry's birthday") and the user didn't state the actual date themselves
+  on knowing one ("remind me a week before Ben's birthday") and the user didn't state the actual date themselves
   in the message, ask for the date rather than guessing or inventing one.
 - General catch-all: if you genuinely have no tool that does what's being asked and none of the specific cases above
   covers it, say so plainly in one sentence rather than forcing the request into the nearest-sounding tool anyway —
@@ -1965,7 +2510,7 @@ than implying the approval itself carries a changed detail.
   the relevant tab or asking" rather than a made-up explanation stated as fact.
 - There is no "auto-approve" or standing-policy setting of any kind — every approve/decline/claim/complete/cancel is
   a one-off action on one specific item, each needing its own proposal and its own confirmation. If asked to set up
-  an ongoing policy ("auto-approve everything Jas submits from now on", "always approve her chores automatically"),
+  an ongoing policy ("auto-approve everything Mia submits from now on", "always approve her chores automatically"),
   say plainly that isn't something you can set up — there's no standing-approval feature — rather than pretending to
   turn one on or repeatedly approving things without being asked each time.
 themselves — same confirm-before-acting rule as every other propose_* tool.
@@ -1976,11 +2521,55 @@ I've left this unassigned — take a look below") rather than staying silent abo
 if the assignment worked. Same treatment for "_unresolvedHelperName" on a propose_event result — the accompanying/
 helping/driving person you tried to set couldn't be matched either, so the draft has no helper assigned; mention
 that too in your one-sentence reply rather than silently dropping it.
+${activePendingProposal
+  ? `ACTIVE PENDING DRAFT (ground truth, not something to infer from chat history): there is currently ONE
+unconfirmed proposal card still showing to the user — a "${activePendingProposal.kind}" with this exact data:
+${JSON.stringify(activePendingProposal.data)}. This is the definitive state of what's pending right now; if it
+disagrees with anything you think you remember from earlier in this conversation's text, THIS is correct. If the
+user's next message is a short instruction with no new subject named ("change the time", "make it 30 coins",
+"sure", "yes", "do it"), it almost certainly refers to THIS exact draft — never a different, unrelated real record
+that merely happens to match a search more literally.`
+  : `ACTIVE PENDING DRAFT: none right now — no proposal card is currently showing. If the user's next message is a
+short instruction like "yes"/"sure"/"change the time" with no subject named, do NOT claim or imply a card exists;
+either it answers a plain question you just asked, or you genuinely don't have enough context and should ask what
+they mean.`}
+If your OWN most recent turn was a refusal/decline (you said you can't help with a request, e.g. it was
+inappropriate, unsafe, or outside what you do), a vague filler reply from the user right after it — "ok", "oh
+great", "fine", "nvm", "cool", a laugh, or any other non-specific acknowledgment — is the user reacting to being
+turned down, NOT a request for you to do something else. Do NOT invent a new action, draft ANY proposal, or pick
+some unrelated item currently visible in this conversation's context (an in-flight chore mentioned earlier, a
+family member's name that came up, anything) and act on it — that would be fabricating a request nobody actually
+made (a real, live-reported bug: after refusing an inappropriate message, "Oh great" produced a completely
+unrequested propose_chore_action assigning a real chore to a real person). If a filler reply like this follows a
+refusal, just acknowledge briefly and ask what you can actually help with — call NO tool at all.
 A proposal card is only ever confirmed by the user tapping Confirm on the card itself, never by typing something in
-chat afterward — you have no "execute"/"confirm" tool, propose_* tools only ever draft a card. If the user replies to
-an already-shown proposal with something like "yeah do that", "do it", "confirm", or "yes", do NOT call the propose_*
-tool again (that would draft a duplicate card) and do NOT say or imply the action was performed — you cannot perform
-it. Reply briefly telling them to tap Confirm on the card above.
+chat afterward — you have no "execute"/"confirm" tool, propose_* tools only ever draft a card. This rule applies
+ONLY when a propose_* tool call has ALREADY happened earlier in this same conversation and its card is genuinely
+still showing (i.e. your most recent turn that produced a __proposal result). A short affirmative — "yes", "sure",
+"do it", "go ahead", "confirm" — does NOT automatically mean this: check what you yourself most recently ASKED
+before assuming it's answering a proposal card. If your last message asked a plain yes/no QUESTION that was not a
+proposal card (e.g. "can I use your location to help with that?", "want me to check X?", "should I look that up?"),
+a "sure"/"yes" answers THAT question — proceed with what you asked permission for (e.g. actually call get_location),
+never respond as if a nonexistent card needs confirming. Only when the user's "yes"/"do it"/"confirm" is actually
+responding to an already-drafted proposal card, do NOT call the propose_* tool again (that would draft a duplicate)
+and do NOT say or imply the action was performed — you cannot perform it; reply briefly telling them to tap Confirm
+on the card above. Never claim a card exists or say "tap Confirm on the card above" when no propose_* tool has
+actually been called yet in this conversation — that is a fabricated instruction pointing at nothing (a real,
+live-reported bug: replying this way to a plain "sure" answering a location-consent question, with no card ever
+shown).
+REVISING a just-drafted, still-unconfirmed card is a THIRD case, distinct from both of the above — do not confuse it
+with "confirming" it. When your most recent turn drafted a proposal (any __proposal result) and the user's very next
+message is a short instruction that only makes sense as changing THAT draft — "change the time", "make it 30
+coins instead", "move it to Saturday", "actually make that 6pm", with no new title/subject named — call the SAME
+propose_* tool again, for the SAME item, with every field from the original draft carried over unchanged except the
+one(s) the user just asked to change. This REPLACES the pending card with a corrected one; it is not a duplicate,
+since the first draft was never confirmed/created. Do NOT call propose_update or any other "modify an existing
+record" tool for this — propose_update only searches for and edits records that already exist in the family's real
+data, and the draft you just proposed does NOT exist yet (a live-reported bug: "change the time" right after
+drafting a brand-new "Date with wife" event instead searched the database and matched a completely unrelated
+pre-existing chore, changing the wrong thing's time entirely). Stay on the exact subject of the card you just
+showed — never let a short, subject-less follow-up like this drift onto some other unrelated item just because that
+other item happens to match a tool's search more literally.
 CRITICAL: after calling a propose_* tool, your reply text must be SHORT — one sentence like "Here's an idea for
 tonight — take a look below" or "I've drafted a few options below, pick one that sounds good." The app already shows
 a rich visual card with the full title/ingredients/details right under your message, so NEVER restate the dish name,
@@ -1988,7 +2577,27 @@ ingredient list, or any other proposal field in your reply text — that just du
 After a tool call returns, you MUST respond with a normal natural-language sentence summarizing the result for a
 person to read. NEVER reply with raw JSON, a code block, or the tool's output verbatim — always turn it into plain
 conversational text (e.g. "Nothing on the calendar today" or "${viewerAlias} has 2 chores approved and 1 pending").
-Keep answers concise and conversational, not a bulleted data dump unless the user asked for a list.
+Keep answers concise and conversational for a SINGLE item or a plain yes/no/status answer (e.g. "Nothing on the
+calendar today," "${viewerAlias} has 2 chores approved and 1 pending"). But the moment your answer covers TWO OR
+MORE distinct events/chores/requests/rewards, structure it as a real list — one line per item — rather than running
+them together in one sentence separated by commas: a parent scanning "what's going on this week" needs to see each
+item's date/time and who it's for at a glance, not parse a run-on clause. Use this exact shape per line: "• [Title]
+— [day/date], [time if it has one] ([who it's for / who's helping or driving], if relevant)" — e.g. "• Soccer
+practice — today at 4:00 PM (Sam driving)" or "• Take out trash — due tomorrow (Mia)." A single lead-in sentence
+before the list is fine ("Here's what's coming up:") but never restate the SAME items again in prose after the
+list — the list is the answer, don't duplicate it.
+A title stored in the family's own data can itself contain stray date/time words a parent typed or a past request
+accidentally baked in (e.g. a title literally reading "Pickup Maya from Soccer get 4 PM tomorrow") — this is real,
+messy user data, not something to silently trust as accurate. Never just tack the tool's actual date/time field onto
+a title like that verbatim if the title's own wording already states or implies a conflicting day/time — that
+produces a contradictory line like "...tomorrow — today, 4:00 PM" which is confusing, not helpful. If a title's own
+wording plainly conflicts with the real date/time field you're given, prefer showing the ACTUAL scheduled date/time
+(the tool's real data, not text baked into a title) and drop or ignore the conflicting fragment from the title
+rather than displaying both side by side unreconciled.
+This list-vs-prose distinction applies to get_schedule/get_quests/get_chore_history/
+get_rewards/get_kid_requests results specifically (multi-event/chore/request answers) — it does NOT apply to a
+propose_* confirmation reply, which stays the short one-sentence-only style described above, since the card itself
+already shows the structured detail there.
 CRITICAL: answer ONLY what the user actually asked in their most recent message this turn — never append unrelated
 information, unrequested status updates, or content about a different topic (e.g. the user asks to set a reminder
 for an event -> your reply is about that reminder ONLY, never a summary of chores, other events, or anything else
@@ -2008,7 +2617,7 @@ message ran long or wasn't cleanly separated into sentences.
 After your reply sentence, if there's a genuinely useful, SPECIFIC next thing the user might want to do based on
 what you just told them (not a generic "anything else?"), add one final line starting with exactly "SUGGESTIONS:"
 followed by a JSON array of 1-3 short strings (each under 40 characters, phrased as something the user would say to
-you, e.g. "Remind Praveena about it" or "Add a follow-up chore"). This applies to EVERY turn where it's genuinely
+you, e.g. "Remind Alex about it" or "Add a follow-up chore"). This applies to EVERY turn where it's genuinely
 warranted — not just the first message of a conversation. Reassess fresh on every single reply whether a real
 follow-up makes sense given what you JUST said, the same way a person naturally keeps offering a next step through
 an ongoing conversation, not only when it starts. Only include this line when a real, specific follow-up makes
@@ -2017,22 +2626,52 @@ chore, suggesting reassigning a similar one; after "what's on today" with a conf
 mentioning a still-pending kid request (ride/help/permission/etc.), suggesting approving or declining it; after
 answering "what's overdue," suggesting a reminder or reassignment for one of the overdue items; after confirming
 any propose_* action, suggesting a natural next action on the same topic (e.g. after adding one event, suggesting
-a reminder for it; after approving one chore, suggesting checking on another pending one). Do not under-use this —
-most turns that name a specific event/chore/request/reward DO have a real next action available via one of your own
-tools; err toward including the line when a genuine one exists rather than skipping it by default. Skip it only for
-truly closed-ended replies with no natural next action (a plain "yes"/greeting/acknowledgment, or a definitive fact
-with nothing left to act on), and never suggest something you can't actually help with via one of your own tools.
+a reminder for it; after approving one chore, suggesting checking on another pending one). A long weekend or named
+holiday shown in the precomputed list above landing within the next couple weeks is ALSO a genuinely useful,
+SPECIFIC thing to proactively surface even when the user didn't ask about it directly — e.g. after any calendar
+question where the answer touches that date range, a pill like "Plan something for the long weekend" or "Any ideas
+for Thanksgiving?" is a real next step, not a generic one, as long as you're not fabricating a place to go (per the
+holiday/itinerary instructions above — the pill invites the user to start that planning with you, it never names a
+specific place itself). Do not under-use this — treat including a SUGGESTIONS line as the DEFAULT for every reply, and skipping it as the
+rare exception you have to actively justify, not the other way around. Almost every reply names or touches SOME
+real thing (an event, a chore, a reward, a family member, a date) that has a genuine next action available via one
+of your own tools — actively look for it rather than waiting for an obviously perfect fit before bothering. Only
+skip the line for the narrow set of turns with truly nothing to build on: a bare greeting/acknowledgment/sign-off
+("ok", "thanks", "hi"), a plain yes/no answer to a factual question with no related action possible, or a refusal
+where nothing legitimate follows. If you catch yourself NOT including one, double-check first whether that's really
+because no real follow-up exists, or just because it took a little more thought to find — this was a real,
+live-reported gap (inconsistent coverage) worth actively correcting against, not a coin flip to make casually each
+turn. Never suggest something you can't actually help with via one of your own tools, and never suggest a fabricated
+place/business per the holiday instructions above.
 This line is stripped before the user sees your reply — it is a separate machine-readable signal, not part of the
 conversation text, so never reference "the suggestions below" in your actual reply sentence.`;
 
     const aliasedMessage = realNameToAlias(aliasMap, allMembers ?? [], body.message);
 
+    // Real bug (live-reported: assigning a chore to one kid produced a
+    // confirmation card for a DIFFERENT kid, and the model then insisted
+    // the two were the same person): ask_cube_messages stores every turn's
+    // RAW real-name text (see the insert below, and the tool-result insert
+    // further down) — only THIS turn's fresh user message was ever aliased
+    // before reaching the model. Prior turns were replayed here verbatim,
+    // so a multi-turn conversation handed the model a mix of real names
+    // (from history) and "Person A"/"Person B" aliases (for the current
+    // turn and any tool results) for the SAME people, with nothing tying
+    // them together — the model had no way to know "Jas" from two turns
+    // ago and "Person C" just now were the same family member, and every
+    // real name it saw in history bypassed the alias privacy boundary
+    // entirely. Every replayed turn's text must go through the identical
+    // alias substitution the current turn's message gets, so the whole
+    // conversation the model sees is consistently in alias-space.
+    const aliasHistoryText = (text: string | null | undefined) =>
+      typeof text === 'string' ? realNameToAlias(aliasMap, allMembers ?? [], text) : text;
+
     const messages: any[] = [
       { role: 'system', content: systemPrompt },
       ...trimmedPriorMessages.map(m => {
         if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, name: m.tool_name, content: m.content };
-        if (m.tool_calls) return { role: 'assistant', content: m.content, tool_calls: m.tool_calls };
-        return { role: m.role, content: m.content };
+        if (m.tool_calls) return { role: 'assistant', content: aliasHistoryText(m.content), tool_calls: m.tool_calls };
+        return { role: m.role, content: aliasHistoryText(m.content) };
       }),
       { role: 'user', content: aliasedMessage },
     ];
@@ -2060,10 +2699,70 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // that call never returned.
     let calledAnyToolThisTurn = false;
     const groundedTitles = new Set<string>(); // every title string a grounding tool actually returned this turn
+    // Real live QA bug: when the model fails to produce a real reply (raw
+    // JSON, or empty) the fallback below used to show ONLY groundedTitles —
+    // a flat comma-run of event names with no date/time/who, since titles
+    // alone were all it ever collected. get_schedule's own events already
+    // carry date/time/helper/driver — keep the actual event objects too
+    // (deduped by title+date), so even the last-resort fallback can read
+    // like a real schedule instead of a bare name list.
+    const groundedEventDetails = new Map<string, { title: string; date: string; time: string | null; helper: string | null; driver: string | null }>();
+    let modelUsedThisRequest: 'gemini' | 'deepseek' = 'gemini'; // updated each round; last round's value wins
+    // QA-only diagnostic (see callGemini's own comment) — never part of the
+    // real client response type, __meta is already QA-only.
+    let lastDebugEmptyReason: any = undefined;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const reply = await callModel(messages, TOOLS);
+      const { reply, modelUsed } = await callModel(messages, TOOLS);
+      modelUsedThisRequest = modelUsed;
       if (!reply) return json({ error: 'Model returned no reply' }, 502);
+      if ((reply as any)._debugEmptyReason) lastDebugEmptyReason = (reply as any)._debugEmptyReason;
+
+      // Real live QA bug, TWO shapes: (1) for a terse data question ("what's
+      // overdue?", "is anything late?"), the model sometimes returns a
+      // completely EMPTY reply with no tool_calls at all on round 0 — it
+      // never even attempts to look anything up. (2) Separately, and more
+      // commonly (confirmed live: "what's going on this week?" and similar
+      // broad questions were failing this way on effectively every call), the
+      // model calls tools successfully, gets real data back, and THEN its
+      // final summarizing reply comes back empty — this used to fall straight
+      // through to the raw-JSON/empty-reply safety net below and ship a bare
+      // comma-joined title list as if that were a real answer. Both shapes
+      // get the same bounded nudge-and-retry treatment now (not just the
+      // pre-tool-call case) — only skipped once we're on the very last
+      // available round, so it can never loop forever.
+      if (!reply.tool_calls?.length && !reply.content?.trim()) {
+        const emptyRoundsSoFar = messages.filter(m =>
+          m.role === 'user' && typeof m.content === 'string' &&
+          (m.content.startsWith('(Your last response was empty') || m.content.startsWith('(Your reply was empty')),
+        ).length;
+        if (round >= MAX_TOOL_ROUNDS - 1) {
+          // Out of rounds to nudge in — fall through and let the normal
+          // "couldn't pull that up"/grounded-fallback further down handle
+          // it, rather than spending the very last round on another nudge
+          // that can't be acted on.
+          finalText = reply.content ?? '';
+          break;
+        }
+        // Must be a 'user'-role message, not 'system' — callGemini only ever
+        // reads the FIRST role:'system' message in the array (systemInstruction
+        // is set once from messages.find(...)) and strips every other
+        // role:'system' entry out of the conversation history entirely, so a
+        // second system-role nudge here would silently vanish and this would
+        // just resend the identical request forever until MAX_TOOL_ROUNDS.
+        const nudge = calledAnyToolThisTurn
+          ? '(Your reply was empty. You already have real tool results above from this turn — write an actual natural-language sentence summarizing them now, do not call any tool again and do not leave your reply blank.)'
+          : emptyRoundsSoFar === 0
+            ? '(Your last response was empty — you must actually call the relevant tool(s), e.g. get_schedule and/or get_quests for an overdue/status question, before replying. Call the tool(s) now.)'
+            : '(Your response was empty again. You MUST make an actual function/tool call now — not text — to answer my question. If my question could be about either the calendar or chores, call BOTH get_schedule and get_quests this turn rather than replying with nothing.)';
+        // Push the model's own empty turn into history too (not just the
+        // nudge) so Gemini sees a normal alternating assistant/user
+        // structure rather than two raw user turns stacked back to back —
+        // an empty content turn is still a valid turn to round-trip.
+        messages.push({ role: 'assistant', content: reply.content ?? '' });
+        messages.push({ role: 'user', content: nudge });
+        continue;
+      }
 
       if (reply.tool_calls?.length) {
         messages.push({ role: 'assistant', content: reply.content ?? null, tool_calls: reply.tool_calls });
@@ -2084,14 +2783,34 @@ conversation text, so never reference "the suggestions below" in your actual rep
           // Grounding: only the read-side lookups (never the propose_*
           // tools, which return a drafted title the model itself invented on
           // purpose) count as "real data the model is now allowed to cite."
-          const GROUNDING_TOOLS = new Set(['get_schedule', 'get_schedule_conflicts', 'get_free_time', 'get_quests', 'get_chore_history', 'get_rewards', 'get_kid_requests']);
+          const GROUNDING_TOOLS = new Set(['get_schedule', 'get_schedule_conflicts', 'get_free_time', 'get_quests', 'get_chore_history', 'get_rewards', 'get_kid_requests', 'get_family_members']);
           if (GROUNDING_TOOLS.has(call.function.name)) {
             calledAnyToolThisTurn = true;
             const r: any = result;
-            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests].filter(Array.isArray);
+            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests, r.members].filter(Array.isArray);
+            // Real live QA bug: this only ever read item.title/item.person,
+            // but the actual tool result shapes name people under several
+            // OTHER keys — get_schedule's events use driver/helper,
+            // get_quests'/get_chore_history's rows use assignedTo, kid
+            // requests use from — none of those were ever added to
+            // groundedTitles, so a perfectly real name the model cited
+            // straight from this turn's own tool result (e.g. an
+            // assignee's alias in a chores answer) got flagged as
+            // "unverified" and the whole reply was wrongly discarded.
             for (const pool of pools) for (const item of pool) {
-              if (typeof item?.title === 'string') groundedTitles.add(item.title);
-              if (typeof item?.person === 'string') groundedTitles.add(item.person);
+              for (const key of ['title', 'person', 'assignedTo', 'driver', 'helper', 'from', 'currentAssignee']) {
+                if (typeof item?.[key] === 'string') groundedTitles.add(item[key]);
+              }
+            }
+            if (Array.isArray(r.events)) {
+              for (const ev of r.events) {
+                if (typeof ev?.title === 'string' && typeof ev?.date === 'string') {
+                  groundedEventDetails.set(`${ev.title}|${ev.date}`, {
+                    title: ev.title, date: ev.date, time: ev.time ?? null,
+                    helper: ev.helper ?? null, driver: ev.driver ?? null,
+                  });
+                }
+              }
             }
           }
 
@@ -2145,11 +2864,49 @@ conversation text, so never reference "the suggestions below" in your actual rep
 
     // Safety net: if the model ignored the system prompt and echoed a raw
     // tool payload back as its answer, don't ship that to the chat UI.
+    // Real live QA bug: this fallback used to say "Here's what I found —
+    // let me know if you'd like more detail" even when NO tool was ever
+    // called this turn (finalText came back empty on round 0, no
+    // tool_calls at all) — the exact hollow, content-free phrasing the
+    // system prompt explicitly forbids the model itself from producing,
+    // except here it was OUR OWN fallback code saying it instead. Now the
+    // fallback text depends on what actually happened this turn: if a
+    // grounding tool really was called, name that plainly rather than
+    // implying unnamed findings exist; if nothing was called and there's no
+    // proposal either, say we don't have an answer yet instead of claiming
+    // one was found.
     const looksLikeRawJson = /^\s*[{[]/.test(finalText) && (() => { try { JSON.parse(finalText); return true; } catch { return false; } })();
     if (looksLikeRawJson || !finalText.trim()) {
-      finalText = proposals.length
-        ? (proposals.length > 1 ? "I've drafted a few options below — take a look and pick one." : "I've drafted that for you — take a look below and confirm if it looks right.")
-        : "Here's what I found — let me know if you'd like more detail.";
+      if (proposals.length) {
+        finalText = proposals.length > 1
+          ? "I've drafted a few options below — take a look and pick one."
+          : "I've drafted that for you — take a look below and confirm if it looks right.";
+      } else if (calledAnyToolThisTurn) {
+        // Live-reported: this fallback's flat "Here's what I found: title,
+        // title, title" comma-run gives no date/time/who — the model
+        // normally supplies that structure itself, but this path only
+        // fires when the model FAILED to (raw JSON or empty reply), so it's
+        // the one place titles alone were ever shown with no other context.
+        // groundedEventDetails carries the real date/time/helper info
+        // already returned by get_schedule this turn (populated alongside
+        // groundedTitles below) — use it here so even the last-resort
+        // fallback reads as a real schedule, one line per item, not a
+        // run-on list of names with no way to tell what's happening when.
+        if (groundedEventDetails.size) {
+          const lines = [...groundedEventDetails.values()].slice(0, 8).map(ev => {
+            const when = ev.time ? `${formatFriendlyDate(ev.date)} at ${formatFriendlyTime(ev.time)}` : formatFriendlyDate(ev.date);
+            const who = ev.helper ? ` (${ev.helper} helping)` : ev.driver ? ` (${ev.driver} driving)` : '';
+            return `• ${ev.title} — ${when}${who}`;
+          });
+          finalText = `Here's what's on:\n${lines.join('\n')}`;
+        } else if (groundedTitles.size) {
+          finalText = `Here's what I found: ${[...groundedTitles].slice(0, 8).join(', ')}.`;
+        } else {
+          finalText = "Nothing looks relevant right now — I checked but didn't find anything to report.";
+        }
+      } else {
+        finalText = "I wasn't able to pull that up just now — could you ask again?";
+      }
       followUps = []; // any suggestions the model returned were tied to the discarded reply text, not this fallback
     }
 
@@ -2165,7 +2922,19 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // user's own words back is fine — the risk is the model supplying a NEW
     // specific-sounding title on its own).
     if (calledAnyToolThisTurn) {
-      const cited = [...finalText.matchAll(/\*\*([^*]{3,60})\*\*|"([^"]{3,60})"/g)].map(m => m[1] ?? m[2]);
+      // Real live QA bug (DeepSeek-primary regression testing): DeepSeek's
+      // own formatting habits bold SECTION HEADERS ("**Calendar events
+      // already past today:**", "**Chores past their due date:**") in an
+      // otherwise perfectly correct, fully-grounded answer — Gemini didn't
+      // happen to format multi-item answers this way, so this check was
+      // only ever tuned against Gemini's own citation style and never
+      // anticipated a bolded LABEL rather than a bolded ITEM NAME. A bolded
+      // phrase ending in ':' is a section header, never a claimed title —
+      // exclude it from the citation check entirely rather than treating it
+      // as an invented, ungrounded fact.
+      const cited = [...finalText.matchAll(/\*\*([^*]{3,60})\*\*|"([^"]{3,60})"/g)]
+        .map(m => m[1] ?? m[2])
+        .filter(c => !c.trim().endsWith(':'));
       const userLower = aliasedMessage.toLowerCase();
       const unverified = cited.filter(c =>
         !groundedTitles.has(c) &&
@@ -2174,12 +2943,27 @@ conversation text, so never reference "the suggestions below" in your actual rep
       );
       if (unverified.length) {
         console.warn('[ask-cube] grounding check failed — reply cited unverified title(s), discarding', { unverified, groundedTitles: [...groundedTitles] });
+        // QA-only diagnostic (see the similar _debugEmptyReason field) — the
+        // ORIGINAL text before discarding, needed to actually see what a
+        // model quoted/bolded that tripped this check (DeepSeek's formatting
+        // habits were suspected to differ from Gemini's and false-trigger
+        // this Gemini-tuned heuristic; this is the only way to confirm it
+        // without direct log access). Never part of the real client type.
+        (lastDebugEmptyReason ??= {}).groundingDiscard = { originalText: finalText, unverified, groundedTitles: [...groundedTitles] };
         finalText = "I don't actually have that on file right now — I may have mixed up an earlier answer. Could you ask again so I can look it up fresh?";
         proposals = []; // never ship a proposal built on the same ungrounded turn either
         followUps = []; // ...nor a follow-up suggestion referencing the same discarded, possibly-invented content
       }
     }
     finalText = aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, finalText));
+    // Real live QA bug: followUps (the SUGGESTIONS pills) are generated by
+    // the model in the exact same alias space as its main reply text
+    // ("Person D", not "Jas") but only finalText was ever run through the
+    // alias->real-name de-alias pass above — every follow-up chip shipped
+    // a raw, unresolved "Person D"/"Place A" straight to the real user,
+    // the same privacy/correctness gap as the earlier cross-turn-history
+    // leak, just in a different field of the response.
+    followUps = followUps.map(f => aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, f)));
 
     // Only keep refs for chores the reply text actually names — a turn can
     // call get_quests broadly (e.g. "what's overdue") and pull back rows
@@ -2199,9 +2983,13 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // is genuinely what the client receives, useful for confirming the
     // alias round-trip actually worked and didn't leave a stray "Person A"
     // in the visible reply.
-    console.log('[ask-cube] response', { conversationId, answer: finalText, proposalCount: proposals.length });
+    console.log('[ask-cube] response', { conversationId, answer: finalText, proposalCount: proposals.length, modelUsed: modelUsedThisRequest });
 
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps });
+    // __meta is a QA/debugging-only field (which model actually answered
+    // this turn — see callModel's own comment) — never part of the app's
+    // real AskCubeResponse type (lib/askCubeService.ts), so a normal client
+    // simply ignores the extra key; only the QA harness reads it.
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

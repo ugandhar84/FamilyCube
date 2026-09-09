@@ -1266,8 +1266,13 @@ function ChoreCardRow({
                 accessibilityLabel={`Can't do this: ${q.title}`}
                 accessibilityHint="Give a reason and put this chore back up for grabs"
               >
+                {/* Shortened visible label ("Can't do this" -> "Can't do")
+                    so this pill sits comfortably beside Mark Done on one
+                    row at kiosk scale [live-requested: "just use short
+                    name"] — accessibilityLabel above keeps the full,
+                    unambiguous phrasing for a screen reader. */}
                 <Text style={[s.taskActionText, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>
-                  Can't do this
+                  Can't do
                 </Text>
               </Pressable>
             )}
@@ -1383,14 +1388,15 @@ const s = StyleSheet.create({
   // Flat mock-matched task row (ChoreCardRow) — mock's own .task/.task-
   // check/.task-title/.task-meta/.badge/.task-coin/.task-action shapes.
   taskRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: KIOSK_SPACE.sm,
+    flexDirection: 'row', alignItems: 'stretch', gap: KIOSK_SPACE.sm,
     paddingVertical: KIOSK_SPACE.sm,
   },
   taskCheck: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 2,
     alignItems: 'center', justifyContent: 'center', marginTop: 2,
+    alignSelf: 'flex-start',
   },
-  taskMain: { flex: 1, minWidth: 0, gap: 2 },
+  taskMain: { flex: 1, minWidth: 0, gap: 2, alignSelf: 'flex-start' },
   taskTitle: { fontSize: CHORE_CARD_TYPO.title, fontWeight: '800' },
   taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: 1 },
   taskMeta: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '600' },
@@ -1405,7 +1411,13 @@ const s = StyleSheet.create({
   // ChoreCardRow's own comment on why these no longer sit as three loose
   // row siblings (coin amount + up to two buttons never fit on one line
   // at kiosk scale without wrapping oddly).
-  taskRightCol: { alignItems: 'flex-end', gap: KIOSK_SPACE.xs, flexShrink: 0 },
+  // justifyContent: 'center' — was top-aligned only, so a row whose
+  // title/meta column ran taller than the stacked action button(s) left
+  // visible dead space below the button(s) instead of the pair sitting
+  // centered against the row's real height [live-reported: "if i have
+  // multiple buttons we should fit nicely to avoid crating more wihte
+  // spce on the cards"].
+  taskRightCol: { alignItems: 'flex-end', justifyContent: 'center', gap: KIOSK_SPACE.xs, flexShrink: 0 },
   choreHelper: { fontSize: CHORE_CARD_TYPO.meta, fontWeight: '700', marginTop: 2 },
   // The parent's decline note on a needs-redo chore — real information the
   // mock's own read-only reference has no field for; kept, not dropped.
@@ -1419,14 +1431,19 @@ const s = StyleSheet.create({
   // the button's own accent (Mark Done -> sage, Can't do this -> danger)
   // only when pressed, matching .task-action:hover's real behavior as
   // closely as a touch UI (no hover state) can.
-  // Column, not row — two buttons side by side in this narrow right-hand
-  // column wrapped awkwardly at kiosk scale; stacked instead, matching
-  // the coin amount right above them.
-  taskActionPair: { gap: KIOSK_SPACE.xs },
+  // Side by side, not stacked — two smaller compact pills fit one row
+  // fine at kiosk scale and read as a natural pair instead of leaving
+  // dead space below a stacked, over-tall pair [live-reported: "done,
+  // can't do these are 2 bugs and put in the same row with small buttons
+  // right?"]. minHeight dropped from KIOSK_HIT.min (this pair sits beside
+  // the already-large tap-target checkbox to their left, so these don't
+  // need to independently meet the same floor) and padding tightened so
+  // both fit comfortably on one line without wrapping.
+  taskActionPair: { flexDirection: 'row', gap: KIOSK_SPACE.xs },
   taskActionBtn: {
-    minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.md,
+    minHeight: 32, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch',
+    alignItems: 'center', justifyContent: 'center',
   },
   taskActionText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800' },
   // Smaller than a real actionable taskActionBtn — a passive status

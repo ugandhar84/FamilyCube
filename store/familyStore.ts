@@ -93,8 +93,18 @@ export type MemberRole = 'parent' | 'kid' | 'teen' | 'senior';
 // alone drives RBAC everywhere else in the app. Kept to the straightforward
 // 2-parent / up-to-4-grandparent household this app actually models —
 // no blended-family variants unless real usage asks for them.
+// Live-requested: "I think I should have a relationship as the husband and
+// wife in the profile options" — a parent could previously only be labeled
+// relative to the KIDS (Mother/Father), with no way to represent the
+// relationship BETWEEN the two parents themselves. AskFam's own
+// relationship-word resolution ("date my wife") depends on this real,
+// stored field — it had nothing to match against for a spousal word since
+// no such option ever existed here. `relationship` stays a single
+// free-text value (not multi-select), so a parent picks whichever label
+// matters more to them (e.g. "Wife") rather than both "Mother" and "Wife"
+// at once — a real, accepted tradeoff, not an oversight.
 export const RELATIONSHIPS_BY_ROLE: Record<MemberRole, string[]> = {
-  parent: ['Mother', 'Father'],
+  parent: ['Mother', 'Father', 'Wife', 'Husband', 'Spouse'],
   kid:    ['Daughter', 'Son'],
   teen:   ['Daughter', 'Son'],
   senior: ['Grandmother', 'Grandfather'],

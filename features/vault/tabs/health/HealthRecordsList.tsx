@@ -6,6 +6,7 @@ import {
 } from 'lucide-react-native';
 import { StatusPill, MemberAvatar, EmptyState } from '../shared';
 import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, encodeTakenEntry, formatDoseTime, medicationAdherenceHistory, fmtDateDisplay, DoseAdherence, groupHistoryByDay } from './types';
+import { fmtDate } from '@/lib/dates';
 import { hf, h } from './styles';
 
 const STATUS_META: Record<DoseAdherence['status'], { label: string; Icon: any }> = {
@@ -29,6 +30,7 @@ export default function HealthRecordsList({
   expandedId, setExpandedId,
   markTaken, toggleMedActive, deleteMed,
   toggleVax, deleteVax,
+  onEditMed, onEditVax,
   load,
   onOpenHistory,
 }: {
@@ -53,6 +55,13 @@ export default function HealthRecordsList({
   deleteMed: (id: string) => void;
   toggleVax: (vax: Vaccine) => void;
   deleteVax: (id: string) => void;
+  // Opens AddMedModal/AddVaxModal seeded with this record for editing
+  // [live-requested: "we should have vacc edit feature also once we add"]
+  // — optional so a caller that doesn't support editing (none currently,
+  // but matches onOpenHistory's own optional pattern) degrades to no tap
+  // action rather than a hard prop-type error.
+  onEditMed?: (med: Medication) => void;
+  onEditVax?: (vax: Vaccine) => void;
   load: () => void;
   // Kiosk overrides this to open its own side KioskFormDrawer instead of
   // this component's own bottom Modal — a phone bottom sheet doesn't fit
@@ -294,6 +303,12 @@ export default function HealthRecordsList({
                     </TouchableOpacity>
                     {!kidView && (
                       <>
+                        {onEditMed && (
+                          <TouchableOpacity onPress={() => onEditMed(med)}
+                            style={[h.actionBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>Edit</Text>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity onPress={() => toggleMedActive(med)}
                           style={[h.actionBtn, {
                             borderColor: med.is_active ? colors.danger + '60' : colors.success + '60',
@@ -323,7 +338,9 @@ export default function HealthRecordsList({
         : filteredVaxes.map(vax => {
           const mc = memberColor(vax.member_id);
           return (
-            <View key={vax.id} style={[h.medCard, {
+            <TouchableOpacity key={vax.id} activeOpacity={onEditVax ? 0.7 : 1}
+              onPress={() => onEditVax?.(vax)}
+              style={[h.medCard, {
               backgroundColor: isDark ? colors.card + 'CC' : colors.tealLight,
               borderColor: vax.done ? colors.teal + '60' : colors.border,
             }]}>
@@ -347,12 +364,12 @@ export default function HealthRecordsList({
                   <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                     <View style={h.detailRow}>
                       <Calendar size={11} color={colors.textTertiary} />
-                      <Text style={[h.detailText, { color: colors.textTertiary }]}>{vax.date}</Text>
+                      <Text style={[h.detailText, { color: colors.textTertiary }]}>{fmtDate(vax.date)}</Text>
                     </View>
                     {vax.next_due_date && (
                       <View style={h.detailRow}>
                         <Clock size={11} color={colors.amber} />
-                        <Text style={[h.detailText, { color: colors.amber }]}>Next: {vax.next_due_date}</Text>
+                        <Text style={[h.detailText, { color: colors.amber }]}>Next: {fmtDate(vax.next_due_date)}</Text>
                       </View>
                     )}
                     {vax.series_total > 1 && (
@@ -380,7 +397,7 @@ export default function HealthRecordsList({
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })
       )}

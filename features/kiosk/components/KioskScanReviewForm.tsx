@@ -47,11 +47,15 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator, TextInput, Modal,
 import { Camera, Image as ImageIcon, FileText, ScanLine, Syringe, X } from 'lucide-react-native';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '@/features/vault/usePrescriptionScanner';
 import { RedactStep } from '@/features/vault/tabs/health/RedactStep';
+import { ScanDateField } from '@/features/vault/tabs/health/ScanDateField';
 import { KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { KioskModalHost } from '../KioskActivityContext';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_RADIUS, KIOSK_TYPO, KIOSK_HIT } from '../kioskTheme';
 
+// prescribed_date/administered_date/next_due_date are rendered via
+// ScanDateField (real native date picker) below, not in these plain-text
+// lists [live-requested: "sorry need date picker"].
 const MED_FIELDS: [string, keyof ParsedMedication][] = [
   ['Medication name', 'name'], ['Dosage', 'dosage'], ['Frequency', 'frequency'],
   ['Duration', 'duration'], ['Instructions', 'instructions'],
@@ -59,7 +63,6 @@ const MED_FIELDS: [string, keyof ParsedMedication][] = [
 ];
 const VAX_FIELDS: [string, keyof ParsedVaccine][] = [
   ['Vaccine name', 'vaccine_name'], ['Manufacturer', 'manufacturer'], ['Lot number', 'lot_number'],
-  ['Date administered (YYYY-MM-DD)', 'administered_date'], ['Next due date (YYYY-MM-DD)', 'next_due_date'],
   ['Dose #', 'dose_number'], ['Total doses', 'total_doses'],
   ['Administered by', 'administered_by'], ['Site (e.g. Left arm)', 'site'],
 ];
@@ -85,12 +88,17 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
     clearPending, clearScan,
   } = usePrescriptionScanner();
 
-  const [reviewMed, setReviewMed] = useState<ParsedMedication | null>(null);
-  const [reviewVax, setReviewVax] = useState<ParsedVaccine | null>(null);
+  // One entry per medication/vaccine the scan found — was a single object
+  // each (only the first item on a multi-item document). Same fix as
+  // mobile's ScanReviewSheet.tsx [live-requested: "app is trying to add
+  // only one vaccine at a time" / "both mobile and kiosk"].
+  const [reviewMeds, setReviewMeds] = useState<(ParsedMedication & { skip?: boolean })[]>([]);
+  const [reviewVaxes, setReviewVaxes] = useState<(ParsedVaccine & { skip?: boolean })[]>([]);
   const [reviewDocType, setReviewDocType] = useState<'medication' | 'vaccine'>('medication');
   const [reviewMemberId, setReviewMemberId] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
 
   const accent = scanMode === 'vaccine' ? k.sage : k.danger;
 
@@ -108,33 +116,52 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
     if (!scanResult) return;
     const dt = scanResult.doc_type === 'vaccine' ? 'vaccine' : 'medication';
     setReviewDocType(dt);
-    if (scanResult.medication) setReviewMed({ ...scanResult.medication });
-    if (scanResult.vaccine) setReviewVax({ ...scanResult.vaccine });
+    setReviewMeds(scanResult.medications.map(m => ({ ...m })));
+    setReviewVaxes(scanResult.vaccines.map(v => ({ ...v })));
+    setSaveErrors({});
     setReviewMemberId(activeMemberId ?? '');
   }, [scanResult]);
 
   useEffect(() => {
     if (!visible) {
       clearScan();
-      setReviewMed(null); setReviewVax(null); setSaveError(null);
+      setReviewMeds([]); setReviewVaxes([]); setSaveError(null); setSaveErrors({});
     }
   }, [visible]);
 
   const handleClose = () => { clearScan(); onClose(); };
 
+  // Saves every non-skipped item for the active doc type — same batch-save
+  // pattern as ScanReviewSheet.tsx's own saveAllScanned, keeps going after
+  // a single item's failure instead of aborting the whole batch.
   const handleSave = async () => {
     if (!reviewMemberId) return;
     setSaving(true);
     setSaveError(null);
-    try {
-      if (reviewDocType === 'medication' && reviewMed) await onSaveMed(reviewMed, reviewMemberId);
-      else if (reviewDocType === 'vaccine' && reviewVax) await onSaveVax(reviewVax, reviewMemberId);
-      handleClose();
-    } catch (e: any) {
-      setSaveError(e?.message ?? 'Could not save. Please try again.');
-    } finally {
-      setSaving(false);
+    setSaveErrors({});
+    const items = reviewDocType === 'medication' ? reviewMeds : reviewVaxes;
+    const errors: Record<number, string> = {};
+    let savedCount = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.skip) continue;
+      try {
+        if (reviewDocType === 'medication') await onSaveMed(item as ParsedMedication, reviewMemberId);
+        else await onSaveVax(item as ParsedVaccine, reviewMemberId);
+        savedCount++;
+      } catch (e: any) {
+        errors[i] = e?.message ?? 'Could not save.';
+      }
     }
+    setSaving(false);
+    if (Object.keys(errors).length > 0) {
+      setSaveErrors(errors);
+      setSaveError(savedCount > 0
+        ? `${savedCount} of ${items.length} saved. Please retry or skip the ones marked below.`
+        : 'Could not save. Please try again.');
+      return;
+    }
+    handleClose();
   };
 
   const input = kioskInputStyle(k);
@@ -254,7 +281,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
                     {scanResult?.additionalItemsFound && (
                       <View style={{ borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, backgroundColor: k.goldSoft, borderColor: k.goldEdge, padding: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.sm }}>
                         <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.gold, fontWeight: '600' }}>
-                          {scanResult.additionalItemsNote ?? 'This document listed more than one item — only one was extracted here.'}
+                          {scanResult.additionalItemsNote ?? 'This document had more items than could be confidently read — some may be missing below.'}
                         </Text>
                       </View>
                     )}
@@ -277,38 +304,117 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
                       </View>
                     )}
 
-                    {reviewDocType === 'medication' && reviewMed && (
-                      <View style={{ gap: KIOSK_SPACE.sm }}>
-                        {MED_FIELDS.map(([label, field]) => (
-                          <View key={field}>
-                            <KioskFieldLabel k={k}>{label.toUpperCase()}</KioskFieldLabel>
-                            <TextInput
-                              value={String(reviewMed[field] ?? '')}
-                              onChangeText={v => setReviewMed(prev => prev ? { ...prev, [field]: v } : prev)}
-                              placeholder="—" placeholderTextColor={k.textFaint}
-                              style={[input, { borderColor: field === 'name' && !reviewMed.name ? k.danger : input.borderColor }]}
+                    {/* One card per extracted item — was a single reviewMed/
+                        reviewVax object (only the FIRST item on a multi-item
+                        document) [live-requested: "app is trying to add
+                        only one vaccine at a time" / "both mobile and
+                        kiosek"]. Stacked, matching mobile's own
+                        ScanReviewSheet.tsx layout choice. */}
+                    {reviewDocType === 'medication' && reviewMeds.map((med, idx) => (
+                      <View key={idx} style={{
+                        borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm,
+                        borderColor: med.skip ? k.cardBorder : accent + '60',
+                        backgroundColor: k.well, opacity: med.skip ? 0.55 : 1,
+                        marginBottom: KIOSK_SPACE.sm,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: KIOSK_TYPO.label, fontWeight: '900', color: accent }}>
+                            {reviewMeds.length > 1 ? `MEDICATION ${idx + 1} OF ${reviewMeds.length}` : 'MEDICATION'}
+                          </Text>
+                          {reviewMeds.length > 1 && (
+                            <Pressable
+                              onPress={() => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, skip: !m.skip } : m))}
+                              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: k.card }}>
+                              <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: k.textMuted }}>
+                                {med.skip ? 'Skipped — tap to include' : 'Skip this one'}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                        {saveErrors[idx] && (
+                          <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: k.danger }}>{saveErrors[idx]}</Text>
+                        )}
+                        {!med.skip && (
+                          <View style={{ gap: KIOSK_SPACE.sm }}>
+                            {MED_FIELDS.map(([label, field]) => (
+                              <View key={field}>
+                                <KioskFieldLabel k={k}>{label.toUpperCase()}</KioskFieldLabel>
+                                <TextInput
+                                  value={String(med[field] ?? '')}
+                                  onChangeText={v => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, [field]: v } : m))}
+                                  placeholder="—" placeholderTextColor={k.textFaint}
+                                  style={[input, { borderColor: field === 'name' && !med.name ? k.danger : input.borderColor }]}
+                                />
+                              </View>
+                            ))}
+                            <ScanDateField
+                              label="Prescribed date" value={med.prescribed_date}
+                              onChange={v => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, prescribed_date: v } : m))}
+                              colors={colors} isDark={isDark} accent={accent}
                             />
                           </View>
-                        ))}
+                        )}
                       </View>
-                    )}
+                    ))}
 
-                    {reviewDocType === 'vaccine' && reviewVax && (
-                      <View style={{ gap: KIOSK_SPACE.sm }}>
-                        {VAX_FIELDS.map(([label, field]) => (
-                          <View key={field}>
-                            <KioskFieldLabel k={k}>{label.toUpperCase()}</KioskFieldLabel>
-                            <TextInput
-                              value={reviewVax[field] != null ? String(reviewVax[field]) : ''}
-                              onChangeText={v => setReviewVax(prev => prev ? { ...prev, [field]: (v || null) as any } : prev)}
-                              placeholder="—" placeholderTextColor={k.textFaint}
-                              keyboardType={(field === 'dose_number' || field === 'total_doses') ? 'numeric' : 'default'}
-                              style={[input, { borderColor: field === 'vaccine_name' && !reviewVax.vaccine_name ? k.danger : input.borderColor }]}
-                            />
+                    {reviewDocType === 'vaccine' && reviewVaxes.map((vax, idx) => (
+                      <View key={idx} style={{
+                        borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm,
+                        borderColor: vax.skip ? k.cardBorder : accent + '60',
+                        backgroundColor: k.well, opacity: vax.skip ? 0.55 : 1,
+                        marginBottom: KIOSK_SPACE.sm,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: KIOSK_TYPO.label, fontWeight: '900', color: accent }}>
+                            {reviewVaxes.length > 1 ? `VACCINE ${idx + 1} OF ${reviewVaxes.length}` : 'VACCINE'}
+                          </Text>
+                          {reviewVaxes.length > 1 && (
+                            <Pressable
+                              onPress={() => setReviewVaxes(prev => prev.map((v, i) => i === idx ? { ...v, skip: !v.skip } : v))}
+                              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: k.card }}>
+                              <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: k.textMuted }}>
+                                {vax.skip ? 'Skipped — tap to include' : 'Skip this one'}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                        {saveErrors[idx] && (
+                          <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: k.danger }}>{saveErrors[idx]}</Text>
+                        )}
+                        {!vax.skip && (
+                          <View style={{ gap: KIOSK_SPACE.sm }}>
+                            {VAX_FIELDS.map(([label, field]) => (
+                              <View key={field}>
+                                <KioskFieldLabel k={k}>{label.toUpperCase()}</KioskFieldLabel>
+                                <TextInput
+                                  value={vax[field] != null ? String(vax[field]) : ''}
+                                  onChangeText={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, [field]: (v || null) as any } : vv))}
+                                  placeholder="—" placeholderTextColor={k.textFaint}
+                                  keyboardType={(field === 'dose_number' || field === 'total_doses') ? 'numeric' : 'default'}
+                                  style={[input, { borderColor: field === 'vaccine_name' && !vax.vaccine_name ? k.danger : input.borderColor }]}
+                                />
+                              </View>
+                            ))}
+                            <View style={{ flexDirection: 'row', gap: KIOSK_SPACE.sm }}>
+                              <View style={{ flex: 1 }}>
+                                <ScanDateField
+                                  label="Date administered" value={vax.administered_date}
+                                  onChange={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, administered_date: v } : vv))}
+                                  colors={colors} isDark={isDark} accent={accent}
+                                />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <ScanDateField
+                                  label="Next due date" value={vax.next_due_date}
+                                  onChange={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, next_due_date: v } : vv))}
+                                  colors={colors} isDark={isDark} accent={k.gold}
+                                />
+                              </View>
+                            </View>
                           </View>
-                        ))}
+                        )}
                       </View>
-                    )}
+                    ))}
                   </>
                 )}
 
@@ -331,7 +437,12 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
                         <ActivityIndicator size="small" color={k.onAccent} />
                       ) : (
                         <Text style={[s.submitText, { color: canSubmit ? k.onAccent : k.textFaint }]} numberOfLines={1}>
-                          Save {reviewDocType === 'vaccine' ? 'Vaccine' : 'Medication'}
+                          {(() => {
+                            const items = reviewDocType === 'vaccine' ? reviewVaxes : reviewMeds;
+                            const count = items.filter(i => !i.skip).length;
+                            const kind = reviewDocType === 'vaccine' ? 'Vaccine' : 'Medication';
+                            return count > 1 ? `Save All ${kind}s (${count})` : `Save ${kind}`;
+                          })()}
                         </Text>
                       )}
                     </Pressable>

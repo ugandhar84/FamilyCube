@@ -26,10 +26,24 @@ const STEP_TITLES: Record<Step, string> = {
   supply: 'Prescriber & Supply', alert: 'Missed-Dose Alert',
 };
 
-export default function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
+// Same LOCAL-midnight parse as AddVaxModal's own copy — a plain
+// `new Date(str)` on a YYYY-MM-DD string parses as UTC midnight, which can
+// silently land on the previous day in a negative-UTC-offset timezone.
+function parseLocalDateStr(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d) : new Date();
+}
+
+export default function AddMedModal({ visible, onClose, onSave, members, colors, isDark, editing }: {
   visible: boolean; onClose: () => void;
-  onSave: (memberId: string, form: MedForm) => Promise<void>;
+  // memberId + form as before for a new record; medId passed through
+  // unchanged so the caller's onSave can tell a create from an update
+  // apart (undefined = create).
+  onSave: (memberId: string, form: MedForm, medId?: string) => Promise<void>;
   members: any[]; colors: any; isDark: boolean;
+  // Seeds the form from an existing saved medication instead of BLANK_MED
+  // — same edit-in-place pattern as AddVaxModal's own `editing` prop.
+  editing?: { medId?: string; memberId: string; form: MedForm; refillDate?: string | null };
 }) {
   const [form, setForm]               = useState<MedForm>(BLANK_MED);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
@@ -60,7 +74,22 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
       .then(({ data }) => { if (data) setGlobalSuggestions(data as any); });
   }, [visible]);
 
-  useEffect(() => { if (visible) setStepIndex(0); }, [visible]);
+  // Seed from `editing` every time the sheet opens with one, instead of
+  // BLANK_MED — mirrors BLANK_MED's own field set exactly so nothing is
+  // silently dropped switching between add and edit.
+  useEffect(() => {
+    if (!visible) return;
+    setStepIndex(0);
+    if (editing) {
+      setForm(editing.form);
+      setSelectedMember(editing.memberId);
+      setRefillDate(editing.refillDate ? parseLocalDateStr(editing.refillDate) : null);
+    } else {
+      setForm(BLANK_MED);
+      setSelectedMember(members[0]?.id ?? '');
+      setRefillDate(null);
+    }
+  }, [visible, editing]);
 
   const set = (k: keyof MedForm, v: string) => setForm(f => ({ ...f, [k]: v }));
   const setReminderTime = (idx: number, time: string) =>
@@ -131,7 +160,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
       return;
     }
     setSaving(true);
-    await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' });
+    await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' }, editing?.medId);
     setSaving(false);
     reset();
     onClose();
@@ -187,7 +216,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
               )}
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-                  {stepIndex === 0 ? 'Add Medication' : STEP_TITLES[step]}
+                  {stepIndex === 0 ? (editing ? 'Edit Medication' : 'Add Medication') : STEP_TITLES[step]}
                 </Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
                   Step {stepIndex + 1} of {STEPS.length}

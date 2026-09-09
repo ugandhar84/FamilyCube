@@ -55,6 +55,12 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showMedModal, setShowMedModal] = useState(false);
   const [showVaxModal, setShowVaxModal] = useState(false);
+  // Seeds AddMedModal/AddVaxModal into edit mode for an existing saved
+  // record instead of a blank new one [live-requested: "we should have
+  // vacc edit feature also once we add" — there was previously no way to
+  // edit a saved medication/vaccine at all, only add or delete].
+  const [editMed, setEditMed] = useState<Medication | null>(null);
+  const [editVax, setEditVax] = useState<Vaccine | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [localHealthTab, setLocalHealthTab] = useState<'meds' | 'vax'>('meds');
   const effectiveHealthTab = healthTab ?? localHealthTab;
@@ -324,7 +330,55 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     );
   };
 
-  const addMed = async (memberId: string, form: MedForm) => {
+  // Editing an existing record only patches its own fields — does NOT
+  // touch/regenerate the recurring reminder events addMed's own insert
+  // path creates below, since re-running that on every edit would create
+  // a growing pile of duplicate reminder series for the same medication
+  // rather than adjusting the ones that already exist. A future pass could
+  // reconcile those too; out of scope for "let me fix a typo in the dosage."
+  const updateMed = async (medId: string, memberId: string, form: MedForm) => {
+    const { error } = await supabase.from('family_medications').update({
+      member_id: memberId,
+      modified_by: activeMember?.id ?? null,
+      name: form.name.trim(),
+      dosage: form.dosage.trim(),
+      dosage_unit: form.dosage_unit,
+      frequency: form.frequency,
+      frequency_times: form.reminder_times.length ? form.reminder_times : ['08:00'],
+      category: form.category,
+      prescribing_doctor: form.prescribing_doctor || null,
+      pharmacy: form.pharmacy || null,
+      refill_date: form.refill_date || null,
+      pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
+      instructions: form.instructions || null,
+      is_ongoing: !form.end_date,
+      start_date: form.start_date || today(),
+      end_date: form.end_date || null,
+      escalation_enabled: form.escalation_enabled,
+      escalation_after_min: parseInt(form.escalation_after_min) || 60,
+      updated_at: new Date().toISOString(),
+    }).eq('id', medId);
+    if (!error) {
+      setMeds(prev => prev.map(m => m.id === medId ? {
+        ...m, member_id: memberId, name: form.name.trim(), dosage: form.dosage.trim(),
+        dosage_unit: form.dosage_unit, frequency: form.frequency,
+        frequency_times: form.reminder_times.length ? form.reminder_times : ['08:00'],
+        category: form.category, prescribing_doctor: form.prescribing_doctor || null,
+        pharmacy: form.pharmacy || null, refill_date: form.refill_date || null,
+        pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
+        instructions: form.instructions || null, is_ongoing: !form.end_date,
+        start_date: form.start_date || today(), end_date: form.end_date || null,
+        escalation_enabled: form.escalation_enabled,
+        escalation_after_min: parseInt(form.escalation_after_min) || 60,
+      } : m));
+      showToast('Medication updated');
+    } else {
+      throw error;
+    }
+  };
+
+  const addMed = async (memberId: string, form: MedForm, medId?: string) => {
+    if (medId) return updateMed(medId, memberId, form);
     const times = form.reminder_times.length ? form.reminder_times : ['08:00'];
     const { data } = await supabase.from('family_medications').insert({
       family_id: familyId,
@@ -404,7 +458,37 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     }
   };
 
-  const addVax = async (memberId: string, form: VaxForm) => {
+  const updateVax = async (vaxId: string, memberId: string, form: VaxForm) => {
+    const { error } = await supabase.from('family_vaccines').update({
+      member_id: memberId,
+      modified_by: activeMember?.id ?? null,
+      title: form.title.trim(),
+      vaccine_type: form.vaccine_type || null,
+      date: form.date,
+      next_due_date: form.next_due_date || null,
+      series_current: parseInt(form.series_current) || 1,
+      series_total: parseInt(form.series_total) || 1,
+      administered_by: form.administered_by || null,
+      location: form.location || null,
+      notes: form.notes || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', vaxId);
+    if (!error) {
+      setVaxes(prev => prev.map(v => v.id === vaxId ? {
+        ...v, member_id: memberId, title: form.title.trim(), vaccine_type: form.vaccine_type || null,
+        date: form.date, next_due_date: form.next_due_date || null,
+        series_current: parseInt(form.series_current) || 1, series_total: parseInt(form.series_total) || 1,
+        administered_by: form.administered_by || null, location: form.location || null,
+        notes: form.notes || null,
+      } : v));
+      showToast('Vaccine updated');
+    } else {
+      throw error;
+    }
+  };
+
+  const addVax = async (memberId: string, form: VaxForm, vaxId?: string) => {
+    if (vaxId) return updateVax(vaxId, memberId, form);
     const { data } = await supabase.from('family_vaccines').insert({
       family_id: familyId,
       member_id: memberId,
@@ -820,15 +904,47 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         deleteMed={deleteMed}
         toggleVax={toggleVax}
         deleteVax={deleteVax}
+        onEditMed={setEditMed}
+        onEditVax={setEditVax}
         load={load}
         onOpenHistory={onOpenHistory}
       />
 
       {/* Modals */}
-      <AddMedModal visible={showMedModal} onClose={() => setShowMedModal(false)}
-        onSave={addMed} members={members} colors={colors} isDark={isDark} />
-      <AddVaxModal visible={showVaxModal} onClose={() => setShowVaxModal(false)}
-        onSave={addVax} members={members} colors={colors} isDark={isDark} />
+      <AddMedModal
+        visible={showMedModal || !!editMed}
+        onClose={() => { setShowMedModal(false); setEditMed(null); }}
+        onSave={addMed} members={members} colors={colors} isDark={isDark}
+        editing={editMed ? {
+          medId: editMed.id, memberId: editMed.member_id, refillDate: editMed.refill_date,
+          form: {
+            name: editMed.name, dosage: editMed.dosage, dosage_unit: editMed.dosage_unit,
+            frequency: editMed.frequency, category: editMed.category,
+            prescribing_doctor: editMed.prescribing_doctor ?? '', pharmacy: editMed.pharmacy ?? '',
+            refill_date: editMed.refill_date ?? '', pills_remaining: editMed.pills_remaining != null ? String(editMed.pills_remaining) : '',
+            instructions: editMed.instructions ?? '', notes: editMed.notes ?? '',
+            escalation_enabled: editMed.escalation_enabled, escalation_after_min: String(editMed.escalation_after_min),
+            start_date: editMed.start_date ?? today(), end_date: editMed.end_date ?? '',
+            reminder_times: editMed.frequency_times?.length ? editMed.frequency_times : ['08:00'],
+            alert_call: false,
+          },
+        } : undefined}
+      />
+      <AddVaxModal
+        visible={showVaxModal || !!editVax}
+        onClose={() => { setShowVaxModal(false); setEditVax(null); }}
+        onSave={addVax} members={members} colors={colors} isDark={isDark}
+        editing={editVax ? {
+          vaxId: editVax.id, memberId: editVax.member_id,
+          form: {
+            title: editVax.title, vaccine_type: editVax.vaccine_type ?? '', date: editVax.date,
+            next_due_date: editVax.next_due_date ?? '',
+            series_current: String(editVax.series_current), series_total: String(editVax.series_total),
+            administered_by: editVax.administered_by ?? '', location: editVax.location ?? '',
+            notes: editVax.notes ?? '',
+          },
+        } : undefined}
+      />
 
       {/* ── Scan Rx / Vaccine — 2-page bottom sheet (full-screen during redact) ── */}
       <ScanReviewSheet

@@ -11,6 +11,7 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../../usePrescriptionScanner';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { ScanDateField } from './ScanDateField';
 
 export interface ScanReviewSheetHandle {
   open: (mode: 'rx' | 'vaccine') => void;
@@ -44,11 +45,21 @@ export default function ScanReviewSheet({
 
   // Report scanning state up so the parent's AI banner can show its spinner
   useEffect(() => { onScanningChange?.(scanning); }, [scanning]);
-  const [reviewMed, setReviewMed] = useState<ParsedMedication | null>(null);
-  const [reviewVax, setReviewVax] = useState<ParsedVaccine | null>(null);
+  // One entry per medication/vaccine the scan found — was a single object
+  // each, only ever the first item on a multi-item document (live-
+  // requested: "app is trying to add only one vaccine at a time"). `skip`
+  // lets the user exclude one entry (e.g. a duplicate, or one they'd
+  // rather add manually) from "Save All" without discarding the whole scan.
+  const [reviewMeds, setReviewMeds] = useState<(ParsedMedication & { skip?: boolean })[]>([]);
+  const [reviewVaxes, setReviewVaxes] = useState<(ParsedVaccine & { skip?: boolean })[]>([]);
   const [reviewDocType, setReviewDocType] = useState<'medication' | 'vaccine'>('medication');
   const [reviewMemberId, setReviewMemberId] = useState('');
   const [rxSaving, setRxSaving] = useState(false);
+  // Per-item save outcome, keyed by array index — surfaces which specific
+  // item failed instead of one generic alert covering the whole batch, so
+  // a mid-batch failure (item 2 of 5) doesn't leave the user guessing
+  // which of the 5 actually made it into their health records.
+  const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
 
   const [scanPage, setScanPage] = useState<1 | 2>(1);
 
@@ -173,8 +184,9 @@ export default function ScanReviewSheet({
     if (!scanResult) return;
     const dt = scanResult.doc_type === 'vaccine' ? 'vaccine' : 'medication';
     setReviewDocType(dt);
-    if (scanResult.medication) setReviewMed({ ...scanResult.medication });
-    if (scanResult.vaccine)    setReviewVax({ ...scanResult.vaccine });
+    setReviewMeds(scanResult.medications.map(m => ({ ...m })));
+    setReviewVaxes(scanResult.vaccines.map(v => ({ ...v })));
+    setSaveErrors({});
     setReviewMemberId(activeMemberId ?? '');
     setScanPage(2);
   }, [scanResult]);
@@ -191,6 +203,9 @@ export default function ScanReviewSheet({
     setRedactBoxesByImage([]);
     setCurrentBox(null);
     setActiveRedactIdx(0);
+    setReviewMeds([]);
+    setReviewVaxes([]);
+    setSaveErrors({});
   };
 
   // Reset redact boxes when image count changes (new image added)
@@ -204,30 +219,44 @@ export default function ScanReviewSheet({
     if (pendingImages.length > 0) setActiveRedactIdx(pendingImages.length - 1);
   }, [pendingImages.length]);
 
-  const saveScannedMed = async () => {
-    if (!reviewMed || !reviewMemberId) return;
+  // Saves every non-skipped item for the active doc type, one at a time —
+  // onSaveMed/onSaveVax are already single-item inserts (unchanged), so a
+  // multi-item scan is just N real inserts instead of one, same as if the
+  // user had manually added each one via AddMedModal/AddVaxModal. Keeps
+  // going after a single item's failure rather than aborting the whole
+  // batch, so e.g. items 1 and 3 of 3 still save even if item 2 fails —
+  // the alternative (all-or-nothing) would force a re-scan and re-entry
+  // of items that already saved successfully.
+  const saveAllScanned = async () => {
+    if (!reviewMemberId) return;
     setRxSaving(true);
-    try {
-      await onSaveMed(reviewMed, reviewMemberId);
-    } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Could not save medication.');
-      throw e;
-    } finally {
-      setRxSaving(false);
+    setSaveErrors({});
+    const items = reviewDocType === 'medication' ? reviewMeds : reviewVaxes;
+    const errors: Record<number, string> = {};
+    let savedCount = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.skip) continue;
+      try {
+        if (reviewDocType === 'medication') await onSaveMed(item as ParsedMedication, reviewMemberId);
+        else await onSaveVax(item as ParsedVaccine, reviewMemberId);
+        savedCount++;
+      } catch (e: any) {
+        errors[i] = e.message ?? 'Could not save.';
+      }
     }
-  };
-
-  const saveScannedVax = async () => {
-    if (!reviewVax || !reviewMemberId) return;
-    setRxSaving(true);
-    try {
-      await onSaveVax(reviewVax, reviewMemberId);
-    } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Could not save vaccine record.');
-      throw e;
-    } finally {
-      setRxSaving(false);
+    setRxSaving(false);
+    if (Object.keys(errors).length > 0) {
+      setSaveErrors(errors);
+      // Some items may have saved fine even though others failed — closing
+      // the sheet now would lose the failed ones' data with no way back,
+      // so stay open showing which entries need attention instead.
+      if (savedCount > 0) {
+        Alert.alert('Partially saved', `${savedCount} of ${items.length} saved. Please retry or discard the ones marked below.`);
+      }
+      return false;
     }
+    return true;
   };
 
   return (
@@ -623,7 +652,7 @@ export default function ScanReviewSheet({
                     flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                     <AlertCircle size={14} color={colors.amber} style={{ marginTop: 1 }} />
                     <Text style={{ fontSize: 12, color: colors.amber, flex: 1, fontWeight: '600' }}>
-                      {scanResult.additionalItemsNote ?? 'This document listed more than one item — only one was extracted here.'}
+                      {scanResult.additionalItemsNote ?? 'This document had more items than could be confidently read — some may be missing below.'}
                     </Text>
                   </View>
                 )}
@@ -693,10 +722,39 @@ export default function ScanReviewSheet({
                 {/* ── Divider ── */}
                 <View style={{ height: 1, backgroundColor: isDark ? '#222' : '#EBEBEB' }} />
 
-                {/* ── Medication fields ── */}
-                {reviewDocType === 'medication' && reviewMed && (
-                  <View style={{ gap: 12 }}>
-                    {([
+                {/* ── Medication cards — one per extracted item, was a
+                    single reviewMed object (only the FIRST medication on a
+                    multi-item document, e.g. a discharge summary listing
+                    several drugs) [live-requested: "app is trying to add
+                    only one vaccine at a time" — same underlying schema
+                    gap for medications]. Stacked, not tabbed, so every
+                    item's fields stay visible while scrolling instead of
+                    hiding behind a tab switch. ── */}
+                {reviewDocType === 'medication' && reviewMeds.map((med, idx) => (
+                  <View key={idx} style={{
+                    borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 12,
+                    borderColor: med.skip ? (isDark ? '#333' : '#E5E7EB') : colors.accent + '40',
+                    backgroundColor: isDark ? '#161622' : '#FAFAFF',
+                    opacity: med.skip ? 0.55 : 1,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '900', color: colors.accent }}>
+                        MEDICATION {reviewMeds.length > 1 ? `${idx + 1} OF ${reviewMeds.length}` : ''}
+                      </Text>
+                      {reviewMeds.length > 1 && (
+                        <TouchableOpacity
+                          onPress={() => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, skip: !m.skip } : m))}
+                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? '#222' : '#EEE' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666' }}>
+                            {med.skip ? 'Skipped — tap to include' : 'Skip this one'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {saveErrors[idx] && (
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>{saveErrors[idx]}</Text>
+                    )}
+                    {!med.skip && ([
                       ['Medication name *', 'name'],
                       ['Dosage', 'dosage'],
                       ['Frequency', 'frequency'],
@@ -706,18 +764,19 @@ export default function ScanReviewSheet({
                       ['Pharmacy', 'pharmacy'],
                       ['Notes', 'notes'],
                     ] as [string, keyof ParsedMedication][]).map(([label, field]) => (
+                      field === 'prescribed_date' ? null : (
                       <View key={field}>
                         <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#666' : '#999', marginBottom: 4, letterSpacing: 0.4 }}>
                           {label.toUpperCase()}
                         </Text>
                         <TextInput
-                          value={String(reviewMed[field] ?? '')}
-                          onChangeText={v => setReviewMed(prev => prev ? { ...prev, [field]: v } : prev)}
+                          value={String(med[field] ?? '')}
+                          onChangeText={v => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, [field]: v } : m))}
                           placeholder={`—`}
                           placeholderTextColor={isDark ? '#444' : '#ccc'}
                           style={{
                             borderWidth: 1.5,
-                            borderColor: field === 'name' && !reviewMed.name
+                            borderColor: field === 'name' && !med.name
                               ? colors.danger + '80'
                               : (isDark ? '#2A2A3E' : '#E5E7EB'),
                             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
@@ -727,19 +786,48 @@ export default function ScanReviewSheet({
                           }}
                         />
                       </View>
+                      )
                     ))}
+                    {!med.skip && (
+                      <ScanDateField
+                        label="Prescribed date" value={med.prescribed_date}
+                        onChange={v => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, prescribed_date: v } : m))}
+                        colors={colors} isDark={isDark} accent={colors.accent}
+                      />
+                    )}
                   </View>
-                )}
+                ))}
 
-                {/* ── Vaccine fields ── */}
-                {reviewDocType === 'vaccine' && reviewVax && (
-                  <View style={{ gap: 12 }}>
-                    {([
+                {/* ── Vaccine cards — same stacked-per-item pattern as
+                    medications above. ── */}
+                {reviewDocType === 'vaccine' && reviewVaxes.map((vax, idx) => (
+                  <View key={idx} style={{
+                    borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 12,
+                    borderColor: vax.skip ? (isDark ? '#333' : '#E5E7EB') : colors.teal + '40',
+                    backgroundColor: isDark ? '#0F1F1A' : '#F5FBF9',
+                    opacity: vax.skip ? 0.55 : 1,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '900', color: colors.teal }}>
+                        VACCINE {reviewVaxes.length > 1 ? `${idx + 1} OF ${reviewVaxes.length}` : ''}
+                      </Text>
+                      {reviewVaxes.length > 1 && (
+                        <TouchableOpacity
+                          onPress={() => setReviewVaxes(prev => prev.map((v, i) => i === idx ? { ...v, skip: !v.skip } : v))}
+                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? '#222' : '#EEE' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666' }}>
+                            {vax.skip ? 'Skipped — tap to include' : 'Skip this one'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {saveErrors[idx] && (
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>{saveErrors[idx]}</Text>
+                    )}
+                    {!vax.skip && ([
                       ['Vaccine name *', 'vaccine_name'],
                       ['Manufacturer', 'manufacturer'],
                       ['Lot number', 'lot_number'],
-                      ['Date administered (YYYY-MM-DD)', 'administered_date'],
-                      ['Next due date (YYYY-MM-DD)', 'next_due_date'],
                       ['Dose #', 'dose_number'],
                       ['Total doses', 'total_doses'],
                       ['Administered by', 'administered_by'],
@@ -750,14 +838,14 @@ export default function ScanReviewSheet({
                           {label.toUpperCase()}
                         </Text>
                         <TextInput
-                          value={reviewVax[field] != null ? String(reviewVax[field]) : ''}
-                          onChangeText={v => setReviewVax(prev => prev ? { ...prev, [field]: v || null } : prev)}
+                          value={vax[field] != null ? String(vax[field]) : ''}
+                          onChangeText={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, [field]: (v || null) as any } : vv))}
                           placeholder="—"
                           placeholderTextColor={isDark ? '#444' : '#ccc'}
                           keyboardType={['dose_number', 'total_doses'].includes(field as string) ? 'numeric' : 'default'}
                           style={{
                             borderWidth: 1.5,
-                            borderColor: field === 'vaccine_name' && !reviewVax.vaccine_name
+                            borderColor: field === 'vaccine_name' && !vax.vaccine_name
                               ? colors.danger + '80'
                               : (isDark ? '#2A2A3E' : '#E5E7EB'),
                             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
@@ -768,8 +856,26 @@ export default function ScanReviewSheet({
                         />
                       </View>
                     ))}
+                    {!vax.skip && (
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <ScanDateField
+                            label="Date administered" value={vax.administered_date}
+                            onChange={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, administered_date: v } : vv))}
+                            colors={colors} isDark={isDark} accent={colors.teal}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ScanDateField
+                            label="Next due date" value={vax.next_due_date}
+                            onChange={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, next_due_date: v } : vv))}
+                            colors={colors} isDark={isDark} accent={colors.amber}
+                          />
+                        </View>
+                      </View>
+                    )}
                   </View>
-                )}
+                ))}
 
                 {/* ── Save / Discard ── */}
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
@@ -784,11 +890,8 @@ export default function ScanReviewSheet({
                   <TouchableOpacity
                     disabled={rxSaving || !reviewMemberId}
                     onPress={async () => {
-                      try {
-                        if (reviewDocType === 'medication') await saveScannedMed();
-                        else await saveScannedVax();
-                        closeScanSheet();
-                      } catch { /* error already shown via Alert */ }
+                      const ok = await saveAllScanned();
+                      if (ok) closeScanSheet();
                     }}
                     style={{
                       flex: 2, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
@@ -802,7 +905,12 @@ export default function ScanReviewSheet({
                           fontWeight: '900', fontSize: 14,
                           color: !reviewMemberId ? (isDark ? '#666' : '#aaa') : '#fff',
                         }}>
-                          Save {reviewDocType === 'vaccine' ? 'Vaccine' : 'Medication'}
+                          {(() => {
+                            const items = reviewDocType === 'vaccine' ? reviewVaxes : reviewMeds;
+                            const count = items.filter(i => !i.skip).length;
+                            const kind = reviewDocType === 'vaccine' ? 'Vaccine' : 'Medication';
+                            return count > 1 ? `Save All ${kind}s (${count})` : `Save ${kind}`;
+                          })()}
                         </Text>}
                   </TouchableOpacity>
                 </View>

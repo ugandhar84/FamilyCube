@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from '@/lib/supabase';
 
 export interface ParsedMedication {
@@ -119,9 +120,33 @@ export function usePrescriptionScanner() {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       if (!asset.base64) { setScanError('Could not read image data. Please try again.'); return; }
+      // Was: trusted asset.mimeType (falling back to 'image/jpeg' when
+      // absent) alongside the raw base64 straight from the picker. On iOS,
+      // expo-image-picker has several known code paths (particularly on
+      // iPad, and/or a live HEIC camera capture) where the returned base64
+      // is still the ORIGINAL file bytes (e.g. genuinely HEIC) while
+      // asset.mimeType comes back undefined or wrongly reports 'jpeg' —
+      // see expo/expo#35714, expo/expo#43790. Gemini's vision API validates
+      // the declared mimeType against the actual byte signature, so a
+      // mislabeled HEIC-as-JPEG image is rejected outright with "Unable to
+      // process input image" — live-reported: happened consistently on an
+      // iPad (both the primary AND identical retry failed the same way,
+      // ruling out transient flakiness) while the same flow worked fine on
+      // iPhone, exactly the device-specific split this class of bug causes.
+      // Re-encoding through expo-image-manipulator with no-op actions and
+      // an explicit JPEG SaveFormat guarantees the bytes sent to the AI are
+      // real, verified JPEG regardless of what the OS/picker returned.
+      let base64 = asset.base64;
+      let mimeType = 'image/jpeg';
+      try {
+        const reEncoded = await manipulateAsync(asset.uri, [], { base64: true, format: SaveFormat.JPEG, compress: 0.85 });
+        if (reEncoded.base64) base64 = reEncoded.base64;
+      } catch (e: any) {
+        console.warn('[usePrescriptionScanner] JPEG re-encode failed, using picker base64 as-is:', e?.message);
+      }
       setPendingImages(prev => {
         if (prev.length >= MAX_PHOTOS) return prev; // cap at 3
-        return [...prev, { base64: asset.base64!, mimeType: asset.mimeType ?? 'image/jpeg' }];
+        return [...prev, { base64: base64!, mimeType }];
       });
     } catch (err: any) {
       setScanError(err.message ?? 'Could not open camera. Please try again.');

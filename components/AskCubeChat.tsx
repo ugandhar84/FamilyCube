@@ -55,7 +55,15 @@ function formatConversationTimestamp(iso: string): string {
   return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${time}`;
 }
 
-type ProposalStatus = 'pending' | 'created' | 'discarded';
+// 'superseded' is a discarded variant applied automatically (never by the
+// user) when a later proposal targets the same record — e.g. the model
+// re-calling propose_update to fold in a reassignment after the reminder
+// was already drafted. Rendered identically to 'discarded' (see the
+// `discarded={status === 'discarded' || status === 'superseded'}` below)
+// so the stale card visibly resolves instead of sitting there pending and
+// tappable forever alongside its replacement (user-reported: two
+// near-identical "Update draft" cards stacking up for one edit).
+type ProposalStatus = 'pending' | 'created' | 'discarded' | 'superseded';
 
 interface ChatMessage {
   id: string;
@@ -344,12 +352,40 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // reducing actual latency, which is still an improvement over the
       // answer just popping in all at once.
       const proposals = res.proposals ?? [];
-      setMessages(prev => [...prev, {
-        id: msgId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
-        proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
-        chores: res.chores ?? [],
-        followUps: res.followUps ?? [],
-      }]);
+      // A record a new update_event/update_chore proposal targets — used
+      // below to auto-supersede any still-pending EARLIER proposal for the
+      // SAME record, so a revision (e.g. "who should I reassign it to?"
+      // folded into a follow-up propose_update call) resolves the old
+      // draft card instead of leaving it pending forever next to the new
+      // one (see the ProposalStatus 'superseded' comment above).
+      const newTargetIds = new Set(
+        proposals
+          .filter(p => p.kind === 'update_event' || p.kind === 'update_chore')
+          .map(p => p.data?.eventId ?? p.data?.choreId)
+          .filter(Boolean),
+      );
+      setMessages(prev => {
+        const withSuperseded = newTargetIds.size === 0 ? prev : prev.map(m => {
+          if (!m.proposals || !m.proposalStatuses) return m;
+          let changed = false;
+          const nextStatuses = m.proposalStatuses.map((s, i) => {
+            const p = m.proposals![i];
+            if (s !== 'pending' || (p.kind !== 'update_event' && p.kind !== 'update_chore')) return s;
+            const targetId = p.data?.eventId ?? p.data?.choreId;
+            if (targetId && newTargetIds.has(targetId)) { changed = true; return 'superseded' as ProposalStatus; }
+            return s;
+          });
+          if (!changed) return m;
+          askCube.setProposalStatus(m.id, nextStatuses).catch(() => {});
+          return { ...m, proposalStatuses: nextStatuses };
+        });
+        return [...withSuperseded, {
+          id: msgId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
+          proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
+          chores: res.chores ?? [],
+          followUps: res.followUps ?? [],
+        }];
+      });
       setSending(false);
       let i = 0;
       const step = Math.max(1, Math.ceil(fullText.length / 60));
@@ -695,13 +731,31 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // partial-patch path (toRowPartial) documents. Never spread the whole
       // proposal — that would risk overwriting fields the user never asked
       // to touch with the found record's OTHER unrelated current values.
-      updateEvent(d.eventId, d.changes ?? {});
+      // Awaited + caught (previously fire-and-forget) — updateEvent/
+      // updateChore are real async DB writes and can throw (e.g. an RLS
+      // denial, or the record having been deleted between the draft and
+      // the confirm tap), which previously vanished silently while the
+      // toast + "created" state below still fired unconditionally,
+      // telling the user the update happened when it hadn't.
+      try {
+        await updateEvent(d.eventId, d.changes ?? {});
+      } catch (e: any) {
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-updateerr`, role: 'assistant',
+          content: "Sorry, that event update didn't go through — please try again from the Schedule tab.", timestamp: new Date().toISOString() }]);
+        return;
+      }
     } else if (proposal.kind === 'update_chore') {
       // Same discipline for chores — updateChore's own DB patch builder
       // (store/choreStore.ts) already only writes columns present in the
       // updates object via `in` checks, so passing exactly d.changes here
       // (nothing more) keeps every untouched field on the real row intact.
-      updateChore(d.choreId, d.changes ?? {});
+      try {
+        await updateChore(d.choreId, d.changes ?? {});
+      } catch (e: any) {
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-updateerr`, role: 'assistant',
+          content: "Sorry, that chore update didn't go through — please try again from the Chores tab.", timestamp: new Date().toISOString() }]);
+        return;
+      }
     } else if (proposal.kind === 'chore_action') {
       // Each branch calls the exact same store action the corresponding
       // manual UI control does (Claim button, Approve/Decline in
@@ -918,7 +972,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                                 members={members}
                                 compact={isMealGrid}
                                 added={status === 'created'}
-                                discarded={status === 'discarded'}
+                                discarded={status === 'discarded' || status === 'superseded'}
                                 onDiscard={() => discardProposal(m.id, i)}
                                 onCreate={() => createProposal(m.id, i, p)}
                                 onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}

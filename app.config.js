@@ -135,7 +135,17 @@ const config = {
   },
   web: {
     bundler: "metro",
-    output: "static",
+    // Was "static" — makes Expo Router SSR-prerender every route to HTML
+    // via expo-router/node/render.js on every `expo start`, which crashes
+    // (Supabase's AsyncStorage-backed auth client touches `window` during
+    // init, undefined in that Node SSR context) and takes down the whole
+    // Metro process, not just the web target — killing the iOS dev session
+    // too (live-reported: tapping Scan now on iOS appeared to break, but
+    // the actual cause was this background web SSR crash landing moments
+    // later and killing the shared dev server). This app is iOS-only (see
+    // CLAUDE.md) and never ships to web; "single" (plain SPA bundle, no
+    // SSR prerender step) avoids the crash entirely.
+    output: "single",
     favicon: "./assets/favicon.png",
   },
   plugins: [

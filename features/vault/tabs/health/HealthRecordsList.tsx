@@ -1,11 +1,18 @@
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import {
   Pill, Syringe, Trash2, Check, Clock, ChevronDown, ChevronUp,
-  User, Calendar, AlertCircle, RefreshCw,
+  User, Calendar, AlertCircle, RefreshCw, History, X, XCircle,
 } from 'lucide-react-native';
 import { StatusPill, MemberAvatar, EmptyState } from '../shared';
-import { Medication, Vaccine, FREQ_LABELS, getCatColors, today } from './types';
+import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, encodeTakenEntry, formatDoseTime, medicationAdherenceHistory, fmtDateDisplay, DoseAdherence, groupHistoryByDay } from './types';
 import { hf, h } from './styles';
+
+const STATUS_META: Record<DoseAdherence['status'], { label: string; Icon: any }> = {
+  taken: { label: 'Taken', Icon: Check },
+  missed: { label: 'Missed', Icon: XCircle },
+  upcoming: { label: 'Upcoming', Icon: Clock },
+};
 
 export default function HealthRecordsList({
   colors, isDark, kidView,
@@ -23,6 +30,7 @@ export default function HealthRecordsList({
   markTaken, toggleMedActive, deleteMed,
   toggleVax, deleteVax,
   load,
+  onOpenHistory,
 }: {
   colors: any; isDark: boolean; kidView: boolean;
   meds: Medication[]; vaxes: Vaccine[];
@@ -40,14 +48,28 @@ export default function HealthRecordsList({
   memberName: (id: string) => string; memberColor: (id: string) => string;
   isOverdue: (med: Medication) => boolean;
   expandedId: string | null; setExpandedId: (id: string | null) => void;
-  markTaken: (med: Medication) => void;
+  markTaken: (med: Medication, time: string | null) => void;
   toggleMedActive: (med: Medication) => void;
   deleteMed: (id: string) => void;
   toggleVax: (vax: Vaccine) => void;
   deleteVax: (id: string) => void;
   load: () => void;
+  // Kiosk overrides this to open its own side KioskFormDrawer instead of
+  // this component's own bottom Modal — a phone bottom sheet doesn't fit
+  // kiosk's wall-display shell, same reason the Find page's location
+  // history got its own kiosk-native drawer shell around the identical
+  // real data [live-requested: "show that history side bar"]. Mobile
+  // (HealthTab.tsx's real screen) never passes this, so its own Modal
+  // below is completely unchanged there.
+  onOpenHistory?: (med: Medication) => void;
 }) {
   const catColors = getCatColors(colors);
+  // Which medication's adherence-history drawer is open, if any — real
+  // taken/missed/upcoming log built from taken_dates via
+  // medicationAdherenceHistory() [live-requested: "we must show the
+  // active medication history like day and take and missing.."].
+  const [historyMed, setHistoryMed] = useState<Medication | null>(null);
+  const historyDays = historyMed ? groupHistoryByDay(medicationAdherenceHistory(historyMed)) : [];
   return (
     <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
       {/* Flat — no card shell/title/tab-switcher here; "Health & Records"
@@ -160,8 +182,10 @@ export default function HealthRecordsList({
                       {med.dosage} {med.dosage_unit} · {FREQ_LABELS[med.frequency] ?? med.frequency}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                      {/* Avatar only — the name was redundant next to it
+                          [live-requested: "we dont need the name right just
+                          need the avtar on the card"]. */}
                       <MemberAvatar name={memberName(med.member_id)} color={mc} size={20} />
-                      <Text style={{ fontSize: 11, color: colors.textTertiary }}>{memberName(med.member_id)}</Text>
                       <StatusPill
                         label={med.category}
                         color={catColor}
@@ -225,19 +249,48 @@ export default function HealthRecordsList({
                   </View>
 
                   {/* Action buttons */}
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    {/* Kids can mark taken; parents/seniors get all controls */}
-                    <TouchableOpacity onPress={() => markTaken(med)}
-                      style={[h.actionBtn, {
-                        borderColor: isTakenToday ? colors.success + '60' : colors.danger + '60',
-                        backgroundColor: isTakenToday ? colors.success + '15' : colors.danger + '10',
-                        flex: 1,
-                      }]}>
-                      <Check size={14} color={isTakenToday ? colors.success : colors.danger} />
-                      <Text style={{ fontSize: 12, fontWeight: '800',
-                        color: isTakenToday ? colors.success : colors.danger }}>
-                        {isTakenToday ? 'Taken Today' : 'Mark Taken'}
-                      </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    {/* Kids can mark taken; parents/seniors get all controls.
+                        One button per dose time for a multi-dose med (e.g.
+                        twice_daily) instead of one button for the whole day
+                        [live-requested: "add extensive like which time slot
+                        / part of day they missed", confirmed: "Add one
+                        button per dose time"]. */}
+                    {(() => {
+                      const doseTimes = med.frequency_times?.length ? med.frequency_times : [null];
+                      const multiDose = doseTimes.length > 1;
+                      const takenSet = new Set(med.taken_dates ?? []);
+                      const todayStr = today();
+                      return doseTimes.map((time, idx) => {
+                        const doseTaken = multiDose
+                          ? takenSet.has(encodeTakenEntry(todayStr, time))
+                          : isTakenToday;
+                        return (
+                          <TouchableOpacity key={time ?? idx} onPress={() => markTaken(med, multiDose ? time : null)}
+                            style={[h.actionBtn, {
+                              borderColor: doseTaken ? colors.success + '60' : colors.danger + '60',
+                              backgroundColor: doseTaken ? colors.success + '15' : colors.danger + '10',
+                              flex: multiDose ? undefined : 1,
+                            }]}>
+                            <Check size={14} color={doseTaken ? colors.success : colors.danger} />
+                            <Text style={{ fontSize: 12, fontWeight: '800',
+                              color: doseTaken ? colors.success : colors.danger }}>
+                              {multiDose
+                                ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : ''}`
+                                : (doseTaken ? 'Taken Today' : 'Mark Taken')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      });
+                    })()}
+                    {/* History — real adherence log (taken/missed/upcoming,
+                        per dose time), open to kids too since it's
+                        read-only, just like the parent-controlled edit
+                        buttons below are gated instead. */}
+                    <TouchableOpacity onPress={() => onOpenHistory ? onOpenHistory(med) : setHistoryMed(med)}
+                      style={[h.actionBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      <History size={14} color={colors.textSecondary} />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>History</Text>
                     </TouchableOpacity>
                     {!kidView && (
                       <>
@@ -332,6 +385,69 @@ export default function HealthRecordsList({
         })
       )}
 
+      {/* Adherence history drawer — taken/missed/upcoming per day, broken
+          down by dose time for a multi-dose med. Built from the real
+          taken_dates column via medicationAdherenceHistory(); "missed"
+          only applies once a dose's scheduled time has genuinely passed
+          [live-requested: "we must show the active medication history
+          like day and take and missing.. I know today we show overdue bit
+          for yestdays one we should show missd right if they really
+          missed"]. */}
+      <Modal visible={!!historyMed} transparent animationType="slide" onRequestClose={() => setHistoryMed(null)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View style={{
+            maxHeight: '80%', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            backgroundColor: colors.card, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 24,
+          }}>
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary }}>
+                  {historyMed?.name} History
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>
+                  {historyMed ? memberName(historyMed.member_id) : ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setHistoryMed(null)}
+                style={{ padding: 6, borderRadius: 16, backgroundColor: colors.surface }}>
+                <X size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ marginTop: 10 }} showsVerticalScrollIndicator={false}>
+              {historyDays.length === 0 ? (
+                <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', paddingVertical: 24 }}>
+                  No history yet
+                </Text>
+              ) : historyDays.map(({ date, doses }) => (
+                <View key={date} style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textTertiary, marginBottom: 6 }}>
+                    {fmtDateDisplay(new Date(date + 'T00:00:00'))}
+                  </Text>
+                  {doses.map((dose, idx) => {
+                    const meta = STATUS_META[dose.status];
+                    const tint = dose.status === 'taken' ? colors.success
+                      : dose.status === 'missed' ? colors.danger
+                      : colors.textTertiary;
+                    return (
+                      <View key={idx} style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 10,
+                        paddingVertical: 8, borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: colors.border,
+                      }}>
+                        <meta.Icon size={14} color={tint} />
+                        <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }}>
+                          {dose.time ? formatDoseTime(dose.time) : 'Dose'}
+                        </Text>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: tint }}>{meta.label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

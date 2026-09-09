@@ -18,6 +18,7 @@ import {
   encryptMessage, decryptMessage,
   getDeviceId, getDevicePublicKeyB64,
   getOrCreateLocationSessionKey, wrapLocationKeyForDevices, unwrapLocationKey,
+  unwrapLocationKeyWithRealIdentity,
   encryptWithSessionKey, decryptWithSessionKey,
 } from './chatCrypto';
 import { ensureDeviceRegistered, getUniqueWrapTargets } from './deviceRegistry';
@@ -175,6 +176,21 @@ export async function decryptLocationText(memberId: string, ciphertext: string):
     for (const d of memberDevices ?? []) {
       try {
         const sessionKey = await unwrapLocationKey(keyRow.wrapped_key, d.public_key, familyId);
+        const result = decryptWithSessionKey(ciphertext, sessionKey);
+        if (!result.startsWith('[🔒')) return result;
+      } catch { /* try next device */ }
+      // Live-reported ("wrong key encryption in FindFam") — this device may
+      // have a STALE family-scoped recovered identity cached from before a
+      // recovery passcode reset/rotation (see getRealDeviceKeyPair's own
+      // doc in chatCrypto.ts): getDeviceKeyPair(familyId) above always
+      // prefers that cached pair over this device's own real identity, even
+      // after the server-side recovery keypair has moved on. This device's
+      // real identity is registered normally in device_keys the whole time
+      // and unaffected by recovery, so it's always safe to also try it here
+      // — no weaker key, just a second legitimate candidate this device
+      // already rightfully owns.
+      try {
+        const sessionKey = await unwrapLocationKeyWithRealIdentity(keyRow.wrapped_key, d.public_key);
         const result = decryptWithSessionKey(ciphertext, sessionKey);
         if (!result.startsWith('[🔒')) return result;
       } catch { /* try next device */ }

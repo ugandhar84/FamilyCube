@@ -124,7 +124,15 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
   return (
     <KioskFormDrawer
       visible={!!event}
-      variant="dialog"
+      // [dialog->drawer audit] Re-checked: despite the name, this is not a
+      // read-only peek — RSVP going/maybe/not-going, Acknowledge, Confirm/
+      // Can't Make It, and the full driver-reassign flow (chip picker +
+      // optional reason TextInput + Confirm) all live here, sized and
+      // interacted with exactly like every other real kiosk form. A fixed
+      // 85%-of-screen dialog was clipping/cramping that action set on a
+      // real event with several of these sections visible at once; drawer
+      // gives it the same full-height room KioskEventEditor already gets.
+      variant="drawer"
       title={ev.title}
       accent={cc}
       Icon={CalendarIcon}

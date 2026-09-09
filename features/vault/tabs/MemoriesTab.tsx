@@ -175,11 +175,21 @@ interface ComposedMedia { uri: string; type: 'photo' | 'video'; }
  * additive: nothing about this component changes, and MemoriesTab still
  * renders it exactly as before.
  */
-export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, colors, isDark }: {
+// renderShell lets kiosk swap this bottom sheet for its own right-side
+// KioskFormDrawer around the exact same real body/state/logic
+// [live-requested: "add memory also should be side form for kiosek"],
+// without this mobile-owned file importing any kiosk component (same
+// fork-when-needed shape as ProfileSettingsScreen.tsx's NotificationsSheet/
+// EditMyProfileSheet). Default (renderShell omitted, as every existing
+// mobile call site does) is byte-identical to before this prop existed —
+// the header row, backdrop, handle and KeyboardAvoidingView-wrapped Modal
+// stay exactly as they were.
+export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, colors, isDark, renderShell }: {
   visible: boolean; onClose: () => void;
   onPost: (media: ComposedMedia[], caption: string, captionOverlay: boolean, taggedMemberIds: string[], tag: string | null) => Promise<void>;
   members: FamilyMember[]; myId: string;
   colors: any; isDark: boolean;
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 }) {
   // Mixed photo/video slots, index 0 is always the hero. Was a bare
   // string[] (photo URIs only) — a typed slot per item so the keepsake
@@ -300,32 +310,40 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
   // same pattern as TeenTileSheet/EventFormModal, which don't get shoved
   // upward past their cap when the keyboard opens the way AppBottomSheet's
   // dynamically-measured height does.
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={md.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[md.sheet, { backgroundColor: colors.surface, maxHeight: keyboardAwareMaxHeight ?? '88%' }]}>
-            <View style={[md.handle, { backgroundColor: colors.border }]} />
+  //
+  // Mobile-only title row — NOT part of `fieldsBody` below, since
+  // KioskFormDrawer's own shell already renders a title/subtitle/close
+  // header (KioskFormDrawer's `title`/`Icon` props, wired at the kiosk call
+  // site). Passing this row into renderShell too would stack two headers.
+  const mobileHeader = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 13, fontStyle: 'italic', color: colors.primary, marginBottom: 2, fontWeight: '600' }}>
+          for the family album
+        </Text>
+        <Text style={{ fontSize: 19, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.2 }}>
+          Tuck away a memory
+        </Text>
+      </View>
+      <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+        style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+        <X size={16} color={colors.textSecondary} />
+      </TouchableOpacity>
+    </View>
+  );
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontStyle: 'italic', color: colors.primary, marginBottom: 2, fontWeight: '600' }}>
-                  for the family album
-                </Text>
-                <Text style={{ fontSize: 19, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.2 }}>
-                  Tuck away a memory
-                </Text>
-              </View>
-              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <X size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+  // `fieldsBody` is the real form content — every real field, picker call
+  // and the sticky footer — extracted so a caller's renderShell can wrap it
+  // in a different chrome (kiosk's full-height KioskFormDrawer, which
+  // supplies its own header/close/scroll) while the JSX inside stays byte-
+  // identical to what mobile renders in its own ScrollView below. Same
+  // reuse-logic-not-fork pattern as ProfileSettingsScreen.tsx's
+  // NotificationsSheetBody.
+  const fieldsBody = (
+    <>
+      <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: 8 }}>
 
               {/* ── The keepsake card — hero photo + handwritten-style note,
@@ -542,14 +560,36 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                   : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Keep this memory</Text>}
               </TouchableOpacity>
             </View>
+    </>
+  );
+
+  const previewer = previewIdx !== null && media[previewIdx] && (
+    <MediaViewer visible mediaType={media[previewIdx].type} uri={media[previewIdx].uri}
+      onClose={() => setPreviewIdx(null)} />
+  );
+
+  if (renderShell) {
+    return (
+      <>
+        {renderShell(visible, dismiss, fieldsBody)}
+        {previewer}
+      </>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={md.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[md.sheet, { backgroundColor: colors.surface, maxHeight: keyboardAwareMaxHeight ?? '88%' }]}>
+            <View style={[md.handle, { backgroundColor: colors.border }]} />
+            {mobileHeader}
+            {fieldsBody}
           </View>
         </View>
       </KeyboardAvoidingView>
-
-      {previewIdx !== null && media[previewIdx] && (
-        <MediaViewer visible mediaType={media[previewIdx].type} uri={media[previewIdx].uri}
-          onClose={() => setPreviewIdx(null)} />
-      )}
+      {previewer}
     </Modal>
   );
 }

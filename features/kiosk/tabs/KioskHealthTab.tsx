@@ -51,7 +51,7 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
-import { Heart, Pill, Syringe, FolderOpen, Plus, ScanLine } from 'lucide-react-native';
+import { Heart, Pill, Syringe, FolderOpen, Plus, ScanLine, History, Check, XCircle, Clock } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote, ActionButton } from '../components/KioskOS';
@@ -62,8 +62,8 @@ import { useEventStore } from '@/store/eventStore';
 import { assigneeStyle } from '@/features/calendar/components/EventCard';
 import { supabase } from '@/lib/supabase';
 import { claimChannel } from '@/lib/realtimeChannel';
-import { today as todayStr } from '@/features/vault/tabs/health/types';
-import type { Medication, Vaccine, MedForm, VaxForm } from '@/features/vault/tabs/health/types';
+import { today as todayStr, medicationAdherenceHistory, groupHistoryByDay, formatDoseTime, fmtDateDisplay } from '@/features/vault/tabs/health/types';
+import type { Medication, Vaccine, MedForm, VaxForm, DoseAdherence } from '@/features/vault/tabs/health/types';
 import type { MedRecord } from '@/features/vault/records/types';
 import type { ParsedMedication, ParsedVaccine } from '@/features/vault/usePrescriptionScanner';
 import type { RecordForm } from '@/features/vault/records/types';
@@ -76,6 +76,8 @@ import { KioskAddRecordForm } from '../components/KioskAddRecordForm';
 import { KioskScanReviewForm } from '../components/KioskScanReviewForm';
 import { showToast } from '@/components/AppToast';
 import { KioskHealthAiWidget } from '../components/KioskHealthAiWidget';
+import { KioskFormDrawer } from '../components/KioskFormDrawer';
+import { KioskAvatar } from '../components/KioskAvatar';
 
 type Segment = 'meds' | 'vax' | 'records';
 
@@ -228,6 +230,11 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [showScanSheet, setShowScanSheet] = useState(false);
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
+  // Medication adherence-history side drawer — kiosk's own KioskFormDrawer
+  // shell instead of HealthRecordsList's phone bottom Modal, same real
+  // medicationAdherenceHistory() data [live-requested: "show that history
+  // side bar"].
+  const [historyMed, setHistoryMed] = useState<Medication | null>(null);
 
   // Every save function below is wrapped in try/catch so it can never
   // reject — AddMedModal/AddVaxModal/AddRecordModal/ScanReviewSheet all
@@ -647,8 +654,62 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                 // useHealthAi hook as its own standalone card — without
                 // this, the AI pill would render a second time inline
                 // here too.
-                hideAiAssistant={!isKid} />}
+                hideAiAssistant={!isKid}
+                onOpenHistory={med => setHistoryMed(med)} />}
         </WidgetCard>
+
+        {/* Medication history — real day-by-day taken/missed/upcoming log
+            from medicationAdherenceHistory(), kiosk-native side drawer
+            (variant="drawer") instead of the phone's bottom Modal
+            [live-requested: "show that history side bar"], same pattern
+            as the Find page's own location-history drawer. */}
+        <KioskFormDrawer
+          visible={!!historyMed}
+          variant="drawer"
+          title={historyMed ? `${historyMed.name} History` : 'Medication History'}
+          subtitle={historyMed ? (members.find(m => m.id === historyMed.member_id)?.name ?? '') : undefined}
+          accent={k.danger}
+          Icon={History}
+          k={k}
+          onClose={() => setHistoryMed(null)}
+        >
+          {(() => {
+            const days = historyMed ? groupHistoryByDay(medicationAdherenceHistory(historyMed)) : [];
+            if (days.length === 0) return <EmptyNote text="No history yet." k={k} />;
+            return (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {days.map(({ date, doses }) => (
+                  <View key={date} style={{ marginBottom: KIOSK_SPACE.md }}>
+                    <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: k.textFaint, marginBottom: 6 }}>
+                      {fmtDateDisplay(new Date(date + 'T00:00:00'))}
+                    </Text>
+                    {doses.map((dose: DoseAdherence, idx: number) => {
+                      const tint = dose.status === 'taken' ? k.sage
+                        : dose.status === 'missed' ? k.danger
+                        : k.textFaint;
+                      const Icon = dose.status === 'taken' ? Check : dose.status === 'missed' ? XCircle : Clock;
+                      return (
+                        <View key={idx} style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 10,
+                          paddingVertical: 8,
+                          borderTopWidth: idx > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: k.cardBorder,
+                        }}>
+                          <Icon size={14} color={tint} />
+                          <Text style={{ flex: 1, fontSize: KIOSK_TYPO.body, color: k.textMuted }}>
+                            {dose.time ? formatDoseTime(dose.time) : 'Dose'}
+                          </Text>
+                          <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: tint }}>
+                            {dose.status === 'taken' ? 'Taken' : dose.status === 'missed' ? 'Missed' : 'Upcoming'}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </ScrollView>
+            );
+          })()}
+        </KioskFormDrawer>
 
         {/* Kiosk-native Add Med/Vax forms (KioskFormDrawer shell, matching
             KioskGroceryItemSheet's own pattern), not the phone's stepper
@@ -725,9 +786,17 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                       style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                       accessibilityLabel={`${member.name.split(' ')[0]}: ${takenToday} of ${meds.length} taken today${overdue > 0 ? `, ${overdueMeds.map(m => m.name).join(', ')} overdue` : ''}`}
                     >
-                      <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
-                        <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
-                      </View>
+                      <KioskAvatar
+                        name={member.name}
+                        emoji={member.emoji}
+                        avatarUrl={member.avatarUrl}
+                        siblings={members.filter(x => x.id !== member.id).map(x => x.name)}
+                        size={36}
+                        ringWidth={1.5}
+                        ringColor={rs.dot}
+                        bgColor={rs.badge}
+                        k={k}
+                      />
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
                         <Text style={[s.jarMeta, { color: overdue > 0 ? k.danger : k.textFaint }]} numberOfLines={1}>
@@ -765,9 +834,17 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     // avtar"]. Still carried here for screen readers.
                     accessibilityLabel={`${med.name}, ${member?.name.split(' ')[0] ?? 'someone'}, refill due ${daysLeft === 0 ? 'today' : `in ${daysLeft} days`}`}
                   >
-                    <View style={[s.jarAvatar, { backgroundColor: k.goldSoft, borderColor: k.goldEdge, borderWidth: 1.5 }]}>
-                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💊'}</Text>
-                    </View>
+                    <KioskAvatar
+                      name={member?.name ?? med.name}
+                      emoji={member?.emoji}
+                      avatarUrl={member?.avatarUrl}
+                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
+                      size={36}
+                      ringWidth={1.5}
+                      ringColor={k.goldEdge}
+                      bgColor={k.goldSoft}
+                      k={k}
+                    />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{med.name}</Text>
                     </View>
@@ -795,9 +872,17 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                     accessibilityLabel={`${vax.title}, ${member?.name.split(' ')[0] ?? 'someone'}, ${daysLeft <= 0 ? 'due now' : `due in ${daysLeft} days`}`}
                   >
-                    <View style={[s.jarAvatar, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, borderWidth: 1.5 }]}>
-                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '💉'}</Text>
-                    </View>
+                    <KioskAvatar
+                      name={member?.name ?? vax.title}
+                      emoji={member?.emoji}
+                      avatarUrl={member?.avatarUrl}
+                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
+                      size={36}
+                      ringWidth={1.5}
+                      ringColor={k.sageEdge}
+                      bgColor={k.sageSoft}
+                      k={k}
+                    />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{vax.title}</Text>
                     </View>
@@ -827,9 +912,17 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                     accessibilityLabel={`${rec.title}, ${member?.name.split(' ')[0] ?? 'someone'}${statusText ? `, ${statusText}` : ''}`}
                   >
-                    <View style={[s.jarAvatar, { backgroundColor: urgent ? k.dangerSoft : k.goldSoft, borderColor: urgent ? k.dangerEdge : k.goldEdge, borderWidth: 1.5 }]}>
-                      <Text style={{ fontSize: 15 }}>{member?.emoji ?? '📄'}</Text>
-                    </View>
+                    <KioskAvatar
+                      name={member?.name ?? rec.title}
+                      emoji={member?.emoji}
+                      avatarUrl={member?.avatarUrl}
+                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
+                      size={36}
+                      ringWidth={1.5}
+                      ringColor={urgent ? k.dangerEdge : k.goldEdge}
+                      bgColor={urgent ? k.dangerSoft : k.goldSoft}
+                      k={k}
+                    />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
                       {!!statusText && (

@@ -24,19 +24,30 @@
  * into a kiosk frame, in both light and dark. Making SchoolTab itself
  * kiosk-aware is a separate, larger job than a styling pass.
  */
+import { useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { BookOpen } from 'lucide-react-native';
 import SchoolTabComp from '@/features/vault/tabs/SchoolTab';
 import { KIOSK_SPACE } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, TabTitle } from '../components/KioskOS';
-import { useKioskActivity } from '../KioskActivityContext';
+import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
+import { KioskSchoolScheduleModal } from '../components/KioskSchoolScheduleModal';
 
-export function KioskSchoolTab({ isKid, colors, isDark }: {
-  isKid: boolean; colors: any; isDark: boolean;
+export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
+  isKid: boolean; isTeen?: boolean; colors: any; isDark: boolean;
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
+  // SchoolScheduleCard's own edit-schedule Modal has zero kiosk idle-lock
+  // participation of its own (a plain phone Modal, same real bug class
+  // already fixed for AskCubeChat/other phone-shared modals) — without
+  // this, kiosk's idle timer keeps running as if nothing is happening
+  // while a parent is mid-edit on a class schedule, risking a discarded
+  // draft [live-requested: "please aling those 2 pages with the exact
+  // mobile functionality"].
+  const [scheduleEditOpen, setScheduleEditOpen] = useState(false);
+  useKioskLockSuspended(scheduleEditOpen);
 
   return (
     <View style={s.root}>
@@ -55,7 +66,17 @@ export function KioskSchoolTab({ isKid, colors, isDark }: {
             Icon={BookOpen} eyebrow="This week" title="Classes & homework"
             accent={k.purple} k={k} isDark={kioskDark}
           />
-          <SchoolTabComp colors={colors} isDark={isDark} isKid={isKid} />
+          <SchoolTabComp
+            colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen}
+            onEditModalVisibilityChange={setScheduleEditOpen}
+            renderEditModal={({ visible, onClose, memberId, memberName, isParent }) => (
+              <KioskSchoolScheduleModal
+                visible={visible} onClose={onClose}
+                memberId={memberId} memberName={memberName} isParent={isParent}
+                colors={colors} isDark={isDark}
+              />
+            )}
+          />
         </WidgetCard>
       </ScrollView>
     </View>

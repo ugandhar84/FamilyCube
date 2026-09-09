@@ -19,6 +19,7 @@ export default function SchoolScreen({ hideHeader = false }: { hideHeader?: bool
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isKid = activeMember?.role === 'kid';
+  const isTeen = activeMember?.role === 'teen';
 
   // Hides the shared Ask Cube FAB — same fullBleedScreenActive mechanism
   // GpsTab.tsx/HealthRecordsScreen.tsx use for a pushed sub-route the tab
@@ -50,7 +51,7 @@ export default function SchoolScreen({ hideHeader = false }: { hideHeader?: bool
       )}
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
-        <SchoolTabComp colors={colors} isDark={isDark} isKid={isKid} />
+        <SchoolTabComp colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen} />
       </ScrollView>
     </SafeAreaView>
   );

@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import {
   getDeviceId, getDevicePublicKeyB64,
   getOrCreateRecordsSessionKey, wrapRecordsKeyForDevices, unwrapRecordsKey,
+  unwrapRecordsKeyWithRealIdentity,
   encryptWithSessionKey, decryptWithSessionKey,
 } from '@/lib/chatCrypto';
 import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
@@ -221,7 +222,20 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
       try {
         sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key, familyId);
         result = decryptWithSessionKey(blob.ct, sessionKey);
-      } catch { continue; } // wrong device's public key for this wrap — try the next one
+      } catch {
+        // Same stale-recovered-identity gap fixed for location (see
+        // getRealDeviceKeyPair's own doc in chatCrypto.ts) — a family-
+        // scoped recovered key left over from before a passcode reset/
+        // rotation takes priority in unwrapRecordsKey's own
+        // getDeviceKeyPair(familyId) call and fails the GCM auth check
+        // against a wrap made for this device's REAL identity instead.
+        // Retry this same device's public key against this device's real
+        // identity before giving up on it entirely.
+        try {
+          sessionKey = await unwrapRecordsKeyWithRealIdentity(keyRow.wrapped_key, d.public_key);
+          result = decryptWithSessionKey(blob.ct, sessionKey);
+        } catch { continue; } // wrong device's public key for this wrap — try the next one
+      }
       if (result.startsWith('[🔒')) continue; // wrong key/corrupted ciphertext — try the next device
       // The right device+key WAS found (decrypt succeeded) — a JSON.parse
       // failure past this point means the underlying plaintext itself is

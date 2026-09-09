@@ -93,7 +93,7 @@ export function KioskChoreProposalSheet({ visible, onClose, active, members, fam
   return (
     <KioskFormDrawer
       visible={visible}
-      variant="dialog"
+      variant="drawer"
       title="Propose a Chore"
       subtitle="A parent reviews it and sets the reward"
       accent={accent}

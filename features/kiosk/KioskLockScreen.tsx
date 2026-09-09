@@ -33,6 +33,8 @@ import { Lock } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
+import { useKioskColors } from './kioskPalette';
+import { KioskAvatar } from './components/KioskAvatar';
 
 export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   familyName: string;
@@ -43,6 +45,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   onUnlock: (memberId: string) => void;
   colors: any;
 }) {
+  const { k } = useKioskColors();
   const [now, setNow] = useState(new Date());
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
   useEffect(() => {
@@ -111,8 +114,18 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
                   accessibilityLabel={firstName}
                   accessibilityHint={needsPin ? 'Requires a PIN to unlock' : 'Unlocks the kiosk as this person'}
                 >
-                  <View style={[s.avatarRing, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
+                  <View style={s.avatarRingWrap}>
+                    <KioskAvatar
+                      name={m.name}
+                      emoji={m.emoji}
+                      avatarUrl={m.avatarUrl}
+                      siblings={visibleMembers.filter(x => x.id !== m.id).map(x => x.name)}
+                      size={KIOSK_HIT.avatar}
+                      ringWidth={3}
+                      ringColor={colors.border}
+                      bgColor={colors.surface}
+                      k={k}
+                    />
                     {needsPin && (
                       <View style={[s.pinBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Lock size={13} color={colors.textSecondary} />
@@ -181,6 +194,7 @@ const s = StyleSheet.create({
   // locked kiosk, only) control on screen, tapped by kids and grandparents
   // standing at the counter.
   tile: { alignItems: 'center', gap: KIOSK_SPACE.xs, width: 120, minHeight: KIOSK_HIT.avatar + 34 },
+  avatarRingWrap: { width: KIOSK_HIT.avatar, height: KIOSK_HIT.avatar },
   avatarRing: {
     width: KIOSK_HIT.avatar, height: KIOSK_HIT.avatar, borderRadius: KIOSK_HIT.avatar / 2, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',

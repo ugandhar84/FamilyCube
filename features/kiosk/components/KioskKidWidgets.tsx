@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
   CalendarClock, CheckSquare, RotateCcw,
-  Coins, CheckCircle2, Camera, ClipboardList, Clock3, XCircle, Check, ChevronRight, type LucideIcon,
+  Coins, CheckCircle2, Camera, ClipboardList, Clock3, XCircle, Check, ChevronRight, ChevronDown, type LucideIcon,
 } from 'lucide-react-native';
 
 import type { FamilyMember } from '@/store/familyStore';
@@ -39,9 +39,9 @@ import type { Quest } from '@/store/questStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
-import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
+import { useKidRequestStore, REQUEST_META, type KidRequest, type KidRequestItem } from '@/store/kidRequestStore';
 import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
-import { KidRequestsSheet } from './KioskKidQuickActions';
+import { KidRequestsSheet, KioskKidCheerList } from './KioskKidQuickActions';
 import { useKioskAskParent, ASK_PARENT_OPTIONS } from './KioskAskParentFlow';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtTime } from '@/lib/dates';
@@ -52,6 +52,7 @@ import { kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { useKioskFonts, KIOSK_FONT } from '../kioskFonts';
 import { visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
+import { KioskFormDrawer } from './KioskFormDrawer';
 import { KioskCantDoThisDialog } from './KioskCantDoThisDialog';
 
 // ════════════════════════════════════════════════════════════════════════
@@ -533,6 +534,41 @@ export function KioskMyStuffPanel({
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// Cheer Squad — own sideCol panel, real kidCheerableQuests data via the
+// same KioskKidCheerList component the Chores tab's own "Sibling Cheer"
+// filter already renders (not re-derived), 4 rows visible before it
+// scrolls [live-requested: "cheers sqard as a separate widget in the
+// right most colum - show only 4 and rest in scroll view .. same for the
+// teens as well"]. Role-agnostic — kidCheerableQuests/kidSiblingsOf carry
+// no kid-only assumption, same as ASK_PARENT_OPTIONS above.
+// ════════════════════════════════════════════════════════════════════════
+
+export function KioskCheerSquadPanel({ active, members, k, isDark }: {
+  active: FamilyMember;
+  members: FamilyMember[];
+  k: KioskColors;
+  isDark: boolean;
+}) {
+  return (
+    <WidgetCard k={k} isDark={isDark}>
+      <PanelHead title="Cheer squad" k={k} />
+      {/* KioskKidCheerList's own real rows are ~64px tall (heroQuick-scale
+          avatar+text+button, cheerRow's KIOSK_HIT.primary min-height) plus
+          the sm gap between them — 4 rows visible, rest scroll. Cheer
+          itself opens a real centered sheet (KioskKidCheerList's own
+          SendCheerSheet) rather than an inline note field in this small
+          scroll — a field here had no reliable way to clear the on-screen
+          keyboard [live-reported, after two failed scroll-into-view
+          attempts: "lets show the diffrent sheet in center and enter
+          notes and hit cheers?"]. */}
+      <ScrollView style={s.cheerSquadScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        <KioskKidCheerList active={active} members={members} k={k} isDark={isDark} />
+      </ScrollView>
+    </WidgetCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // My Requests — compact always-visible sideCol list, same real
 // kidRequestStore data/filtering KidRequestsSheet already uses (that
 // sheet's own `mine`/statusOf logic, ported here verbatim rather than
@@ -652,6 +688,178 @@ export function KioskUpForGrabsPanel({
   );
 }
 
+// Grocery/supplies requests encode `detail` as a machine-readable payload
+// (GROCERY_PREFIX/SUPPLIES_PREFIX + JSON, per KidModals.tsx's own
+// encodeGroceryRequest/KioskSuppliesRequestSheet.tsx) rather than plain
+// text — printing r.detail raw here showed the literal prefix+JSON string
+// to a kid [live-reported screenshot: "my requests has the raw jason"].
+// Same real priority the parent-facing GroceryRequestCard.tsx uses: prefer
+// the real r.items (multi-item requests carry their own item names) over
+// decoding detail, and never fall through to a still-encoded string.
+const GROCERY_PREFIX = 'GROCERY_REQUEST:';
+const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
+export function requestDisplayTitle(r: { detail?: string | null; items?: { name: string }[] }, fallbackLabel?: string): string {
+  if (r.items?.length) {
+    return r.items.length === 1 ? r.items[0].name : `${r.items[0].name} +${r.items.length - 1} more`;
+  }
+  // r.detail is undefined/null for real request types that never set it
+  // (e.g. a plain ride/permission/question ask) — calling .startsWith on
+  // that crashed mid-render and blanked the whole panel
+  // [live-reported: "what happen to the myrequest last 30days after you
+  // fix that json raw it is disappered"], rather than the intended
+  // graceful fallback.
+  const detail = r.detail ?? '';
+  const isEncoded = detail.startsWith(GROCERY_PREFIX) || detail.startsWith(SUPPLIES_PREFIX);
+  if (!isEncoded) return detail || fallbackLabel || 'Request';
+  try {
+    const raw = detail.replace(GROCERY_PREFIX, '').replace(SUPPLIES_PREFIX, '');
+    const parsed = JSON.parse(raw);
+    if (parsed?.name) return parsed.name;
+    if (Array.isArray(parsed?.items) && parsed.items.length) {
+      return parsed.items.length === 1 ? parsed.items[0].name : `${parsed.items[0].name} +${parsed.items.length - 1} more`;
+    }
+  } catch { /* fall through to fallbackLabel */ }
+  return fallbackLabel || 'Request';
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// KioskRequestDetailDrawer — the full request + response, opened by
+// tapping a row in either My Requests panel (Overview sideCol) or the
+// full-history KidRequestsSheet [live-requested: "when i click on
+// dividual reuest it should open the side bar to show the complte
+// request/responses" / "i eman i requested groceries or supplies how do
+// that kid know what is capproved item level" / "my main concern is what
+// is approved and ehat nor.."]. For a multi-item grocery/supplies request
+// this is the ONLY place a kid can see PER-ITEM approve/reject status —
+// every other surface (compact panel, history sheet) only ever showed one
+// rolled-up status for the whole request, which hides that a parent
+// approved half the list and rejected the rest. Real data only:
+// KidRequestItem.status/approvedBy/rejectedBy/parentNote per item (set by
+// the real parent approveItems/rejectItems flow), and the request's own
+// top-level parentNote/respondedBy for a single-answer request with no
+// item list.
+// ════════════════════════════════════════════════════════════════════════
+
+function itemStatusOf(status: string, k: KioskColors): { label: string; accent: string; Icon: LucideIcon } {
+  if (status === 'approved') return { label: 'Approved', accent: k.sage, Icon: CheckCircle2 };
+  if (status === 'rejected') return { label: 'Declined', accent: k.danger, Icon: XCircle };
+  return { label: 'Waiting', accent: k.gold, Icon: Clock3 };
+}
+
+export function KioskRequestDetailDrawer({ request, members, k, isDark, onClose }: {
+  request: KidRequest | null;
+  members: FamilyMember[];
+  k: KioskColors;
+  isDark: boolean;
+  onClose: () => void;
+}) {
+  const nameOf = (id?: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0];
+  if (!request) return null;
+  const meta = REQUEST_META[request.type];
+  const st = requestStatusOf(request.status, k);
+  const hasItems = !!request.items?.length;
+  const title = requestDisplayTitle(request, meta?.label);
+
+  return (
+    <KioskFormDrawer
+      visible={!!request}
+      variant="drawer"
+      title={title}
+      subtitle={meta?.label}
+      accent={st.accent}
+      Icon={ClipboardList}
+      k={k}
+      onClose={onClose}
+    >
+      <View style={{ gap: KIOSK_SPACE.md }}>
+        <View style={s.reqDetailStatusRow}>
+          <st.Icon size={16} color={st.accent} />
+          <Text style={[s.reqDetailStatusText, { color: st.accent }]}>{st.label}</Text>
+          <Text style={[s.reqDetailMetaText, { color: k.textFaint }]}>
+            {new Date(request.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </Text>
+        </View>
+
+        {/* Per-item breakdown — the whole reason this drawer exists for a
+            grocery/supplies request. Each item keeps its OWN real status,
+            not the request's rolled-up one. */}
+        {hasItems ? (
+          <View style={{ gap: KIOSK_SPACE.sm }}>
+            <Text style={[s.reqDetailSectionLabel, { color: k.textMuted }]}>ITEMS ({request.items!.length})</Text>
+            {request.items!.map((it: KidRequestItem) => {
+              const ist = itemStatusOf(it.status, k);
+              const by = it.status === 'approved' ? it.approvedBy : it.status === 'rejected' ? it.rejectedBy : undefined;
+              // Real approvedAt/rejectedAt timestamps [live-requested:
+              // "approved date and time is not shown"] — same 12h app-wide
+              // format standard used everywhere else on this card.
+              const at = it.status === 'approved' ? it.approvedAt : it.status === 'rejected' ? it.rejectedAt : undefined;
+              const atLabel = at ? new Date(at).toLocaleString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+              }) : undefined;
+              return (
+                <View key={it.id} style={[s.reqDetailItemRow, { borderColor: k.cardBorder }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}>
+                    <Text style={{ fontSize: 18 }}>{it.emoji ?? '🛒'}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.reqDetailItemName, { color: k.text }]} numberOfLines={1}>
+                        {it.name}{it.qty ? ` · ${it.qty}` : ''}
+                      </Text>
+                      {!!it.store && (
+                        <Text style={[s.reqDetailItemMeta, { color: k.textFaint }]} numberOfLines={1}>{it.store}</Text>
+                      )}
+                    </View>
+                    <Chip label={ist.label} accent={ist.accent} isDark={isDark} k={k} />
+                  </View>
+                  {(by || atLabel || it.parentNote) && (
+                    <Text style={[s.reqDetailItemNote, { color: k.textMuted }]} numberOfLines={3}>
+                      {[by ? nameOf(by) : null, atLabel].filter(Boolean).join(' · ')}
+                      {it.parentNote ? `${by || atLabel ? ' — ' : ''}“${it.parentNote}”` : ''}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <>
+            <Text style={[s.reqDetailBody, { color: k.text }]}>{request.detail || meta?.label || 'Request'}</Text>
+            {!!request.respondedBy && (
+              <Text style={[s.reqDetailMetaText, { color: k.textFaint }]}>
+                Answered by {nameOf(request.respondedBy)}
+                {request.respondedAt ? ` · ${new Date(request.respondedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+              </Text>
+            )}
+            {!!request.parentNote && (
+              <View style={[s.reqDetailNoteBox, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+                <Text style={[s.reqDetailNoteLabel, { color: k.textMuted }]}>Parent's note</Text>
+                <Text style={[s.reqDetailNoteText, { color: k.text }]}>“{request.parentNote}”</Text>
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    </KioskFormDrawer>
+  );
+}
+
+// Tiny relative-time label for a compact row [live-requested: "also show
+// the qpproved date time stap on the my rquest individual card tiny
+// atleast" / "x ago or actual date/time"] — "just now"/"5m ago"/"3h
+// ago"/"2d ago", falling back to a short date once it's old enough that
+// "N ago" stops being a useful glance.
+function agoLabel(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (isNaN(ms)) return '';
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function requestStatusOf(status: string, k: KioskColors): { label: string; accent: string; Icon: LucideIcon } {
   if (status === 'approved' || status === 'completed') return { label: 'Approved', accent: k.sage, Icon: CheckCircle2 };
   if (status === 'declined' || status === 'cancelled' || status === 'expired') return { label: status === 'expired' ? 'Expired' : 'Declined', accent: k.danger, Icon: XCircle };
@@ -674,6 +882,10 @@ export function KioskMyRequestsPanel({
   // new always-visible top-3 glance, the sheet is still the real full-
   // history surface.
   const [showAll, setShowAll] = useState(false);
+  // Full request+response drawer, opened by tapping any row
+  // [live-requested: "when i click on dividual reuest it should open the
+  // side bar to show the complte request/responses"].
+  const [viewingRequest, setViewingRequest] = useState<KidRequest | null>(null);
 
   // Same 30-day window KidRequestsSheet already uses — see that
   // component's own comment for why (matches the phone's real ceiling).
@@ -703,16 +915,28 @@ export function KioskMyRequestsPanel({
             const st = requestStatusOf(r.status, k);
             const meta = REQUEST_META[r.type];
             const answered = nameOf(r.respondedBy);
+            const displayTitle = requestDisplayTitle(r, meta?.label);
             return (
-              <View key={r.id} style={[s.reqCompactRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+              <Pressable
+                key={r.id}
+                onPress={() => setViewingRequest(r)}
+                style={({ pressed }) => [
+                  s.reqCompactRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
+                  pressed && { opacity: 0.6 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${displayTitle}, ${st.label}`}
+                accessibilityHint="Opens the full request and response"
+              >
                 <Text style={s.reqCompactEmoji} numberOfLines={1}>{meta?.emoji ?? '📋'}</Text>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[s.reqCompactTitle, { color: k.text }]} numberOfLines={1}>{r.detail || meta?.label || 'Request'}</Text>
+                  <Text style={[s.reqCompactTitle, { color: k.text }]} numberOfLines={1}>{displayTitle}</Text>
                   <Text style={[s.reqCompactMeta, { color: st.accent }]} numberOfLines={1}>
-                    {st.label}{answered ? ` · ${answered}` : ''}
+                    {st.label}{answered ? ` · ${answered}` : ''} · {agoLabel(r.respondedAt ?? r.requestedAt)}
                   </Text>
                 </View>
-              </View>
+                <ChevronRight size={16} color={k.textFaint} />
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -728,6 +952,10 @@ export function KioskMyRequestsPanel({
           onClose={() => setShowAll(false)}
         />
       )}
+      <KioskRequestDetailDrawer
+        request={viewingRequest} members={members} k={k} isDark={isDark}
+        onClose={() => setViewingRequest(null)}
+      />
     </WidgetCard>
   );
 }
@@ -840,13 +1068,30 @@ function ChoreCardRow({
 }) {
   const inReview = q.status === 'pending_approval';
   const isDone = q.status === 'approved' || q.status === 'done';
+  // Collapsed to title + meta row (2 lines) by default; the helper line
+  // and Parent's note box only show once expanded [live-reported: "we
+  // can show only 2 rows in the card rest we can keep t in expanded
+  // mode"] — this row previously had no collapse state at all, so every
+  // task's full detail printed inline regardless of how many were on
+  // screen. Only offered when there's actually something to expand into.
+  const hasExpandableContent = inReview || !!q.declineReason;
+  const [expanded, setExpanded] = useState(false);
 
   const fontsLoaded = useKioskFonts();
   const fontExtrabold = fontsLoaded ? KIOSK_FONT.inter.extrabold : undefined;
   const fontSemibold = fontsLoaded ? KIOSK_FONT.inter.semibold : undefined;
 
+  const RowShell = hasExpandableContent ? Pressable : View;
+
   return (
-    <View style={s.taskRow}>
+    <RowShell
+      style={s.taskRow}
+      {...(hasExpandableContent ? {
+        onPress: () => setExpanded(e => !e),
+        accessibilityRole: 'button' as const,
+        accessibilityHint: expanded ? 'Collapses this chore' : 'Shows more detail about this chore',
+      } : {})}
+    >
       <View
         style={[
           s.taskCheck,
@@ -884,8 +1129,18 @@ function ChoreCardRow({
           <Text style={[s.taskMeta, { color: k.textFaint, fontFamily: fontSemibold, flexShrink: 1 }]} numberOfLines={1}>
             {(() => {
               if (isDone) {
-                return q.approvedAt
-                  ? `Completed ${new Date(q.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                // A real, malformed q.approvedAt (not just missing) was
+                // rendering literally as "Completed Invalid Date"
+                // [live-reported screenshot] — new Date() on an
+                // unparseable string produces an Invalid Date object,
+                // which still passes the truthy `?` check but formats to
+                // that exact literal string. Guard with isNaN on the
+                // parsed time, same validity check used elsewhere for
+                // this class of bug, so a bad timestamp falls back to no
+                // date shown rather than a nonsense one.
+                const approvedDate = q.approvedAt ? new Date(q.approvedAt) : null;
+                return approvedDate && !isNaN(approvedDate.getTime())
+                  ? `Completed ${approvedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
                   : '';
               }
               // Due date/time takes priority whenever the chore actually
@@ -931,13 +1186,28 @@ function ChoreCardRow({
           {isDone && (
             <Text style={[s.taskDoneCoin, { color: k.textFaint }]} numberOfLines={1}>+{q.coins}</Text>
           )}
+          {/* Small affordance marking this row as tappable for more detail
+              — only shown when there actually IS more (inReview helper
+              text or a declined chore's Parent's note), matching
+              hasExpandableContent's own gate on the row's Pressable. */}
+          {hasExpandableContent && (
+            <ChevronDown
+              size={14}
+              color={k.textFaint}
+              style={expanded ? { transform: [{ rotate: '180deg' }] } : undefined}
+            />
+          )}
         </View>
-        {inReview && (
+        {/* Collapsed to title + meta row by default now — these two
+            blocks only show once expanded [live-reported: "we can show
+            only 2 rows in the card rest we can keep t in expanded
+            mode"]. */}
+        {expanded && inReview && (
           <Text style={[s.choreHelper, { color: k.gold, fontFamily: fontSemibold }]} numberOfLines={2}>
             Waiting on a parent to review this chore.
           </Text>
         )}
-        {!!q.declineReason && (
+        {expanded && !!q.declineReason && (
           <View style={[s.choreDeclineNote, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}>
             <Text style={[s.choreDeclineLabel, { color: k.danger, fontFamily: fontExtrabold }]} numberOfLines={1}>Parent's note</Text>
             <Text style={[s.choreDeclineText, { color: k.text, fontFamily: fontSemibold }]} numberOfLines={4}>{q.declineReason}</Text>
@@ -954,10 +1224,14 @@ function ChoreCardRow({
       <View style={s.taskRightCol}>
 
         {/* Mock's own disabled "Awaiting review" ghost pill for a chore
-            with no available action (in review, waiting on a parent). */}
+            with no available action (in review, waiting on a parent).
+            Smaller than a real actionable button [live-reported: "looks
+            like button on the my tasks also over sized awiting for
+            review"] — this is a passive status label, not a control the
+            standard KIOSK_HIT.min touch-target floor is meant for. */}
         {!isDone && !btn && inReview && (
-          <View style={[s.taskActionBtn, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
-            <Text style={[s.taskActionText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
+          <View style={[s.taskGhostPill, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
+            <Text style={[s.taskGhostPillText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
               Awaiting review
             </Text>
           </View>
@@ -1000,13 +1274,16 @@ function ChoreCardRow({
           </View>
         )}
       </View>
-    </View>
+    </RowShell>
   );
 }
 
 const s = StyleSheet.create({
   // My requests (compact sideCol rows). 5 rows visible by default.
   reqListScroll: { maxHeight: 270 },
+  // 4 rows visible (KIOSK_HIT.primary=56 each + KIOSK_SPACE.sm=10 gaps),
+  // rest scroll [live-requested: "show only 4 and rest in scroll view"].
+  cheerSquadScroll: { maxHeight: 254 },
   reqCompactRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
@@ -1014,6 +1291,23 @@ const s = StyleSheet.create({
   reqCompactEmoji: { fontSize: 18 },
   reqCompactTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
   reqCompactMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', marginTop: 1 },
+
+  // KioskRequestDetailDrawer.
+  reqDetailStatusRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
+  reqDetailStatusText: { fontSize: KIOSK_TYPO.body, fontWeight: '800', flex: 1 },
+  reqDetailMetaText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
+  reqDetailSectionLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.5 },
+  reqDetailItemRow: {
+    gap: 6, paddingVertical: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.sm,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+  },
+  reqDetailItemName: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  reqDetailItemMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
+  reqDetailItemNote: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
+  reqDetailBody: { fontSize: KIOSK_TYPO.body, fontWeight: '600', lineHeight: KIOSK_TYPO.body * 1.4 },
+  reqDetailNoteBox: { gap: 4, padding: KIOSK_SPACE.sm, borderWidth: 1, borderRadius: KIOSK_RADIUS.sm },
+  reqDetailNoteLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.5 },
+  reqDetailNoteText: { fontSize: KIOSK_TYPO.body, fontWeight: '600' },
 
   // My schedule.
   evRow: {
@@ -1135,6 +1429,14 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch',
   },
   taskActionText: { fontSize: CHORE_CARD_TYPO.button, fontWeight: '800' },
+  // Smaller than a real actionable taskActionBtn — a passive status
+  // label, not a control.
+  taskGhostPill: {
+    paddingVertical: 6, paddingHorizontal: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end',
+  },
+  taskGhostPillText: { fontSize: 11, fontWeight: '800' },
 
   poolMore: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
   // Up for Grabs — flat mock-matched rows (KioskUpForGrabsPanel), matched

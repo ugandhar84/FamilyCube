@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Alert, Pressable, findNodeHandle, UIManager, Dimensions } from 'react-native';
+import { View, Text, Alert, Pressable, findNodeHandle, UIManager, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
@@ -118,7 +118,15 @@ export function GroceryItemsSection({
   // making the effective edge zone slightly generous — not a problem here)
   // without plumbing a separate onLayout down from the screen just to
   // measure the ScrollView's own rendered height.
-  const [viewportHeight] = useState(() => Dimensions.get('window').height);
+  // Was `useState(() => Dimensions.get('window').height)` — a one-time
+  // snapshot taken only at mount and frozen forever after, so rotating the
+  // device mid-session left the drag auto-scroll's edge-detection zone
+  // using the stale pre-rotation viewport height until this screen happened
+  // to unmount/remount (real bug, found via KioskMealsTab.tsx's own copy of
+  // this exact pattern being live-reported and fixed first). useWindowDimensions()
+  // is the reactive equivalent — re-renders on a real rotation/resize event
+  // instead of needing a remount to pick one up.
+  const { height: viewportHeight } = useWindowDimensions();
 
   // storeAtY is plain JS (reads a ref, no worklet context) — updateHoveredStore
   // wraps it in a stable, hoisted function so the worklet below always calls

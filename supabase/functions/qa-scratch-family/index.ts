@@ -28,13 +28,25 @@
 //                member with no password), then calls the RPC through an
 //                anon-key client carrying that real JWT — exactly how the
 //                real app calls it.
-//   'add_event'/'add_quest' → convenience inserts for seeding test rows
-//                (a ride event, a chore) owned by the scratch family.
+//   'add_event'/'add_quest'/'add_reward'/'add_grocery_item'/'add_kid_request'
+//              → convenience inserts for seeding realistic test rows across
+//                every module AskFam answers questions about, not just
+//                chores/events — a ride event, a chore (with optional
+//                dueDate/dueTime/coins), a store reward, a grocery item, a
+//                kid request.
+//   'set_coins' → sets a scratch member's mainCoins/gpCoins directly, for
+//                testing balance/redemption questions without a real
+//                redemption flow.
+//   'ask'      → invokes the real ask-cube edge function AS a specific
+//                scratch member's real session (same session-minting as
+//                'rpc' above) — the actual end-to-end AskFam request/
+//                response path, not a static read of its prompt.
 //   'read'     → select * from any of a small allowlist of tables scoped
 //                to the scratch family_id, for the agent to inspect state
 //                between steps.
 //   'teardown' → deletes the scratch family and everything under it
-//                (events, quests, members, participants) by family_id.
+//                (events, quests, rewards, redemptions, grocery items, kid
+//                requests, members, participants) by family_id.
 //
 // Deploy: supabase functions deploy qa-scratch-family --no-verify-jwt
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (already present)
@@ -45,6 +57,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
+  'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests',
 ]);
 
 // families.id / members.id are real `uuid` columns (confirmed live —
@@ -87,6 +100,16 @@ serve(async (req) => {
 
     if (action === 'setup') {
       const memberCount = Math.min(Math.max(body.memberCount ?? 9, 2), 12);
+      // Optional friendly first names (e.g. ["Alex","Sarah","Jordan",...]),
+      // indexed by position — falls back to the generic "Parent N"/"Kid N"
+      // labels below when omitted or shorter than memberCount. Lets a
+      // conversational AskFam test read naturally ("what's Alex's chore
+      // status") instead of "QA SCRATCH Kid 3" [live-requested: "dont use
+      // that praveena jas cherry or uhgandhar / youse some aliases like
+      // Alex , Sarah , etc" — real family member names must never appear
+      // in test data, and generic role labels aren't natural to type in
+      // chat either].
+      const names: string[] | undefined = Array.isArray(body.names) ? body.names : undefined;
       const familyId = uuid();
       const { error: famErr } = await admin.from('families').insert({
         id: familyId, name: SCRATCH_MARK, created_at: new Date().toISOString(),
@@ -121,11 +144,18 @@ serve(async (req) => {
           email, email_confirm: true,
         });
         if (authErr || !authUser?.user) throw new Error(`auth user create failed for member ${i}: ${authErr?.message}`);
+        const friendlyName = names?.[i];
         members.push({
           id: memberId,
           family_id: familyId,
           auth_user_id: authUser.user.id,
-          name: `${SCRATCH_MARK} ${role === 'parent' ? 'Parent' : role === 'grandparent' ? 'GP' : role === 'teenager' ? 'Teen' : 'Kid'} ${i + 1}`,
+          // Still prefixed with SCRATCH_MARK even with a friendly name —
+          // teardown's stale-sweep and the 'rpc' action's actor lookup both
+          // key off `name LIKE '${SCRATCH_MARK}%'`, so this must stay a
+          // real, matchable marker regardless of naming style.
+          name: friendlyName
+            ? `${SCRATCH_MARK} ${friendlyName}`
+            : `${SCRATCH_MARK} ${role === 'parent' ? 'Parent' : role === 'grandparent' ? 'GP' : role === 'teenager' ? 'Teen' : 'Kid'} ${i + 1}`,
           role,
           avatar: role === 'parent' ? '🧑' : role === 'grandparent' ? '👵' : role === 'teenager' ? '🧑‍🎓' : '🧒',
           has_car: role === 'parent' || role === 'grandparent',
@@ -162,17 +192,72 @@ serve(async (req) => {
     }
 
     if (action === 'add_quest') {
-      const { familyId, title, isPool, assignedToId, status } = body;
+      const { familyId, title, isPool, assignedToId, status, dueDate, dueTime, coins } = body;
       await assertScratchFamily(admin, familyId);
       const id = scratchId('ch');
       const { error } = await admin.from('chore_tasks').insert({
         id, family_id: familyId, title: title ?? 'QA test chore',
         is_pool: isPool ?? true, assigned_to_id: assignedToId ?? null,
-        status: status ?? 'todo', base_points: 10, coins_reward: 10,
+        status: status ?? 'todo', base_points: coins ?? 10, coins_reward: coins ?? 10,
+        due_date: dueDate ?? null, due_time: dueTime ?? null,
         created_at: new Date().toISOString(),
       });
       if (error) throw new Error(`chore insert failed: ${error.message}`);
       return json({ ok: true, choreId: id });
+    }
+
+    // Broader seed actions — one per module, so a full QA campaign can build
+    // realistic day-to-day data everywhere AskFam answers questions about,
+    // not just chores/events [live-requested: "create extensive test data
+    // to all modules" / "make it 80% perfect all day to dy family needs"].
+    if (action === 'add_reward') {
+      const { familyId, title, cost, category, emoji } = body;
+      await assertScratchFamily(admin, familyId);
+      const id = uuid();
+      const { error } = await admin.from('rewards').insert({
+        id, family_id: familyId, title: title ?? 'QA test reward',
+        cost: cost ?? 50, category: category ?? 'Special', emoji: emoji ?? '🎁',
+        available: true, requires_approval: true, created_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(`reward insert failed: ${error.message}`);
+      return json({ ok: true, rewardId: id });
+    }
+
+    if (action === 'add_grocery_item') {
+      const { familyId, name, category, addedBy } = body;
+      await assertScratchFamily(admin, familyId);
+      const id = uuid();
+      const { error } = await admin.from('grocery_items').insert({
+        id, family_id: familyId, name: name ?? 'QA test item',
+        category: category ?? 'Other', added_by: addedBy ?? null,
+        is_bought: false, created_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(`grocery item insert failed: ${error.message}`);
+      return json({ ok: true, itemId: id });
+    }
+
+    if (action === 'add_kid_request') {
+      const { familyId, fromMemberId, type, detail, status } = body;
+      await assertScratchFamily(admin, familyId);
+      const id = uuid();
+      const { error } = await admin.from('kid_requests').insert({
+        id, family_id: familyId, from_member_id: fromMemberId,
+        type: type ?? 'ride', detail: detail ?? 'QA test request',
+        status: status ?? 'pending', urgency: 'normal',
+        requested_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(`kid request insert failed: ${error.message}`);
+      return json({ ok: true, requestId: id });
+    }
+
+    if (action === 'set_coins') {
+      const { memberId, mainCoins, gpCoins } = body;
+      const { error } = await admin.from('members').update({
+        ...(mainCoins != null ? { main_coins: mainCoins } : {}),
+        ...(gpCoins != null ? { gp_coins: gpCoins } : {}),
+      }).eq('id', memberId).like('name', `${SCRATCH_MARK}%`);
+      if (error) throw new Error(`set_coins failed: ${error.message}`);
+      return json({ ok: true });
     }
 
     if (action === 'rpc') {
@@ -189,36 +274,28 @@ serve(async (req) => {
       // guessed), so this can't be pointed at a real user's account.
       const { fnName, args, actingMemberId } = body;
       if (!fnName) throw new Error('fnName required');
-      if (!actingMemberId) throw new Error('actingMemberId required — resolve_active_member_id() has no path that works without a real session');
-
-      const { data: actor, error: actorErr } = await admin.from('members')
-        .select('id, name, auth_user_id').eq('id', actingMemberId).like('name', `${SCRATCH_MARK}%`).maybeSingle();
-      if (actorErr || !actor) throw new Error('actingMemberId is not a known scratch member');
-      if (!actor.auth_user_id) throw new Error('acting member has no linked auth user');
-
-      const { data: authUserResp, error: getUserErr } = await admin.auth.admin.getUserById(actor.auth_user_id);
-      if (getUserErr || !authUserResp?.user?.email) throw new Error(`getUserById failed: ${getUserErr?.message ?? 'no email'}`);
-      const authUser = authUserResp.user;
-
-      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-        type: 'magiclink', email: authUser.email,
-      });
-      if (linkErr || !linkData.properties?.hashed_token) {
-        throw new Error(`generateLink failed: ${linkErr?.message}`);
-      }
-      const anonClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
-      const { data: verifyData, error: verifyErr } = await anonClient.auth.verifyOtp({
-        type: 'magiclink', token_hash: linkData.properties.hashed_token,
-      });
-      if (verifyErr || !verifyData.session) {
-        throw new Error(`verifyOtp failed: ${verifyErr?.message}`);
-      }
-
-      const scopedClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-        global: { headers: { Authorization: `Bearer ${verifyData.session.access_token}` } },
-      });
+      const { scopedClient, actor } = await mintScratchMemberSession(admin, actingMemberId);
       const { data, error } = await scopedClient.rpc(fnName, args ?? {});
       return json({ ok: !error, data: data ?? null, error: error?.message ?? null, actingAs: actor.name });
+    }
+
+    // 'ask' — calls the real ask-cube edge function AS a specific scratch
+    // member's real session, same session-minting mechanism as 'rpc' above.
+    // Lets AskFam's actual system prompt/tool logic be exercised end-to-end
+    // against real seeded rows instead of only reasoned about statically —
+    // the model has no way to distinguish this session from a genuine
+    // family's, so this is the real request/response path in full
+    // [live-requested: "create a QA family and with data and test this
+    // model"].
+    if (action === 'ask') {
+      const { message, actingMemberId, conversationId } = body;
+      if (!message) throw new Error('message required');
+      const { scopedClient, actor } = await mintScratchMemberSession(admin, actingMemberId);
+      const { data, error } = await scopedClient.functions.invoke('ask-cube', {
+        body: { memberId: actor.id, message, conversationId },
+      });
+      if (error) throw new Error(`ask-cube invoke failed: ${error.message}`);
+      return json({ ok: !data?.error, actingAs: actor.name, ...data });
     }
 
     if (action === 'read') {
@@ -251,6 +328,43 @@ serve(async (req) => {
 // against it — a real DB check, not a string-prefix guess, since
 // families.id is a plain uuid with no way to encode a marker in the id
 // itself.
+// Shared by 'rpc' and 'ask' — mints a real Supabase session for a scratch
+// member so the caller can act as them through a real, session-scoped
+// client (anon key + that member's JWT), exactly like the app itself does.
+// See 'rpc' action's own original comment for why a real session is
+// unavoidable (no code path trusts a spoofed identity).
+async function mintScratchMemberSession(admin: ReturnType<typeof createClient>, actingMemberId: string | undefined) {
+  if (!actingMemberId) throw new Error('actingMemberId required — no path works without a real session');
+
+  const { data: actor, error: actorErr } = await admin.from('members')
+    .select('id, name, auth_user_id').eq('id', actingMemberId).like('name', `${SCRATCH_MARK}%`).maybeSingle();
+  if (actorErr || !actor) throw new Error('actingMemberId is not a known scratch member');
+  if (!actor.auth_user_id) throw new Error('acting member has no linked auth user');
+
+  const { data: authUserResp, error: getUserErr } = await admin.auth.admin.getUserById(actor.auth_user_id);
+  if (getUserErr || !authUserResp?.user?.email) throw new Error(`getUserById failed: ${getUserErr?.message ?? 'no email'}`);
+  const authUser = authUserResp.user;
+
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'magiclink', email: authUser.email,
+  });
+  if (linkErr || !linkData.properties?.hashed_token) {
+    throw new Error(`generateLink failed: ${linkErr?.message}`);
+  }
+  const anonClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
+  const { data: verifyData, error: verifyErr } = await anonClient.auth.verifyOtp({
+    type: 'magiclink', token_hash: linkData.properties.hashed_token,
+  });
+  if (verifyErr || !verifyData.session) {
+    throw new Error(`verifyOtp failed: ${verifyErr?.message}`);
+  }
+
+  const scopedClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: `Bearer ${verifyData.session.access_token}` } },
+  });
+  return { scopedClient, actor };
+}
+
 async function assertScratchFamily(admin: ReturnType<typeof createClient>, familyId: string | undefined) {
   if (!familyId) throw new Error('familyId required');
   const { data, error } = await admin.from('families').select('id, name').eq('id', familyId).maybeSingle();
@@ -265,6 +379,11 @@ async function deleteFamily(admin: ReturnType<typeof createClient>, familyId: st
     .data?.map((r: any) => r.auth_user_id).filter(Boolean) ?? [];
   if (eventIds.length) await admin.from('event_participants').delete().in('event_id', eventIds);
   if (choreIds.length) await admin.from('chore_participants').delete().in('chore_id', choreIds);
+  const rewardIds = (await admin.from('rewards').select('id').eq('family_id', familyId)).data?.map((r: any) => r.id) ?? [];
+  if (rewardIds.length) await admin.from('reward_redemptions').delete().in('reward_id', rewardIds);
+  await admin.from('rewards').delete().eq('family_id', familyId);
+  await admin.from('grocery_items').delete().eq('family_id', familyId);
+  await admin.from('kid_requests').delete().eq('family_id', familyId);
   await admin.from('trips').delete().eq('family_id', familyId);
   await admin.from('activity_log').delete().eq('family_id', familyId);
   await admin.from('calendar_events').delete().eq('family_id', familyId);

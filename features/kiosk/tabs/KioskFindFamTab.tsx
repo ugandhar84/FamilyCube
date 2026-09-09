@@ -58,15 +58,17 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import { MapPin, BatteryLow, Navigation } from 'lucide-react-native';
+import { MapPin, BatteryLow, BatteryMedium, Navigation, History } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
-import { useKioskActivity } from '../KioskActivityContext';
+import { KioskFormDrawer } from '../components/KioskFormDrawer';
+import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { supabase } from '@/lib/supabase';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import type { FamilyMember } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { KioskAvatar } from '../components/KioskAvatar';
 
 interface MemberLocation {
   member_id: string;
@@ -127,6 +129,38 @@ export function KioskFindFamTab({ active, members }: {
   const { registerActivity } = useKioskActivity();
   const [locations, setLocations] = useState<MemberLocation[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Real "Location Today" timeline — same member_location_history query
+  // GpsTab.tsx's own openHistory uses (today-only, decrypted addresses,
+  // newest first) [live-requested: "history we have the location history
+  // of each person right.. and provide the location icon to open the
+  // maps" — a genuinely missing real feature this fork never carried
+  // over, not something to invent]. The card's separate Navigation icon
+  // still opens native-maps directions, unchanged.
+  const [historyFor, setHistoryFor] = useState<{ member_id: string; name: string } | null>(null);
+  const [history, setHistory] = useState<{ lat: number; lng: number; address: string | null; recorded_at: string }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useKioskLockSuspended(!!historyFor);
+
+  const openHistory = async (memberId: string, name: string) => {
+    registerActivity();
+    setHistoryFor({ member_id: memberId, name });
+    setHistoryLoading(true);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('member_location_history')
+      .select('lat, lng, address, recorded_at')
+      .eq('member_id', memberId)
+      .gte('recorded_at', startOfDay.toISOString())
+      .order('recorded_at', { ascending: false })
+      .limit(500);
+    const decrypted = await Promise.all((data ?? []).map(async h => ({
+      ...h, address: h.address ? await decryptLocationText(memberId, h.address) : h.address,
+    })));
+    setHistory(decrypted);
+    setHistoryLoading(false);
+  };
 
   // Live-reported: "can we have map view lil taller in the portrait mode" —
   // a fixed 380px reads fine in landscape (where width is already scarce
@@ -352,6 +386,14 @@ export function KioskFindFamTab({ active, members }: {
           // as if it were live even after they opted out.
           const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
           const isLive = !!(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng));
+          // Layout: row 1 avatar+name, row 2 current location, battery %
+          // badge pinned to the card's own top-right corner, a bottom
+          // action button (repurposes the real "get directions" action —
+          // no separate location-history feature exists anywhere in the
+          // app to back a literal history view) [live-requested: "2 row
+          // avtar + name / current location / battery % on tthe top right
+          // and bottom is history icon"].
+          const lowBattery = loc?.battery_level != null && loc.battery_level <= 20;
           return (
             <Well
               key={m.id}
@@ -359,45 +401,70 @@ export function KioskFindFamTab({ active, members }: {
               accent={isLive ? roleColor(m.role ?? 'kid') : undefined}
               style={s.card}
             >
-              <View style={[s.avatar, { backgroundColor: roleColor(m.role ?? 'kid') + (isDark ? '24' : '1A') }]}>
-                <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
+              {loc?.battery_level != null && (
+                <View style={[s.batteryBadge, { backgroundColor: lowBattery ? k.dangerSoft : k.well, borderColor: lowBattery ? k.dangerEdge : k.cardBorder }]}>
+                  {lowBattery
+                    ? <BatteryLow size={11} color={k.danger} />
+                    : <BatteryMedium size={11} color={k.textMuted} />}
+                  <Text style={[s.batteryBadgeText, { color: lowBattery ? k.danger : k.textMuted }]} numberOfLines={1}>
+                    {loc.battery_level}%
+                  </Text>
+                </View>
+              )}
+
+              <View style={s.cardRow1}>
+                <KioskAvatar
+                  name={m.name}
+                  emoji={m.emoji}
+                  avatarUrl={m.avatarUrl}
+                  siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                  size={32}
+                  bgColor={roleColor(m.role ?? 'kid') + (isDark ? '24' : '1A')}
+                  k={k}
+                />
                 <Text style={[s.name, { color: k.text }]} numberOfLines={1}>{m.name}</Text>
-                {loc ? (
-                  <>
-                    <View style={s.metaRow}>
-                      <MapPin size={14} color={k.sage} />
-                      <Text style={[s.status, { color: k.sage }]} numberOfLines={1}>
-                        {loc.status_text || STATUS_LABEL[loc.status] || 'Unknown'}
-                      </Text>
-                    </View>
-                    {!!loc.neighborhood && (
-                      <Text style={[s.addr, { color: k.textMuted }]} numberOfLines={1}>{loc.neighborhood}</Text>
-                    )}
-                    {loc.battery_level != null && loc.battery_level <= 20 && (
-                      <View style={s.metaRow}>
-                        <BatteryLow size={14} color={k.danger} />
-                        <Text style={[s.lowBattery, { color: k.danger }]} numberOfLines={1}>
-                          {loc.battery_level}%
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <Text style={[s.addr, { color: k.textFaint }]} numberOfLines={1}>Location not shared</Text>
-                )}
               </View>
-              {isLive && (
+
+              {loc ? (
+                <View style={s.metaRow}>
+                  <MapPin size={12} color={k.sage} />
+                  <Text style={[s.status, { color: k.sage }]} numberOfLines={1}>
+                    {loc.neighborhood || loc.status_text || STATUS_LABEL[loc.status] || 'Unknown'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[s.addr, { color: k.textFaint }]} numberOfLines={1}>Location not shared</Text>
+              )}
+
+              {/* Two real, separate actions — History (member_location_
+                  history's own today-timeline, same real GpsTab.tsx
+                  feature) and Navigation (native-maps directions), not
+                  one icon standing in for the other
+                  [live-requested: "history we have the location history
+                  of each person right.. and provide the location icon to
+                  open the maps"]. History works for anyone with at least
+                  one location ping today, even one not currently pinned
+                  live; Navigation only makes sense with a real live pin. */}
+              <View style={s.cardActionsRow}>
                 <TouchableOpacity
-                  onPress={() => { registerActivity(); openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name); }}
+                  onPress={() => openHistory(m.id, m.name)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Get directions to ${m.name}`}
-                  style={[s.navBtn, { backgroundColor: k.sageSoft, borderColor: k.sageEdge }]}>
-                  <Navigation size={20} color={k.sage} />
+                  accessibilityLabel={`${m.name}'s location history today`}
+                  style={[s.navBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+                  <History size={16} color={k.textMuted} />
                 </TouchableOpacity>
-              )}
+                {isLive && (
+                  <TouchableOpacity
+                    onPress={() => { registerActivity(); openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name); }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Get directions to ${m.name}`}
+                    style={[s.navBtn, { backgroundColor: k.sageSoft, borderColor: k.sageEdge }]}>
+                    <Navigation size={16} color={k.sage} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </Well>
           );
         })}
@@ -408,6 +475,53 @@ export function KioskFindFamTab({ active, members }: {
         </WidgetCard>
       </ScrollView>
       )}
+
+      {/* Location history — real GpsTab.tsx feature (today-only timeline
+          from member_location_history), kiosk-native drawer shell instead
+          of the phone's bottom sheet, same query/data. */}
+      <KioskFormDrawer
+        visible={!!historyFor}
+        variant="drawer"
+        title={historyFor ? `${historyFor.name}'s Location Today` : 'Location Today'}
+        subtitle={new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+        accent={k.sage}
+        Icon={History}
+        k={k}
+        onClose={() => setHistoryFor(null)}
+      >
+        {historyLoading ? (
+          <View style={{ alignItems: 'center', paddingVertical: KIOSK_SPACE.xl }}>
+            <ActivityIndicator color={k.sage} />
+          </View>
+        ) : history.length === 0 ? (
+          <EmptyNote text="No location updates recorded yet today." k={k} />
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {history.map((h, idx) => (
+              <View key={idx} style={[s.historyRow, idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+                <View style={s.historyTimeCol}>
+                  {/* Date + time per row, not just once in the drawer's
+                      own subtitle [live-requested: "in history we should
+                      sho date and time right"] — app-wide 12h format
+                      standard. */}
+                  <Text style={[s.historyDate, { color: k.textFaint }]} numberOfLines={1}>
+                    {new Date(h.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  <Text style={[s.historyTime, { color: k.text }]} numberOfLines={1}>
+                    {new Date(h.recorded_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  </Text>
+                </View>
+                <View style={[s.historyDot, { backgroundColor: k.sage }]} />
+                {/* Full address, not truncated to one line
+                    [live-requested: "and complete address"]. */}
+                <Text style={[s.historyAddr, { color: k.textMuted }]}>
+                  {h.address ?? `${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}`}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </KioskFormDrawer>
     </View>
   );
 }
@@ -448,23 +562,58 @@ const s = StyleSheet.create({
     fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#F7F2EE',
     marginTop: KIOSK_SPACE.xs, textAlign: 'center',
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
+  // Real 4-per-row grid — was a fixed 300px card width with no share-based
+  // sizing, wrapping to whatever count happened to fit rather than a
+  // deliberate column count [live-requested: "lets make this ia nice grid
+  // of familuy memebrs to fit the ocntenter an dmaller like 4 ppl. in a
+  // row"]. Smaller/more compact card to match: less padding, smaller
+  // avatar/text, nav button moved below the name row instead of beside it
+  // (no room for it inline at this width).
+  // 3 per row now (was 4), and a shorter card — smaller vertical padding
+  // and inter-row gap [live-requested: "may be resuc the height of the
+  // card and make grid limit to 3?"].
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
+  // [live-requested: "dont waste the space on the card"] — tighter
+  // padding all round, and cardRow1's own reserved clearance for the
+  // battery badge cut down to just what that small badge actually needs.
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    width: 300, maxWidth: '100%', minHeight: 76,
+    flexBasis: '31%', flexGrow: 1, maxWidth: '31%', minWidth: 150,
+    flexDirection: 'column', alignItems: 'center', gap: 2,
+    paddingVertical: 6, paddingHorizontal: 6, position: 'relative',
   },
+  // Row 1: avatar + name side by side [live-requested: "2 row avtar +
+  // name / current location"].
+  cardRow1: { flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%', paddingRight: 24 },
   avatar: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarEmoji: { fontSize: 22 },
-  name: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginTop: 4 },
-  status: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  addr: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 4 },
+  avatarEmoji: { fontSize: 15 },
+  name: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
+  // Battery %, pinned to the card's own top-right corner
+  // [live-requested: "battery % on tthe top right"].
+  batteryBadge: {
+    position: 'absolute', top: 5, right: 5,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: 4, paddingVertical: 1,
+  },
+  batteryBadgeText: { fontSize: 9, fontWeight: '800' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 },
+  status: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  addr: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, textAlign: 'center' },
   lowBattery: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  // Bottom action row — History always shows, Navigation only when live.
+  cardActionsRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
   navBtn: {
-    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2,
+    width: 32, height: 32, borderRadius: 16, marginTop: 2,
     borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
+  // Location-history drawer rows.
+  historyRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: KIOSK_SPACE.sm },
+  historyTimeCol: { width: 68 },
+  historyDate: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  historyTime: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', marginTop: 1 },
+  historyDot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: KIOSK_SPACE.sm, marginTop: 6 },
+  historyAddr: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '600', lineHeight: KIOSK_TYPO.body * 1.4 },
 });

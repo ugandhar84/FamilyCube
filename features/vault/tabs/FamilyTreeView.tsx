@@ -136,9 +136,20 @@ function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark,
 
       {kids.length > 0 && (
         <GenGroup label={`Kids (${kids.length})`} colors={colors}>
+          {/* alignItems: 'center' — each kid's column is flex:1 (2 or
+              fewer kids) or a fixed 31% (3+, wrapping), but MemberCard
+              itself is a fixed 180px width with no self-centering, so
+              without this each card sat flush at its column's LEFT edge
+              instead of centered — same alignItems:'center' the Parents
+              row above already has per-column, just missing here
+              [live-reported: "still kids are aprt from - not aligned"]. */}
           <View style={{ flexDirection: 'row', gap: 6, flexWrap: kids.length > 3 ? 'wrap' : 'nowrap' }}>
             {kids.map(k => (
-              <View key={k.id} style={{ width: kids.length > 3 ? '31%' : undefined, flex: kids.length > 3 ? undefined : 1 }}>
+              <View key={k.id} style={{
+                width: kids.length > 3 ? '31%' : undefined,
+                flex: kids.length > 3 ? undefined : 1,
+                alignItems: 'center',
+              }}>
                 {renderCard(k)}
               </View>
             ))}

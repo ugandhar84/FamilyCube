@@ -31,19 +31,20 @@
  */
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert, StyleSheet } from 'react-native';
-import { Gift, Coins, ClipboardCheck, History, Check, X } from 'lucide-react-native';
+import { Gift, Coins, ClipboardCheck, History, Check, X, Plus, Pencil, Trash2 } from 'lucide-react-native';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
+import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote, ActionButton } from '../components/KioskOS';
+import { KioskAddRewardForm, type RewardFormData } from '../components/KioskAddRewardForm';
 
 export function KioskStoreTab({ active }: { active: FamilyMember }) {
   const { k, isDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
-  const { rewards, redemptions, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
+  const { rewards, redemptions, redeemReward, approveRedemption, rejectRedemption, addReward, updateReward, deleteReward } = useRewardStore();
   const { members } = useFamilyStore();
 
   const eligible = useMemo(
@@ -66,6 +67,37 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
   const canRedeemSelf = active.role === 'kid' || active.role === 'teen' || active.role === 'senior';
 
   const [jarPicker, setJarPicker] = useState<Reward | null>(null);
+
+  // Add/edit/delete perk catalog — real StoreScreen.tsx capability
+  // (addReward/updateReward/deleteReward, all from useRewardStore()) that
+  // kiosk had ZERO UI for at all [live-reported: "i figured out lot of
+  // things are missing par with Mobile app store add /mod /del" / "please
+  // aling those 2 pages with the exact mobile functionality"]. Parent-only,
+  // same as mobile (PerkCard's onLongPress is isParent-gated there too).
+  const [rewardFormOpen, setRewardFormOpen] = useState(false);
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
+  useKioskLockSuspended(rewardFormOpen);
+
+  const openAddReward = () => { setEditingReward(null); setRewardFormOpen(true); };
+  const openEditReward = (r: Reward) => { setEditingReward(r); setRewardFormOpen(true); };
+
+  // Same real defaulting StoreScreen.tsx's own PerkModal onSave does:
+  // create fills in available/requiresApproval/createdAt, edit only ever
+  // patches the fields the form actually collects.
+  const saveReward = (data: RewardFormData) => {
+    if (editingReward) {
+      updateReward?.(editingReward.id, data, active.id);
+    } else {
+      addReward?.({ available: true, requiresApproval: true, createdAt: new Date().toISOString(), ...data } as any);
+    }
+  };
+
+  const confirmDeleteReward = (r: Reward) => {
+    Alert.alert('Delete Perk?', `Remove "${r.title}" from the store?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteReward?.(r.id) },
+    ]);
+  };
 
   // redeemReward(rewardId, memberId, wallet) already deducts the coins
   // atomically server-side (rewardStore.ts:396's redeem_reward RPC) — no
@@ -246,9 +278,17 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
           <WidgetHeader
             Icon={Gift} eyebrow="Catalog" title="Available perks"
             accent={k.primary} k={k} isDark={isDark}
-            right={eligible.length > 0
-              ? <Chip label={`${eligible.length}`} accent={k.primary} isDark={isDark} k={k} />
-              : undefined}
+            right={(
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}>
+                {eligible.length > 0 && <Chip label={`${eligible.length}`} accent={k.primary} isDark={isDark} k={k} />}
+                {isParent && (
+                  <ActionButton
+                    label="Add Perk" Icon={Plus} accent={k.primary} k={k} isDark={isDark}
+                    onPress={openAddReward} variant="soft"
+                  />
+                )}
+              </View>
+            )}
           />
           {eligible.length === 0 ? (
             <Well k={k} style={s.emptyWell}>
@@ -260,6 +300,12 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
               />
             </Well>
           ) : (
+            // 2 rows visible (6-per-row × 2 = 12), rest scroll
+            // [live-requested: "store also untouched tab one lets make
+            // the 6 items per a row.2 row"] — same bounded-ScrollView
+            // pattern every other kiosk grid this session uses, instead
+            // of letting the reward grid grow the whole page indefinitely.
+            <ScrollView style={s.gridScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             <View style={s.grid}>
               {eligible.map(r => {
                 const affordable = canRedeemSelf && maxAffordable >= r.cost;
@@ -268,7 +314,8 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
                   <Pressable
                     key={r.id}
                     onPress={() => canRedeemSelf && onRedeem(r)}
-                    disabled={!canRedeemSelf}
+                    onLongPress={isParent ? () => openEditReward(r) : undefined}
+                    disabled={!canRedeemSelf && !isParent}
                     style={({ pressed }) => [
                       s.perk,
                       {
@@ -282,11 +329,23 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
                     accessibilityLabel={`${r.title}, ${r.cost} coins`}
                     accessibilityState={{ disabled: !canRedeemSelf }}
                     accessibilityHint={
-                      !canRedeemSelf ? undefined
+                      isParent ? 'Long-press to edit this perk'
+                        : !canRedeemSelf ? undefined
                         : affordable ? 'Redeem this reward'
                         : `Not enough coins yet, ${r.cost - maxAffordable} more needed`
                     }
                   >
+                    {isParent && (
+                      <Pressable
+                        onPress={() => confirmDeleteReward(r)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={[s.perkDelete, { backgroundColor: k.card, borderColor: k.cardBorder }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${r.title}`}
+                      >
+                        <Trash2 size={12} color={k.danger} />
+                      </Pressable>
+                    )}
                     <Text style={s.perkEmoji}>{r.emoji}</Text>
                     <Text style={[s.perkTitle, { color: k.text }]} numberOfLines={2}>{r.title}</Text>
                     <Chip label={`${r.cost} coins`} accent={k.gold} isDark={isDark} k={k} />
@@ -299,6 +358,7 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
                 );
               })}
             </View>
+            </ScrollView>
           )}
         </WidgetCard>
       </ScrollView>
@@ -371,6 +431,13 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
           </View>
         </View>
       )}
+
+      <KioskAddRewardForm
+        visible={rewardFormOpen}
+        editing={editingReward}
+        onClose={() => setRewardFormOpen(false)}
+        onSave={saveReward}
+      />
     </View>
   );
 }
@@ -427,13 +494,27 @@ const s = StyleSheet.create({
     borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
+  // 6 per row, and radius matching every other kiosk card (WidgetCard's
+  // own KIOSK_RADIUS.sm) instead of the rounder .lg this grid used alone
+  // [live-requested: "store also untouched tab one lets make the 6 items
+  // per a row. use the same radious as the cards in pverview.."]. A
+  // percentage flexBasis (not the old fixed 190px width) so 6 always fit
+  // regardless of screen width, smaller emoji/text to match the denser
+  // card.
+  // 2 rows visible (minHeight 130 each + gap), rest scroll.
+  gridScroll: { maxHeight: 270 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
   perk: {
-    width: 190, maxWidth: '100%', minHeight: 180, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
-    padding: KIOSK_SPACE.md, alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.sm,
+    flexBasis: '15%', flexGrow: 1, maxWidth: '15%', minWidth: 120, minHeight: 130,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, position: 'relative',
+    padding: KIOSK_SPACE.sm, alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
   },
-  perkEmoji: { fontSize: 40 },
-  perkTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', textAlign: 'center' },
+  perkDelete: {
+    position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1,
+  },
+  perkEmoji: { fontSize: 28 },
+  perkTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', textAlign: 'center' },
   needMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   emptyWell: { alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xl },
 

@@ -71,40 +71,69 @@ const HEALTH:   KioskRailItem = { key: 'health',   label: 'Health',   Icon: Hear
 const PROFILE:  KioskRailItem = { key: 'profile',  label: 'Profile',  Icon: UserCircle2 };
 
 /**
- * Parent / kid: the full rail. Ordered to the mockup's rhythm — the
- * dashboard, then the kitchen, then the household's shared domains.
+ * Per-role rail order — each role gets its OWN sequence reflecting what
+ * that role actually uses most, rather than one shared order reused
+ * everywhere [live-requested: "rearrange the tab menu based on the real
+ * family intrest and importance.. for parent and kids, teens, gp"]. Which
+ * tabs a role sees at all is UNCHANGED from before this pass (still
+ * mirrors the phone's own per-role tab split — see this file's own
+ * earlier header note); only the ORDER within each role's own set moved.
  */
-export const RAIL_DEFAULT: KioskRailItem[] = [
-  OVERVIEW, MEALS, SCHEDULE, TASKS, FINDFAM, CHAT, STORE, MEMORIES, SCHOOL, HEALTH, PROFILE,
+
+/**
+ * Parent: oversight-first. Dashboard, then the logistics that need a
+ * parent's eyes daily (schedule, chore approvals, meal planning, knowing
+ * where everyone is), then communication, then the rest.
+ */
+export const RAIL_PARENT: KioskRailItem[] = [
+  OVERVIEW, SCHEDULE, TASKS, MEALS, FINDFAM, CHAT, STORE, HEALTH, SCHOOL, MEMORIES, PROFILE,
+];
+
+/** Back-compat alias — some call sites may still reference the old name. */
+export const RAIL_DEFAULT: KioskRailItem[] = RAIL_PARENT;
+
+/**
+ * Kid: motivation-first. Their own dashboard, then earning coins (chores)
+ * and spending them (store) — the two things a kid actually opens this
+ * device for most — then what's happening today, then talking to family,
+ * then the rest. School stays kid-accessible (phone parity), placed near
+ * the end alongside the other reference/utility tabs.
+ */
+export const RAIL_KID: KioskRailItem[] = [
+  OVERVIEW, TASKS, STORE, SCHEDULE, CHAT, MEALS, MEMORIES, FINDFAM, HEALTH, SCHOOL, PROFILE,
 ];
 
 /**
- * Teen: same, minus School — School stays parent/kid-only on the phone
- * (AppsQuickAccessPills.tsx's PILLS roles array). Health and Memories are
- * both teen-accessible on the phone (health covers a teen's own medications;
- * memories was widened to include teen at the owner's explicit request), so
- * kiosk keeps both for teen too — inventing a narrower kiosk-only exclusion
- * would be a real (if small) product regression nobody asked for.
+ * Teen: same motivation-first logic as Kid, but Find ranks a bit higher —
+ * more relevant once a teen is out and about somewhat independently
+ * (rides, curfew-adjacent check-ins) than it is for a younger kid mostly
+ * home. School was widened to include teen on the phone
+ * (AppsQuickAccessPills.tsx's PILLS roles array) at the owner's explicit
+ * request ["it should be for both kids and teens - school schedule"], so
+ * kiosk keeps it here too, placed near the end alongside Health/Memories
+ * to match Kid's own placement. Health and Memories are both
+ * teen-accessible on the phone (health covers a teen's own medications;
+ * memories was widened to include teen at the owner's explicit request),
+ * so kiosk keeps both for teen too.
  */
-export const RAIL_TEEN: KioskRailItem[] = RAIL_DEFAULT.filter(
-  r => r.key !== 'school',
-);
+export const RAIL_TEEN: KioskRailItem[] = [
+  OVERVIEW, TASKS, STORE, SCHEDULE, CHAT, MEALS, FINDFAM, MEMORIES, HEALTH, SCHOOL, PROFILE,
+];
 
 /**
- * Senior / grandparent: the calm subset, matching the phone's TABS_SENIOR
- * (no Store, no FindFam). Meals was here (a grandparent cooking dinner
- * seemed like a plausible real use of a kitchen display) but was removed
- * per explicit later correction: "we dont need meals for seniours" — now
- * matching real mobile, which never gave senior a Meals entry point at
- * all (no 'meals' pill in AppsQuickAccessPills' PILLS, no Meals link in
- * SeniorView.tsx).
+ * Senior / grandparent: connection-first, matching a grandparent's real
+ * priority — staying in touch and seeing photos — ahead of household
+ * chore oversight. Same subset as before (no Store, no FindFam, no
+ * Meals — see this file's own note on why Meals was removed for senior),
+ * only the order changed.
  */
 export const RAIL_SENIOR: KioskRailItem[] = [
-  OVERVIEW, TASKS, CHAT, MEMORIES, PROFILE,
+  OVERVIEW, CHAT, MEMORIES, TASKS, PROFILE,
 ];
 
 export function railForRole(role: string | undefined): KioskRailItem[] {
   if (role === 'senior') return RAIL_SENIOR;
   if (role === 'teen') return RAIL_TEEN;
-  return RAIL_DEFAULT;
+  if (role === 'kid') return RAIL_KID;
+  return RAIL_PARENT;
 }

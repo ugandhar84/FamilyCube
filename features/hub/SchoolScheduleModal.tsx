@@ -4,7 +4,7 @@
  *
  * Data lives in schoolStore (AsyncStorage).  No Supabase yet.
  */
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, type ReactNode } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   Pressable, Alert, ScrollView, Platform, StyleSheet,
@@ -30,7 +30,7 @@ interface Props {
   onClose:    () => void;
 }
 
-const ALL_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+export const ALL_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 type Day = typeof ALL_DAYS[number];
 const DAY_LABEL: Record<Day, string> = {
   mon: 'M', tue: 'T', wed: 'W', thu: 'Th', fri: 'F', sat: 'Sa', sun: 'Su',
@@ -38,12 +38,12 @@ const DAY_LABEL: Record<Day, string> = {
 
 // ─── Time picker helper ───────────────────────────────────────────────────────
 
-function timeToMins(t: string) {
+export function timeToMins(t: string) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 
-function formatTime(t: string) {
+export function formatTime(t: string) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
   const ampm = h >= 12 ? 'PM' : 'AM';
@@ -52,7 +52,7 @@ function formatTime(t: string) {
 }
 
 // Simple HH:MM picker via text input — good enough for MVP
-function TimeInput({ value, onChange, placeholder, colors }: {
+export function TimeInput({ value, onChange, placeholder, colors }: {
   value: string; onChange: (v: string) => void; placeholder: string; colors: any;
 }) {
   return (
@@ -70,7 +70,7 @@ function TimeInput({ value, onChange, placeholder, colors }: {
 
 // ─── Period row (edit) ────────────────────────────────────────────────────────
 
-function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
+export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
   period: ClassPeriod; colors: any; isDark: boolean;
   onChange: (p: ClassPeriod) => void; onDelete: () => void;
 }) {
@@ -437,7 +437,7 @@ const DAY_ABBR: Record<string,string> = { mon:'M',tue:'T',wed:'W',thu:'Th',fri:'
 const DAY_FULL: Record<string,string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
 const NOW_DAY_KEY_MAP: Record<number,string> = { 0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat' };
 
-export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isDark, defaultExpanded, externalOpenRequested, onExternalOpenHandled }: {
+export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isDark, defaultExpanded, externalOpenRequested, onExternalOpenHandled, onEditModalVisibilityChange, renderEditModal }: {
   memberId: string; memberName: string; isParent: boolean; colors: any; isDark: boolean; defaultExpanded?: boolean;
   /** Set true to open this card's edit-schedule modal from OUTSIDE (the
    * shared FAB's School-tab "+" face, via SchoolTab.tsx's one-shot uiStore
@@ -446,8 +446,33 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
    * can clear its own flag. */
   externalOpenRequested?: boolean;
   onExternalOpenHandled?: () => void;
+  /** Fires whenever this card's own edit-schedule Modal opens/closes —
+   * lets a kiosk wrapper participate in the idle lock while a parent is
+   * mid-edit (this Modal has no kiosk awareness of its own, same real bug
+   * class already fixed for AskCubeChat/other phone-shared modals: kiosk's
+   * idle timer kept running as if nothing was happening, risking a
+   * discarded draft) [live-requested: "please aling those 2 pages with
+   * the exact mobile functionality" — School's own CRUD modal]. Optional;
+   * the phone's own SchoolTab.tsx never passes this, so its behavior is
+   * completely unchanged. */
+  onEditModalVisibilityChange?: (open: boolean) => void;
+  /** Kiosk-only override — when provided, this card renders the given
+   * function instead of mounting its own real SchoolScheduleModal, so a
+   * kiosk wrapper can show its own KioskFormDrawer-shelled version of the
+   * exact same real form instead of the phone's slide-up sheet
+   * [live-reported: "i see that there is manual forms are missing in
+   * school it should be side form"]. Same visible/onClose contract as the
+   * built-in modal — the card still owns editModalOpen and still decides
+   * when to show it, only the rendered shell changes. Optional; every
+   * existing caller (the phone's own SchoolScreen.tsx/SchoolTab.tsx) never
+   * passes this, so their behavior is completely unchanged. */
+  renderEditModal?: (props: { visible: boolean; onClose: () => void; memberId: string; memberName: string; isParent: boolean }) => ReactNode;
 }) {
-  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpenState] = useState(false);
+  const setEditModalOpen = (open: boolean) => {
+    setEditModalOpenState(open);
+    onEditModalVisibilityChange?.(open);
+  };
   useEffect(() => {
     if (externalOpenRequested) {
       setEditModalOpen(true);
@@ -551,12 +576,16 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
         </View>
 
         {!schedule ? (
-          /* No schedule yet — setup now lives behind the shared FAB's
-             School-tab "+" face (app/(tabs)/_layout.tsx), not a second
-             inline entry point on this card. */
+          /* No schedule yet. The real create-schedule entry point now
+             lives in the title row above this card (SchoolTab.tsx's own
+             "Create Schedule" button beside the selected kid's name)
+             [live-requested: "i want create a schedule button in the row
+             of title once we select the kid" / "in empty component we can
+             remove that button" — this card's own copy of that button,
+             added when this was the only entry point, is redundant now]. */
           <View style={{ paddingHorizontal: 14, paddingBottom: 14, alignItems: 'center' }}>
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontWeight: '600' }}>
-              No schedule yet — tap the + button below to set one up
+              No schedule yet
             </Text>
           </View>
         ) : (
@@ -667,15 +696,17 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
         )}
       </View>
 
-      <SchoolScheduleModal
-        visible={editModalOpen}
-        memberId={memberId}
-        memberName={memberName}
-        isParent={isParent}
-        colors={colors}
-        isDark={isDark}
-        onClose={() => setEditModalOpen(false)}
-      />
+      {renderEditModal ? renderEditModal({ visible: editModalOpen, onClose: () => setEditModalOpen(false), memberId, memberName, isParent }) : (
+        <SchoolScheduleModal
+          visible={editModalOpen}
+          memberId={memberId}
+          memberName={memberName}
+          isParent={isParent}
+          colors={colors}
+          isDark={isDark}
+          onClose={() => setEditModalOpen(false)}
+        />
+      )}
     </>
   );
 }

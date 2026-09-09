@@ -44,7 +44,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal, useWindowDimensions } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
-  CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion, Pencil,
+  CheckCircle2, Camera, RotateCcw, Zap, Trophy, ShieldQuestion, Pencil, ChevronRight,
 } from 'lucide-react-native';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
@@ -75,9 +75,11 @@ import { GpOfferReviewCard } from '@/features/hub/parent/GpOfferReviewCard';
 import { CreateQuestModal } from '@/features/hub/senior/CreateQuestModal';
 import { KioskAiChoresEngine } from '../components/KioskAiChoresEngine';
 import { KioskChoreHistorySheet } from '../components/KioskChoreHistorySheet';
+import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
+import { KioskAvatar } from '../components/KioskAvatar';
 
 // Live-reported: a chore a parent sent back for redo (choreAdapter maps
 // the DB's 'redo_requested' status down to Quest status 'declined',
@@ -93,8 +95,10 @@ import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette
 // widget answers those questions from the same source rather than a
 // second copy that could drift. Nothing about the rules changed.
 
-export function KioskTasksTab({ active, members, colors, isDark }: {
+export function KioskTasksTab({ active, members, colors, isDark, onNavigate }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
+  /** For kid/teen's own "My Progress" sideCol Reward Store link. */
+  onNavigate?: (tab: any) => void;
 }) {
   // Live-reported: an approved chore (e.g. a "Suggest a Chore" proposal a
   // parent just approved into a real pool chore) didn't show up on kiosk
@@ -125,7 +129,7 @@ export function KioskTasksTab({ active, members, colors, isDark }: {
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
-  return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} />;
+  return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} onNavigate={onNavigate} />;
 }
 
 /**
@@ -140,10 +144,16 @@ export function KioskTasksTab({ active, members, colors, isDark }: {
  * writing that by hand is how one of them ends up without it.
  */
 function FilterPill({
-  label, emoji, selected, accent, onPress, k, isDark, a11yLabel, hint,
+  label, emoji, avatarMember, avatarSiblings, selected, accent, onPress, k, isDark, a11yLabel, hint,
 }: {
   label: string;
   emoji?: string;
+  /** When set, renders a real KioskAvatar (emoji/photo/initials) for this
+   *  member instead of the plain `emoji` prop's raw glyph — used by the
+   *  per-member filter pills so a member's real uploaded photo isn't
+   *  silently ignored here the way it was before. */
+  avatarMember?: FamilyMember;
+  avatarSiblings?: string[];
   selected: boolean;
   accent: string;
   onPress: () => void;
@@ -170,7 +180,18 @@ function FilterPill({
         pressed && { opacity: 0.75 },
       ]}
     >
-      {!!emoji && <Text style={{ fontSize: 13 }}>{emoji}</Text>}
+      {avatarMember ? (
+        <KioskAvatar
+          name={avatarMember.name}
+          emoji={avatarMember.emoji}
+          avatarUrl={avatarMember.avatarUrl}
+          siblings={avatarSiblings}
+          size={18}
+          k={k}
+        />
+      ) : (
+        !!emoji && <Text style={{ fontSize: 13 }}>{emoji}</Text>
+      )}
       <Text
         style={[s.filterChipText, { color: selected ? kioskOnAccent(k, accent) : k.textMuted }]}
         numberOfLines={1}
@@ -191,8 +212,9 @@ function FilterPill({
 // including other kids', with no claim/submit action anywhere (live-
 // reported: "we need similar chore/event creation and claim like mobile
 // app... claim, submit, review all exact same mobile app functions").
-function KioskBoardView({ active, members, colors, isDark }: {
+function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
+  onNavigate?: (tab: any) => void;
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
@@ -443,6 +465,19 @@ function KioskBoardView({ active, members, colors, isDark }: {
     return { pool, review, mine };
   }, [visibleQuests]);
 
+  // Self-scoped real fields for kid/teen's own "My Progress" sideCol
+  // panel — same mainCoins/gpCoins/streak fields KioskOverviewTab.tsx's
+  // own KioskMyBalancePanel already reads off the real FamilyMember, not
+  // invented numbers.
+  const myCoins = ((active as any).mainCoins ?? 0) + ((active as any).gpCoins ?? 0);
+  const myStreak = (active as any).streak ?? 0;
+  const recentlyCompleted = useMemo(() => {
+    return visibleQuests
+      .filter(q => (q.status === 'approved' || q.status === 'done') && q.assignedToId === active.id && !!q.approvedAt)
+      .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
+      .slice(0, 5);
+  }, [visibleQuests, active.id]);
+
   // ── Pool / "Up for grabs" lane [GAP] ──────────────────────────────────
   // Pool chores previously had no lane of their own — they fell into
   // whichever status column matched (always "To Do") and were
@@ -684,6 +719,20 @@ function KioskBoardView({ active, members, colors, isDark }: {
                     <Text style={[s.statusPillText, { color: meta.accent }]} numberOfLines={1}>{meta.label}</Text>
                   </View>
 
+                  {/* Real FOMO/bonus timer — same FlashBonusBadge component
+                      Overview's own KioskUpForGrabsPanel already uses for
+                      this exact real bonusCoins/bonusExpiresAt data
+                      [live-requested: "the pool chore will have bonus and
+                      timebased FOMO blink or something" / "jus show the
+                      flashing coins bonus on the same row of the status
+                      badges"]. Shows the full reward figure (base + bonus)
+                      plus a live countdown — the plain coin chip further
+                      right is hidden whenever this renders, so the same
+                      number doesn't print twice. */}
+                  {q.bonusExpiresAt && q.bonusCoins > 0 && (
+                    <FlashBonusBadge bonusCoins={q.coins + q.bonusCoins} expiresAt={q.bonusExpiresAt} />
+                  )}
+
                   {overdue && (
                     <View
                       style={[s.statusPill, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]}
@@ -744,9 +793,13 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   reward chip) — the mock's own coin pill is a soft amber
                   tint. History moved into the badge row above, alongside
                   the date/status tags [live-reported: "keep that in the
-                  row of the date"]. */}
+                  row of the date"]. Hidden when the button's own label
+                  already states the coin figure (only the Claim button
+                  does — "Claim (+N 🪙)") so the same number doesn't print
+                  twice on one card [live-reported: "remove the redundent
+                  info showing coins manyplaces on the same card"]. */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                {!isAdultAssignee && (
+                {!isAdultAssignee && !btn?.label.includes('🪙') && !(q.bonusExpiresAt && q.bonusCoins > 0) && (
                   <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
                 )}
                 {/* Primary action button ALWAYS visible in the collapsed
@@ -774,6 +827,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                     label={btn.label} Icon={btn.Icon} accent={btn.accent}
                     k={k} isDark={kioskDark} variant="solid"
                     style={s.headerActionBtn}
+                    textStyle={s.headerActionBtnText}
                     accessibilityHint={q.title}
                     onPress={() => { registerActivity(); btn.action(); }}
                   />
@@ -812,13 +866,37 @@ function KioskBoardView({ active, members, colors, isDark }: {
         )}
 
         <View style={s.cardMeta}>
-          <View style={[s.assigneeChip, { backgroundColor: q.isPool ? k.well : rs.badge, borderColor: q.isPool ? k.cardBorder : rs.dot + '55' }]}>
-            {!q.isPool && <Text style={{ fontSize: 14 }}>{assignee?.emoji ?? '👤'}</Text>}
-            <Text style={[s.assigneeChipText, { color: q.isPool ? k.textMuted : rs.text }]} numberOfLines={1}>
-              {q.isPool ? 'Open to all' : memberName(q.assignedToId) ?? 'Unassigned'}
-            </Text>
-          </View>
-          {!!q.dueDate && (
+          {/* Pool quests drop this chip entirely — "Open to all" only ever
+              restated the BOUNTY badge already sitting in the row above
+              [live-reported: "remove open to all as it is already
+              redundenty to bounty"]. An assigned quest shows the
+              assignee's real avatar only, no name text
+              [live-reported: "we can just show avtar instead of names on
+              the chores cards"] — accessibilityLabel still carries the
+              real name for screen readers. */}
+          {!q.isPool && (
+            <View accessibilityLabel={memberName(q.assignedToId) ?? 'Unassigned'}>
+              <KioskAvatar
+                name={assignee?.name ?? 'Unassigned'}
+                emoji={assignee?.emoji}
+                avatarUrl={assignee?.avatarUrl}
+                siblings={members.filter(x => x.id !== assignee?.id).map(x => x.name)}
+                size={24}
+                ringWidth={1.5}
+                ringColor={rs.dot}
+                bgColor={rs.badge}
+                k={k}
+              />
+            </View>
+          )}
+          {/* Hidden when overdue — the badge row's own overdue pill
+              already states this exact date, so showing it a second time
+              here would be the same redundancy just fixed for coins
+              [live-reported: "remove the date which is in exapndable as
+              it is redundant to the date which is in the stature badge
+              row"]. A non-overdue due date has no equivalent anywhere
+              else on the card, so it still shows here. */}
+          {!!q.dueDate && !overdue && (
             <View style={s.dueRow}>
               <Clock3 size={13} color={k.textFaint} />
               <Text style={[s.dueText, { color: k.textFaint }]} numberOfLines={1}>{fmtDateShort(q.dueDate)}</Text>
@@ -1166,21 +1244,16 @@ function KioskBoardView({ active, members, colors, isDark }: {
               onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
             />
           </View>
-        ) : (btn || actions.canKidDecline || actions.canGiveBack || (actions.canApprove && !!q.assignedToId) || actions.canReopen) ? (
+        ) : (actions.canKidDecline || actions.canGiveBack || (actions.canApprove && !!q.assignedToId) || actions.canReopen) ? (
+          // btn's own primary action (e.g. "Claim (+10 🪙)") is NOT
+          // repeated here — it's already always visible in the collapsed
+          // header (see that comment above), so rendering it again in the
+          // expanded body just printed the same button twice on one card
+          // [live-reported: "why do we ned same dumplicate claim button
+          // donw"]. This row now only ever holds the card's SECONDARY
+          // actions (Redo/Reopen/Can't do this) — `btn` itself dropped
+          // from both the trigger condition and the row's own content.
           <View style={s.actionRow}>
-            {btn && (
-              <ActionButton
-                label={btn.label}
-                Icon={btn.Icon}
-                accent={btn.accent}
-                k={k}
-                isDark={kioskDark}
-                variant="solid"
-                style={s.actionPrimary}
-                accessibilityHint={q.title}
-                onPress={() => { registerActivity(); btn.action(); }}
-              />
-            )}
             {/* ── Parent Redo, paired with Approve [GAP — audit finding
                 A1] ────────────────────────────────────────────────────
                 The board's own canApprove branch (primaryAction, above)
@@ -1215,6 +1288,9 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 redoCount/rejectionReason), just one the phone's own UI
                 never surfaced. */}
             {actions.canReopen && (
+              // btn no longer occupies a slot in this row (see this row's
+              // own header comment) — Reopen is this row's own leading
+              // action now whenever it's the first thing rendered here.
               <ActionButton
                 label="Reopen"
                 Icon={RotateCcw}
@@ -1222,7 +1298,7 @@ function KioskBoardView({ active, members, colors, isDark }: {
                 k={k}
                 isDark={kioskDark}
                 variant="soft"
-                style={btn ? s.actionSecondary : s.actionPrimary}
+                style={s.actionPrimary}
                 accessibilityHint={`Reopen ${q.title} so it can be tried again`}
                 onPress={() => { registerActivity(); reopenQuest(q.id, active.id); showToast(`Reopened "${q.title}" ✓`); }}
               />
@@ -1273,6 +1349,28 @@ function KioskBoardView({ active, members, colors, isDark }: {
       </KioskExpandableCard>
     );
   };
+
+  // Extracted so it can render in a different position by role — parent
+  // keeps it leading the board (Zone 1), kid/teen get it trailing after
+  // In Flight instead [live-requested: "any one can clain cam go to
+  // bottom widget and first fous on the inflight or already claimed
+  // chores"]. See its render site below for the full rationale.
+  const poolZone = poolQuests.length > 0 ? (
+    <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
+      <PanelHead
+        title="Anyone can claim these"
+        k={k}
+        right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
+      />
+      <View style={s.poolGrid}>
+        {poolQuests.map(q => (
+          <View key={q.id} style={s.poolCard}>
+            {renderQuestCard(q)}
+          </View>
+        ))}
+      </View>
+    </WidgetCard>
+  ) : null;
 
   return (
     <ScrollView
@@ -1370,7 +1468,8 @@ function KioskBoardView({ active, members, colors, isDark }: {
               <FilterPill
                 key={m.id}
                 label={first}
-                emoji={m.emoji ?? '👤'}
+                avatarMember={m}
+                avatarSiblings={members.filter(x => x.id !== m.id).map(x => x.name)}
                 selected={on}
                 accent={rs.dot}
                 k={k} isDark={kioskDark}
@@ -1502,35 +1601,19 @@ function KioskBoardView({ active, members, colors, isDark }: {
           The pool lane leads the board rather than being buried inside
           "To Do". This is the one thing on a shared kitchen surface that
           is addressed to the ROOM rather than to an individual, so it
-          gets hero treatment: full width, tinted tiles, big cards. */}
-      {poolQuests.length > 0 && (
-        <WidgetCard k={k} isDark={kioskDark} style={s.zone}>
-          {/* Plain uppercase-tracked label + small count pill — matching
-              the approved reference mock's own zone header exactly (no
-              icon-chip), not WidgetHeader's fixed icon+eyebrow+title
-              shape. Real eyebrow copy kept verbatim as the label text. */}
-          <PanelHead
-            title="Anyone can claim these"
-            k={k}
-            right={<Chip label={`${poolQuests.length}`} accent={k.gold} isDark={kioskDark} k={k} />}
-          />
-          {/* Plain View, not a Well wrapper — KioskExpandableCard already
-              draws its own card shell (background/border/accent bar) per
-              row, so wrapping it in a second k.well-tinted, accent-bordered
-              Well double-boxed every row here, the one thing that made
-              this zone look different from "In flight" right below it
-              [live-reported: "like in flight card"] even though both use
-              the exact same renderQuestCard. Matching In flight's own flat
-              s.poolCard wrapper exactly. */}
-          <View style={s.poolGrid}>
-            {poolQuests.map(q => (
-              <View key={q.id} style={s.poolCard}>
-                {renderQuestCard(q)}
-              </View>
-            ))}
-          </View>
-        </WidgetCard>
-      )}
+          gets hero treatment: full width, tinted tiles, big cards.
+          For kid/teen this zone now renders AFTER In Flight instead of
+          before it (poolZone below is a JSX variable, placed at the
+          bottom for kid/teen and here for parent) [live-requested: "any
+          one can clain cam go to bottom widget and first fous on the
+          inflight or already claimed chores"] — a kid glancing at their
+          own board cares first about what's already theirs and in
+          progress, with open-to-anyone bounties as a secondary "if you
+          want more" section below. Parent keeps the original pool-first
+          order (matches their own existing screenshot/mock), since a
+          parent's first question is "what's unclaimed", not "what's my
+          kid already doing". */}
+      {isParent && poolZone}
 
       {/* ── Zone 1.5: Bounty claims needing review [GAP — audit A2/A3] ──
           Same real card content ParentReviewDeck.tsx's own
@@ -1729,6 +1812,11 @@ function KioskBoardView({ active, members, colors, isDark }: {
         </WidgetCard>
       )}
 
+      {/* Kid/teen: Anyone-can-claim trails In Flight instead of leading
+          it — see poolZone's own definition/comment above for the full
+          rationale. */}
+      {!isParent && poolZone}
+
       {/* Whole-board empty state — one calm, centered message rather
           than four separate "Nothing here" labels. */}
       {poolQuests.length === 0 && !byColumn.some(c => c.items.length > 0) && (
@@ -1772,12 +1860,92 @@ function KioskBoardView({ active, members, colors, isDark }: {
 
       {/* ── Sidebar — matching KioskOverviewTab.tsx's own sideCol
           (Coin Jars etc). "Who has what" relocated here from the main
-          column (same real kidStats data, unchanged), plus a new real
+          column (same real kidStats data, unchanged), plus a real
           coin-balance panel using the exact same jar-row pattern Overview
           uses for its own Coin Jars widget (mainCoins + gpCoins off each
-          real FamilyMember — no invented numbers). Parent-facing only,
-          same as the roster always was. */}
+          real FamilyMember — no invented numbers). Both parent-facing
+          only, same as the roster always was (they'd leak every sibling's
+          own coin balance/open-chore count to a kid otherwise).
+          Kid/teen instead get their own self-scoped "My Progress" panel
+          below [live-requested: "we dont need full wodth instead
+          introduce another coloum with the stats and some useful quick
+          info and valuble" — after first trying to hide the whole column
+          outright for kid/teen when it was rendering visibly empty and
+          silently squeezing chore-card titles]. */}
       <View style={[s.sideCol, isNarrowBoardLayout && s.colFullWidth]}>
+        {!isParent && (
+          <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+            <PanelHead title="My progress" k={k} />
+            <View style={s.jarRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>Coins</Text>
+                <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                  {myStreak > 0 ? `${myStreak} day streak` : 'No streak yet'}
+                </Text>
+              </View>
+              <Text style={[s.jarAmt, { color: k.gold }]} numberOfLines={1}>🪙 {myCoins}</Text>
+            </View>
+            <View style={[s.jarRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>On your plate</Text>
+                <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>Chores assigned to you</Text>
+              </View>
+              <Text style={[s.jarAmt, { color: totals.mine === 0 ? k.sage : k.text }]} numberOfLines={1}>
+                {totals.mine === 0 ? '✓' : totals.mine}
+              </Text>
+            </View>
+            <View style={[s.jarRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>Up for grabs</Text>
+                <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>Anyone can claim these</Text>
+              </View>
+              <Text style={[s.jarAmt, { color: totals.pool > 0 ? k.purple : k.textFaint }]} numberOfLines={1}>{totals.pool}</Text>
+            </View>
+            {/* Quiet text link, not a filled button — same convention
+                Overview's own My Balance panel already uses for "Reward
+                Store" [live-requested: "reward store is text link >"
+                earlier this session]. */}
+            {!!onNavigate && (
+              <Pressable
+                onPress={() => onNavigate('store')}
+                style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open reward store"
+                accessibilityHint="Open the reward store to spend coins"
+              >
+                <Text style={[s.panelTextLinkText, { color: k.gold }]}>Reward Store</Text>
+                <ChevronRight size={14} color={k.gold} />
+              </Pressable>
+            )}
+          </WidgetCard>
+        )}
+
+        {/* Recently completed — real, motivating glance at chores THIS
+            member has already finished, most recent first
+            [live-requested: "recently completed chores... using the same
+            activity-log data"]. Reads visibleQuests directly (already
+            scoped to this member by visibleQuestsFor), not a separate
+            fetch — approved/done items it already carries. */}
+        {!isParent && recentlyCompleted.length > 0 && (
+          <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
+            <PanelHead title="Recently completed" k={k} />
+            {recentlyCompleted.map((q, i) => (
+              <View
+                key={q.id}
+                style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
+                  <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
+                    {q.approvedAt ? new Date(q.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                  </Text>
+                </View>
+                <Text style={[s.jarAmt, { color: k.sage }]} numberOfLines={1}>+{q.coins}</Text>
+              </View>
+            ))}
+          </WidgetCard>
+        )}
+
         {isParent && kidStats.length > 0 && (
           <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
             <PanelHead title="Who has what" k={k} />
@@ -1791,9 +1959,17 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                   accessibilityLabel={`${member.name.split(' ')[0]}: ${done} of ${total} chores done`}
                 >
-                  <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
-                    <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
-                  </View>
+                  <KioskAvatar
+                    name={member.name}
+                    emoji={member.emoji}
+                    avatarUrl={member.avatarUrl}
+                    siblings={members.filter(x => x.id !== member.id).map(x => x.name)}
+                    size={36}
+                    ringWidth={1.5}
+                    ringColor={rs.dot}
+                    bgColor={rs.badge}
+                    k={k}
+                  />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
                     <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
@@ -1825,9 +2001,17 @@ function KioskBoardView({ active, members, colors, isDark }: {
                   key={member.id}
                   style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                 >
-                  <View style={[s.jarAvatar, { backgroundColor: rs.badge, borderColor: rs.dot, borderWidth: 1.5 }]}>
-                    <Text style={{ fontSize: 15 }}>{member.emoji ?? '👤'}</Text>
-                  </View>
+                  <KioskAvatar
+                    name={member.name}
+                    emoji={member.emoji}
+                    avatarUrl={member.avatarUrl}
+                    siblings={members.filter(x => x.id !== member.id).map(x => x.name)}
+                    size={36}
+                    ringWidth={1.5}
+                    ringColor={rs.dot}
+                    bgColor={rs.badge}
+                    k={k}
+                  />
                   <Text style={[s.jarName, { color: k.text, flex: 1 }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
                   <Text style={[s.jarAmt, { color: k.gold }]} numberOfLines={1}>🪙 {total}</Text>
                 </View>
@@ -2356,6 +2540,12 @@ const s = StyleSheet.create({
   jarName: { fontSize: 13.5, fontWeight: '700' },
   jarMeta: { fontSize: 11.5, marginTop: 2 },
   jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  // Same values as KioskOverviewTab.tsx's own panelTextLink/panelTextLinkText.
+  panelTextLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    marginTop: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, minHeight: KIOSK_HIT.min,
+  },
+  panelTextLinkText: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
 
   // ── Filter bar ────────────────────────────────────────────────────────
   // One shared card (matching the approved reference mock's own
@@ -2471,13 +2661,17 @@ const s = StyleSheet.create({
   // row overwhelm the title they're meant to annotate. The accent lives in
   // the border and the label, on the neutral `well` ground, which reads the
   // same way in both appearances.
+  // Tightened below KIOSK_TYPO.micro — a deliberate literal-size exception
+  // for this specific lighter tag control, same reasoning Overview's own
+  // filter-chip fix used [live-requested: "reduce the status badge sizes
+  // etc"].
   statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
     borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 3,
+    paddingHorizontal: 7, paddingVertical: 2,
     flexShrink: 1,
   },
-  statusPillText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 0.3, flexShrink: 1 },
+  statusPillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2, flexShrink: 1 },
   // A real bordered control, not a bare icon — this sits inside the card's
   // own header Pressable, so it needs to read as a separate tappable thing
   // rather than decoration. hitSlop (at the call site) carries it past the
@@ -2500,7 +2694,15 @@ const s = StyleSheet.create({
   // which are never hidden behind an expand step. Shorter than the
   // expanded body's own full-width action buttons since this sits inline
   // beside the coin chip in a compact header row.
-  headerActionBtn: { paddingHorizontal: KIOSK_SPACE.md, minHeight: 34 },
+  // flexShrink lets this button compress rather than always claiming its
+  // full natural width, which was squeezing the title column down to a
+  // couple words before it ever truncated [live-reported screenshot:
+  // "Help with grocery shoppi..." cut off]; headerActionBtnText's smaller
+  // size (was KIOSK_TYPO.body/ActionButton's own default) buys the label
+  // more room to actually fit without wrapping, in the same reduced
+  // footprint.
+  headerActionBtn: { paddingHorizontal: KIOSK_SPACE.sm, minHeight: 34, flexShrink: 1 },
+  headerActionBtnText: { fontSize: KIOSK_TYPO.caption },
   // Matches WidgetHeader's own headerIcon exactly (38x38, KIOSK_RADIUS.md)
   // — the same icon-chip size/shape Overview uses everywhere, rather than
   // this card's own smaller one-off badge. Visual-polish pass only.
@@ -2564,11 +2766,12 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
   editLinkText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
-  assigneeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, borderRadius: KIOSK_RADIUS.sm,
-    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs, borderWidth: 1, flexShrink: 1,
+  // Avatar-only, no name text [live-requested: "we can just show avtar
+  // instead of names on the chores cards"].
+  assigneeAvatar: {
+    width: 24, height: 24, borderRadius: 12, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
   },
-  assigneeChipText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   dueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dueText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
   // (cardActionBtn's full-width single button was replaced by the two-up

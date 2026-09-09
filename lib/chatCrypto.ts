@@ -307,6 +307,33 @@ export async function getDevicePublicKeyB64(familyId?: string): Promise<string> 
 }
 
 /**
+ * This device's own REAL identity keypair, bypassing any family-scoped
+ * recovered pair even when one exists for `familyId` — unlike
+ * getDeviceKeyPair(familyId), which prefers the recovered pair whenever its
+ * SecureStore slot is present. Needed because a recovery-key ROTATION
+ * (setUpFamilyRecoveryKey, called by both first-time setup and Reset) only
+ * updates the server side (device_keys' recovery row, families.
+ * encrypted_recovery_privkey) — it has no way to reach into every device
+ * that previously ran recoverWithFamilyPasscode and clear their now-stale
+ * RECOVERED_PRIVKEY_PREFIX/RECOVERED_PUBKEY_PREFIX SecureStore slot, since
+ * that state is local-only and the device may be offline or not the one
+ * doing the reset. A device in that state silently keeps using its stale
+ * recovered key as if it were still current, in every getDeviceKeyPair(
+ * familyId) call — live-reported as location addresses coming back
+ * "wrong key"/garbled shortly after a passcode reset on such a device: its
+ * OWN real identity is registered normally in device_keys the whole time
+ * (installRecoveredKeyPair's own doc confirms this — recovery never
+ * touches it) and is still perfectly capable of unwrapping anything wrapped
+ * for it, but getDeviceKeyPair(familyId) had no way to reach it once a
+ * (now-stale) recovered slot took priority. This lets a read-path retry
+ * loop (decryptLocationText et al.) fall back to trying this device's real
+ * identity too, rather than only ever having one candidate key per family.
+ */
+export async function getRealDeviceKeyPair(): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+  return getDeviceKeyPair();
+}
+
+/**
  * Encrypt plaintext once with a fresh random session key, and wrap that
  * session key for every given recipient device's public key.
  * Returns the body ciphertext plus one wrapped-key entry per recipient —
@@ -362,6 +389,26 @@ export async function unwrapSessionKeyFromDevice(
 }
 
 /**
+ * Same as unwrapSessionKeyFromDevice, but always uses this device's REAL
+ * identity (getRealDeviceKeyPair) rather than a family-scoped recovered
+ * pair — same stale-recovered-key-after-a-passcode-reset gap
+ * unwrapLocationKeyWithRealIdentity exists to cover, for chat instead of
+ * location (getRealDeviceKeyPair's own doc explains the full mechanism —
+ * fixed for location, this closes the identical gap here).
+ */
+export async function unwrapSessionKeyFromDeviceWithRealIdentity(
+  wrappedKey: string,
+  senderPublicKeyB64: string,
+): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getRealDeviceKeyPair();
+  const theirPub = b64ToBytes(senderPublicKeyB64);
+  const shared    = x25519.getSharedSecret(myPriv, theirPub);
+  const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
+  const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
+  return wrapCipher.decrypt(b64ToBytes(wrappedB64));
+}
+
+/**
  * Decrypt a message this device was a wrap target for. senderPublicKeyB64
  * is the sender device's public key (looked up from device_keys) — ECDH is
  * symmetric, so deriving with (myPrivate, theirPublic) reproduces the exact
@@ -373,13 +420,30 @@ export async function decryptFromDevice(
   senderPublicKeyB64: string,
   familyId?: string,
 ): Promise<string> {
-  try {
-    const sessionKey = await unwrapSessionKeyFromDevice(wrappedKey, senderPublicKeyB64, familyId);
+  const decode = (sessionKey: Uint8Array) => {
     const [ivB64, encB64] = ciphertext.split(':');
     const cipher  = gcm(sessionKey, b64ToBytes(ivB64));
     const decoded = cipher.decrypt(b64ToBytes(encB64));
     return new TextDecoder().decode(decoded);
+  };
+  try {
+    const sessionKey = await unwrapSessionKeyFromDevice(wrappedKey, senderPublicKeyB64, familyId);
+    return decode(sessionKey);
   } catch {
+    // Same stale-recovered-identity gap fixed for location (see
+    // getRealDeviceKeyPair's own doc) — a family-scoped recovered key left
+    // over from before a passcode reset/rotation takes priority in
+    // getDeviceKeyPair(familyId) and fails the GCM auth check against a
+    // message wrapped for this device's REAL identity. Chat has a known,
+    // specific sender_device_id per message (unlike location's "try every
+    // device" loop), so one retry against the real identity is enough —
+    // no candidate list needed.
+    if (familyId) {
+      try {
+        const sessionKey = await unwrapSessionKeyFromDeviceWithRealIdentity(wrappedKey, senderPublicKeyB64);
+        return decode(sessionKey);
+      } catch { /* fall through to the sentinel below */ }
+    }
     return '[🔒 encrypted — wrong key or corrupted]';
   }
 }
@@ -463,6 +527,21 @@ export async function unwrapLocationKey(wrappedKey: string, senderPublicKeyB64: 
   return wrapCipher.decrypt(b64ToBytes(wrappedB64));
 }
 
+/**
+ * Same as unwrapLocationKey, but always uses this device's REAL identity
+ * (getRealDeviceKeyPair) rather than a family-scoped recovered pair — see
+ * that function's own doc for why this fallback exists (a stale recovered
+ * key left over from before a passcode reset/rotation).
+ */
+export async function unwrapLocationKeyWithRealIdentity(wrappedKey: string, senderPublicKeyB64: string): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getRealDeviceKeyPair();
+  const theirPub = b64ToBytes(senderPublicKeyB64);
+  const shared    = x25519.getSharedSecret(myPriv, theirPub);
+  const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
+  const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
+  return wrapCipher.decrypt(b64ToBytes(wrappedB64));
+}
+
 /** Encrypt plaintext with an already-established AES-256 session key (not a fresh one). */
 export function encryptWithSessionKey(plaintext: string, sessionKey: Uint8Array): string {
   const iv        = randomBytes(12);
@@ -534,6 +613,21 @@ export async function wrapRecordsKeyForDevices(
 /** Unwraps a records session key using this device's own private key + the sender device's public key. */
 export async function unwrapRecordsKey(wrappedKey: string, senderPublicKeyB64: string, familyId?: string): Promise<Uint8Array> {
   const { privateKey: myPriv } = await getDeviceKeyPair(familyId);
+  const theirPub = b64ToBytes(senderPublicKeyB64);
+  const shared    = x25519.getSharedSecret(myPriv, theirPub);
+  const [wrapIvB64, wrappedB64] = wrappedKey.split(':');
+  const wrapCipher = gcm(shared.slice(0, 32), b64ToBytes(wrapIvB64));
+  return wrapCipher.decrypt(b64ToBytes(wrappedB64));
+}
+
+/**
+ * Same as unwrapRecordsKey, but always uses this device's REAL identity
+ * (getRealDeviceKeyPair) rather than a family-scoped recovered pair — same
+ * stale-recovered-key-after-a-passcode-reset gap unwrapLocationKeyWithRealIdentity
+ * exists to cover, for health/medical records instead of location.
+ */
+export async function unwrapRecordsKeyWithRealIdentity(wrappedKey: string, senderPublicKeyB64: string): Promise<Uint8Array> {
+  const { privateKey: myPriv } = await getRealDeviceKeyPair();
   const theirPub = b64ToBytes(senderPublicKeyB64);
   const shared    = x25519.getSharedSecret(myPriv, theirPub);
   const [wrapIvB64, wrappedB64] = wrappedKey.split(':');

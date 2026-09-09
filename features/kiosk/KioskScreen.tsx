@@ -26,8 +26,11 @@
  * Everything rendered into a native <Modal> sits in its own native window
  * and its touches never reach this component's root onTouchStart. Every
  * such surface here therefore either wraps itself in KioskModalHost
- * (KioskIntercomModal, KioskAskFamDrawer — both do, internally) or is
- * declared to the lock via useKioskLockSuspended (AskCubeChat, below).
+ * (KioskIntercomModal does, internally) or is declared to the lock via
+ * useKioskLockSuspended (AskCubeChat, below — the local, non-AI
+ * KioskAskFamDrawer was retired in favor of the real AI for every role
+ * that still has an "Ask Fam"/"Ask Family AI" entry point; see its own
+ * removal comment further down).
  * Skipping that is the bug KioskActivityContext exists to fix: the busiest
  * moments on the device would register as total inactivity and the lock
  * would fire mid-sentence. Any NEW modal added to kiosk must do one of the
@@ -36,11 +39,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Sparkles } from 'lucide-react-native';
+import { Sparkles, UserCircle2 } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
 import { useEventStore, eventAssignee, isEventSensitive } from '@/store/eventStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useTripStore } from '@/store/tripStore';
+import { useRewardStore } from '@/store/rewardStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import AskCubeChat from '@/components/AskCubeChat';
@@ -49,11 +55,11 @@ import { KioskLockScreen } from './KioskLockScreen';
 import { KioskAmbientOverlay, type AmbientNextUp } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
-import { KioskAskFamDrawer } from './components/KioskAskFamDrawer';
 import { ParentStatsColumn } from './components/ParentStatsColumn';
 import { KioskKidTeenStatsColumn } from './components/KioskKidTeenStatsColumn';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
+import { KioskFormDrawer } from './components/KioskFormDrawer';
 import { useKioskFonts } from './kioskFonts';
 import { railForRole, type KioskTabKey } from './kioskTabs';
 import { useKioskIdleLock } from './useKioskIdleLock';
@@ -67,6 +73,7 @@ import { KioskStoreTab } from './tabs/KioskStoreTab';
 import { KioskMemoriesTab } from './tabs/KioskMemoriesTab';
 import { KioskSchoolTab } from './tabs/KioskSchoolTab';
 import { KioskHealthTab } from './tabs/KioskHealthTab';
+import { EditMyProfileSheet } from '@/features/profile/ProfileSettingsScreen';
 import { KioskProfileTab } from './tabs/KioskProfileTab';
 import { useTheme } from '@/lib/ThemeContext';
 
@@ -93,9 +100,16 @@ export default function KioskScreen() {
   const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
   const [tab, setTab] = useState<KioskTabKey>('overview');
   const [askCubeOpen, setAskCubeOpen] = useState(false);
-  const [askFamOpen, setAskFamOpen] = useState(false);
   const [intercomOpen, setIntercomOpen] = useState(false);
   const [standbyPinned, setStandbyPinned] = useState(false);
+  // Long-press on the sidebar's own identity card (ParentStatsColumn /
+  // KioskKidTeenStatsColumn) opens the same real EditMyProfileSheet the
+  // phone's Profile screen uses — replaces that screen's own hero card as
+  // the entry point on kiosk, since the identity is already always
+  // visible here [live-requested: "remove the heroin the profile as we
+  // aalready have it in the static side bar we can add that fuctionality
+  // long press"].
+  const [showEditMyProfile, setShowEditMyProfile] = useState(false);
 
   const { locked, ambient, registerActivity, lockNow, unlock, suspendLock, resumeLock } = useKioskIdleLock();
 
@@ -135,7 +149,6 @@ export default function KioskScreen() {
   useEffect(() => {
     if (!locked) return;
     setAskCubeOpen(false);
-    setAskFamOpen(false);
     setIntercomOpen(false);
   }, [locked]);
 
@@ -191,6 +204,65 @@ export default function KioskScreen() {
   // channel the phone uses, so a new event appears without a long wait.
   useEffect(() => {
     useEventStore.getState().selectDate(localDateStr());
+  }, []);
+  // Same real bug class as the calendar fix above — kidRequestStore's ONLY
+  // real fetch call anywhere in the app is app/_layout.tsx's own AppState
+  // foreground listener (`useKidRequestStore.getState().loadFromStorage()`
+  // inside its `AppState.addEventListener('change', ...)` handler), which
+  // never fires for a kiosk that's always foregrounded — the store starts
+  // at its own initial `requests: []` and nothing ever populates it
+  // [live-reported: "so we are not able fix it?" / "but ehy the list has
+  // shown - it is stille mpty" — My Requests wasn't crashing anymore
+  // after the raw-JSON fix, it was genuinely empty because the request
+  // list itself was never fetched]. Calling it here on mount both
+  // populates real request data and subscribes kiosk to the same
+  // `kid_requests:${familyId}` realtime channel loadFromStorage's own
+  // ensureRealtime call sets up.
+  // Depends on active?.familyId, not []: loadFromStorage's own getFamilyId()
+  // reads familyStore.getState() synchronously with no wait — if this
+  // fired before familyStore's real member/family data had resolved on a
+  // cold kiosk launch (members still empty), familyId came back null, the
+  // fetch was silently skipped (loadFromStorage's own `if (familyId)`
+  // guard), and nothing ever re-triggered it since the effect never
+  // re-ran — the store stayed permanently empty even though real requests
+  // existed [live-reported: "ive noticed kids requests are not showing
+  // under the overview"]. Re-running once familyId actually resolves
+  // fixes the race without guessing at a fixed delay.
+  useEffect(() => {
+    if (active?.familyId) useKidRequestStore.getState().loadFromStorage();
+  }, [active?.familyId]);
+  // Same real bug class, same fix, one more sibling store: tripStore's ONLY
+  // real fetch call anywhere in the app (besides its own realtime channel,
+  // which nothing ever opens without this first call) is HubScreen.tsx's
+  // own mount effect (`loadTrip(familyId)`, features/hub/HubScreen.tsx) —
+  // that screen never mounts on kiosk, so tripStore's `activeTrips` stayed
+  // permanently `[]` and its `trips:${familyId}` realtime channel never
+  // subscribed at all [live-reported: "so enroute is has bugs not syncing
+  // the mobile and kiosek"] — a trip started on a phone (which DOES mount
+  // HubScreen and boot the channel) had nowhere on kiosk that was ever
+  // listening. Same familyId-dependent re-run as the kidRequestStore fix
+  // above, for the same cold-launch race (familyStore's members may not
+  // have resolved yet on the first render).
+  useEffect(() => {
+    if (active?.familyId) useTripStore.getState().loadFromStorage(active.familyId);
+  }, [active?.familyId]);
+  // Same real bug class, same fix, one more sibling store: rewardStore's ONLY
+  // real fetch call anywhere in the app is HubScreen.tsx's/StoreScreen.tsx's
+  // own mount effect (`loadFromStorage()`, which internally calls
+  // syncFromDB() — the only thing that ever reads rewards/reward_redemptions
+  // from Supabase and the only thing that opens rewardStore's realtime
+  // channel — see rewardStore.ts's own loadFromStorage comment). Neither
+  // screen mounts on kiosk, so KioskStoreTab/KioskOverviewTab/KioskHubTab
+  // were reading nothing but the seeded local defaults forever, with no
+  // `reward_redemptions` channel ever subscribing — a reward a parent added
+  // or a redemption a kid requested on a phone never reached kiosk at all.
+  // Not keyed on `active?.familyId` like the two siblings above — rewardStore's
+  // syncFromDB takes no familyId argument at all (its select('*') on
+  // rewards/reward_redemptions is unfiltered, relying entirely on RLS, same
+  // trust boundary its own ensureRealtime doc comment already documents for
+  // the realtime side), so a plain mount call is all its signature allows.
+  useEffect(() => {
+    useRewardStore.getState().loadFromStorage();
   }, []);
   const { quests } = useQuestStore();
   const ambientChoreCount = useMemo(
@@ -330,27 +402,12 @@ export default function KioskScreen() {
               })}
             </ScrollView>
 
-            {/* Ask Fam — the mockup's bottom-of-rail assistant card. Open to
-                every role, unlike the header's AskCubeChat (parent-only,
-                because that one is a real model with real spend behind it);
-                this drawer is a local lookup over the family's own data, so
-                there's nothing to gate. */}
-            <Pressable
-              onPress={() => setAskFamOpen(true)}
-              style={({ pressed }) => [
-                s.askFamCard,
-                {
-                  backgroundColor: pressed ? k.cardHover : k.purpleSoft,
-                  borderColor: k.purpleEdge,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Ask Fam"
-              accessibilityHint="Look up your family's schedule, chores and meals"
-            >
-              <Sparkles size={20} color={k.purple} />
-              <Text style={[s.askFamText, { color: k.purple }]} numberOfLines={1}>Ask Fam</Text>
-            </Pressable>
+            {/* Ask Fam removed for senior — no AI-shaped surface at all for
+                GP, even a real non-AI local lookup, per explicit direction
+                [live-requested: "restict content to the kids /teens as
+                they are .. no AI at all for the GP"]. Every other role
+                still gets it from their own persistent shell
+                (ParentStatsColumn / KioskKidTeenStatsColumn). */}
           </View>
           )}
 
@@ -362,7 +419,18 @@ export default function KioskScreen() {
             <ParentStatsColumn
               active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
-              onAskFam={() => setAskFamOpen(true)}
+              // Opens the real AI (AskCubeChat, same one the header's Ask
+              // Cube button opens) instead of the local, non-AI Ask Fam
+              // lookup — a parent's own "Ask Family AI" card should
+              // actually be the real AI [live-requested: "ask fam is not
+              // showing reponse similar to the mobile app" → confirmed:
+              // "Have Ask Fam actually call the real AI backend" +
+              // "Same behavior as Ask Cube — real AI, parent-only"]. Kid/
+              // teen's own Ask Fam (KioskKidTeenStatsColumn, below) stays
+              // the local lookup — AI access is parent-only, matching Ask
+              // Cube's own existing gate.
+              onAskFam={() => setAskCubeOpen(true)}
+              onLongPressIdentity={() => setShowEditMyProfile(true)}
             />
           )}
 
@@ -375,7 +443,37 @@ export default function KioskScreen() {
             <KioskKidTeenStatsColumn
               active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
               onNavigate={setTab}
-              onAskFam={() => setAskFamOpen(true)}
+              onLongPressIdentity={() => setShowEditMyProfile(true)}
+            />
+          )}
+
+          {/* Self-service name/DOB/email/avatar edit — same real sheet
+              ProfileSettingsScreen.tsx's own (now kiosk-hidden) hero card
+              used to open, now reachable via a long-press on the sidebar's
+              identity card instead [live-requested: "remove the heroin the
+              profile as we aalready have it in the static side bar we can
+              add that fuctionality long press"]. */}
+          {active && (
+            <EditMyProfileSheet
+              visible={showEditMyProfile}
+              onClose={() => setShowEditMyProfile(false)}
+              member={active}
+              colors={colors}
+              isDark={isDark}
+              renderShell={(visible, onClose, children) => (
+                <KioskFormDrawer
+                  visible={visible}
+                  variant="drawer"
+                  title="Edit My Profile"
+                  subtitle="Your own name, photo, birthday, and email"
+                  accent={k.primary}
+                  Icon={UserCircle2}
+                  k={k}
+                  onClose={onClose}
+                >
+                  {children}
+                </KioskFormDrawer>
+              )}
             />
           )}
 
@@ -392,14 +490,20 @@ export default function KioskScreen() {
               />
             )}
             {effectiveTab === 'meals' && <KioskMealsTab active={active} members={members} />}
-            {effectiveTab === 'tasks' && <KioskTasksTab active={active} members={members} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'tasks' && <KioskTasksTab active={active} members={members} colors={colors} isDark={isDark} onNavigate={setTab} />}
             {effectiveTab === 'schedule' && !isSenior && <KioskScheduleTab active={active} members={members} colors={colors} isDark={isDark} />}
             {effectiveTab === 'chat' && <KioskChatTab active={active} members={members} colors={colors} isDark={isDark} />}
             {effectiveTab === 'findfam' && !isSenior && <KioskFindFamTab active={active} members={members} />}
             {effectiveTab === 'store' && !isSenior && <KioskStoreTab active={active} />}
             {effectiveTab === 'memories' && <KioskMemoriesTab colors={colors} isDark={isDark} readOnly={isSenior} />}
-            {effectiveTab === 'school' && !isSenior && !isTeen && <KioskSchoolTab isKid={isKidRole} colors={colors} isDark={isDark} />}
-            {effectiveTab === 'health' && !isSenior && <KioskHealthTab isKid={isKidRole} colors={colors} isDark={isDark} />}
+            {effectiveTab === 'school' && !isSenior && <KioskSchoolTab isKid={isKidRole} isTeen={isTeen} colors={colors} isDark={isDark} />}
+            {/* isKidRole || isTeen — a teen must only ever see their OWN
+                medications, same restricted view a kid gets, not the whole
+                family's [live-requested: "we should only show the fitlerd
+                medications for the kids right"]. Was isKidRole only, so a
+                teen session silently saw every family member's meds in
+                both this tab's sidebar and its main list. */}
+            {effectiveTab === 'health' && !isSenior && <KioskHealthTab isKid={isKidRole || isTeen} colors={colors} isDark={isDark} />}
             {effectiveTab === 'profile' && <KioskProfileTab />}
           </View>
         </View>
@@ -418,7 +522,11 @@ export default function KioskScreen() {
           />
         )}
 
-        <KioskAskFamDrawer visible={askFamOpen} onClose={() => setAskFamOpen(false)} />
+        {/* KioskAskFamDrawer (the local, non-AI lookup) removed entirely —
+            no role has a trigger for it anymore: senior never had one,
+            parent now opens the real AskCubeChat instead, and kid/teen's
+            own sidebar button was just removed too [live-requested:
+            "remove the askFam for kids and teaans as well.."]. */}
 
         <KioskIntercomModal
           visible={intercomOpen}

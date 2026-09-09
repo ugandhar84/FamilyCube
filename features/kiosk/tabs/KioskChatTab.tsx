@@ -47,10 +47,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet,
   Modal, Image, Alert, Clipboard, KeyboardAvoidingView, Platform, Keyboard,
+  findNodeHandle, UIManager,
 } from 'react-native';
 import {
   Send, Lock, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
-  MapPin, X, XCircle, CornerUpLeft, Pencil, type LucideIcon,
+  MapPin, X, XCircle, CornerUpLeft, Pencil, Search, ChevronLeft, ChevronRight, type LucideIcon,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -68,6 +69,7 @@ import {
   buildGroupChannels, formatDay, QUICK_REACTIONS, REPLY_KIND_LABEL,
 } from '@/features/chat/components/constants';
 import { MessageBubble } from '@/features/chat/components/MessageBubble';
+import { stripMentionBrackets } from '@/features/chat/components/MentionText';
 import { MessageActionSheet } from '@/features/chat/components/MessageActionSheet';
 import { RecordingBar, VoiceReviewBar } from '@/features/chat/components/VoiceComponents';
 import { GroceryModal } from '@/features/chat/components/GroceryModal';
@@ -77,6 +79,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useKioskActivity, useKioskLockSuspended, KioskModalHost } from '../KioskActivityContext';
 import { useKioskColors } from '../kioskPalette';
 import { Chip } from '../components/KioskOS';
+import { KioskAvatar } from '../components/KioskAvatar';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
 
 interface ChannelEntry {
@@ -94,6 +97,11 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
+  // Scrolled so a card's own quick-send input stays visible once the
+  // keyboard opens over it [live-requested: "when keyboard open puh the
+  // page to view the text input"] — the grid page had no keyboard
+  // avoidance/scroll-into-view at all before this.
+  const gridScrollRef = useRef<ScrollView>(null);
   const channels = useChatStore(s => s.channels);
   const unreadCounts = useChatStore(s => s.unreadCounts);
   const readReceipts = useChatStore(s => s.readReceipts);
@@ -181,6 +189,72 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   }, [members, active, isParent, isSenior]);
 
   const [activeChannel, setActiveChannel] = useState<string>(entries[0]?.id ?? 'all');
+
+  // ── @mention suggestions — real gap, kiosk had none at all
+  // [confirmed via a full ChatScreen.tsx-vs-KioskChatTab.tsx feature diff:
+  // "mentions" was flagged missing]. currentChannelMemberIds mirrors
+  // ChatScreen.tsx's own derivation exactly (lines ~393-418) — scoped to
+  // who's ACTUALLY in the open channel, same reasoning as that file's own
+  // comment: mention-notify has no channel-membership check of its own,
+  // so suggesting an out-of-channel member and sending would genuinely
+  // notify someone with no access to the conversation. */
+  const activeEntry = useMemo(() => entries.find(e => e.id === activeChannel), [entries, activeChannel]);
+  const currentChannelMemberIds: string[] = useMemo(() => {
+    if (activeEntry?.isDM) return [active.id, activeEntry.otherMember?.id].filter((id): id is string => !!id);
+    if (activeChannel === 'parents') return members.filter(m => m.role === 'parent').map(m => m.id);
+    if (activeChannel === 'seniors_all') return members.map(m => m.id);
+    if (activeChannel === 'seniors_a' || activeChannel === 'seniors_b') {
+      const parents = members.filter(m => m.role === 'parent');
+      const sideForGp = (gp: any): 'a' | 'b' | 'unlinked' => {
+        if (!gp.linkedParentId) return 'unlinked';
+        if (gp.linkedParentId === parents[0]?.id) return 'a';
+        if (gp.linkedParentId === parents[1]?.id) return 'b';
+        return 'unlinked';
+      };
+      return members.filter(m => {
+        if (m.role !== 'senior') return true;
+        const side = sideForGp(m);
+        const wantSide = activeChannel === 'seniors_a' ? 'a' : 'b';
+        return side === wantSide || (side === 'unlinked' && wantSide === 'a');
+      }).map(m => m.id);
+    }
+    return members.filter(m => m.role !== 'senior').map(m => m.id);
+  }, [activeEntry, activeChannel, members, active.id]);
+
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const isGroupChannel = !activeEntry?.isDM;
+  const everyoneEntry = { id: 'everyone', name: 'Everyone', emoji: '📣', role: 'group' };
+  const mentionSuggestions = mentionQuery !== null
+    ? [
+        ...(isGroupChannel && 'everyone'.includes(mentionQuery.toLowerCase()) ? [everyoneEntry] : []),
+        ...members.filter(m =>
+          m.id !== active.id
+          && currentChannelMemberIds.includes(m.id)
+          && m.name.toLowerCase().includes(mentionQuery.toLowerCase())),
+      ]
+    : [];
+  // token "@FirstName_idx" -> full "@[Name|id]" for send-time substitution.
+  const pendingMentions = useRef<Record<string, string>>({});
+  const handleTextChange = (val: string) => {
+    setText(val);
+    if (moderationWarning) setModerationWarning(false);
+    const atIdx = val.lastIndexOf('@');
+    if (atIdx !== -1) {
+      const after = val.slice(atIdx + 1);
+      if (!after.includes(' ') && !after.includes(']')) { setMentionQuery(after); return; }
+    }
+    setMentionQuery(null);
+  };
+  const insertMention = (member: { id: string; name: string }) => {
+    const atIdx = text.lastIndexOf('@');
+    const before = text.slice(0, atIdx);
+    const firstName = member.name.split(' ')[0];
+    const token = `@${firstName}`;
+    pendingMentions.current[token] = `@[${member.name}|${member.id}]`;
+    setText(before + token + ' ');
+    setMentionQuery(null);
+    inputRef.current?.focus();
+  };
   // Tapping a card in the grid opens its conversation in a right-anchored
   // Modal drawer — the exact same shell KioskAskFamDrawer already uses
   // successfully, scrim included. Live-reported: earlier attempts either
@@ -213,6 +287,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
   const [quickEmojiFor, setQuickEmojiFor] = useState<ChatMessage | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+  // ── Message search — real gap, kiosk had none at all [confirmed via a
+  // full ChatScreen.tsx-vs-KioskChatTab.tsx feature diff: "search" was
+  // flagged missing]. Same real filter/nav logic as ChatScreen.tsx's own
+  // (lines ~93-96, ~328-330, ~913-947) — a case-insensitive text search
+  // scoped to the OPEN channel, with a match counter and prev/next
+  // navigation that scrolls + highlights, not a separate search screen.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchIdx, setSearchMatchIdx] = useState(0);
+  useEffect(() => { setSearchMatchIdx(0); }, [searchQuery]);
+  useEffect(() => { if (!searchOpen) setSearchQuery(''); }, [searchOpen]);
   // Edit/grocery-convert/shared-card — ChatScreen.tsx's own editingMsg/
   // groceryMsg/sharedCardPayload state (lines 88, ~onAddGrocery/
   // onOpenSharedCard call sites), wired here instead of the no-op stubs
@@ -289,6 +374,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setModerationWarning(false);
     setText('');
     setShowAttachMenu(false);
+    setSearchOpen(false);
   };
 
   const rawMsgs = channels[activeChannel]?.messages ?? [];
@@ -302,18 +388,24 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     loadReadReceipts(activeChannel, rawMsgs.map(m => m.id));
   }, [activeChannel, rawMsgs.length, active.id]);
 
+  // Same real filter ChatScreen.tsx's own msgs derivation uses — a search
+  // query narrows what actually renders, not just what's highlighted.
+  const msgs = searchQuery.trim()
+    ? rawMsgs.filter(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
+    : rawMsgs;
+
   // Day-grouped, chronological (kiosk thread renders top-to-bottom, not
   // inverted like the phone's — same data, non-inverted list order).
   const dayItems = useMemo(() => {
     const items: DayGroup[] = [];
     let lastDay = '';
-    for (const m of rawMsgs) {
+    for (const m of msgs) {
       const day = formatDay(m.timestamp);
       if (day !== lastDay) { items.push({ type: 'day', label: day }); lastDay = day; }
       items.push({ type: 'msg', msg: m });
     }
     return items;
-  }, [rawMsgs]);
+  }, [msgs]);
 
   const scrollToQuotedMsg = (replyToId: string) => {
     const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
@@ -341,10 +433,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     // the original message and sends a new one with the updated text.
     if (editingMsg) { deleteMessage(activeChannel, editingMsg.id); setEditingMsg(null); }
 
-    const finalText = sourceText.trim();
+    // Convert display tokens "@FirstName" back to storage format
+    // "@[Name|id]" — same substitution ChatScreen.tsx's own handleSend
+    // does (line ~484-489).
+    let finalText = sourceText.trim();
+    for (const [token, full] of Object.entries(pendingMentions.current)) {
+      finalText = finalText.split(token).join(full);
+    }
+    pendingMentions.current = {};
     const localAttachUri = attachUri;
     const localAttachType = attachType;
-    setText(''); setAttachUri(null); setReplyingTo(null);
+    setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
 
     const sentMsgId = await sendMessage(activeChannel, active.id, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -531,41 +630,61 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           you what's being discussed without opening anything. Tapping a
           card opens the full conversation as an overlay sheet, same
           pattern as Ask Fam/Ask Cube. */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
-        <Text style={[s.gridSectionLabel, { color: k.textFaint }]}>CHANNELS</Text>
-        <View style={s.gridRow}>
-          {entries.filter(e => !e.isDM).map(e => (
-            <ChatPreviewCard
-              key={e.id}
-              entry={e}
-              unread={unreadCounts[e.id] ?? 0}
-              messages={channels[e.id]?.messages ?? []}
-              memberMap={memberMap}
-              selfId={active.id}
-              k={k}
-              onPress={() => switchChannel(e.id)}
-            />
-          ))}
-        </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+      >
+        <ScrollView
+          ref={gridScrollRef}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.grid}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* One flowing grid, 2 cards per row throughout — reverted from
+              a Channels/DM two-column split [live-requested: "dont
+              separate anything just try to adjust grids with available
+              previews"]. Radius/sizing still match Overview's own card
+              convention (KIOSK_RADIUS.sm, 2-per-row). */}
+          <Text style={[s.gridSectionLabel, { color: k.textFaint }]}>CHANNELS</Text>
+          <View style={s.gridRow}>
+            {entries.filter(e => !e.isDM).map(e => (
+              <ChatPreviewCard
+                key={e.id}
+                entry={e}
+                unread={unreadCounts[e.id] ?? 0}
+                messages={channels[e.id]?.messages ?? []}
+                memberMap={memberMap}
+                selfId={active.id}
+                k={k}
+                onPress={() => switchChannel(e.id)}
+                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
+                scrollRef={gridScrollRef}
+              />
+            ))}
+          </View>
 
-        {entries.some(e => e.isDM) && (
-          <Text style={[s.gridSectionLabel, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
-        )}
-        <View style={s.gridRow}>
-          {entries.filter(e => e.isDM).map(e => (
-            <ChatPreviewCard
-              key={e.id}
-              entry={e}
-              unread={unreadCounts[e.id] ?? 0}
-              messages={channels[e.id]?.messages ?? []}
-              memberMap={memberMap}
-              selfId={active.id}
-              k={k}
-              onPress={() => switchChannel(e.id)}
-            />
-          ))}
-        </View>
-      </ScrollView>
+          {entries.some(e => e.isDM) && (
+            <Text style={[s.gridSectionLabel, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
+          )}
+          <View style={s.gridRow}>
+            {entries.filter(e => e.isDM).map(e => (
+              <ChatPreviewCard
+                key={e.id}
+                entry={e}
+                unread={unreadCounts[e.id] ?? 0}
+                messages={channels[e.id]?.messages ?? []}
+                memberMap={memberMap}
+                selfId={active.id}
+                k={k}
+                onPress={() => switchChannel(e.id)}
+                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
+                scrollRef={gridScrollRef}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* ── Message thread — opens as a narrow right-anchored Modal drawer,
           the exact same shell KioskAskFamDrawer already uses successfully:
@@ -592,7 +711,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             style={s.threadRight}
             pointerEvents="box-none"
           >
-            <View style={[s.threadPanel, { backgroundColor: k.card, borderLeftColor: k.cardBorder }]}>
+            <View style={s.threadShadowWrap}>
+            <View style={[s.threadPanel, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
               <View style={s.threadHead}>
                 <Pressable
                   onPress={() => setThreadOpen(false)}
@@ -603,13 +723,88 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 >
                   <X size={20} color={k.textMuted} />
                 </Pressable>
-                <Text style={[s.title, { color: k.text }]} numberOfLines={1}>
+                <Text style={[s.title, { color: k.text, flex: 1 }]} numberOfLines={1}>
               {currentEntry?.label ?? 'Chat'}
             </Text>
             {currentEntry?.lock && (
               <Chip label="Private" accent={k.purple} isDark={kioskDark} k={k} />
             )}
+            {/* Message search — real gap, kiosk had none at all
+                [confirmed via a full ChatScreen.tsx-vs-KioskChatTab.tsx
+                feature diff: "search" was flagged missing;
+                live-requested: "chat sesrch is the one i need"]. Same
+                real toggle/filter/match-nav ChatScreen.tsx's own search
+                bar uses. */}
+            <Pressable
+              onPress={() => setSearchOpen(o => !o)}
+              hitSlop={10}
+              style={[s.threadSearchBtn, { backgroundColor: searchOpen ? k.primary + '18' : k.well, borderColor: searchOpen ? k.primary : k.cardBorder }]}
+              accessibilityRole="button"
+              accessibilityLabel={searchOpen ? 'Close search' : 'Search messages'}
+            >
+              {searchOpen ? <X size={16} color={k.primary} /> : <Search size={16} color={k.textMuted} />}
+            </Pressable>
           </View>
+
+          {searchOpen && (
+            <View style={[s.threadSearchRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+              <Search size={14} color={k.textFaint} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search messages…"
+                placeholderTextColor={k.textFaint}
+                style={[s.threadSearchInput, { color: k.text }]}
+                autoFocus
+              />
+              {searchQuery.length > 0 && msgs.length > 0 && (
+                <>
+                  <Text style={[s.threadSearchCount, { color: k.textFaint }]}>
+                    {searchMatchIdx + 1}/{msgs.length}
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      const next = (searchMatchIdx - 1 + msgs.length) % msgs.length;
+                      setSearchMatchIdx(next);
+                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      if (idx >= 0) {
+                        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+                        setHighlightedMsgId(msgs[next].id);
+                        setTimeout(() => setHighlightedMsgId(null), 2000);
+                      }
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous match"
+                  >
+                    <ChevronLeft size={18} color={k.primary} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const next = (searchMatchIdx + 1) % msgs.length;
+                      setSearchMatchIdx(next);
+                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      if (idx >= 0) {
+                        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+                        setHighlightedMsgId(msgs[next].id);
+                        setTimeout(() => setHighlightedMsgId(null), 2000);
+                      }
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next match"
+                  >
+                    <ChevronRight size={18} color={k.primary} />
+                  </Pressable>
+                </>
+              )}
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+                  <XCircle size={16} color={k.textFaint} />
+                </Pressable>
+              )}
+            </View>
+          )}
 
           <View style={{ flex: 1 }}>
             <FlatList
@@ -652,7 +847,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     replyToColor={msg.replyTo ? accentColor(msg.replyTo.senderId) : undefined}
                     activeMemberId={active.id}
                     memberMap={memberMap}
-                    searchQuery=""
+                    searchQuery={searchQuery}
                     isParent={isParent}
                     colors={colors} isDark={isDark}
                     highlighted={highlightedMsgId === msg.id}
@@ -670,7 +865,9 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 );
               }}
               ListEmptyComponent={
-                <Text style={[s.empty, { color: k.textFaint }]} numberOfLines={2}>No messages yet — say hi 👋</Text>
+                <Text style={[s.empty, { color: k.textFaint }]} numberOfLines={2}>
+                  {searchQuery.trim() ? `No results for "${searchQuery}"` : 'No messages yet — say hi 👋'}
+                </Text>
               }
             />
           </View>
@@ -789,6 +986,41 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
+          {/* ── Mention picker — grows upward from just above the input,
+              same real ChatScreen.tsx feature/behavior at kiosk scale. */}
+          {mentionSuggestions.length > 0 && (
+            <View style={[s.mentionPicker, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+              {mentionSuggestions.map((m, i) => (
+                <Pressable
+                  key={m.id}
+                  onPress={() => insertMention(m)}
+                  style={({ pressed }) => [
+                    s.mentionRow,
+                    i < mentionSuggestions.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: k.cardBorder },
+                    pressed && { backgroundColor: k.cardHover },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mention ${m.name}`}
+                >
+                  <KioskAvatar
+                    name={m.name}
+                    emoji={(m as any).emoji}
+                    avatarUrl={(m as any).avatarUrl}
+                    siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                    size={36}
+                    bgColor={k.primary + '22'}
+                    k={k}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.mentionName, { color: k.text }]} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
+                    <Text style={[s.mentionRole, { color: k.textMuted }]} numberOfLines={1}>{(m as any).role}</Text>
+                  </View>
+                  <Text style={[s.mentionHint, { color: k.primary }]}>tap to mention</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
             <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
@@ -800,7 +1032,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               <TextInput
                 ref={inputRef}
                 value={text}
-                onChangeText={val => { setText(val); if (moderationWarning) setModerationWarning(false); }}
+                onChangeText={handleTextChange}
                 placeholder={currentEntry?.isDM ? `Message ${currentEntry.label}…` : 'Message the family…'}
                 placeholderTextColor={k.textFaint}
                 style={[s.input, { color: k.text }]}
@@ -825,6 +1057,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               )}
             </View>
           )}
+            </View>
             </View>
           </KeyboardAvoidingView>
         </KioskModalHost>
@@ -954,12 +1187,19 @@ function messagePreviewText(msg: ChatMessage): string {
   if (msg.voiceUri) return REPLY_KIND_LABEL.voice;
   if (msg.documentUri) return REPLY_KIND_LABEL.document;
   if (msg.locationPin) return REPLY_KIND_LABEL.location;
-  return msg.text || '';
+  // Raw storage-format mention tokens ("@[Name|id]") were printing
+  // literally in the preview [live-reported screenshot:
+  // "@[Everyone|everyone]" shown verbatim] — same real stripMentionBrackets
+  // helper MessageBubble/ChatScreen already use to display these.
+  return stripMentionBrackets(msg.text || '');
 }
 
-const PREVIEW_COUNT = 5;
+// Bumped from 5 to 10 — the preview container's own minHeight was
+// increased to match [live-requested: "in crease the height of preview
+// container to fit 10 msgs"].
+const PREVIEW_COUNT = 10;
 
-function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPress }: {
+function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPress, onQuickSend, style, scrollRef }: {
   entry: ChannelEntry;
   unread: number;
   messages: ChatMessage[];
@@ -967,21 +1207,67 @@ function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPres
   selfId: string;
   k: any;
   onPress: () => void;
+  /** Send a text-only message straight from the card, no full thread
+   * needed — a small persistent input, not a second full-fledged chat
+   * window [live-requested: "make sure we have the small quick chat text
+   * not full fledged window just for sending quick chat" / "like gcaht on
+   * the gamil"]. */
+  onQuickSend: (text: string) => void;
+  /** Overrides the card's own layout, if a caller ever needs to. */
+  style?: any;
+  /** The outer grid's own ScrollView ref — measured against on focus so
+   * the card scrolls into view above the keyboard [live-requested: "when
+   * keyboard open puh the page to view the text input"]. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }) {
-  const recent = useMemo(() => messages.slice(-PREVIEW_COUNT).reverse(), [messages]);
+  // Chronological, oldest-to-newest — latest message at the bottom, same
+  // real-chat reading order every actual thread view uses
+  // [live-requested: "hwo the order of message also proper like latest
+  // to be bottom"]. Was reversed, putting the newest message at the TOP
+  // of the preview list instead.
+  const recent = useMemo(() => messages.slice(-PREVIEW_COUNT), [messages]);
+  const [draft, setDraft] = useState('');
+  const cardRef = useRef<View>(null);
+  const quickInputRef = useRef<TextInput>(null);
+  const scrollToCard = () => {
+    const cardHandle = findNodeHandle(cardRef.current);
+    const scrollHandle = findNodeHandle(scrollRef?.current ?? null);
+    if (!cardHandle || !scrollHandle) return;
+    UIManager.measureLayout(
+      cardHandle, scrollHandle,
+      () => {},
+      (_x, y) => scrollRef?.current?.scrollTo({ y: Math.max(y - 40, 0), animated: true }),
+    );
+  };
+  const send = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onQuickSend(text);
+    setDraft('');
+  };
   return (
     <Pressable
+      ref={cardRef}
       onPress={onPress}
       style={({ pressed }) => [
         s.card,
         { backgroundColor: pressed ? k.cardHover : k.card, borderColor: k.cardBorder },
+        style,
       ]}
       accessibilityRole="button"
       accessibilityLabel={`${entry.isDM ? 'Direct message with ' : ''}${entry.label}${unread > 0 ? `, ${unread} unread` : ''}`}
     >
       <View style={s.cardHeadRow}>
         {entry.isDM
-          ? <Text style={s.dmEmoji}>{entry.otherMember?.emoji ?? '👤'}</Text>
+          ? (
+            <KioskAvatar
+              name={entry.otherMember?.name ?? entry.label}
+              emoji={entry.otherMember?.emoji}
+              avatarUrl={entry.otherMember?.avatarUrl}
+              size={18}
+              k={k}
+            />
+          )
           : entry.lock && <Lock size={15} color={k.textFaint} />}
         <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={1}>{entry.label}</Text>
         {unread > 0 && (
@@ -997,15 +1283,86 @@ function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPres
         ) : (
           recent.map(msg => {
             const sender = memberMap[msg.senderId];
-            const senderLabel = msg.senderId === selfId ? 'You' : (sender?.name.split(' ')[0] ?? '?');
+            const isSelf = msg.senderId === selfId;
+            // Direction, not a repeated name label — a real chat's own
+            // left/right split (self right-aligned, no "You:" prefix;
+            // others get a small avatar instead of a text name)
+            // [live-requested: "ive to show the direrection sides as
+            // well like is me or oteher same like chat" / "we dont need
+            // that you right" / "else show avarars which is better"].
+            // Mirrors MessageBubble's own left/right + avatar convention.
+            // Real mini bubbles now — a filled, padded, rounded shape per
+            // message instead of bare floating text [live-reported: "no
+            // paddings and no buble" against the plain-text version].
+            // Self gets a tinted fill (k.primary wash), others a neutral
+            // well fill, same self-vs-other distinction MessageBubble
+            // itself makes, just simplified for preview scale.
             return (
-              <View key={msg.id} style={s.cardPreviewRow}>
-                <Text style={[s.cardPreviewSender, { color: k.textMuted }]} numberOfLines={1}>{senderLabel}:</Text>
-                <Text style={[s.cardPreviewText, { color: k.textMuted }]} numberOfLines={1}>{messagePreviewText(msg)}</Text>
+              <View key={msg.id} style={[s.cardPreviewRow, isSelf && s.cardPreviewRowSelf]}>
+                {!isSelf && (
+                  <KioskAvatar
+                    name={(sender as any)?.name ?? 'Family member'}
+                    emoji={(sender as any)?.emoji}
+                    avatarUrl={(sender as any)?.avatarUrl}
+                    size={13}
+                    k={k}
+                  />
+                )}
+                <View
+                  style={[
+                    s.cardPreviewBubble,
+                    isSelf
+                      ? { backgroundColor: k.primary + '1A', borderTopRightRadius: 3 }
+                      : { backgroundColor: k.well, borderTopLeftRadius: 3 },
+                  ]}
+                >
+                  <Text style={[s.cardPreviewText, { color: k.text }]} numberOfLines={2}>
+                    {messagePreviewText(msg)}
+                  </Text>
+                </View>
               </View>
             );
           })
         )}
+      </View>
+
+      {/* Quick-send row — nested inside the card's own Pressable. RN's
+          Pressable already claims/stops propagation of its own taps
+          correctly (a press on the TextInput or the send button below
+          resolves to THAT element, not the outer card's onPress) without
+          needing a manual onStartShouldSetResponderCapture — that capture
+          handler was actually the bug: claiming the touch at the parent
+          during the CAPTURE phase before it ever reached the send button's
+          own Pressable underneath it, so the button never registered a
+          real press at all [live-reported: "send button on pevie is not
+          sending message"]. Text only, no attachments/voice/reactions —
+          those stay real actions inside the full thread this card still
+          opens on its own tap elsewhere. */}
+      <View style={[s.cardQuickSendRow, { borderTopColor: k.cardBorder }]}>
+        <TextInput
+          ref={quickInputRef}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Quick message…"
+          placeholderTextColor={k.textFaint}
+          style={[s.cardQuickSendInput, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }]}
+          returnKeyType="send"
+          onSubmitEditing={send}
+          blurOnSubmit={false}
+          onFocus={() => requestAnimationFrame(scrollToCard)}
+        />
+        <Pressable
+          onPress={send}
+          disabled={!draft.trim()}
+          style={({ pressed }) => [
+            s.cardQuickSendBtn,
+            { backgroundColor: draft.trim() ? k.primary : k.well, opacity: pressed ? 0.7 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`Send message to ${entry.label}`}
+        >
+          <Send size={15} color={draft.trim() ? k.onPrimary : k.textFaint} />
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -1015,11 +1372,29 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   grid: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm },
   gridSectionLabel: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 4 },
+  // 2 per row, always — a percentage flexBasis instead of the old fixed
+  // 280px width, which let 3-4+ cards fit per row on a wide kiosk screen
+  // [live-requested: "we can keep the 2 widgets for a row"].
   gridRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
   // Cards are the primary navigation on this tab now — sized well above the
   // kiosk touch floor since each one carries a preview, not just a label.
+  // Radius matches every other kiosk card (WidgetCard's own KIOSK_RADIUS.sm)
+  // instead of the rounder .lg this tab used alone [live-requested:
+  // "follwo the same radious of cards like other in over view"].
+  // maxWidth caps this at the same share flexBasis targets — without it,
+  // flexGrow let a lone card sitting alone in its own row (an odd count,
+  // or just one channel/DM) stretch to fill the WHOLE row's width instead
+  // of staying the same size as every other card [live-reported
+  // screenshot: "#all-family" and a lone DM both full-width while
+  // 2-per-row rows stayed correctly sized — "i still see faily channels
+  // have full wodth and the lat chat also have full width" / "and keep
+  // all of then in same size dont strech to full woddth"].
+  // minHeight raised to comfortably fit 10 preview rows (up to 2 lines
+  // each) instead of the old 5-message-sized card [live-requested: "in
+  // crease the height of preview container to fit 10 msgs"].
   card: {
-    width: 280, minHeight: 176, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1,
+    flexBasis: '48%', flexGrow: 1, maxWidth: '48%', minWidth: 280, minHeight: 340,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
     padding: KIOSK_SPACE.sm, gap: 6,
   },
   cardHeadRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1027,19 +1402,75 @@ const s = StyleSheet.create({
   dmEmoji: { fontSize: 18 },
   unreadDot: { minWidth: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   unreadDotText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
-  cardPreviewList: { gap: 3 },
-  cardPreviewRow: { flexDirection: 'row', gap: 4 },
-  cardPreviewSender: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
-  cardPreviewText: { flex: 1, fontSize: KIOSK_TYPO.micro },
+  // flex:1 so this list fills the card's remaining space, pushing the
+  // quick-send row down to sit flush against the card's own bottom edge
+  // regardless of how many/few messages are showing [live-requested:
+  // "quick message txt box should stick to footer of previre window"].
+  cardPreviewList: { flex: 1, gap: 3 },
+  // Wraps up to 2 lines now instead of truncating at 1 [live-requested:
+  // "text should show wrapped if the message is lengthy in the
+  // preview"] — flex-start (not center) so the avatar sits at the top of
+  // a wrapped 2-line message instead of vertically centering oddly.
+  cardPreviewRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
+  // Self rows drop the leading avatar and right-align the text instead —
+  // no repeated "You:" label, matching MessageBubble's own self-on-the-
+  // right convention at preview scale.
+  cardPreviewRowSelf: { justifyContent: 'flex-end' },
+  cardPreviewAvatar: { fontSize: 13, marginTop: 1 },
+  // Real bubble shape — filled, padded, rounded, capped to 85% of the row
+  // so every wrapped line aligns against the same edge rather than each
+  // line shrinking to its own intrinsic width [live-reported: "no
+  // paddings and no buble" / "fix the text foing on the other direction
+  // is me whoever sends long text"].
+  cardPreviewBubble: {
+    maxWidth: '85%', borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6,
+  },
+  cardPreviewText: { fontSize: KIOSK_TYPO.micro },
+  // Quick-send row at the foot of each preview card.
+  cardQuickSendRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 4, paddingTop: KIOSK_SPACE.xs, borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  cardQuickSendInput: {
+    flex: 1, fontSize: KIOSK_TYPO.caption, borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 6,
+  },
+  cardQuickSendBtn: {
+    width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+  },
   cardEmpty: { fontSize: KIOSK_TYPO.micro, fontStyle: 'italic' },
 
-  // The thread opens as a narrow right-anchored Modal drawer — the exact
-  // host/right/panel shape KioskAskFamDrawer already uses successfully
-  // (scrim behind, fixed-width panel pinned right, full height inside its
-  // own KeyboardAvoidingView).
+  // The thread opens as a narrow right-anchored Modal drawer — the same
+  // host/right/panel shape KioskFormDrawer's own drawer variant uses.
   threadHost: { flex: 1 },
-  threadRight: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
-  threadPanel: { width: 480, maxWidth: '100%', height: '100%', borderLeftWidth: 1, paddingHorizontal: 20, paddingTop: 20 },
+  // Capped at 85% of the available height instead of the full screen,
+  // floating clear of the very bottom edge (the iPad system bar / home
+  // indicator strip) rather than running edge-to-edge [live-requested:
+  // "i want to make this better to avoib going to system bar can we make
+  // 85% height with professional design?" — after an earlier 80% pass was
+  // reverted for risking real keyboard behavior]. maxHeight still gives
+  // KeyboardAvoidingView a real box to shrink into for the keyboard —
+  // that's what actually made height:'100%' work, not the specific
+  // number, so 85% keeps the same mechanism intact. Floats vertically
+  // centered (alignItems:'center' on `threadRight`) with a full border +
+  // radius + soft shadow, since it no longer touches the screen's top/
+  // bottom edges to justify a flush, radius-less panel.
+  threadRight: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingVertical: KIOSK_SPACE.xl },
+  // Shadow lives on this OUTER wrapper, not threadPanel itself — a view
+  // with overflow:'hidden' (needed on threadPanel so its own content
+  // clips to the rounded corners) also clips its own shadow on both iOS
+  // and Android, so the two have to be separate layers.
+  threadShadowWrap: {
+    width: 480, maxWidth: '100%', maxHeight: '85%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowRadius: 24, shadowOpacity: 0.18,
+    elevation: 12,
+  },
+  threadPanel: {
+    flex: 1,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden',
+    paddingHorizontal: 20, paddingTop: 20,
+  },
 
   threadHead: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
@@ -1050,6 +1481,18 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   title: { fontSize: KIOSK_TYPO.title, fontWeight: '800', letterSpacing: -0.6, flexShrink: 1 },
+  threadSearchBtn: {
+    width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.full,
+    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
+  threadSearchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
+    paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: 8,
+    marginBottom: KIOSK_SPACE.sm,
+  },
+  threadSearchInput: { flex: 1, fontSize: KIOSK_TYPO.body, paddingVertical: 2 },
+  threadSearchCount: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   list: { paddingBottom: 12, flexGrow: 1 },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 10, marginHorizontal: 20 },
   dayLine: { flex: 1, height: StyleSheet.hairlineWidth },
@@ -1063,6 +1506,13 @@ const s = StyleSheet.create({
   attachItem: { alignItems: 'center', gap: 8, flex: 1 },
   attachIcon: { width: 56, height: 56, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   attachLabel: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  // @mention picker.
+  mentionPicker: { borderWidth: 1, borderRadius: KIOSK_RADIUS.sm, marginBottom: KIOSK_SPACE.xs, overflow: 'hidden' },
+  mentionRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm },
+  mentionAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  mentionName: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  mentionRole: { fontSize: KIOSK_TYPO.caption, textTransform: 'capitalize' },
+  mentionHint: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
 
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, borderWidth: 1.5, borderRadius: 24, paddingLeft: 14, paddingRight: 6, paddingVertical: 8, marginBottom: 20 },
   iconBtn: { width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_HIT.min / 2, alignItems: 'center', justifyContent: 'center' },

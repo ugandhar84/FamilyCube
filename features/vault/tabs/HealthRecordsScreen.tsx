@@ -28,7 +28,14 @@ export default function HealthRecordsScreen({ hideHeader = false }: { hideHeader
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const kidView = activeMember?.role === 'kid';
+  // "kidView" also covers teens and seniors/grandparents — all three
+  // should only ever see their OWN medications, same restricted
+  // Medications-only segment a kid gets, not the whole family's
+  // [live-requested: "we should only show to the their medication for
+  // kids and gp" / "we should only show the fitlerd medications for the
+  // kids right"]. Was 'kid' only, so a teen or senior profile silently
+  // loaded and saw every family member's meds.
+  const kidView = activeMember?.role === 'kid' || activeMember?.role === 'teen' || activeMember?.role === 'senior';
   const [tab, setTab] = useState<Segment>('meds');
 
   // No fullBleedScreenActive hide-FAB trick here — the shared FAB itself

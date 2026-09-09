@@ -17,6 +17,8 @@ import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-n
 import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle, RotateCcw, Gift } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from '../kioskTheme';
 import { KioskCard, KioskZoneHeader } from '../components/KioskSurface';
+import { useKioskColors } from '../kioskPalette';
+import { KioskAvatar } from '../components/KioskAvatar';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
@@ -34,6 +36,7 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 export function KioskHubTab({ active, members, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
+  const { k } = useKioskColors();
   // ── Responsive grid [CLIPPING BUG FIX] ────────────────────────────────
   // Live-reported: on a ~2000px landscape kiosk the dashboard's columns
   // ran off the right edge — "In Progress" and "Family Chat" were clipped
@@ -140,7 +143,6 @@ export function KioskHubTab({ active, members, colors, isDark }: {
   const recentChat = useMemo(() => chatMessages.slice(-3).reverse(), [chatMessages]);
 
   const memberName = (id?: string) => members.find(m => m.id === id)?.name?.split(' ')[0];
-  const memberEmoji = (id?: string) => members.find(m => m.id === id)?.emoji ?? '👤';
 
   // Only meaningful for TODAY's own timeline — dayEvents is already scoped
   // to the current day elsewhere in this app, but guard explicitly in case
@@ -347,9 +349,18 @@ export function KioskHubTab({ active, members, colors, isDark }: {
                   <Text style={[s.empty, { color: colors.textTertiary }]}>No messages yet</Text>
                 </View>
               ) : (
-                recentChat.map(m => (
+                recentChat.map(m => {
+                  const sender = members.find(x => x.id === m.senderId);
+                  return (
                   <View key={m.id} style={s.chatRow}>
-                    <Text style={s.chatEmoji}>{memberEmoji(m.senderId)}</Text>
+                    <KioskAvatar
+                      name={sender?.name ?? 'Family member'}
+                      emoji={sender?.emoji}
+                      avatarUrl={sender?.avatarUrl}
+                      siblings={members.filter(x => x.id !== sender?.id).map(x => x.name)}
+                      size={18}
+                      k={k}
+                    />
                     <View style={{ flex: 1 }}>
                       <Text style={[s.chatText, { color: colors.textPrimary }]} numberOfLines={2}>
                         <Text style={{ fontWeight: '800' }}>{memberName(m.senderId)}: </Text>
@@ -357,7 +368,8 @@ export function KioskHubTab({ active, members, colors, isDark }: {
                       </Text>
                     </View>
                   </View>
-                ))
+                  );
+                })
               )}
             </KioskCard>
           </View>

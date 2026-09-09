@@ -52,6 +52,7 @@ import {
   Check, Lock, RefreshCw, Car, Repeat,
 } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { KioskAvatar } from '../components/KioskAvatar';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -459,58 +460,22 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
           )}
         </View>
 
-        {/* ROW 1 — "My Schedule" / "All" scope, the phone's own toggle
-            (CalendarScreen.tsx:1211). Rendered as a segmented control
-            rather than a third pill style, reusing the exact visual
-            treatment of the Month/Week/Day/Agenda switcher directly above
-            (s.modeSwitch / s.modeBtn) so this file keeps one segmented
-            language. Non-parents only, matching the phone's `&& !isParent`
-            gate — a parent's scope is permanently 'all' there and here. */}
-        {canScopeSchedule && (
-          <View style={[s.scopeSwitch, { backgroundColor: k.well }]}
-            accessibilityRole="tablist">
-            {([{ key: 'mine' as const, label: 'My Schedule' }, { key: 'all' as const, label: 'All' }]).map(t => {
-              const on = scheduleScope === t.key;
-              return (
-                <Pressable key={t.key}
-                  onPress={() => {
-                    setScheduleScope(t.key);
-                    // Phone clears the member filter when you drop back to
-                    // 'mine' (CalendarScreen.tsx:1213) — the two would
-                    // otherwise contradict each other on screen.
-                    if (t.key === 'mine') setFilterMemberId(null);
-                  }}
-                  style={[s.scopeBtn, on && { backgroundColor: k.primary }]}
-                  accessibilityRole="tab" accessibilityState={{ selected: on }}
-                  accessibilityLabel={t.label}
-                  accessibilityHint={t.key === 'mine'
-                    ? 'Shows only events you are part of'
-                    : 'Shows the whole family’s events'}>
-                  <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
-                    {t.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {/* ROW 2 — the per-member filter, a SEPARATE and independent control
-            from the scope toggle above, exactly as on the phone
-            (CalendarScreen.tsx:1145): "All Family" first, then every member
-            under their real name. No self-relabeling to "Mine" here — the
-            scope toggle owns that concept now. Parent/senior only, matching
-            the phone's isParentOrSenior gate on the same row. */}
-        {/* Member filter + Day/Week/Month/Agenda mode switch, ONE shared
-            row (member pills left, mode switch right) — matching Chores'
-            own filter bar pattern exactly [live-reported: "bring that
-            agenda, day week month to the same row of filter similar to
-            chores"]. The mode switch used to sit up in headerTop, beside
-            the prev/next/Today nav cluster; canFilterByMember still gates
-            whether the member-pill half renders (kid/teen viewers don't
-            get it), but the mode switch always does, so this row renders
-            unconditionally with the member pills as its own optional
-            child. */}
+        {/* Scope/member filter + Day/Week/Month/Agenda mode switch, ONE
+            shared row (left side / mode switch right) — matching parent's
+            own screenshot exactly [live-requested: "you must adapt the
+            parents schedule tab desing"]: parent's left side is filled
+            with All Family + member pills, so kid/teen's own left side
+            fills with the equivalent real control (the "My Schedule"/
+            "All" scope toggle, CalendarScreen.tsx:1211) instead of
+            leaving that side of the row empty [live-reported screenshot:
+            kid/teen's own scope toggle sat alone on its own row above,
+            with the mode switch isolated far to the right below it — a
+            visibly different, less balanced layout than parent's single
+            filled row]. canFilterByMember (parent/senior) renders the
+            member-pill scroller; canScopeSchedule (non-parent) renders
+            the scope toggle instead — the two are mutually exclusive by
+            their own real gates (CalendarScreen.tsx's isParentOrSenior vs
+            !isParent), so exactly one of them ever fills this slot. */}
         <View style={s.scheduleFilterBar}>
           {canFilterByMember ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRowOuter} contentContainerStyle={s.filterRow}>
@@ -532,12 +497,47 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                     accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
                     accessibilityState={{ selected: on }}
                     style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
-                    <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
+                    <KioskAvatar
+                      name={m.name}
+                      emoji={m.emoji}
+                      avatarUrl={m.avatarUrl}
+                      siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                      size={18}
+                      ringColor={on ? rs.dot : k.cardBorder}
+                      k={k}
+                    />
                     <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
+          ) : canScopeSchedule ? (
+            <View style={[s.scopeSwitch, { backgroundColor: k.well }]}
+              accessibilityRole="tablist">
+              {([{ key: 'mine' as const, label: 'My Schedule' }, { key: 'all' as const, label: 'All' }]).map(t => {
+                const on = scheduleScope === t.key;
+                return (
+                  <Pressable key={t.key}
+                    onPress={() => {
+                      setScheduleScope(t.key);
+                      // Phone clears the member filter when you drop back
+                      // to 'mine' (CalendarScreen.tsx:1213) — the two
+                      // would otherwise contradict each other on screen.
+                      if (t.key === 'mine') setFilterMemberId(null);
+                    }}
+                    style={[s.scopeBtn, on && { backgroundColor: k.primary }]}
+                    accessibilityRole="tab" accessibilityState={{ selected: on }}
+                    accessibilityLabel={t.label}
+                    accessibilityHint={t.key === 'mine'
+                      ? 'Shows only events you are part of'
+                      : 'Shows the whole family’s events'}>
+                    <Text style={[s.modeBtnText, { color: on ? k.onPrimary : k.textMuted }]} numberOfLines={1}>
+                      {t.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           ) : <View />}
 
           <View style={[s.modeSwitch, { backgroundColor: k.well }]}>
@@ -1428,30 +1428,42 @@ function AgendaView({
   const canClaim = active.role === 'parent';
 
   if (days.length === 0) {
+    // Copy only promises "tap below to ask" when there's actually a button
+    // to tap — a teen viewer has no onAdd at all (real mobile parity:
+    // CalendarScreen.tsx:1108's own isParentOrSenior-only create gate,
+    // confirmed by reading it — teen genuinely has no creation entry point
+    // there either, so this isn't a kiosk gap to invent a fix for). The
+    // old copy claimed a button existed for every kid-viewer regardless,
+    // which read as broken for a teen [live-reported screenshot: no
+    // header button, no empty-state button, yet the text still said "tap
+    // below"]. Wrapped in a WidgetCard now too, matching every other
+    // panel's dense-card frame instead of floating on the bare background
+    // [live-requested: "we just need parent schedule inspired desing"].
+    const emptyText = isKidViewer
+      ? (onAdd
+        ? 'Nothing on your schedule for the next two weeks. Tap below to ask for a ride or anything else.'
+        : 'Nothing on your schedule for the next two weeks.')
+      : 'Nothing scheduled in the next two weeks.';
     return (
-      <ScrollView contentContainerStyle={s.agendaEmptyWrap} showsVerticalScrollIndicator={false}>
-        <CalendarIcon size={30} color={k.textFaint} />
-        {/* Kid-specific framing, ported from CalendarScreen.tsx:1432 — a kid
-            doesn't schedule, they ASK, and the button below opens
-            AskParentSheet rather than an event form, so generic "Add an
-            event" copy would promise authority they don't have. */}
-        <Text style={[s.agendaEmptyText, { color: k.textFaint }]} numberOfLines={3}>
-          {isKidViewer
-            ? 'Nothing on your schedule for the next two weeks. Tap below to ask for a ride or anything else.'
-            : 'Nothing scheduled in the next two weeks.'}
-        </Text>
-        {onAdd && (
-          <Pressable
-            onPress={onAdd}
-            style={[s.monthAddBtn, { backgroundColor: k.primary, alignSelf: 'center' }]}
-            accessibilityRole="button"
-            accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
-          >
-            <Plus size={22} color={k.onPrimary} />
-            <Text style={[s.monthAddBtnText, { color: k.onPrimary }]}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
-          </Pressable>
-        )}
-      </ScrollView>
+      <WidgetCard k={k} isDark={isDark} style={s.agendaEmptyCard}>
+        <View style={s.agendaEmptyWrap}>
+          <CalendarIcon size={30} color={k.textFaint} />
+          <Text style={[s.agendaEmptyText, { color: k.textFaint }]} numberOfLines={3}>
+            {emptyText}
+          </Text>
+          {onAdd && (
+            <Pressable
+              onPress={onAdd}
+              style={[s.monthAddBtn, { backgroundColor: k.primary, alignSelf: 'center' }]}
+              accessibilityRole="button"
+              accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
+            >
+              <Plus size={22} color={k.onPrimary} />
+              <Text style={[s.monthAddBtnText, { color: k.onPrimary }]}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
+            </Pressable>
+          )}
+        </View>
+      </WidgetCard>
     );
   }
 
@@ -1985,12 +1997,17 @@ const s = StyleSheet.create({
   // style) so the header reads as one control language rather than a third
   // invented pill shape. Only difference: it's a two-option row of its own,
   // sized to its content rather than sharing the headerTop line.
+  // Sized to match the filter chips beside it exactly [live-reported:
+  // "the filter pills stips is not alinged with parents styles" —
+  // scopeBtn was still using the original full-size KIOSK_HIT.min/
+  // KIOSK_SPACE.lg control before this, visibly taller/wider than
+  // filterChip's own compact sizing right next to it on the same row].
   scopeSwitch: {
-    flexDirection: 'row', borderRadius: KIOSK_RADIUS.md, padding: 4, gap: 3,
+    flexDirection: 'row', borderRadius: KIOSK_RADIUS.sm, padding: 4, gap: 3,
     alignSelf: 'flex-start', maxWidth: '100%',
   },
   scopeBtn: {
-    paddingHorizontal: KIOSK_SPACE.lg, minHeight: KIOSK_HIT.min,
+    paddingHorizontal: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.min - 10,
     justifyContent: 'center', alignItems: 'center', borderRadius: KIOSK_RADIUS.sm,
     flexShrink: 1, minWidth: 0,
   },
@@ -2078,9 +2095,14 @@ const s = StyleSheet.create({
 
   // ── Agenda ─────────────────────────────────────────────────────────────
   agendaScroll: { paddingHorizontal: 4, paddingBottom: 40, gap: KIOSK_SPACE.lg },
+  // A bounded card now (not flexGrow:1 centering in the whole remaining
+  // page height, which read as a lot of dead space around one small
+  // message) — a fixed, generous padding instead, same density every
+  // other kiosk empty-state card uses.
+  agendaEmptyCard: { marginTop: KIOSK_SPACE.md },
   agendaEmptyWrap: {
-    flexGrow: 1, alignItems: 'center', justifyContent: 'center',
-    gap: KIOSK_SPACE.md, padding: KIOSK_SPACE.xl,
+    alignItems: 'center', justifyContent: 'center',
+    gap: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.xxl,
   },
   agendaEmptyText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '600', textAlign: 'center' },
   // One continuous card for the whole Agenda list — mocked and picked

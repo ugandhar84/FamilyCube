@@ -31,6 +31,24 @@ import {
 
 type Mode = 'loading' | 'setup' | 'change' | 'recover';
 
+// The passcode KDF (deriveRecoveryWrappingKey, lib/chatCrypto.ts) runs
+// 600,000 PBKDF2 iterations — genuinely heavy, and on this RN/Expo runtime's
+// crypto.subtle implementation it can run synchronously on the JS thread
+// despite being awaited. setSaving(true) alone doesn't guarantee the spinner
+// actually PAINTS before that heavy call starts — React batches the state
+// update, and if the next thing that runs is a thread-blocking computation
+// with no yield in between, the update never gets a chance to flush to the
+// screen at all, so the button just silently hangs with no spinner visible
+// [live-reported: "when i set my recovery password then it click on submit
+// the UI is frozen.."]. One requestAnimationFrame tick is enough to let RN
+// commit the pending re-render before the heavy work begins — same fix
+// shape as InteractionManager.runAfterInteractions elsewhere in this file
+// family (EditMyProfileSheet), just a lighter one-frame version since this
+// only needs the spinner to show, not a full interaction-queue drain.
+function yieldToUI(): Promise<void> {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
 // Offered exactly once, right after a passcode is successfully set or
 // changed — same "shown once at the moment it's created, never re-shown"
 // principle the OS itself uses for a newly generated password. The
@@ -79,6 +97,7 @@ function OtherFamilyRecoveryCard({ family, memberId, colors, s }: {
   const handleRecover = async () => {
     if (!passcode) { showAlert('Enter the family passcode', `Ask a parent in ${family.name} for their security passcode.`); return; }
     setSaving(true);
+    await yieldToUI();
     const result = await recoverWithFamilyPasscode(family.id, memberId, passcode);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
@@ -125,7 +144,20 @@ function OtherFamilyRecoveryCard({ family, memberId, colors, s }: {
   );
 }
 
-export default function DataRecoveryScreen() {
+export default function DataRecoveryScreen({ hideChrome = false }: {
+  /** Kiosk-only — suppresses this screen's own SafeAreaView/back-header
+   * chrome so it can be mounted as the body of a KioskFormDrawer side
+   * sheet instead of a pushed full-screen route (this screen has no
+   * `hideHeader` prop the way SchoolScreen/HealthRecordsScreen do, since
+   * it was never previously reachable except via router.push from Profile
+   * — kiosk's own Profile tab hid this row entirely for a while over the
+   * device's 30-min idle-lock exposure window, then was asked to bring it
+   * back as a proper side-sheet form instead of leaving it gone
+   * [live-requested: "i need all these to be side bar forms" / "it is for
+   * kiosk only"]). The phone's own route (app/profile-settings/
+   * data-recovery.tsx) never passes this, so its behavior is unchanged. */
+  hideChrome?: boolean;
+} = {}) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, myFamilies, activeFamilyId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -198,6 +230,7 @@ export default function DataRecoveryScreen() {
     if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
     if (!familyId || !activeMemberId) return;
     setSaving(true);
+    await yieldToUI();
     const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, passcode);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't set this up", result.error); return; }
@@ -229,6 +262,7 @@ export default function DataRecoveryScreen() {
     if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
     if (!familyId) return;
     setSaving(true);
+    await yieldToUI();
     const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode, activeMemberId ?? undefined);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't change the passcode", result.error); return; }
@@ -272,6 +306,7 @@ export default function DataRecoveryScreen() {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Reset', style: 'destructive', onPress: async () => {
           setSaving(true);
+          await yieldToUI();
           const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, resetPasscode);
           setSaving(false);
           if (!result.ok) { showAlert("Couldn't reset", result.error); return; }
@@ -324,6 +359,7 @@ export default function DataRecoveryScreen() {
     if (!currentForRecover) { showAlert('Enter the family passcode', 'Ask a parent for the family security passcode.'); return; }
     if (!familyId || !activeMemberId) return;
     setSaving(true);
+    await yieldToUI();
     const result = await recoverWithFamilyPasscode(familyId, activeMemberId, currentForRecover);
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
@@ -332,24 +368,25 @@ export default function DataRecoveryScreen() {
   };
 
   if (mode === 'loading') {
-    return (
-      <SafeAreaView style={s.safe}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
+    const loadingBody = (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
     );
+    return hideChrome ? loadingBody : <SafeAreaView style={s.safe}>{loadingBody}</SafeAreaView>;
   }
 
-  return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Data Recovery</Text>
-        <View style={{ width: 24 }} />
-      </View>
+  const body = (
+    <>
+      {!hideChrome && (
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>Data Recovery</Text>
+          <View style={{ width: 24 }} />
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
         <View style={s.infoCard}>
@@ -604,8 +641,10 @@ export default function DataRecoveryScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </>
   );
+
+  return hideChrome ? body : <SafeAreaView style={s.safe}>{body}</SafeAreaView>;
 }
 
 function styles(colors: any, isDark: boolean) {

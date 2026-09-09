@@ -169,6 +169,22 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)
   )[0];
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+  // "I'm ready for pickup!" used to blindly name confirmedRide regardless
+  // of how far off it actually was — tapping it at 8am for a 4pm ride (or
+  // even a ride days out, since confirmedRideCandidates has no window
+  // check at all) still named that ride [live-requested: "when im ready-
+  // we should not blicdly pickup ride to show ready for ride-- if they
+  // click just bfore x min then we should take that - or it can be
+  // generic"]. Scoped to just the check-in message, not confirmedRide
+  // itself — the ride BANNER still legitimately shows a ride hours ahead
+  // (that's real, useful information), only the "I'm ready" wording is
+  // gated to genuinely imminent: within 60 minutes before pickup through
+  // 30 minutes after (the same grace window the banner's own overdue
+  // state already tolerates before going stale), falling back to generic
+  // copy with no ride name outside that window.
+  const imminentRide = confirmedRide && rideCountdown !== null && rideCountdown <= 60 && rideCountdown >= -30
+    ? confirmedRide
+    : undefined;
   // Real Pick-up Radar signal, not just the scheduled clock — master-flow
   // audit finding: the ride banner previously derived "here"/"overdue"
   // purely from rideCountdown, so it could say a ride was overdue while
@@ -311,8 +327,8 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const sendCheckin = (type: 'home' | 'ready' | 'late') => {
     const messages: Record<string, { detail: string; chatMsg: string; emoji: string }> = {
       home:  { detail: "I'm home! 🏠", chatMsg: `${active.name.split(' ')[0]} is home! 🏠`, emoji: "🏠 I'm home!" },
-      ready: { detail: `I'm ready for pickup! 🎒${confirmedRide ? ` (${confirmedRide.title})` : ''}`,
-               chatMsg: `${active.name.split(' ')[0]} is ready for pickup! 🎒${confirmedRide ? ` (${confirmedRide.title})` : ''}`, emoji: "🎒 I'm ready!" },
+      ready: { detail: `I'm ready for pickup! 🎒${imminentRide ? ` (${imminentRide.title})` : ''}`,
+               chatMsg: `${active.name.split(' ')[0]} is ready for pickup! 🎒${imminentRide ? ` (${imminentRide.title})` : ''}`, emoji: "🎒 I'm ready!" },
       late:  { detail: `Running a bit late 🏃${nextEvent ? ` for ${nextEvent.title}` : ''}`,
                chatMsg: `${active.name.split(' ')[0]} is running late 🏃${nextEvent ? ` for ${nextEvent.title}` : ''}`, emoji: '🏃 Running late!' },
     };

@@ -10,7 +10,7 @@ import { useEventStore } from '@/store/eventStore';
 import { SCard, CardHeader } from './shared';
 import { ParsedMedication, ParsedVaccine } from '../usePrescriptionScanner';
 
-import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, MedForm, VaxForm } from './health/types';
+import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, MedForm, VaxForm, encodeTakenEntry, formatDoseTime } from './health/types';
 import { useHealthAi } from './health/useHealthAi';
 import AddMedModal from './health/AddMedModal';
 import AddVaxModal from './health/AddVaxModal';
@@ -21,7 +21,7 @@ import HealthFilterSheet, { MedFilters, VaxFilters } from './health/HealthFilter
 import HealthRecordsList from './health/HealthRecordsList';
 import { showToast } from '@/components/AppToast';
 
-export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab, hideAiAssistant = false }: {
+export default function HealthTab({ colors, isDark, kidView = false, healthTab, setHealthTab, hideAiAssistant = false, onOpenHistory }: {
   colors: any; isDark: boolean; kidView?: boolean;
   // Controlled from HealthRecordsScreen.tsx — that screen owns ONE 3-way
   // switch (Medications/Immunizations/Records) instead of this component
@@ -38,6 +38,12 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // HealthRecordsScreen.tsx never passes this, so its behavior is
   // completely unchanged.
   hideAiAssistant?: boolean;
+  // Kiosk-only: opens a side KioskFormDrawer instead of HealthRecordsList's
+  // own bottom Modal for the medication History button — a phone bottom
+  // sheet doesn't fit kiosk's wall-display shell [live-requested: "show
+  // that history side bar"]. Mobile's own HealthRecordsScreen.tsx never
+  // passes this, so its Modal is completely unchanged there.
+  onOpenHistory?: (med: Medication) => void;
 }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
@@ -115,20 +121,29 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // fullBleedScreenActive hide (Health's own CubeAI banner vs. Ask Cube's
   // sparkle competing) — that's moot now since the shared FAB no longer
   // shows the sparkle face on this route at all.
+  // Kid/teen/senior can't add a medication or immunization — same
+  // restriction as the rest of this screen's edit controls
+  // [live-requested: "also should avoid adding the med , immu and then
+  // scan ... to them"]. The shared FAB (app/(tabs)/_layout.tsx) fires this
+  // flag regardless of role — it was relying on THIS screen to ignore it
+  // for a kid, but neither effect below actually checked kidView, so the
+  // "+" FAB still popped the Add form open for a kid/teen/senior session.
   const openHealthRecordsComposerRequested = useUIStore(s => s.openHealthRecordsComposerRequested);
   useEffect(() => {
     if (openHealthRecordsComposerRequested) {
       useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      if (kidView) return;
       if (effectiveHealthTab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
     }
-  }, [openHealthRecordsComposerRequested, effectiveHealthTab]);
+  }, [openHealthRecordsComposerRequested, effectiveHealthTab, kidView]);
 
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().openHealthRecordsComposerRequested) {
       useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
+      if (kidView) return;
       if (effectiveHealthTab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
     }
-  }, [effectiveHealthTab]));
+  }, [effectiveHealthTab, kidView]));
 
   const openScanSheet = (mode: 'rx' | 'vaccine') => {
     setScanMode(mode);
@@ -182,23 +197,45 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     return () => { supabase.removeChannel(channel); };
   }, [familyId, load]);
 
-  // Mark medication taken today — records who marked it
-  const markTaken = async (med: Medication) => {
+  // Mark ONE dose taken/untaken — a twice-daily med now gets a real
+  // per-dose-time toggle (was a single button for the whole medication
+  // regardless of dose count) [live-requested: "add extensive like which
+  // time slot / part of day they missed" — true per-time-slot tracking
+  // needs a button per dose, not one button standing in for all of them].
+  // Writes into the real taken_dates history array
+  // (family_medications.taken_dates — present in the schema since this
+  // table was created, but never actually read or written anywhere until
+  // this fix); taken_date (single field) is kept in sync too, set/cleared
+  // only when marking the LAST remaining dose of the day so its old
+  // "taken today" meaning (used elsewhere for the simple daily glance)
+  // stays correct for a single-dose med and doesn't go stale for a
+  // multi-dose one. time is null for a single-dose med (frequency_times
+  // has exactly one entry) — same as before this fix, just now also
+  // recorded in taken_dates instead of only taken_date.
+  const markTaken = async (med: Medication, time: string | null) => {
     const todayStr = today();
-    const alreadyTaken = med.taken_date === todayStr;
-    const newDate = alreadyTaken ? null : todayStr;
+    const entry = encodeTakenEntry(todayStr, time);
+    const existingDates = med.taken_dates ?? [];
+    const wasTaken = existingDates.includes(entry);
+    const newDates = wasTaken
+      ? existingDates.filter(d => d !== entry)
+      : [...existingDates, entry];
+    const timesForMed = med.frequency_times?.length ? med.frequency_times : ['08:00'];
+    const allDosesTakenToday = timesForMed.every(t => newDates.includes(encodeTakenEntry(todayStr, timesForMed.length > 1 ? t : null)));
+    const newDate = allDosesTakenToday ? todayStr : null;
     const { error } = await supabase.from('family_medications')
       .update({
         taken_date: newDate,
+        taken_dates: newDates,
         modified_by: activeMember?.id ?? null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', med.id);
     if (!error) {
       setMeds(prev => prev.map(m => m.id === med.id
-        ? { ...m, taken_date: newDate, modified_by: activeMember?.id ?? null }
+        ? { ...m, taken_date: newDate, taken_dates: newDates, modified_by: activeMember?.id ?? null }
         : m));
-      showToast(alreadyTaken ? 'Marked as not taken' : 'Marked as taken');
+      showToast(wasTaken ? 'Marked as not taken' : 'Marked as taken');
     }
   };
 
@@ -606,6 +643,14 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         ) : activeMeds.map(med => {
           const isTaken = med.taken_date === todayStr;
           const catColor = getCatColors(colors)[med.category] ?? colors.primary;
+          // One dose slot per frequency_times entry — a twice-daily med
+          // gets two independent buttons instead of one button standing
+          // in for the whole day [live-requested: "add extensive like
+          // which time slot / part of day they missed", confirmed:
+          // "Add one button per dose time"].
+          const doseTimes = med.frequency_times?.length ? med.frequency_times : [null];
+          const multiDose = doseTimes.length > 1;
+          const takenSet = new Set(med.taken_dates ?? []);
           return (
             <View key={med.id} style={{
               borderRadius: 20, overflow: 'hidden',
@@ -647,21 +692,31 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
                   </Text>
                 )}
 
-                {/* Mark taken button */}
-                <TouchableOpacity onPress={() => markTaken(med)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    paddingVertical: 13, borderRadius: 14,
-                    backgroundColor: isTaken ? colors.success + '15' : catColor,
-                    borderWidth: isTaken ? 1.5 : 0,
-                    borderColor: isTaken ? colors.success + '50' : 'transparent',
-                  }}>
-                  <Check size={16} color={isTaken ? colors.success : colors.textInverse} />
-                  <Text style={{ fontSize: 15, fontWeight: '900',
-                    color: isTaken ? colors.success : colors.textInverse }}>
-                    {isTaken ? 'Marked as Taken' : 'Mark as Taken'}
-                  </Text>
-                </TouchableOpacity>
+                {/* Mark taken — one button per dose time for a multi-dose med */}
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {doseTimes.map((time, idx) => {
+                    const entry = encodeTakenEntry(todayStr, multiDose ? time : null);
+                    const doseTaken = takenSet.has(entry) || (!multiDose && isTaken);
+                    return (
+                      <TouchableOpacity key={time ?? idx} onPress={() => markTaken(med, multiDose ? time : null)}
+                        style={{
+                          flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                          paddingVertical: 13, borderRadius: 14,
+                          backgroundColor: doseTaken ? colors.success + '15' : catColor,
+                          borderWidth: doseTaken ? 1.5 : 0,
+                          borderColor: doseTaken ? colors.success + '50' : 'transparent',
+                        }}>
+                        <Check size={16} color={doseTaken ? colors.success : colors.textInverse} />
+                        <Text style={{ fontSize: multiDose ? 13 : 15, fontWeight: '900',
+                          color: doseTaken ? colors.success : colors.textInverse }}>
+                          {multiDose
+                            ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : ''}`
+                            : (doseTaken ? 'Marked as Taken' : 'Mark as Taken')}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             </View>
           );
@@ -766,6 +821,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         toggleVax={toggleVax}
         deleteVax={deleteVax}
         load={load}
+        onOpenHistory={onOpenHistory}
       />
 
       {/* Modals */}

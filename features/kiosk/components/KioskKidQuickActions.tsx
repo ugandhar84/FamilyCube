@@ -71,7 +71,7 @@
 import { useMemo, useState } from 'react';
 import {
   Modal, View, Text, ScrollView, Pressable, StyleSheet,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, TextInput,
 } from 'react-native';
 import {
   PiggyBank, ClipboardList, PartyPopper, X, Receipt, Trophy,
@@ -83,17 +83,21 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
+import type { Quest } from '@/store/questStore';
+import { useKidRequestStore, REQUEST_META, type KidRequest as KidRequestType } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
-import { useEventStore, eventAssignee } from '@/store/eventStore';
+import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { parseDbTime } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
+import { KioskFormDrawer, KioskFieldLabel, kioskInputStyle } from './KioskFormDrawer';
 
 import { KioskModalHost, useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
+import { KioskAvatar } from './KioskAvatar';
 import { WidgetCard, WidgetHeader, Well, Chip, ActionButton, EmptyNote } from './KioskOS';
 import { useKioskAskParent, ASK_PARENT_OPTIONS } from './KioskAskParentFlow';
+import { requestDisplayTitle, KioskRequestDetailDrawer } from './KioskKidWidgets';
 
 type SheetKey = 'piggy' | 'cheer' | 'requests' | 'checkin';
 
@@ -422,11 +426,28 @@ function KidCheckinSheet({ active, k, isDark, onClose }: {
         return ids.includes(active.id);
       })
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+    const rawConfirmedRide = mine.find(ev => {
+      const a = eventAssignee(ev);
+      return !!a.name && a.status === 'confirmed';
+    });
+    // "I'm ready for pickup!" used to blindly name any confirmed ride
+    // scheduled ANY time today, even hours away — the mobile equivalent
+    // of the same bug, KidView.tsx's own confirmedRide/sendCheckin
+    // [live-requested: "when im ready- we should not blicdly pickup ride
+    // to show ready for ride-- if they click just bfore x min then we
+    // should take that - or it can be generic .. we should fix this in
+    // the mobile also"]. Same 60-minutes-before/30-minutes-after window
+    // as the mobile fix.
+    let confirmedRide: FamilyEvent | undefined;
+    if (rawConfirmedRide?.time) {
+      const [h, m] = rawConfirmedRide.time.split(':').map(Number);
+      const target = new Date();
+      target.setHours(h, m, 0, 0);
+      const mins = Math.round((target.getTime() - Date.now()) / 60000);
+      if (mins <= 60 && mins >= -30) confirmedRide = rawConfirmedRide;
+    }
     return {
-      confirmedRide: mine.find(ev => {
-        const a = eventAssignee(ev);
-        return !!a.name && a.status === 'confirmed';
-      }),
+      confirmedRide,
       nextEvent: mine.find(ev => eventAssignee(ev).status !== 'rejected'),
     };
   }, [dayEvents, active.id]);
@@ -544,13 +565,20 @@ function KidCheckinSheet({ active, k, isDark, onClose }: {
  * unchanged. See this file's header for why that matters.
  */
 function KioskSheet({
-  title, subtitle, accent, Icon, k, isDark, onClose, children,
+  title, subtitle, accent, Icon, k, isDark, onClose, children, variant = 'dialog',
 }: {
   title: string; subtitle?: string; accent: string; Icon: LucideIcon;
   k: KioskColors; isDark: boolean; onClose: () => void; children: React.ReactNode;
+  /** 'dialog' (default) — centered fade card, unchanged from before this
+   *  prop existed (every existing call site keeps its exact look). 'drawer'
+   *  — full-height right-anchored panel, same shape KioskFormDrawer's own
+   *  variant uses [live-requested: "open in side bar" — the parent-facing
+   *  request-history sheet]. */
+  variant?: 'dialog' | 'drawer';
 }) {
+  const isDrawer = variant === 'drawer';
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType={isDrawer ? 'slide' : 'fade'} onRequestClose={onClose}>
       <KioskModalHost style={s.overlay}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -560,11 +588,11 @@ function KioskSheet({
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={s.center}
+          style={isDrawer ? s.right : s.center}
           pointerEvents="box-none"
         >
           <View
-            style={[s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}
+            style={[isDrawer ? s.sheetDrawer : s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}
             accessibilityViewIsModal
             accessibilityLabel={title}
           >
@@ -761,6 +789,17 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
     () => kidCheerableQuests(quests, siblingKids, active.id),
     [quests, siblingKids, active.id],
   );
+  // One shared centered sheet for the whole list, not an inline field per
+  // row — a row deep in this small, always-scrolled panel had no reliable
+  // way to clear the on-screen keyboard when its own note field focused
+  // (tried scrolling the row into view twice, still covered either way)
+  // [live-reported: "when i click on that my keyboard is covering in
+  // overview page" → "still same no luch" → "lets show the diffrent sheet
+  // in center and enter notes and hit cheers?"]. A real centered Modal
+  // sidesteps the whole page-scroll/keyboard-overlap problem: its own
+  // KeyboardAvoidingView pushes just its own compact content up, the same
+  // real fix QuestProposalCoinSheet already uses for an analogous case.
+  const [cheerTarget, setCheerTarget] = useState<Quest | null>(null);
 
   if (cheerable.length === 0) {
     return <EmptyNote text="Nobody's finished anything new to cheer yet. Check back later 🌱" k={k} />;
@@ -773,7 +812,14 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
         const who = sib?.name?.trim().split(' ')[0] ?? 'They';
         return (
           <Well key={q.id} k={k} accent={k.sage} style={s.cheerRow}>
-            <Text style={s.lbEmoji} numberOfLines={1}>{sib?.emoji ?? '🧒'}</Text>
+            <KioskAvatar
+              name={sib?.name ?? 'Family member'}
+              emoji={sib?.emoji}
+              avatarUrl={sib?.avatarUrl}
+              siblings={members.filter(x => x.id !== sib?.id).map(x => x.name)}
+              size={24}
+              k={k}
+            />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[s.cheerTitle, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
               <Text style={[s.cheerSub, { color: k.sage }]} numberOfLines={1}>
@@ -784,12 +830,55 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
               label="Cheer" Icon={PartyPopper} accent={k.sage} k={k} isDark={isDark}
               variant="solid"
               accessibilityHint={`Send ${who} a cheer for ${q.title}`}
-              onPress={() => { registerActivity(); cheerQuest(q.id, active.id); }}
+              onPress={() => { registerActivity(); setCheerTarget(q); }}
             />
           </Well>
         );
       })}
+      <SendCheerSheet
+        target={cheerTarget}
+        who={cheerTarget ? (siblingKids.find(x => x.id === cheerTarget.assignedToId)?.name?.trim().split(' ')[0] ?? 'They') : ''}
+        k={k}
+        onClose={() => setCheerTarget(null)}
+        onSend={(note) => {
+          if (cheerTarget) cheerQuest(cheerTarget.id, active.id, note ? { note } : undefined);
+          setCheerTarget(null);
+        }}
+      />
     </View>
+  );
+}
+
+// Centered dialog — same real KioskFormDrawer shell (dialog variant)
+// QuestProposalCoinSheet/RedoReasonSheet already use, so a note field here
+// gets that shell's own working keyboard handling for free instead of
+// this component reinventing scroll-into-view math.
+function SendCheerSheet({ target, who, k, onClose, onSend }: {
+  target: Quest | null;
+  who: string;
+  k: KioskColors;
+  onClose: () => void;
+  onSend: (note?: string) => void;
+}) {
+  const [note, setNote] = useState('');
+  const close = () => { setNote(''); onClose(); };
+  return (
+    <KioskFormDrawer
+      visible={!!target} title={`Cheer for ${who}`} subtitle={target?.title}
+      accent={k.sage} Icon={PartyPopper} k={k} onClose={close}
+      submitLabel="Send Cheer" canSubmit
+      onSubmit={() => { onSend(note.trim() || undefined); setNote(''); }}
+    >
+      <KioskFieldLabel k={k}>Message (optional)</KioskFieldLabel>
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        placeholder={`Tell ${who} why you're cheering…`}
+        placeholderTextColor={k.textFaint}
+        multiline
+        style={[kioskInputStyle(k), { minHeight: 90, textAlignVertical: 'top' }]}
+      />
+    </KioskFormDrawer>
   );
 }
 
@@ -807,11 +896,21 @@ export function KioskKidCheerList({ active, members, k, isDark }: {
  * surface is a glance — but the window itself is now the phone's full
  * 30-day ceiling outright, so a request from three weeks ago still shows.
  */
-export function KidRequestsSheet({ active, members, k, isDark, onClose }: {
+export function KidRequestsSheet({ active, members, k, isDark, onClose, scope = 'mine' }: {
   active: FamilyMember; members: FamilyMember[]; k: KioskColors; isDark: boolean;
   onClose: () => void;
+  /** 'mine' (default) — a kid/teen's own outgoing requests only, unchanged
+   *  from before this prop existed. 'family' — every kid's requests,
+   *  newest first, each row's own name shown — the parent-facing history
+   *  footer for the Approvals widget [live-requested: "also show the
+   *  history as a tab footer"]. */
+  scope?: 'mine' | 'family';
 }) {
   const requests = useKidRequestStore(s => s.requests);
+  // Full request+response drawer, opened by tapping any row
+  // [live-requested: "when i click on dividual reuest it should open the
+  // side bar to show the complte request/responses"].
+  const [viewingRequest, setViewingRequest] = useState<KidRequestType | null>(null);
 
   // Live-reported: "My Requests" wasn't showing history — this window was
   // hard-capped to the phone modal's DEFAULT of 7 days with no way to see
@@ -823,10 +922,10 @@ export function KidRequestsSheet({ active, members, k, isDark, onClose }: {
   const mine = useMemo(() => {
     const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return requests
-      .filter(r => r.fromMemberId === active.id && !!r.requestedAt)
+      .filter(r => (scope === 'family' || r.fromMemberId === active.id) && !!r.requestedAt)
       .filter(r => parseDbTime(r.requestedAt).getTime() >= since)
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
-  }, [requests, active.id]);
+  }, [requests, active.id, scope]);
 
   const statusOf = (status: string): { label: string; accent: string; Icon: LucideIcon } => {
     if (status === 'approved' || status === 'completed') return { label: 'Approved', accent: k.sage, Icon: CheckCircle2 };
@@ -840,43 +939,71 @@ export function KidRequestsSheet({ active, members, k, isDark, onClose }: {
 
   return (
     <KioskSheet
-      title="My Requests" subtitle="Last 30 days" accent={k.blue} Icon={ClipboardList}
+      title={scope === 'family' ? 'Request History' : 'My Requests'}
+      subtitle="Last 30 days" accent={k.blue} Icon={ClipboardList}
       k={k} isDark={isDark} onClose={onClose}
+      variant={scope === 'family' ? 'drawer' : 'dialog'}
     >
       {mine.length === 0 ? (
-        <EmptyNote text="You haven't asked for anything in the last 30 days." k={k} />
+        <EmptyNote
+          text={scope === 'family'
+            ? 'No kid requests in the last 30 days.'
+            : "You haven't asked for anything in the last 30 days."}
+          k={k}
+        />
       ) : (
         <View style={{ gap: KIOSK_SPACE.sm }}>
           {mine.map(r => {
             const st = statusOf(r.status);
             const meta = REQUEST_META[r.type];
             const answered = nameOf(r.respondedBy);
+            const askedBy = scope === 'family' ? nameOf(r.fromMemberId) : undefined;
+            // Tiny approved/responded timestamp, right on the row itself
+            // [live-requested: "also show the qpproved date time stap on
+            // the my rquest individual card tiny atleast"] — not just
+            // inside the detail drawer this row now also opens.
+            const respondedLabel = r.respondedAt
+              ? new Date(r.respondedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+              : null;
             return (
-              <Well key={r.id} k={k} accent={st.accent} style={s.reqRow}>
-                <View style={s.reqTop}>
-                  <Text style={s.lbEmoji} numberOfLines={1}>{meta?.emoji ?? '📋'}</Text>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[s.reqTitle, { color: k.text }]} numberOfLines={2}>
-                      {r.detail || meta?.label || 'Request'}
-                    </Text>
-                    <Text style={[s.reqMeta, { color: k.textFaint }]} numberOfLines={1}>
-                      {meta?.label ?? 'Request'}
-                      {r.scheduledTime ? ` · ${r.scheduledTime}` : ''}
-                      {answered ? ` · ${answered} answered` : ''}
-                    </Text>
+              <Pressable
+                key={r.id}
+                onPress={() => setViewingRequest(r)}
+                style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityHint="Opens the full request and response"
+              >
+                <Well k={k} accent={st.accent} style={s.reqRow}>
+                  <View style={s.reqTop}>
+                    <Text style={s.lbEmoji} numberOfLines={1}>{meta?.emoji ?? '📋'}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.reqTitle, { color: k.text }]} numberOfLines={2}>
+                        {requestDisplayTitle(r, meta?.label)}
+                      </Text>
+                      <Text style={[s.reqMeta, { color: k.textFaint }]} numberOfLines={1}>
+                        {askedBy ? `${askedBy} · ` : ''}{meta?.label ?? 'Request'}
+                        {r.scheduledTime ? ` · ${r.scheduledTime}` : ''}
+                        {answered ? ` · ${answered} answered` : ''}
+                        {respondedLabel ? ` · ${respondedLabel}` : ''}
+                      </Text>
+                    </View>
+                    <Chip label={st.label} accent={st.accent} isDark={isDark} k={k} />
                   </View>
-                  <Chip label={st.label} accent={st.accent} isDark={isDark} k={k} />
-                </View>
-                {!!r.parentNote && (
-                  <Text style={[s.reqNote, { color: k.textMuted }]} numberOfLines={3}>
-                    “{r.parentNote}”
-                  </Text>
-                )}
-              </Well>
+                  {!!r.parentNote && (
+                    <Text style={[s.reqNote, { color: k.textMuted }]} numberOfLines={3}>
+                      “{r.parentNote}”
+                    </Text>
+                  )}
+                </Well>
+              </Pressable>
             );
           })}
         </View>
       )}
+      <KioskRequestDetailDrawer
+        request={viewingRequest} members={members} k={k} isDark={isDark}
+        onClose={() => setViewingRequest(null)}
+      />
     </KioskSheet>
   );
 }
@@ -957,6 +1084,19 @@ const s = StyleSheet.create({
   sheet: {
     width: 520, maxWidth: '100%', maxHeight: '85%',
     borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden',
+  },
+  // Drawer variant — right-anchored, capped at 80% of the available
+  // height rather than the full screen [live-requested: "wherever we use
+  // side bar using the 80% of mac height instead full side bar like forms
+  // / info display details, chats etc.." → "similar to askFam ... but
+  // increase the height to 80%"], matching KioskFormDrawer's own
+  // panelDrawer fix. Floats vertically centered (alignItems:'center' on
+  // `right`) with a full border + radius on all sides, since it no longer
+  // touches the screen's top/bottom edges.
+  right: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingVertical: KIOSK_SPACE.xl },
+  sheetDrawer: {
+    width: 480, maxWidth: '100%', maxHeight: '80%',
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg,
   },
   sheetHeader: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,

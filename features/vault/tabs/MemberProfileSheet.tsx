@@ -65,7 +65,7 @@ function StatTile({ Icon, label, value, colors, accent }: { Icon: any; label: st
   );
 }
 
-export function MemberProfileSheet({ member, siblings, allMembers, visible, onClose, onSave, onLinkParent, onDelete, onSavePin, onResetPin, onResendInvite, onGenerateRecoveryCode, isParentViewer, canChangePin, initialSection, colors, isDark }: {
+export function MemberProfileSheet({ member, siblings, allMembers, visible, onClose, onSave, onLinkParent, onDelete, onSavePin, onResetPin, onResendInvite, onGenerateRecoveryCode, isParentViewer, canChangePin, initialSection, colors, isDark, renderShell }: {
   member: FamilyMember; siblings: string[]; visible: boolean; onClose: () => void;
   /** All members — needed for the edit section's "whose parent?" picker. */
   allMembers?: any[];
@@ -106,6 +106,14 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
    * was showing when the sheet last closed. */
   initialSection?: 'view' | 'edit' | 'pin';
   colors: any; isDark: boolean;
+  /** Kiosk-only: swaps this AppBottomSheet for kiosk's own right-side
+   *  KioskFormDrawer around the exact same real view/edit/pin/confirmRemove
+   *  body [live-requested: "the family memeber edit shoud also open the
+   *  side bar"]. Receives the computed title/subtitle too, since unlike
+   *  the simpler Notifications/Currency/Family-Name sheets this title
+   *  changes per-section. Mobile never passes this, so its own
+   *  AppBottomSheet is completely unchanged. */
+  renderShell?: (visible: boolean, onClose: () => void, title: string, subtitle: string | undefined, children: React.ReactNode) => React.ReactNode;
 }) {
   const [section, setSection] = useState<'view' | 'edit' | 'pin' | 'confirmRemove'>(initialSection ?? 'view');
   // The useState initializer above only runs on first mount — this sheet
@@ -126,11 +134,11 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
 
   const close = () => { setSection('view'); onClose(); };
 
-  return (
-    <AppBottomSheet visible={visible} onClose={close}
-      title={section === 'edit' ? 'Edit Member' : section === 'pin' ? (member.pin ? 'Change PIN' : 'Set PIN') : section === 'confirmRemove' ? 'Remove Member' : member.name}
-      subtitle={section === 'view' ? (member.relationship ?? roleLabel) : undefined}
-      accentColor={rc} minHeight="40%" maxHeight="85%">
+  const title = section === 'edit' ? 'Edit Member' : section === 'pin' ? (member.pin ? 'Change PIN' : 'Set PIN') : section === 'confirmRemove' ? 'Remove Member' : member.name;
+  const subtitle = section === 'view' ? (member.relationship ?? roleLabel) : undefined;
+
+  const body = (
+    <>
       {section === 'view' && (
         <ViewSection member={member} siblings={siblings} rc={rc} isKidOrTeen={isKidOrTeen} isSenior={isSenior}
           isParentViewer={isParentViewer} canChangePin={canChangePin} onSave={onSave} onDelete={onDelete}
@@ -158,6 +166,16 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
           onSave={async (id, pin) => { await onSavePin(id, pin); close(); }}
           colors={colors} isDark={isDark} />
       )}
+    </>
+  );
+
+  if (renderShell) return <>{renderShell(visible, close, title, subtitle, body)}</>;
+
+  return (
+    <AppBottomSheet visible={visible} onClose={close}
+      title={title} subtitle={subtitle}
+      accentColor={rc} minHeight="40%" maxHeight="85%">
+      {body}
     </AppBottomSheet>
   );
 }

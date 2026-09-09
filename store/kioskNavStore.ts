@@ -25,7 +25,7 @@ import { create } from 'zustand';
  * clears it — same one-shot "consume and clear" shape as other
  * fire-once-then-forget signals in this codebase (e.g. paywallSheetStore).
  */
-export type KioskNavTab = 'hub' | 'tasks' | 'schedule' | 'chat' | 'findfam' | 'store' | 'memories' | 'school' | 'health' | 'profile';
+export type KioskNavTab = 'hub' | 'tasks' | 'schedule' | 'chat' | 'findfam' | 'store' | 'memories' | 'school' | 'health' | 'profile' | 'meals';
 
 interface KioskNavState {
   pendingTab: KioskNavTab | null;

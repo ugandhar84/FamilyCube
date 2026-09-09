@@ -5,7 +5,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { SectionCard } from '../hubComponents';
 import { GP } from './seniorTheme';
 import AddMedModal from '@/features/vault/tabs/health/AddMedModal';
-import { Medication, FREQ_LABELS } from '@/features/vault/tabs/health/types';
+import { Medication, FREQ_LABELS, encodeTakenEntry, formatDoseTime, today as todayLocalStr } from '@/features/vault/tabs/health/types';
 
 // Money-green — "taken" status accent, distinct from brand teal used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -15,7 +15,7 @@ const MONEY_GREEN = '#10B981';
 export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemoveMed, colors, isDark, active, allMembers }: {
   meds: Medication[];
   medsTaken: Record<string, boolean>;
-  toggleMed: (med: Medication) => void;
+  toggleMed: (med: Medication, time: string | null) => void;
   // Real dosage/frequency/schedule form (AddMedModal, the same one
   // HealthTab.tsx's Health screen uses) instead of the old name+time-only
   // stub — a medication feature with no dosage, recurrence, or start/end
@@ -70,11 +70,27 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
                   {addedByName ? ` · Added by ${addedByName}` : ''}
                 </Text>
               </View>
-              <Pressable onPress={() => toggleMed(med)} style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: taken ? MONEY_GREEN + '20' : BRAND.teal, borderWidth: taken ? 1 : 0, borderColor: MONEY_GREEN + '40' }}>
-                <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: taken ? MONEY_GREEN : '#fff' }}>
-                  {taken ? 'Taken' : 'Mark Taken'}
-                </Text>
-              </Pressable>
+              {/* One button per dose time for a multi-dose med (e.g.
+                  twice_daily) instead of one button standing in for the
+                  whole day [live-requested: "add extensive like which time
+                  slot / part of day they missed", confirmed: "Add one
+                  button per dose time"]. */}
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(med.frequency_times?.length ? med.frequency_times : [null]).map((time, idx) => {
+                  const multiDose = (med.frequency_times?.length ?? 0) > 1;
+                  const doseTaken = multiDose
+                    ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time))
+                    : taken;
+                  return (
+                    <Pressable key={time ?? idx} onPress={() => toggleMed(med, multiDose ? time : null)}
+                      style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: doseTaken ? MONEY_GREEN + '20' : BRAND.teal, borderWidth: doseTaken ? 1 : 0, borderColor: MONEY_GREEN + '40' }}>
+                      <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: doseTaken ? MONEY_GREEN : '#fff' }}>
+                        {multiDose ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : ''}` : (doseTaken ? 'Taken' : 'Mark Taken')}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
               {/* Extra left margin (was flush against "Mark Taken") — a
                   stray tap near two adjacent controls, one destructive, one
                   the primary action, is a real risk for a medication list

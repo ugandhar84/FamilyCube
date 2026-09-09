@@ -23,6 +23,15 @@ export interface Medication {
   end_date: string | null;
   instructions: string | null;
   taken_date: string | null;
+  // Real DB column (family_medications.taken_dates, JSONB array of
+  // YYYY-MM-DD strings), present in the schema since this table was
+  // created but never read or written by any app code until now — every
+  // "mark taken" write only ever touched the single taken_date field.
+  // This is the actual adherence history: every day this med was marked
+  // taken, not just today's [live-requested: "we must show the active
+  // medication history like day and take and missing.. for yestdays one
+  // we should show missd right if they really missed"].
+  taken_dates: string[];
   escalation_enabled: boolean;
   escalation_after_min: number;
   escalation_to: string[];
@@ -100,6 +109,107 @@ export interface MedForm {
 // time — see AddMedModal's frequency-change handler).
 export function doseCountForFrequency(frequency: string): number {
   return frequency === 'twice_daily' ? 2 : 1;
+}
+
+// ─── Medication adherence history ──────────────────────────────────────────
+// Real per-day (and, for a multi-dose med, per-dose-time) taken/missed
+// history, built entirely from real data already on the row: taken_dates
+// (the real DB column, present since this table was created but never
+// actually read/written until now — every prior write only touched the
+// single taken_date field), start_date/end_date, and frequency_times
+// [live-requested: "we must show the active medication history like day
+// and take and missing.. for yestdays one we should show missd right if
+// they really missed" / "add extensive like which time slot / part of
+// day they missed"]. No new table — taken_dates already held exactly
+// this, just disconnected from every write path.
+//
+// Entry format: a plain "YYYY-MM-DD" for a single-dose med (frequency !==
+// 'twice_daily'); "YYYY-MM-DD|HH:MM" for a multi-dose med, one entry per
+// dose actually taken, HH:MM matching one of frequency_times. Backward-
+// compatible: any already-existing plain-date entry (from before this
+// fix, or on a med that was single-dose when taken) still parses as
+// "taken", just without a specific time slot to attribute it to.
+export interface DoseAdherence {
+  date: string;         // YYYY-MM-DD
+  time: string | null;  // one of frequency_times, or null if untracked/single-dose
+  status: 'taken' | 'missed' | 'upcoming';
+}
+
+export function encodeTakenEntry(date: string, time: string | null): string {
+  return time ? `${date}|${time}` : date;
+}
+
+// "08:00" -> "8:00 AM" — used to label each per-dose-time button/row so a
+// twice-daily med's two slots read as times, not raw 24h strings.
+export function formatDoseTime(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h || 0, m || 0, 0, 0);
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function decodeTakenEntry(entry: string): { date: string; time: string | null } {
+  const [date, time] = entry.split('|');
+  return { date, time: time ?? null };
+}
+
+// Every scheduled dose from start_date through min(end_date, today),
+// each marked taken/missed/upcoming against the real taken_dates array.
+// "Missed" only for a dose whose scheduled date+time has genuinely
+// passed and isn't in taken_dates — today's own not-yet-due doses (or a
+// dose later today) are "upcoming," not "missed", matching the real
+// distinction the owner drew ("today we show overdue bit for yestdays
+// one we should show missd right if they really missed").
+export function medicationAdherenceHistory(med: Medication, daysBack = 14): DoseAdherence[] {
+  const times = med.frequency_times?.length ? med.frequency_times : ['08:00'];
+  const multiDose = times.length > 1;
+  const takenSet = new Set(med.taken_dates ?? []);
+  const nowStr = today();
+  const now = new Date();
+
+  const start = med.start_date ? new Date(med.start_date + 'T00:00:00') : new Date(nowStr + 'T00:00:00');
+  const earliestWindow = new Date(now);
+  earliestWindow.setDate(earliestWindow.getDate() - daysBack);
+  const windowStart = start > earliestWindow ? start : earliestWindow;
+  const end = med.end_date ? new Date(med.end_date + 'T00:00:00') : now;
+  const windowEnd = end < now ? end : now;
+
+  const out: DoseAdherence[] = [];
+  for (let d = new Date(windowStart); d <= windowEnd; d.setDate(d.getDate() + 1)) {
+    const dateStr = fmtDate(d);
+    for (const time of times) {
+      const isTaken = multiDose
+        ? takenSet.has(encodeTakenEntry(dateStr, time)) || takenSet.has(dateStr)
+        : takenSet.has(dateStr) || takenSet.has(encodeTakenEntry(dateStr, time));
+      let status: DoseAdherence['status'];
+      if (isTaken) {
+        status = 'taken';
+      } else {
+        const [h, m] = time.split(':').map(Number);
+        const doseAt = new Date(d);
+        doseAt.setHours(h || 0, m || 0, 0, 0);
+        status = doseAt.getTime() <= now.getTime() ? 'missed' : 'upcoming';
+      }
+      out.push({ date: dateStr, time: multiDose ? time : null, status });
+    }
+  }
+  return out.reverse(); // newest first
+}
+
+// Doses grouped by day, newest day first, so a history view reads as a
+// real day-by-day log instead of one flat list of dose rows — shared by
+// mobile's own drawer (HealthRecordsList.tsx) and kiosk's side-drawer
+// version, both built off the same medicationAdherenceHistory() output
+// [live-requested: "we must show the active medication history like day
+// and take and missing.." / "show that history side bar"].
+export function groupHistoryByDay(doses: DoseAdherence[]): { date: string; doses: DoseAdherence[] }[] {
+  const byDate = new Map<string, DoseAdherence[]>();
+  for (const d of doses) {
+    const list = byDate.get(d.date) ?? [];
+    list.push(d);
+    byDate.set(d.date, list);
+  }
+  return Array.from(byDate.entries()).map(([date, doses]) => ({ date, doses }));
 }
 export const BLANK_MED: MedForm = {
   name: '', dosage: '', dosage_unit: 'tablet', frequency: 'daily',

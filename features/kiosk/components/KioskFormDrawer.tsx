@@ -80,10 +80,10 @@
  * doesn't need this — it's already height:'100%' inside the same shrinking
  * KeyboardAvoidingView box, so there's no separate percentage to reclamp.
  */
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
   Modal, View, Text, Pressable, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard, TextInput, findNodeHandle,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -138,6 +138,32 @@ export function KioskFormDrawer({
   // the panel itself is correctly bounded, there's nothing left for a
   // fancier auto-scroll library to compensate for.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(85);
+  // Drawer variant no longer shrinks the panel at all (see panelDrawer's
+  // own comment on why that approach was reverted), so nothing else was
+  // scrolling a focused field above the keyboard once it opened — the
+  // dialog variant's own comment above assumed the panel's shrink handled
+  // this, which stopped being true here [live-requested: "hen text input
+  // box clicks it will come to automatically top of the keyboard to see
+  // text"]. RN's own ScrollView.scrollResponderScrollNativeHandleToKeyboard
+  // is the built-in mechanism for exactly this — no extra library, and it
+  // works for whichever field any of the 18 real forms this shell wraps
+  // happens to focus, without each of them needing its own onFocus
+  // handler. Runs on keyboardDidShow (the keyboard's final settled
+  // height/position), not the input's own onFocus — onFocus fires before
+  // the keyboard has finished animating in, so scrolling then targets a
+  // screen layout that's about to change again.
+  const bodyScrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(showEvt, () => {
+      const focused = TextInput.State.currentlyFocusedInput?.();
+      const focusedHandle = focused ? findNodeHandle(focused as any) : null;
+      if (focusedHandle != null) {
+        bodyScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(focusedHandle, 40, true);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <Modal
@@ -174,6 +200,17 @@ export function KioskFormDrawer({
               s.panelBase,
               isDialog
                 ? [s.panelDialog, { borderColor: k.cardBorder }, keyboardAwareMaxHeight != null && { maxHeight: keyboardAwareMaxHeight }]
+                // Plain flush full-height panel — same exact shape as
+                // KioskAppBottomSheet/KioskTaskFormShell/
+                // KioskDateTimePicker (width 520, height:'100%',
+                // borderLeftWidth 1, no radius, no shadow, no inset)
+                // [live-requested: "we have to make that model similar to
+                // the WhatDo you need? form" — that composer's own kiosk
+                // shell, KioskAppBottomSheet, IS this exact plain shape;
+                // every earlier inset/radius/shadow/85%-cap styling pass
+                // on this file's own drawer variant is reverted]. Real
+                // full height — no percentage cap, no keyboard-aware
+                // shrink, nothing for the keyboard to visibly fight.
                 : [s.panelDrawer, { borderLeftColor: k.cardBorder }],
               { backgroundColor: k.card },
             ]}
@@ -245,6 +282,7 @@ export function KioskFormDrawer({
               whichever field is focused — nothing extra to compensate for.
             */}
             <ScrollView
+              ref={bodyScrollRef}
               style={isDialog ? s.bodyDialog : s.body}
               contentContainerStyle={s.bodyContent}
               showsVerticalScrollIndicator={false}
@@ -388,6 +426,13 @@ const s = StyleSheet.create({
   // Same 520 KioskSheet uses — these forms carry more per row (name + qty +
   // remove) than KioskAskFamDrawer's 480 chat column comfortably fits.
   panelBase: { width: 520, maxWidth: '100%', overflow: 'hidden' },
+  // Plain flush full-height panel, same exact shape as
+  // KioskAppBottomSheet/KioskTaskFormShell/KioskDateTimePicker — every
+  // inset/radius/shadow/percentage-cap styling pass this drawer variant
+  // went through is reverted [live-requested: "we have to make that model
+  // similar to the WhatDo you need? form" — that composer's own kiosk
+  // shell IS this exact plain shape, and the rest of kiosk's forms should
+  // read as one consistent family, not each with a different frame].
   panelDrawer: { height: '100%', borderLeftWidth: 1 },
   // No fixed height: the card is as tall as head + body + footer, and only
   // stops growing at maxHeight, after which the body scrolls. maxHeight is

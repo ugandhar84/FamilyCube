@@ -1544,6 +1544,27 @@ export const useEventStore = create<EventState>((set, get) => ({
     const key = `day:${date}`;
     set({ currentDate: date, dayLoading: true });
 
+    // Was: ensureRealtime() was only ever called after a live DB fetch
+    // succeeded below, so a fresh-cache hit just below (isFresh — served
+    // and returns immediately, no DB hit at all) never reached it. If the
+    // realtime socket had died in the background (iOS suspends it; the
+    // subscribe() status handler below detects this and nulls out
+    // _rtChannel, but nothing then re-opens it) and this device's cache
+    // for `date` was still within DAY_TTL_MS, EVERY call to selectDate —
+    // including the plain foreground/mount refresh HubScreen's loadEvents()
+    // does — kept hitting the cache-fresh early return and skipping
+    // ensureRealtime entirely, leaving the channel dead for up to the rest
+    // of the 5-min TTL window. Live-reported: a kid's ride request not
+    // reaching the parent's Hub/kiosk "instantly," only after some later
+    // action (pull-to-refresh, or the TTL finally expiring) forced a real
+    // fetch. ensureRealtime() itself is a cheap no-op whenever a channel is
+    // already alive, so calling it unconditionally here — before the cache
+    // check, not just after a fetch — costs nothing on the common path and
+    // guarantees a dead channel gets reopened on every call, not just ones
+    // that happen to miss the cache.
+    const familyIdForRt = getFamilyId();
+    if (familyIdForRt) ensureRealtime(familyIdForRt, get, s => set(s as any));
+
     // ── Serve from SWR cache ──────────────────────────────────────────────
     const cached = get()._dayCache[date];
     const isFresh = !force && cached && (Date.now() - cached.fetchedAt) < DAY_TTL_MS;

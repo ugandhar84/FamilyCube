@@ -81,11 +81,11 @@
  * more widgets.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, Alert, ActivityIndicator, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, Image, useWindowDimensions, Alert, ActivityIndicator, Animated, findNodeHandle, UIManager, type StyleProp, type ViewStyle } from 'react-native';
 import {
   Car, UtensilsCrossed, Bell, Check, ChevronRight,
   Megaphone, BatteryLow, ChefHat, CheckSquare, X, UserCheck,
-  AlertTriangle, MapPin, AlertOctagon,
+  AlertTriangle, MapPin, AlertOctagon, Sparkles,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
@@ -96,14 +96,13 @@ import { usePendingUnconfirmedEvents } from '@/features/hub/usePendingUnconfirme
 import { useUpcomingOpenEvents } from '@/features/hub/useUpcomingOpenEvents';
 import { classifyEventUrgency } from '@/features/hub/lib/classifyEventUrgency';
 import { dedupeRideSeries } from '@/features/hub/lib/dedupeRideSeries';
-import { isHomeLocation, hoursUntilEvent, isWorkEvent, minutesBetween } from '@/features/hub/hubUtils';
+import { hoursUntilEvent, isWorkEvent, minutesBetween } from '@/features/hub/hubUtils';
 import { detectAssigneeConflicts, detectWorkConflicts } from '@/features/hub/lib/detectAssigneeConflicts';
-import { AlertBanner } from '@/features/hub/hubComponents';
+import { AlertBanner, PickupRadarStatus } from '@/features/hub/hubComponents';
 import { useTripStore } from '@/store/tripStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, REJECTION_PRESETS, type RejectionPresetKey } from '@/store/choreStore';
 import { HouseholdBacklogSection } from '@/features/hub/parent/HouseholdBacklogSection';
-import { ActionNeededSection } from '@/features/hub/parent/ActionNeededSection';
 import { PushbackSheet } from '@/features/hub/parent/PushbackSheet';
 import { DelegateSheet } from '@/features/hub/parent/DelegateSheet';
 import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
@@ -123,11 +122,14 @@ import { useKioskPhotos } from '../useKioskPhotos';
 import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
-import { KioskKidQuickActions, KioskKidCheckInTile, KioskKidMineTile } from '../components/KioskKidQuickActions';
-import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel } from '../components/KioskKidWidgets';
+import { KioskKidCheckInTile, KioskKidMineTile, KidRequestsSheet } from '../components/KioskKidQuickActions';
+import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel, KioskCheerSquadPanel, requestDisplayTitle } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import { KioskEventEditor } from '../components/KioskEventEditor';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
+import FlyerScannerModal from '@/components/FlyerScannerModal';
+import { useKioskLockSuspended } from '../KioskActivityContext';
+import { KioskAvatar } from '../components/KioskAvatar';
 import type { KioskTabKey } from '../kioskTabs';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
@@ -177,6 +179,15 @@ interface ApprovalItem {
   coins?: number;
   /** Higher sorts first. Only a kid request's real urgency ever exceeds 1. */
   urgencyRank: 1 | 2 | 3 | 4;
+  /** Only set for kind:'request' — the real KidRequest.type (ride, tutor,
+   *  permission, question, checkin, medication, etc.). Drives each row's
+   *  real per-type button labels/behavior (Allow/No, Acknowledged/Dismiss,
+   *  Reply/Dismiss, a single Got it for check-ins) instead of one generic
+   *  Approve/Decline pair for every kind [live-requested: "the buttons
+   *  should be meaning full right.. seen, acknoledge , yes no etc similar
+   *  to mobile app"] — matches InlineReplyCard.tsx/ActionNeededSection's
+   *  own CheckinRow exactly. */
+  requestType?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -206,6 +217,15 @@ export function KioskOverviewTab({
   isDark: boolean;
 }) {
   const { k, isDark } = useKioskColors();
+  // Root scroll ref — lets an inline TextInput deep in this page (the
+  // Approvals reply field, a sibling cheer's note field) scroll itself
+  // into view above the keyboard on focus, same real
+  // findNodeHandle/UIManager.measureLayout pattern KioskChatTab.tsx's own
+  // quick-send cards already use, rather than wrapping this whole
+  // multi-ScrollView page in a page-level KeyboardAvoidingView
+  // [live-reported: "when i click on that my keyboard is covering in
+  // overview page"].
+  const rootScrollRef = useRef<ScrollView>(null);
   // Live-requested: "card sizes and text adjust based on rotation without
   // cutting and trimming or over-zooming." Parent's page is a real 3-column
   // grid (stats rail + centerCol flex + sideCol fixed 340px, matching the
@@ -223,6 +243,21 @@ export function KioskOverviewTab({
   const { width: winWidth } = useWindowDimensions();
   const isNarrowParentLayout = winWidth < 1080;
   const isParent = active.role === 'parent';
+
+  // Scan Flyer — real ParentQuickActions.tsx tile (features/hub/parent/
+  // ParentQuickActions.tsx), had no kiosk equivalent at all
+  // [live-reported: "we missed one thing scan flyer button where do you
+  // think best fit in overview?"]. Same real FlyerScannerModal component
+  // the phone mounts (photo/PDF capture → Gemini Vision extraction →
+  // editable review → save event per selected kid via useEventStore) —
+  // reused verbatim, not forked, since it's a multi-step camera flow, not
+  // a simple field form. It's a plain phone Modal with no kiosk idle-lock
+  // participation of its own (same real bug class already fixed for
+  // AskCubeChat/School's edit modal), so useKioskLockSuspended wraps its
+  // visibility here.
+  const [flyerScannerOpen, setFlyerScannerOpen] = useState(false);
+  useKioskLockSuspended(flyerScannerOpen);
+
   // Kid role gets a genuinely different Overview, not the parent's with
   // pieces missing. All swaps below are scoped to `kid` alone — teen,
   // senior and parent are untouched:
@@ -1188,18 +1223,16 @@ export function KioskOverviewTab({
   // the underlying queries, but that tab never merged them, and it's dead
   // code besides).
   //
-  // Kid requests used to ALSO fold into this merged list as a third,
-  // generic approve/decline item — real-phone-corrected: ActionNeededSection
-  // below is the phone's own real, richer, type-specific surface for kid
-  // requests (InlineReplyCard/RideLateAlertCard/ServiceRequestCard/
-  // GroceryRequestCard/QuestProposalCard/CheckinRow, each rendering the
-  // request's actual type instead of one generic row) — the real Hub never
-  // double-shows a kid request in two places at once, so this widget's own
-  // merge no longer includes them; ActionNeededSection is now the sole
-  // surface for pending kid requests on kiosk, matching that real
-  // separation of concerns. See the pendingKidRequestsForAction derivation
-  // near the ActionNeededSection mount below for the (genuinely different,
-  // richer) real filter that replaces this widget's old simple one.
+  // Kid requests DO fold into this merged list too, as their own generic
+  // row (kind: 'request') — restores the "Kid requests" filter chip to
+  // actually working [live-reported: "why did you remove kids requests
+  // from the approvals?" after the chip was found to always read 0].
+  // ActionNeededSection below remains the richer, type-specific surface
+  // (InlineReplyCard/RideLateAlertCard/ServiceRequestCard/
+  // GroceryRequestCard/QuestProposalCard/CheckinRow) — this generic row is
+  // additive, not a replacement, so a parent can either work the queue
+  // from this one unified list OR use ActionNeededSection's fuller detail,
+  // whichever they're already looking at.
   const pendingChoreReviews = useMemo(
     () => quests.filter(q => q.status === 'pending_approval'),
     [quests],
@@ -1208,6 +1241,48 @@ export function KioskOverviewTab({
     () => isParent ? redemptions.filter(r => r.status === 'pending') : [],
     [redemptions, isParent],
   );
+  // Real ParentView.tsx's own pendingKidRequests filter (its lines
+  // ~340-375) — the same "what counts as a pending kid request" source of
+  // truth ActionNeededSection below uses, reused here rather than a
+  // second, simpler ad hoc filter so the two surfaces can never disagree
+  // about which requests are actually pending.
+  //
+  // One real clause intentionally NOT reproduced: ParentView.tsx also
+  // suppresses a ride-late request while a dispatch trip for that same kid
+  // is actively in progress (its own activeTrip/otherActiveTrips state).
+  // Kiosk's Overview has no dispatch-trip concept at all (onDispatchDirect
+  // and the trip state it tracks are ParentView-only, not mounted on
+  // kiosk anywhere) — there's nothing here to check that clause against,
+  // so it's left out rather than faked. Effect is narrow and fails safe:
+  // a ride-late alert that the phone would hide during an active dispatch
+  // could still show on kiosk in that one window; it never hides something
+  // the phone would show.
+  // Second real clause intentionally NOT reproduced (kiosk-specific
+  // divergence, confirmed live): ParentView.tsx auto-hides a check-in
+  // request once it's more than 2 hours old, treating it as stale. On
+  // kiosk a parent standing right at the device should still see and be
+  // able to act on a pending "I'm ready for pickup!" no matter how long
+  // it's been sitting there [live-reported: real Jas check-in requests
+  // were silently missing from both this widget and ActionNeededSection;
+  // confirmed via the request-history drawer they were genuinely just
+  // over 2 hours old — root cause was this exact clause, not a status-
+  // matching bug]. Every other exclusion below still matches mobile
+  // exactly.
+  const pendingKidRequestsForAction = useMemo(() => {
+    if (!isParent) return [] as typeof kidRequests;
+    return kidRequests.filter(r => {
+      if (!['pending', 'partial'].includes(r.status)) return false;
+      if (r.status === 'partial' && (r.items?.length ?? 0) > 0 && !r.items!.some((it: any) => it.status === 'pending')) return false;
+      if (r.type === 'delegation' && (r.items?.length ?? 0) === 0 && !r.detail.startsWith('💵')) return false;
+      return true;
+    });
+  }, [isParent, kidRequests]);
+  const REQUEST_TYPE_LABEL: Record<string, string> = {
+    ride: 'Ride request', tutor: 'Tutor request', cheer: 'Cheer request',
+    emergency: 'Emergency', question: 'Question', permission: 'Permission request',
+    appointment: 'Appointment', delegation: 'Delegation', checkin: 'Check-in',
+    medication: 'Medication', quest_proposal: 'Chore idea',
+  };
   const approvals = useMemo(() => {
     if (!isParent) return [] as ApprovalItem[];
     const memberFirst = (id?: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0];
@@ -1226,12 +1301,22 @@ export function KioskOverviewTab({
         coins: -r.deductedCoins,
         urgencyRank: 1,
       })),
+      ...pendingKidRequestsForAction.map((r): ApprovalItem => ({
+        id: `request:${r.id}`, kind: 'request', sortAt: r.requestedAt,
+        title: requestDisplayTitle(r, REQUEST_TYPE_LABEL[r.type] ?? 'Request'),
+        who: memberFirst(r.fromMemberId), emoji: memberEmoji(r.fromMemberId),
+        meta: REQUEST_TYPE_LABEL[r.type] ?? 'Request',
+        // No coin value — same as the mockup's own request rows (t.coin
+        // is 0 there too); a kid request isn't a payout, it's an ask.
+        urgencyRank: r.urgency === 'emergency' ? 4 : r.urgency === 'urgent' ? 3 : r.urgency === 'soon' ? 2 : 1,
+        requestType: r.type,
+      })),
     ];
     // Most urgent first; within the same urgency, oldest first — the one
     // that's been waiting longest surfaces before a just-arrived duplicate
     // at the same rank, so nothing quietly ages at the bottom of its tier.
     return items.sort((a, b) => b.urgencyRank - a.urgencyRank || a.sortAt.localeCompare(b.sortAt));
-  }, [isParent, pendingChoreReviews, pendingRedemptions, members]);
+  }, [isParent, pendingChoreReviews, pendingRedemptions, pendingKidRequestsForAction, members]);
 
   // ── Chore counts for the hero line ───────────────────────────────────
   const openChores = useMemo(
@@ -1247,66 +1332,13 @@ export function KioskOverviewTab({
     [dayEvents],
   );
 
-  // ── Action Needed (parent-only) ───────────────────────────────────────
-  // Real ParentView.tsx's own "unassigned ride / kid-request-needing-a-
-  // reply" surface, kiosk had ZERO equivalent of before this. Reads the
-  // SAME `unassigned` bucket the Part 1 classifier fix above now correctly
-  // populates (previously always empty on kiosk — see that block's own
-  // comment). Split into two card-type buckets exactly as ParentView.tsx
-  // does (its lines ~190-219) — purely which CARD to render, not a second
-  // classification pass.
-  const pendingRequests = useMemo(
-    () => unassigned.filter(e => e.category === 'Ride' && !e.rideRequired),
-    [unassigned],
-  );
-  const pendingRideRequiredEvents = useMemo(
-    () => unassigned.filter(e =>
-      e.rideRequired
-      || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
-      || !!e.helperId || !!e.driverId
-    ),
-    [unassigned],
-  );
-  // Real ParentView.tsx's own pendingKidRequests filter (its lines
-  // ~340-375), reproduced here rather than reusing kiosk's OWN older,
-  // simpler pendingKidRequests filter (status==='pending' && toMemberId
-  // scoping only) that used to feed ParentApprovalsWidget above — that
-  // simpler filter is now retired from ParentApprovalsWidget entirely (see
-  // its own comment), and this real, richer filter takes over as the sole
-  // "what counts as a pending kid request" source of truth on kiosk,
-  // feeding ActionNeededSection below.
-  //
-  // One real clause intentionally NOT reproduced: ParentView.tsx also
-  // suppresses a ride-late request while a dispatch trip for that same kid
-  // is actively in progress (its own activeTrip/otherActiveTrips state).
-  // Kiosk's Overview has no dispatch-trip concept at all (onDispatchDirect
-  // and the trip state it tracks are ParentView-only, not mounted on
-  // kiosk anywhere) — there's nothing here to check that clause against,
-  // so it's left out rather than faked. Effect is narrow and fails safe:
-  // a ride-late alert that the phone would hide during an active dispatch
-  // could still show on kiosk in that one window; it never hides something
-  // the phone would show.
-  const pendingKidRequestsForAction = useMemo(() => {
-    if (!isParent) return [] as typeof kidRequests;
-    return kidRequests.filter(r => {
-      if (!['pending', 'partial'].includes(r.status)) return false;
-      if (r.status === 'partial' && (r.items?.length ?? 0) > 0 && !r.items!.some((it: any) => it.status === 'pending')) return false;
-      if (r.type === 'checkin') {
-        const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
-        if (ageHours > 2) return false;
-      }
-      if (r.type === 'delegation' && (r.items?.length ?? 0) === 0 && !r.detail.startsWith('💵')) return false;
-      return true;
-    });
-  }, [isParent, kidRequests]);
-  // Same real formula ParentView.tsx uses (its own actionCount, line
-  // ~389) — deduped-for-count ride buckets (the SAME dedupeRideSeries pass
-  // ActionNeededSection itself runs internally on these two lists, so this
-  // badge and the actual rendered card count can't structurally diverge)
-  // plus the kid-requests count. pending_approval chore reviews are
-  // deliberately excluded — ParentApprovalsWidget's own badge covers those.
-  const [dedupedPendingForCount, dedupedRideRequiredForCount] = dedupeRideSeries(pendingRequests, pendingRideRequiredEvents);
-  const actionCount = dedupedPendingForCount.length + dedupedRideRequiredForCount.length + pendingKidRequestsForAction.length;
+  // pendingRequests/pendingRideRequiredEvents/actionCount (the old
+  // ActionNeededSection feed) removed along with that section itself —
+  // its unassigned-ride cards are already covered by Pickup Radar
+  // elsewhere on this screen, and its kid-request cards are now
+  // ParentApprovalsWidget's own "Kid requests" tab job [live-requested:
+  // "can you now hide the ACTION nEEDED section from the parents overview
+  // as itis is deuplicated witht he kidsrequests..."].
 
   // Three real ParentView.tsx-only handlers (never store actions
   // themselves — local closures that file defines around real store
@@ -1374,7 +1406,7 @@ export function KioskOverviewTab({
 
   return (
     <>
-    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+    <ScrollView ref={rootScrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
       {/* Greeting hero — senior-only now. Kid/teen moved onto the same
           twoColRow/centerCol/sideCol layout parent already uses (see that
           block's own header comment below), which has no greeting hero at
@@ -1408,9 +1440,15 @@ export function KioskOverviewTab({
               same "who is this for" signal the coin-jar and radar rows
               already give everyone else on this screen. */}
           <View style={s.heroGreetRow}>
-            <View style={[s.heroAvatar, { backgroundColor: kioskRoleAccent(k, active.role) + (isDark ? '26' : '18') }]}>
-              <Text style={s.heroAvatarEmoji}>{active.emoji ?? '👤'}</Text>
-            </View>
+            <KioskAvatar
+              name={active.name}
+              emoji={active.emoji}
+              avatarUrl={active.avatarUrl}
+              siblings={members.filter(x => x.id !== active.id).map(x => x.name)}
+              size={56}
+              bgColor={kioskRoleAccent(k, active.role) + (isDark ? '26' : '18')}
+              k={k}
+            />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[s.heroTitle, { color: k.text }]} numberOfLines={2}>
                 {greeting}, {active.name?.trim().split(' ')[0]}
@@ -1424,7 +1462,10 @@ export function KioskOverviewTab({
           {/* Quick actions. Schedule/Grocery/Meals were dropped for
               everyone — each already has its own persistent rail tab, so a
               second entry point here was redundant, not just extra taps.
-              Intercom has no rail equivalent, so it stays.
+              Intercom has no rail equivalent, so it stays. Scan Flyer is
+              the same real deal — mobile's ParentQuickActions row has no
+              kiosk rail tab equivalent, so it joins Intercom here rather
+              than living nowhere on kiosk at all.
 
               For kid, four of their own tiles join Intercom here — Check
               In, Piggy Bank, Cheer Squad, My Requests — the "glance at my
@@ -1441,6 +1482,13 @@ export function KioskOverviewTab({
               onPress={onIntercom}
               hint="Broadcast an announcement to every family phone"
             />
+            {isParent && (
+              <QuickAction
+                Icon={Sparkles} label="Scan Flyer" accent={k.purple} k={k} isDark={isDark}
+                onPress={() => setFlyerScannerOpen(true)}
+                hint="Photograph a flyer to add it to the family schedule"
+              />
+            )}
             {isKid && (
               <>
                 <KioskKidCheckInTile active={active} />
@@ -1560,6 +1608,11 @@ export function KioskOverviewTab({
         isDark={phoneDark}
       />
 
+      <FlyerScannerModal
+        visible={flyerScannerOpen}
+        onClose={() => setFlyerScannerOpen(false)}
+      />
+
       {/* PushbackSheet/DelegateSheet — the real, exported, standalone sheet
           components HouseholdBacklogSection's own onRespond/onDelegate
           callbacks open (see the HouseholdBacklogSection mount below), same
@@ -1619,15 +1672,15 @@ export function KioskOverviewTab({
         active={active}
       />
 
-      {/* ══ YOUR STUFF (kid only) ══════════════════════════════════════
-          The kid's own actions, as one labeled full-width card directly
-          under the hero — prominent, but visually distinct from the hero's
-          household Intercom action, and above the widget deck so it is not
-          buried among the read-only widgets. Kid-only, matching the phone's
-          own gate: KidCheckinRow and AskParentSheet are mounted from
-          KidView alone, and the kiosk Tasks tab's creation gate is likewise
-          `active.role === 'kid'` (not teen). */}
-      {isKid && <KioskKidQuickActions active={active} members={members} />}
+      {/* The old full-width centerCol "Ask a parent" card
+          (KioskKidQuickActions) that used to render here for kid-only is
+          gone — kid now shares teen's own compact sideCol KioskMyStuffPanel
+          widget instead [live-reported: "ask parent is not a wodget of
+          Mystull like in the teens in the kids profile"], mounted in
+          sideCol below. KioskKidQuickActions itself is untouched (its
+          Check-In/Cheer Squad tiles are separate real features, unrelated
+          to this specific card, and it may still be reachable from other
+          call sites), only this particular mount is removed. */}
 
       {/* ══ PARENT / KID / TEEN: two-column page (matches the reference
           mockup's own layout exactly — a wide center column of "things to
@@ -1652,23 +1705,14 @@ export function KioskOverviewTab({
       {(isParent || isKid || isTeen) ? (
         <View style={[s.twoColRow, isNarrowParentLayout && s.twoColRowStacked]}>
           <View style={[s.centerCol, isNarrowParentLayout && s.colFullWidth]}>
-            {/* Check In / Cheer Squad — kid-only real mobile features
-                (KidCheckinRow/CheerSquadSection are mounted from
-                KidView.tsx alone; no teen equivalent exists on the real
-                phone, so this row is deliberately NOT extended to teen).
-                No Intercom here [live-requested: "no need of intercom
-                there"] — that stayed a household-broadcast action, and
-                this two-column layout has no hero row to share it with
-                anymore. Piggy Bank (the persistent left column) and My
-                Requests (KioskMyRequestsPanel, sideCol) — the other two
-                tiles that used to live in the removed hero — moved to
-                real homes instead of duplicating them here. */}
-            {isKid && (
-              <View style={s.kidQuickRow}>
-                <KioskKidCheckInTile active={active} />
-                <KioskKidMineTile kind="cheer" active={active} members={members} />
-              </View>
-            )}
+            {/* Check In moved to a sideCol strip (small widget under My
+                Stuff) and Cheer Squad to its own sideCol panel (near Find
+                Fam) [live-requested: "remove checking and cheer sqd from
+                the top center"] — this centerCol row is retired, not
+                duplicated. No Intercom here [live-requested: "no need of
+                intercom there"] — that stayed a household-broadcast
+                action, and this two-column layout has no hero row to
+                share it with anymore. */}
 
             {/* ══ HAPPENING NOW ═══════════════════════════════════════════
                 Matches the mockup's own .now-strip exactly: a compact
@@ -1727,6 +1771,29 @@ export function KioskOverviewTab({
                 onOpenDetail={setViewingEvent}
               />
             )}
+
+            {/* Pickup Radar — read-only live trip status for parent/
+                co-parent. Real ParentView.tsx always shows an active trip
+                here (its own driver gets the full interactive EnRouteBanner
+                dispatch card; every OTHER parent/co-parent sees this same
+                real, exported, self-contained PickupRadarStatus — kiosk had
+                ZERO surface for this at all, so a trip started on mobile
+                (e.g. by the other parent) never showed up here regardless
+                of role [live-requested: "praveena already started a trip
+                top pickung jas using mobile.. but that is not reflecting
+                in kiosek..across roles not in parent/ coparent , kid" /
+                "enroute functionality also not proper at least read only i
+                asked for the kiosek"]. Kiosk scope is explicitly read-only
+                for now (no dispatch/ETA-edit/pickup-done controls here,
+                matching the "at least read only" ask) — every active trip
+                (this parent's own included) renders via the same read-only
+                card; a future pass can add the interactive EnRouteBanner
+                for the actual driver, matching ParentView.tsx's branch. */}
+            {isParent && [primaryTripView, ...otherTripViews].filter(
+              (t): t is NonNullable<typeof t> => !!t
+            ).map(t => (
+              <PickupRadarStatus key={t.tripId} colors={colors} isDark={phoneDark} activeTrip={t} />
+            ))}
 
             {isParent && (
             <FamilySchedulePanel dayEvents={dayEvents} k={k} isDark={isDark} />
@@ -1863,8 +1930,14 @@ export function KioskOverviewTab({
               onDeclineChore={(id, reason, presetKey) => declineQuest(id, active.id, reason, presetKey)}
               onApproveRedemption={(id) => approveRedemption(id, active.id)}
               onRejectRedemption={(id) => rejectRedemption(id, active.id)}
-              onApproveRequest={(id) => approveRequest(id, active.id)}
-              onDeclineRequest={(id) => declineRequest(id, active.id)}
+              onApproveRequest={(id, note) => approveRequest(id, active.id, note)}
+              onDeclineRequest={(id, note) => declineRequest(id, active.id, note)}
+              onApproveQuestProposal={(id, coins) => {
+                const req = pendingKidRequestsForAction.find(r => r.id === id);
+                if (req) approveQuestProposalHandler(req, coins);
+              }}
+              active={active} members={members}
+              scrollRef={rootScrollRef}
             />
 
             {/* Live-reported: "in approval there is missing cards to the
@@ -1942,26 +2015,16 @@ export function KioskOverviewTab({
                 reading its actual render, not assumed from Backlog's own
                 comment) — a padded WidgetCard would double that inset, an
                 unwrapped mount would have no card chrome at all. */}
-            <WidgetCard k={k} isDark={isDark} padded={false}>
-              <View style={{ paddingVertical: KIOSK_SPACE.sm }}>
-                <ActionNeededSection
-                  actionCount={actionCount}
-                  pendingRequests={pendingRequests}
-                  pendingRideRequiredEvents={pendingRideRequiredEvents}
-                  awaitingApproval={[]}
-                  pendingKidRequests={pendingKidRequestsForAction}
-                  events={allEvents}
-                  active={active} members={members} allNames={members.map(m => m.name)}
-                  colors={colors} isDark={phoneDark}
-                  updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped}
-                  approveQuest={approveQuest} declineQuest={declineQuest}
-                  approveRequest={approveRequest} declineRequest={declineRequest}
-                  toggleGPWelcome={toggleGPWelcome}
-                  approveItemsAndSync={approveItemsAndSync} rejectItems={rejectItems}
-                  approveQuestProposal={approveQuestProposalHandler} declineQuestProposal={declineQuestProposalHandler}
-                />
-              </View>
-            </WidgetCard>
+            {/* ActionNeededSection removed from kiosk's own Overview —
+                its kid-request cards are now duplicated by
+                ParentApprovalsWidget's own real "Kid requests" tab (which
+                reads the same pendingKidRequestsForAction data), and its
+                unassigned-ride cards are already covered by Pickup Radar
+                elsewhere on this screen [live-requested: "can you now hide
+                the ACTION nEEDED section from the parents overview as itis
+                is deuplicated witht he kidsrequests..."]. Approve/decline
+                for a kid request still works the same real way, just from
+                one surface instead of two. */}
 
             {/* Household Backlog — real ParentView.tsx section kiosk was
                 missing almost entirely (only its "Rides needing attention"
@@ -2020,6 +2083,10 @@ export function KioskOverviewTab({
               members={members} k={k} isDark={isDark}
               onOpen={() => onNavigate('findfam')}
             />
+
+            {/* Family Feed — moved into centerCol from sideCol
+                [live-requested: "family feed move to center secolumn"]. */}
+            <FamilyFeedStrip k={k} isDark={isDark} onOpen={() => onNavigate('memories')} />
           </View>
 
           <View style={[s.sideCol, isNarrowParentLayout && s.colFullWidth]}>
@@ -2034,8 +2101,34 @@ export function KioskOverviewTab({
                 parent's multi-kid Coin Jars panel below, which shows
                 every kid's balance and would leak a sibling's coins to
                 a kid who has no reason to see them. */}
-            {isTeen && (
+            {/* Kid AND teen both get this now — was teen-only, leaving kid
+                stuck with the older full-width centerCol "Ask a parent"
+                card (KioskKidQuickActions) instead of this same compact
+                sideCol widget [live-reported: "ask parent is not a wodget
+                of Mystull like in the teens in the kids profile"]. Real
+                mobile gives both roles the identical AskParentSheet
+                capability (TeenView.tsx's own comment: "AskParentSheet,
+                mainly built for Kids, still works for a Teen too"), so
+                one shared widget for both is correct, not a kid-only
+                narrowing. KioskKidQuickActions' own full-width mount
+                below is removed for kid now that this replaces it. */}
+            {(isKid || isTeen) && (
               <KioskMyStuffPanel active={active} members={members} k={k} isDark={isDark} />
+            )}
+
+            {/* Small Check-In strip, directly under My Stuff
+                [live-requested: "checking also a small stip widget
+                underneat of the MY STUFF"] — a second, compact entry
+                point alongside the existing one in centerCol's own
+                kidQuickRow (kept as-is; both stay). Same real
+                KioskKidCheckInTile component/logic, just mounted here in
+                a small card of its own rather than duplicating any
+                check-in logic. Kid-only, matching kidQuickRow's own gate
+                — teen has no check-in equivalent on the real phone. */}
+            {isKid && (
+              <WidgetCard k={k} isDark={isDark} padded={false} style={{ padding: KIOSK_SPACE.sm }}>
+                <KioskKidCheckInTile active={active} />
+              </WidgetCard>
             )}
             {/* Up for Grabs — own sideCol panel now, matching the mock's
                 own separate .panel exactly (was a sub-section inside My
@@ -2054,12 +2147,18 @@ export function KioskOverviewTab({
               />
             )}
 
-            {/* Mockup's .jar row exactly: a colored square with the kid's
-                INITIAL (not an emoji), name + a real "N/M chores this week"
-                progress line (not the coin-source split this used to show),
-                a bare gold number on the right (no "coins" unit label).
-                Parent-only — shows every kid's balance, not appropriate
-                for a kid/teen viewer to see a sibling's coins. */}
+            {/* Mockup's .jar row exactly: a colored square avatar, name +
+                a real "N/M chores this week" progress line (not the
+                coin-source split this used to show), a bare gold number
+                on the right (no "coins" unit label). Now shows a real
+                photo when the kid has one instead of always an initial
+                [live-requested: "coin jars also lets fill with avtar
+                without changing shape"] — same square shape (borderRadius
+                10, unchanged), just via KioskAvatar so a real avatarUrl
+                isn't silently ignored the way the old hand-rolled initial-
+                only square did. Parent-only — shows every kid's balance,
+                not appropriate for a kid/teen viewer to see a sibling's
+                coins. */}
             {isParent && kids.length > 0 && (
               <WidgetCard k={k} isDark={isDark}>
                 <PanelHead title="Coin jars" k={k} />
@@ -2074,9 +2173,16 @@ export function KioskOverviewTab({
                     const firstName = kid.name?.trim().split(' ')[0] ?? '';
                     return (
                       <View key={kid.id} style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-                        <View style={[s.jarAvatar, { backgroundColor: accent }]}>
-                          <Text style={s.jarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
-                        </View>
+                        <KioskAvatar
+                          name={kid.name}
+                          emoji={kid.emoji}
+                          avatarUrl={kid.avatarUrl}
+                          siblings={members.filter(x => x.id !== kid.id).map(x => x.name)}
+                          size={36}
+                          borderRadius={10}
+                          ringColor={accent}
+                          k={k}
+                        />
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{firstName}</Text>
                           <Text style={[s.jarMeta, { color: k.textFaint }]} numberOfLines={1}>
@@ -2145,7 +2251,18 @@ export function KioskOverviewTab({
               )}
             </WidgetCard>
 
-            {/* Live-corrected: matches the REAL phone's grocery behavior
+            {/* Parent-only now — this was the live editable grocery_items
+                list (check off/mark bought directly), unrestricted for
+                any role [live-reported: "why kid is showing the grocery
+                list with editable in the overview - teen and kids should
+                not able to do complete or broght that lis tis read only
+                correct- i think we can remove that to kids/teens" /
+                "lets remove from overview of tkids teens"] — contradicts
+                the parent-only restriction already built for the Meals
+                tab's own grocery section and mobile's GroceryScreen.tsx.
+                Kid/teen already have their own real request-status view
+                (KioskMyRequestsPanel, sideCol) — not duplicated here.
+                Live-corrected: matches the REAL phone's grocery behavior
                 (features/grocery/GroceryScreen.tsx), not the mockup's own
                 invented .grocery-row.got (checked, struck-through, stays
                 visible). The real app filters bought items out of the
@@ -2157,6 +2274,7 @@ export function KioskOverviewTab({
                 never had one before this — only the underlying "bought
                 items leave the active list" data model is matched, not
                 every UI step. */}
+            {isParent && (
             <WidgetCard k={k} isDark={isDark}>
               <PanelHead title="Grocery list" k={k} />
               {activeGroceryRun && (
@@ -2221,8 +2339,20 @@ export function KioskOverviewTab({
                 <ChevronRight size={14} color={k.sage} />
               </Pressable>
             </WidgetCard>
+            )}
 
-            <FamilyFeedStrip k={k} isDark={isDark} onOpen={() => onNavigate('memories')} />
+            {/* Cheer Squad — near the bottom of sideCol, roughly level
+                with Find Fam at the foot of centerCol [live-requested:
+                "cheers sqard as a separate widget in the right most
+                colum" / "cheers sqad can be down to the find fam"]. Both
+                kid and teen now — real kidCheerableQuests/kidSiblingsOf
+                data carries no kid-only assumption (confirmed by reading
+                it), same as the Chores tab's own "Sibling Cheer" filter,
+                which is already avail.showCheer-gated for isKidOrTeen
+                there, not isKid alone. */}
+            {(isKid || isTeen) && (
+              <KioskCheerSquadPanel active={active} members={members} k={k} isDark={isDark} />
+            )}
           </View>
         </View>
       ) : (
@@ -2863,9 +2993,36 @@ const APPROVAL_FILTERS: { key: ApprovalFilterKey; label: string }[] = [
   { key: 'request', label: 'Kid requests' },
 ];
 
+// A small looping pulse — a soft ring that expands and fades, repeating —
+// on the "Kid requests" chip whenever a real one is pending. Kid requests
+// get this treatment and no other approval kind does, on purpose
+// [live-requested: "if any requests comes there just show the nice
+// animation to get attention as always kids are important.. on the kids
+// request pill with counter"]. Purely decorative (no data of its own);
+// unmounted whenever there's nothing pending, so the animation loop never
+// runs for no reason.
+function PulseDot({ color }: { color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, { toValue: 1, duration: 1400, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.6, 0.25, 0] });
+  return (
+    <View style={s.pulseWrap} pointerEvents="none">
+      <Animated.View style={[s.pulseRing, { backgroundColor: color, opacity, transform: [{ scale }] }]} />
+      <View style={[s.pulseCore, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
 function ParentApprovalsWidget({
   approvals, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption,
-  onApproveRequest, onDeclineRequest,
+  onApproveRequest, onDeclineRequest, onApproveQuestProposal, active, members, scrollRef,
 }: {
   approvals: ApprovalItem[];
   k: KioskColors;
@@ -2875,8 +3032,28 @@ function ParentApprovalsWidget({
   onDeclineChore: (questId: string, reason: string, presetKey?: RejectionPresetKey) => void;
   onApproveRedemption: (id: string) => void;
   onRejectRedemption: (id: string) => void;
-  onApproveRequest: (id: string) => void;
-  onDeclineRequest: (id: string) => void;
+  /** note carries the inline reply text — same real
+   *  approveRequest(id, by, note?)/declineRequest(id, by, note?) signature
+   *  kidRequestStore already exposes [live-requested: "also show the
+   *  optional text and mandatory text while replying inline"]. */
+  onApproveRequest: (id: string, note?: string) => void;
+  onDeclineRequest: (id: string, note?: string) => void;
+  /** Opens the coin-amount sheet instead of a plain Approve — a
+   *  quest_proposal (kid's own "chore idea" ask) needs a chosen coin
+   *  reward AND a real chore row created, not just a status flip
+   *  [live-requested: "Add a small coin-amount sheet on Approve" after
+   *  removing ActionNeededSection took away the only working approval
+   *  path for this request type]. */
+  onApproveQuestProposal: (id: string, coins: number) => void;
+  /** For the "See request history" footer link — opens KidRequestsSheet in
+   *  family scope (every kid's requests, not just one) [live-requested:
+   *  "also show the history as a tab footer"]. */
+  active: FamilyMember;
+  members: FamilyMember[];
+  /** The page's own root ScrollView — lets a row's inline reply field
+   *  scroll itself into view above the keyboard on focus [live-reported:
+   *  "when i click on that my keyboard is covering in overview page"]. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }) {
   const [filter, setFilter] = useState<ApprovalFilterKey>('all');
   const filtered = filter === 'all' ? approvals : approvals.filter(a => a.kind === filter);
@@ -2885,6 +3062,13 @@ function ParentApprovalsWidget({
   // parent only ever declines one chore at a time, and this matches the
   // phone's own RedoSheet, which is a single sheet at the deck level too.
   const [redoTarget, setRedoTarget] = useState<{ id: string; title: string } | null>(null);
+  // Same one-sheet-for-the-whole-panel pattern for a quest_proposal's own
+  // coin-amount picker.
+  const [coinTarget, setCoinTarget] = useState<{ id: string; title: string } | null>(null);
+  // "See request history" footer — opens the full 30-day family-wide
+  // request history (approved/declined too, not just pending)
+  // [live-requested: "also show the history as a tab footer"].
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <WidgetCard k={k} isDark={isDark} accent={hasUrgent ? k.danger : undefined}>
@@ -2912,6 +3096,12 @@ function ParentApprovalsWidget({
         {APPROVAL_FILTERS.map(f => {
           const count = f.key === 'all' ? approvals.length : approvals.filter(a => a.kind === f.key).length;
           const selected = filter === f.key;
+          // Kid requests get a real attention pulse when any are pending —
+          // no other approval kind does, on purpose (see PulseDot's own
+          // comment). Not shown while the chip is itself selected — the
+          // parent is already looking right at that filtered list, so the
+          // extra motion is only useful as an unnoticed-yet nudge.
+          const pulse = f.key === 'request' && count > 0 && !selected;
           return (
             <Pressable
               key={f.key} onPress={() => setFilter(f.key)}
@@ -2921,8 +3111,9 @@ function ParentApprovalsWidget({
               }]}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              accessibilityLabel={f.label}
+              accessibilityLabel={pulse ? `${f.label}, needs attention` : f.label}
             >
+              {pulse && <PulseDot color={k.danger} />}
               <Text style={[s.filterChipText, { color: selected ? k.card : k.textMuted }]} numberOfLines={1}>
                 {f.label} <Text style={{ opacity: 0.6 }}>({count})</Text>
               </Text>
@@ -2949,6 +3140,8 @@ function ParentApprovalsWidget({
               onRejectRedemption={onRejectRedemption}
               onApproveRequest={onApproveRequest}
               onDeclineRequest={onDeclineRequest}
+              onOpenQuestProposalCoinSheet={() => setCoinTarget({ id: item.id.slice(item.id.indexOf(':') + 1), title: item.title })}
+              scrollRef={scrollRef}
             />
           ))}
         </ScrollView>
@@ -2961,6 +3154,42 @@ function ParentApprovalsWidget({
           setRedoTarget(null);
         }}
       />
+      <QuestProposalCoinSheet
+        target={coinTarget} k={k}
+        onClose={() => setCoinTarget(null)}
+        onApprove={(coins) => {
+          if (coinTarget) onApproveQuestProposal(coinTarget.id, coins);
+          setCoinTarget(null);
+        }}
+      />
+      {/* History footer — every kid's approved/declined requests too, not
+          just what's currently pending [live-requested: "also show the
+          history as a tab footer"], shown ONLY on the Kid requests tab
+          [live-requested: "just show that link inside the kids request
+          tab alone"] — Chores/Redemptions already have their own real
+          history elsewhere (chore review history, redemption log) so this
+          link would be a dead duplicate there. Opens as a right-side
+          drawer [live-requested: "open in side bar"], not the dialog
+          shell the kid's own "My Requests" sheet uses. */}
+      {filter === 'request' && (
+        <Pressable
+          onPress={() => setShowHistory(true)}
+          style={({ pressed }) => [s.panelTextLink, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Request history"
+          accessibilityHint="See every kid's approved and declined requests from the last 30 days"
+        >
+          <Text style={[s.panelTextLinkText, { color: k.primary }]}>See request history</Text>
+          <ChevronRight size={14} color={k.primary} />
+        </Pressable>
+      )}
+      {showHistory && (
+        <KidRequestsSheet
+          active={active} members={members} k={k} isDark={isDark}
+          scope="family"
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </WidgetCard>
   );
 }
@@ -2973,7 +3202,7 @@ function ParentApprovalsWidget({
  * is a small grid card; this panel is a list, so its rows are list rows.
  */
 function ApprovalRow({
-  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest,
+  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest, onOpenQuestProposalCoinSheet, scrollRef,
 }: {
   item: ApprovalItem;
   k: KioskColors;
@@ -2984,18 +3213,82 @@ function ApprovalRow({
   onDeclineChore: () => void;
   onApproveRedemption: (id: string) => void;
   onRejectRedemption: (id: string) => void;
-  onApproveRequest: (id: string) => void;
-  onDeclineRequest: (id: string) => void;
+  onApproveRequest: (id: string, note?: string) => void;
+  onDeclineRequest: (id: string, note?: string) => void;
+  /** Opens the shared coin-amount sheet — a quest_proposal's own Approve
+   *  never fires directly (see QuestProposalCoinSheet's own comment). */
+  onOpenQuestProposalCoinSheet: () => void;
+  /** The page's root ScrollView — see ParentApprovalsWidget's own comment. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }) {
   const [busy, setBusy] = useState(false);
   const rawId = item.id.slice(item.id.indexOf(':') + 1);
   const urgent = item.urgencyRank >= 3;
+  // Scrolls this row above the keyboard on reply-field focus — same real
+  // findNodeHandle/UIManager.measureLayout pattern KioskChatTab.tsx's own
+  // quick-send cards already use [live-reported: "when i click on that my
+  // keyboard is covering in overview page"].
+  const rowRef = useRef<View>(null);
+  const scrollToRow = () => {
+    const rowHandle = findNodeHandle(rowRef.current);
+    const outerHandle = findNodeHandle(scrollRef?.current ?? null);
+    if (!rowHandle || !outerHandle) return;
+    UIManager.measureLayout(
+      rowHandle, outerHandle,
+      () => {},
+      (_x, y) => scrollRef?.current?.scrollTo({ y: Math.max(y - 40, 0), animated: true }),
+    );
+  };
+
+  // Real per-type button labels/behavior, matching mobile's own
+  // InlineReplyCard.tsx (Allow/No for permission, Acknowledged/Dismiss for
+  // medication, Reply/Dismiss otherwise) and ActionNeededSection's own
+  // CheckinRow (a single "Got it", no decline at all) — was one generic
+  // Approve/Decline pair for every request type regardless of what the
+  // kid actually asked [live-requested: "the buttons should be meaning
+  // full right.. seen, acknoledge , yes no etc similar to mobile app"].
+  const isCheckin = item.kind === 'request' && item.requestType === 'checkin';
+  const isPermission = item.kind === 'request' && item.requestType === 'permission';
+  const isMedical = item.kind === 'request' && item.requestType === 'medication';
+  const isQuestion = item.kind === 'request' && item.requestType === 'question';
+  // quest_proposal (a kid's own "chore idea" ask) can't approve directly —
+  // approving must ALSO create a real chore with a chosen coin reward, so
+  // Approve here opens the shared coin-amount sheet instead of firing
+  // [live-requested: "Add a small coin-amount sheet on Approve" — the only
+  // working approval path for this request type was lost when
+  // ActionNeededSection was removed from Overview].
+  const isQuestProposal = item.kind === 'request' && item.requestType === 'quest_proposal';
+  const approveLabel = item.kind === 'chore' ? 'Approve' : item.kind === 'redemption' ? 'Approve'
+    : isCheckin ? 'Got it' : isPermission ? 'Allow' : isMedical ? 'Acknowledged' : isQuestProposal ? 'Approve' : 'Reply';
+  // undefined for a check-in — a single "Got it" acknowledgment, no
+  // decline pairing, matching ActionNeededSection's own CheckinRow exactly.
+  const declineLabel: string | undefined = item.kind === 'chore' ? 'Redo' : item.kind === 'redemption' ? 'Decline'
+    : isCheckin ? undefined : isPermission ? 'No' : 'Dismiss';
+
+  // Inline reply text — same real optional/required split as
+  // InlineReplyCard.tsx's own placeholder [live-requested: "also show the
+  // optional text and mandatory text while replying inline"]. Only a
+  // question REQUIRES a reply before it can be sent; every other type's
+  // note is optional. Not shown for chore/redemption (those have their
+  // own real flows: chore decline opens the shared redo-reason sheet,
+  // redemption has no reply concept at all), for a check-in (a single
+  // acknowledgment, nothing to say back), or for a quest_proposal (its own
+  // coin-amount sheet is the real flow, not a plain note).
+  const showsReply = item.kind === 'request' && !isCheckin && !isQuestProposal;
+  const [reply, setReply] = useState('');
+  const replyRequired = isQuestion;
+  const canApprove = !replyRequired || reply.trim().length > 0;
 
   const approve = () => {
+    if (!canApprove) return;
+    if (item.kind === 'chore') { setBusy(true); onApproveChore(rawId); return; }
+    if (item.kind === 'redemption') { setBusy(true); onApproveRedemption(rawId); return; }
+    // quest_proposal never sets busy here — the row stays interactive
+    // until the coin sheet itself submits or is cancelled, same pattern
+    // chore's own redo-reason sheet uses.
+    if (isQuestProposal) { onOpenQuestProposalCoinSheet(); return; }
     setBusy(true);
-    if (item.kind === 'chore') onApproveChore(rawId);
-    else if (item.kind === 'redemption') onApproveRedemption(rawId);
-    else onApproveRequest(rawId);
+    onApproveRequest(rawId, showsReply ? reply.trim() || undefined : undefined);
   };
   const decline = () => {
     // Chore decline opens the reason sheet instead of firing immediately —
@@ -3004,43 +3297,66 @@ function ApprovalRow({
     if (item.kind === 'chore') { onDeclineChore(); return; }
     setBusy(true);
     if (item.kind === 'redemption') onRejectRedemption(rawId);
-    else onDeclineRequest(rawId);
+    else onDeclineRequest(rawId, showsReply ? reply.trim() || undefined : undefined);
   };
 
   return (
-    <KioskListRow
-      k={k}
-      isFirst={isFirst}
-      title={item.title}
-      meta={item.meta}
-      badge={item.who}
-      // Mock's .task-coin always occupies this slot, even with nothing to
-      // show — a real coin figure, or an em-dash at reduced opacity for a
-      // kid request (which never carries coins). Keeps every row's coin
-      // column aligned instead of requests alone losing their right edge.
-      value={
-        <Text
-          style={[s.approvalCoin, typeof item.coins === 'number' ? { color: k.gold } : { color: k.textFaint, opacity: 0.35 }]}
-          numberOfLines={1}
-        >
-          {typeof item.coins === 'number' ? (item.coins > 0 ? `+${item.coins}` : item.coins) : '—'}
-        </Text>
-      }
-      actions={
-        <>
-          <KioskListRowAction
-            k={k} onPress={decline} disabled={busy}
-            label={item.kind === 'chore' ? 'Redo' : 'Decline'}
-            color={k.danger}
+    <View ref={rowRef}>
+      <KioskListRow
+        k={k}
+        isFirst={isFirst}
+        title={item.title}
+        meta={item.meta}
+        badge={item.who}
+        // Mock's .task-coin always occupies this slot, even with nothing to
+        // show — a real coin figure, or an em-dash at reduced opacity for a
+        // kid request (which never carries coins). Keeps every row's coin
+        // column aligned instead of requests alone losing their right edge.
+        value={
+          <Text
+            style={[s.approvalCoin, typeof item.coins === 'number' ? { color: k.gold } : { color: k.textFaint, opacity: 0.35 }]}
+            numberOfLines={1}
+          >
+            {typeof item.coins === 'number' ? (item.coins > 0 ? `+${item.coins}` : item.coins) : '—'}
+          </Text>
+        }
+        actions={
+          <>
+            {declineLabel && (
+              <KioskListRowAction
+                k={k} onPress={decline} disabled={busy}
+                label={declineLabel}
+                color={k.danger}
+              />
+            )}
+            <KioskListRowAction
+              k={k} onPress={approve} disabled={busy || !canApprove}
+              label={approveLabel}
+              color={k.text}
+            />
+          </>
+        }
+      />
+      {/* Inline reply — same real optional/required split InlineReplyCard.tsx
+          uses on mobile [live-requested: "also show the optional text and
+          mandatory text while replying inline"]. A question can't be sent
+          without a reply (Reply stays disabled until typed); every other
+          type's note is optional, so the placeholder itself says so
+          instead of the field silently doing nothing different. */}
+      {showsReply && (
+        <View style={s.approvalReplyRow}>
+          <TextInput
+            value={reply}
+            onChangeText={setReply}
+            onFocus={() => requestAnimationFrame(scrollToRow)}
+            placeholder={replyRequired ? 'Type your reply… (required)' : 'Add a reply (optional)'}
+            placeholderTextColor={k.textFaint}
+            style={[s.approvalReplyInput, { color: k.text, borderColor: k.cardBorder, backgroundColor: k.well }]}
+            multiline
           />
-          <KioskListRowAction
-            k={k} onPress={approve} disabled={busy}
-            label="Approve"
-            color={k.text}
-          />
-        </>
-      }
-    />
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -3090,6 +3406,53 @@ function RedoReasonSheet({ target, k, onClose, onSend }: {
           style={[kioskInputStyle(k), { minHeight: 90, textAlignVertical: 'top' }]}
         />
       )}
+    </KioskFormDrawer>
+  );
+}
+
+// Real presets mirroring the phone's own quest_proposal approval flow
+// (ParentView.tsx's finalCoins prompt) — a handful of common reward sizes
+// plus a custom field, rather than forcing a parent to always type a
+// number. Same shell pattern as RedoReasonSheet just above.
+const QUEST_PROPOSAL_COIN_PRESETS = [10, 20, 30, 50];
+
+function QuestProposalCoinSheet({ target, k, onClose, onApprove }: {
+  target: { id: string; title: string } | null;
+  k: KioskColors;
+  onClose: () => void;
+  onApprove: (coins: number) => void;
+}) {
+  const [preset, setPreset] = useState<number | null>(20);
+  const [customCoins, setCustomCoins] = useState('');
+
+  const coins = customCoins.trim() ? parseInt(customCoins, 10) : preset;
+  const canSubmit = typeof coins === 'number' && Number.isFinite(coins) && coins > 0;
+
+  const close = () => { setPreset(20); setCustomCoins(''); onClose(); };
+
+  return (
+    <KioskFormDrawer
+      visible={!!target} title="Approve chore idea" subtitle={target?.title}
+      accent={k.gold} Icon={Check} k={k} onClose={close}
+      submitLabel="Approve" canSubmit={canSubmit}
+      onSubmit={() => { if (canSubmit) onApprove(coins); close(); }}
+      footerNote="Creates a real chore the kid can start right away."
+    >
+      <KioskFieldLabel k={k}>Coin reward</KioskFieldLabel>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, marginBottom: KIOSK_SPACE.md }}>
+        {QUEST_PROPOSAL_COIN_PRESETS.map(c => (
+          <KioskPill
+            key={c} label={`${c} coins`} selected={preset === c && !customCoins.trim()}
+            onPress={() => { setPreset(c); setCustomCoins(''); }} accent={k.gold} k={k}
+          />
+        ))}
+      </View>
+      <TextInput
+        value={customCoins} onChangeText={setCustomCoins}
+        placeholder="Or type a custom amount…" placeholderTextColor={k.textFaint}
+        keyboardType="number-pad"
+        style={kioskInputStyle(k)}
+      />
     </KioskFormDrawer>
   );
 }
@@ -3469,9 +3832,16 @@ function RadarStrip({ members, k, isDark, onOpen, style }: {
           const low = loc?.battery_level != null && loc.battery_level <= 20;
           return (
             <View key={m.id} style={s.radarCell}>
-              <View style={[s.radarAvatar, { borderColor: loc ? accent : k.cardBorder }]}>
-                <Text style={s.radarEmoji}>{m.emoji ?? '👤'}</Text>
-              </View>
+              <KioskAvatar
+                name={m.name}
+                emoji={m.emoji}
+                avatarUrl={m.avatarUrl}
+                siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                size={38}
+                ringWidth={2}
+                ringColor={loc ? accent : k.cardBorder}
+                k={k}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[s.radarName, { color: k.text }]} numberOfLines={1}>
                   {m.name?.trim().split(' ')[0]}
@@ -3656,17 +4026,31 @@ const s = StyleSheet.create({
   filterChip: {
     borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: 13, paddingVertical: 7,
+    position: 'relative',
   },
   filterChipText: { fontSize: 12, fontWeight: '700' },
+  // Attention pulse anchored to the chip's top-right corner — see
+  // PulseDot's own comment.
+  pulseWrap: {
+    position: 'absolute', top: -4, right: -4, width: 14, height: 14,
+    alignItems: 'center', justifyContent: 'center', zIndex: 1,
+  },
+  pulseRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
+  pulseCore: { width: 8, height: 8, borderRadius: 4 },
   // Consumer-specific coin-figure formatting for KioskListRow's `value`
   // slot — the row shell itself (check/title/meta/badge/actions) is now
   // KioskListRow, shared with the Recently Approved dispute cards.
   approvalCoin: { fontSize: 14, fontWeight: '700', flexShrink: 0 },
+  approvalReplyRow: { paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.sm },
+  approvalReplyInput: {
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm, paddingHorizontal: KIOSK_SPACE.sm,
+    paddingVertical: 8, fontSize: 13, minHeight: 40, textAlignVertical: 'top',
+  },
 
-  // Mockup's .jar/.jar-avatar/.jar-name/.jar-meta/.jar-amt exactly.
+  // Mockup's .jar/.jar-name/.jar-meta/.jar-amt exactly (.jar-avatar's own
+  // shape now lives inline as KioskAvatar's borderRadius={10} prop, see
+  // that call site).
   jarRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
-  jarAvatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  jarInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
   jarName: { fontSize: 13.5, fontWeight: '700' },
   jarMeta: { fontSize: 11.5, marginTop: 2 },
   jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
@@ -3723,9 +4107,13 @@ const s = StyleSheet.create({
   // days, rest scroll [live-requested: "and meals also limit to 3 that is
   // today and then rest scroll"].
   mealsWeekScroll: { maxHeight: 175 },
-  // 5 rows' worth (~65px each incl. padding) before it scrolls, same
-  // bounded-ScrollView reasoning as Meals This Week's own list.
-  approvalsScroll: { maxHeight: 320 },
+  // ~5 rows' worth before it scrolls, same bounded-ScrollView reasoning as
+  // Meals This Week's own list [live-requested: "show last 5 and
+  // remaining scroll like others"]. Bumped from 320 — a kid-request row
+  // can now also carry its own inline reply TextInput (Reply/Allow/
+  // Acknowledged rows), which is taller than a plain chore/redemption row,
+  // so 5 real rows no longer fit in the old fixed height.
+  approvalsScroll: { maxHeight: 420 },
   // 5 rows' worth (~64px each: 13px vertical padding x2 + ~38px of
   // stacked time/who/title/meta text), same bounded-ScrollView reasoning.
   scheduleScroll: { maxHeight: 320 },

@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import { View, Text, Pressable, Image, TextInput } from 'react-native';
-import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2, Users } from 'lucide-react-native';
+import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2, Users, HandHeart } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import type { AskCubeProposal } from '@/lib/askCubeService';
@@ -46,6 +46,7 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },
   chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'kid' },
   cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'danger' },
+  kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'teal' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -57,6 +58,11 @@ const CHORE_ACTION_LABEL: Record<string, string> = {
   decline: 'Decline',
   complete: 'Mark complete',
   cancel: 'Cancel',
+};
+
+const KID_REQUEST_ACTION_LABEL: Record<string, string> = {
+  approve: 'Approve',
+  decline: 'Decline',
 };
 
 // Human-readable label per changeable field, shared by both update_event and
@@ -72,9 +78,18 @@ const CHANGE_FIELD_LABEL: Record<string, string> = {
   description: 'Note',
   coinsReward: 'Coins',
   alertCallLeadMinutes: 'Reminder',
+  // Reassignment — was missing entirely, so a real "assign this to Cherry"
+  // proposal rendered with no visible change at all (the underlying
+  // assignedToId/memberId key had no label/formatter here), even though
+  // the write itself was correct once ask-cube's own propose_update gap
+  // was fixed [live-reported: "when i asked assing the event or chore to
+  // family memebr it is not giving the updated card with changing
+  // assingment"].
+  assignedToId: 'Assigned to',
+  memberId: 'Assigned to',
 };
 
-function formatChangeValue(field: string, value: any): string {
+function formatChangeValue(field: string, value: any, members?: { id: string; name: string }[]): string {
   if (field === 'alertCallLeadMinutes') return value === 0 ? 'On time' : `${value} min before`;
   if (field === 'coinsReward') return `${value} coins`;
   // dueDate/date are YYYY-MM-DD; dueTime/time are 24h "HH:MM" — both come
@@ -84,6 +99,13 @@ function formatChangeValue(field: string, value: any): string {
   // machine-readable string.
   if (field === 'dueDate' || field === 'date') return fmtDate(value, String(value));
   if (field === 'dueTime' || field === 'time') return fmtTime(value, String(value));
+  // assignedToId/memberId carry a real member id, not a display name — the
+  // raw uuid is meaningless in a confirmation card, so resolve it against
+  // the real member list the same way every other assignee display in the
+  // app does.
+  if (field === 'assignedToId' || field === 'memberId') {
+    return members?.find(m => m.id === value)?.name?.trim().split(' ')[0] ?? 'Unknown';
+  }
   return String(value);
 }
 
@@ -403,6 +425,7 @@ export default function AskCubeProposalCard({
             : proposal.kind === 'redemption' ? 'Redeem'
             : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
             : proposal.kind === 'cancel_event' ? 'Cancel event'
+            : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
             : 'Create'}
         </Text>
       </Pressable>
@@ -583,6 +606,36 @@ export default function AskCubeProposalCard({
     );
   }
 
+  if (proposal.kind === 'kid_request_action') {
+    const actionColors: Record<string, string> = {
+      approve: colors.success, decline: colors.danger,
+    };
+    const actionColor = actionColors[d.action] ?? accent;
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.detail}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <View style={{ backgroundColor: actionColor + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: actionColor, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              {KID_REQUEST_ACTION_LABEL[d.action] ?? d.action}
+            </Text>
+          </View>
+          {!!d.fromMemberName && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <User size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{d.fromMemberName}</Text>
+            </View>
+          )}
+        </View>
+        {!!d.note && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.note}"</Text>
+        )}
+        {Actions}
+      </View>
+    );
+  }
+
   if (proposal.kind === 'cancel_event') {
     return (
       <View style={cardBase} pointerEvents={cardPointerEvents}>
@@ -655,7 +708,14 @@ export default function AskCubeProposalCard({
     const dateField = isChore ? 'dueDate' : 'date';
     const timeField = isChore ? 'dueTime' : 'time';
     const hasDateTimeChange = dateField in changes;
-    const changeEntries = Object.entries(changes).filter(([k]) => k !== 'alertCall' && k !== 'alertCallLeadMinutes' && k !== dateField && k !== timeField);
+    // memberIds/isPool excluded from display — both are only ever set
+    // alongside memberId/assignedToId as part of a real reassignment
+    // (ask-cube/index.ts's own propose_update: clearing the old multi-
+    // assignee list, flipping a pool chore's isPool off), implementation
+    // details the user doesn't need a separate row for; the
+    // memberId/assignedToId row above already shows the actual new
+    // assignee.
+    const changeEntries = Object.entries(changes).filter(([k]) => k !== 'alertCall' && k !== 'alertCallLeadMinutes' && k !== dateField && k !== timeField && k !== 'memberIds' && k !== 'isPool');
     return (
       <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
@@ -694,7 +754,7 @@ export default function AskCubeProposalCard({
                   {CHANGE_FIELD_LABEL[field] ?? field}:
                 </Text>
                 <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }} numberOfLines={2}>
-                  {formatChangeValue(field, value)}
+                  {formatChangeValue(field, value, members)}
                 </Text>
               </View>
             ))}

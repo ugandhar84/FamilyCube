@@ -40,6 +40,7 @@ import { useTripStore } from '@/store/tripStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
+import { useHelpStore } from '@/store/helpStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useKioskNavStore, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
@@ -90,10 +91,13 @@ const TAG = 'RootLayout';
 // KioskScreen there when deviceClass === 'kitchenHub'); every OTHER tab
 // route (tasks.tsx, calendar.tsx, chat.tsx, store.tsx, gps.tsx, etc.)
 // renders its own plain phone screen unconditionally, no kiosk gate at all.
-// A couple of phone destinations (grocery, meals) still have no
-// kiosk-native equivalent — those fall back to Hub rather than a route
-// that would strand the kiosk on a bare phone screen with no way back
-// except the notification bell.
+// [nav-safety audit] '/(tabs)/meals' was missing from this map even though
+// KioskMealsTab.tsx is a real kiosk tab ('meals' in kioskTabs.ts's own
+// KioskTabKey/KioskNavTab) — a meal_reminder notification tap on a kiosk
+// device fell through to the `?? 'hub'` default below instead of landing
+// on Meals. Grocery still has no kiosk-native tab at all (no
+// KioskGroceryTab.tsx exists), so that one genuinely has nowhere kiosk-safe
+// to go yet and correctly falls back to Hub rather than inventing a tab.
 const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
   '/(tabs)': 'hub',
   '/(tabs)/tasks': 'tasks',
@@ -104,6 +108,7 @@ const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
   '/(tabs)/memories': 'memories',
   '/(tabs)/school': 'school',
   '/(tabs)/family-health': 'health',
+  '/(tabs)/meals': 'meals',
   '/profile-settings': 'profile',
 };
 
@@ -998,6 +1003,22 @@ function RootNavigator() {
       if (familyIdForForegroundSync) useTripStore.getState().loadFromStorage(familyIdForForegroundSync).catch(() => {});
       useKidRequestStore.getState().loadFromStorage().catch(() => {});
       useTemporaryApproverStore.getState().loadFromStorage().catch(() => {});
+      // helpStore has the identical zero-foreground-recovery gap the four
+      // stores above already had fixed: app/(tabs)/_layout.tsx's own boot
+      // effect (`loadHelp(members.map(m => m.id))`) is guarded by
+      // `!helpLoaded`, so it fires exactly once per app session and never
+      // again — a dead help_requests socket (the same OS-suspends-the-
+      // socket failure mode documented on every sibling store above) stayed
+      // dead for the rest of that session with nothing to notice or recover
+      // it. syncFromDB() re-fetches and, via subscribeRealtime()'s own
+      // "already subscribed" guard being cleared on a dead channel, actually
+      // resubscribes here — same shape as the fixes above.
+      if (familyIdForForegroundSync) {
+        const memberIdsForHelp = useFamilyStore.getState().members
+          .filter(m => m.familyId === familyIdForForegroundSync).map(m => m.id);
+        useHelpStore.getState().syncFromDB(memberIdsForHelp).catch(() => {});
+        useHelpStore.getState().subscribeRealtime();
+      }
 
       if (awayMs < LOCK_AFTER_MS) return;
       if (!bootCompleted.current) return;

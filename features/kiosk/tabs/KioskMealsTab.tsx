@@ -53,7 +53,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
-  findNodeHandle, UIManager, Dimensions, Alert,
+  findNodeHandle, UIManager, Alert, useWindowDimensions,
 } from 'react-native';
 import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon, Lock } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
@@ -310,7 +310,19 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   const AUTOSCROLL_EDGE = 110;
   const AUTOSCROLL_SPEED = 10;
-  const [viewportHeight] = useState(() => Dimensions.get('window').height);
+  // Was `useState(() => Dimensions.get('window').height)` — a one-time
+  // snapshot taken only at mount, frozen forever after that: rotating the
+  // device mid-session left this stale until the tab happened to unmount/
+  // remount (e.g. switching tabs and back), which is exactly why the drag
+  // auto-scroll's edge zone kept using the pre-rotation viewport height
+  // [live-reported: "when i do a orientation quickly the comonents are not
+  // adjusting based on orientation if i switch tabs it is coming back to
+  // notmal shapes"]. useWindowDimensions() is the reactive equivalent every
+  // other kiosk tab already uses for this exact reason (KioskOverviewTab,
+  // KioskFindFamTab, KioskHealthTab, KioskHubTab, KioskTasksTab,
+  // KioskMemoryFeed, KioskMemoryGrid) — it re-renders the component on a
+  // real rotation/resize event instead of needing a remount to pick one up.
+  const { height: viewportHeight } = useWindowDimensions();
 
   const updateHoveredStore = useCallback((y: number) => {
     setHoveredStore(storeAtY(y));
@@ -574,6 +586,23 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // own guard short-circuits if it's already subscribed for this family, so
   // this costs nothing when the phone's grocery screen already loaded it.
   useEffect(() => { if (familyId) load(familyId); }, [familyId, load]);
+  // groceryStore's two channels now clear their own `_itemSub`/`_runSub` on
+  // CLOSED/CHANNEL_ERROR/TIMED_OUT (see groceryStore.ts's own subscribe
+  // status handlers), but nothing was left to actually notice a dead socket
+  // and re-trigger load() on kiosk — a phone recovers this for free on its
+  // next background/foreground cycle (there is no AppState listener for
+  // grocery specifically, but re-opening GroceryScreen re-runs its own mount
+  // effect), while a wall-mounted kiosk tab can sit open for hours with
+  // nobody to background/foreground it back to life. Same kiosk-appropriate
+  // mount+interval pattern as KioskTasksTab.tsx's choreStore fix — 5 minutes
+  // is frequent enough to notice a dead socket well within a normal cooking/
+  // shopping session without adding meaningful load beyond the realtime
+  // channel that already covers the common case.
+  useEffect(() => {
+    if (!familyId) return;
+    const id = setInterval(() => load(familyId), 5 * 60_000);
+    return () => clearInterval(id);
+  }, [familyId, load]);
 
   useEffect(() => {
     if (!familyId || !geofencingEnabled) return;

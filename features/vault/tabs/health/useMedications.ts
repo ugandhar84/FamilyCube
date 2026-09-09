@@ -16,7 +16,7 @@ import { claimChannel } from '@/lib/realtimeChannel';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
-import { Medication, MedForm, today } from './types';
+import { Medication, MedForm, today, encodeTakenEntry } from './types';
 
 export function useMedications(familyId: string | undefined, memberId: string | undefined) {
   const [meds, setMeds] = useState<Medication[]>([]);
@@ -151,16 +151,30 @@ export function useMedications(familyId: string | undefined, memberId: string | 
     }
   }, [familyId, memberId]);
 
-  const toggleMed = useCallback(async (med: Medication) => {
+  // Mark ONE dose taken/untaken — mirrors HealthTab.tsx's own markTaken
+  // fix. time is the specific frequency_times slot being toggled (null for
+  // a single-dose med), so a twice-daily med tracked via the Hub card gets
+  // the same real per-dose-time history as the full Health screen instead
+  // of two independent, drifting implementations of "taken today".
+  const toggleMed = useCallback(async (med: Medication, time: string | null = null) => {
     const todayStr = today();
-    const alreadyTaken = med.taken_date === todayStr;
-    const newDate = alreadyTaken ? null : todayStr;
+    const entry = encodeTakenEntry(todayStr, time);
+    const existingDates = med.taken_dates ?? [];
+    const wasTaken = existingDates.includes(entry);
+    const newDates = wasTaken
+      ? existingDates.filter(d => d !== entry)
+      : [...existingDates, entry];
+    const timesForMed = med.frequency_times?.length ? med.frequency_times : ['08:00'];
+    const allDosesTakenToday = timesForMed.every(t => newDates.includes(encodeTakenEntry(todayStr, timesForMed.length > 1 ? t : null)));
+    const newDate = allDosesTakenToday ? todayStr : null;
     const { error } = await supabase.from('family_medications')
-      .update({ taken_date: newDate, modified_by: memberId ?? null, updated_at: new Date().toISOString() })
+      .update({ taken_date: newDate, taken_dates: newDates, modified_by: memberId ?? null, updated_at: new Date().toISOString() })
       .eq('id', med.id);
     if (!error) {
-      setMeds(prev => prev.map(m => m.id === med.id ? { ...m, taken_date: newDate, modified_by: memberId ?? null } : m));
-      showToast(alreadyTaken ? 'Marked as not taken' : 'Marked as taken');
+      setMeds(prev => prev.map(m => m.id === med.id
+        ? { ...m, taken_date: newDate, taken_dates: newDates, modified_by: memberId ?? null }
+        : m));
+      showToast(wasTaken ? 'Marked as not taken' : 'Marked as taken');
     }
   }, [memberId]);
 

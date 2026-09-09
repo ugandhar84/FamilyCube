@@ -64,7 +64,7 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   // entry point for every role (the header gear icon was removed once
   // this shipped), so it leads the default row rather than trailing it.
   { id: 'profile',  label: 'Profile',  Icon: UserCircle2,  roles: ['parent', 'kid', 'teen', 'senior'] },
-  { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid'] },
+  { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid', 'teen'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid', 'teen'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'teen', 'senior'] },
 ];

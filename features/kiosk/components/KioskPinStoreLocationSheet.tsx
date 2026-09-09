@@ -113,7 +113,7 @@ export function KioskPinStoreLocationSheet({ visible, store, onClose, onPin }: {
   return (
     <KioskFormDrawer
       visible={visible}
-      variant="dialog"
+      variant="drawer"
       title={`Pin ${store}'s Location`}
       subtitle="Tap the map to drop a pin, or search an address"
       accent={k.primary}

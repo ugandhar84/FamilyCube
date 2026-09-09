@@ -56,6 +56,7 @@ import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors, kioskRoleAccent } from './kioskPalette';
 import { useKioskLockSuspended } from './KioskActivityContext';
 import { useKioskWeather } from './useKioskWeather';
+import { KioskAvatar } from './components/KioskAvatar';
 
 export function KioskHeader({
   members, activeId, onSwitch, onIntercom, onLock,
@@ -165,16 +166,18 @@ export function KioskHeader({
                     : 'Switch to this profile'
                 }
               >
-                <View
-                  style={[
-                    s.avatarRing,
-                    {
-                      backgroundColor: isActive ? tint + (isDark ? '2E' : '1F') : k.well,
-                      borderColor: isActive ? tint : k.cardBorder,
-                    },
-                  ]}
-                >
-                  <Text style={s.avatarEmoji}>{m.emoji ?? '👤'}</Text>
+                <View style={s.avatarRingWrap}>
+                  <KioskAvatar
+                    name={m.name}
+                    emoji={m.emoji}
+                    avatarUrl={m.avatarUrl}
+                    siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                    size={42}
+                    ringWidth={2.5}
+                    ringColor={isActive ? tint : k.cardBorder}
+                    bgColor={isActive ? tint + (isDark ? '2E' : '1F') : k.well}
+                    k={k}
+                  />
                   {needsPin && (
                     <View style={[s.pinBadge, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
                       <Lock size={9} color={k.textMuted} />
@@ -316,6 +319,7 @@ const s = StyleSheet.create({
     width: 42, height: 42, borderRadius: 21, borderWidth: 2.5,
     alignItems: 'center', justifyContent: 'center',
   },
+  avatarRingWrap: { width: 42, height: 42 },
   avatarEmoji: { fontSize: 19 },
   pinBadge: {
     position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,

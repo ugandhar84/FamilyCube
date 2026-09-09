@@ -235,7 +235,7 @@ export function Chip({
  * the size/weight distinction kioskTheme's KIOSK_HIT note insists on.
  */
 export function ActionButton({
-  label, Icon, accent, k, isDark, onPress, variant = 'soft', disabled, accessibilityHint, style,
+  label, Icon, accent, k, isDark, onPress, variant = 'soft', disabled, accessibilityHint, style, textStyle,
 }: {
   label: string;
   Icon?: LucideIcon;
@@ -247,6 +247,10 @@ export function ActionButton({
   disabled?: boolean;
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
+  /** Overrides the label's own text style — e.g. a smaller size for a
+   * cramped header context [live-reported: title still truncating beside
+   * a long "Claim (+N 🪙)" button]. */
+  textStyle?: StyleProp<TextStyle>;
 }) {
   const solid = variant === 'solid';
   const tint = kioskTint(accent, isDark);
@@ -269,7 +273,7 @@ export function ActionButton({
       accessibilityState={{ disabled: !!disabled }}
     >
       {Icon && <Icon size={17} color={fg} />}
-      <Text style={[s.actionText, { color: fg }]} numberOfLines={1}>{label}</Text>
+      <Text style={[s.actionText, { color: fg }, textStyle]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }

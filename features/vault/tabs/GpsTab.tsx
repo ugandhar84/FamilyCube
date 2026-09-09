@@ -10,9 +10,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints } from 'lucide-react-native';
+import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
@@ -113,6 +114,14 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const [tracking, setTracking]     = useState(false);
   const [togglingTrack, setTogglingTrack] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  // Tap-to-expand roster row — Find My-style: a row expands into a
+  // highlighted card with quick actions (Directions/Contact) instead of
+  // every row looking identical and tapping straight into location
+  // history [live-requested: "lets do design similar kind of find in
+  // mobile.."]. History moves to its own small icon inside the expanded
+  // card instead of being the row's own tap target, since expand is now
+  // that job. Only one row expanded at a time, same as Find My.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId;
@@ -783,28 +792,26 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           const isRefreshing = refreshingId === loc.member_id;
           const isLive = loc.lat != null && loc.lng != null && loc.share_location_enabled !== false;
           const sharingOff = loc.share_location_enabled === false;
+          const isExpanded = expandedId === loc.member_id;
 
           return (
             <TouchableOpacity key={loc.member_id} activeOpacity={0.6}
-              onPress={() => openHistory(loc.member_id, loc.name)}
-              style={[g.row, i > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
-              <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                siblings={members.map(mb => mb.name)} ringColor={rc} size={40} />
+              onPress={() => setExpandedId(prev => prev === loc.member_id ? null : loc.member_id)}
+              style={[
+                g.row, i > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+                isExpanded && [g.rowExpanded, { backgroundColor: rc + (isDark ? '1A' : '10'), borderColor: rc + '40' }],
+              ]}>
+              <View style={{ marginTop: 4 }}>
+                <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                  siblings={members.map(mb => mb.name)} ringColor={rc} size={40} />
+              </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>
-                {isLive ? (
-                  <TouchableOpacity onPress={() => openDirections(loc.lat!, loc.lng!, loc.address || loc.name)} hitSlop={{ top: 4, bottom: 4 }}>
-                    <Text style={{ fontSize: 12, color: colors.teal, fontWeight: '600', marginTop: 2, textDecorationLine: 'underline' }} numberOfLines={1}>
-                      {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                    {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
-                  </Text>
-                )}
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                  {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
+                </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                   {isLive && (() => {
                     const movement = classifyMovement(loc.speed_mph ?? 0);
@@ -834,6 +841,42 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                     {isLive ? fmtRelative(loc.last_updated) : sharingOff ? 'Location sharing off' : 'No live GPS'}
                   </Text>
                 </View>
+
+                {/* Expanded quick actions — Find My-style row: Directions,
+                    Contact (routes to Chat, same real pattern every other
+                    "Message"-style action in this app already uses —
+                    RideLateAlertCard.tsx/EmergencySosCard.tsx et al, none
+                    of which deep-link to a specific 1:1 channel either,
+                    since there's no per-member phone number to call and no
+                    existing per-person chat deep-link to reuse instead of
+                    inventing one), and History (this row's own former tap
+                    target, now a small icon here instead). */}
+                {isExpanded && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    {isLive && (
+                      <TouchableOpacity
+                        onPress={() => openDirections(loc.lat!, loc.lng!, loc.address || loc.name)}
+                        style={[g.actionPill, { backgroundColor: rc }]}>
+                        <Navigation size={13} color="#fff" />
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Directions</Text>
+                      </TouchableOpacity>
+                    )}
+                    {!isMe && (
+                      <TouchableOpacity
+                        onPress={() => router.push('/(tabs)/chat')}
+                        style={[g.actionPill, { backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: colors.border }]}>
+                        <MessageCircle size={13} color={colors.textPrimary} />
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>Contact</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => openHistory(loc.member_id, loc.name)}
+                      style={[g.actionPill, g.actionPillIconOnly, { backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: colors.border }]}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <History size={15} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               <TouchableOpacity onPress={() => refreshMyLocation(loc.member_id)} disabled={isRefreshing}
@@ -922,8 +965,12 @@ const g = StyleSheet.create({
   grabber:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#00000020', alignSelf: 'center', marginTop: 8, marginBottom: 12 },
   exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1,
                     paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
-  row:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  refreshBtn:   { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
+  rowExpanded:  { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 10, marginVertical: 2, borderTopWidth: 1.5 },
+  actionPill:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16,
+                  paddingHorizontal: 12, paddingVertical: 7 },
+  actionPillIconOnly: { paddingHorizontal: 9 },
+  refreshBtn:   { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
 
   historyBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   historySheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 32, maxHeight: '75%' },

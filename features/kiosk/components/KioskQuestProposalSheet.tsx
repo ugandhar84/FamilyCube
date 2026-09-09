@@ -75,7 +75,7 @@ export function KioskQuestProposalSheet({ visible, onClose, active }: {
   return (
     <KioskFormDrawer
       visible={visible}
-      variant="dialog"
+      variant="drawer"
       title="Suggest a Chore"
       subtitle="Sent to a parent to review"
       accent={accent}

@@ -59,13 +59,14 @@
  */
 import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Plus, Images, LayoutGrid, Play } from 'lucide-react-native';
+import { Plus, Images, LayoutGrid, Play, Camera } from 'lucide-react-native';
 import { KIOSK_SPACE } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, TabTitle, ActionButton } from '../components/KioskOS';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { KioskMemoryFeed } from '../components/KioskMemoryFeed';
+import { KioskFormDrawer } from '../components/KioskFormDrawer';
 import { useFamilyStore } from '@/store/familyStore';
 import { useFamilyMemories } from '@/features/vault/tabs/useFamilyMemories';
 import { ComposeMemoryModal } from '@/features/vault/tabs/MemoriesTab';
@@ -187,7 +188,16 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
       </ScrollView>
 
       {/* The phone's real composer, handed the shared hook's own postMemory
-          — no second upload/insert path. */}
+          — no second upload/insert path. renderShell swaps the phone's
+          own bottom-slide-up Modal for kiosk's right-anchored
+          KioskFormDrawer [live-requested: "add memory also should be side
+          form for kiosek"] — every real field (photo/video capture, hero
+          promotion, caption + overlay toggle, member tagging, occasion
+          tag, the 6-media cap, the video-length cap) is the exact same
+          ComposeMemoryModal state/logic, just re-chromed; see that
+          component's own renderShell comment for why its mobile-only title
+          row is intentionally NOT part of what's passed in here (kiosk's
+          own KioskFormDrawer header already covers title/subtitle/close). */}
       {!readOnly && (
         <ComposeMemoryModal
           visible={composing}
@@ -197,6 +207,20 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
           myId={api.myId}
           colors={colors}
           isDark={isDark}
+          renderShell={(shellVisible, shellOnClose, children) => (
+            <KioskFormDrawer
+              visible={shellVisible}
+              variant="drawer"
+              title="Add Memory"
+              subtitle="Tuck away a photo or video for the family album"
+              accent={k.purple}
+              Icon={Camera}
+              k={k}
+              onClose={shellOnClose}
+            >
+              {children}
+            </KioskFormDrawer>
+          )}
         />
       )}
     </View>

@@ -40,6 +40,8 @@ import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { localDateStr, fmtDate } from '@/lib/dates';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
+import { TERMS_CONTENT } from '@/features/onboarding/screens/TermsScreen';
+import DataRecoveryScreen from '@/features/profile/DataRecoveryScreen';
 
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
@@ -85,6 +87,23 @@ function SectionHeader({ label, colors }: { label: string; colors: any }) {
     }}>
       {label}
     </Text>
+  );
+}
+
+// Same real TERMS_CONTENT the phone's own TermsViewerScreen route shows —
+// exported so kiosk can render it inside its own side drawer instead of
+// router.push'ing that full-screen route [live-requested: "tems and
+// prviacy should show side bar"].
+export function TermsContentBody({ colors }: { colors: any }) {
+  return (
+    <View style={{
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      backgroundColor: colors.card, padding: 16,
+    }}>
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 20 }}>
+        {TERMS_CONTENT}
+      </Text>
+    </View>
   );
 }
 
@@ -147,11 +166,17 @@ function fmt12Hour(hhmm: string | undefined): string {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-function NotificationsSheet({
-  visible, onClose, activeMember, notifPrefs, setNotifPrefs,
+// Body only — extracted so kiosk can render the exact same real
+// categories/call-alerts/quiet-hours state and logic inside its own
+// KioskFormDrawer side panel instead of this file's AppBottomSheet
+// [live-requested: "show the notification sheet right side bar"].
+// Exported for that reuse; NotificationsSheet below is the unchanged
+// mobile shell around it.
+export function NotificationsSheetBody({
+  activeMember, notifPrefs, setNotifPrefs,
   storeReminders, setStoreReminders, updateMember, colors, isDark,
 }: {
-  visible: boolean; onClose: () => void; activeMember: any;
+  activeMember: any;
   notifPrefs: Partial<Record<string, boolean>>;
   setNotifPrefs: (p: Partial<Record<string, boolean>>) => void;
   storeReminders: boolean; setStoreReminders: (v: boolean) => void;
@@ -185,8 +210,7 @@ function NotificationsSheet({
   };
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Notifications"
-      subtitle="Choose what you hear about, and when" minHeight="60%" maxHeight="90%">
+    <>
       <SectionHeader label="Categories" colors={colors} />
       {NOTIF_CATEGORIES.map(cat => {
         const enabled = notifPrefs[cat.key] !== false;
@@ -297,6 +321,43 @@ function NotificationsSheet({
           />
         )}
       </View>
+    </>
+  );
+}
+
+// renderShell lets kiosk swap this bottom sheet for its own right-side
+// KioskFormDrawer around the exact same real body/state/logic
+// [live-requested: "show the notification sheet right side bar"], without
+// this mobile-owned file importing any kiosk component (fork-when-needed:
+// kiosk owns its own shell, mobile never depends on it). Default is
+// mobile's own unchanged AppBottomSheet — omitting the prop (as
+// ProfileSettingsScreen's own call site below does) is byte-identical to
+// before NotificationsSheetBody was extracted.
+function NotificationsSheet({
+  visible, onClose, activeMember, notifPrefs, setNotifPrefs,
+  storeReminders, setStoreReminders, updateMember, colors, isDark,
+  renderShell,
+}: {
+  visible: boolean; onClose: () => void; activeMember: any;
+  notifPrefs: Partial<Record<string, boolean>>;
+  setNotifPrefs: (p: Partial<Record<string, boolean>>) => void;
+  storeReminders: boolean; setStoreReminders: (v: boolean) => void;
+  updateMember: (id: string, patch: any) => void;
+  colors: any; isDark: boolean;
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+}) {
+  const body = (
+    <NotificationsSheetBody
+      activeMember={activeMember} notifPrefs={notifPrefs} setNotifPrefs={setNotifPrefs}
+      storeReminders={storeReminders} setStoreReminders={setStoreReminders}
+      updateMember={updateMember} colors={colors} isDark={isDark}
+    />
+  );
+  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Notifications"
+      subtitle="Choose what you hear about, and when" minHeight="60%" maxHeight="90%">
+      {body}
     </AppBottomSheet>
   );
 }
@@ -308,10 +369,15 @@ function NotificationsSheet({
 // real, working updater those screens' balances read from — this was only
 // ever missing a UI, not backing logic.
 
-function CurrencySheet({
-  visible, onClose, householdSettings, updateHouseholdSettings, colors, isDark,
+// Body only — same renderShell extraction pattern as
+// NotificationsSheetBody, so kiosk can render this in its own right-side
+// KioskFormDrawer instead of a phone bottom sheet [live-requested:
+// "should work uagsnadhr family USD - all should work like a mobile" —
+// tapping Currency/Family Name on kiosk needs a working, kiosk-native
+// sheet, not the phone's AppBottomSheet].
+export function CurrencySheetBody({
+  householdSettings, updateHouseholdSettings, colors, isDark,
 }: {
-  visible: boolean; onClose: () => void;
   householdSettings: { currencyCode: string; currencySymbol: string; pointsToFiatRatio: number };
   updateHouseholdSettings: (updates: Partial<{ currencyCode: string; currencySymbol: string; pointsToFiatRatio: number }>) => void;
   colors: any; isDark: boolean;
@@ -329,8 +395,7 @@ function CurrencySheet({
   };
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Currency"
-      subtitle="How coins convert to real money for the whole family" minHeight="55%" maxHeight="85%">
+    <>
       <SectionHeader label="Currency" colors={colors} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         {CURRENCIES.map(c => {
@@ -375,6 +440,29 @@ function CurrencySheet({
       <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 10 }}>
         Example: 250 coins = {householdSettings.currencySymbol}{(250 * householdSettings.pointsToFiatRatio).toFixed(2)}
       </Text>
+    </>
+  );
+}
+
+// Mobile's own unchanged shell — same AppBottomSheet, same real body, byte-
+// identical behavior to before CurrencySheetBody was extracted.
+function CurrencySheet({
+  visible, onClose, householdSettings, updateHouseholdSettings, colors, isDark, renderShell,
+}: {
+  visible: boolean; onClose: () => void;
+  householdSettings: { currencyCode: string; currencySymbol: string; pointsToFiatRatio: number };
+  updateHouseholdSettings: (updates: Partial<{ currencyCode: string; currencySymbol: string; pointsToFiatRatio: number }>) => void;
+  colors: any; isDark: boolean;
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+}) {
+  const body = (
+    <CurrencySheetBody householdSettings={householdSettings} updateHouseholdSettings={updateHouseholdSettings} colors={colors} isDark={isDark} />
+  );
+  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Currency"
+      subtitle="How coins convert to real money for the whole family" minHeight="55%" maxHeight="85%">
+      {body}
     </AppBottomSheet>
   );
 }
@@ -385,7 +473,10 @@ function CurrencySheet({
 // 'Our Family' default — nothing fetched the real families.name row or
 // wrote a rename back to it — so this is the family's first working rename
 // path, not a UI-only fix on top of already-working backing logic.
-function FamilyNameSheet({
+// Body only — same renderShell extraction pattern as
+// NotificationsSheetBody/CurrencySheetBody [live-requested: "should work
+// uagsnadhr family USD - all should work like a mobile"].
+export function FamilyNameSheetBody({
   visible, onClose, currentName, renameFamily, colors, isDark,
 }: {
   visible: boolean; onClose: () => void; currentName: string;
@@ -409,8 +500,7 @@ function FamilyNameSheet({
   };
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Family Name"
-      subtitle="Shown on the Hub, the widget, and shared with anyone you invite" minHeight="40%" maxHeight="60%">
+    <>
       <TextInput
         value={name}
         onChangeText={t => { setName(t); setError(''); }}
@@ -434,6 +524,28 @@ function FamilyNameSheet({
       >
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800', fontSize: TYPO.body }}>Save</Text>}
       </TouchableOpacity>
+    </>
+  );
+}
+
+// Mobile's own unchanged shell — same AppBottomSheet, same real body, byte-
+// identical behavior to before FamilyNameSheetBody was extracted.
+function FamilyNameSheet({
+  visible, onClose, currentName, renameFamily, colors, isDark, renderShell,
+}: {
+  visible: boolean; onClose: () => void; currentName: string;
+  renameFamily: (name: string) => Promise<boolean>;
+  colors: any; isDark: boolean;
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+}) {
+  const body = (
+    <FamilyNameSheetBody visible={visible} onClose={onClose} currentName={currentName} renameFamily={renameFamily} colors={colors} isDark={isDark} />
+  );
+  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Family Name"
+      subtitle="Shown on the Hub, the widget, and shared with anyone you invite" minHeight="40%" maxHeight="60%">
+      {body}
     </AppBottomSheet>
   );
 }
@@ -886,10 +998,24 @@ function InviteMemberSheet({
 // editable here.
 const AVATAR_EMOJIS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
 
-function EditMyProfileSheet({
-  visible, onClose, member, colors, isDark,
+// Exported so kiosk's own persistent sidebar (ParentStatsColumn.tsx /
+// KioskKidTeenStatsColumn.tsx) can mount this same real sheet from a
+// long-press on its identity card, instead of only ever being reachable
+// via this screen's own (now kiosk-hidden) hero card [live-requested:
+// "remove the heroin the profile as we aalready have it in the static
+// side bar we can add that fuctionality long press"].
+export function EditMyProfileSheet({
+  visible, onClose, member, colors, isDark, renderShell,
 }: {
   visible: boolean; onClose: () => void; member: FamilyMember; colors: any; isDark: boolean;
+  /** Kiosk-only — swaps this sheet's own AppBottomSheet for kiosk's real
+   * side-sheet form [live-requested: "edit my profile also side form" /
+   * "i need all these to be side bar forms"], same renderShell pattern
+   * used elsewhere in this file (see dataRecoveryShell's own comment) —
+   * wraps this component's real body/state, nothing forked. Mobile never
+   * passes this, so its own AppBottomSheet (opened from the tappable
+   * identity card) is completely unchanged. */
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 }) {
   const updateMember = useFamilyStore(s => s.updateMember);
   const [name, setName] = useState(member.name);
@@ -997,10 +1123,8 @@ function EditMyProfileSheet({
     });
   };
 
-  return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Edit My Profile"
-      subtitle="Your own name, photo, birthday, and email" minHeight="65%" maxHeight="92%">
-
+  const body = (
+    <>
       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Photo</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <TouchableOpacity
@@ -1126,6 +1250,15 @@ function EditMyProfileSheet({
         onRemove={currentAvatarPreview ? () => { setShowPhotoPicker(false); setPhotoUri(null); setPickedEmoji(undefined); } : undefined}
         avatarUri={currentAvatarPreview} avatarEmoji={currentEmojiPreview} name={member.name}
         colors={colors} isDark={isDark} />
+    </>
+  );
+
+  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Edit My Profile"
+      subtitle="Your own name, photo, birthday, and email" minHeight="65%" maxHeight="92%">
+      {body}
     </AppBottomSheet>
   );
 }
@@ -1161,7 +1294,70 @@ function TypeToConfirmRow({
   );
 }
 
-export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false }: { hideBackButton?: boolean; hideSensitiveAdminRows?: boolean } = {}) {
+export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell }: {
+  hideBackButton?: boolean; hideSensitiveAdminRows?: boolean;
+  // Kiosk-only: the identity card (avatar/name/role, tappable to edit) is
+  // redundant there — the same identity already sits in kiosk's own
+  // persistent sidebar (ParentStatsColumn/KioskKidTeenStatsColumn), always
+  // visible on every tab, not just this one [live-requested: "remove the
+  // heroin the profile as we aalready have it in the static side bar we
+  // can add that fuctionality long press"]. Mobile never passes this, so
+  // its own identity card (the only way to reach EditMyProfileSheet there)
+  // is completely unchanged. EditMyProfileSheet itself still mounts below
+  // regardless — kiosk's sidebar now opens it directly via long-press.
+  hideHero?: boolean;
+  // Kiosk-only: re-flows the same sections (unchanged content/order/logic)
+  // into a 3-column wrapping grid instead of one long single-column
+  // scroll, matching the 3-col layout Chores/Schedule/Health already use
+  // [live-requested: "profile page redesing .. 3 col. like similar to
+  // toehr.."]. Mobile never passes this (stays 1, i.e. today's exact
+  // single-column layout).
+  columns?: 1 | 3;
+  // Kiosk-only: swaps the Notifications row's bottom sheet for kiosk's own
+  // right-side KioskFormDrawer around the exact same real
+  // categories/call-alerts/quiet-hours state [live-requested: "show the
+  // notification sheet right side bar"]. Kept as a plain render-prop
+  // (rather than importing a kiosk component here) so this mobile-owned
+  // file never depends on kiosk code — see NotificationsSheet's own
+  // comment. Mobile never passes this, so its own AppBottomSheet is
+  // completely unchanged.
+  notificationsShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: same renderShell swap as notificationsShell, for the
+  // Currency and Family Name rows [live-requested: "should work uagsnadhr
+  // family USD - all should work like a mobile" — both were still opening
+  // the phone's own AppBottomSheet on kiosk]. Mobile never passes these.
+  currencyShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  familyNameShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: Terms & Privacy opens this shell instead of router.push'ing
+  // its own full-screen route [live-requested: "tems and prviacy should
+  // show side bar"]. Mobile never passes this, so its real route is
+  // completely unchanged.
+  termsShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: swaps the Family carousel's tap/long-press/pin
+  // MemberProfileSheet for kiosk's own right-side drawer [live-requested:
+  // "the family memeber edit shoud also open the side bar"]. Mobile never
+  // passes this, so its AppBottomSheet is completely unchanged. Signature
+  // carries title/subtitle too since MemberProfileSheet's title changes
+  // per-section (view/edit/pin/confirmRemove) — see its own renderShell
+  // comment.
+  memberSheetShell?: (visible: boolean, onClose: () => void, title: string, subtitle: string | undefined, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: Data Recovery opens this shell instead of router.push'ing
+  // its own full-screen route, same reasoning as termsShell above (that
+  // route's back button unconditionally does router.back(), which would
+  // blow past kiosk's embedded-tab shell entirely). This row was hidden
+  // outright on kiosk for a while (hideSensitiveAdminRows — the 30-min
+  // idle-lock exposure-window concern, still real) before being asked
+  // back as a proper side-sheet form instead of just staying gone
+  // [live-requested: "i need all these to be side bar forms" / "it is for
+  // kiosk only"] — passing this shell makes the row visible again
+  // regardless of hideSensitiveAdminRows (see the row's own render check
+  // below), since the point of a shell here specifically is to keep this
+  // one row reachable in the safer, contained side-sheet form; the OTHER
+  // hidden row (Admin Console) is untouched and stays hidden — no shell
+  // exists for it, and none was requested. Mobile never passes this, so
+  // its real pushed route is completely unchanged.
+  dataRecoveryShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+} = {}) {
   const { colors, isDark, mode, setMode } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
   // with no selector, which subscribes to the ENTIRE store object and
@@ -1212,6 +1408,10 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   const familyName = useFamilyStore(s => s.familyName);
   const renameFamily = useFamilyStore(s => s.renameFamily);
   const [showFamilyNameSheet, setShowFamilyNameSheet] = useState(false);
+  // Kiosk-only — see termsShell's own comment.
+  const [showTerms, setShowTerms] = useState(false);
+  // Kiosk-only — see dataRecoveryShell's own comment.
+  const [showDataRecovery, setShowDataRecovery] = useState(false);
 
   // Same "who's actually in this family right now" filter RosterTab uses —
   // soft-deleted members and not-yet-claimed pending invitees stay out of
@@ -1507,37 +1707,52 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
       {/* The shared Ask Cube FAB is visible on this tab by default (no
           Profile-specific exclusion in app/(tabs)/_layout.tsx) — same
           overlap risk fixed on Hub/Quests/School/Health/Memories. */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* paddingTop bumped from the shared 16 — on kiosk (columns=3) the
+          "Profile & Settings" title sits directly above this ScrollView
+          with no gap, and the first grid row's own SectionHeader text sat
+          close enough to visually collide with it at the top of the
+          scroll [live-reported: screenshot showed "NOTIFICATIONS"/
+          "APPEARANCE" labels overlapping the page title]. Mobile
+          (columns=1) keeps the original 16 — its own hero card already
+          sits between the title and first section there. */}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns === 3 ? 28 : 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
             available to everyone regardless of role). Distinct from the
             unified MemberProfileSheet's edit section below, which is the
-            parent-edits-someone-ELSE flow. */}
-        <TouchableOpacity onPress={() => setShowEditMyProfile(true)} activeOpacity={0.75} style={{
-          flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16,
-          borderRadius: RADIUS.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          marginBottom: 24,
-        }}>
-          <View style={{
-            width: 52, height: 52, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: role === 'parent' ? colors.parentLight : colors.kidLight, overflow: 'hidden',
+            parent-edits-someone-ELSE flow. Hidden on kiosk (hideHero) —
+            the same identity already sits in kiosk's own persistent
+            sidebar; a long-press there opens this same EditMyProfileSheet
+            instead [live-requested: "remove the heroin the profile as we
+            aalready have it in the static side bar we can add that
+            fuctionality long press"]. */}
+        {!hideHero && (
+          <TouchableOpacity onPress={() => setShowEditMyProfile(true)} activeOpacity={0.75} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16,
+            borderRadius: RADIUS.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            marginBottom: 24,
           }}>
-            {activeMember.avatarUrl ? (
-              <Image source={{ uri: activeMember.avatarUrl }} style={{ width: 52, height: 52 }} />
-            ) : (
-              <Text style={{ fontSize: 26 }}>{activeMember.emoji ?? '👤'}</Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>{activeMember.name}</Text>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 2 }}>
-              {role.charAt(0).toUpperCase() + role.slice(1)}
-              {isAuthLinked ? ' · Signed in' : ' · PIN profile'}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
+            <View style={{
+              width: 52, height: 52, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: role === 'parent' ? colors.parentLight : colors.kidLight, overflow: 'hidden',
+            }}>
+              {activeMember.avatarUrl ? (
+                <Image source={{ uri: activeMember.avatarUrl }} style={{ width: 52, height: 52 }} />
+              ) : (
+                <Text style={{ fontSize: 26 }}>{activeMember.emoji ?? '👤'}</Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>{activeMember.name}</Text>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 2 }}>
+                {role.charAt(0).toUpperCase() + role.slice(1)}
+                {isAuthLinked ? ' · Signed in' : ' · PIN profile'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          </TouchableOpacity>
+        )}
 
         <EditMyProfileSheet visible={showEditMyProfile} onClose={() => setShowEditMyProfile(false)}
           member={activeMember} colors={colors} isDark={isDark} />
@@ -1550,7 +1765,14 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             MemberProfileSheet, read-only 'view' section (never switches
             activeMemberId — an admin views without impersonating). Long-
             press (parents only) → same sheet, landing on its 'edit'
-            section. Key icon → same sheet, landing on its 'pin' section. */}
+            section. Key icon → same sheet, landing on its 'pin' section.
+            Kept OUT of the 3-column grid below and given its own full-
+            width row — its horizontal member carousel wants more than a
+            31%-wide column, and its natural height (a short row of cards)
+            was leaving a tall empty gap under it when it sat as one grid
+            cell next to much shorter Subscription/Notifications cards
+            [live-reported: screenshot showed a big stretched empty area
+            under Family]. */}
         <View style={{ marginBottom: 24 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
             <SectionHeader label="Family" colors={colors} />
@@ -1563,7 +1785,14 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             )}
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+          {/* Explicit width:'100%' — without it this nested horizontal
+              ScrollView sizes to fit ALL member cards unclipped instead of
+              scrolling, which was harmless at full mobile page width but
+              overflowed its own column and cut a member off once this
+              section became a ~31%-wide kiosk column (columns=3)
+              [live-reported: screenshot showed Jas's card cut off at the
+              column edge]. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
             {members.map(m => (
               <CarouselMemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
                 colors={colors} isDark={isDark}
@@ -1586,7 +1815,16 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           </TouchableOpacity>
 
           {showFullTree && (
-            <View style={{ marginTop: 14 }}>
+            // maxWidth + centered — FamilyTreeView's cards are a fixed
+            // 180px wide, tuned for a phone-width column; letting them
+            // stretch across kiosk's much wider full-width Family row
+            // spread the whole tree thin with huge dead gaps between
+            // columns instead of reading as a compact tree [live-reported:
+            // "family tree is not showing good on this kiosek"]. Capped
+            // rather than widened FamilyTreeView itself, since its real
+            // card sizing/columns are unchanged and still correct at
+            // mobile's own width.
+            <View style={{ marginTop: 14, maxWidth: 560, alignSelf: 'center', width: '100%' }}>
               <FamilyTreeView
                 members={members} activeMemberId={activeMemberId} isParent={isParent}
                 colors={colors} isDark={isDark}
@@ -1613,7 +1851,9 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             onResetPin={(m) => openMember(m, 'pin')}
             onResendInvite={(m) => resendInviteFor(m)}
             onGenerateRecoveryCode={(m) => generateRecoveryCodeFor(m)}
-            colors={colors} isDark={isDark} />
+            colors={colors} isDark={isDark}
+            renderShell={memberSheetShell}
+          />
         )}
         {isParent && familyId && (
           <InviteMemberSheet visible={showInviteSheet} onClose={() => setShowInviteSheet(false)}
@@ -1621,8 +1861,18 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             colors={colors} isDark={isDark} />
         )}
 
+        {/* Kiosk-only: from here down, every section is an independent
+            sibling View (many behind their own isParent/isAuthLinked/etc.
+            conditionals) — flex-wrap on this shared container reflows them
+            into a 3-column grid without touching any of that per-section
+            conditional logic. Mobile (columns=1) renders a plain View, so
+            its single-column layout is byte-identical to before. Family
+            (above) is deliberately outside this grid, in its own full-
+            width row — see its own comment for why. */}
+        <View style={columns === 3 ? { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' } : undefined}>
+
         {/* Subscription */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Subscription" colors={colors} />
           <Row
             icon="star-outline"
@@ -1655,7 +1905,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             collapsed into one summary row that opens NotificationsSheet
             (categories, quiet hours, call alerts all together), same
             "tap a row → bottom sheet" pattern the app uses elsewhere. */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Notifications" colors={colors} />
           <Row
             icon="notifications-outline"
@@ -1680,10 +1930,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           setStoreReminders={setStoreReminders}
           updateMember={updateMember}
           colors={colors} isDark={isDark}
+          renderShell={notificationsShell}
         />
 
         {/* Appearance */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Appearance" colors={colors} />
           <View style={{
             flexDirection: 'row', borderRadius: RADIUS.md, backgroundColor: colors.card,
@@ -1715,7 +1966,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         </View>
 
         {/* Security */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Security" colors={colors} />
           {bioAvailable && (
             <Row
@@ -1736,23 +1987,32 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
               }
             />
           )}
-          {!hideSensitiveAdminRows && (
+          {/* dataRecoveryShell overrides hideSensitiveAdminRows on purpose —
+              see that prop's own comment: passing a shell is specifically
+              how kiosk asked to have this ONE row back, in the safer
+              contained side-sheet form, without also reopening Admin
+              Console (which has no shell and stays hidden). */}
+          {(!hideSensitiveAdminRows || dataRecoveryShell) && (
             <Row
               icon="key-outline"
               label="Data Recovery"
               subtitle="Family passcode that protects chat, location, and medical records from loss"
-              onPress={() => router.push('/profile-settings/data-recovery')}
+              onPress={() => dataRecoveryShell ? setShowDataRecovery(true) : router.push('/profile-settings/data-recovery')}
               colors={colors} isDark={isDark}
             />
           )}
         </View>
+
+        {dataRecoveryShell && showDataRecovery && (
+          <>{dataRecoveryShell(showDataRecovery, () => setShowDataRecovery(false), <DataRecoveryScreen hideChrome />)}</>
+        )}
 
         {/* Family Name — familyName was previously stuck forever at the
             store's 'Our Family' default (nothing fetched families.name or
             wrote a rename back to it); this is the first working rename
             path. Same parent-editable / read-only-for-others split as
             Currency below. */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Family" colors={colors} />
           <Row
             icon="home-outline"
@@ -1770,6 +2030,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             currentName={familyName}
             renameFamily={renameFamily}
             colors={colors} isDark={isDark}
+            renderShell={familyNameShell}
           />
         )}
 
@@ -1778,7 +2039,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             ParentReviewDeck) was hardcoded to a bare $ with no setting to
             change it at all. Parent-editable; everyone else sees the same
             row as read-only display, per explicit request. */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Currency" colors={colors} />
           <Row
             icon="cash-outline"
@@ -1800,6 +2061,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             householdSettings={householdSettings}
             updateHouseholdSettings={updateHouseholdSettings}
             colors={colors} isDark={isDark}
+            renderShell={currencyShell}
           />
         )}
 
@@ -1807,7 +2069,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             purely for FreeBusy conflict detection (not full 2-way sync,
             see CalendarSyncScreen.tsx's own header comment). */}
         {isParent && (
-          <View style={{ marginBottom: 24 }}>
+          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <SectionHeader label="Calendar" colors={colors} />
             <Row
               icon="calendar-outline"
@@ -1819,17 +2081,28 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           </View>
         )}
 
-        {/* Legal */}
-        <View style={{ marginBottom: 24 }}>
+        {/* Legal — kiosk opens this as its own side drawer instead of
+            router.push'ing a full-screen route [live-requested: "tems and
+            prviacy should show side bar"]: that route's own back button
+            unconditionally does router.back(), which would replace
+            kiosk's persistent sidebar/header entirely rather than staying
+            inside this embedded tab, the same reason KioskProfileTab
+            passes hideBackButton for THIS screen. Mobile (no termsShell)
+            keeps the real route, completely unchanged. */}
+        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
           <SectionHeader label="Legal" colors={colors} />
           <Row
             icon="document-text-outline"
             label="Terms & Privacy"
             subtitle="Terms of service, privacy policy, AI disclosure"
-            onPress={() => router.push('/profile-settings/terms')}
+            onPress={() => termsShell ? setShowTerms(true) : router.push('/profile-settings/terms')}
             colors={colors} isDark={isDark}
           />
         </View>
+
+        {termsShell && showTerms && (
+          <>{termsShell(showTerms, () => setShowTerms(false), <TermsContentBody colors={colors} />)}</>
+        )}
 
         {/* Admin console — hidden entry point. Only rendered for a parent
             whose auth session is confirmed as a platform admin (app_admins
@@ -1837,7 +2110,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             uses, so a non-admin parent never sees this row AND can't reach
             the gate by any other path either — see features/admin/_layout.tsx. */}
         {isParent && isAppAdmin && !hideSensitiveAdminRows && (
-          <View style={{ marginBottom: 24 }}>
+          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <SectionHeader label="Admin" colors={colors} />
             <Row
               icon="shield-checkmark-outline"
@@ -1862,7 +2135,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             confirmation needed for the real-account case — signing out is
             normal, everyday UX. */}
         {isAuthLinked && viewingOwnProfile && !isAnonymousSession && (
-          <View style={{ marginBottom: 24 }}>
+          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <Row
               icon="log-out-outline"
               label="Sign Out"
@@ -1899,8 +2172,8 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             just requires the PIN again next time, no session loss) instead
             of a real sign-out with no way back in. */}
         {isAuthLinked && viewingOwnProfile && isAnonymousSession && (
-          <View style={{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: colors.surface, padding: 14, gap: 6 }}>
+          <View style={[{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+            backgroundColor: colors.surface, padding: 14, gap: 6 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
               No Sign Out here
             </Text>
@@ -1917,7 +2190,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             purely a local activeMemberId swap gated by the real owner's
             own PIN, no Supabase call at all. */}
         {!viewingOwnProfile && authOwnerMember && (
-          <View style={{ marginBottom: 24 }}>
+          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <Row
               icon="lock-closed-outline"
               label="Lock & Switch Back"
@@ -1940,7 +2213,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
 
         {/* Danger zone */}
         {canShowDangerZone && (
-          <View style={{ marginBottom: 24 }}>
+          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
             <SectionHeader label="Danger Zone" colors={colors} />
             {!showDangerConfirm ? (
               <Row
@@ -2000,6 +2273,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             )}
           </View>
         )}
+        </View>
       </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

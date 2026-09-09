@@ -22,20 +22,18 @@
  * not threaded down from KioskOverviewTab, since this column now renders
  * whether or not KioskOverviewTab itself is even mounted.
  */
-import { useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Animated } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
-import { useQuestStore } from '@/store/choreAdapter';
-import { useRewardStore } from '@/store/rewardStore';
-import { useKidRequestStore } from '@/store/kidRequestStore';
 import { WidgetCard } from './KioskOS';
 import { useKioskColors, kioskRoleAccent, type KioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { railForRole, type KioskTabKey } from '../kioskTabs';
+import { KioskAvatar } from './KioskAvatar';
 
 export function ParentStatsColumn({
-  active, members, familyName, activeTab, onNavigate, onAskFam,
+  active, members, familyName, activeTab, onNavigate, onAskFam, onLongPressIdentity,
 }: {
   active: FamilyMember;
   members: FamilyMember[];
@@ -48,11 +46,23 @@ export function ParentStatsColumn({
    *  assuming Overview is always the active one. */
   activeTab: KioskTabKey;
   onNavigate: (tab: KioskTabKey) => void;
-  /** Opens the real KioskAskFamDrawer (same one the nav rail's own "Ask
-   *  Fam" card opens elsewhere) — live-corrected: this slot was "Message
-   *  the kids" (a quick note to family chat), swapped back to the real Ask
-   *  Fam feature this column's pinned-action slot originally carried. */
+  /** Opens the real AskCubeChat AI (KioskScreen.tsx wires this to the same
+   *  askCubeOpen state the header's own Ask Cube button uses) — live-
+   *  corrected: this slot was "Message the kids" (a quick note to family
+   *  chat), swapped back to the Ask Fam feature this column's pinned-action
+   *  slot originally carried, and later upgraded from the local, non-AI
+   *  KioskAskFamDrawer lookup to the real AI to match mobile's parent
+   *  experience [live-requested: "Have Ask Fam actually call the real AI
+   *  backend"]. */
   onAskFam: () => void;
+  /** Long-press on the identity card below opens the real
+   *  EditMyProfileSheet (name/DOB/email/avatar) — the Profile tab's own
+   *  hero card is hidden on kiosk since this identity is already always
+   *  visible here [live-requested: "remove the heroin the profile as we
+   *  aalready have it in the static side bar we can add that fuctionality
+   *  long press"]. Optional so this column still renders if a caller
+   *  doesn't wire it up. */
+  onLongPressIdentity?: () => void;
 }) {
   const { k, isDark } = useKioskColors();
   // Live-corrected: the mock's own 300px (grid-template-columns: 300px 1fr
@@ -64,34 +74,13 @@ export function ParentStatsColumn({
   // longest real label ("Memories"/"School") plus its icon and padding —
   // "fit to the content," not a fraction of window width.
 
-  const kids = useMemo(
-    () => members.filter(m =>
-      !m.deletedAt && m.inviteStatus !== 'pending' && (m.role === 'kid' || m.role === 'teen')),
-    [members],
-  );
-
-  const { quests } = useQuestStore();
-  const redemptions = useRewardStore(s => s.redemptions);
-  const kidRequests = useKidRequestStore(s => s.requests);
-
-  const pendingChoreCount = useMemo(
-    () => quests.filter(q => q.status === 'pending_approval').length,
-    [quests],
-  );
-  const pendingRedemptionCount = useMemo(
-    () => redemptions.filter(r => r.status === 'pending').length,
-    [redemptions],
-  );
-  const pendingRequestCount = useMemo(
-    () => kidRequests.filter(r => r.status === 'pending' && (!r.toMemberId || r.toMemberId === active.id)).length,
-    [kidRequests, active.id],
-  );
-
-  const rows: { label: string; value: number }[] = [
-    { label: 'Chores pending review', value: pendingChoreCount },
-    { label: 'Redemption requests', value: pendingRedemptionCount },
-    { label: 'Kid requests awaiting reply', value: pendingRequestCount },
-  ];
+  // Chores-pending/redemptions/kid-requests/coin-balance summary card
+  // removed entirely — same "no duplicate stats sidebar" direction as the
+  // kid/teen column's own coin card [live-requested: "undee the first
+  // column we have the coins along with stats.. remove that completely"
+  // — confirmed to include this parent-side card too]. That data is still
+  // real and visible in Overview's own Approvals panel and Coin Jars
+  // widget; this only removes the duplicate sidebar summary.
 
   return (
     <View style={s.statsCol}>
@@ -112,13 +101,36 @@ export function ParentStatsColumn({
           requested to match that real, larger identity padding rather
           than the shared default. */}
       <WidgetCard k={k} isDark={isDark} style={s.statsIdentityCard}>
-        <View style={s.statsIdentity}>
-          <View style={[s.statsAvatar, { backgroundColor: kioskRoleAccent(k, active.role) + (isDark ? '26' : '18') }]}>
-            <Text style={s.statsAvatarEmoji}>{active.emoji ?? '👤'}</Text>
-          </View>
+        {/* Long-press opens EditMyProfileSheet (name/DOB/email/avatar) —
+            this identity card is the only place that self-edit action
+            lives now that the Profile tab's own hero card is hidden on
+            kiosk [live-requested: "remove the heroin the profile as we
+            aalready have it in the static side bar we can add that
+            fuctionality long press"]. No onPress — a plain tap here
+            already means nothing elsewhere in this column, so only
+            long-press is claimed, avoiding a surprise action on a casual
+            tap. */}
+        <Pressable
+          onLongPress={onLongPressIdentity}
+          style={s.statsIdentity}
+          accessibilityRole="button"
+          accessibilityLabel={`${active.name}'s profile`}
+          accessibilityHint="Long-press to edit your name, birthday, email or photo"
+        >
+          <KioskAvatar
+            name={active.name}
+            emoji={active.emoji}
+            avatarUrl={active.avatarUrl}
+            siblings={members.filter(x => x.id !== active.id).map(x => x.name)}
+            size={44}
+            borderRadius={KIOSK_RADIUS.md}
+            style={{ marginBottom: KIOSK_SPACE.sm }}
+            bgColor={kioskRoleAccent(k, active.role) + (isDark ? '26' : '18')}
+            k={k}
+          />
           <Text style={[s.statsName, { color: k.text }]} numberOfLines={1}>{active.name?.trim().split(' ')[0]}</Text>
           <Text style={[s.statsSub, { color: k.textMuted }]} numberOfLines={1}>{familyName}</Text>
-        </View>
+        </Pressable>
       </WidgetCard>
 
       {/* Own ScrollView, same "scrolls independently, pinned action stays
@@ -164,43 +176,54 @@ export function ParentStatsColumn({
           </View>
         </WidgetCard>
 
-        <WidgetCard k={k} isDark={isDark}>
-          <View>
-            {rows.map((row, i) => (
-              <View key={row.label} style={[s.statsRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-                <Text style={[s.statsLabel, { color: k.textMuted }]} numberOfLines={2}>{row.label}</Text>
-                <Text style={[s.statsValue, { color: k.text }]}>{row.value}</Text>
-              </View>
-            ))}
-            {kids.map(kid => {
-              const total = ((kid as any).mainCoins ?? 0) + ((kid as any).gpCoins ?? 0);
-              return (
-                <View key={kid.id} style={[s.statsRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}>
-                  <Text style={[s.statsLabel, { color: k.textMuted }]} numberOfLines={1}>
-                    {kid.name?.trim().split(' ')[0]}'s balance
-                  </Text>
-                  <Text style={[s.statsValue, { color: k.text }]}>{total} coins</Text>
-                </View>
-              );
-            })}
-          </View>
-        </WidgetCard>
       </ScrollView>
 
+      {/* "Ask Fam" — shortened from "Ask Family AI" with no subtitle
+          [live-requested: "In the first column instead of the ask FAmily
+          AI - jus tname it Ask Fam no subtitle needed and make this
+          animated pulse"]. Opens the real AI (AskCubeChat) for a parent —
+          see KioskScreen.tsx's own onAskFam wiring; this button's own
+          behavior is unchanged, only its label/subtitle/animation. */}
       <Pressable
         onPress={onAskFam}
-        style={({ pressed }) => [s.messageKidsBtn, { backgroundColor: pressed ? k.cardHover : k.text }]}
+        style={({ pressed }) => [s.askFamBtn, { backgroundColor: pressed ? k.cardHover : k.text }]}
         accessibilityRole="button"
-        accessibilityLabel="Ask Family AI"
-        accessibilityHint="Look up your family's schedule, chores and meals"
+        accessibilityLabel="Ask Fam"
+        accessibilityHint="Ask the family AI anything"
       >
         <View style={s.askFamRow}>
-          <Sparkles size={16} color={k.purple} />
-          <Text style={[s.messageKidsTitle, { color: k.card }]}>Ask Family AI</Text>
+          <PulseSparkle color={k.purple} />
+          <Text style={[s.askFamText, { color: k.card }]}>Ask Fam</Text>
         </View>
-        <Text style={[s.messageKidsSub, { color: k.card }]}>Quick answers about your family's day</Text>
       </Pressable>
     </View>
+  );
+}
+
+// A gently pulsing scale/opacity loop on the sparkle icon — draws the eye
+// to the AI entry point without a full attention-badge (this isn't tied to
+// a pending count the way PulseDot on the Approvals chip is; it's just the
+// button's own idle state) [live-requested: "make this animated pulse"].
+function PulseSparkle({ color }: { color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.25] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] });
+  return (
+    <Animated.View style={{ transform: [{ scale }], opacity }}>
+      {/* Filled, not just outlined [live-requested: "Ask Fam!  aicon should
+          fill with color"]. */}
+      <Sparkles size={16} color={color} fill={color} />
+    </Animated.View>
   );
 }
 
@@ -230,7 +253,12 @@ const s = StyleSheet.create({
   // visually sits beside now, not the rail it replaced), and had no left
   // inset at all, sitting flush at the screen's true x=0 since
   // KioskScreen.tsx's s.row carries no horizontal padding of its own.
-  statsCol: { width: 240, gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.lg, marginLeft: KIOSK_SPACE.lg },
+  // Narrower than the previous 240 [live-requested: "reduce the width
+  // right.. max this col width is like this - if the min is fit to
+  // content.."] — 200 still comfortably fits the longest real tab label
+  // ("Memories"/"School") plus its icon and padding, and gives the main
+  // content area more room.
+  statsCol: { width: 200, gap: KIOSK_SPACE.md, marginTop: KIOSK_SPACE.lg, marginLeft: KIOSK_SPACE.lg },
   // flex:1 here is correct — this is INSIDE statsCol (a flexDirection:
   // 'column' by default), where flex:1 correctly means "fill remaining
   // VERTICAL space" between the sticky identity header above and the
@@ -248,25 +276,21 @@ const s = StyleSheet.create({
   statsAvatarEmoji: { fontSize: 20 },
   statsName: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
   statsSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-  statsRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.sm,
-  },
-  statsLabel: { flex: 1, fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
-  statsValue: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   railTabRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
     minHeight: KIOSK_HIT.control,
   },
   railTabLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  messageKidsBtn: {
-    borderRadius: KIOSK_RADIUS.sm, padding: KIOSK_SPACE.md,
-    minHeight: KIOSK_HIT.control,
+  // No subtitle line now — just the icon + short "Ask Fam" label, centered
+  // in a shorter button [live-requested: "jus tname it Ask Fam no
+  // subtitle needed"].
+  askFamBtn: {
+    borderRadius: KIOSK_RADIUS.sm, paddingVertical: KIOSK_SPACE.sm,
+    minHeight: KIOSK_HIT.control, alignItems: 'center', justifyContent: 'center',
   },
   askFamRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
-  messageKidsTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  messageKidsSub: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, opacity: 0.75 },
+  askFamText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   toolsCol: { gap: KIOSK_SPACE.xs },
   toolBtn: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,

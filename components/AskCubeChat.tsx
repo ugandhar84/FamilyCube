@@ -25,6 +25,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
@@ -113,6 +114,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const addGroceryItem = useGroceryStore(s => s.addItem);
   const redeemReward = useRewardStore(s => s.redeemReward);
   const sendChatMessage = useChatStore(s => s.sendMessage);
+  const approveKidRequest = useKidRequestStore(s => s.approveRequest);
+  const declineKidRequest = useKidRequestStore(s => s.declineRequest);
 
   const [expandedRecipe, setExpandedRecipe] = useState<{ msgId: string; index: number } | null>(null);
 
@@ -646,6 +649,17 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Fam');
       else if (d.action === 'complete') submitChore(d.choreId);
       else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
+    } else if (proposal.kind === 'kid_request_action') {
+      // Same real store actions the manual Approve/Decline controls on a
+      // parent's own kid-requests panel use (kidRequestStore.ts) —
+      // propose_kid_request_action already re-validated the request's
+      // pending status and the viewer's parent/senior role server-side, so
+      // this mirrors chore_action's own branch in trusting that check.
+      // [live-requested: "approvals of rht kis requests"] — kid requests
+      // (rides, help, permission, etc.) had zero AskFam equivalent before
+      // this; a parent had to leave chat entirely to respond to one.
+      if (d.action === 'approve') approveKidRequest(d.requestId, activeMember.id, d.note ?? undefined);
+      else if (d.action === 'decline') declineKidRequest(d.requestId, activeMember.id, d.note ?? undefined);
     } else if (proposal.kind === 'cancel_event') {
       // Same soft-delete every manual "Delete event" control in the app
       // uses (Calendar tab's own delete action) — propose_cancel_event
@@ -667,12 +681,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     // top of this function) and its own success toast fires from
     // AskCubeMealDayPicker's onConfirm below instead, once addMealToPlan
     // actually succeeds.
+    const kidRequestActionToast: Record<string, string> = {
+      approve: 'Request approved', decline: 'Request declined',
+    };
     const toastByKind: Record<Exclude<AskCubeProposal['kind'], 'meal'>, string> = {
       event: 'Event created', quest: 'Chore created', grocery: 'Added to grocery list',
       redemption: 'Reward redeemed',
       update_event: 'Event updated', update_chore: 'Chore updated',
       chore_action: chorActionToast[d.action] ?? 'Done',
       cancel_event: 'Event cancelled',
+      kid_request_action: kidRequestActionToast[d.action] ?? 'Done',
     };
     showToast(toastByKind[proposal.kind] ?? 'Done');
     markProposalCreated(msgId, index);
@@ -691,19 +709,25 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const isKiosk = variant === 'kiosk';
 
   return (
-    <Modal visible={visible} transparent animationType={isKiosk ? 'fade' : 'slide'} onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={
           isKiosk
-            ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'flex-end', alignItems: 'flex-end', padding: 24 }
+            // Full-height, right-anchored side sheet — same real shape as
+            // every other kiosk form (KioskFormDrawer's drawer variant,
+            // KioskAppBottomSheet): flush, no inset/radius/shadow, no
+            // percentage cap [live-requested: "need that ask fam to cover
+            // whole height of the tab like other forms"]. Was previously a
+            // small bottom-right-anchored floating card (420×560, 80% cap)
+            // — the one kiosk surface that didn't match the rest.
+            ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }
             : { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }
         }>
           <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} />
           <View style={
             isKiosk
-              ? { backgroundColor: colors.card, borderRadius: 26, width: 420, maxWidth: '100%', height: 560,
-                  maxHeight: '80%', paddingTop: 14, overflow: 'hidden',
-                  shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 12 }
+              ? { backgroundColor: colors.card, width: 480, maxWidth: '100%', height: '100%',
+                  borderLeftWidth: 1, borderLeftColor: colors.border, paddingTop: 14, overflow: 'hidden' }
               : { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
                   height: '85%', paddingTop: 12 }
           }>

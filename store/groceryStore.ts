@@ -303,7 +303,21 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
               set(s => ({ items: s.items.filter(i => i.id !== (payload.old as any).id) }));
             }
           })
-        .subscribe();
+        .subscribe((status) => {
+          // Same fix as choreStore.ts's/eventStore.ts's ensureRealtime — this
+          // store had no dead-channel recovery at all, so a socket killed by
+          // backgrounding (or, worse, a wall-mounted kiosk's socket dying
+          // with nobody to background/foreground it back to life) left
+          // `_itemSub` non-null but functionally dead forever: load()'s own
+          // guard (`existing.familyId === familyId && existing._itemSub`)
+          // then kept skipping every later reconnect attempt against a
+          // corpse. Clearing it here on a terminal bad status makes the next
+          // load() call actually resubscribe instead of trusting it.
+          if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn(`[groceryStore] realtime grocery_items:${familyId} unhealthy (${status}) — clearing so the next load() resubscribes`);
+            set(s => (s._itemSub === itemSub ? { _itemSub: null } : {}));
+          }
+        });
 
       // Realtime: run changes
       const runSub = supabase
@@ -322,7 +336,13 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
               set(s => ({ runs: s.runs.filter(r => r.id !== (payload.old as any).id) }));
             }
           })
-        .subscribe();
+        .subscribe((status) => {
+          // Same fix, same reasoning, sibling channel on this same store.
+          if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn(`[groceryStore] realtime grocery_runs:${familyId} unhealthy (${status}) — clearing so the next load() resubscribes`);
+            set(s => (s._runSub === runSub ? { _runSub: null } : {}));
+          }
+        });
 
       set({ _itemSub: itemSub, _runSub: runSub });
     } catch (err) {

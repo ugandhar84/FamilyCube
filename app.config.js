@@ -222,6 +222,7 @@ const config = {
     "react-native-quick-crypto",
     "./plugins/withCallKeep.js",
     "./plugins/withFirebasePodfileFixes.js",
+    "./plugins/withFmtConstevalFix.js",
   ],
   experiments: {
     typedRoutes: true,

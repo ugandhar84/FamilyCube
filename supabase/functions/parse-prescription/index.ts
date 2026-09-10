@@ -119,11 +119,20 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
     generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
   };
 
+  // Was 15s — too tight now that this call also carries a full retry (both
+  // primary and retry go through this exact function, see the handler's
+  // own comment on why the retry re-calls callGeminiVision instead of a
+  // separate lighter path). Live-reported via edge logs: a 3-image request
+  // against the 8192-token budget genuinely took longer than 15s under
+  // load, so BOTH the primary call AND its retry timed out back-to-back —
+  // there was no timeout headroom left to actually benefit from having a
+  // retry at all. Matches parse-flyer's own 35s budget for the same class
+  // of multi-image, high-token-budget vision extraction.
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }, 15_000);
+  }, 35_000);
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');

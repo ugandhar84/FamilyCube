@@ -42,6 +42,8 @@ import {
 import { pickAiMemoryTurn, recordSeen, type SeenMap } from './memoryAI';
 import { useGameStore } from '@/store/gameStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useAppStateRefresh } from '@/lib/useAppStateRefresh';
+import { showAlert } from '@/components/AppAlert';
 
 const MISMATCH_PREVIEW_MS = 700;
 const GRID_MAX_WIDTH = 340;
@@ -441,7 +443,12 @@ function MultiplayerMemory({ gridWidth, sessionId, onGameOverChange }: { gridWid
   const loadSession = useGameStore(s => s.loadSession);
   const ensureSessionRealtime = useGameStore(s => s.ensureSessionRealtime);
   const stopSessionRealtime = useGameStore(s => s.stopSessionRealtime);
+  const ensurePresence = useGameStore(s => s.ensurePresence);
+  const stopPresence = useGameStore(s => s.stopPresence);
+  const opponentOnline = useGameStore(s => s.opponentOnline);
+  const leaveGame = useGameStore(s => s.leaveGame);
   const [submitting, setSubmitting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   // The server resolves a mismatch (both cards revealed, then flipped back
   // down) within a single response — we hold the PREVIOUS render (with
   // both cards still face-up) for a beat before accepting a response that
@@ -453,17 +460,29 @@ function MultiplayerMemory({ gridWidth, sessionId, onGameOverChange }: { gridWid
     useGameStore.setState({ activeSession: null });
     ensureSessionRealtime(sessionId);
     loadSession(sessionId);
-    return () => stopSessionRealtime();
-  }, [sessionId]);
+    if (activeMemberId) ensurePresence(sessionId, activeMemberId);
+    return () => { stopSessionRealtime(); stopPresence(); };
+  }, [sessionId, activeMemberId]);
+
+  // Same foreground-recovery fix as TicTacToeGame.tsx's own copy — a
+  // silently dropped socket previously had no recovery path short of
+  // leaving and re-entering the screen (live-reported: moves not
+  // reflecting live in the other player's screen).
+  useAppStateRefresh(() => {
+    loadSession(sessionId);
+    ensureSessionRealtime(sessionId);
+    if (activeMemberId) ensurePresence(sessionId, activeMemberId);
+  });
 
   const session = activeSession?.id === sessionId ? activeSession : null;
   const isParticipant = !!session && (session.challengerId === activeMemberId || session.challengedId === activeMemberId);
 
   const serverCards: MemoryCard[] = session?.boardState?.cards ?? [];
   const cards = displayOverride?.cards ?? serverCards;
-  const gameOver = session?.status === 'completed';
+  const abandoned = session?.status === 'abandoned';
+  const gameOver = session?.status === 'completed' || abandoned;
   const draw = session?.result === 'tie';
-  const myWon = gameOver && session?.winnerId === activeMemberId;
+  const myWon = gameOver && !!session?.winnerId && session.winnerId === activeMemberId;
 
   // Every hook here must run on every render regardless of the early
   // "not loaded yet" / "not your game" return below — an effect declared
@@ -535,16 +554,32 @@ function MultiplayerMemory({ gridWidth, sessionId, onGameOverChange }: { gridWid
     }
   };
 
-  const statusText = gameOver
-    ? (draw ? 'Tie' : myWon ? 'You win!' : `${opponent?.name?.split(' ')[0] ?? 'Opponent'} wins`)
+  const opponentName = opponent?.name?.split(' ')[0] ?? 'Opponent';
+  const statusText = abandoned
+    ? (myWon ? `${opponentName} left the game` : 'You left the game')
+    : gameOver
+    ? (draw ? 'Tie' : myWon ? 'You win!' : `${opponentName} wins`)
     : session.status === 'pending' ? 'Waiting…'
     : isMyTurn ? 'Your turn'
-    : `${opponent?.name?.split(' ')[0] ?? 'Their'}'s turn`;
+    : `${opponentName}'s turn`;
   const statusColor = gameOver ? (draw ? ARCADE.textPrimary : myWon ? ARCADE.memory : ARCADE.ticTacToeO) : ARCADE.textPrimary;
   const timeLimit = session.timeLimitSeconds;
   const timeRemaining = timeLimit && session.startedAt
     ? Math.max(0, timeLimit - Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000))
     : null;
+
+  const handleLeave = () => {
+    showAlert('Leave game?', `${opponentName} will be notified that you left.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave', style: 'destructive',
+        onPress: async () => {
+          setLeaving(true);
+          try { await leaveGame(sessionId); } finally { setLeaving(false); }
+        },
+      },
+    ]);
+  };
 
   return (
     <MemoryBoardShell
@@ -554,7 +589,22 @@ function MultiplayerMemory({ gridWidth, sessionId, onGameOverChange }: { gridWid
       leftCount={myPairs} rightCount={opponentPairs} totalPairs={totalPairs}
       leftTurn={isMyTurn && !gameOver} rightTurn={!isMyTurn && !gameOver}
       onCardPress={handleCardPress} cardsDisabled={!isMyTurn || gameOver || submitting || !!displayOverride}
-      footer={null}
+      footer={
+        <View style={{ gap: 8, alignItems: 'center' }}>
+          {!gameOver && opponentOnline === false && (
+            <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: ARCADE_TYPO.label, color: ARCADE.textMuted }}>
+              {opponentName} is offline
+            </Text>
+          )}
+          {!gameOver && (
+            <Pressable onPress={handleLeave} disabled={leaving} hitSlop={8}>
+              <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: ARCADE_TYPO.label, color: ARCADE.textMuted, textDecorationLine: 'underline' }}>
+                {leaving ? 'Leaving…' : 'Leave game'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      }
     />
   );
 }

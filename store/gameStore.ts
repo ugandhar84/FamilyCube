@@ -288,12 +288,34 @@ export function xpToNextLevel(xp: number): { current: number; next: number; rema
 // mounted. Drives incomingChallenges/outgoingChallenges.
 let _rtChallengeChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtChallengeFamilyId = '';
+// The activeMemberId ensureChallengeRealtime's postgres_changes callback
+// closure was built against. Was NOT tracked at all — the dedup guard
+// below only ever compared familyId, so PIN-switching between two kids
+// on the SAME shared device/family (a real, common case — see
+// FamilyGamesSection's own mount effect keyed only on familyId) silently
+// kept the OLD channel alive with the OLD member's id baked into its
+// closure, filtering every incoming challenge against the wrong viewer
+// until the app was fully relaunched (live-reported: "the other person is
+// not showing the realtime invitation on the hub (showing after
+// relaunch)"). Tracking it here lets the guard below correctly force a
+// re-subscribe whenever the active member changes, even if familyId did not.
+let _rtChallengeMemberId = '';
 
 // Session channel — scoped to ONE active session, subscribed only while
 // its game screen is mounted (never family-wide) so a family member isn't
 // receiving realtime traffic for every other pending game in the family.
 let _rtSessionChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtSessionId = '';
+// Presence channel — separate from the postgres_changes session channel
+// above (Presence and postgres_changes are independent Realtime features,
+// each with their own subscribe lifecycle on the same or different
+// channels) — tracks whether the OPPONENT's own game screen is currently
+// mounted, i.e. genuinely online in this game right now, not just "has the
+// app open somewhere." Was missing entirely (live-reported: "other person
+// should notify that he is offline at that moement" — no such signal
+// existed anywhere in this feature before).
+let _rtPresenceChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtPresenceSessionId = '';
 
 // Uno table polling — scoped to ONE game, active only while its lobby or
 // table screen is mounted. See ensureUnoRealtime's own comment for why
@@ -304,6 +326,13 @@ let _rtUnoGameId = '';
 interface GameState {
   incomingChallenges: GameSession[];
   outgoingChallenges: GameSession[];
+  // Every 'active' session the current member participates in, across the
+  // whole family — powers a "resume game" card on the Hub (live-requested:
+  // resuming a force-closed app previously required already knowing the
+  // sessionId, since it's only ever a navigation param, never a persisted
+  // "which game was I in" pointer). Distinct from activeSession (singular),
+  // which is only ever set once a specific game SCREEN is open.
+  myActiveSessions: GameSession[];
   activeSession: GameSession | null;
   leaderboard: Record<string, GameScore[]>;   // key: `${gameType}:${difficulty}`
 
@@ -314,6 +343,14 @@ interface GameState {
   arcadeStats: Record<string, ArcadeStats>; // key: memberId
 
   lastChallengeError: string | null;
+
+  // Whether the OPPONENT's own game screen is currently mounted/online,
+  // driven by ensurePresence's Presence channel — was no such signal
+  // anywhere before (live-reported: "other person should notify that he
+  // is offline at that moement"). Undefined until ensurePresence has had
+  // its first sync, so UI can distinguish "unknown yet" from "confirmed
+  // offline" if it wants to.
+  opponentOnline: boolean | undefined;
 
   loadChallenges: (familyId: string) => Promise<void>;
   createChallenge: (gameType: GameType, difficulty: Difficulty, challengedId: string) => Promise<GameSession | null>;
@@ -333,9 +370,12 @@ interface GameState {
   loadArcadeStats: (familyId: string, memberId: string) => Promise<void>;
 
   loadSession: (sessionId: string) => Promise<void>;
+  leaveGame: (sessionId: string) => Promise<GameSession | null>;
   ensureChallengeRealtime: (familyId: string) => void;
   ensureSessionRealtime: (sessionId: string) => void;
   stopSessionRealtime: () => void;
+  ensurePresence: (sessionId: string, memberId: string) => void;
+  stopPresence: () => void;
 
   createUnoGame: (humanMemberIds: string[], aiDifficulties: ('easy' | 'medium' | 'hard')[]) => Promise<UnoGame | null>;
   loadUnoGame: (gameId: string) => Promise<void>;
@@ -351,6 +391,7 @@ interface GameState {
 export const useGameStore = create<GameState>((set, get) => ({
   incomingChallenges: [],
   outgoingChallenges: [],
+  myActiveSessions: [],
   activeSession: null,
   leaderboard: {},
   activeUnoGame: null,
@@ -358,6 +399,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   winTallies: {},
   arcadeStats: {},
   lastChallengeError: null,
+  opponentOnline: undefined,
 
   loadChallenges: async (familyId) => {
     const activeMemberId = getActiveMemberId();
@@ -366,13 +408,19 @@ export const useGameStore = create<GameState>((set, get) => ({
       .from('game_sessions')
       .select('*')
       .eq('family_id', familyId)
-      .eq('status', 'pending')
+      // Was status='pending' only — 'active' sessions the member is
+      // currently in were never fetched at all, so there was no way to
+      // surface a "resume game" entry point after a force-close/relaunch
+      // dropped them back on the Hub with no memory of which sessionId
+      // they were in (live-requested: rejoin-after-close support).
+      .in('status', ['pending', 'active'])
       .or(`challenger_id.eq.${activeMemberId},challenged_id.eq.${activeMemberId}`);
     if (error || !data) { console.warn('[gameStore] loadChallenges failed', error?.message); return; }
     const sessions = data.map(fromSessionRow);
     set({
-      incomingChallenges: sessions.filter(s => s.challengedId === activeMemberId),
-      outgoingChallenges: sessions.filter(s => s.challengerId === activeMemberId),
+      incomingChallenges: sessions.filter(s => s.status === 'pending' && s.challengedId === activeMemberId),
+      outgoingChallenges: sessions.filter(s => s.status === 'pending' && s.challengerId === activeMemberId),
+      myActiveSessions: sessions.filter(s => s.status === 'active'),
     });
   },
 
@@ -597,8 +645,39 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ activeSession: fromSessionRow(data) });
   },
 
+  // Explicit "I'm done" — was NO way to end an active game at all
+  // (live-reported: "if the other person should fore exit from the game
+  // if he lost the intrest inbetween and that let tha other player also
+  // know that he is no longer in the game"). Distinct from the 30-minute
+  // silent-disconnect sweep (game-challenge-sweep/index.ts) — this fires
+  // immediately and credits the opponent as the winner, since the leaver
+  // is unambiguously the one who quit.
+  leaveGame: async (sessionId) => {
+    const activeMemberId = getActiveMemberId();
+    if (!activeMemberId) return null;
+    const { data, error } = await supabase.rpc('leave_game', {
+      p_session_id: sessionId, p_member_id: activeMemberId,
+    });
+    if (error || !data) { console.warn('[gameStore] leaveGame failed', error?.message); return null; }
+    const session = fromSessionRow(data);
+    set({ activeSession: session });
+    const opponentId = session.challengerId === activeMemberId ? session.challengedId : session.challengerId;
+    if (opponentId) {
+      notifyGameEvent('game_completed', [opponentId], activeMemberId, {
+        gameType: session.gameType, sessionId: session.id, result: 'opponent_left', winnerId: session.winnerId,
+      });
+    }
+    return session;
+  },
+
   ensureChallengeRealtime: (familyId) => {
-    if (_rtChallengeFamilyId === familyId && _rtChallengeChannel) return;
+    const activeMemberId = getActiveMemberId();
+    // Was `_rtChallengeFamilyId === familyId` only — see _rtChallengeMemberId's
+    // own comment above for why the member id must ALSO match to skip
+    // re-subscribing (a PIN-switch between two kids in the same family
+    // never changes familyId, but must still force a fresh channel since
+    // the callback closure below captures activeMemberId by value).
+    if (_rtChallengeFamilyId === familyId && _rtChallengeMemberId === activeMemberId && _rtChallengeChannel) return;
     if (_rtChallengeChannel) { supabase.removeChannel(_rtChallengeChannel); _rtChallengeChannel = null; }
     // Hot-reload-safe stale-topic sweep — same defensive pattern as
     // eventStore.ts's ensureRealtime, guards against the dev-mode "cannot
@@ -606,8 +685,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const staleTopic = `realtime:games:${familyId}`;
     supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
     _rtChallengeFamilyId = familyId;
+    _rtChallengeMemberId = activeMemberId ?? '';
 
-    const activeMemberId = getActiveMemberId();
     _rtChallengeChannel = supabase
       .channel(`games:${familyId}`)
       .on(
@@ -633,11 +712,23 @@ export const useGameStore = create<GameState>((set, get) => ({
                   ? s.outgoingChallenges.map(c => c.id === session.id ? session : c)
                   : [session, ...s.outgoingChallenges];
               }
-            } else {
-              // Left pending (accepted/declined/expired) — no longer belongs
-              // in either pending list.
+              next.myActiveSessions = s.myActiveSessions.filter(c => c.id !== session.id);
+            } else if (session.status === 'active') {
+              // Left pending (accepted) — no longer belongs in either
+              // pending list, but now belongs in myActiveSessions so the
+              // Hub's "resume game" card appears live for both players the
+              // instant a challenge is accepted, not just after a reload.
               next.incomingChallenges = s.incomingChallenges.filter(c => c.id !== session.id);
               next.outgoingChallenges = s.outgoingChallenges.filter(c => c.id !== session.id);
+              next.myActiveSessions = s.myActiveSessions.some(c => c.id === session.id)
+                ? s.myActiveSessions.map(c => c.id === session.id ? session : c)
+                : [session, ...s.myActiveSessions];
+            } else {
+              // Declined/expired/completed/abandoned — no longer belongs in
+              // any of the three lists.
+              next.incomingChallenges = s.incomingChallenges.filter(c => c.id !== session.id);
+              next.outgoingChallenges = s.outgoingChallenges.filter(c => c.id !== session.id);
+              next.myActiveSessions = s.myActiveSessions.filter(c => c.id !== session.id);
             }
             return next;
           });
@@ -647,6 +738,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           _rtChallengeChannel = null;
           _rtChallengeFamilyId = '';
+          _rtChallengeMemberId = '';
         }
       });
   },
@@ -685,6 +777,55 @@ export const useGameStore = create<GameState>((set, get) => ({
   stopSessionRealtime: () => {
     if (_rtSessionChannel) { supabase.removeChannel(_rtSessionChannel); _rtSessionChannel = null; }
     _rtSessionId = '';
+  },
+
+  // Supabase Realtime Presence — was missing entirely (live-requested:
+  // "other person should notify that he is offline at that moement").
+  // Each player's own game screen calls this while mounted; `track()`
+  // announces "I'm here" the instant the channel subscribes, and Presence's
+  // own sync/join/leave events fire automatically (server-detected, no
+  // polling) the moment the OTHER player's channel disconnects — app
+  // backgrounded, force-closed, or a genuine network drop all present the
+  // same way as a plain "leave" from this channel's perspective, which is
+  // exactly the "is the opponent's game screen live right now" signal this
+  // feature needs. Deliberately a SEPARATE channel from the postgres_changes
+  // session channel above — Presence and postgres_changes are independent
+  // Realtime primitives, mixing their handlers on one channel object works
+  // but keeping them apart keeps each one's subscribe/teardown lifecycle
+  // simple to reason about independently.
+  ensurePresence: (sessionId, memberId) => {
+    if (_rtPresenceSessionId === sessionId && _rtPresenceChannel) return;
+    if (_rtPresenceChannel) { supabase.removeChannel(_rtPresenceChannel); _rtPresenceChannel = null; }
+    const staleTopic = `realtime:presence:game:${sessionId}`;
+    supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
+    _rtPresenceSessionId = sessionId;
+
+    const recompute = (channel: ReturnType<typeof supabase.channel>) => {
+      const state = channel.presenceState<{ memberId: string }>();
+      const others = Object.values(state).flat().some(p => p.memberId && p.memberId !== memberId);
+      useGameStore.setState({ opponentOnline: others });
+    };
+
+    _rtPresenceChannel = supabase.channel(`presence:game:${sessionId}`, { config: { presence: { key: memberId } } });
+    _rtPresenceChannel
+      .on('presence', { event: 'sync' }, () => recompute(_rtPresenceChannel!))
+      .on('presence', { event: 'join' }, () => recompute(_rtPresenceChannel!))
+      .on('presence', { event: 'leave' }, () => recompute(_rtPresenceChannel!))
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await _rtPresenceChannel?.track({ memberId, onlineAt: new Date().toISOString() });
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          _rtPresenceChannel = null;
+          _rtPresenceSessionId = '';
+          useGameStore.setState({ opponentOnline: undefined });
+        }
+      });
+  },
+
+  stopPresence: () => {
+    if (_rtPresenceChannel) { supabase.removeChannel(_rtPresenceChannel); _rtPresenceChannel = null; }
+    _rtPresenceSessionId = '';
+    set({ opponentOnline: undefined });
   },
 
   createUnoGame: async (humanMemberIds, aiDifficulties) => {

@@ -75,6 +75,14 @@ const SECTIONS: AdminSection[] = [
     route: '/admin/broadcast',
     accent: 'primary',
   },
+  {
+    id: 'legal-documents',
+    label: 'Legal Documents',
+    subtitle: 'Edit Terms of Service text, live for every user',
+    icon: 'document-text-outline',
+    route: '/admin/legal-documents',
+    accent: 'accent',
+  },
 ];
 
 const ACCENT_LIGHT_KEY: Record<AdminSection['accent'], string> = {

@@ -18,6 +18,16 @@ interface RingPayload {
   category?: string;
   notes?: string;
   location?: string;
+  // The event's own member_id resolved to a name — who the event is ABOUT
+  // (e.g. the kid being dropped off/picked up), distinct from recipientName
+  // (whoever's own device this specific push reaches, i.e. the driver).
+  // Was missing entirely, so the native "ride" greeting had only the raw
+  // event title to work with and produced backwards phrasing like "Your
+  // ride for Drop off Jas is coming up" when read out TO the driver
+  // (live-reported: "i heard greeting for jas and asking drop time for to
+  // drop jas. which is weired" — wants the greeting to name Jas correctly
+  // as who's being dropped off, not conflated with the recipient).
+  subjectName?: string;
 }
 
 // ─── iOS: APNs PushKit via JWT (ES256) provider auth ──────────────────────────
@@ -105,6 +115,7 @@ async function sendApnsVoip(token: string, payload: RingPayload, recipientName?:
     ...(payload.category ? { category: payload.category } : {}),
     ...(payload.notes ? { notes: payload.notes } : {}),
     ...(payload.location ? { location: payload.location } : {}),
+    ...(payload.subjectName ? { subjectName: payload.subjectName } : {}),
   });
 
   try {
@@ -212,6 +223,7 @@ async function sendFcmDataMessage(token: string, payload: RingPayload, recipient
             ...(payload.category ? { category: payload.category } : {}),
             ...(payload.notes ? { notes: payload.notes } : {}),
             ...(payload.location ? { location: payload.location } : {}),
+            ...(payload.subjectName ? { subjectName: payload.subjectName } : {}),
           },
         },
       }),

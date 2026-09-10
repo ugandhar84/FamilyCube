@@ -41,6 +41,15 @@ interface RingTarget {
   category?: string | null;
   notes?: string | null;
   location?: string | null;
+  // The event's own member_id — who the event is ABOUT (e.g. the kid being
+  // dropped off/picked up), as distinct from memberIds' driver/helper who
+  // actually gets rung. Was previously not carried at all past dueEvents,
+  // so the native call greeting had no way to say "drop off Jas" — it only
+  // ever had the event's own title to work with, producing backwards
+  // phrasing like "Your ride for Drop off Jas is coming up" when read out
+  // to the driver (live-reported: "i heard greeting for jas and asking
+  // drop time for to drop jas. which is weired").
+  subjectMemberId?: string | null;
 }
 
 // due_time/start_time are stored as display strings from the app's time
@@ -196,7 +205,7 @@ serve(async (req) => {
       }
     }
 
-    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[]; notes?: string | null; location?: string | null }[] = [];
+    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[]; notes?: string | null; location?: string | null; subjectMemberId?: string | null }[] = [];
     for (const e of (events ?? [])) {
       if (!e.start_time) continue;
       const t24 = to24Hour(e.start_time);
@@ -205,7 +214,7 @@ serve(async (req) => {
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);
-        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null });
+        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null, subjectMemberId: e.member_id ?? null });
       }
     }
 
@@ -237,6 +246,7 @@ serve(async (req) => {
           category: (e as any).category ?? null,
           notes: e.notes ?? null,
           location: e.location ?? null,
+          subjectMemberId: e.subjectMemberId ?? null,
         });
       }
     }
@@ -344,6 +354,10 @@ serve(async (req) => {
             memberNames: memberIds.map((id: string) => nameOf2[id]).filter(Boolean),
             location: !isChore ? (source.location ?? undefined) : undefined,
             notes: (isChore ? source.description : source.notes) ?? undefined,
+            // Same subjectName as the original ring — see RingTarget's own
+            // subjectMemberId comment. source.member_id is the event's own
+            // "who this is about" column; only meaningful for events.
+            subjectName: (!isChore && source.member_id) ? (nameOf2[source.member_id] ?? undefined) : undefined,
           });
         }
 
@@ -504,6 +518,10 @@ serve(async (req) => {
         category: t.category ?? undefined,
         notes: t.notes ?? undefined,
         location: t.location ?? undefined,
+        // subjectMemberId is already part of t.memberIds' driver/helper/
+        // passenger union, so nameOf already has it resolved — no extra
+        // query needed. Only meaningful for events (chores never set this).
+        subjectName: t.subjectMemberId ? (nameOf[t.subjectMemberId] ?? undefined) : undefined,
       });
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
       // The claim row (item_type,item_id,due_at) was already written

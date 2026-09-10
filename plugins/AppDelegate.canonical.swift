@@ -545,6 +545,7 @@ FirebaseApp.configure()
     let location      = d.string(forKey: "familycube_call_location_\(callUUID)")
     let category      = d.string(forKey: "familycube_call_category_\(callUUID)") ?? ""
     let dueAtIso      = d.string(forKey: "familycube_call_dueAtIso_\(callUUID)") ?? ""
+    let subjectName   = d.string(forKey: "familycube_call_subject_\(callUUID)")
 
     // ── Time-of-day aware greeting ─────────────────────────────────────────
     let greeting = timeOfDayGreeting()
@@ -645,7 +646,32 @@ FirebaseApp.configure()
           if lowerTitle.hasPrefix(prefix) { rideTitle = String(title.dropFirst(prefix.count)); break }
         }
         let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
-        mainLine = "Your ride for \(rideTitle) is\(u.isEmpty ? " coming up" : u)."
+        // subjectName (the event's own member_id — who this ride is ABOUT,
+        // e.g. Jas) is who's actually being dropped off/picked up; the
+        // person this call is ringing is the driver, a DIFFERENT person.
+        // Was: "Your ride for [title] is coming up" read out to the
+        // driver regardless — nonsensical for a title like "Drop off Jas"
+        // (live-reported: "i heard greeting for jas and asking drop time
+        // for to drop jas. which is weired"). Detect drop-off vs. pick-up
+        // from the title's own verb (same verbPrefixes list chores use, a
+        // subset of it applies to ride titles too) so the driver hears the
+        // correct action, not a generic "ride."
+        // Only use subjectName when it's someone OTHER than who's being
+        // rung — a teen with their own ride reminder has subjectName ==
+        // recipientName (they're both the driver AND the passenger), where
+        // "Time to drop off [their own name]" would be nonsensical; the
+        // original generic phrasing is correct for that case.
+        if let subject = subjectName, !subject.isEmpty, subject != name {
+          if lowerTitle.hasPrefix("drop off ") || lowerTitle.hasPrefix("drop ") {
+            mainLine = "Time to drop off \(subject)\(u.isEmpty ? "" : u)."
+          } else if lowerTitle.hasPrefix("pick up ") || lowerTitle.hasPrefix("pickup ") {
+            mainLine = "Time to pick up \(subject)\(u.isEmpty ? "" : u)."
+          } else {
+            mainLine = "Time for \(subject)'s ride — \(rideTitle)\(u)."
+          }
+        } else {
+          mainLine = "Your ride for \(rideTitle) is\(u.isEmpty ? " coming up" : u)."
+        }
       case "work":
         let u = urgencyPhrase.isEmpty ? "" : " \(urgencyPhrase)"
         mainLine = "Work reminder: \(title)\(u)."
@@ -776,6 +802,14 @@ FirebaseApp.configure()
     let category      = data["category"]      as? String
     let notes         = data["notes"]         as? String
     let location      = data["location"]      as? String
+    // Who the event is ABOUT (e.g. the kid being dropped off/picked up),
+    // distinct from recipientName (whoever's device this call is actually
+    // ringing, i.e. the driver) — see RingPayload.subjectName's own comment
+    // server-side. Was missing entirely, so speakReminder's "ride" phrasing
+    // only had the raw event title to fall back on (live-reported: "i
+    // heard greeting for jas and asking drop time for to drop jas. which
+    // is weired").
+    let subjectName   = data["subjectName"]   as? String
 
     let d = UserDefaults.standard
     d.set(itemType,   forKey: "familycube_call_itemType_\(callUUID)")
@@ -786,6 +820,7 @@ FirebaseApp.configure()
     if let v = category      { d.set(v, forKey: "familycube_call_category_\(callUUID)") }
     if let v = notes         { d.set(v, forKey: "familycube_call_notes_\(callUUID)") }
     if let v = location      { d.set(v, forKey: "familycube_call_location_\(callUUID)") }
+    if let v = subjectName   { d.set(v, forKey: "familycube_call_subject_\(callUUID)") }
 
     RNCallKeep.reportNewIncomingCall(
       callUUID,

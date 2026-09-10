@@ -1,26 +1,12 @@
-import { useEffect, useState } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '@/lib/ThemeContext';
-import BackButton from '@/components/BackButton';
-import { useAuthStore } from '@/store/authStore';
-import { showAlert } from '@/components/AppAlert';
-import { supabase } from '@/lib/supabase';
-import { TYPO } from '@/constants/theme';
-
-// Fallback only — the real, editable copy now lives in the legal_documents
-// DB table (slug 'terms_of_service'), fetched via useTermsContent() below
-// [live-requested: "i want this terms to be in the DB.. not in the UI
-// itself so i can modify whenever is required"]. This constant is what
-// renders if that fetch fails (offline, RLS hiccup, etc.) — Terms must
-// always show SOMETHING rather than a blank screen — and is also what the
-// DB row was originally seeded from
-// (20260949200000_seed_terms_of_service.sql).
-export const TERMS_CONTENT_FALLBACK = `FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
+-- Seeds legal_documents with the current Terms of Service text
+-- (moved out of features/onboarding/screens/TermsScreen.tsx's hardcoded
+-- TERMS_CONTENT constant) so it's immediately editable from the admin
+-- console after this migration runs.
+insert into public.legal_documents (slug, title, content, version)
+values (
+  'terms_of_service',
+  'Family Cube — Terms of Service, Privacy Policy & AI Disclosure',
+  $TERMS_SEED$FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
 
 Last updated: September 2026 | Version 2.1
 
@@ -202,160 +188,10 @@ You agree to indemnify and hold harmless PeopleOnTech LLC from third-party claim
 15.8 Contact. Questions about these Terms can be sent through the App's support channel.
 
 
-© 2026 PeopleOnTech LLC. All rights reserved. Family Cube is a trademark of PeopleOnTech LLC.`;
-
-// Shared by every Terms render site (this screen's own accept-flow,
-// TermsViewerScreen.tsx, ProfileSettingsScreen's TermsContentBody) so all
-// three always show the identical live copy, with the identical fallback
-// behavior if the fetch fails.
-export function useTermsContent() {
-  const [content, setContent] = useState(TERMS_CONTENT_FALLBACK);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('legal_documents')
-        .select('content')
-        .eq('slug', 'terms_of_service')
-        .maybeSingle();
-      if (cancelled) return;
-      if (!error && data?.content) setContent(data.content);
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  return { content, loading };
-}
-
-export default function TermsScreen() {
-  const { colors, isDark } = useTheme();
-  const { acceptTermsOnly } = useAuthStore();
-  const { content: termsContent } = useTermsContent();
-  const [accepted, setAccepted] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const handleAccept = async () => {
-    if (!accepted || loading) return;
-    setLoading(true);
-    try {
-      // acceptTermsOnly (not acceptTerms) — this is the mid-flow terms
-      // acceptance, BEFORE the user has created or joined a family.
-      // acceptTerms() also stamps onboarding_completed: true, which was
-      // wrong here: signing out anywhere between this screen and
-      // CompleteProfileScreen's real completeOnboarding() call, then
-      // signing back in, made _layout.tsx's routing see
-      // onboarding_completed=true with zero family members and route
-      // straight to /(tabs) — which immediately bounced back to
-      // /onboarding once (tabs)/_layout.tsx's own family-check effect
-      // found no members, producing a confusing blank-screen-then-
-      // tutorial flash (reported live). acceptTermsOnly leaves
-      // onboarding_completed false until CompleteProfileScreen's
-      // completeOnboarding() actually runs at the true end of the flow.
-      await acceptTermsOnly();
-      router.replace('/onboarding/family-choice');
-    } catch (e: any) {
-      // Was a silent no-op catch — a failed write (RLS denial, network
-      // error) left the user staring at an unresponsive Accept button
-      // with no explanation, and terms_accepted never actually got set,
-      // so the next app launch routed straight back to /onboarding even
-      // though the user believed they'd already completed it (reported:
-      // "completed onboarding multiple times, still asking").
-      console.error('[TermsScreen] acceptTermsOnly failed:', e?.message, e);
-      showAlert('Something went wrong', e?.message ?? 'Could not save your acceptance. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <View style={[s.root, { backgroundColor: colors.background }]}>
-      <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-
-        {/* Back */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-          <BackButton onPress={() => router.replace('/onboarding')} />
-        </View>
-
-        {/* Header */}
-        <View style={s.header}>
-          <View style={[s.iconBadge, { backgroundColor: isDark ? '#1E1535' : '#EDE9FC' }]}>
-            <Ionicons name="document-text-outline" size={24} color="#7C5CBF" />
-          </View>
-          <Text style={[s.title, { color: colors.textPrimary }]}>Terms & Conditions</Text>
-          <Text style={[s.sub, { color: colors.textSecondary }]}>
-            Please read and accept our terms before continuing.
-          </Text>
-        </View>
-
-        {/* Scrollable content */}
-        <View style={[s.card, { backgroundColor: isDark ? '#1A1230' : '#F9F7FF', borderColor: isDark ? '#2D2450' : '#E2D9FA' }]}>
-          <ScrollView
-            style={s.scroll}
-            contentContainerStyle={s.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={[s.content, { color: colors.textSecondary }]}>{termsContent}</Text>
-          </ScrollView>
-        </View>
-
-        {/* Accept checkbox */}
-        <TouchableOpacity
-          style={s.checkRow}
-          onPress={() => setAccepted(!accepted)}
-          activeOpacity={0.7}
-        >
-          <View style={[
-            s.checkbox,
-            {
-              borderColor: accepted ? colors.primary : (isDark ? '#4A3D70' : '#C4B8F0'),
-              backgroundColor: accepted ? colors.primary : 'transparent',
-            },
-          ]}>
-            {accepted && <Ionicons name="checkmark" size={14} color="white" />}
-          </View>
-          <Text style={[s.checkLabel, { color: colors.textPrimary }]}>
-            I have read and agree to the{' '}
-            <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Terms & Conditions</Text>
-          </Text>
-        </TouchableOpacity>
-
-        {/* CTA */}
-        <TouchableOpacity
-          style={[s.btn, { backgroundColor: accepted ? colors.primary : (isDark ? '#2D2450' : '#D9CEFF'), opacity: loading ? 0.7 : 1 }]}
-          onPress={handleAccept}
-          disabled={!accepted || loading}
-          activeOpacity={0.85}
-        >
-          {loading
-            ? <ActivityIndicator color="white" />
-            : <Text style={[s.btnTxt, { color: accepted ? 'white' : (isDark ? '#5A4D80' : '#9370E0') }]}>
-                Accept & Continue
-              </Text>
-          }
-        </TouchableOpacity>
-
-      </SafeAreaView>
-    </View>
-  );
-}
-
-const s = StyleSheet.create({
-  root: { flex: 1 },
-  safe: { flex: 1, paddingHorizontal: 20 },
-  header: { alignItems: 'center', paddingTop: 16, paddingBottom: 16, gap: 8 },
-  iconBadge: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: TYPO.title, fontWeight: '800', letterSpacing: -0.3 },
-  sub: { fontSize: TYPO.body, textAlign: 'center', lineHeight: 20 },
-  card: { flex: 1, borderRadius: 18, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 18 },
-  content: { fontSize: TYPO.body, lineHeight: 21 },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  checkLabel: { flex: 1, fontSize: TYPO.body, lineHeight: 20 },
-  btn: { paddingVertical: 16, borderRadius: 18, alignItems: 'center', marginBottom: 8 },
-  btnTxt: { fontSize: TYPO.subheading, fontWeight: '700', letterSpacing: 0.2 },
-});
+© 2026 PeopleOnTech LLC. All rights reserved. Family Cube is a trademark of PeopleOnTech LLC.$TERMS_SEED$,
+  '2.1'
+)
+on conflict (slug) do update set
+  content = excluded.content,
+  version = excluded.version,
+  updated_at = now();

@@ -40,7 +40,7 @@ import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { localDateStr, fmtDate } from '@/lib/dates';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
-import { TERMS_CONTENT } from '@/features/onboarding/screens/TermsScreen';
+import { useTermsContent } from '@/features/onboarding/screens/TermsScreen';
 import DataRecoveryScreen from '@/features/profile/DataRecoveryScreen';
 
 // Same category buckets family-notifier's own categoryFor() groups every
@@ -90,18 +90,19 @@ function SectionHeader({ label, colors }: { label: string; colors: any }) {
   );
 }
 
-// Same real TERMS_CONTENT the phone's own TermsViewerScreen route shows —
+// Same live legal_documents copy every other Terms render site shows —
 // exported so kiosk can render it inside its own side drawer instead of
 // router.push'ing that full-screen route [live-requested: "tems and
 // prviacy should show side bar"].
 export function TermsContentBody({ colors }: { colors: any }) {
+  const { content: termsContent } = useTermsContent();
   return (
     <View style={{
       borderRadius: 16, borderWidth: 1, borderColor: colors.border,
       backgroundColor: colors.card, padding: 16,
     }}>
       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 20 }}>
-        {TERMS_CONTENT}
+        {termsContent}
       </Text>
     </View>
   );

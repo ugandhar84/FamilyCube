@@ -374,3 +374,54 @@ export async function setFeaturePaywallAssignment(featureKey: string, groupId: s
     );
   if (error) throw new Error(error.message);
 }
+
+// ── Legal documents ──────────────────────────────────────────────────────────
+// Terms of Service (and any future doc, keyed by slug) editable at runtime
+// from the admin console instead of hardcoded in app source
+// [live-requested: "i want this terms to be in the DB.. not in the UI
+// itself so i can modify whenever is required"]. Any authenticated user
+// can read; only an app admin can write (RLS in
+// 20260949100000_legal_documents.sql).
+
+export type LegalDocumentRow = {
+  slug: string;
+  title: string;
+  content: string;
+  version: string;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export async function getLegalDocument(slug: string): Promise<LegalDocumentRow | null> {
+  const { data, error } = await supabase
+    .from('legal_documents')
+    .select('slug, title, content, version, updated_by, updated_at')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as LegalDocumentRow | null;
+}
+
+export async function getAllLegalDocuments(): Promise<LegalDocumentRow[]> {
+  const { data, error } = await supabase
+    .from('legal_documents')
+    .select('slug, title, content, version, updated_by, updated_at')
+    .order('title', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as LegalDocumentRow[];
+}
+
+export async function updateLegalDocument(
+  slug: string,
+  updates: { title?: string; content?: string; version?: string },
+  updatedByMemberId: string | null,
+): Promise<LegalDocumentRow> {
+  const { data, error } = await supabase
+    .from('legal_documents')
+    .update({ ...updates, updated_by: updatedByMemberId, updated_at: new Date().toISOString() })
+    .eq('slug', slug)
+    .select('slug, title, content, version, updated_by, updated_at')
+    .single();
+  if (error) throw new Error(error.message);
+  return data as LegalDocumentRow;
+}

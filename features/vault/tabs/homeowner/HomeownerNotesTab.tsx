@@ -13,6 +13,7 @@ import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory 
 import { SCard, CardHeader, EmptyState, StatusPill } from '../shared';
 import { AddHomeownerNoteSheet } from './AddHomeownerNoteSheet';
 import { EditHomeownerNoteSheet } from './EditHomeownerNoteSheet';
+import { CompleteNoteSheet } from './CompleteNoteSheet';
 import { CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
 import { fmtDateDisplay } from '../health/types';
 import { showAlert } from '@/components/AppAlert';
@@ -49,6 +50,7 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
   const { notes, isLoading, loadNotes, addNote, completeNote, deleteNote } = useHomeownerNotesStore();
   const [showAdd, setShowAdd] = useState(false);
   const [editNote, setEditNote] = useState<HomeownerNote | null>(null);
+  const [completingNote, setCompletingNote] = useState<HomeownerNote | null>(null);
   const [groupByCategory, setGroupByCategory] = useState(false);
 
   useEffect(() => {
@@ -82,12 +84,23 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
   const renderRow = (note: HomeownerNote) => {
     const overdue = isOverdue(note);
     const dueSoon = isDueSoon(note);
+    // Not yet within a week of the due date — Complete stays disabled
+    // rather than silently doing nothing, so a parent can tell it's
+    // gated instead of assuming the tap didn't register
+    // [live-requested: "we should not allow user to click complete
+    // until that date comes or date minus a week"].
+    const completable = !note.dueDate || dueSoon || overdue;
     return (
       <View key={note.id} style={{
         flexDirection: 'row', alignItems: 'flex-start', gap: 10,
         paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border,
       }}>
-        <TouchableOpacity onPress={() => completeNote(note.id)} hitSlop={8} style={{ marginTop: 2 }}>
+        <TouchableOpacity
+          onPress={() => completable && setCompletingNote(note)}
+          disabled={!completable}
+          hitSlop={8}
+          style={{ marginTop: 2, opacity: completable ? 1 : 0.35 }}
+        >
           <View style={{
             width: 22, height: 22, borderRadius: 11, borderWidth: 2,
             borderColor: overdue ? colors.danger : colors.teal,
@@ -237,6 +250,19 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
           onClose={() => setEditNote(null)}
         />
       )}
+
+      <CompleteNoteSheet
+        visible={!!completingNote}
+        note={completingNote}
+        colors={colors}
+        onClose={() => setCompletingNote(null)}
+        onConfirm={async (comment) => {
+          if (!completingNote) return;
+          const { error } = await completeNote(completingNote.id, comment);
+          setCompletingNote(null);
+          if (error) showAlert('Could not complete', error);
+        }}
+      />
     </ScrollView>
   );
 }

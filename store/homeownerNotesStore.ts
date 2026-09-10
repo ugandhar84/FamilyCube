@@ -20,6 +20,10 @@ export interface HomeownerNote {
   dueDate?: string;
   recurEveryDays?: number;
   completedAt?: string;
+  // Free-text note captured at completion time [live-requested: "while
+  // clicking on complete we should ask for the confirmation swith
+  // comments text"] — e.g. "used ABC HVAC, cost $180."
+  completionNotes?: string;
   photoUrl?: string;
   serialNumber?: string;
   // Purchase/install date and warranty/guarantee expiration — most useful
@@ -59,7 +63,13 @@ interface HomeownerNotesState {
     'purchaseDate' | 'warrantyExpiresDate' | 'vendorName' | 'vendorPhone' | 'vendorNotes' |
     'costCents' | 'priority' | 'room' | 'tags'
   >>) => Promise<{ error?: string }>;
-  completeNote: (id: string) => Promise<{ error?: string }>;
+  completeNote: (id: string, completionComment?: string) => Promise<{ error?: string }>;
+  // True once the due date is within a week away or already past — the
+  // window in which the "Complete" action is actually enabled
+  // [live-requested: "we should not allow user to click complete until
+  // that date comes or date minus a week"]. A note with no due date is
+  // always eligible (nothing to gate against).
+  isNoteCompletable: (note: HomeownerNote) => boolean;
   deleteNote: (id: string) => Promise<{ error?: string }>;
 }
 
@@ -73,6 +83,7 @@ function mapNote(row: any): HomeownerNote {
     dueDate: row.due_date ?? undefined,
     recurEveryDays: row.recur_every_days ?? undefined,
     completedAt: row.completed_at ?? undefined,
+    completionNotes: row.completion_notes ?? undefined,
     photoUrl: row.photo_url ?? undefined,
     serialNumber: row.serial_number ?? undefined,
     purchaseDate: row.purchase_date ?? undefined,
@@ -148,22 +159,33 @@ export const useHomeownerNotesStore = create<HomeownerNotesState>((set, get) => 
     return {};
   },
 
-  completeNote: async (id: string) => {
+  isNoteCompletable: (note: HomeownerNote) => {
+    if (!note.dueDate) return true;
+    const due = new Date(note.dueDate).getTime();
+    const eligibleFrom = due - 7 * 24 * 3600_000;
+    return Date.now() >= eligibleFrom;
+  },
+
+  completeNote: async (id: string, completionComment?: string) => {
     const note = get().notes.find(n => n.id === id);
     if (!note) return { error: 'Note not found' };
+    if (!get().isNoteCompletable(note)) {
+      return { error: "This isn't due yet — it can be marked complete starting one week before its due date." };
+    }
+    const completionNotes = completionComment?.trim() || null;
 
     if (note.recurEveryDays) {
       const base = note.dueDate ? new Date(note.dueDate).getTime() : Date.now();
       const nextDue = new Date(base + note.recurEveryDays * 24 * 3600_000).toISOString().slice(0, 10);
       const { data, error } = await supabase.from('homeowner_notes')
-        .update({ due_date: nextDue, completed_at: null, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        .update({ due_date: nextDue, completed_at: null, completion_notes: completionNotes, updated_at: new Date().toISOString() }).eq('id', id).select().single();
       if (error) return { error: error.message };
       set(s => ({ notes: s.notes.map(n => n.id === id ? mapNote(data) : n) }));
       return {};
     }
 
     const { data, error } = await supabase.from('homeowner_notes')
-      .update({ completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id).select().single();
+      .update({ completed_at: new Date().toISOString(), completion_notes: completionNotes, updated_at: new Date().toISOString() }).eq('id', id).select().single();
     if (error) return { error: error.message };
     set(s => ({ notes: s.notes.map(n => n.id === id ? mapNote(data) : n) }));
     return {};

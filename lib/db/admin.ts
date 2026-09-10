@@ -495,3 +495,31 @@ export async function getAiUsageTrend(bucket: AiUsageTrendBucket = 'day', days =
     bucketStart: r.bucket_start, callCount: Number(r.call_count), totalTokens: Number(r.total_tokens),
   }));
 }
+
+// ── AI chain config ──────────────────────────────────────────────────────────
+// Admin editor for the per-use-case AI fallback chain
+// (_shared/getChainConfig.ts) — [live-requested: "we should be able to
+// configure ai chain for each ai edge function"]. Reads/writes the same
+// app_settings row ('ai_chain_config') every edge function's own
+// getChainConfig() reads, admin-write-gated by
+// 20260951000000_app_settings_admin_write.sql.
+
+export type ModelSlot = { provider: string; model: string; timeoutSecs: number };
+export type AiChainConfigValue = Record<string, ModelSlot[]>;
+
+export async function getAiChainConfig(): Promise<AiChainConfigValue> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'ai_chain_config')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.value as AiChainConfigValue) ?? {};
+}
+
+export async function setAiChainConfig(value: AiChainConfigValue, updatedByMemberId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: 'ai_chain_config', value, updated_by: updatedByMemberId, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) throw new Error(error.message);
+}

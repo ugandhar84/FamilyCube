@@ -91,6 +91,14 @@ const SECTIONS: AdminSection[] = [
     route: '/admin/ai-usage',
     accent: 'kid',
   },
+  {
+    id: 'ai-chain-config',
+    label: 'AI Chain Config',
+    subtitle: 'Edit the model fallback chain for each AI use case',
+    icon: 'git-branch-outline',
+    route: '/admin/ai-chain-config',
+    accent: 'primary',
+  },
 ];
 
 const ACCENT_LIGHT_KEY: Record<AdminSection['accent'], string> = {

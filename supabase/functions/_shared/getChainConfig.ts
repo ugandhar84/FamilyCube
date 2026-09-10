@@ -14,7 +14,24 @@ export type UseCaseKey =
   | 'health_records'
   | 'pet_timeline'
   | 'general_vision'
-  | 'general_text';
+  | 'general_text'
+  // Registered here so the admin console's AI Chain Config editor
+  // (features/admin/screens/ai-chain-config.tsx) can view/edit these
+  // three use cases too [live-requested: "we should be able to configure
+  // ai chain for each ai edge function"]. ask_cube_chat/flyer_parse/
+  // grocery_receipt_parse do NOT yet read their chain from here at
+  // runtime — each still has its own inline model-selection logic
+  // (ask-cube's callModel(), parse-flyer's MODELS retry array,
+  // parse-grocery-receipt's single hardcoded call). Rerouting each one
+  // through getChainConfig()/runChain() is real, separate work (ask-cube
+  // especially, since it's tool-calling, not a single-shot generation —
+  // runChain's buildGeminiBody/buildDeepSeekMessages shape doesn't cover
+  // tool declarations) — tracked as a deliberate follow-up, not done in
+  // this pass, so this DEFAULTS entry only documents current behavior
+  // for now rather than actually controlling it yet.
+  | 'ask_cube_chat'
+  | 'flyer_parse'
+  | 'grocery_receipt_parse';
 
 export type AIChainConfig = Record<UseCaseKey, ModelSlot[]>;
 
@@ -46,6 +63,22 @@ const DEFAULTS: AIChainConfig = {
   general_text:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
                    { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
+  // Documents ask-cube/index.ts's own callModel() cascade — Claude Haiku
+  // primary, Gemini fallback, DeepSeek final fallback. Not yet wired to
+  // actually control ask-cube's runtime behavior (see UseCaseKey's own
+  // comment above).
+  ask_cube_chat:  [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', timeoutSecs: 20 },
+                   { provider: 'gemini',    model: 'gemini-2.5-flash',          timeoutSecs: 20 },
+                   { provider: 'deepseek',  model: 'deepseek-chat',             timeoutSecs: 20 }],
+  // Documents parse-flyer/index.ts's own MODELS retry array — 3x
+  // gemini-2.5-flash at 35s each. Not yet wired to control runtime.
+  flyer_parse:    [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 },
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 },
+                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 }],
+  // Documents parse-grocery-receipt/index.ts's single hardcoded Gemini
+  // call (no retry/timeout wrapper exists there today — 30s picked as a
+  // sane default to register here). Not yet wired to control runtime.
+  grocery_receipt_parse: [{ provider: 'gemini', model: 'gemini-2.5-flash', timeoutSecs: 30 }],
 };
 
 let cached: AIChainConfig | null = null;
@@ -130,6 +163,37 @@ export async function callGeminiSlot(
   return { text, provider: 'gemini', model: slot.model };
 }
 
+// Call Anthropic Messages API — added so an 'anthropic' slot in a chain
+// (e.g. ask_cube_chat's primary) can actually be exercised once a caller
+// routes through runChain(); ask-cube itself doesn't yet (see
+// UseCaseKey's own comment on why).
+export async function callAnthropicSlot(
+  slot: ModelSlot,
+  messages: { role: string; content: string }[],
+  anthropicKey: string,
+  tag: string,
+): Promise<CallResult> {
+  const systemMsg = messages.find(m => m.role === 'system');
+  const rest = messages.filter(m => m.role !== 'system').map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content,
+  }));
+  const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: slot.model, max_tokens: 4096, system: systemMsg?.content, messages: rest }),
+  }, slot.timeoutSecs * 1000);
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`[${tag}] anthropic/${slot.model} HTTP ${res.status}: ${errBody.slice(0, 120)}`);
+  }
+  const j = await res.json();
+  const textBlock = (j.content ?? []).find((b: any) => b.type === 'text');
+  const text: string = textBlock?.text ?? '';
+  if (!text) throw new Error(`[${tag}] anthropic/${slot.model} returned empty content`);
+  return { text, provider: 'anthropic', model: slot.model };
+}
+
 // Call DeepSeek chat/completions with an OpenAI-compatible body.
 export async function callDeepSeekSlot(
   slot: ModelSlot,
@@ -161,6 +225,7 @@ export async function runChain(
   opts: {
     geminiKey?: string;
     deepseekKey?: string;
+    anthropicKey?: string;
     tag: string;
     buildGeminiBody: (slot: ModelSlot) => object;
     buildDeepSeekMessages: (slot: ModelSlot) => { role: string; content: string }[];
@@ -177,6 +242,10 @@ export async function runChain(
       if (slot.provider === 'deepseek') {
         if (!opts.deepseekKey) { errors.push(`deepseek/${slot.model}: no API key`); continue; }
         return await callDeepSeekSlot(slot, opts.buildDeepSeekMessages(slot), opts.deepseekKey, opts.tag, opts.deepseekExtra);
+      }
+      if (slot.provider === 'anthropic') {
+        if (!opts.anthropicKey) { errors.push(`anthropic/${slot.model}: no API key`); continue; }
+        return await callAnthropicSlot(slot, opts.buildDeepSeekMessages(slot), opts.anthropicKey, opts.tag);
       }
       errors.push(`${slot.provider}/${slot.model}: unsupported provider`);
     } catch (e: any) {

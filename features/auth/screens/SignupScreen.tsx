@@ -2,9 +2,8 @@ import { showAlert } from '@/components/AppAlert';
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
+  Platform, Alert, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
@@ -19,6 +18,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { markPendingTermsAcceptance } from '@/lib/biometrics';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
+import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
+import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
 import { RADIUS, SPACING , TYPO } from '@/constants/theme';
 
 function friendlyAuthError(msg: string): string {
@@ -279,13 +280,16 @@ export default function SignupScreen() {
     }
   };
 
-  const s = makeStyles(colors);
+  const scale = useAuthScale();
+  const s = makeStyles(colors, scale);
 
   return (
-    <SafeAreaView style={s.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-
+    <ResponsiveAuthContainer
+      backgroundColor={colors.background}
+      keyboardAvoiding
+      contentContainerStyle={s.scroll}
+      scrollViewProps={{ keyboardShouldPersistTaps: 'handled' }}
+    >
           <TouchableOpacity onPress={() => router.back()} style={s.back}>
             <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -304,7 +308,7 @@ export default function SignupScreen() {
                 ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
                 : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
               cornerRadius={RADIUS.md}
-              style={{ height: 52, marginBottom: SPACING.sm }}
+              style={{ height: 52 * scale.control, marginBottom: SPACING.sm * scale.space }}
               onPress={handleAppleSignup}
             />
           ) : (
@@ -433,70 +437,67 @@ export default function SignupScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ResponsiveAuthContainer>
   );
 }
 
-const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTheme>['colors']) =>
+const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTheme>['colors'], scale: AuthScale) =>
   StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    scroll: { flexGrow: 1, padding: SPACING.xxl },
-    back: { marginBottom: SPACING.xl, alignSelf: 'flex-start' },
-    header: { alignItems: 'center', marginBottom: SPACING.xl },
-    logoBrand: { width: 80, height: 80, marginBottom: SPACING.md, resizeMode: 'contain' },
-    title: { fontSize: TYPO.hero, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
-    sub: { fontSize: TYPO.body, color: colors.textSecondary, marginTop: 4 },
+    scroll: { flexGrow: 1, padding: SPACING.xxl * scale.space },
+    back: { marginBottom: SPACING.xl * scale.space, alignSelf: 'flex-start' },
+    header: { alignItems: 'center', marginBottom: SPACING.xl * scale.space },
+    logoBrand: { width: 80, height: 80, marginBottom: SPACING.md * scale.space, resizeMode: 'contain' },
+    title: { fontSize: TYPO.hero * scale.font, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
+    sub: { fontSize: TYPO.body * scale.font, color: colors.textSecondary, marginTop: 4 },
     googleBtn: {
-      height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+      height: 52 * scale.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
       borderWidth: 1, borderColor: colors.borderMed,
-      borderRadius: RADIUS.md, marginBottom: SPACING.lg,
+      borderRadius: RADIUS.md, marginBottom: SPACING.lg * scale.space,
       backgroundColor: colors.card,
     },
     appleBtn: {
-      height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-      borderRadius: RADIUS.md, marginBottom: SPACING.sm,
+      height: 52 * scale.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+      borderRadius: RADIUS.md, marginBottom: SPACING.sm * scale.space,
     },
-    appleBtnText: { fontSize: TYPO.body, fontWeight: '600' },
+    appleBtnText: { fontSize: TYPO.body * scale.font, fontWeight: '600' },
 
-    googleText: { fontSize: TYPO.body, fontWeight: '500', color: colors.textPrimary },
-    dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: SPACING.lg },
+    googleText: { fontSize: TYPO.body * scale.font, fontWeight: '500', color: colors.textPrimary },
+    dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: SPACING.lg * scale.space },
     dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-    dividerText: { fontSize: TYPO.body, color: colors.textSecondary },
+    dividerText: { fontSize: TYPO.body * scale.font, color: colors.textSecondary },
     form: { width: '100%' },
-    label: { fontSize: TYPO.body, fontWeight: '500', color: colors.textSecondary, marginBottom: 6 },
+    label: { fontSize: TYPO.body * scale.font, fontWeight: '500', color: colors.textSecondary, marginBottom: 6 },
     input: {
-      height: 50,
+      height: 50 * scale.control,
       borderWidth: 1,
       borderColor: colors.inputBorder,
       borderRadius: RADIUS.md,
-      paddingHorizontal: SPACING.lg,
-      fontSize: TYPO.body,
+      paddingHorizontal: SPACING.lg * scale.space,
+      fontSize: TYPO.body * scale.font,
       color: colors.textPrimary,
       backgroundColor: colors.inputBg,
-      marginBottom: SPACING.sm,
+      marginBottom: SPACING.sm * scale.space,
     },
-    passwordWrap: { flexDirection: 'row', marginBottom: SPACING.sm },
+    passwordWrap: { flexDirection: 'row', marginBottom: SPACING.sm * scale.space },
     eyeBtn: {
-      width: 50, height: 50,
+      width: 50 * scale.control, height: 50 * scale.control,
       borderWidth: 1, borderLeftWidth: 0,
       borderColor: colors.inputBorder,
       borderTopRightRadius: RADIUS.md, borderBottomRightRadius: RADIUS.md,
       backgroundColor: colors.inputBg,
       alignItems: 'center', justifyContent: 'center',
     },
-    checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: SPACING.sm, paddingVertical: 4 },
-    checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-    checkLabel: { flex: 1, fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 },
+    checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: SPACING.sm * scale.space, paddingVertical: 4 },
+    checkbox: { width: 20 * scale.control, height: 20 * scale.control, borderRadius: 5 * scale.control, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+    checkLabel: { flex: 1, fontSize: TYPO.caption * scale.font, color: colors.textSecondary, lineHeight: 18 * scale.font },
     btn: {
-      height: 52,
+      height: 52 * scale.control,
       backgroundColor: colors.primary,
       borderRadius: RADIUS.md,
       alignItems: 'center', justifyContent: 'center',
-      marginTop: SPACING.md,
+      marginTop: SPACING.md * scale.space,
     },
-    btnText: { color: '#fff', fontSize: TYPO.subheading, fontWeight: '700' },
-    linkBtn: { marginTop: SPACING.lg, alignItems: 'center' },
-    linkText: { fontSize: TYPO.body, color: colors.textSecondary },
+    btnText: { color: '#fff', fontSize: TYPO.subheading * scale.font, fontWeight: '700' },
+    linkBtn: { marginTop: SPACING.lg * scale.space, alignItems: 'center' },
+    linkText: { fontSize: TYPO.body * scale.font, color: colors.textSecondary },
   });

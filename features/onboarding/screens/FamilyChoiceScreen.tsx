@@ -5,9 +5,8 @@
 import { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  Dimensions, StatusBar,
+  StatusBar, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
@@ -15,11 +14,11 @@ import Svg, { Circle, Path, Rect, G, Ellipse, Polygon } from 'react-native-svg';
 import { useAuthStore } from '@/store/authStore';
 import { showAlert } from '@/components/AppAlert';
 import { LogOut } from 'lucide-react-native';
-
-const { width } = Dimensions.get('window');
+import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
+import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
 
 // ─── Hero SVG — family silhouette ─────────────────────────────────────────────
-function FamilyHeroSvg({ colors }: { colors: any }) {
+function FamilyHeroSvg({ colors, width }: { colors: any; width: number }) {
   return (
     <Svg width={width * 0.82} height={220} viewBox="0 0 340 220">
       {/* Sky gradient backdrop */}
@@ -99,6 +98,13 @@ function JoinCodeSvg({ colors }: { colors: any }) {
 export default function FamilyChoiceScreen() {
   const { colors, isDark } = useTheme();
   const signOut = useAuthStore(s => s.signOut);
+  const scale = useAuthScale();
+  const s = makeStyles(scale);
+  const { width: windowWidth } = useWindowDimensions();
+  // Hero SVG sizes off the centered content box on tablet (scale.maxWidth),
+  // not full device width — otherwise it would be oversized even inside the
+  // narrower card on a large iPad.
+  const heroBasisWidth = scale.isTablet ? scale.maxWidth : windowWidth;
 
   // This screen was previously a dead end — no back button, no sign-out —
   // for anyone who reached it and didn't actually want to create or join a
@@ -121,19 +127,24 @@ export default function FamilyChoiceScreen() {
   return (
     <View style={[s.root, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
 
-        <TouchableOpacity
-          onPress={handleSignOut}
-          style={[s.signOutBtn, { backgroundColor: colors.surface }]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <LogOut size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
+      <TouchableOpacity
+        onPress={handleSignOut}
+        style={[s.signOutBtn, { backgroundColor: colors.surface }]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <LogOut size={18} color={colors.textSecondary} />
+      </TouchableOpacity>
 
+      <ResponsiveAuthContainer
+        backgroundColor={colors.background}
+        scroll={false}
+        contentContainerStyle={s.safe}
+        edges={['top', 'bottom']}
+      >
         {/* Hero */}
         <View style={s.heroWrap}>
-          <FamilyHeroSvg colors={colors} />
+          <FamilyHeroSvg colors={colors} width={heroBasisWidth} />
         </View>
 
         {/* Headline */}
@@ -178,34 +189,33 @@ export default function FamilyChoiceScreen() {
             <Text style={[s.arrow, { color: colors.teal }]}>→</Text>
           </TouchableOpacity>
         </View>
-
-      </SafeAreaView>
+      </ResponsiveAuthContainer>
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (scale: AuthScale) => StyleSheet.create({
   root:      { flex: 1 },
-  safe:      { flex: 1, paddingHorizontal: 20 },
+  safe:      { flex: 1, paddingHorizontal: 20 * scale.space, width: '100%' },
   signOutBtn: {
     position: 'absolute', top: 12, right: 20, zIndex: 10,
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
   },
   heroWrap:  { alignItems: 'center', marginTop: 16, marginBottom: 8 },
-  headWrap:  { alignItems: 'center', marginBottom: 28 },
-  headline:  { fontSize: 30, fontWeight: '800', textAlign: 'center', lineHeight: 36, marginBottom: 8 },
-  sub:       { fontSize: TYPO.body, textAlign: 'center', lineHeight: 22, opacity: 0.8 },
-  cards:     { gap: 14 },
+  headWrap:  { alignItems: 'center', marginBottom: 28 * scale.space },
+  headline:  { fontSize: 30 * scale.font, fontWeight: '800', textAlign: 'center', lineHeight: 36 * scale.font, marginBottom: 8 },
+  sub:       { fontSize: TYPO.body * scale.font, textAlign: 'center', lineHeight: 22 * scale.font, opacity: 0.8 },
+  cards:     { gap: 14 * scale.space, width: '100%' },
   card:      {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    borderRadius: 18, padding: 18,
+    borderRadius: 18, padding: 18 * scale.space,
     borderWidth: 1.5,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
   cardText:  { flex: 1 },
-  cardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 3 },
-  cardDesc:  { fontSize: 13, lineHeight: 18, opacity: 0.75 },
-  arrow:     { fontSize: 20 },
+  cardTitle: { fontSize: 16 * scale.font, fontWeight: '700', marginBottom: 3 },
+  cardDesc:  { fontSize: 13 * scale.font, lineHeight: 18 * scale.font, opacity: 0.75 },
+  arrow:     { fontSize: 20 * scale.font },
 });

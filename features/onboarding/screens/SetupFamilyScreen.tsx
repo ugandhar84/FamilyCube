@@ -5,9 +5,8 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Image,
-  ScrollView, ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Platform, Share,
+  ActivityIndicator, Alert, Share,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/lib/ThemeContext';
@@ -20,8 +19,8 @@ import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
 import { showAlert } from '@/components/AppAlert';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
-
-const { width } = Dimensions.get('window');
+import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
+import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
 
 const AVATARS = ['👩','👨','🧑','👩‍💼','👨‍💼','🦸‍♀️','🦸‍♂️','🧙‍♀️','🧙‍♂️','🧑‍🏫','🧑‍🍳','🌟'];
 // Member's own profile-color choice — a genuine swatch picker, not app
@@ -117,8 +116,9 @@ function PinDots({ value, colors }: { value: string; colors: any }) {
   );
 }
 
-function PinPad({ value, onChange, colors }: { value: string; onChange: (v: string) => void; colors: any }) {
+function PinPad({ value, onChange, colors, scale }: { value: string; onChange: (v: string) => void; colors: any; scale: AuthScale }) {
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  const ps = makePinStyles(scale);
   return (
     <View style={ps.pad}>
       {keys.map((k, i) => k === '' ? (
@@ -142,6 +142,8 @@ function PinPad({ value, onChange, colors }: { value: string; onChange: (v: stri
 
 export default function SetupFamilyScreen() {
   const { colors, isDark } = useTheme();
+  const scale = useAuthScale();
+  const s = makeStyles(scale);
   const COLORS = [colors.primary, colors.teal, colors.amber, colors.pink, colors.danger];
   const [step, setStep]             = useState<Step>('family');
   const [familyName, setFamilyName] = useState('');
@@ -470,11 +472,14 @@ export default function SetupFamilyScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[s.root, { backgroundColor: colors.background }]}>
-        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
-
+    <>
+      <ResponsiveAuthContainer
+        backgroundColor={colors.background}
+        keyboardAvoiding
+        edges={['top', 'bottom']}
+        contentContainerStyle={s.scroll}
+        scrollViewProps={{ showsVerticalScrollIndicator: false }}
+      >
             {/* No back button/gesture past 'pin' — the family + parent
                 member already exist in the DB by the time 'invite'/'code'
                 render (handleCreate already ran), so "going back" to
@@ -577,6 +582,7 @@ export default function SetupFamilyScreen() {
                     <PinPad
                       value={pin}
                       colors={colors}
+                      scale={scale}
                       onChange={v => {
                         setPin(v);
                         if (v.length === 4) setPinStage('confirm');
@@ -590,6 +596,7 @@ export default function SetupFamilyScreen() {
                     <PinPad
                       value={pinConfirm}
                       colors={colors}
+                      scale={scale}
                       onChange={v => {
                         setPinConfirm(v);
                         if (v.length === 4) {
@@ -699,40 +706,38 @@ export default function SetupFamilyScreen() {
               </View>
             )}
 
-          </ScrollView>
-        </SafeAreaView>
-      </View>
+      </ResponsiveAuthContainer>
       <PhotoPickerSheet
         visible={showPhotoPicker} onClose={() => setShowPhotoPicker(false)}
         onTakePhoto={() => pickPhoto(true)} onChooseLibrary={() => pickPhoto(false)}
         onRemove={photoUri ? () => { setShowPhotoPicker(false); setPhotoUri(null); } : undefined}
         avatarUri={photoUri} avatarEmoji={avatar} name={name || undefined}
         colors={colors} isDark={isDark} />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (scale: AuthScale) => StyleSheet.create({
   root:         { flex: 1 },
   safe:         { flex: 1 },
-  scroll:       { paddingHorizontal: 22, paddingBottom: 40 },
+  scroll:       { paddingHorizontal: 22 * scale.space, paddingBottom: 40 * scale.space },
   back:         { paddingTop: 10, paddingBottom: 4 },
-  backText:     { fontSize: 15 },
-  center:       { alignItems: 'center', marginBottom: 16 },
-  title:        { fontSize: 26, fontWeight: '800', textAlign: 'center', marginTop: 16, marginBottom: 8 },
-  subtitle:     { fontSize: TYPO.body, textAlign: 'center', lineHeight: 22, opacity: 0.75, marginBottom: 20 },
-  label:        { fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 18, textTransform: 'uppercase', letterSpacing: 0.5, alignSelf: 'flex-start' },
-  input:        { borderRadius: 14, borderWidth: 1.5, padding: 14, fontSize: 16, width: '100%', marginBottom: 4 },
+  backText:     { fontSize: 15 * scale.font },
+  center:       { alignItems: 'center', marginBottom: 16 * scale.space },
+  title:        { fontSize: 26 * scale.font, fontWeight: '800', textAlign: 'center', marginTop: 16 * scale.space, marginBottom: 8 },
+  subtitle:     { fontSize: TYPO.body * scale.font, textAlign: 'center', lineHeight: 22 * scale.font, opacity: 0.75, marginBottom: 20 * scale.space },
+  label:        { fontSize: 13 * scale.font, fontWeight: '600', marginBottom: 8, marginTop: 18 * scale.space, textTransform: 'uppercase', letterSpacing: 0.5, alignSelf: 'flex-start' },
+  input:        { borderRadius: 14, borderWidth: 1.5, padding: 14 * scale.control, fontSize: 16 * scale.font, width: '100%', marginBottom: 4 },
   emojiGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  emojiBtn:     { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  btn:          { borderRadius: 16, paddingVertical: 15, paddingHorizontal: 28, alignItems: 'center', marginTop: 12, minWidth: 220 },
-  btnText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
-  error:        { color: '#EF4444', fontSize: 13, textAlign: 'center', marginTop: 8 },
+  emojiBtn:     { width: 48 * scale.control, height: 48 * scale.control, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  btn:          { borderRadius: 16, paddingVertical: 15 * scale.control, paddingHorizontal: 28 * scale.space, alignItems: 'center', marginTop: 12 * scale.space, minWidth: 220 * scale.control },
+  btnText:      { color: '#fff', fontSize: 16 * scale.font, fontWeight: '700' },
+  error:        { color: '#EF4444', fontSize: 13 * scale.font, textAlign: 'center', marginTop: 8 },
 });
 
-const ps = StyleSheet.create({
-  pad:          { flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center', gap: 12, marginTop: 4 },
-  padKey:       { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
-  padEmpty:     { width: 68, height: 68 },
-  padKeyText:   { fontSize: 22, fontWeight: '700' },
+const makePinStyles = (scale: AuthScale) => StyleSheet.create({
+  pad:          { flexDirection: 'row', flexWrap: 'wrap', width: 240 * scale.control, justifyContent: 'center', gap: 12, marginTop: 4 },
+  padKey:       { width: 68 * scale.control, height: 68 * scale.control, borderRadius: 34 * scale.control, alignItems: 'center', justifyContent: 'center' },
+  padEmpty:     { width: 68 * scale.control, height: 68 * scale.control },
+  padKeyText:   { fontSize: 22 * scale.font, fontWeight: '700' },
 });

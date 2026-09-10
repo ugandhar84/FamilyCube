@@ -5,9 +5,8 @@
 import { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Image,
-  ScrollView, Alert, ActivityIndicator, Dimensions, KeyboardAvoidingView, Platform,
+  Alert, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/lib/ThemeContext';
@@ -20,8 +19,8 @@ import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
 import { showAlert } from '@/components/AppAlert';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
-
-const { width } = Dimensions.get('window');
+import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
+import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
 
 const AVATARS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
 // Member's own profile-color choice — a genuine swatch picker, not app
@@ -109,6 +108,8 @@ function StepDots({ step, colors }: { step: Step; colors: any }) {
 
 export default function JoinFamilyScreen() {
   const { colors, isDark } = useTheme();
+  const scale = useAuthScale();
+  const s = makeStyles(scale);
   const COLORS = [colors.primary, colors.teal, colors.amber, colors.pink, colors.danger];
   const [step, setStep]         = useState<Step>('code');
   const [code, setCode]         = useState('');
@@ -399,11 +400,14 @@ export default function JoinFamilyScreen() {
   const card = colors.card ?? colors.surface;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[s.root, { backgroundColor: bg }]}>
-        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
-
+    <>
+      <ResponsiveAuthContainer
+        backgroundColor={bg}
+        keyboardAvoiding
+        edges={['top', 'bottom']}
+        contentContainerStyle={s.scroll}
+        scrollViewProps={{ showsVerticalScrollIndicator: false }}
+      >
             {/* Back — omitted on 'invite-check': this is a forced decision
                 (must explicitly answer whether the pending email invite is
                 them), not a step to quietly back out of past. Both its own
@@ -618,6 +622,7 @@ export default function JoinFamilyScreen() {
                     <PinPad
                       value={pin}
                       colors={colors}
+                      scale={scale}
                       onChange={v => {
                         setPin(v);
                         if (v.length === 4) setPinStage('confirm');
@@ -631,6 +636,7 @@ export default function JoinFamilyScreen() {
                     <PinPad
                       value={pinConfirm}
                       colors={colors}
+                      scale={scale}
                       onChange={v => {
                         setPinConfirm(v);
                         if (v.length === 4) {
@@ -684,16 +690,14 @@ export default function JoinFamilyScreen() {
               </View>
             )}
 
-          </ScrollView>
-        </SafeAreaView>
-      </View>
+      </ResponsiveAuthContainer>
       <PhotoPickerSheet
         visible={showPhotoPicker} onClose={() => setShowPhotoPicker(false)}
         onTakePhoto={() => pickPhoto(true)} onChooseLibrary={() => pickPhoto(false)}
         onRemove={photoUri ? () => { setShowPhotoPicker(false); setPhotoUri(null); } : undefined}
         avatarUri={photoUri} avatarEmoji={avatar} name={name || undefined}
         colors={colors} isDark={isDark} />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -713,8 +717,9 @@ function PinDots({ value, colors }: { value: string; colors: any }) {
 }
 
 // ─── PIN numpad ───────────────────────────────────────────────────────────────
-function PinPad({ value, onChange, colors }: { value: string; onChange: (v: string) => void; colors: any }) {
+function PinPad({ value, onChange, colors, scale }: { value: string; onChange: (v: string) => void; colors: any; scale: AuthScale }) {
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  const s = makeStyles(scale);
   return (
     <View style={s.pad}>
       {keys.map((k, i) => k === '' ? (
@@ -736,32 +741,32 @@ function PinPad({ value, onChange, colors }: { value: string; onChange: (v: stri
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (scale: AuthScale) => StyleSheet.create({
   root:         { flex: 1 },
   safe:         { flex: 1 },
-  scroll:       { paddingHorizontal: 22, paddingBottom: 40 },
+  scroll:       { paddingHorizontal: 22 * scale.space, paddingBottom: 40 * scale.space },
   back:         { paddingTop: 10, paddingBottom: 4 },
-  backText:     { fontSize: 15 },
-  center:       { alignItems: 'center', marginBottom: 16 },
-  title:        { fontSize: 26, fontWeight: '800', textAlign: 'center', marginTop: 16, marginBottom: 8 },
-  subtitle:     { fontSize: TYPO.body, textAlign: 'center', lineHeight: 22, opacity: 0.75, marginBottom: 20 },
-  label:        { fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 18, textTransform: 'uppercase', letterSpacing: 0.5 },
-  codeInput:    { fontSize: 32, fontWeight: '800', letterSpacing: 12, borderRadius: 16, borderWidth: 2, padding: 18, width: 240, textAlign: 'center', marginVertical: 20 },
-  input:        { borderRadius: 14, borderWidth: 1.5, padding: 14, fontSize: 16, marginBottom: 4 },
+  backText:     { fontSize: 15 * scale.font },
+  center:       { alignItems: 'center', marginBottom: 16 * scale.space },
+  title:        { fontSize: 26 * scale.font, fontWeight: '800', textAlign: 'center', marginTop: 16 * scale.space, marginBottom: 8 },
+  subtitle:     { fontSize: TYPO.body * scale.font, textAlign: 'center', lineHeight: 22 * scale.font, opacity: 0.75, marginBottom: 20 * scale.space },
+  label:        { fontSize: 13 * scale.font, fontWeight: '600', marginBottom: 8, marginTop: 18 * scale.space, textTransform: 'uppercase', letterSpacing: 0.5 },
+  codeInput:    { fontSize: 32 * scale.font, fontWeight: '800', letterSpacing: 12, borderRadius: 16, borderWidth: 2, padding: 18 * scale.control, width: 240 * scale.control, textAlign: 'center', marginVertical: 20 * scale.space },
+  input:        { borderRadius: 14, borderWidth: 1.5, padding: 14 * scale.control, fontSize: 16 * scale.font, marginBottom: 4 },
   roleRow:      { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  roleCard:     { flex: 1, borderRadius: 14, padding: 12, alignItems: 'center', gap: 4 },
-  roleLabel:    { fontSize: 13, fontWeight: '700' },
-  roleDesc:     { fontSize: 11, textAlign: 'center', opacity: 0.7 },
+  roleCard:     { flex: 1, borderRadius: 14, padding: 12 * scale.control, alignItems: 'center', gap: 4 },
+  roleLabel:    { fontSize: 13 * scale.font, fontWeight: '700' },
+  roleDesc:     { fontSize: 11 * scale.font, textAlign: 'center', opacity: 0.7 },
   emojiGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  emojiBtn:     { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  colorRow:     { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  colorDot:     { width: 32, height: 32, borderRadius: 16 },
+  emojiBtn:     { width: 48 * scale.control, height: 48 * scale.control, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  colorRow:     { flexDirection: 'row', gap: 12, marginBottom: 24 * scale.space },
+  colorDot:     { width: 32 * scale.control, height: 32 * scale.control, borderRadius: 16 * scale.control },
   colorDotActive: { borderWidth: 3, borderColor: '#fff', transform: [{ scale: 1.15 }], shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4 },
-  btn:          { borderRadius: 16, paddingVertical: 15, paddingHorizontal: 28, alignItems: 'center', marginTop: 12, minWidth: 200 },
-  btnText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
-  error:        { color: '#EF4444', fontSize: 13, textAlign: 'center', marginTop: 8 },
-  pad:          { flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center', gap: 12, marginTop: 4 },
-  padKey:       { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
-  padEmpty:     { width: 68, height: 68 },
-  padKeyText:   { fontSize: 22, fontWeight: '700' },
+  btn:          { borderRadius: 16, paddingVertical: 15 * scale.control, paddingHorizontal: 28 * scale.space, alignItems: 'center', marginTop: 12 * scale.space, minWidth: 200 * scale.control },
+  btnText:      { color: '#fff', fontSize: 16 * scale.font, fontWeight: '700' },
+  error:        { color: '#EF4444', fontSize: 13 * scale.font, textAlign: 'center', marginTop: 8 },
+  pad:          { flexDirection: 'row', flexWrap: 'wrap', width: 240 * scale.control, justifyContent: 'center', gap: 12, marginTop: 4 },
+  padKey:       { width: 68 * scale.control, height: 68 * scale.control, borderRadius: 34 * scale.control, alignItems: 'center', justifyContent: 'center' },
+  padEmpty:     { width: 68 * scale.control, height: 68 * scale.control },
+  padKeyText:   { fontSize: 22 * scale.font, fontWeight: '700' },
 });

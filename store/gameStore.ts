@@ -660,7 +660,19 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
     if (error || !data) { console.warn('[gameStore] leaveGame failed', error?.message); return null; }
     const session = fromSessionRow(data);
-    set({ activeSession: session });
+    // Was: only set activeSession — myActiveSessions (the Hub's "resume
+    // game" card list) was left untouched here, relying entirely on the
+    // family-wide games:${familyId} realtime channel to echo this same
+    // update back and clean it up. That channel may not even be
+    // subscribed right now (the leaving player is on the GAME screen, not
+    // the Hub, when they tap Leave — FamilyGamesSection, which owns that
+    // channel, might not be mounted at all), so the card kept showing a
+    // now-abandoned game as still resumable (live-reported: "as soon as i
+    // leave the game we can clear the resume game on the hub"). Remove it
+    // here directly, synchronously with the RPC's own result, instead of
+    // depending on a realtime echo that may never arrive in time (or at
+    // all, for this specific screen).
+    set(s => ({ activeSession: session, myActiveSessions: s.myActiveSessions.filter(c => c.id !== sessionId) }));
     const opponentId = session.challengerId === activeMemberId ? session.challengedId : session.challengerId;
     if (opponentId) {
       notifyGameEvent('game_completed', [opponentId], activeMemberId, {

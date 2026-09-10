@@ -324,3 +324,80 @@ export const IlloGetStarted = React.memo(function IlloGetStarted({ isDark }: Ill
     </Svg>
   );
 });
+
+// ── Family Health — a caring heart over a simple medical record card ────────
+export const IlloFamilyHealth = React.memo(function IlloFamilyHealth({ isDark }: IlloProps) {
+  const bg0 = isDark ? '#0f1f18' : '#E1EFE7';
+  const bg1 = isDark ? '#0a140f' : '#F6FBF8';
+  const shadow = isDark ? '#152820' : '#CDE7DA';
+  const card = isDark ? '#16281f' : 'white';
+  return (
+    <Svg width={width} height={ILLO_H} viewBox={`0 0 390 ${ILLO_H}`}>
+      <Defs>
+        <SvgLinearGradient id="fh-bg" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={bg0} />
+          <Stop offset="1" stopColor={bg1} />
+        </SvgLinearGradient>
+      </Defs>
+      <Rect width="390" height="240" fill="url(#fh-bg)" />
+      <Ellipse cx="195" cy="205" rx="130" ry="40" fill={shadow} />
+
+      {/* Record card */}
+      <Rect x="120" y="75" width="150" height="110" rx="16" fill={card} stroke="#00A97A" strokeWidth="3" />
+      <Rect x="140" y="98" width="90" height="9" rx="4.5" fill="#00A97A" opacity={0.35} />
+      <Rect x="140" y="118" width="70" height="9" rx="4.5" fill="#00A97A" opacity={0.2} />
+
+      {/* Heartbeat pulse line across the card */}
+      <Path d="M140 150 h20 l8 -20 l10 34 l8 -24 l6 10 h48" stroke="#F04E98" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* Heart badge, upper-right of the card, slightly overlapping */}
+      <Path
+        d="M255 70 C255 70 235 54 235 39 A14 14 0 0 1 255 27 A14 14 0 0 1 275 39 C275 54 255 70 255 70 Z"
+        fill="#F04E98"
+      />
+
+      <Circle cx="75" cy="90" r="5" fill="#00A97A" opacity={0.5} />
+      <Circle cx="315" cy="140" r="4" fill="#F5A623" opacity={0.5} />
+      <Circle cx="90" cy="170" r="3" fill="#F04E98" opacity={0.4} />
+    </Svg>
+  );
+});
+
+// ── Grocery — a shopping basket with a scanned receipt sliding in ───────────
+export const IlloGrocery = React.memo(function IlloGrocery({ isDark }: IlloProps) {
+  const bg0 = isDark ? '#241a07' : '#FEF0D3';
+  const bg1 = isDark ? '#160f03' : '#FFF9EC';
+  const shadow = isDark ? '#2E2108' : '#FDE6B8';
+  const paper = isDark ? '#241708' : 'white';
+  return (
+    <Svg width={width} height={ILLO_H} viewBox={`0 0 390 ${ILLO_H}`}>
+      <Defs>
+        <SvgLinearGradient id="gr-bg" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={bg0} />
+          <Stop offset="1" stopColor={bg1} />
+        </SvgLinearGradient>
+      </Defs>
+      <Rect width="390" height="240" fill="url(#gr-bg)" />
+      <Ellipse cx="195" cy="205" rx="130" ry="40" fill={shadow} />
+
+      {/* Basket */}
+      <Path d="M130 120 L260 120 L245 185 A16 16 0 0 1 229 198 L161 198 A16 16 0 0 1 145 185 Z" fill="#F5A623" />
+      <Path d="M155 120 L165 85 M235 120 L225 85" stroke="#B45309" strokeWidth="6" strokeLinecap="round" fill="none" />
+      <Line x1="165" y1="135" x2="175" y2="182" stroke="#B45309" strokeWidth="4" strokeLinecap="round" />
+      <Line x1="195" y1="135" x2="195" y2="182" stroke="#B45309" strokeWidth="4" strokeLinecap="round" />
+      <Line x1="225" y1="135" x2="215" y2="182" stroke="#B45309" strokeWidth="4" strokeLinecap="round" />
+
+      {/* Receipt sliding in from the top-right, slight rotation */}
+      <G transform="rotate(8 270 70)">
+        <Path d="M245 30 h50 v75 l-8 -8 l-8 8 l-8 -8 l-8 8 l-8 -8 l-8 8 Z" fill={paper} stroke="#F5A623" strokeWidth="2" />
+        <Rect x="253" y="42" width="34" height="5" rx="2.5" fill="#F5A623" opacity={0.5} />
+        <Rect x="253" y="53" width="26" height="5" rx="2.5" fill="#F5A623" opacity={0.3} />
+        <Rect x="253" y="64" width="30" height="5" rx="2.5" fill="#F5A623" opacity={0.3} />
+      </G>
+
+      <Circle cx="70" cy="90" r="5" fill="#F5A623" opacity={0.4} />
+      <Circle cx="80" cy="160" r="4" fill="#00BBA4" opacity={0.4} />
+      <Circle cx="320" cy="150" r="3" fill="#F04E98" opacity={0.4} />
+    </Svg>
+  );
+});

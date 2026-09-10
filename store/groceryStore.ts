@@ -198,6 +198,13 @@ interface GroceryState {
 
   loadPinnedStores:  (familyId: string) => Promise<void>;
   pinStoreLocation:  (params: { familyId: string; store: string; latitude: number; longitude: number; pinnedBy: string }) => Promise<void>;
+  // Was no way to remove a store's pin once set at all (live-requested:
+  // "once pin is set we should be able to modify it or delete it") —
+  // pinStoreLocation's own upsert already covers "modify" (re-pin with a
+  // new lat/lng), this covers the missing "delete" half. RLS already
+  // permits the delete (store_locations_delete policy, migration
+  // 20260908200000) — the client just never issued one.
+  unpinStoreLocation: (params: { familyId: string; store: string }) => Promise<void>;
 
   loadSavedStores: (familyId: string) => Promise<void>;
   addSavedStore:   (params: { familyId: string; name: string; createdBy: string }) => Promise<void>;
@@ -758,6 +765,17 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     }, { onConflict: 'family_id,store' });
     if (error) { console.warn('[groceryStore] pinStoreLocation error', error); return; }
     set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude } } }));
+  },
+
+  unpinStoreLocation: async ({ familyId, store }) => {
+    const { error } = await supabase.from('store_locations')
+      .delete().eq('family_id', familyId).eq('store', store);
+    if (error) { console.warn('[groceryStore] unpinStoreLocation error', error); return; }
+    set(s => {
+      const next = { ...s.pinnedStores };
+      delete next[store];
+      return { pinnedStores: next };
+    });
   },
 
   loadSavedStores: async (familyId) => {

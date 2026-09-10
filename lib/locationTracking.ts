@@ -17,8 +17,25 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { encryptLocationText } from './locationCrypto';
+
+// Persisted fallback for activeMemberId/lastFamilyId below — was IN-MEMORY
+// ONLY (module-level vars, set only by GpsTab.tsx's mount effect / the
+// tracking-toggle handler, both of which run inside the React tree). On
+// iOS, startLocationUpdatesAsync can wake/relaunch the app in a
+// background/headless JS context to deliver a fix — a fresh JS
+// evaluation resets both vars to null, and nothing outside the full
+// app-boot UI flow ever repopulates them, so the task's own
+// `if (!activeMemberId) return` guard silently no-op'd every single
+// background delivery with no error anywhere (live-reported: moved
+// >0.5 miles, map still showed the old location, no error). Storing
+// these under a plain AsyncStorage key any time they're set lets the
+// task body recover them synchronously-enough (one AsyncStorage read)
+// even when this module's own memory was wiped by a background relaunch.
+const STORAGE_KEY_MEMBER_ID = 'familycube_bg_location_member_id';
+const STORAGE_KEY_FAMILY_ID = 'familycube_bg_location_family_id';
 
 export const LOCATION_TASK_NAME = 'family-cube-background-location';
 
@@ -94,6 +111,13 @@ const MIN_DISTANCE_METERS = 80; // ~0.05 mi
 let lastFamilyId: string | null = null;
 export function setBackgroundLocationFamilyId(id: string | null) {
   lastFamilyId = id;
+  // Fire-and-forget — see STORAGE_KEY_FAMILY_ID's own comment. Never
+  // awaited/blocking: this setter is called from UI code that shouldn't
+  // wait on a disk write, and a momentary lag between the in-memory var
+  // and the persisted copy is harmless (the in-memory var is always tried
+  // first, see ensureTaskDefined below).
+  if (id) AsyncStorage.setItem(STORAGE_KEY_FAMILY_ID, id).catch(() => {});
+  else AsyncStorage.removeItem(STORAGE_KEY_FAMILY_ID).catch(() => {});
 }
 
 type TaskManagerAPI = typeof import('expo-task-manager');
@@ -257,6 +281,11 @@ export async function reportDeviceStatus(familyId: string | null | undefined): P
 let activeMemberId: string | null = null;
 export function setBackgroundLocationMemberId(id: string | null) {
   activeMemberId = id;
+  // See STORAGE_KEY_MEMBER_ID's own comment — persisted fallback for a
+  // background-relaunched JS instance where this in-memory var starts
+  // out null again.
+  if (id) AsyncStorage.setItem(STORAGE_KEY_MEMBER_ID, id).catch(() => {});
+  else AsyncStorage.removeItem(STORAGE_KEY_MEMBER_ID).catch(() => {});
 }
 
 let lastFix: { lat: number; lng: number } | null = null;
@@ -291,7 +320,19 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       console.error('[locationTracking] background task error:', error.message);
       return;
     }
-    if (!activeMemberId) return; // no signed-in member yet — nothing to attribute this to
+    // In-memory vars are null on a background-relaunched/headless JS
+    // instance (see this file's own header comment and
+    // STORAGE_KEY_MEMBER_ID's comment above) — fall back to the persisted
+    // copy before giving up. Backfills the in-memory vars too so the rest
+    // of this invocation (and any immediately-following ones in the same
+    // JS instance) can read them synchronously without hitting storage
+    // again.
+    if (!activeMemberId) activeMemberId = await AsyncStorage.getItem(STORAGE_KEY_MEMBER_ID).catch(() => null);
+    if (!lastFamilyId) lastFamilyId = await AsyncStorage.getItem(STORAGE_KEY_FAMILY_ID).catch(() => null);
+    if (!activeMemberId) {
+      console.warn('[locationTracking] background task fired with no known active member (memory + storage both empty) — skipping write');
+      return;
+    }
     const { locations } = (data as { locations: Location.LocationObject[] }) ?? { locations: [] };
     const loc = locations?.[locations.length - 1];
     if (!loc) return;
@@ -377,7 +418,17 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     const encNeighborhood = await encryptLocationText(activeMemberId, lastFamilyId, neighborhood);
 
     const now = new Date().toISOString();
-    await supabase.from('member_locations').upsert({
+    // Was fire-and-forget with the error result never even read — an RLS
+    // rejection (e.g. this task's activeMemberId/lastFamilyId disagreeing
+    // with what resolve_active_member_id() resolves from the request
+    // header, a genuinely separate "active member" tracker from this
+    // file's own — see member_locations' own RLS policy) or any other
+    // write failure vanished with zero trace anywhere, indistinguishable
+    // from a real successful update from the outside (live-reported:
+    // moved noticeably, map never updated, no error shown). Logging here
+    // doesn't fix a real RLS mismatch by itself, but makes the next
+    // occurrence actually diagnosable instead of a silent no-op.
+    const { error: upsertErr } = await supabase.from('member_locations').upsert({
       member_id: activeMemberId,
       family_id: lastFamilyId,
       lat, lng, address: encAddress,
@@ -400,14 +451,19 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // rather than only the reinstall path this column was first added for).
       share_location_enabled: true,
     }, { onConflict: 'member_id' });
+    if (upsertErr) {
+      console.error('[locationTracking] member_locations upsert failed:', upsertErr.message);
+      return;
+    }
 
     if (lastFamilyId) {
-      await supabase.from('member_location_history').insert({
+      const { error: historyErr } = await supabase.from('member_location_history').insert({
         member_id: activeMemberId, family_id: lastFamilyId,
         lat, lng, address: encAddress,
         battery_level: batteryLevel, is_charging: isCharging,
         recorded_at: now,
       });
+      if (historyErr) console.warn('[locationTracking] member_location_history insert failed:', historyErr.message);
     }
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);

@@ -36,7 +36,22 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') { setLocating(false); return; }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        // Was Accuracy.Balanced — on iOS this tier can be satisfied by a
+        // CACHED last-known Core Location fix instead of forcing a fresh
+        // GPS lock. This marker's coordinate becomes the STORE's saved
+        // location if the user never repositions it before tapping
+        // "Pin It" — a stale cached fix from wherever the phone last had a
+        // lock (which could genuinely be "near the store" from an earlier
+        // visit) would silently save the store at the wrong spot, then
+        // immediately geofence-trigger "near the store" the next time
+        // ANY fresh fix (even a correct one) happens to still be close to
+        // that stale point (live-reported: pinned a store 4 miles away,
+        // app said "near the store" as soon as the pin was set). Highest
+        // forces Core Location to produce a genuinely current fix rather
+        // than accepting a cached one — this is a one-time picker-open
+        // call, not a background/battery-sensitive polling loop, so the
+        // extra accuracy cost here is negligible.
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
         const r = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 };
         setRegion(r);
         setMarker({ latitude: r.latitude, longitude: r.longitude });

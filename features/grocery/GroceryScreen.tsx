@@ -31,6 +31,7 @@ import { useQuestStore } from '@/store/choreAdapter';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import { PinStoreLocationSheet } from './components/PinStoreLocationSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
+import { showAlert } from '@/components/AppAlert';
 
 import { AddItemSheet } from './components/AddItemSheet';
 import { CreateRunSheet } from './components/CreateRunSheet';
@@ -56,7 +57,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
-  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning, loadPinnedStores, pinnedStores, pinStoreLocation } = useGroceryStore();
+  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning, loadPinnedStores, pinnedStores, pinStoreLocation, unpinStoreLocation } = useGroceryStore();
 
   const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
@@ -210,6 +211,25 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
+
+  // Was no way to remove a store's pin once set (live-requested: "once
+  // pin is set we should be able to modify it or delete it") — "modify"
+  // is already covered by re-opening PinStoreLocationSheet (its onPin is
+  // an upsert), this is the missing "delete" half. Re-registers geofences
+  // afterward so the removed region actually stops monitoring — same
+  // pattern the pin flow itself already uses.
+  const handleUnpinStore = (store: string) => {
+    showAlert('Remove pin?', `${store} will no longer notify nearby family members.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive',
+        onPress: async () => {
+          await unpinStoreLocation({ familyId, store });
+          if (activeMemberId) registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+        },
+      },
+    ]);
+  };
 
   useEffect(() => {
     load(familyId);
@@ -584,6 +604,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             isDark={isDark}
             pinnedStores={geofencingEnabled ? pinnedStores : undefined}
             onPinStore={geofencingEnabled ? (store) => setPinningStore(store) : undefined}
+            onUnpinStore={geofencingEnabled ? handleUnpinStore : undefined}
             onAutoScroll={handleAutoScroll}
             familyId={familyId}
             activeMemberId={activeMemberId ?? ''}

@@ -672,10 +672,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
         onAddTask={() => setShowTaskComposer(true)} />
 
-      <FamilyGamesSection colors={colors} isDark={isDark} />
-
-      <HomeownerNotesSection colors={colors} />
-
       <TodayView
         colors={colors}
         isDark={isDark}
@@ -803,6 +799,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           revokeTemporaryApprover={revokeTemporaryApprover}
         />
       </View>
+
+      {/* Family Games + Homeowner Notes moved to the end of the page —
+          [live-requested: "move family game and this one to the end of
+          the page"] — everything above is daily-driver family-management
+          content; these two are lower-frequency side features. */}
+      <FamilyGamesSection colors={colors} isDark={isDark} />
+
+      <HomeownerNotesSection colors={colors} />
 
       <PushbackSheet
         target={pushbackSheet} colors={colors} isDark={isDark}

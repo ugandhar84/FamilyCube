@@ -469,6 +469,19 @@ interface ChatState {
   // Internal: called by realtime handler
   _upsertMessage: (channelId: string, msg: ChatMessage) => void;
   _removeMessage: (channelId: string, msgId: string) => void;
+
+  // Tears down every live subscription (per-channel + the global unread
+  // listener) and clears all in-memory chat state — previously nothing
+  // called this on sign-out at all, so switching accounts on the same
+  // device left the PREVIOUS account's family chat sitting in memory
+  // (and its realtime subscriptions still live) until a full app
+  // restart re-synced everything from scratch [live-reported: "why
+  // ugandhars family chats sarah family is seeing" — one family logged
+  // in, logged out, a different family logged in on the same device].
+  // Matches the same "reset every store on sign-out" pattern
+  // authStore.signOut() already uses for familyStore/subscriptionStore/
+  // preferenceStore/notifStore.
+  reset: () => void;
 }
 
 // ─── Default channel state ────────────────────────────────────────────────────
@@ -840,6 +853,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const sub = get()._subs[channelId];
     if (sub) { supabase.removeChannel(sub); }
     set(s => { const subs = { ...s._subs }; delete subs[channelId]; return { _subs: subs }; });
+  },
+
+  reset: () => {
+    for (const sub of Object.values(get()._subs)) {
+      if (sub) supabase.removeChannel(sub as any);
+    }
+    if (_globalUnreadSub) { supabase.removeChannel(_globalUnreadSub); _globalUnreadSub = null; }
+    _globalUnreadMemberId = null;
+    _openChannelId = null;
+    set({ channels: {}, _subs: {}, lastActivity: {}, readReceipts: {}, unreadCounts: {} });
   },
 
   // ── Send ──────────────────────────────────────────────────────────────────

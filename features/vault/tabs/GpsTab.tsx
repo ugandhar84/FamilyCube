@@ -21,7 +21,7 @@ import { useUIStore } from '@/store/uiStore';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { CardHeader, StatusPill, MemberAvatar } from './shared';
+import { CardHeader, StatusPill } from './shared';
 
 type LocStatus = 'at_home' | 'at_school' | 'at_work' | 'in_transit' | 'at_activity';
 
@@ -616,51 +616,12 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           animated height so it grows/shrinks in lockstep as the sheet is
           dragged. */}
       <Animated.View style={{ height: Animated.subtract(SCREEN_H, sheetHeight), overflow: 'hidden' }}>
-        {/* Find-My-style avatar strip floating over the top of the map —
-            live-requested: "we can also utilize the header space for map
-            similar like iPhone find me". Tapping a member animates the
-            camera to their pin, same 650ms animateToRegion the auto-fit
-            effect above already uses. Only pinned (live-location) members
-            appear here — someone with no lat/lng has nowhere to center
-            the map on; they're still reachable via the roster sheet below. */}
-        {pinned.length > 0 && (
-          <ScrollView
-            horizontal showsHorizontalScrollIndicator={false}
-            style={{ position: 'absolute', top: 8, left: 0, right: 0, zIndex: 10 }}
-            contentContainerStyle={{ paddingHorizontal: 12, gap: 10 }}
-          >
-            {pinned.map(loc => {
-              const rc = roleColor(loc.role);
-              const isMe = loc.member_id === activeMemberId;
-              return (
-                <TouchableOpacity
-                  key={loc.member_id}
-                  onPress={() => {
-                    if (loc.lat == null || loc.lng == null) return;
-                    const r = { latitude: loc.lat, longitude: loc.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
-                    mapRef.current?.animateToRegion(r, 650);
-                  }}
-                  style={{ alignItems: 'center', gap: 3 }}
-                >
-                  <View style={{
-                    padding: 2, borderRadius: 22, backgroundColor: colors.card,
-                    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 3,
-                  }}>
-                    <MemberAvatar name={loc.name} color={rc} size={40} />
-                  </View>
-                  <View style={{
-                    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
-                    backgroundColor: colors.card, maxWidth: 64,
-                  }}>
-                    <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary }}>
-                      {isMe ? 'You' : loc.name.split(' ')[0]}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
+        {/* No avatar strip over the map — member avatars already render as
+            real pins ON the map below (Marker + FamilyAvatar), and the
+            "People" list in the bottom sheet covers selection/jump-to.
+            Matches Apple Find My's own layout exactly [live-requested:
+            "no headers and the person emojis on top of the map header" —
+            i.e. don't duplicate the avatars in a floating strip]. */}
         <MapView
           ref={mapRef}
           provider={PROVIDER_DEFAULT}
@@ -841,7 +802,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 
           return (
             <TouchableOpacity key={loc.member_id} activeOpacity={0.6}
-              onPress={() => setExpandedId(prev => prev === loc.member_id ? null : loc.member_id)}
+              onPress={() => {
+                setExpandedId(prev => prev === loc.member_id ? null : loc.member_id);
+                // Tapping a person centers the map on their pin, same as
+                // Find My's own list — this replaces the floating avatar
+                // strip's tap-to-jump now that the strip itself is gone
+                // [live-requested: "no headers and the person emojis on
+                // top of the map header"].
+                if (loc.lat != null && loc.lng != null) {
+                  mapRef.current?.animateToRegion({ latitude: loc.lat, longitude: loc.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 650);
+                }
+              }}
               style={[
                 g.row, i > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
                 isExpanded && [g.rowExpanded, { backgroundColor: rc + (isDark ? '1A' : '10'), borderColor: rc + '40' }],

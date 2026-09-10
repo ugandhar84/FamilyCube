@@ -523,3 +523,66 @@ export async function setAiChainConfig(value: AiChainConfigValue, updatedByMembe
     .upsert({ key: 'ai_chain_config', value, updated_by: updatedByMemberId, updated_at: new Date().toISOString() }, { onConflict: 'key' });
   if (error) throw new Error(error.message);
 }
+
+// ── Pricing display config ───────────────────────────────────────────────────
+// Admin-editable paywall DISPLAY pricing — [live-requested: "admin should
+// be able to change the price in future both monthly and yearly with
+// discount showing"]. Does NOT change real charged amounts (App Store
+// Connect/RevenueCat own that) — see the migration's own comment. Same
+// admin-write pattern as legal_documents.
+
+export type PricingConfigRow = {
+  planKey: string;
+  monthlyPriceDisplay: string;
+  yearlyPriceDisplay: string;
+  monthlyWasPriceDisplay: string | null;
+  yearlyWasPriceDisplay: string | null;
+  yearlyDiscountPct: number | null;
+  yearlyDiscountBadgeText: string | null;
+  updatedBy: string | null;
+  updatedAt: string;
+};
+
+function mapPricingConfigRow(r: any): PricingConfigRow {
+  return {
+    planKey: r.plan_key, monthlyPriceDisplay: r.monthly_price_display, yearlyPriceDisplay: r.yearly_price_display,
+    monthlyWasPriceDisplay: r.monthly_was_price_display, yearlyWasPriceDisplay: r.yearly_was_price_display,
+    yearlyDiscountPct: r.yearly_discount_pct != null ? Number(r.yearly_discount_pct) : null,
+    yearlyDiscountBadgeText: r.yearly_discount_badge_text, updatedBy: r.updated_by, updatedAt: r.updated_at,
+  };
+}
+
+export async function getPricingConfig(planKey = 'family_plan'): Promise<PricingConfigRow | null> {
+  const { data, error } = await supabase
+    .from('pricing_config')
+    .select('*')
+    .eq('plan_key', planKey)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapPricingConfigRow(data) : null;
+}
+
+export async function updatePricingConfig(
+  planKey: string,
+  updates: Partial<Pick<PricingConfigRow,
+    'monthlyPriceDisplay' | 'yearlyPriceDisplay' | 'monthlyWasPriceDisplay' | 'yearlyWasPriceDisplay' |
+    'yearlyDiscountPct' | 'yearlyDiscountBadgeText'
+  >>,
+  updatedByMemberId: string | null,
+): Promise<PricingConfigRow> {
+  const dbUpdates: Record<string, unknown> = { updated_by: updatedByMemberId, updated_at: new Date().toISOString() };
+  if (updates.monthlyPriceDisplay !== undefined) dbUpdates.monthly_price_display = updates.monthlyPriceDisplay;
+  if (updates.yearlyPriceDisplay !== undefined) dbUpdates.yearly_price_display = updates.yearlyPriceDisplay;
+  if (updates.monthlyWasPriceDisplay !== undefined) dbUpdates.monthly_was_price_display = updates.monthlyWasPriceDisplay;
+  if (updates.yearlyWasPriceDisplay !== undefined) dbUpdates.yearly_was_price_display = updates.yearlyWasPriceDisplay;
+  if (updates.yearlyDiscountPct !== undefined) dbUpdates.yearly_discount_pct = updates.yearlyDiscountPct;
+  if (updates.yearlyDiscountBadgeText !== undefined) dbUpdates.yearly_discount_badge_text = updates.yearlyDiscountBadgeText;
+  const { data, error } = await supabase
+    .from('pricing_config')
+    .update(dbUpdates)
+    .eq('plan_key', planKey)
+    .select('*')
+    .single();
+  if (error) throw new Error(error.message);
+  return mapPricingConfigRow(data);
+}

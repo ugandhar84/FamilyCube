@@ -99,6 +99,14 @@ const SECTIONS: AdminSection[] = [
     route: '/admin/ai-chain-config',
     accent: 'primary',
   },
+  {
+    id: 'pricing',
+    label: 'Pricing',
+    subtitle: 'Paywall display price, strikethrough & discount badge',
+    icon: 'pricetag-outline',
+    route: '/admin/pricing',
+    accent: 'accent',
+  },
 ];
 
 const ACCENT_LIGHT_KEY: Record<AdminSection['accent'], string> = {

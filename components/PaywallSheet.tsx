@@ -10,6 +10,7 @@ import { IconCubeMark, Wordmark } from '@/components/FamilyCubeLogo';
 import { getOfferings, purchasePackage, restorePurchases, isRevenueCatReady } from '@/lib/subscription';
 import { useAuthStore } from '@/store/authStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { supabase } from '@/lib/supabase';
 
 // Pulled directly from constants/Colors.ts brand tokens
 const BRAND = {
@@ -61,6 +62,17 @@ export default function PaywallSheet({
   const [offering, setOffering]     = useState<any>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring]   = useState(false);
+  // Admin-editable DISPLAY pricing (pricing_config table) — used only as
+  // the fallback before RevenueCat's real offering loads, and as the
+  // source of the discount badge/strikethrough RevenueCat has no
+  // equivalent field for [live-requested: "admin should be able to
+  // change the price in future both monthly and yearly with discount
+  // showing"]. The real StoreKit price always wins once `offering` loads.
+  const [pricingConfig, setPricingConfig] = useState<{
+    monthlyPriceDisplay: string; yearlyPriceDisplay: string;
+    monthlyWasPriceDisplay: string | null; yearlyWasPriceDisplay: string | null;
+    yearlyDiscountPct: number | null; yearlyDiscountBadgeText: string | null;
+  } | null>(null);
   const mountedRef       = useRef(true);
   const purchasingRef    = useRef(false);
   const pendingAlertRef  = useRef<{ title: string; message?: string; buttons?: any[] } | null>(null);
@@ -74,6 +86,20 @@ export default function PaywallSheet({
       setRestoring(false);
       if (!offering) {
         getOfferings().then(o => { if (mountedRef.current) setOffering(o); }).catch(() => {});
+      }
+      if (!pricingConfig) {
+        (async () => {
+          try {
+            const { data } = await supabase.from('pricing_config').select('*').eq('plan_key', 'family_plan').maybeSingle();
+            if (!mountedRef.current || !data) return;
+            setPricingConfig({
+              monthlyPriceDisplay: data.monthly_price_display, yearlyPriceDisplay: data.yearly_price_display,
+              monthlyWasPriceDisplay: data.monthly_was_price_display, yearlyWasPriceDisplay: data.yearly_was_price_display,
+              yearlyDiscountPct: data.yearly_discount_pct != null ? Number(data.yearly_discount_pct) : null,
+              yearlyDiscountBadgeText: data.yearly_discount_badge_text,
+            });
+          } catch {}
+        })();
       }
     } else {
       if (mountedRef.current) { setPurchasing(false); setRestoring(false); }
@@ -108,14 +134,20 @@ export default function PaywallSheet({
 
   const localizedPrice = (fallback: string) => {
     const pkg = getPkg();
-    return pkg?.product?.localizedPriceString ?? pkg?.product?.priceString ?? `$${fallback}`;
+    return pkg?.product?.localizedPriceString ?? pkg?.product?.priceString ?? fallback;
   };
 
   const monthlyEquiv = () => {
     const pkg = getPkg();
-    if (billing !== 'annual' || !pkg) return null;
-    const price: number = pkg.product?.price ?? 47.88;
-    return `$${(price / 12).toFixed(2)}/mo`;
+    if (billing !== 'annual') return null;
+    if (pkg?.product?.price != null) return `$${(pkg.product.price / 12).toFixed(2)}/mo`;
+    // No live package yet — fall back to the admin-configured yearly
+    // display price divided by 12, stripping any non-numeric chars
+    // (currency symbol) so this works regardless of what symbol the
+    // admin typed.
+    const fallback = pricingConfig?.yearlyPriceDisplay ?? '$47.88';
+    const numeric = parseFloat(fallback.replace(/[^0-9.]/g, ''));
+    return Number.isFinite(numeric) ? `$${(numeric / 12).toFixed(2)}/mo` : null;
   };
 
   const hasTrial = () => {
@@ -172,11 +204,25 @@ export default function PaywallSheet({
     }
   };
 
-  // Flat rate — $3.99/mo, annual is exactly 12x with no discount
-  // [live-requested: "flat rate 3.99 plan permonth and year *12"].
-  const price = billing === 'annual' ? localizedPrice('47.88') : localizedPrice('3.99');
+  // Fallback strings come from the admin-editable pricing_config
+  // [live-requested: "admin should be able to change the price in future
+  // both monthly and yearly"] — the real StoreKit price always wins once
+  // `offering` has loaded; these only show for the brief pre-load moment
+  // or if RevenueCat fails to load entirely.
+  const price = billing === 'annual'
+    ? localizedPrice(pricingConfig?.yearlyPriceDisplay ?? '$47.88')
+    : localizedPrice(pricingConfig?.monthlyPriceDisplay ?? '$3.99');
   const equiv = monthlyEquiv();
   const trialText = hasTrial() ? '7-day free trial, then ' : '';
+  // "Was" price + discount badge — admin-editable, purely display copy
+  // [live-requested: "with discounted strike value to show" / "we can
+  // also add % badge too"]. Only rendered for annual, only when the
+  // admin has actually set one of these fields.
+  const wasPrice = billing === 'annual' ? pricingConfig?.yearlyWasPriceDisplay : pricingConfig?.monthlyWasPriceDisplay;
+  const discountBadgeText = billing === 'annual'
+    ? (pricingConfig?.yearlyDiscountBadgeText
+        || (pricingConfig?.yearlyDiscountPct ? `Save ${pricingConfig.yearlyDiscountPct}%` : null))
+    : null;
 
   return (
     <BottomSheet
@@ -247,10 +293,18 @@ export default function PaywallSheet({
               <Text style={[s.billingLabel, { color: billing === b ? '#fff' : colors.textSecondary }]}>
                 {b === 'annual' ? 'Annual' : 'Monthly'}
               </Text>
-              {/* No "Save X%" badge — annual is a flat 12x the monthly
-                  price with no discount at this pricing
-                  [live-requested: "flat rate 3.99 plan permonth and year
-                  *12"]. */}
+              {/* Discount badge — admin-editable (pricing_config), only
+                  shown when the admin has set a % or override text
+                  [live-requested: "with discounted strike value to
+                  show" / "we can also add % badge too"]. Was previously
+                  hardcoded "Save 40%" at a pricing tier with no actual
+                  discount; now genuinely reflects whatever the admin
+                  configures. */}
+              {b === 'annual' && discountBadgeText && (
+                <View style={[s.savePill, { backgroundColor: billing === 'annual' ? 'rgba(255,255,255,0.25)' : BRAND.terracottaLight }]}>
+                  <Text style={[s.savePillText, { color: billing === 'annual' ? '#fff' : BRAND.terracottaDark }]}>{discountBadgeText}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -261,6 +315,14 @@ export default function PaywallSheet({
           borderColor: BRAND.terracotta,
         }]}>
           <View style={s.priceRow}>
+            {/* Strikethrough "was" price — admin-editable, only shown
+                when set [live-requested: "with discounted strike value
+                to show"]. */}
+            {wasPrice && (
+              <Text style={[s.priceWas, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>
+                {wasPrice}
+              </Text>
+            )}
             <Text style={[s.priceMain, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>{price}</Text>
             <Text style={[s.pricePer, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>
               {billing === 'annual' ? ' / year' : ' / month'}
@@ -329,6 +391,7 @@ const s = StyleSheet.create({
   savePillText:     { fontSize: 11, fontWeight: '700' },
   priceCard:        { borderWidth: 1.5, borderRadius: 16, padding: 18, alignItems: 'center', gap: 4 },
   priceRow:         { flexDirection: 'row', alignItems: 'baseline' },
+  priceWas:         { fontSize: 18, fontWeight: '600', textDecorationLine: 'line-through', opacity: 0.55, marginRight: 6 },
   priceMain:        { fontSize: 38, fontWeight: '800', letterSpacing: -1 },
   pricePer:         { fontSize: 16, fontWeight: '600' },
   priceEquiv:       { fontSize: 13, fontWeight: '500', opacity: 0.8 },

@@ -3221,7 +3221,21 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // proposal either, say we don't have an answer yet instead of claiming
     // one was found.
     const looksLikeRawJson = /^\s*[{[]/.test(finalText) && (() => { try { JSON.parse(finalText); return true; } catch { return false; } })();
-    if (looksLikeRawJson || !finalText.trim()) {
+    // Broader net than looksLikeRawJson — a raw-JSON leak isn't the only
+    // shape this takes. Live-reported: the model echoed something that
+    // read as "tool code with print statements" for a meal-recipe
+    // question — not valid JSON (so looksLikeRawJson never caught it),
+    // but still clearly not a natural-language answer. Catches: a
+    // fenced code block (```...```), a Python-style print(...)/
+    // function-call-looking line, or a line that's literally a bare
+    // tool/function name from TOOLS (e.g. "propose_meal(...)" leaking
+    // through instead of a real tool_call). Deliberately conservative —
+    // only trips on unambiguous code-shaped text, never on normal prose
+    // that happens to mention a word like "print" in passing.
+    const looksLikeCodeLeak = /```[\s\S]*```/.test(finalText)
+      || /^\s*(print|console\.log)\s*\(/m.test(finalText)
+      || /^\s*[a-z_][a-z0-9_]*\s*\([^)]*\)\s*$/im.test(finalText.trim());
+    if (looksLikeRawJson || looksLikeCodeLeak || !finalText.trim()) {
       if (proposals.length) {
         finalText = proposals.length > 1
           ? "I've drafted a few options below — take a look and pick one."

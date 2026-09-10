@@ -802,13 +802,22 @@ async function callGemini(messages: any[], tools: unknown[]) {
 // the first place: if Gemini's own call throws (quota exhausted again, or
 // any other failure), this still fails over to DeepSeek rather than going
 // straight to the empty-reply fallback.
-// Live-requested (2026-09-09): Claude Haiku made primary, over Gemini
-// (previous primary, well-tested against this exact prompt tonight) and
-// DeepSeek. User made this call explicitly aware it has NOT been tested
-// against this prompt/tool-set before — unlike the earlier DeepSeek-primary
-// incident, this was not an emergency quota-driven swap, it's a deliberate
-// choice to try a new candidate live. Gemini and DeepSeek remain wired as
-// real fallbacks in the same order as before if Claude's own call throws.
+// Reverted back to Gemini-primary (2026-09-10) — real measured latency
+// data from the new ai_usage_log table (first-ever visibility into actual
+// per-call timing) showed Claude Haiku averaging ~18s per call and up to
+// 39s on this prompt/tool-set, with every one of 8 sampled calls served
+// by Claude directly (no fallback/retry inflating the number) — i.e.
+// genuinely, structurally slow here, not a fluke. [Live-reported: "it is
+// taking too much time.. are we not using the Hiku" — confirmed Haiku
+// WAS already primary; the fix is moving off it, not onto it.] Combined
+// with MAX_TOOL_ROUNDS' up-to-6-round loop (each round resends the full
+// growing conversation + tool schema), a multi-tool question on Haiku
+// could take 40-100+ seconds. Gemini 2.5 Flash is back to primary — it
+// has far more live-verified hours on this exact prompt (see the
+// preceding comment block from 2026-09-08/09) and is built for low
+// latency. DeepSeek stays wired as the final fallback in the same order
+// as before. Claude remains available as a fallback rather than removed
+// outright, in case Gemini's own call throws (quota exhaustion, etc.).
 const MODEL_NAME_BY_PROVIDER: Record<'gemini' | 'deepseek' | 'claude', string> = {
   claude: 'claude-haiku-4-5-20251001', gemini: 'gemini-2.5-flash', deepseek: 'deepseek-chat',
 };
@@ -818,15 +827,15 @@ async function callModel(messages: unknown[], tools: unknown[]): Promise<{
   usage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null } | null;
 }> {
   try {
-    const reply = await callClaude(messages as any[], tools);
-    return { reply, modelUsed: 'claude', usage: _lastUsage };
+    const reply = await callGemini(messages as any[], tools);
+    return { reply, modelUsed: 'gemini', usage: _lastUsage };
   } catch (err) {
-    console.warn('[ask-cube] Claude failed, falling back to Gemini:', (err as Error).message);
+    console.warn('[ask-cube] Gemini failed, falling back to Claude:', (err as Error).message);
     try {
-      const reply = await callGemini(messages as any[], tools);
-      return { reply, modelUsed: 'gemini', usage: _lastUsage };
+      const reply = await callClaude(messages as any[], tools);
+      return { reply, modelUsed: 'claude', usage: _lastUsage };
     } catch (err2) {
-      console.warn('[ask-cube] Gemini failed, falling back to DeepSeek:', (err2 as Error).message);
+      console.warn('[ask-cube] Claude failed, falling back to DeepSeek:', (err2 as Error).message);
       const reply = await callDeepSeek(messages, tools);
       return { reply, modelUsed: 'deepseek', usage: _lastUsage };
     }

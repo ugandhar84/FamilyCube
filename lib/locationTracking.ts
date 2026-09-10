@@ -450,6 +450,17 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // it is on reinstall reset to false in UI" — same root cause, a race
       // rather than only the reinstall path this column was first added for).
       share_location_enabled: true,
+      // Was omitted entirely — the exact same INSERT-branch-default-false
+      // race as share_location_enabled above, just never fixed for this
+      // column. shareExact is already read fresh from the DB right above
+      // (to decide which address string to use THIS update), so passing
+      // it straight back through here costs nothing extra and closes the
+      // gap where this task's own first-ever write for a member could
+      // silently reset "share exact address" back to off (live-reported:
+      // "share exact address is not sticking, persistent every relaunch,
+      // going off" — the toggle's own write in GpsTab.tsx was correct;
+      // this background task's write was the one silently clobbering it).
+      share_exact_address: shareExact,
     }, { onConflict: 'member_id' });
     if (upsertErr) {
       console.error('[locationTracking] member_locations upsert failed:', upsertErr.message);

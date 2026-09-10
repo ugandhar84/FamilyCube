@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import {
   Pill, Syringe, Trash2, Check, Clock, ChevronDown, ChevronUp,
-  User, Calendar, AlertCircle, RefreshCw, History, X, XCircle,
+  User, Calendar, AlertCircle, RefreshCw, History, X, XCircle, Square, CheckSquare, Share2,
 } from 'lucide-react-native';
 import { StatusPill, MemberAvatar, EmptyState } from '../shared';
 import { Medication, Vaccine, FREQ_LABELS, getCatColors, today, encodeTakenEntry, formatDoseTime, medicationAdherenceHistory, fmtDateDisplay, DoseAdherence, groupHistoryByDay } from './types';
 import { fmtDate } from '@/lib/dates';
 import { hf, h } from './styles';
+import { showAlert } from '@/components/AppAlert';
+import { shareVaccineRecordsPdf } from './vaxPdfExport';
 
 const STATUS_META: Record<DoseAdherence['status'], { label: string; Icon: any }> = {
   taken: { label: 'Taken', Icon: Check },
@@ -26,10 +28,11 @@ export default function HealthRecordsList({
   medStatusFilter, medMemberFilter, medCatFilter, medRefillSoon, medEscalationOnly,
   vaxStatusFilter, vaxMemberFilter, vaxDueSoonDays,
   clearMedFilters, clearVaxFilters,
+  familyName,
   memberName, memberColor, isOverdue,
   expandedId, setExpandedId,
-  markTaken, toggleMedActive, deleteMed,
-  toggleVax, deleteVax,
+  markTaken, toggleMedActive, deleteMed, deleteMedsBulk,
+  toggleVax, deleteVax, deleteVaxesBulk,
   onEditMed, onEditVax,
   load,
   onOpenHistory,
@@ -47,14 +50,24 @@ export default function HealthRecordsList({
   medRefillSoon: boolean; medEscalationOnly: boolean;
   vaxStatusFilter: string; vaxMemberFilter: string[]; vaxDueSoonDays: number;
   clearMedFilters: () => void; clearVaxFilters: () => void;
+  // Used as the PDF's header title [live-requested: "export or share the
+  // vax to a PDF with the nice header and details"]. Optional so a caller
+  // that doesn't pass it (none currently) just falls back to a generic
+  // title rather than a hard prop-type error.
+  familyName?: string;
   memberName: (id: string) => string; memberColor: (id: string) => string;
   isOverdue: (med: Medication) => boolean;
   expandedId: string | null; setExpandedId: (id: string | null) => void;
   markTaken: (med: Medication, time: string | null) => void;
   toggleMedActive: (med: Medication) => void;
   deleteMed: (id: string) => void;
+  // Selection-mode bulk delete [live-requested: "implement the multi
+  // delete"] — optional so a caller without a bulk handler (none
+  // currently) just doesn't get the selection-mode entry point.
+  deleteMedsBulk?: (ids: string[]) => void;
   toggleVax: (vax: Vaccine) => void;
   deleteVax: (id: string) => void;
+  deleteVaxesBulk?: (ids: string[]) => void;
   // Opens AddMedModal/AddVaxModal seeded with this record for editing
   // [live-requested: "we should have vacc edit feature also once we add"]
   // — optional so a caller that doesn't support editing (none currently,
@@ -79,6 +92,86 @@ export default function HealthRecordsList({
   // active medication history like day and take and missing.."].
   const [historyMed, setHistoryMed] = useState<Medication | null>(null);
   const historyDays = historyMed ? groupHistoryByDay(medicationAdherenceHistory(historyMed)) : [];
+
+  // Multi-select delete mode — long-press any row to enter, tap toggles
+  // selection, a bottom bar shows "Delete N" [live-requested: "implement
+  // the multi delete"]. Tracked per-tab (meds vs vax use separate id sets)
+  // so switching tabs doesn't carry over a stale selection into the other
+  // list's delete call.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const enterSelectMode = () => {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+    setExpandedId(null);
+  };
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  const confirmBulkDelete = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (healthTab === 'meds') {
+      deleteMedsBulk?.(ids);
+    } else {
+      showAlert(`Delete ${ids.length} vaccine${ids.length > 1 ? 's' : ''}?`, undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteVaxesBulk?.(ids) },
+      ]);
+    }
+    exitSelectMode();
+  };
+
+  // Grouped vaccine view: Person → Vaccine name → dose dates
+  // [live-requested: "we can show by grouping Persona name / Vac name /
+  // Date"] — replaces the flat card list per the chosen design.
+  const groupedVaxes = useMemo(() => {
+    const byMember = new Map<string, Vaccine[]>();
+    for (const v of filteredVaxes) {
+      const list = byMember.get(v.member_id) ?? [];
+      list.push(v);
+      byMember.set(v.member_id, list);
+    }
+    return Array.from(byMember.entries()).map(([memberId, vaxList]) => {
+      const byName = new Map<string, Vaccine[]>();
+      for (const v of vaxList) {
+        const list = byName.get(v.title) ?? [];
+        list.push(v);
+        byName.set(v.title, list);
+      }
+      const vaccines = Array.from(byName.entries()).map(([title, doses]) => ({
+        title,
+        doses: doses.slice().sort((a, b) => b.date.localeCompare(a.date)),
+      }));
+      return { memberId, vaccines };
+    });
+  }, [filteredVaxes]);
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const onSharePdf = async () => {
+    if (exportingPdf || filteredVaxes.length === 0) return;
+    setExportingPdf(true);
+    try {
+      await shareVaccineRecordsPdf({
+        familyName: familyName ?? 'Family Cube',
+        members: groupedVaxes.map(g => ({
+          memberId: g.memberId,
+          memberName: memberName(g.memberId),
+          vaccines: g.vaccines.flatMap(v => v.doses),
+        })),
+      });
+    } catch (e: any) {
+      showAlert('Could not share PDF', e?.message ?? 'Something went wrong generating the file.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
   return (
     <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
       {/* Flat — no card shell/title/tab-switcher here; "Health & Records"
@@ -94,14 +187,47 @@ export default function HealthRecordsList({
           already has paddingTop — stacking a third top padding here on
           top of both left a large dead gap before "X of Y" (live-reported). */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>
-          {healthTab === 'meds'
-            ? `${filteredMeds.length} of ${meds.length} medications`
-            : `${filteredVaxes.length} of ${vaxes.length} immunizations`}
-        </Text>
-        <TouchableOpacity onPress={load} style={{ padding: 8, margin: -8 }}>
-          <RefreshCw size={14} color={colors.textTertiary} />
-        </TouchableOpacity>
+        {selectMode ? (
+          <>
+            <TouchableOpacity onPress={exitSelectMode} style={{ padding: 8, margin: -8 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+              {selectedIds.size} selected
+            </Text>
+            <TouchableOpacity
+              onPress={confirmBulkDelete}
+              disabled={selectedIds.size === 0}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 8, margin: -8, opacity: selectedIds.size === 0 ? 0.4 : 1 }}
+            >
+              <Trash2 size={14} color={colors.danger} />
+              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.danger }}>Delete</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>
+              {healthTab === 'meds'
+                ? `${filteredMeds.length} of ${meds.length} medications`
+                : `${filteredVaxes.length} of ${vaxes.length} immunizations`}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              {!kidView && healthTab === 'vax' && filteredVaxes.length > 0 && (
+                <TouchableOpacity onPress={onSharePdf} disabled={exportingPdf} style={{ padding: 8, margin: -8, opacity: exportingPdf ? 0.5 : 1 }}>
+                  <Share2 size={15} color={colors.teal} />
+                </TouchableOpacity>
+              )}
+              {!kidView && ((healthTab === 'meds' && filteredMeds.length > 0) || (healthTab === 'vax' && filteredVaxes.length > 0)) && (
+                <TouchableOpacity onPress={enterSelectMode} style={{ padding: 8, margin: -8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>Select</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={load} style={{ padding: 8, margin: -8 }}>
+                <RefreshCw size={14} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
 
       {/* ── Active-filter pill summary (compact, dismissable) ── */}
@@ -172,17 +298,36 @@ export default function HealthRecordsList({
           const catColor    = catColors[med.category] ?? colors.danger;
           const mc          = memberColor(med.member_id);
 
+          const isSelected = selectedIds.has(med.id);
+
           return (
             <View key={med.id} style={[h.medCard, {
               backgroundColor: isDark ? colors.card + 'CC' : colors.surface,
-              borderColor: isTakenToday ? colors.success + '60' : colors.border,
+              borderColor: isSelected ? colors.primary : (isTakenToday ? colors.success + '60' : colors.border),
+              borderWidth: isSelected ? 2 : undefined,
               opacity: med.is_active === false ? 0.55 : 1,
             }]}>
-              <TouchableOpacity onPress={() => setExpandedId(expanded ? null : med.id)}>
+              {/* Long-press opens Edit directly — the fastest path to fix a
+                  typo/dosage without expanding the card first
+                  [live-requested: "make the med and vaccine long press for
+                  edit"]. Multi-select for bulk delete has its own explicit
+                  "Select" entry point instead (see the count row above). */}
+              <TouchableOpacity
+                onPress={() => selectMode ? toggleSelected(med.id) : setExpandedId(expanded ? null : med.id)}
+                onLongPress={() => !kidView && !selectMode && onEditMed?.(med)}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                  <View style={[h.pillIcon, { backgroundColor: catColor + '20' }]}>
-                    <Pill size={16} color={catColor} />
-                  </View>
+                  {selectMode ? (
+                    <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+                      {isSelected
+                        ? <CheckSquare size={20} color={colors.primary} />
+                        : <Square size={20} color={colors.textTertiary} />}
+                    </View>
+                  ) : (
+                    <View style={[h.pillIcon, { backgroundColor: catColor + '20' }]}>
+                      <Pill size={16} color={catColor} />
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>
                       {med.name}
@@ -305,6 +450,7 @@ export default function HealthRecordsList({
                       <>
                         {onEditMed && (
                           <TouchableOpacity onPress={() => onEditMed(med)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             style={[h.actionBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
                             <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>Edit</Text>
                           </TouchableOpacity>
@@ -319,9 +465,14 @@ export default function HealthRecordsList({
                             {med.is_active ? 'Deactivate' : 'Reactivate'}
                           </Text>
                         </TouchableOpacity>
+                        {/* hitSlop + extra horizontal padding — was a bare
+                            14px icon with no slop, an easy mis-tap target
+                            [live-requested: "increase the delete touch
+                            area"]. */}
                         <TouchableOpacity onPress={() => deleteMed(med.id)}
-                          style={[h.actionBtn, { borderColor: colors.danger + '50', backgroundColor: colors.danger + '10' }]}>
-                          <Trash2 size={14} color={colors.danger} />
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={[h.actionBtn, { borderColor: colors.danger + '50', backgroundColor: colors.danger + '10', paddingHorizontal: 14 }]}>
+                          <Trash2 size={16} color={colors.danger} />
                         </TouchableOpacity>
                       </>
                     )}
@@ -333,71 +484,116 @@ export default function HealthRecordsList({
         })
       )}
 
+      {/* Grouped: Person → Vaccine name → dose dates [live-requested: "we
+          can show by grouping Persona name / Vac name / Date"] — replaces
+          the previous flat one-card-per-dose list. */}
       {!kidView && healthTab === 'vax' && (filteredVaxes.length === 0
         ? <EmptyState Icon={Syringe} label={vaxes.length === 0 ? 'No vaccine records yet' : 'No results — adjust filters'} colors={colors} />
-        : filteredVaxes.map(vax => {
-          const mc = memberColor(vax.member_id);
+        : groupedVaxes.map(({ memberId, vaccines }) => {
+          const mc = memberColor(memberId);
           return (
-            <TouchableOpacity key={vax.id} activeOpacity={onEditVax ? 0.7 : 1}
-              onPress={() => onEditVax?.(vax)}
-              style={[h.medCard, {
-              backgroundColor: isDark ? colors.card + 'CC' : colors.tealLight,
-              borderColor: vax.done ? colors.teal + '60' : colors.border,
-            }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                <View style={[h.pillIcon, { backgroundColor: colors.teal + '20' }]}>
-                  <Syringe size={16} color={colors.teal} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>
-                    {vax.title}
-                  </Text>
-                  {vax.vaccine_type && (
-                    <Text style={{ fontSize: 11, color: colors.teal, fontWeight: '700', marginTop: 2 }}>
-                      {vax.vaccine_type.toUpperCase()}
-                    </Text>
-                  )}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
-                    <MemberAvatar name={memberName(vax.member_id)} color={mc} size={20} />
-                    <Text style={{ fontSize: 11, color: colors.textTertiary }}>{memberName(vax.member_id)}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                    <View style={h.detailRow}>
-                      <Calendar size={11} color={colors.textTertiary} />
-                      <Text style={[h.detailText, { color: colors.textTertiary }]}>{fmtDate(vax.date)}</Text>
-                    </View>
-                    {vax.next_due_date && (
-                      <View style={h.detailRow}>
-                        <Clock size={11} color={colors.amber} />
-                        <Text style={[h.detailText, { color: colors.amber }]}>Next: {fmtDate(vax.next_due_date)}</Text>
-                      </View>
-                    )}
-                    {vax.series_total > 1 && (
-                      <StatusPill label={`Dose ${vax.series_current}/${vax.series_total}`} color={colors.info} />
-                    )}
-                  </View>
-                  {vax.administered_by && (
-                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>
-                      {vax.administered_by}{vax.location ? ` · ${vax.location}` : ''}
-                    </Text>
-                  )}
-                </View>
-
-                <View style={{ alignItems: 'flex-end', gap: 8 }}>
-                  <TouchableOpacity onPress={() => toggleVax(vax)}
-                    style={[h.pillIcon, {
-                      backgroundColor: vax.done ? colors.teal + '20' : colors.card,
-                      borderWidth: 1.5,
-                      borderColor: vax.done ? colors.teal + '60' : colors.border,
-                    }]}>
-                    <Check size={14} color={vax.done ? colors.teal : colors.textTertiary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => deleteVax(vax.id)}>
-                    <Trash2 size={14} color={colors.danger + 'AA'} />
-                  </TouchableOpacity>
-                </View>
+            <View key={memberId} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <MemberAvatar name={memberName(memberId)} color={mc} size={24} />
+                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary }}>
+                  {memberName(memberId)}
+                </Text>
               </View>
-            </TouchableOpacity>
+
+              {vaccines.map(({ title, doses }) => (
+                <View key={title} style={[h.medCard, {
+                  backgroundColor: isDark ? colors.card + 'CC' : colors.tealLight,
+                  borderColor: colors.border, marginBottom: 8,
+                }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <View style={[h.pillIcon, { width: 26, height: 26, backgroundColor: colors.teal + '20' }]}>
+                      <Syringe size={13} color={colors.teal} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>
+                      {title}
+                    </Text>
+                    {doses[0]?.vaccine_type && (
+                      <Text style={{ fontSize: 10, color: colors.teal, fontWeight: '700' }}>
+                        {doses[0].vaccine_type!.toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+
+                  {doses.map((vax, idx) => {
+                    const isSelected = selectedIds.has(vax.id);
+                    return (
+                      <TouchableOpacity
+                        key={vax.id}
+                        activeOpacity={onEditVax ? 0.7 : 1}
+                        onPress={() => selectMode ? toggleSelected(vax.id) : onEditVax?.(vax)}
+                        onLongPress={() => !selectMode && onEditVax?.(vax)}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 10,
+                          paddingVertical: 8,
+                          borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: colors.border,
+                          backgroundColor: isSelected ? colors.primary + '12' : undefined,
+                          borderRadius: isSelected ? 8 : undefined,
+                        }}
+                      >
+                        {selectMode ? (
+                          <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                            {isSelected
+                              ? <CheckSquare size={18} color={colors.primary} />
+                              : <Square size={18} color={colors.textTertiary} />}
+                          </View>
+                        ) : (
+                          <TouchableOpacity onPress={() => toggleVax(vax)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            style={[h.pillIcon, {
+                              width: 26, height: 26,
+                              backgroundColor: vax.done ? colors.teal + '20' : colors.card,
+                              borderWidth: 1.5,
+                              borderColor: vax.done ? colors.teal + '60' : colors.border,
+                            }]}>
+                            <Check size={12} color={vax.done ? colors.teal : colors.textTertiary} />
+                          </TouchableOpacity>
+                        )}
+
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <View style={h.detailRow}>
+                              <Calendar size={11} color={colors.textTertiary} />
+                              <Text style={[h.detailText, { color: colors.textTertiary }]}>{fmtDate(vax.date)}</Text>
+                            </View>
+                            {vax.next_due_date && (
+                              <View style={h.detailRow}>
+                                <Clock size={11} color={colors.amber} />
+                                <Text style={[h.detailText, { color: colors.amber }]}>Next: {fmtDate(vax.next_due_date)}</Text>
+                              </View>
+                            )}
+                            {vax.series_total > 1 && (
+                              <StatusPill label={`Dose ${vax.series_current}/${vax.series_total}`} color={colors.info} />
+                            )}
+                          </View>
+                          {vax.administered_by && (
+                            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 3 }}>
+                              {vax.administered_by}{vax.location ? ` · ${vax.location}` : ''}
+                            </Text>
+                          )}
+                        </View>
+
+                        {!selectMode && (
+                          /* hitSlop + extra padding — same bigger-touch-area
+                             fix as the medication delete button
+                             [live-requested: "increase the delete touch
+                             area"]. */
+                          <TouchableOpacity onPress={() => deleteVax(vax.id)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={{ padding: 6 }}>
+                            <Trash2 size={16} color={colors.danger + 'AA'} />
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
           );
         })
       )}

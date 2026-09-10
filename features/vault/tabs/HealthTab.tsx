@@ -45,7 +45,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // passes this, so its Modal is completely unchanged there.
   onOpenHistory?: (med: Medication) => void;
 }) {
-  const { members, activeMemberId } = useFamilyStore();
+  const { members, activeMemberId, familyName } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
 
@@ -292,6 +292,46 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     await supabase.from('family_vaccines').delete().eq('id', id);
     setVaxes(prev => prev.filter(v => v.id !== id));
     showToast('Vaccine removed');
+  };
+
+  // Bulk delete — one shared reason applied to every selected medication
+  // (keeps the same audit trail deleteMed writes per-item, without
+  // prompting once per row) [live-requested: "implement the multi
+  // delete"].
+  const deleteMedsBulk = (ids: string[]) => {
+    if (ids.length === 0) return;
+    Alert.prompt(
+      `Remove ${ids.length} medication${ids.length > 1 ? 's' : ''}`,
+      'Enter a brief note (required)',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async (comment: string | undefined) => {
+            if (!comment?.trim()) {
+              Alert.alert('Comment required', 'Please enter a reason before removing.');
+              return;
+            }
+            const now = new Date().toISOString();
+            await supabase.from('family_medications')
+              .update({ deleted_by: activeMember?.id ?? null, notes: comment.trim(), updated_at: now })
+              .in('id', ids);
+            await supabase.from('family_medications').delete().in('id', ids);
+            setMeds(prev => prev.filter(m => !ids.includes(m.id)));
+            showToast(`${ids.length} medication${ids.length > 1 ? 's' : ''} removed`);
+          },
+        },
+      ],
+      'plain-text'
+    );
+  };
+
+  const deleteVaxesBulk = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    await supabase.from('family_vaccines').delete().in('id', ids);
+    setVaxes(prev => prev.filter(v => !ids.includes(v.id)));
+    showToast(`${ids.length} vaccine${ids.length > 1 ? 's' : ''} removed`);
   };
 
   const toggleMedActive = (med: Medication) => {
@@ -904,6 +944,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         vaxDueSoonDays={vaxDueSoonDays}
         clearMedFilters={clearMedFilters}
         clearVaxFilters={clearVaxFilters}
+        familyName={familyName}
         memberName={memberName}
         memberColor={memberColor}
         isOverdue={isOverdue}
@@ -912,8 +953,10 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         markTaken={markTaken}
         toggleMedActive={toggleMedActive}
         deleteMed={deleteMed}
+        deleteMedsBulk={deleteMedsBulk}
         toggleVax={toggleVax}
         deleteVax={deleteVax}
+        deleteVaxesBulk={deleteVaxesBulk}
         onEditMed={setEditMed}
         onEditVax={setEditVax}
         load={load}

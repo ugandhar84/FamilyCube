@@ -281,6 +281,11 @@ type NotifType =
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
   | 'medication_missed'
+  // Homeowner Notes maintenance reminders — homeowner-notes-sweeper's own
+  // daily cron, one week before due and again on the due day itself
+  // [live-requested: "a week before and on the day"]. payload.when
+  // distinguishes the two so this one type can render both tones.
+  | 'homeowner_note_due'
   // lib/storeGeofencing.ts's geofence-enter handler — was a LOCAL-only
   // notification to whoever's device entered a pinned store's radius,
   // invisible to the rest of the family. Direct report: "when the parent in
@@ -1214,6 +1219,19 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Health', memberId: p.subjectMemberId },
       };
+    case 'homeowner_note_due':
+      return p.when === 'today'
+        ? {
+            title: `🏠 Due today: ${p.title ?? 'Home maintenance'}`,
+            body: `"${p.title}" is due today.`,
+            sound: 'default',
+            data: { screen: 'Hub', route: '/hub/homeowner-notes', noteId: p.noteId },
+          }
+        : {
+            title: `🏠 Due in a week: ${p.title ?? 'Home maintenance'}`,
+            body: `"${p.title}" is due on ${p.dueDateDisplay ?? 'soon'} — plan ahead.`,
+            data: { screen: 'Hub', route: '/hub/homeowner-notes', noteId: p.noteId },
+          };
     case 'store_proximity_arrived': {
       const list = p.itemNames as string | undefined;
       return {
@@ -1399,7 +1417,7 @@ serve(async (req) => {
     let resolvedMemberIds: string[] = memberIds ?? [];
 
     // Auto-route: if no memberIds passed, resolve by type
-    const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
+    const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty', 'homeowner_note_due'];
     const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added'];
 
     // kid_request fans out to every parent, but not every request TYPE is

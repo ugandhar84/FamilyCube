@@ -505,16 +505,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const session = fromSessionRow(data);
     set({ activeSession: session });
     const opponentId = session.challengerId === activeMemberId ? session.challengedId : session.challengerId;
-    if (opponentId) {
-      if (session.status === 'completed') {
-        notifyGameEvent('game_completed', [opponentId], activeMemberId, {
-          gameType: session.gameType, sessionId: session.id, result: session.result, winnerId: session.winnerId,
-        });
-      } else {
-        notifyGameEvent('game_move_made', [opponentId], activeMemberId, {
-          gameType: session.gameType, sessionId: session.id,
-        });
-      }
+    // A per-move "your turn" push was redundant with the live realtime sync
+    // both boards already have open — the opponent's board updates and
+    // flashes its own turn indicator (PlayerPod's active/pulse state)
+    // immediately, so only game-completion still gets a push.
+    if (opponentId && session.status === 'completed') {
+      notifyGameEvent('game_completed', [opponentId], activeMemberId, {
+        gameType: session.gameType, sessionId: session.id, result: session.result, winnerId: session.winnerId,
+      });
     }
     return session;
   },
@@ -879,10 +877,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     const others = get().activeUnoPlayers.filter(p => p.memberId && p.memberId !== activeMemberId).map(p => p.memberId!);
     if (game.status === 'completed') {
       notifyGameEvent('game_completed', others, activeMemberId, { gameType: 'uno', gameId, winnerId: game.winnerId });
-    } else {
-      const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
-      if (nextPlayer?.memberId) notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
     }
+    // Per-turn "your turn" pushes removed — Uno's realtime poll already
+    // updates every open board immediately, and the board itself flashes
+    // whose turn it is, so a push here was redundant noise.
     return game;
   },
 
@@ -896,10 +894,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     const game = fromUnoGameRow(data);
     set({ activeUnoGame: game });
     await get().loadUnoGame(gameId);
-    const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
-    if (nextPlayer?.memberId && nextPlayer.memberId !== activeMemberId) {
-      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
-    }
     return game;
   },
 
@@ -940,11 +934,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     const game = fromUnoGameRow(data);
     set({ activeUnoGame: game });
     await get().loadUnoGame(gameId);
-    const activeMemberId = getActiveMemberId();
-    const nextPlayer = get().activeUnoPlayers.find(p => p.seat === game.currentTurnSeat);
-    if (nextPlayer?.memberId && nextPlayer.memberId !== activeMemberId) {
-      notifyGameEvent('uno_your_turn', [nextPlayer.memberId], activeMemberId, { gameId, gameType: 'uno' });
-    }
     return game;
   },
 

@@ -30,6 +30,7 @@ import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
+import { SmartHubSection } from './parent/SmartHubSection';
 import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
@@ -672,6 +673,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         onAddTask={() => setShowTaskComposer(true)} />
 
       <FamilyGamesSection colors={colors} isDark={isDark} />
+
+      <SmartHubSection colors={colors} />
 
       <TodayView
         colors={colors}

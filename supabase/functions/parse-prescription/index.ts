@@ -38,6 +38,14 @@ add a top-level "additional_items_found": true with "additional_items_note": a o
 else was on the document but not extracted (e.g. "Also lists 3 more vaccines in the bottom row that were too blurry
 to read reliably — please add those separately").
 
+CRITICAL — the SAME vaccine name (or medication name) appearing multiple times on the SAME document, each with a
+DIFFERENT administered_date/dose_number, is NOT a duplicate — it is a real dose series (e.g. "Hepatitis B" given on
+three different dates for doses 1, 2, and 3) and every one of those rows is its own separate entry in the array.
+Do NOT collapse them into a single entry, and do NOT keep only the most recent/last one — a parent tracking their
+child's vaccine history needs every dose on its own real date, not just the latest. Only skip an entry as a true
+duplicate when name AND date AND dose_number all match another entry exactly (e.g. the same row genuinely printed
+twice on the document).
+
 For a MEDICATION prescription, extract:
 - name: drug/medication name (brand or generic)
 - dosage: e.g. "10mg", "500mg/5ml" — CRITICAL: if the numeric dose is even slightly unclear, blurry, or ambiguous
@@ -252,6 +260,31 @@ function extractJson(raw: string): Record<string, unknown> {
   }
 }
 
+// Collapses only TRUE duplicate rows — same name AND same date AND same
+// dose_number/refills (whichever applies) — never different doses of the
+// same vaccine/medication on different dates (live-reported: "ive same
+// vaccene multiple dates mening diffrent docesed with diff dates why ai
+// is giving last one only? we should one dedup same date same vaccene").
+// This is a defensive backstop only: the prompt itself now explicitly
+// tells the model every distinct dose/date is its own real entry, not a
+// duplicate — this function exists in case the model still occasionally
+// emits the literal same row twice (e.g. printed twice on the source
+// document), not as the mechanism relied on to keep multi-dose entries.
+function dedupeExactMatches<T extends Record<string, unknown>>(items: unknown, nameField: string, dateField: string, extraField: string): T[] {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const key = `${String(row[nameField] ?? '').trim().toLowerCase()}|${String(row[dateField] ?? '')}|${String(row[extraField] ?? '')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row as T);
+  }
+  return out;
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -313,7 +346,18 @@ serve(async (req) => {
       }
     }
 
-    return json({ ...parsed, _model: usedModel });
+    // Defensive exact-duplicate collapse — see dedupeExactMatches's own
+    // comment for why this must never fire on legitimately different
+    // doses/dates of the same vaccine or medication name.
+    const finalParsed = { ...parsed } as Record<string, unknown>;
+    if (Array.isArray(finalParsed.vaccines)) {
+      finalParsed.vaccines = dedupeExactMatches(finalParsed.vaccines, 'vaccine_name', 'administered_date', 'dose_number');
+    }
+    if (Array.isArray(finalParsed.medications)) {
+      finalParsed.medications = dedupeExactMatches(finalParsed.medications, 'name', 'prescribed_date', 'dosage');
+    }
+
+    return json({ ...finalParsed, _model: usedModel });
   } catch (err: any) {
     console.error('[parse-prescription] unhandled error:', err);
     return json({ error: err.message ?? 'Internal error' }, 500);

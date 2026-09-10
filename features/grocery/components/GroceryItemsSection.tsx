@@ -16,7 +16,7 @@ export function GroceryItemsSection({
   selectedIds, setSelectedIds, isSelecting, priceMap,
   setDetailItem, handleBuyItem, setEditingItem, setShowAddItem, removeItem,
   isKid, members, colors, isDark,
-  pinnedStores, onPinStore, onAutoScroll,
+  pinnedStores, onPinStore, onUnpinStore, onAutoScroll,
   familyId, activeMemberId,
 }: {
   groceryItems: GroceryItem[];
@@ -39,6 +39,13 @@ export function GroceryItemsSection({
   // exactly as it did before the feature existed.
   pinnedStores?: Record<string, { lat: number; lng: number }>;
   onPinStore?: (store: string) => void;
+  // Was missing entirely — a pinned store's location could never be
+  // changed or removed once set (live-requested: "once pin is set we
+  // should be able to modify it or delete it"). Re-tapping "Pin"/"Edit"
+  // for an already-pinned store reuses the same onPinStore flow (its own
+  // save path is an upsert, so re-picking a location naturally "moves"
+  // the pin); this is specifically the missing delete affordance.
+  onUnpinStore?: (store: string) => void;
   // Called with a signed px delta (+down/-up) while a drag's finger is near
   // the top/bottom of the viewport, so the parent's ScrollView can nudge
   // itself — this component has no ref to that ScrollView, only the
@@ -245,6 +252,29 @@ export function GroceryItemsSection({
                   <Ionicons name="location-outline" size={11} color={colors.textTertiary} />
                   <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Pin</Text>
                 </Pressable>
+              )}
+              {/* Was: the Pin button vanished forever once a store had a
+                  pin, with no way back in to move or remove it. A pinned
+                  store now shows both actions — same hitSlop/visual weight
+                  as the original Pin button, distinguished by icon/label
+                  and separated by a bullet. */}
+              {(onPinStore || onUnpinStore) && store !== 'Any store' && !!pinnedStores?.[store] && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {onPinStore && (
+                    <Pressable onPress={() => onPinStore(store)} hitSlop={6}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Ionicons name="location" size={11} color={colors.textTertiary} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Move</Text>
+                    </Pressable>
+                  )}
+                  {onUnpinStore && (
+                    <Pressable onPress={() => onUnpinStore(store)} hitSlop={6}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Ionicons name="close-circle-outline" size={11} color={colors.textTertiary} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Remove</Text>
+                    </Pressable>
+                  )}
+                </View>
               )}
               <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary }}>
                 {storeItems.filter(i => !i.isBought).length} left

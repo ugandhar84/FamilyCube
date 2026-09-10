@@ -72,7 +72,11 @@ export function KioskPinStoreLocationSheet({ visible, store, onClose, onPin }: {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') { setLocating(false); return; }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        // Same fix as the mobile PinStoreLocationSheet.tsx — Balanced can
+        // return a cached last-known fix instead of forcing a fresh GPS
+        // lock, which could silently save the store's pin at a stale
+        // location and immediately false-positive the geofence.
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
         const r = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 };
         setRegion(r);
         setMarker({ latitude: r.latitude, longitude: r.longitude });

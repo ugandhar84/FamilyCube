@@ -46,6 +46,8 @@ import { pickAiMove, type Difficulty } from './ticTacToeAI';
 import { TicTacToeMark } from './TicTacToeMark';
 import { useGameStore } from '@/store/gameStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useAppStateRefresh } from '@/lib/useAppStateRefresh';
+import { showAlert } from '@/components/AppAlert';
 
 const BOARD_MAX = 320;
 const CELL_GAP = 8;
@@ -371,7 +373,12 @@ function MultiplayerTicTacToe({ boardSize, cellSize, sessionId, onGameOverChange
   const loadSession = useGameStore(s => s.loadSession);
   const ensureSessionRealtime = useGameStore(s => s.ensureSessionRealtime);
   const stopSessionRealtime = useGameStore(s => s.stopSessionRealtime);
+  const ensurePresence = useGameStore(s => s.ensurePresence);
+  const stopPresence = useGameStore(s => s.stopPresence);
+  const opponentOnline = useGameStore(s => s.opponentOnline);
+  const leaveGame = useGameStore(s => s.leaveGame);
   const [submitting, setSubmitting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     useGameStore.setState({ activeSession: null });
@@ -381,17 +388,40 @@ function MultiplayerTicTacToe({ boardSize, cellSize, sessionId, onGameOverChange
     // leave activeSession null forever. Fetch the current row once so the
     // screen renders the real state immediately.
     loadSession(sessionId);
-    return () => stopSessionRealtime();
-  }, [sessionId]);
+    if (activeMemberId) ensurePresence(sessionId, activeMemberId);
+    return () => { stopSessionRealtime(); stopPresence(); };
+  }, [sessionId, activeMemberId]);
+
+  // A silently dropped move-sync socket (e.g. after the app spends time
+  // backgrounded) had no recovery path — ensureSessionRealtime's own dedup
+  // guard skips re-subscribing for the SAME sessionId even after the
+  // channel died, and nothing else ever called it again short of leaving
+  // and re-entering this screen (live-reported: "if the persons are on
+  // the screen the person played it is not realtime reflecting the move
+  // in the other person screen"). Foregrounding now forces a fresh
+  // fetch + a fresh subscribe (ensureSessionRealtime's guard only skips
+  // when the channel is confirmed still alive).
+  useAppStateRefresh(() => {
+    loadSession(sessionId);
+    ensureSessionRealtime(sessionId);
+    if (activeMemberId) ensurePresence(sessionId, activeMemberId);
+  });
 
   const session = activeSession?.id === sessionId ? activeSession : null;
   const board: Board = (session?.boardState?.cells as Board) ?? emptyBoard();
   const winningLine = checkWinningLine(board);
 
   const isParticipant = !!session && (session.challengerId === activeMemberId || session.challengedId === activeMemberId);
-  const gameOver = session?.status === 'completed';
+  // 'abandoned' (an explicit leave, or the 30-minute silent-disconnect
+  // sweep — see leave_game RPC / game-challenge-sweep's own comments) is
+  // just as terminal as 'completed' — was previously NOT treated as
+  // game-over at all, so a left/forfeited game looked identically "stuck
+  // mid-game" as one that was genuinely still in progress, with no
+  // resolution shown to the remaining player.
+  const abandoned = session?.status === 'abandoned';
+  const gameOver = session?.status === 'completed' || abandoned;
   const draw = session?.result === 'draw' || session?.result === 'tie';
-  const myWon = gameOver && session?.winnerId === activeMemberId;
+  const myWon = gameOver && !!session?.winnerId && session.winnerId === activeMemberId;
 
   // Every hook in this component must run on every render regardless of
   // the early "not loaded yet" / "not your game" return below — an effect
@@ -443,14 +473,30 @@ function MultiplayerTicTacToe({ boardSize, cellSize, sessionId, onGameOverChange
     }
   };
 
-  const statusText = gameOver
-    ? (draw ? 'Draw' : myWon ? 'You win!' : `${opponent?.name?.split(' ')[0] ?? 'Opponent'} wins`)
+  const opponentName = opponent?.name?.split(' ')[0] ?? 'Opponent';
+  const statusText = abandoned
+    ? (myWon ? `${opponentName} left the game` : 'You left the game')
+    : gameOver
+    ? (draw ? 'Draw' : myWon ? 'You win!' : `${opponentName} wins`)
     : session.status === 'pending' ? 'Waiting…'
     : isMyTurn ? 'Your turn'
-    : `${opponent?.name?.split(' ')[0] ?? 'Their'}'s turn`;
+    : `${opponentName}'s turn`;
   const statusColor = gameOver
     ? (draw ? ARCADE.textPrimary : myWon ? ARCADE.ticTacToeX : ARCADE.ticTacToeO)
     : ARCADE.textPrimary;
+
+  const handleLeave = () => {
+    showAlert('Leave game?', `${opponentName} will be notified that you left.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave', style: 'destructive',
+        onPress: async () => {
+          setLeaving(true);
+          try { await leaveGame(sessionId); } finally { setLeaving(false); }
+        },
+      },
+    ]);
+  };
 
   const leftIsMe = isChallenger;
 
@@ -467,7 +513,29 @@ function MultiplayerTicTacToe({ boardSize, cellSize, sessionId, onGameOverChange
       rightMark={leftIsMe ? (myMark === 'X' ? 'O' : 'X') : myMark}
       onCellPress={handleCellPress} cellsDisabled={!isMyTurn || gameOver}
       showConfetti={myWon} confettiColors={[ARCADE.ticTacToeX, ARCADE.primary]}
-      footer={null}
+      footer={
+        <View style={{ gap: 8, alignItems: 'center' }}>
+          {/* opponentOnline is only meaningful once BOTH players' presence
+              channels have actually synced — undefined (not yet known) and
+              true (online) both render nothing, so a brand-new game or a
+              momentary presence hiccup never falsely accuses someone of
+              being offline. Was no such signal anywhere before
+              (live-requested: "other person should notify that he is
+              offline at that moement"). */}
+          {!gameOver && opponentOnline === false && (
+            <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: ARCADE_TYPO.label, color: ARCADE.textMuted }}>
+              {opponentName} is offline
+            </Text>
+          )}
+          {!gameOver && (
+            <Pressable onPress={handleLeave} disabled={leaving} hitSlop={8}>
+              <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_BOLD, fontSize: ARCADE_TYPO.label, color: ARCADE.textMuted, textDecorationLine: 'underline' }}>
+                {leaving ? 'Leaving…' : 'Leave game'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      }
     />
   );
 }

@@ -4,23 +4,40 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
   ScrollView, StatusBar,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useAuthStore } from '@/store/authStore';
-import {
-  IlloWelcome, IlloHealth, IlloReminders, IlloAIHealth,
-  IlloSocial, IlloAI, IlloGetStarted, IlloPlaydates,
-} from '@/features/onboarding/components/OnboardingIllos';
 import { TYPO } from '@/constants/theme';
 
 const { width, height } = Dimensions.get('window');
+const ILLO_H = Math.round(height * 0.52);
 
-// ─── Slide data — one per real Family Cube feature (see the 7-tab layout in
-// CLAUDE.md), illustrated with our own SVG scenes (OnboardingIllos.tsx)
-// instead of stock photography. Built from useTheme() inside the component
+// Generated illustrations (character-art style, matched set — see
+// docs/onboarding art direction) — one per slide, real photo/JPEG assets
+// instead of the earlier hand-drawn SVG scenes. expo-image's cover
+// contentFit center-crops these to fill any device's screen (phone or
+// iPad, portrait or landscape) without needing separate per-device asset
+// variants — every source image already has its subject centered with
+// generous white margin, so a cover-crop never cuts anything important.
+const ONBOARDING_IMAGES = {
+  welcome: require('@/assets/onboarding/welcome.jpeg'),
+  quests: require('@/assets/onboarding/quests.jpeg'),
+  schedule: require('@/assets/onboarding/schedule.jpeg'),
+  health: require('@/assets/onboarding/health.jpeg'),
+  chat: require('@/assets/onboarding/chat.jpeg'),
+  gps: require('@/assets/onboarding/gps.jpeg'),
+  grocery: require('@/assets/onboarding/grocery.jpeg'),
+  askcube: require('@/assets/onboarding/askfam.jpeg'),
+  getstarted: require('@/assets/onboarding/getstarted.jpeg'),
+} as const;
+
+// ─── Slide data — one per real Family Cube feature, illustrated with a
+// generated character-art image set (ONBOARDING_IMAGES above) matched to
+// the app's own brand palette. Built from useTheme() inside the component
 // below (not a module-level const) so each slide's accent maps to the
 // actual current brand token for its feature — primary for Welcome/Ask
 // Cube/Get Started, amber for Quests/Store (ORGANIZE), teal for GPS
@@ -29,7 +46,7 @@ function buildSlides(colors: any) {
   return [
     {
       key: 'welcome',
-      illustration: IlloWelcome,
+      image: ONBOARDING_IMAGES.welcome,
       gradientColors: [colors.primary, colors.primaryLight] as [string, string],
       chip: 'CONNECT · ORGANIZE · CARE · GROW',
       title: 'One family.\nOne cube.',
@@ -39,7 +56,7 @@ function buildSlides(colors: any) {
     },
     {
       key: 'quests',
-      illustration: IlloHealth,
+      image: ONBOARDING_IMAGES.quests,
       gradientColors: [colors.amber, colors.amberLight] as [string, string],
       chip: 'Chores',
       title: 'Chores become\nworth doing.',
@@ -49,7 +66,7 @@ function buildSlides(colors: any) {
     },
     {
       key: 'schedule',
-      illustration: IlloReminders,
+      image: ONBOARDING_IMAGES.schedule,
       gradientColors: [colors.teal, colors.tealLight] as [string, string],
       chip: 'Schedule',
       title: 'Never miss\nwhat matters.',
@@ -58,8 +75,18 @@ function buildSlides(colors: any) {
       btnLabel: 'Next',
     },
     {
+      key: 'health',
+      image: ONBOARDING_IMAGES.health,
+      gradientColors: [colors.teal, colors.tealLight] as [string, string],
+      chip: 'Family Health',
+      title: 'Medications and\nvaccines, tracked.',
+      sub: 'Scan a bottle or a shot record and Family Cube fills in the details — never miss a dose or a booster again.',
+      btnColor: colors.teal,
+      btnLabel: 'Next',
+    },
+    {
       key: 'chat',
-      illustration: IlloAIHealth,
+      image: ONBOARDING_IMAGES.chat,
       gradientColors: [colors.pink, colors.pinkLight] as [string, string],
       chip: 'Chat',
       title: 'Talk like\na family again.',
@@ -69,7 +96,7 @@ function buildSlides(colors: any) {
     },
     {
       key: 'gps',
-      illustration: IlloSocial,
+      image: ONBOARDING_IMAGES.gps,
       gradientColors: [colors.teal, colors.tealLight] as [string, string],
       chip: 'GPS',
       title: 'Know they\nmade it home.',
@@ -78,18 +105,18 @@ function buildSlides(colors: any) {
       btnLabel: 'Next',
     },
     {
-      key: 'store',
-      illustration: IlloPlaydates,
+      key: 'grocery',
+      image: ONBOARDING_IMAGES.grocery,
       gradientColors: [colors.amberLight, colors.amber] as [string, string],
-      chip: 'Store',
-      title: 'Coins earned.\nRewards claimed.',
-      sub: 'Kids cash in quest coins for real rewards parents set — screen time, treats, or something bigger.',
+      chip: 'Grocery',
+      title: 'One list.\nNo double buying.',
+      sub: 'Everyone adds to the same shopping list — scan a receipt and Family Cube checks items off automatically.',
       btnColor: colors.amber,
       btnLabel: 'Next',
     },
     {
       key: 'askcube',
-      illustration: IlloAI,
+      image: ONBOARDING_IMAGES.askcube,
       gradientColors: [colors.primary, colors.accent] as [string, string],
       chip: 'Ask Fam',
       title: 'Your family\'s\nsmart assistant.',
@@ -99,7 +126,7 @@ function buildSlides(colors: any) {
     },
     {
       key: 'getstarted',
-      illustration: IlloGetStarted,
+      image: ONBOARDING_IMAGES.getstarted,
       gradientColors: [colors.primary, colors.pink] as [string, string],
       chip: 'Ready when you are',
       title: 'Let\'s build your\nfamily cube.',
@@ -174,12 +201,19 @@ export default function OnboardingScreen() {
         scrollEnabled
       >
         {SLIDES.map((sl) => {
-          const Illo = sl.illustration;
           return (
             <View key={sl.key} style={{ width, height }}>
               <LinearGradient colors={sl.gradientColors} style={StyleSheet.absoluteFillObject}>
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 }}>
-                  <Illo isDark={false} />
+                {/* Source images are plain-white-background JPEGs (a soft
+                    tinted circle nearly fills the frame) — cover-fit
+                    scoped to just this illustration zone (not the full
+                    screen) crops out that white margin so the art reads
+                    as sitting directly on the gradient, without zooming
+                    past face level the way a full-screen cover would.
+                    Works identically on phone and iPad since it's driven
+                    by the zone's own aspect ratio, not the device's. */}
+                <View style={{ height: ILLO_H + 60, overflow: 'hidden' }}>
+                  <Image source={sl.image} style={{ width: '100%', height: '100%' }} contentFit="cover" contentPosition="top" />
                 </View>
               </LinearGradient>
               {/* Gradient: starts at bottom of illustration zone, fades down to text area */}

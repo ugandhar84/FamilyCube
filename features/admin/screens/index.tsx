@@ -83,6 +83,14 @@ const SECTIONS: AdminSection[] = [
     route: '/admin/legal-documents',
     accent: 'accent',
   },
+  {
+    id: 'ai-usage',
+    label: 'AI Usage',
+    subtitle: 'Calls and tokens per service and per user, over time',
+    icon: 'sparkles-outline',
+    route: '/admin/ai-usage',
+    accent: 'kid',
+  },
 ];
 
 const ACCENT_LIGHT_KEY: Record<AdminSection['accent'], string> = {

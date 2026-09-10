@@ -14,6 +14,7 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logAiUsage } from '../_shared/logAiUsage.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -591,6 +592,15 @@ const TOOLS = [
 
 // ─── Model calls ─────────────────────────────────────────────────────────
 
+// _lastUsage — set immediately after each provider's own fetch resolves,
+// read once by callModel right after the call returns. A return-shape
+// change (adding a `usage` field to every call site) would touch every
+// existing consumer of callDeepSeek/callClaude/callGemini's return value;
+// this module-level side channel avoids that, at the cost of only being
+// valid for the single in-flight call — acceptable since this file has no
+// concurrent request handling within one invocation.
+let _lastUsage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null } | null = null;
+
 async function callDeepSeek(messages: unknown[], tools: unknown[]) {
   if (!DEEPSEEK_KEY) throw new Error('DEEPSEEK_API_KEY not configured');
   const res = await fetch(DEEPSEEK_URL, {
@@ -600,6 +610,8 @@ async function callDeepSeek(messages: unknown[], tools: unknown[]) {
   });
   if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  const u = data.usage;
+  _lastUsage = u ? { promptTokens: u.prompt_tokens ?? null, completionTokens: u.completion_tokens ?? null, totalTokens: u.total_tokens ?? null } : null;
   return data.choices?.[0]?.message;
 }
 
@@ -659,6 +671,10 @@ async function callClaude(messages: any[], tools: unknown[]) {
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  const u = data.usage;
+  _lastUsage = u
+    ? { promptTokens: u.input_tokens ?? null, completionTokens: u.output_tokens ?? null, totalTokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) || null }
+    : null;
   const textBlock = (data.content ?? []).find((b: any) => b.type === 'text');
   const toolUseBlocks = (data.content ?? []).filter((b: any) => b.type === 'tool_use');
   return {
@@ -716,6 +732,10 @@ async function callGemini(messages: any[], tools: unknown[]) {
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  const um = data.usageMetadata;
+  _lastUsage = um
+    ? { promptTokens: um.promptTokenCount ?? null, completionTokens: um.candidatesTokenCount ?? null, totalTokens: um.totalTokenCount ?? null }
+    : null;
   const candidate = data.candidates?.[0];
   const parts = candidate?.content?.parts ?? [];
   // Real live QA investigation: a genuinely empty reply (no functionCall,
@@ -789,19 +809,26 @@ async function callGemini(messages: any[], tools: unknown[]) {
 // incident, this was not an emergency quota-driven swap, it's a deliberate
 // choice to try a new candidate live. Gemini and DeepSeek remain wired as
 // real fallbacks in the same order as before if Claude's own call throws.
-async function callModel(messages: unknown[], tools: unknown[]): Promise<{ reply: any; modelUsed: 'gemini' | 'deepseek' | 'claude' }> {
+const MODEL_NAME_BY_PROVIDER: Record<'gemini' | 'deepseek' | 'claude', string> = {
+  claude: 'claude-haiku-4-5-20251001', gemini: 'gemini-2.5-flash', deepseek: 'deepseek-chat',
+};
+
+async function callModel(messages: unknown[], tools: unknown[]): Promise<{
+  reply: any; modelUsed: 'gemini' | 'deepseek' | 'claude';
+  usage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null } | null;
+}> {
   try {
     const reply = await callClaude(messages as any[], tools);
-    return { reply, modelUsed: 'claude' };
+    return { reply, modelUsed: 'claude', usage: _lastUsage };
   } catch (err) {
     console.warn('[ask-cube] Claude failed, falling back to Gemini:', (err as Error).message);
     try {
       const reply = await callGemini(messages as any[], tools);
-      return { reply, modelUsed: 'gemini' };
+      return { reply, modelUsed: 'gemini', usage: _lastUsage };
     } catch (err2) {
       console.warn('[ask-cube] Gemini failed, falling back to DeepSeek:', (err2 as Error).message);
       const reply = await callDeepSeek(messages, tools);
-      return { reply, modelUsed: 'deepseek' };
+      return { reply, modelUsed: 'deepseek', usage: _lastUsage };
     }
   }
 }
@@ -2979,8 +3006,18 @@ conversation text, so never reference "the suggestions below" in your actual rep
     let lastDebugEmptyReason: any = undefined;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const { reply, modelUsed } = await callModel(messages, TOOLS);
+      const modelCallStarted = Date.now();
+      const { reply, modelUsed, usage } = await callModel(messages, TOOLS);
       modelUsedThisRequest = modelUsed;
+      // Fire-and-forget — logging must never block or fail the actual
+      // user-facing reply [live-requested: "how many call we are using
+      // per user and total per day week month year stats"].
+      logAiUsage(supabase, {
+        service: 'ask_cube', provider: modelUsed, model: MODEL_NAME_BY_PROVIDER[modelUsed],
+        memberId: body.memberId ?? null, familyId: member?.family_id ?? null,
+        promptTokens: usage?.promptTokens ?? null, completionTokens: usage?.completionTokens ?? null,
+        totalTokens: usage?.totalTokens ?? null, success: true, latencyMs: Date.now() - modelCallStarted,
+      }).catch(() => {});
       if (!reply) return json({ error: 'Model returned no reply' }, 502);
       if ((reply as any)._debugEmptyReason) lastDebugEmptyReason = (reply as any)._debugEmptyReason;
 

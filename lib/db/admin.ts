@@ -425,3 +425,73 @@ export async function updateLegalDocument(
   if (error) throw new Error(error.message);
   return data as LegalDocumentRow;
 }
+
+// ── AI usage ─────────────────────────────────────────────────────────────────
+// Backed by admin_get_ai_usage_*() security-definer RPCs
+// (20260950000000_ai_usage_log.sql) — "how many AI calls each user is
+// making per service" / "total per day week month year"
+// [live-requested]. Every RPC is gated by is_app_admin() and returns zero
+// rows for a non-admin caller.
+
+export type AiUsageSummaryRow = {
+  service: string;
+  callCount: number;
+  successCount: number;
+  totalTokens: number;
+};
+
+export async function getAiUsageSummary(days = 30): Promise<AiUsageSummaryRow[]> {
+  const { data, error } = await supabase.rpc('admin_get_ai_usage_summary', { days });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map(r => ({
+    service: r.service, callCount: Number(r.call_count), successCount: Number(r.success_count), totalTokens: Number(r.total_tokens),
+  }));
+}
+
+export type AiUsageByUserRow = {
+  memberId: string;
+  memberName: string | null;
+  familyId: string | null;
+  callCount: number;
+  totalTokens: number;
+};
+
+export async function getAiUsageByUser(days = 30, limit = 50): Promise<AiUsageByUserRow[]> {
+  const { data, error } = await supabase.rpc('admin_get_ai_usage_by_user', { days, result_limit: limit });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map(r => ({
+    memberId: r.member_id, memberName: r.member_name, familyId: r.family_id,
+    callCount: Number(r.call_count), totalTokens: Number(r.total_tokens),
+  }));
+}
+
+export type AiUsageForUserRow = {
+  service: string;
+  callCount: number;
+  totalTokens: number;
+  lastUsedAt: string;
+};
+
+export async function getAiUsageForUser(memberId: string): Promise<AiUsageForUserRow[]> {
+  const { data, error } = await supabase.rpc('admin_get_ai_usage_for_user', { target_member_id: memberId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map(r => ({
+    service: r.service, callCount: Number(r.call_count), totalTokens: Number(r.total_tokens), lastUsedAt: r.last_used_at,
+  }));
+}
+
+export type AiUsageTrendPoint = {
+  bucketStart: string;
+  callCount: number;
+  totalTokens: number;
+};
+
+export type AiUsageTrendBucket = 'hour' | 'day' | 'week' | 'month' | 'year';
+
+export async function getAiUsageTrend(bucket: AiUsageTrendBucket = 'day', days = 90): Promise<AiUsageTrendPoint[]> {
+  const { data, error } = await supabase.rpc('admin_get_ai_usage_trend', { bucket, days });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map(r => ({
+    bucketStart: r.bucket_start, callCount: Number(r.call_count), totalTokens: Number(r.total_tokens),
+  }));
+}

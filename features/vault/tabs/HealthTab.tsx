@@ -663,7 +663,14 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       if (medStatusFilter === 'pending') return med.taken_date !== todayStr && !isOverdue(med);
       if (medStatusFilter === 'overdue') return isOverdue(med);
       return true;
-    });
+    })
+      // Was unordered (whatever order the DB happened to return, no
+      // .order() on the underlying query) — live-requested: "we should
+      // show the vax, med in sorted order latest on top in the clinet."
+      // start_date is the closest analog to "administered date" a
+      // medication row has (prescribed/began-taking date); falls back to
+      // created_at for a row with no start_date set at all.
+      .sort((a, b) => new Date(b.start_date || b.updated_at || 0).getTime() - new Date(a.start_date || a.updated_at || 0).getTime());
   }, [meds, medMemberFilter, medCatFilter, medFreqFilter, medOngoingOnly,
       medEscalationOnly, medRefillSoon, medSearch, medStatusFilter]);
 
@@ -681,7 +688,10 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         return !vax.done && (due.getTime() - now.getTime()) < vaxDueSoonDays * 24 * 3600_000;
       }
       return true;
-    });
+    })
+      // Same "latest on top" fix as filteredMeds above — vax.date is the
+      // real administered date.
+      .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   }, [vaxes, vaxMemberFilter, vaxSearch, vaxStatusFilter, vaxDueSoonDays]);
 
   if (loading) return (

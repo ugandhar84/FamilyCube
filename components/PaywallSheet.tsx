@@ -114,7 +114,7 @@ export default function PaywallSheet({
   const monthlyEquiv = () => {
     const pkg = getPkg();
     if (billing !== 'annual' || !pkg) return null;
-    const price: number = pkg.product?.price ?? 44.99;
+    const price: number = pkg.product?.price ?? 47.88;
     return `$${(price / 12).toFixed(2)}/mo`;
   };
 
@@ -172,10 +172,11 @@ export default function PaywallSheet({
     }
   };
 
-  const price = billing === 'annual' ? localizedPrice('44.99') : localizedPrice('6.99');
+  // Flat rate — $3.99/mo, annual is exactly 12x with no discount
+  // [live-requested: "flat rate 3.99 plan permonth and year *12"].
+  const price = billing === 'annual' ? localizedPrice('47.88') : localizedPrice('3.99');
   const equiv = monthlyEquiv();
   const trialText = hasTrial() ? '7-day free trial, then ' : '';
-  const savings = billing === 'annual' ? 'Save 40%' : null;
 
   return (
     <BottomSheet
@@ -246,11 +247,10 @@ export default function PaywallSheet({
               <Text style={[s.billingLabel, { color: billing === b ? '#fff' : colors.textSecondary }]}>
                 {b === 'annual' ? 'Annual' : 'Monthly'}
               </Text>
-              {b === 'annual' && (
-                <View style={[s.savePill, { backgroundColor: billing === 'annual' ? 'rgba(255,255,255,0.25)' : BRAND.terracottaLight }]}>
-                  <Text style={[s.savePillText, { color: billing === 'annual' ? '#fff' : BRAND.terracottaDark }]}>Save 40%</Text>
-                </View>
-              )}
+              {/* No "Save X%" badge — annual is a flat 12x the monthly
+                  price with no discount at this pricing
+                  [live-requested: "flat rate 3.99 plan permonth and year
+                  *12"]. */}
             </TouchableOpacity>
           ))}
         </View>

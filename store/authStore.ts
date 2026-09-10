@@ -7,6 +7,7 @@ import { clearWeatherCache } from '@/lib/weather';
 import { resetAppSettingsSubscription } from '@/lib/hooks/useAppSettings';
 import { useNotifStore } from '@/store/notifStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useChatStore } from '@/store/chatStore';
 
 export const TERMS_VERSION = '1.0';
 
@@ -274,6 +275,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     useSubscriptionStore.getState().reset();
     usePreferenceStore.getState().reset();
     useNotifStore.getState().reset();
+    // chatStore never had a reset() before this — its in-memory messages/
+    // channels/realtime subscriptions survived a sign-out untouched, so
+    // switching accounts on the same device kept showing (and streaming
+    // new messages from) the PREVIOUS account's family chat until a full
+    // app restart [live-reported: a different family's chat visible
+    // after logging into a new account on the same device]. Same fix
+    // shape as familyStore.reset() below, for the same underlying class
+    // of bug.
+    useChatStore.getState().reset();
     // Critical: familyStore caches members/activeMemberId under fixed
     // (non-user-scoped) AsyncStorage keys, and derives which family to
     // query on next load from whatever's already cached. Without this,

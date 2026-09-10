@@ -616,6 +616,51 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           animated height so it grows/shrinks in lockstep as the sheet is
           dragged. */}
       <Animated.View style={{ height: Animated.subtract(SCREEN_H, sheetHeight), overflow: 'hidden' }}>
+        {/* Find-My-style avatar strip floating over the top of the map —
+            live-requested: "we can also utilize the header space for map
+            similar like iPhone find me". Tapping a member animates the
+            camera to their pin, same 650ms animateToRegion the auto-fit
+            effect above already uses. Only pinned (live-location) members
+            appear here — someone with no lat/lng has nowhere to center
+            the map on; they're still reachable via the roster sheet below. */}
+        {pinned.length > 0 && (
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false}
+            style={{ position: 'absolute', top: 8, left: 0, right: 0, zIndex: 10 }}
+            contentContainerStyle={{ paddingHorizontal: 12, gap: 10 }}
+          >
+            {pinned.map(loc => {
+              const rc = roleColor(loc.role);
+              const isMe = loc.member_id === activeMemberId;
+              return (
+                <TouchableOpacity
+                  key={loc.member_id}
+                  onPress={() => {
+                    if (loc.lat == null || loc.lng == null) return;
+                    const r = { latitude: loc.lat, longitude: loc.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+                    mapRef.current?.animateToRegion(r, 650);
+                  }}
+                  style={{ alignItems: 'center', gap: 3 }}
+                >
+                  <View style={{
+                    padding: 2, borderRadius: 22, backgroundColor: colors.card,
+                    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 3,
+                  }}>
+                    <MemberAvatar name={loc.name} color={rc} size={40} />
+                  </View>
+                  <View style={{
+                    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
+                    backgroundColor: colors.card, maxWidth: 64,
+                  }}>
+                    <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary }}>
+                      {isMe ? 'You' : loc.name.split(' ')[0]}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
         <MapView
           ref={mapRef}
           provider={PROVIDER_DEFAULT}

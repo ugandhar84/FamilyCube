@@ -1,0 +1,16 @@
+-- One-time cleanup: every store_locations row saved before today's fix
+-- (PinStoreLocationSheet.tsx / KioskPinStoreLocationSheet.tsx switching
+-- from Location.Accuracy.Balanced to Accuracy.Highest when seeding the
+-- picker's initial marker) could have been silently saved at the user's
+-- own STALE cached device location instead of the store's real location,
+-- if the user never repositioned the marker before tapping "Pin It".
+-- A wrong pin like this causes an immediate false "near the store"
+-- geofence trigger for anyone whose device later has a fresh fix still
+-- close to that stale point (live-reported: pinned a store 4 miles away,
+-- got an instant "near the store" alert — confirmed as a pin saved before
+-- this fix, not a new one). Rather than leave every family's existing
+-- pins silently suspect, clear them all so every family re-pins fresh
+-- with the corrected accuracy — the client already has a "Pin" button
+-- that reappears the moment pinnedStores[store] is empty, so this is a
+-- clean, self-healing reset with no UI change needed.
+delete from public.store_locations;

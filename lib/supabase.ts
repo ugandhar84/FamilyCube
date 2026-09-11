@@ -100,6 +100,32 @@ function getActiveFamilyIdHeader(): string | undefined {
   }
 }
 
+// Background location pushes (lib/locationTracking.ts) fire from a
+// headless/backgrounded JS context on whatever connectivity the OS
+// happens to hand it at that moment — a genuine transport failure there
+// is common-by-nature (weak cellular during a background wake, not a real
+// "you're offline" moment for the person actively using the app) and was
+// silently feeding the SAME app-wide network-failure counter every other
+// screen's Supabase calls also feed [live-reported: "getting this count
+// not connect error - not sure why... could be location" / "dont display
+// for the internet connection issue" once it was clear a real bug, not a
+// real outage, could just as easily be hiding behind that generic
+// banner]. suppressNetworkBanner lets the location task mark its OWN
+// requests as exempt from the shared isOffline banner — it still throws
+// normally (the task's own try/catch and last-error recording,
+// lib/locationTracking.ts's recordLocationSyncError, see that unchanged)
+// — this only stops ITS failures from popping the generic banner that
+// every other, genuinely-foreground Supabase call still correctly does.
+let suppressNetworkBanner = false;
+export async function withSuppressedNetworkBanner<T>(fn: () => PromiseLike<T>): Promise<T> {
+  suppressNetworkBanner = true;
+  try {
+    return await fn();
+  } finally {
+    suppressNetworkBanner = false;
+  }
+}
+
 const debugFetch: typeof fetch = async (input, init) => {
   const activeMemberId = getActiveMemberIdHeader();
   const activeMemberGrant = getActiveMemberGrantHeader();
@@ -128,7 +154,7 @@ const debugFetch: typeof fetch = async (input, init) => {
   try {
     res = await fetch(input, init);
   } catch (err) {
-    if (isNetworkError(err)) markNetworkOffline();
+    if (isNetworkError(err) && !suppressNetworkBanner) markNetworkOffline();
     throw err;
   }
   const ms = Date.now() - t0;

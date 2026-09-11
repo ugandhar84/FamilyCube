@@ -18,7 +18,7 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
+import { supabase, withSuppressedNetworkBanner } from './supabase';
 import { encryptLocationText } from './locationCrypto';
 
 // Persisted fallback for activeMemberId/lastFamilyId below — was IN-MEMORY
@@ -36,6 +36,40 @@ import { encryptLocationText } from './locationCrypto';
 // even when this module's own memory was wiped by a background relaunch.
 const STORAGE_KEY_MEMBER_ID = 'familycube_bg_location_member_id';
 const STORAGE_KEY_FAMILY_ID = 'familycube_bg_location_family_id';
+
+// TestFlight/production builds have no Metro console — every failure in
+// this background task previously went to console.error/console.warn
+// only, so a persistent write failure (an RLS policy mismatch, a stale
+// auth token, anything that fails on EVERY delivery rather than a one-off
+// blip) was structurally undiagnosable outside a dev build. It would also
+// silently feed the app-wide network-failure counter (lib/networkStore.ts)
+// on every attempt, popping the generic "No internet connection —
+// retrying…" banner with zero way to tell it apart from a real
+// connectivity issue [live-reported: "getting this count not connect
+// error - not sure why... could be location"]. Same
+// record/get/clear-last-error pattern lib/calendarSync2Way.ts already
+// uses for Apple Calendar sync — persists the most recent real failure so
+// GpsTab.tsx can surface it directly in the UI instead of it vanishing
+// into a console no one on a real device can see.
+const LAST_ERROR_KEY_PREFIX = 'familycube_bg_location_last_error_'; // + memberId
+
+async function recordLocationSyncError(memberId: string, context: string, e: unknown): Promise<void> {
+  try {
+    const message = e instanceof Error ? e.message : String(e);
+    await AsyncStorage.setItem(LAST_ERROR_KEY_PREFIX + memberId, JSON.stringify({ context, message, at: new Date().toISOString() }));
+  } catch { /* best-effort only */ }
+}
+
+export async function getLastLocationSyncError(memberId: string): Promise<{ context: string; message: string; at: string } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_ERROR_KEY_PREFIX + memberId);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export async function clearLastLocationSyncError(memberId: string): Promise<void> {
+  try { await AsyncStorage.removeItem(LAST_ERROR_KEY_PREFIX + memberId); } catch { /* best-effort */ }
+}
 
 export const LOCATION_TASK_NAME = 'family-cube-background-location';
 
@@ -428,7 +462,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // moved noticeably, map never updated, no error shown). Logging here
     // doesn't fix a real RLS mismatch by itself, but makes the next
     // occurrence actually diagnosable instead of a silent no-op.
-    const { error: upsertErr } = await supabase.from('member_locations').upsert({
+    const { error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert({
       member_id: activeMemberId,
       family_id: lastFamilyId,
       lat, lng, address: encAddress,
@@ -461,23 +495,33 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // going off" — the toggle's own write in GpsTab.tsx was correct;
       // this background task's write was the one silently clobbering it).
       share_exact_address: shareExact,
-    }, { onConflict: 'member_id' });
+    }, { onConflict: 'member_id' }));
     if (upsertErr) {
       console.error('[locationTracking] member_locations upsert failed:', upsertErr.message);
+      await recordLocationSyncError(activeMemberId, 'upsert', upsertErr.message);
       return;
     }
+    // A Postgres-level error (RLS denial, bad payload) comes back as a
+    // normal HTTP response, never a fetch throw — withSuppressedNetworkBanner
+    // only exempts transport-level failures, so this branch is reached
+    // independently and is what actually distinguishes "a real bug" from
+    // "the network dropped" for anyone reading this file. Clear any
+    // previously-recorded failure once a write genuinely succeeds, so a
+    // resolved issue doesn't keep showing as still-broken.
+    await clearLastLocationSyncError(activeMemberId);
 
     if (lastFamilyId) {
-      const { error: historyErr } = await supabase.from('member_location_history').insert({
+      const { error: historyErr } = await withSuppressedNetworkBanner(() => supabase.from('member_location_history').insert({
         member_id: activeMemberId, family_id: lastFamilyId,
         lat, lng, address: encAddress,
         battery_level: batteryLevel, is_charging: isCharging,
         recorded_at: now,
-      });
+      }));
       if (historyErr) console.warn('[locationTracking] member_location_history insert failed:', historyErr.message);
     }
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);
+      if (activeMemberId) await recordLocationSyncError(activeMemberId, 'callback', (e as Error)?.message ?? e);
     }
   });
   taskDefined = true;

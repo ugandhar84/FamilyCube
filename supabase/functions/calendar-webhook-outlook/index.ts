@@ -133,6 +133,54 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
     }).eq('id', link.event_id);
     await supabase.from('event_external_links').update({ last_pulled_at: new Date().toISOString(), external_etag: item['@odata.etag'] ?? null }).eq('id', link.id);
   } else {
+    // Live-reported bug (same class already fixed for Google, see
+    // googleReconcile.ts's own comment on check_likely_duplicate_event):
+    // this branch had NO dedup check at all — a FamilyCube-native event
+    // that also happens to exist on the connected Outlook calendar (the
+    // other parent added it there, or a shared school calendar pushed it)
+    // always inserted as a second, independent row. Checked BEFORE
+    // treating this as genuinely new: if a same-title/time/family row
+    // already exists, link this Outlook item onto it instead of inserting
+    // a duplicate — the native row's richer fields stay untouched, only
+    // the external link is created, so future Outlook-side edits reconcile
+    // onto the real row via the update branch above.
+    let dupeEventId: string | null = null;
+    if (patch.title && patch.startTime && patch.date) {
+      const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
+        p_family_id: connection.family_id,
+        p_title: patch.title,
+        p_start_time: patch.startTime,
+        p_date: patch.date,
+      });
+      const dupe = Array.isArray(dupes) ? dupes[0] : dupes;
+      if (dupe?.id) dupeEventId = dupe.id;
+    }
+
+    if (dupeEventId) {
+      const { data: alreadyLinked } = await supabase.from('event_external_links')
+        .select('id').eq('connection_id', connection.id).eq('event_id', dupeEventId).maybeSingle();
+      if (!alreadyLinked) {
+        await supabase.from('event_external_links').insert({
+          event_id: dupeEventId, connection_id: connection.id, external_event_id: item.id,
+          external_etag: item['@odata.etag'] ?? null, last_pulled_at: new Date().toISOString(),
+        });
+      }
+      // Same freshness-guarded stamp rule googleReconcile.ts uses for its
+      // own dedup-link path — don't clobber a more-recently-synced
+      // other-provider stamp on the row this just linked onto.
+      const { data: existing } = await supabase.from('calendar_events')
+        .select('last_external_sync_at').eq('id', dupeEventId).maybeSingle();
+      const existingStampTime = existing?.last_external_sync_at ? new Date(existing.last_external_sync_at).getTime() : 0;
+      const thisPullTime = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime).getTime() : Date.now();
+      if (thisPullTime >= existingStampTime) {
+        await supabase.from('calendar_events').update({
+          last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'outlook',
+          last_external_sync_account: connection.connected_account_email ?? null, last_external_sync_member_id: connection.member_id,
+        }).eq('id', dupeEventId);
+      }
+      return;
+    }
+
     const newId = crypto.randomUUID();
     const defaultAssignee = patch.location && syncMemberName
       ? { helper_name: syncMemberName, helper_id: connection.member_id, helper_status: 'pending' as const }

@@ -413,6 +413,58 @@ export async function reconcileAppleCalendar(
           || localEvent.time !== patch.time || localEvent.location !== patch.location || localEvent.notes !== patch.notes;
         if (changed && deviceModified > 0) await callbacks.updateEvent(familyEventId, { ...patch, ...syncFields });
       } else {
+        // Live-reported bug (same class Google's reconcile already fixed,
+        // see googleReconcile.ts's own comment on check_likely_duplicate_event):
+        // a FamilyCube-native event pushed OUT to this device's own
+        // "FamilyCube" Apple calendar could get pulled back IN here as if
+        // it were "added directly in the device Calendar app" — this local
+        // `map` is per-device AsyncStorage, not server-shared, so it goes
+        // stale across a reinstall or a second device running its own
+        // sweep for a different member, and a genuinely new insert
+        // followed with no guard at all. The DB's own unique index
+        // (calendar_events_single_dedup_uniq) does NOT catch this case
+        // either, since it's scoped by member_id and this insert would
+        // land under the RECONCILING member, not the original event's
+        // member — two rows, same title/time, different member_id, one
+        // stamped 'apple' and one 'app', exactly the visible symptom
+        // (duplicate "Family Picnic" row, only one carrying the sync
+        // badge). Same RPC Google's path already uses, checked BEFORE
+        // treating this as new: if a same-title/time/family row already
+        // exists, adopt it into this device's own map instead of
+        // inserting a second one — no event_external_links row here
+        // (that table is OAuth-provider-specific; Apple's own linkage IS
+        // this local map), just point deviceEvent.id at the existing
+        // family event id so future sweeps treat it as already-linked.
+        let dupeEventId: string | null = null;
+        if (patch.title && patch.time && patch.date) {
+          const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
+            p_family_id: familyId,
+            p_title: patch.title,
+            p_start_time: patch.time,
+            p_date: patch.date,
+          });
+          const dupe = Array.isArray(dupes) ? dupes[0] : dupes;
+          if (dupe?.id) dupeEventId = dupe.id;
+        }
+
+        if (dupeEventId) {
+          map[dupeEventId] = deviceEvent.id;
+          // Same freshness-guarded stamp rule googleReconcile.ts uses for
+          // its own dedup-link path — don't clobber a more-recently-synced
+          // other-provider stamp on the row this just linked onto.
+          const { data: existing } = await supabase.from('calendar_events')
+            .select('last_external_sync_at').eq('id', dupeEventId).maybeSingle();
+          const existingStampTime = existing?.last_external_sync_at ? new Date(existing.last_external_sync_at).getTime() : 0;
+          const thisPullTime = deviceEvent.lastModifiedDate ? new Date(deviceEvent.lastModifiedDate).getTime() : Date.now();
+          if (thisPullTime >= existingStampTime) {
+            await supabase.from('calendar_events').update({
+              last_external_sync_at: new Date().toISOString(), last_external_sync_provider: 'apple',
+              last_external_sync_account: null, last_external_sync_member_id: memberId,
+            }).eq('id', dupeEventId);
+          }
+          continue;
+        }
+
         // Genuinely new — added directly in the device Calendar app.
         // Same "default the assignee to whoever's calendar this synced
         // from, but only when there's a real location" rule as the

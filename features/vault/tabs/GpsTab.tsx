@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
-import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
+import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling, getLastLocationSyncError } from '@/lib/locationTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
@@ -122,6 +122,18 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // card instead of being the row's own tap target, since expand is now
   // that job. Only one row expanded at a time, same as Find My.
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // TestFlight/production has no Metro console — surfaces the background
+  // location task's own persisted last-error (lib/locationTracking.ts) so
+  // a real, repeated write failure is diagnosable in the UI directly,
+  // rather than only ever showing as the generic, unrelated "No internet
+  // connection" banner some other Supabase call happens to have tripped
+  // [live-reported: "getting this count not connect error - not sure
+  // why... could be location" / "why could not have error then it is
+  // like something wrong.. dont display for the internet connection
+  // issue" — a real bug hiding behind a vague connectivity message helps
+  // no one]. Same pattern CalendarSyncScreen.tsx already uses for
+  // appleLastError.
+  const [locationSyncError, setLocationSyncError] = useState<{ context: string; message: string; at: string } | null>(null);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId;
@@ -156,6 +168,11 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   }, [members]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!activeMemberId) { setLocationSyncError(null); return; }
+    getLastLocationSyncError(activeMemberId).then(setLocationSyncError).catch(() => setLocationSyncError(null));
+  }, [activeMemberId]);
 
   useEffect(() => {
     // Hide the global Ask Cube FAB while this full-bleed map is open — it
@@ -767,6 +784,32 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           <Switch value={shareExactAddress} onValueChange={toggleExactAddress}
             trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
         </View>
+
+        {/* A real, repeated background-write failure (RLS denial, bad
+            payload — see lib/locationTracking.ts's recordLocationSyncError)
+            used to be indistinguishable from a genuine offline moment: it
+            only ever showed as the app-wide "No internet connection"
+            banner, which any OTHER unrelated Supabase call could just as
+            easily have tripped [live-reported: "getting this count not
+            connect error - not sure why... could be location" / "why
+            could not have error then it is like something wrong.. dont
+            display for the internet connection issue"]. Only shown while
+            sharing is actually ON — an error recorded from a stale prior
+            session while sharing was off isn't relevant right now. */}
+        {tracking && locationSyncError && (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderRadius: 12, borderWidth: 1,
+            borderColor: colors.danger + '55', backgroundColor: colors.danger + '14', padding: 10, marginBottom: 10 }}>
+            <ShieldOff size={13} color={colors.danger} style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.danger }}>
+                Your location hasn't synced — this isn't a connection issue
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
+                {locationSyncError.message}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {roster.map((loc, i) => {
           const rc  = roleColor(loc.role);

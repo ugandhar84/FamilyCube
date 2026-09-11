@@ -34,6 +34,13 @@ export interface EventRecurrenceRule {
   days?: number[];      // weekly only — which weekdays (0=Sun..6=Sat), e.g. [1,3,5] for Mon/Wed/Fri
   endDate?: string;      // 'YYYY-MM-DD' — repeat until (and including) this date; omitted = no end date
   occurrences?: number;  // alternative to endDate — repeat this many times total, then stop
+  // Dates that would otherwise match the rule but should NOT materialize
+  // an occurrence — e.g. school holiday ranges (store/schoolStore.ts's
+  // SchoolHoliday). Honored by generateOccurrenceDates for BOTH the
+  // initial batch and every later extendRecurringSeries call, since both
+  // funnel through that one function — a range excluded once stays
+  // excluded as the series' rolling window keeps advancing.
+  excludeRanges?: { start: string; end: string }[];
 }
 
 export interface FamilyEvent {
@@ -438,6 +445,26 @@ interface EventState {
   // calendar UX choice ("This event" / "This and following" / "All events").
   updateEventScoped: (id: string, updates: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   deleteEventScoped: (id: string, scope: 'this' | 'following' | 'all') => void;
+
+  // Soft-deletes every LIVE occurrence of one series whose date falls
+  // inside [startDate, endDate] (inclusive) — e.g. clearing a school
+  // holiday range's already-materialized class periods. Same
+  // query-by-series-id-then-filter-by-date, non-bulk Promise.all pattern
+  // deleteEventScoped already uses for its 'all'/'following' scopes (see
+  // that function's own comment on the stale-snapshot race a single bulk
+  // query would reintroduce).
+  // Returns the dates (within the range) whose delete FAILED, so a caller
+  // that later needs to "restore what this cleared" (schoolStore's
+  // removeHoliday) can skip re-inserting a row that was never actually
+  // removed, avoiding a duplicate.
+  deleteSeriesOccurrencesInRange: (seriesId: string, startDate: string, endDate: string) => Promise<string[]>;
+
+  // Returns the set of dates (within [startDate, endDate]) that already
+  // have a LIVE occurrence in this series — used before a targeted
+  // backfill insert (schoolStore's removeHoliday) to avoid creating a
+  // duplicate row for a date that was never actually cleared (a failed
+  // delete, or an overlapping range that was separately restored).
+  getLiveSeriesDatesInRange: (seriesId: string, startDate: string, endDate: string) => Promise<Set<string>>;
 
   // Race-safe claim of an open helper/driver slot (GP "I'll Drive" on an
   // isOpenToGrandparents ride, Teen "I'll take it" on an isOpenToTeens
@@ -3091,6 +3118,60 @@ export const useEventStore = create<EventState>((set, get) => ({
       }
     }
   },
+
+  deleteSeriesOccurrencesInRange: async (seriesId, startDate, endDate) => {
+    const { data, error } = await supabase.from('calendar_events')
+      .select('id, date')
+      .eq('series_id', seriesId)
+      .is('deleted_at', null);
+    if (error || !data) { console.warn('[eventStore] deleteSeriesOccurrencesInRange: series lookup failed', error?.message); return []; }
+    const ids = data.filter(r => r.date >= startDate && r.date <= endDate).map(r => r.id);
+    if (ids.length === 0) return [];
+
+    // Same non-bulk Promise.all pattern deleteEventScoped uses — see that
+    // function's own comment on why N concurrent single-row updates (not
+    // one bulk query) avoid a stale-snapshot race across local state.
+    const now = new Date().toISOString();
+    const actorId = getActiveMemberId();
+    const results = await Promise.all(ids.map(rowId =>
+      supabase.from('calendar_events').update({ deleted_at: now, deleted_by: actorId }).eq('id', rowId)
+    ));
+    const failedIds = new Set(ids.filter((_, i) => results[i].error));
+    // Logged QA gap, fixed: this used to swallow a partial failure
+    // completely silently (no warn, no toast, unlike deleteEventScoped's
+    // own equivalent handling) — a caller like schoolStore's addHoliday
+    // had no way to know some occurrences were never actually cleared,
+    // which mattered later: removeHoliday's restore path would otherwise
+    // blindly re-insert on top of rows that silently survived a failed
+    // delete, creating real duplicate calendar_events rows. Now returns
+    // the failed dates so the caller can skip re-inserting them.
+    if (failedIds.size > 0) {
+      console.warn('[eventStore] deleteSeriesOccurrencesInRange: some deletes failed', [...failedIds]);
+      showToast("Couldn't clear some occurrences — please try again", 'error');
+    }
+    const confirmedIds = new Set(ids.filter(id => !failedIds.has(id)));
+    const failedDates = data.filter(r => failedIds.has(r.id)).map(r => r.date);
+    if (confirmedIds.size > 0) {
+      const nextDay = get().dayEvents.filter(e => !confirmedIds.has(e.id));
+      const nextRange = get().rangeEvents.filter(e => !confirmedIds.has(e.id));
+      set({ dayEvents: nextDay, events: nextDay, rangeEvents: nextRange });
+    }
+    return failedDates;
+  },
+
+  getLiveSeriesDatesInRange: async (seriesId, startDate, endDate) => {
+    const { data, error } = await supabase.from('calendar_events')
+      .select('date')
+      .eq('series_id', seriesId)
+      .is('deleted_at', null)
+      .gte('date', startDate)
+      .lte('date', endDate);
+    if (error || !data) {
+      console.warn('[eventStore] getLiveSeriesDatesInRange: lookup failed', error?.message);
+      return new Set();
+    }
+    return new Set(data.map(r => r.date));
+  },
 }));
 
 // ── Util ──────────────────────────────────────────────────────────────────────
@@ -3129,12 +3210,22 @@ function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, ex
   const windowEnd = offsetDate(fromDate, RECURRENCE_WINDOW_DAYS);
   const hardEnd = rule.endDate && rule.endDate < windowEnd ? rule.endDate : windowEnd;
   const remaining = rule.occurrences != null ? Math.max(0, rule.occurrences - existingCount) : Infinity;
+  // Checked INSIDE each loop below (at push-time), not filtered once at
+  // the end — logged QA gap, fixed: filtering after generation meant the
+  // `dates.length < remaining` loop guard could exit having generated
+  // exactly `remaining` RAW dates, some of which then got excluded,
+  // silently returning fewer than `rule.occurrences` actually asked for.
+  // Checking here means `remaining` only ever counts genuinely-included
+  // dates, so an occurrences-bounded rule combined with excludeRanges
+  // still yields the requested count (continuing past an excluded date
+  // instead of stopping short).
+  const isExcluded = (d: string) => !!rule.excludeRanges?.some(r => d >= r.start && d <= r.end);
 
   const dates: string[] = [];
   if (rule.frequency === 'daily') {
     let cursor = offsetDate(fromDate, 1);
     while (cursor <= hardEnd && dates.length < remaining) {
-      dates.push(cursor);
+      if (!isExcluded(cursor)) dates.push(cursor);
       cursor = offsetDate(cursor, 1);
     }
   } else if (rule.frequency === 'weekly') {
@@ -3142,7 +3233,7 @@ function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, ex
     let cursor = offsetDate(fromDate, 1);
     while (cursor <= hardEnd && dates.length < remaining) {
       const dow = new Date(`${cursor}T00:00:00`).getDay();
-      if (days.includes(dow)) dates.push(cursor);
+      if (days.includes(dow) && !isExcluded(cursor)) dates.push(cursor);
       cursor = offsetDate(cursor, 1);
     }
   } else if (rule.frequency === 'monthly') {
@@ -3159,7 +3250,7 @@ function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, ex
       const day = Math.min(dayOfMonth, lastDayOfMonth);
       const candidate = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       if (candidate > hardEnd) break;
-      dates.push(candidate);
+      if (!isExcluded(candidate)) dates.push(candidate);
     }
   }
   return dates;

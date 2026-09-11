@@ -14,6 +14,10 @@ export interface TodayPeriodStatus {
   isNow: boolean;
 }
 
+export interface HolidayStatus {
+  reason: string;
+}
+
 /** Periods in `schedule` scheduled for today, sorted by start time. */
 function periodsToday(schedule: KidSchedule, todayName: string): ClassPeriod[] {
   return schedule.periods
@@ -22,10 +26,17 @@ function periodsToday(schedule: KidSchedule, todayName: string): ClassPeriod[] {
 }
 
 /**
- * Returns the class currently in session for this schedule right now, or
- * the next upcoming one today, or null if the school day is over/empty.
+ * Returns the class currently in session for this schedule right now, the
+ * next upcoming one today, a HolidayStatus if today falls inside one of
+ * the schedule's holiday ranges (so callers can show the reason instead
+ * of a bare "no more classes today"), or null if the school day is over/
+ * empty with no holiday in effect.
  */
-export function getTodayPeriodStatus(schedule: KidSchedule, now: Date = new Date()): TodayPeriodStatus | null {
+export function getTodayPeriodStatus(schedule: KidSchedule, now: Date = new Date()): TodayPeriodStatus | HolidayStatus | null {
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const holiday = schedule.holidays?.find(h => todayStr >= h.startDate && todayStr <= h.endDate);
+  if (holiday) return { reason: holiday.reason };
+
   const todayName = DAY_INDEX_TO_NAME[now.getDay()];
   const todays = periodsToday(schedule, todayName);
   if (todays.length === 0) return null;

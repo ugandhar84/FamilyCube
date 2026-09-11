@@ -25,7 +25,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { useSchoolStore, type ClassPeriod, type KidSchedule } from '@/store/schoolStore';
 import {
-  PeriodEditor, timeToMins, ALL_DAYS,
+  PeriodEditor, timeToMins, ALL_DAYS, HolidaySection,
 } from '@/features/hub/SchoolScheduleModal';
 import { KioskFormDrawer, KioskFieldLabel, kioskInputStyle } from './KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
@@ -227,6 +227,10 @@ export function KioskSchoolScheduleModal({ visible, memberId, memberName, isPare
           borderColor: BRAND.purple + '60', backgroundColor: BRAND.purple + '08' }}>
         <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: BRAND.purple }}>+ Add Period</Text>
       </TouchableOpacity>
+
+      <View style={{ marginTop: KIOSK_SPACE.md }}>
+        <HolidaySection memberId={memberId} holidays={existing?.holidays ?? []} colors={colors} isDark={isDark} />
+      </View>
     </KioskFormDrawer>
   );
 }

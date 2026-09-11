@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useSchoolStore } from '@/store/schoolStore';
-import { getTodayPeriodStatus } from '@/lib/schoolPeriodNow';
+import { getTodayPeriodStatus, type TodayPeriodStatus, type HolidayStatus } from '@/lib/schoolPeriodNow';
+
+function isHoliday(s: TodayPeriodStatus | HolidayStatus | null): s is HolidayStatus {
+  return !!s && 'reason' in s;
+}
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { KIOSK_SPACE, KIOSK_TYPO, KIOSK_RADIUS } from '../kioskTheme';
@@ -46,46 +50,54 @@ export function KioskSchoolTodayWidget({ kids, members, k, isDark, active }: {
     <WidgetCard k={k} isDark={isDark}>
       <PanelHead title="School today" k={k} />
       <View style={{ gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xs }}>
-        {rows.map(({ kid, status }) => (
-          <Pressable
-            key={kid.id}
-            disabled={!status?.period.linkedEventId}
-            onPress={() => status?.period.linkedEventId && setDetailEventId(status.period.linkedEventId)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              paddingHorizontal: 10, paddingVertical: 8,
-              borderRadius: KIOSK_RADIUS.sm,
-              backgroundColor: status?.isNow ? k.sage + '18' : k.well,
-              borderWidth: status?.isNow ? 1 : 0,
-              borderColor: k.sage + '40',
-            }}>
-            <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={32} ringColor={k.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: k.text }}>
-                {kid.name.split(' ')[0]}
-              </Text>
-              {status ? (
-                <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textFaint, marginTop: 1 }}>
-                  {status.period.subject}{status.period.room ? ` · Rm ${status.period.room}` : ''} · {status.period.startTime}–{status.period.endTime}
-                </Text>
-              ) : (
-                <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textFaint, marginTop: 1 }}>
-                  No more classes today
-                </Text>
-              )}
-            </View>
-            {status?.isNow && (
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 4,
-                paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
-                backgroundColor: k.sage,
+        {rows.map(({ kid, status }) => {
+          const holiday = isHoliday(status);
+          const periodStatus = holiday ? null : (status as TodayPeriodStatus | null);
+          return (
+            <Pressable
+              key={kid.id}
+              disabled={!periodStatus?.period.linkedEventId}
+              onPress={() => periodStatus?.period.linkedEventId && setDetailEventId(periodStatus.period.linkedEventId)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 10,
+                paddingHorizontal: 10, paddingVertical: 8,
+                borderRadius: KIOSK_RADIUS.sm,
+                backgroundColor: periodStatus?.isNow ? k.sage + '18' : k.well,
+                borderWidth: periodStatus?.isNow ? 1 : 0,
+                borderColor: k.sage + '40',
               }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
-                <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
+              <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={32} ringColor={k.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: k.text }}>
+                  {kid.name.split(' ')[0]}
+                </Text>
+                {holiday ? (
+                  <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textFaint, marginTop: 1 }}>
+                    🎉 No school — {(status as HolidayStatus).reason}
+                  </Text>
+                ) : periodStatus ? (
+                  <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textFaint, marginTop: 1 }}>
+                    {periodStatus.period.subject}{periodStatus.period.room ? ` · Rm ${periodStatus.period.room}` : ''} · {periodStatus.period.startTime}–{periodStatus.period.endTime}
+                  </Text>
+                ) : (
+                  <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textFaint, marginTop: 1 }}>
+                    No more classes today
+                  </Text>
+                )}
               </View>
-            )}
-          </Pressable>
-        ))}
+              {periodStatus?.isNow && (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
+                  backgroundColor: k.sage,
+                }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                  <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
       </View>
       <KioskEventDetailSheet
         event={detailEvent}

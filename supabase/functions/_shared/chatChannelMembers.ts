@@ -12,7 +12,7 @@ export async function resolveChannelMembership(
   channelId: string,
   members: { id: string; role: string; linked_parent_id?: string | null; created_at?: string | null }[],
 ): Promise<(memberId: string) => boolean> {
-  if (channelId.startsWith('dm_')) {
+  if (channelId.startsWith('dm_') || channelId.startsWith('couple_')) {
     // Deterministic pair-id scheme: dm_<sortedIdA>_<sortedIdB> — splitting the
     // id on '_' breaks for any real member id that itself contains an
     // underscore. Query chat_channels' own member_ids (the source of truth

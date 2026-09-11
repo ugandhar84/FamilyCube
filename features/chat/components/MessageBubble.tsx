@@ -70,6 +70,48 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
   );
 }
 
+// ─── Couple proposal card (Just Us — predefined plan proposals) ───────────────
+// Mirrors SharedCardBubble's shape exactly: read-only presentation here,
+// action routed through a parent callback (onRespond), same as
+// onOpenSharedCard — keeps this component out of MessageBubbleImpl's props
+// (and its memo comparator) entirely, matching the existing pattern rather
+// than threading channelId/sendMessage through the whole memoized chain.
+// payload: { label: string, response?: 'confirmed' | 'declined' }.
+export function CoupleProposalBubble({ payload, colors, isMe, onLongPress, onRespond }: {
+  payload: { label: string; response?: 'confirmed' | 'declined' };
+  colors: any; isMe: boolean; onLongPress: () => void;
+  onRespond?: (response: 'confirmed' | 'declined') => void;
+}) {
+  const accent = colors.pink ?? colors.accent;
+  const responded = !!payload.response;
+
+  return (
+    <Pressable onLongPress={onLongPress} delayLongPress={350}
+      style={{ width: 240, backgroundColor: colors.card, borderRadius: 16,
+        borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
+      <View style={{ padding: 12, gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={{ fontSize: 13 }}>💕</Text>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>Proposal</Text>
+        </View>
+        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{payload.label}</Text>
+        {!isMe && !responded && (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+            <Pressable onPress={() => onRespond?.('confirmed')}
+              style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: accent, alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Confirm</Text>
+            </Pressable>
+            <Pressable onPress={() => onRespond?.('declined')}
+              style={{ flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>Can't tonight</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 // ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
 
 // Chat's FlatList renders potentially hundreds of these rows with no
@@ -112,7 +154,7 @@ function BubbleTail({ isMe, color }: { isMe: boolean; color: string }) {
 // re-render for messages that show the reader stack.
 function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
   senderColor, replyToColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent, readers,
-  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard, onRetry }: {
+  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard, onRespondProposal, onRetry }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
   senderName: string; senderEmoji: string; senderColor: string;
   // Color of the ORIGINAL sender of the quoted message (msg.replyTo), not
@@ -129,6 +171,10 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   onOpenImage?: (uri: string) => void;
   onOpenVideo?: (uri: string) => void;
   onOpenSharedCard?: (payload: any) => void;
+  // Just Us proposal card's Confirm/Decline — posts a reply message via
+  // ChatScreen's own sendMessage, same "callback out, not props in" shape
+  // as onOpenSharedCard above.
+  onRespondProposal?: (msg: ChatMessage, response: 'confirmed' | 'declined') => void;
   // Only relevant when msg.status === 'failed' — retries the exact send
   // that failed (network drop, RLS error, etc.) using the args chatStore
   // captured at failure time.
@@ -308,6 +354,53 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
         <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
           <SharedCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress}
             onPress={() => onOpenSharedCard?.(msg.systemEvent!.payload)} />
+          {metaRow}
+        </View>
+      </View>
+    );
+  }
+
+  // "Just Us" proposal reply (Confirm/Decline tap) — renders as a plain
+  // small text bubble, not another card, so a confirm/decline thread reads
+  // like a normal conversation rather than a stack of cards.
+  if (msg.systemEvent?.type === 'couple_proposal_response') {
+    const confirmed = msg.systemEvent.payload?.response === 'confirmed';
+    return (
+      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
+        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
+        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
+        <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14,
+            backgroundColor: confirmed ? (colors.pink ?? colors.accent) + '22' : colors.surface }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: confirmed ? (colors.pink ?? colors.accent) : colors.textSecondary }}>
+              {confirmed ? '💕 ' : ''}{msg.text}
+            </Text>
+          </View>
+          {metaRow}
+        </View>
+      </View>
+    );
+  }
+
+  // "Just Us" predefined plan proposal — same read-only-card-plus-callback
+  // shape as shared_card above.
+  if (msg.systemEvent?.type === 'couple_proposal') {
+    return (
+      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
+        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
+        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
+        {!isMe && (
+          isGroupLast
+            ? <View style={[mb.avatar, { backgroundColor: senderColor }]}>
+                <Text style={{ fontSize: senderEmoji && senderEmoji !== '👤' ? 16 : 13, color: '#fff', fontWeight: '700' }}>
+                  {senderEmoji && senderEmoji !== '👤' ? senderEmoji : senderName[0]?.toUpperCase()}
+                </Text>
+              </View>
+            : <View style={{ width: 34 }} />
+        )}
+        <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
+          <CoupleProposalBubble payload={msg.systemEvent.payload as { label: string; response?: 'confirmed' | 'declined' }} colors={colors} isMe={isMe} onLongPress={onLongPress}
+            onRespond={(response) => onRespondProposal?.(msg, response)} />
           {metaRow}
         </View>
       </View>

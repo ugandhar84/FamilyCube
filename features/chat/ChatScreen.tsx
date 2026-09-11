@@ -41,7 +41,10 @@ import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { useChatStore, ChatMessage, dmChannelId } from '@/store/chatStore';
+import { useChatStore, ChatMessage, dmChannelId, coupleChannelId } from '@/store/chatStore';
+import { useCoupleChannelStore } from '@/store/coupleChannelStore';
+import CouplePinModal from '@/components/CouplePinModal';
+import { useFeatureFlag } from '@/lib/featureFlags';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { checkProfanity } from '@/lib/contentModeration';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
@@ -71,6 +74,13 @@ export default function ChatScreen() {
     readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
   } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
+
+  // "Just Us" — app-admin kill switch (see lib/featureFlags.ts). Read
+  // outside the allChannels useMemo below since it's itself reactive
+  // state, not a stable dependency the memo can just close over.
+  const coupleChannelFlagOn = useFeatureFlag('couple_channel');
+  const { isUnlocked: isCoupleChannelUnlocked, markUnlocked: markCoupleChannelUnlocked } = useCoupleChannelStore();
+  const [couplePinModal, setCouplePinModal] = useState<{ mode: 'set' | 'verify' | 'disable'; channelId: string } | null>(null);
 
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
@@ -233,6 +243,24 @@ export default function ChatScreen() {
       // generic chat-bubble icon standing in for the actual person.
       ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: p.name.split(' ')[0], isDM: true, lock: false })),
       ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: k.name.split(' ')[0], isDM: true, lock: false })),
+      // "Just Us" — private parents-only channel, hard-locked forever to
+      // exactly the 2 parent-role members present when it was enabled
+      // (same dm_<sorted ids> id scheme as a normal co-parent DM, so it
+      // inherits the existing dm_% RLS participant check with zero new
+      // policy needed). Deliberately NOT shown for 3+ parents (no "pick
+      // which 2" UI in v1) and NOT constructed at all — not merely
+      // hidden — when the admin-level couple_channel flag is off, so an
+      // admin disabling it hides this for every family immediately.
+      ...((coupleChannelFlagOn && isParent && coParents.length === 1)
+        ? [{
+            id: coupleChannelId(activeMemberId ?? '', coParents[0].id),
+            otherId: coParents[0].id,
+            label: 'Just Us',
+            isDM: false,
+            isCoupleChannel: true,
+            lock: false,
+          }]
+        : []),
     ];
     // sortChannelIds was only ever applied to groupChannels above — DM tabs
     // got appended afterward in raw roster order and never re-sorted, so a
@@ -755,6 +783,16 @@ export default function ChatScreen() {
   const canSend      = (dictation.state === 'listening' ? dictation.silenceReady && dictatedText.trim().length > 0 : dictatedText.trim().length > 0) || attachUri !== null;
   const parentLocked = channelId === 'parents' && !isParent;
 
+  // "Just Us" — needs its PIN verified once per session before its
+  // messages render, even for a parent who's otherwise allowed to see the
+  // channel at all (unlike parentLocked above, which is a role gate, this
+  // is a PIN gate on top of an already-permitted viewer).
+  const openCoupleChannel = (allChannels.find(c => c.id === channelId) as any)?.isCoupleChannel;
+  const coupleChannelLocked = !!openCoupleChannel && !isCoupleChannelUnlocked(channelId);
+  useEffect(() => {
+    if (coupleChannelLocked) setCouplePinModal({ mode: 'verify', channelId });
+  }, [coupleChannelLocked, channelId]);
+
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   return (
@@ -778,6 +816,25 @@ export default function ChatScreen() {
           onBellPress={() => setNotifPanelOpen(true)}
         />
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+
+        {couplePinModal && (
+          <CouplePinModal
+            visible
+            mode={couplePinModal.mode}
+            channelId={couplePinModal.channelId}
+            onCancel={() => {
+              setCouplePinModal(null);
+              // Verify was blocking the channel the user just tapped into —
+              // bounce back to Family rather than leaving them stuck on a
+              // channel they can't see the contents of.
+              if (channelId === couplePinModal.channelId) switchChannel('all');
+            }}
+            onSuccess={() => {
+              markCoupleChannelUnlocked(couplePinModal.channelId);
+              setCouplePinModal(null);
+            }}
+          />
+        )}
 
         {/* ── Channel strip ──
             Was a per-scroll-event Animated.Value collapse (see the removed-
@@ -955,6 +1012,14 @@ export default function ChatScreen() {
             <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>🔒 Parents Vault</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
           </View>
+        ) : coupleChannelLocked ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: (colors.pink ?? colors.accent) + '22', borderWidth: 2, borderColor: colors.pink ?? colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={30} color={colors.pink ?? colors.accent} />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>💕 Just Us</Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
+          </View>
         ) : (
           <>
             {/* ── Messages + scroll-to-latest button, wrapped in their own
@@ -1033,10 +1098,14 @@ export default function ChatScreen() {
                     <ActivityIndicator color={colors.primary} />
                   </View>
                 ) : (
-                  <View style={{ alignItems: 'center', paddingVertical: 56 }}>
-                    <Text style={{ fontSize: 36, marginBottom: 12 }}>💬</Text>
+                  <View style={{ alignItems: 'center', paddingVertical: 56, paddingHorizontal: 32 }}>
+                    <Text style={{ fontSize: 36, marginBottom: 12 }}>{openCoupleChannel ? '💕' : '💬'}</Text>
                     <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', lineHeight: 20 }}>
-                      {searchQuery ? `No results for "${searchQuery}"` : 'No messages yet.\nSay hello! 👋'}
+                      {searchQuery
+                        ? `No results for "${searchQuery}"`
+                        : openCoupleChannel
+                          ? "This one's just for the two of you — inside jokes, voice notes, a photo from your day. Say hello 👋"
+                          : 'No messages yet.\nSay hello! 👋'}
                     </Text>
                   </View>
                 )
@@ -1102,6 +1171,12 @@ export default function ChatScreen() {
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
                     onOpenSharedCard={setSharedCardPayload}
+                    onRespondProposal={(msg, response) => {
+                      const label = msg.systemEvent?.payload?.label ?? 'the plan';
+                      const text = response === 'confirmed' ? `Confirmed: ${label}` : `Can't tonight: ${label}`;
+                      sendMessage(channelId, activeMemberId ?? '', text, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                        { type: 'couple_proposal_response', payload: { label, response } });
+                    }}
                     onRetry={() => retryMessage(channelId, msg.id)}
                   />
                 );
@@ -1234,6 +1309,23 @@ export default function ChatScreen() {
                       <item.Icon size={24} color={item.color} />
                     </View>
                     <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* ── Just Us proposal chips — logistics only, no readiness/mood
+                signaling. Tapping one posts a couple_proposal system
+                message (see MessageBubble.tsx's CoupleProposalBubble) that
+                the other parent can Confirm/"Can't tonight" directly on. ── */}
+            {!reviewing && !recording && (allChannels.find(c => c.id === channelId) as any)?.isCoupleChannel && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, backgroundColor: colors.card }}>
+                {['Date night?', 'Movie at home?', 'Coffee tomorrow?', 'Free tonight?', 'Early night?'].map(label => (
+                  <Pressable key={label}
+                    onPress={() => sendMessage(channelId, activeMemberId ?? '', label, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                      { type: 'couple_proposal', payload: { label } })}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: (colors.pink ?? colors.accent) + '50', backgroundColor: (colors.pink ?? colors.accent) + '10' }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.pink ?? colors.accent }}>{label}</Text>
                   </Pressable>
                 ))}
               </View>

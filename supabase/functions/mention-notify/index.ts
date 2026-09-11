@@ -105,6 +105,22 @@ serve(async (req) => {
 
     if (!mentionedMembers.length) return json({ ok: true, notified: 0 });
 
+    // "Just Us" — this function had no couple-channel awareness at all
+    // (confirmed gap: chat-notify's own generic-label suppression lives
+    // only in that function, and this one builds its push payload
+    // independently) — an @-mention inside a Just Us channel would leak
+    // the real sender name and up to 80 chars of message text into a push
+    // notification, bypassing the whole point of the generic-only-label
+    // requirement. @mentions aren't really meaningful in a 2-person
+    // channel anyway, so this suppresses the payload the same way
+    // chat-notify does rather than trying to build a "safe" mention push.
+    const { data: channelRow } = await supabase
+      .from('chat_channels')
+      .select('pin_hash')
+      .eq('id', channelId)
+      .maybeSingle();
+    const isCoupleChannel = !!channelRow?.pin_hash;
+
     // ── 4. Delegate to family-notifier for push + persistence ─────────────────
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
     const notifierHeaders = {
@@ -129,13 +145,14 @@ serve(async (req) => {
         persist: true,
         payload: {
           messageId, channelId,
-          senderName: sender.name,
+          senderName: isCoupleChannel ? 'Just Us' : sender.name,
           senderId,
           isEveryone: isEveryoneMentioned,
           // Same @[Name|id] -> "@Name" stripping as chat-notify's own
           // preview — a push body has no rich-text mention renderer
-          // (live-reported: "push is coming weired").
-          preview: (() => {
+          // (live-reported: "push is coming weired"). Empty for a Just Us
+          // channel — never leak content into the push.
+          preview: isCoupleChannel ? '' : (() => {
             const displayText = text.replace(/@\[([^\]]+)\|([^\]]+)\]/g, (_m: string, name: string, id: string) =>
               id === 'everyone' ? '@everyone' : `@${name.split(' ')[0]}`);
             return displayText.length > 80 ? displayText.slice(0, 77) + '…' : displayText;

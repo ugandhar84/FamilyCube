@@ -28,7 +28,8 @@ export type FeatureFlagKey =
   | 'rewards_marketplace' // Partner coupons redeemable with coins
   | 'per_device_e2e'      // Multi-device chat encryption envelope (see lib/chatCrypto.ts)
   | 'store_proximity_reminders' // Geofence a pinned store location, notify when nearby with pending items on that store's list
-  | 'home_screen_widgets'; // iOS home-screen widgets (small/medium, role-based content) — not yet built, flag reserved ahead of the native work
+  | 'home_screen_widgets'  // iOS home-screen widgets (small/medium, role-based content) — not yet built, flag reserved ahead of the native work
+  | 'couple_channel';      // "Just Us" private parents-only chat channel — app-admin kill switch, independent of any family's own enable/disable toggle
 
 /** Default state when no remote override exists. All OFF until you're ready. */
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
@@ -45,6 +46,7 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   per_device_e2e:      true,
   store_proximity_reminders: false,
   home_screen_widgets: false,
+  couple_channel:      true,
 };
 
 /**

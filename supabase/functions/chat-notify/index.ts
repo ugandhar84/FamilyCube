@@ -88,7 +88,21 @@ serve(async (req) => {
     );
     if (!recipients.length) return json({ ok: true, notified: 0 });
 
-    const channelLabel = GROUP_LABELS[channelId];
+    // "Just Us" private parents-only channel — pin_hash set means this is
+    // a PIN-protected couple channel, which must never leak message
+    // content, sender name, or a derived channel label into a push
+    // payload (a lock-screen preview is otherwise visible to anyone near
+    // the phone). Confirmed via the channel row itself rather than a
+    // channelId string pattern, since the DM id format is shared with
+    // ordinary 1-1 chats that should still get normal previews.
+    const { data: channelRow } = await supabase
+      .from('chat_channels')
+      .select('pin_hash')
+      .eq('id', channelId)
+      .maybeSingle();
+    const isCoupleChannel = !!channelRow?.pin_hash;
+
+    const channelLabel = isCoupleChannel ? undefined : GROUP_LABELS[channelId];
     // Strip @[Name|id] mention tokens down to plain "@Name" before slicing
     // for the push preview — a push notification body has no rich-text
     // renderer the way MentionText.tsx does client-side, so the raw
@@ -99,7 +113,12 @@ serve(async (req) => {
     // Text spots that show raw message text).
     const displayText = text.replace(/@\[([^\]]+)\|([^\]]+)\]/g, (_m: string, name: string, id: string) =>
       id === 'everyone' ? '@everyone' : `@${name.split(' ')[0]}`);
-    const preview = displayText.length > 80 ? displayText.slice(0, 77) + '…' : displayText;
+    // Just Us: never leak content, sender, or channel into the push —
+    // family-notifier's chat_message template renders
+    // `💬 ${senderName}${channelLabel ? ' in '+channelLabel : ''}` / preview,
+    // so senderName alone carries the whole generic label here.
+    const preview = isCoupleChannel ? '' : (displayText.length > 80 ? displayText.slice(0, 77) + '…' : displayText);
+    const senderName = isCoupleChannel ? 'Just Us' : sender.name;
 
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
     await fetch(notifierUrl, {
@@ -113,7 +132,7 @@ serve(async (req) => {
         memberIds: recipients.map((m: any) => m.id),
         familyId: sender.family_id,
         persist: true,
-        payload: { senderName: sender.name, senderId, channelId, channelLabel, preview },
+        payload: { senderName, senderId, channelId, channelLabel, preview },
       }),
     });
 

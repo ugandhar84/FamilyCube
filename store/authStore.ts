@@ -8,6 +8,7 @@ import { resetAppSettingsSubscription } from '@/lib/hooks/useAppSettings';
 import { useNotifStore } from '@/store/notifStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
+import { useCoupleChannelStore } from '@/store/coupleChannelStore';
 
 export const TERMS_VERSION = '1.0';
 
@@ -284,6 +285,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // shape as familyStore.reset() below, for the same underlying class
     // of bug.
     useChatStore.getState().reset();
+    // Same leak class as chatStore.reset() above — coupleChannelStore's
+    // "unlocked this session" flag for the Just Us channel must not
+    // survive into the next signed-in account on a shared device.
+    useCoupleChannelStore.getState().reset();
     // Critical: familyStore caches members/activeMemberId under fixed
     // (non-user-scoped) AsyncStorage keys, and derives which family to
     // query on next load from whatever's already cached. Without this,

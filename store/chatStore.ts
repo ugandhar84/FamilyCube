@@ -120,6 +120,18 @@ export function dmChannelId(idA: string, idB: string): string {
   return `dm_${[idA, idB].sort().join('_')}`;
 }
 
+// "Just Us" private parents-only channel — deliberately a DIFFERENT id
+// prefix from dmChannelId, not a reuse of it: a couple's regular 1-on-1 DM
+// and their PIN-gated Just Us thread are two separate channels/histories
+// that coexist (confirmed requirement — enabling Just Us does not replace
+// or hide the plain co-parent DM). Same sorted-pair-of-ids scheme as
+// dmChannelId so it's stable regardless of which parent opens it, and
+// inherits an equivalent RLS participant check (see migration
+// 20260955000000's couple_% branch on is_chat_channel_participant).
+export function coupleChannelId(idA: string, idB: string): string {
+  return `couple_${[idA, idB].sort().join('_')}`;
+}
+
 // Reply-quote preview needs to know what an empty-text quoted message
 // actually was — the quote card previously assumed any empty `text` meant
 // a voice note, mislabeling replies to a quoted image/video/document/
@@ -195,7 +207,7 @@ function currentFamilyIdForChat(): string | undefined {
 // channel and isn't already a dm_ composite id, treat it as "recipient id"
 // and rewrite to the real pair-channel before writing anything.
 function normalizeDmChannelId(channelId: string, senderId: string): string {
-  if (GROUP_CHANNEL_IDS.has(channelId) || channelId.startsWith('dm_')) return channelId;
+  if (GROUP_CHANNEL_IDS.has(channelId) || channelId.startsWith('dm_') || channelId.startsWith('couple_')) return channelId;
   if (!senderId || channelId === senderId) return channelId; // no pair to form
   return dmChannelId(channelId, senderId);
 }
@@ -213,7 +225,8 @@ function normalizeDmChannelId(channelId: string, senderId: string): string {
 // of a brand new DM don't race into a duplicate-key error.
 const _ensuredDmChannels = new Set<string>();
 async function ensureDmChannelRow(channelId: string, memberAId: string, memberBId?: string): Promise<void> {
-  if (!channelId.startsWith('dm_') || _ensuredDmChannels.has(channelId)) return;
+  const isPairChannel = channelId.startsWith('dm_') || channelId.startsWith('couple_');
+  if (!isPairChannel || _ensuredDmChannels.has(channelId)) return;
   try {
     // Check-then-insert, not upsert(ignoreDuplicates) — confirmed via
     // direct testing that Supabase's upsert with ignoreDuplicates:true
@@ -902,7 +915,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // whether the FINAL id is a dm_ id, period — regardless of whether
     // normalization actually changed anything.
     let dbChannelId = channelId;
-    if (channelId.startsWith('dm_')) {
+    if (channelId.startsWith('dm_') || channelId.startsWith('couple_')) {
       // originalChannelArg is only the real OTHER-party id when the caller
       // passed a raw recipient id (normalizeDmChannelId then built
       // channelId from it). When the caller already passed a ready-made

@@ -32,6 +32,10 @@ import {
   isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
 } from '@/lib/biometrics';
 import PinEntryModal from '@/components/PinEntryModal';
+import CouplePinModal from '@/components/CouplePinModal';
+import { coupleChannelId } from '@/store/chatStore';
+import { useCoupleChannelStore } from '@/store/coupleChannelStore';
+import { useFeatureFlag } from '@/lib/featureFlags';
 import { CarouselMemberCard } from '@/features/vault/tabs/MemberCard';
 import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
 import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
@@ -1600,6 +1604,22 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
     }
   };
 
+  // "Just Us" — private parents-only chat channel. Hard-locked to exactly
+  // the 2 parent-role members present (no "pick which 2" UI in v1), so the
+  // toggle itself is only offered when there are precisely 2. App-admin
+  // kill switch (lib/featureFlags.ts's couple_channel) hides this row
+  // entirely regardless of the family's own per-member state.
+  const coupleChannelFlagOn = useFeatureFlag('couple_channel');
+  const coParentsForCouple = members.filter(m => m.role === 'parent' && m.id !== activeMember?.id);
+  const coupleChanId = (isParent && coParentsForCouple.length === 1 && activeMember)
+    ? coupleChannelId(activeMember.id, coParentsForCouple[0].id)
+    : null;
+  const { isEnabled: isCoupleEnabled, refreshEnabled: refreshCoupleEnabled } = useCoupleChannelStore();
+  const [couplePinModal, setCouplePinModal] = useState<'set' | 'disable' | null>(null);
+  useEffect(() => {
+    if (coupleChanId) refreshCoupleEnabled(coupleChanId);
+  }, [coupleChanId]);
+
   const [storeReminders, setStoreReminders] = useState(activeMember?.storeProximityRemindersEnabled ?? true);
   const [notifPrefs, setNotifPrefs] = useState(activeMember?.notificationPrefs ?? {});
   const [showNotifSheet, setShowNotifSheet] = useState(false);
@@ -2148,6 +2168,50 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
               colors={colors} isDark={isDark}
             />
           </View>
+        )}
+
+        {/* "Just Us" — private chat + plans coordination between exactly
+            the family's 2 parent-role members, PIN-gated. Only offered
+            when there are precisely 2 parents (no "pick which 2" UI) and
+            the app-admin couple_channel flag is on. Enabling immediately
+            prompts a PIN-setup step; disabling deliberately never accepts
+            the channel PIN itself — only the disabling parent's own birth
+            year — so a child who learned the shared PIN can't also
+            disable the feature to hide it. */}
+        {coupleChannelFlagOn && coupleChanId && (
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
+            <SectionHeader label="Just Us" colors={colors} />
+            <Row
+              icon="heart-outline"
+              label="Just Us"
+              subtitle="A private chat with your co-parent, separate from the family chat"
+              colors={colors} isDark={isDark}
+              right={
+                <Switch
+                  value={isCoupleEnabled(coupleChanId)}
+                  onValueChange={(next) => setCouplePinModal(next ? 'set' : 'disable')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
+        )}
+
+        {coupleChanId && couplePinModal && (
+          <CouplePinModal
+            visible
+            mode={couplePinModal}
+            channelId={coupleChanId}
+            onCancel={() => setCouplePinModal(null)}
+            onSuccess={() => {
+              setCouplePinModal(null);
+              refreshCoupleEnabled(coupleChanId);
+            }}
+          />
         )}
 
         {calendarSyncShell && showCalendarSync && (

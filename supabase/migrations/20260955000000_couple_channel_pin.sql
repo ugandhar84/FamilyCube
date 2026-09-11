@@ -16,6 +16,16 @@
 -- secret among family members, not something a same-family non-parent
 -- should ever be able to read via a stray `select *` even if RLS is later
 -- loosened by mistake.
+-- NOTE: this re-declares is_chat_channel_participant() starting from its
+-- CURRENT definition as of migration 20260825030000 (hotfix #2), not the
+-- original 20260824020000 version — that hotfix already replaced the dm_%
+-- branch's string-splitting with a member_ids-array check, because member
+-- ids can themselves contain underscores (confirmed live incident:
+-- 'm_1786235893879' fractures under a naive split, causing a real
+-- participant to fail their own DM's RLS). An earlier draft of this
+-- migration mistakenly copied the pre-hotfix substring-parsing approach
+-- for the new couple_% branch — fixed here to mirror the CURRENT dm_%
+-- branch's member_ids-only check exactly, with no string parsing at all.
 create or replace function public.is_chat_channel_participant(p_channel_id text)
 returns boolean
 language plpgsql
@@ -26,7 +36,6 @@ as $$
 declare
   caller_id text;
   caller_role text;
-  parts text[];
 begin
   select m.id, m.role into caller_id, caller_role
   from public.members m
@@ -38,20 +47,22 @@ begin
   end if;
 
   if p_channel_id like 'dm\_%' escape '\' then
-    parts := string_to_array(substring(p_channel_id from 4), '_');
-    return caller_id = any(parts) or exists (
+    return exists (
       select 1 from public.chat_channels cc
-      where cc.id = p_channel_id and caller_id = any(cc.member_ids)
+      where cc.id = p_channel_id and cc.member_ids @> to_jsonb(caller_id)
     );
   end if;
 
-  -- "Just Us" — same pair-id participant check as dm_%, different prefix
-  -- so it never collides with (or gets confused for) the plain DM.
+  -- "Just Us" — same participant check as dm_%, different prefix so it
+  -- never collides with (or gets confused for) the plain co-parent DM.
+  -- Relies entirely on member_ids, same as dm_% — see set_channel_pin
+  -- below, which now ensures the chat_channels row (with member_ids
+  -- populated) exists BEFORE ever setting a PIN, so this check is never
+  -- evaluated against a channel with no member_ids yet.
   if p_channel_id like 'couple\_%' escape '\' then
-    parts := string_to_array(substring(p_channel_id from 8), '_');
-    return caller_id = any(parts) or exists (
+    return exists (
       select 1 from public.chat_channels cc
-      where cc.id = p_channel_id and caller_id = any(cc.member_ids)
+      where cc.id = p_channel_id and cc.member_ids @> to_jsonb(caller_id)
     );
   end if;
 
@@ -73,7 +84,21 @@ alter table public.chat_channels
   add column if not exists pin_attempts integer not null default 0,
   add column if not exists pin_locked_until timestamptz;
 
-create or replace function public.set_channel_pin(p_channel_id text, p_pin text)
+-- Logged QA gap, fixed here: the original version of this function did a
+-- bare `update ... where id = p_channel_id` with no row-existence check
+-- and unconditionally `return true` — for a couple enabling Just Us
+-- before ever sending a message in it, chat_channels has no row yet (that
+-- row is otherwise only created lazily by ensureDmChannelRow on first
+-- sendMessage), so the UPDATE silently affected 0 rows while the client
+-- still saw success and marked the toggle "on" — no PIN was actually
+-- persisted, and the toggle would revert (or worse, stay wrongly on)
+-- whenever state was next refreshed. p_other_member_id is now required so
+-- this function can create the chat_channels row itself, with member_ids
+-- populated up front — the same shape ensureDmChannelRow uses for a DM —
+-- so is_chat_channel_participant's couple_% branch (member_ids-based, see
+-- above) has something real to check from the very first call, not just
+-- after a first message happens to be sent.
+create or replace function public.set_channel_pin(p_channel_id text, p_pin text, p_other_member_id text)
 returns boolean
 language plpgsql
 security definer
@@ -81,14 +106,37 @@ set search_path to 'public'
 as $function$
 declare
   v_caller_id text;
+  v_family_id text;
   v_salt text;
+  v_updated_rows integer;
 begin
-  select m.id into v_caller_id from public.members m where m.auth_user_id = auth.uid() limit 1;
-  if v_caller_id is null or not public.is_chat_channel_participant(p_channel_id) then
-    raise exception 'not a participant of channel %', p_channel_id;
+  select m.id, m.family_id into v_caller_id, v_family_id
+  from public.members m where m.auth_user_id = auth.uid() limit 1;
+  if v_caller_id is null then
+    raise exception 'no member found for caller';
+  end if;
+  if p_channel_id not like 'couple\_%' escape '\' then
+    raise exception 'set_channel_pin is only for couple_ channels';
   end if;
   if p_pin is null or length(p_pin) <> 4 or p_pin !~ '^[0-9]{4}$' then
     raise exception 'pin must be exactly 4 digits';
+  end if;
+
+  -- Ensure the row exists with member_ids populated BEFORE the pin write,
+  -- so the RLS participant check (and any subsequent verify/disable call)
+  -- has real data to check against regardless of whether a message has
+  -- ever been sent in this channel. Upsert, not insert-then-update — a
+  -- concurrent double-tap of the enable toggle from the same device
+  -- shouldn't race into a duplicate-key error.
+  insert into public.chat_channels (id, family_id, type, name, member_ids, icon)
+  values (p_channel_id, v_family_id, 'direct', 'Just Us', jsonb_build_array(v_caller_id, p_other_member_id), '💕')
+  on conflict (id) do nothing;
+
+  -- Now that the row is guaranteed to exist, the ordinary participant
+  -- check applies (also guards against p_other_member_id being wrong/
+  -- spoofed for an ALREADY-existing channel this caller isn't part of).
+  if not public.is_chat_channel_participant(p_channel_id) then
+    raise exception 'not a participant of channel %', p_channel_id;
   end if;
 
   v_salt := encode(gen_random_bytes(16), 'hex');
@@ -98,6 +146,10 @@ begin
         pin_attempts = 0,
         pin_locked_until = null
     where id = p_channel_id;
+  get diagnostics v_updated_rows = row_count;
+  if v_updated_rows = 0 then
+    raise exception 'could not set pin for channel %', p_channel_id;
+  end if;
   return true;
 end;
 $function$;

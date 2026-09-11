@@ -2206,6 +2206,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             visible
             mode={couplePinModal}
             channelId={coupleChanId}
+            otherMemberId={coParentsForCouple[0]?.id}
             onCancel={() => setCouplePinModal(null)}
             onSuccess={() => {
               setCouplePinModal(null);

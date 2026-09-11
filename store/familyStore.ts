@@ -642,6 +642,19 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
 
   setActiveMember: (id) => {
     const previousActiveId = get().activeMemberId;
+    // Logged QA gap, fixed: coupleChannelStore's "unlocked this session"
+    // flag survived a same-device PIN-switch between the family's own 2
+    // parents (it was only ever cleared on a full sign-out) — since the
+    // couple channel's id is identical regardless of which of the 2
+    // parents is active, once Parent A unlocked Just Us, PIN-switching to
+    // Parent B on the same device inherited that unlock for the rest of
+    // the session with no PIN prompt at all, weakening the whole point of
+    // the gate. Clear it on every switch, same as the multi-family reset
+    // just below — cheap (session-only Set, not a network call) and a
+    // fresh bell-tap/channel-open re-prompts correctly for whoever is now
+    // active.
+    const { useCoupleChannelStore } = require('./coupleChannelStore');
+    useCoupleChannelStore.getState().reset();
     // A grant token is only ever valid for the exact member it was minted
     // for (verify_member_pin_and_grant stamps it onto that member's own
     // row) — clear it whenever switching to someone OTHER than the member

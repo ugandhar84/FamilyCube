@@ -83,11 +83,17 @@ interface Props {
   visible: boolean;
   mode: Mode;
   channelId: string;
+  // Required for 'set' mode only — the OTHER parent's member id, so the
+  // channel row can be created (with member_ids populated) on first
+  // enable, before either parent has ever sent a message in it. See
+  // set_channel_pin's own comment (migration 20260955000000) for why this
+  // can't be deferred to whenever a message happens to be sent.
+  otherMemberId?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function CouplePinModal({ visible, mode, channelId, onSuccess, onCancel }: Props) {
+export default function CouplePinModal({ visible, mode, channelId, otherMemberId, onSuccess, onCancel }: Props) {
   const { colors, isDark } = useTheme();
   const { deviceClass } = useDeviceClass();
   const isTablet = deviceClass === 'kitchenHub';
@@ -168,8 +174,13 @@ export default function CouplePinModal({ visible, mode, channelId, onSuccess, on
         shakeAndClear("PINs didn't match — try again");
         return;
       }
+      if (!otherMemberId) {
+        console.warn('[CouplePinModal] set mode requires otherMemberId');
+        shakeAndClear('Something went wrong — try again');
+        return;
+      }
       setVerifying(true);
-      supabase.rpc('set_channel_pin', { p_channel_id: channelId, p_pin: entered })
+      supabase.rpc('set_channel_pin', { p_channel_id: channelId, p_pin: entered, p_other_member_id: otherMemberId })
         .then(({ error }) => {
           setVerifying(false);
           if (error) {

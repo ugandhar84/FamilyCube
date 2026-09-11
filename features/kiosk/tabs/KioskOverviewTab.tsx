@@ -2376,7 +2376,7 @@ export function KioskOverviewTab({
                 [live-requested: "add the different section at the end of
                 the hub and overview with the school schedule if
                 available for all kids with happening now badge"]. */}
-            <KioskSchoolTodayWidget kids={kids} k={k} isDark={isDark} />
+            <KioskSchoolTodayWidget kids={kids} members={members} k={k} isDark={isDark} active={active} />
           </View>
         </View>
       ) : (

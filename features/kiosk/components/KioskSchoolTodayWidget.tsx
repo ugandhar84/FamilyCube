@@ -4,7 +4,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { useSchoolStore } from '@/store/schoolStore';
 import { getTodayPeriodStatus } from '@/lib/schoolPeriodNow';
 import type { FamilyMember } from '@/store/familyStore';
-import { KIOSK_SPACE, KIOSK_TYPO } from '../kioskTheme';
+import { KIOSK_SPACE, KIOSK_TYPO, KIOSK_RADIUS } from '../kioskTheme';
 import { WidgetCard, PanelHead, EmptyNote } from './KioskOS';
 import type { KioskColors } from '../kioskPalette';
 
@@ -36,7 +36,14 @@ export function KioskSchoolTodayWidget({ kids, k, isDark }: {
       <PanelHead title="School today" k={k} />
       <View style={{ gap: KIOSK_SPACE.sm, marginTop: KIOSK_SPACE.xs }}>
         {rows.map(({ kid, status }) => (
-          <View key={kid.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View key={kid.id} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            paddingHorizontal: 10, paddingVertical: 8,
+            borderRadius: KIOSK_RADIUS.sm,
+            backgroundColor: status?.isNow ? k.sage + '18' : k.well,
+            borderWidth: status?.isNow ? 1 : 0,
+            borderColor: k.sage + '40',
+          }}>
             <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={32} ringColor={k.gold} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '700', color: k.text }}>
@@ -55,11 +62,11 @@ export function KioskSchoolTodayWidget({ kids, k, isDark }: {
             {status?.isNow && (
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 4,
-                paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999,
-                backgroundColor: k.sage + '22',
+                paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
+                backgroundColor: k.sage,
               }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: k.sage }} />
-                <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '700', color: k.sage }}>NOW</Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                <Text style={{ fontSize: KIOSK_TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
               </View>
             )}
           </View>

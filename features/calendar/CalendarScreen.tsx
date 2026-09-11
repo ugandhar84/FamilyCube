@@ -715,6 +715,27 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMember?.familyId, activeMemberId, viewMode, weekCursor]));
 
+  // Genuine gap the throttled sync block above doesn't cover: an event
+  // created on a DIFFERENT screen/session — Vault's School tab, another
+  // device/parent — writes a real calendar_events row immediately, but
+  // loadRange's own 5-minute freshness TTL (store/eventStore.ts) can keep
+  // serving stale cached rangeEvents for up to 5 minutes, and the sync
+  // block above only force-refreshes once per 10 minutes per family (it
+  // exists to rate-limit the Google/Apple POLL, not to guarantee a local
+  // re-fetch on every visit) — [live-reported: "the same school schedule
+  // is not showing in kids hub" was separately fixed on Hub, but the same
+  // gap exists here on Schedule/Tasks]. Same fix shape as HubScreen.tsx's
+  // own unconditional useFocusEffect: force a real re-fetch on every
+  // focus, cheap (one DB range query), no throttle.
+  useFocusEffect(useCallback(() => {
+    if (viewMode === 'week') {
+      loadRange(toDateStr(weekCursor), toDateStr(addDays(weekCursor, 6)), true);
+    } else if (viewMode === 'agenda') {
+      loadRange(toDateStr(new Date()), toDateStr(addDays(new Date(), 60)), true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, weekCursor]));
+
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
   // Net-new title/notes search — layers on top of the existing date/member/
   // role filters below, never replaces them.

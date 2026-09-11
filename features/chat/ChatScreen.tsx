@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
@@ -280,8 +281,18 @@ export default function ChatScreen() {
   // channelId itself being a raw member id — now that DM ids are a
   // composite pair-id, resolve the OTHER party via the matching
   // allChannels entry's otherId instead.
-  const dmOtherId = (allChannels.find(c => c.id === channelId) as any)?.otherId;
-  const channelLabel = FULL_LABELS[channelId] ?? `💬 ${memberMap[dmOtherId ?? channelId]?.name?.split(' ')[0] ?? ''}`;
+  const openChannelTile = allChannels.find(c => c.id === channelId) as any;
+  const dmOtherId = openChannelTile?.otherId;
+  // "Just Us" — the header must never fall through to the other parent's
+  // name (that's the otherId-based DM fallback below, correct for a
+  // PLAIN co-parent DM but wrong here) [live-reported: the locked Just Us
+  // screen's header still showed "Jak" instead of "Just Us" — no content
+  // leaked, since the message list itself stays locked, but the label
+  // defeats the point of a channel that's supposed to read as private/
+  // unlabeled at a glance].
+  const channelLabel = openChannelTile?.isCoupleChannel
+    ? '💕 Just Us'
+    : FULL_LABELS[channelId] ?? `💬 ${memberMap[dmOtherId ?? channelId]?.name?.split(' ')[0] ?? ''}`;
   // channelLabel is the tab/header's stylized badge text ("🔒 #parents-vault",
   // "#the-grand-squad") — reused verbatim as the input placeholder read as
   // broken ("Message 🔒 #parents-vault…"). Strip the emoji/hash/hyphen
@@ -577,6 +588,20 @@ export default function ChatScreen() {
   // a channel it doesn't even belong to. Route every channel switch
   // through here instead of a bare setChannelId call.
   const switchChannel = (id: string) => {
+    // Re-lock Just Us the instant you navigate away from it — [live-
+    // requested: "once I unlock switch the channels it is not asking pin
+    // every [time]" — the PIN gate should protect against a re-visit
+    // within the SAME session, not just survive until app restart].
+    // Clearing here (not on visibility/background) means the very next
+    // tap into Just Us, whenever that happens, re-prompts — leaving is
+    // enough to require re-entry, no need to also track app foreground/
+    // background state separately.
+    if (id !== channelId) {
+      const leaving = allChannels.find(c => c.id === channelId) as any;
+      if (leaving?.isCoupleChannel) {
+        useCoupleChannelStore.getState().lock(channelId);
+      }
+    }
     setChannelId(id);
     setReplyingTo(null);
     setEditingMsg(null);
@@ -792,6 +817,23 @@ export default function ChatScreen() {
   useEffect(() => {
     if (coupleChannelLocked) setCouplePinModal({ mode: 'verify', channelId });
   }, [coupleChannelLocked, channelId]);
+
+  // Re-lock Just Us on leaving the CHAT TAB itself, not just on an
+  // in-screen channel switch (switchChannel's own re-lock above only
+  // fires when the user explicitly taps a different channel; navigating
+  // to Hub/Tasks/etc. and back leaves this screen mounted with the SAME
+  // channelId still selected, which wouldn't otherwise re-trigger
+  // anything) — [live-requested: re-lock should also apply when leaving
+  // the Chat tab entirely, not only on a channel switch]. useFocusEffect
+  // returns its cleanup on BLUR (tab navigated away from), which is
+  // exactly the "leaving" moment to act on.
+  useFocusEffect(useCallback(() => {
+    return () => {
+      if (openCoupleChannel) {
+        useCoupleChannelStore.getState().lock(channelId);
+      }
+    };
+  }, [openCoupleChannel, channelId]));
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
@@ -1019,6 +1061,16 @@ export default function ChatScreen() {
             </View>
             <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>💕 Just Us</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
+            {/* The auto-open useEffect only fires once, when the lock
+                first flips true — if that modal was cancelled/dismissed,
+                nothing re-opens it without this — [live-reported: "it
+                should show the pin pad" on the lock screen itself]. */}
+            <Pressable
+              onPress={() => setCouplePinModal({ mode: 'verify', channelId })}
+              style={{ marginTop: 4, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: colors.pink ?? colors.accent }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Enter PIN</Text>
+            </Pressable>
           </View>
         ) : (
           <>

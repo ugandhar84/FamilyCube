@@ -304,17 +304,17 @@ export default function PaywallSheet({
                 when set [live-requested: "with discounted strike value
                 to show"]. */}
             {wasPrice && (
-              <Text style={[s.priceWas, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
+              <Text style={[s.priceWas, { color: dark ? colors.primary : colors.primaryText ?? colors.primary }]}>
                 {wasPrice}
               </Text>
             )}
-            <Text style={[s.priceMain, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>{price}</Text>
-            <Text style={[s.pricePer, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
+            <Text style={[s.priceMain, { color: dark ? colors.primary : colors.primaryText ?? colors.primary }]}>{price}</Text>
+            <Text style={[s.pricePer, { color: dark ? colors.primary : colors.primaryText ?? colors.primary }]}>
               {billing === 'annual' ? ' / year' : ' / month'}
             </Text>
           </View>
           {equiv && (
-            <Text style={[s.priceEquiv, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
+            <Text style={[s.priceEquiv, { color: dark ? colors.primary : colors.primaryText ?? colors.primary }]}>
               That's just {equiv} — less than a coffee
             </Text>
           )}

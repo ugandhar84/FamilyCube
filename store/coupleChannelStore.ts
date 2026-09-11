@@ -19,6 +19,7 @@ interface CoupleChannelState {
 
   isUnlocked: (channelId: string) => boolean;
   markUnlocked: (channelId: string) => void;
+  lock: (channelId: string) => void;
 
   isEnabled: (channelId: string) => boolean;
   refreshEnabled: (channelId: string) => Promise<boolean>;
@@ -32,6 +33,14 @@ export const useCoupleChannelStore = create<CoupleChannelState>((set, get) => ({
 
   isUnlocked: (channelId) => get().unlockedChannelIds.has(channelId),
   markUnlocked: (channelId) => set(s => ({ unlockedChannelIds: new Set(s.unlockedChannelIds).add(channelId) })),
+  // Re-locks a single channel — used when navigating away from Just Us
+  // within the same session, so switching back always re-prompts for the
+  // PIN rather than only re-locking on app restart/sign-out/profile-switch.
+  lock: (channelId) => set(s => {
+    const next = new Set(s.unlockedChannelIds);
+    next.delete(channelId);
+    return { unlockedChannelIds: next };
+  }),
 
   isEnabled: (channelId) => get().enabledChannelIds.has(channelId),
   refreshEnabled: async (channelId) => {

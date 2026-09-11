@@ -292,11 +292,17 @@ export function Wordmark({ fontSize = 38, dark = false }: { fontSize?: number; d
             Family{' '}
           </Text>
         </View>
-        <Text style={{ fontSize, fontWeight: '800', letterSpacing: -0.5 }}>
-          <Text style={{ color: BRAND.teal   }}>C</Text>
-          <Text style={{ color: BRAND.amber  }}>u</Text>
-          <Text style={{ color: BRAND.pink   }}>b</Text>
-          <Text style={{ color: BRAND.purple }}>e</Text>
+        {/* "Cube" used to render each letter in a different BRAND color
+            (teal/amber/pink/purple) — inconsistent with the splash
+            screen's single-color mark and every other brand-name call
+            site [live-reported: "match to splash branding name" / "I see
+            cube letter has many colors" — the same complaint an earlier
+            fix already addressed for the cube ICON's top face
+            (FamilyCubeLoader.tsx), but this text wordmark was missed].
+            One consistent color now, matching the app's primary brand
+            hue. */}
+        <Text style={{ fontSize, fontWeight: '800', letterSpacing: -0.5, color: BRAND.purple }}>
+          Cube
         </Text>
       </View>
     </View>

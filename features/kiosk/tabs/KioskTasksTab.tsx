@@ -764,6 +764,18 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
                     </View>
                   )}
 
+                  {/* Coins, next to History rather than in their own
+                      top-right slot — that slot now shows the assignee's
+                      avatar instead [live-requested: "move the coins to
+                      next to the history and in place of coin existing
+                      place bring the assigne person"]. Same hide-when-
+                      redundant rule as before (button label already states
+                      the figure, or the flash-bonus badge already shows
+                      the combined total). */}
+                  {!isAdultAssignee && !btn?.label.includes('🪙') && !(q.bonusExpiresAt && q.bonusCoins > 0) && (
+                    <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                  )}
+
                   {/* History, in the same row as the date/status tags
                       rather than stacked in its own row on the right
                       [live-reported: "keep that in the row of the date"] —
@@ -786,21 +798,27 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
                 </View>
               </View>
 
-              {/* Coin chip + primary action, right-aligned beside
-                  title+tags — matching the mock's own right-aligned coin
-                  figure. Wash variant, not filled: k.gold is a dark
-                  saturated brown at full fill (reads like a button, not a
-                  reward chip) — the mock's own coin pill is a soft amber
-                  tint. History moved into the badge row above, alongside
-                  the date/status tags [live-reported: "keep that in the
-                  row of the date"]. Hidden when the button's own label
-                  already states the coin figure (only the Claim button
-                  does — "Claim (+N 🪙)") so the same number doesn't print
-                  twice on one card [live-reported: "remove the redundent
-                  info showing coins manyplaces on the same card"]. */}
+              {/* Assignee avatar + primary action, right-aligned beside
+                  title+tags — this slot used to hold the coin chip, now
+                  moved into the badge row above next to History
+                  [live-requested, see that comment]. Pool quests have no
+                  single assignee, so nothing renders here for those (same
+                  gate the expanded cardMeta avatar below already used). */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                {!isAdultAssignee && !btn?.label.includes('🪙') && !(q.bonusExpiresAt && q.bonusCoins > 0) && (
-                  <Chip label={`${q.coins} 🪙`} accent={k.gold} isDark={kioskDark} k={k} />
+                {!q.isPool && (
+                  <View accessibilityLabel={memberName(q.assignedToId) ?? 'Unassigned'}>
+                    <KioskAvatar
+                      name={assignee?.name ?? 'Unassigned'}
+                      emoji={assignee?.emoji}
+                      avatarUrl={assignee?.avatarUrl}
+                      siblings={members.filter(x => x.id !== assignee?.id).map(x => x.name)}
+                      size={24}
+                      ringWidth={1.5}
+                      ringColor={rs.dot}
+                      bgColor={rs.badge}
+                      k={k}
+                    />
+                  </View>
                 )}
                 {/* Primary action button ALWAYS visible in the collapsed
                     header, matching the approved reference mock's own
@@ -866,29 +884,9 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
         )}
 
         <View style={s.cardMeta}>
-          {/* Pool quests drop this chip entirely — "Open to all" only ever
-              restated the BOUNTY badge already sitting in the row above
-              [live-reported: "remove open to all as it is already
-              redundenty to bounty"]. An assigned quest shows the
-              assignee's real avatar only, no name text
-              [live-reported: "we can just show avtar instead of names on
-              the chores cards"] — accessibilityLabel still carries the
-              real name for screen readers. */}
-          {!q.isPool && (
-            <View accessibilityLabel={memberName(q.assignedToId) ?? 'Unassigned'}>
-              <KioskAvatar
-                name={assignee?.name ?? 'Unassigned'}
-                emoji={assignee?.emoji}
-                avatarUrl={assignee?.avatarUrl}
-                siblings={members.filter(x => x.id !== assignee?.id).map(x => x.name)}
-                size={24}
-                ringWidth={1.5}
-                ringColor={rs.dot}
-                bgColor={rs.badge}
-                k={k}
-              />
-            </View>
-          )}
+          {/* Assignee avatar moved up to the always-visible header
+              [live-requested, see that comment above] — no longer
+              duplicated here. */}
           {/* Hidden when overdue — the badge row's own overdue pill
               already states this exact date, so showing it a second time
               here would be the same redundancy just fixed for coins

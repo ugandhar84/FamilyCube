@@ -51,8 +51,20 @@ interface ConnectionRow {
 const PROVIDER_LABEL: Record<CalendarProvider, string> = { google: 'Google Calendar', outlook: 'Outlook Calendar' };
 const PROVIDER_ICON: Record<CalendarProvider, keyof typeof Ionicons.glyphMap> = { google: 'logo-google', outlook: 'mail-outline' };
 
-export default function CalendarSyncScreen() {
-  const { colors, isDark } = useTheme();
+/**
+ * CalendarSyncBody — everything this screen actually does (state, OAuth
+ * connect/disconnect, Apple toggle, cleanup actions, and the section list
+ * JSX), extracted from the phone screen's own SafeAreaView+header+
+ * router.back() shell so kiosk can render the exact same body inside its
+ * own side-drawer instead [live-requested: "calendar sync also like wide
+ * seems like using the mobile view can we make the kiosk dedicated view
+ * like showing the side bar recipe"]. Same extraction pattern this file's
+ * phone-owned sibling screens already used for Terms (TermsContentBody,
+ * ProfileSettingsScreen.tsx) — no OAuth/store logic is duplicated, only the
+ * outer chrome differs per caller.
+ */
+export function CalendarSyncBody() {
+  const { colors } = useTheme();
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const activeMember = useFamilyStore(s => s.members.find(m => m.id === s.activeMemberId));
   const updateMember = useFamilyStore(s => s.updateMember);
@@ -419,14 +431,7 @@ export default function CalendarSyncScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Calendar Sync</Text>
-      </View>
-
+    <>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 30 }} color={colors.primary} />
       ) : (
@@ -513,6 +518,26 @@ export default function CalendarSyncScreen() {
           </View>
         </ScrollView>
       )}
+    </>
+  );
+}
+
+/** Phone route — real full-screen SafeAreaView + back-chevron header,
+ * unchanged. Kiosk never renders this component at all: it renders
+ * CalendarSyncBody directly inside its own side-drawer instead (see
+ * KioskProfileTab.tsx's calendarSyncShell wiring). */
+export default function CalendarSyncScreen() {
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>Calendar Sync</Text>
+      </View>
+      <CalendarSyncBody />
     </SafeAreaView>
   );
 }

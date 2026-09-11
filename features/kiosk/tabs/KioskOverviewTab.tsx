@@ -2309,12 +2309,28 @@ export function KioskOverviewTab({
                   {unboughtGroceryItems.map((it, i) => (
                     <Pressable
                       key={it.id}
-                      onPress={() => buyGroceryItem(it.id, active.id)}
+                      // Was a silent one-tap buy — a stray tap on this
+                      // small Overview widget instantly marked an item
+                      // bought and removed it from the list with no way to
+                      // undo [live-reported: "if I click by default going
+                      // to brought silently can we ask for confirmation"].
+                      // Same Alert.alert Cancel/Confirm pattern already
+                      // used elsewhere in kiosk for other one-tap
+                      // consequential actions (e.g. KioskStoreTab's
+                      // "Redeem this reward?").
+                      onPress={() => Alert.alert(
+                        'Mark as bought?',
+                        `Remove "${it.name}" from the grocery list?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Bought', onPress: () => buyGroceryItem(it.id, active.id) },
+                        ],
+                      )}
                       style={[s.groceryRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: false }}
                       accessibilityLabel={it.name}
-                      accessibilityHint="Mark as bought and remove from the list"
+                      accessibilityHint="Mark as bought and remove from the list, after confirming"
                     >
                       <View style={[s.groceryCheck, { borderColor: k.cardBorder }]} />
                       <Text style={[s.groceryItemText, { color: k.text }]} numberOfLines={1}>

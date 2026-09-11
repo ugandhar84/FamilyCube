@@ -371,6 +371,29 @@ export default function TabLayout() {
     useUIStore.getState().setFullBleedScreenActive(false);
   }, [activeTabName]);
 
+  // Route-level backstop: kiosk-awareness otherwise lives ONLY at each
+  // navigation call site (navigateFromNotification in kioskNavStore.ts,
+  // used by app/_layout.tsx's notification listener and by Ask Fam's own
+  // chore-mention links) — none of tasks.tsx/chat.tsx/store.tsx/gps.tsx/
+  // quests.tsx/etc. have any kiosk gate of their own. A bare router.push to
+  // any of them (one already existed inside AskCubeChat.tsx before this
+  // fix) stranded a kiosk device on a plain phone screen with the tab bar
+  // already hidden — no way back to the kiosk rail short of a force-quit
+  // [live-reported: "any link from the fam ai or notifications should not
+  // take to mobile screens where by we stuck to come back... unless they
+  // force kill they can't come back to the kiosk view"]. This closes the
+  // class of bug, not just the one known instance: if a kiosk device ever
+  // becomes focused on any tab OTHER than index (whatever the cause —
+  // future bare push, deep link, stale route restore), redirect straight
+  // back to '/(tabs)' (the only route KioskScreen actually renders on)
+  // immediately, rather than trusting every call site to remember to route
+  // through the kiosk-safe helper.
+  useEffect(() => {
+    if (isKioskMode && activeTabName && activeTabName !== 'index') {
+      router.replace('/(tabs)');
+    }
+  }, [isKioskMode, activeTabName]);
+
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
     if (!familyLoaded) loadFamily();

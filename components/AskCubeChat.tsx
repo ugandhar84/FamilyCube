@@ -26,6 +26,7 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { navigateFromNotification } from '@/store/kioskNavStore';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
@@ -935,7 +936,21 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                         chores={m.chores} linkColor={colors.primary}
                         onChorePress={(choreId) => {
                           onClose();
-                          router.push({ pathname: '/(tabs)/quests', params: { questId: choreId } } as any);
+                          // A bare router.push here bypassed kiosk gating
+                          // entirely — '/(tabs)/quests' has no kiosk
+                          // awareness of its own (only the Hub/index route
+                          // does), so on kiosk this stranded the device on
+                          // a bare phone-style Quests screen with no way
+                          // back short of a force-quit [live-reported: any
+                          // Ask Fam/notification link "should not take to
+                          // mobile screens where by we stuck to come
+                          // back"]. Routed through the same kiosk-safe
+                          // helper every other notification/deep-link
+                          // dispatch in the app already uses.
+                          navigateFromNotification(
+                            { pathname: '/(tabs)/quests', params: { questId: choreId } },
+                            variant === 'kiosk',
+                          );
                         }}
                       />
                     )}

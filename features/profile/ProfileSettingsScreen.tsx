@@ -42,6 +42,7 @@ import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
 import { useTermsContent } from '@/features/onboarding/screens/TermsScreen';
 import DataRecoveryScreen from '@/features/profile/DataRecoveryScreen';
+import { CalendarSyncBody } from '@/features/profile/CalendarSyncScreen';
 
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
@@ -1037,6 +1038,25 @@ export function EditMyProfileSheet({
     if (!visible) setShowDobPicker(false);
   }, [visible]);
 
+  // On kiosk this component's instance survives an active-profile switch
+  // (KioskScreen.tsx renders it under `{active && ...}`, not
+  // `{showEditMyProfile && ...}` — some member is always active, so it
+  // never unmounts). The useState initializers below only ever run on
+  // first mount, so without this the form kept showing whichever member
+  // was active the FIRST time it was ever opened — live-reproduced:
+  // editing Jak, switching to Jessica, then reopening still showed Jak's
+  // name and his real auth email. Re-seed every field whenever the sheet
+  // opens, keyed on member.id, so a stale profile can never be shown.
+  useEffect(() => {
+    if (!visible) return;
+    setName(member.name);
+    setEmail(member.email ?? '');
+    setDob(member.dateOfBirth ? new Date(member.dateOfBirth + 'T00:00:00') : null);
+    setPickedEmoji(undefined);
+    setPhotoUri(null);
+    setTouched({});
+  }, [visible, member.id]);
+
   // A member with a real Supabase Auth account (signed up themselves,
   // rather than a PIN-only profile someone else created) already has a
   // verified email on file in auth.users — pull it in instead of asking
@@ -1295,7 +1315,7 @@ function TypeToConfirmRow({
   );
 }
 
-export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell }: {
+export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, calendarSyncShell }: {
   hideBackButton?: boolean; hideSensitiveAdminRows?: boolean;
   // Kiosk-only: the identity card (avatar/name/role, tappable to edit) is
   // redundant there — the same identity already sits in kiosk's own
@@ -1313,7 +1333,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // [live-requested: "profile page redesing .. 3 col. like similar to
   // toehr.."]. Mobile never passes this (stays 1, i.e. today's exact
   // single-column layout).
-  columns?: 1 | 3;
+  columns?: 1 | 2 | 3;
   // Kiosk-only: swaps the Notifications row's bottom sheet for kiosk's own
   // right-side KioskFormDrawer around the exact same real
   // categories/call-alerts/quiet-hours state [live-requested: "show the
@@ -1358,6 +1378,13 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // exists for it, and none was requested. Mobile never passes this, so
   // its real pushed route is completely unchanged.
   dataRecoveryShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: Calendar Sync opens this shell instead of router.push'ing
+  // its own full-screen route, same reasoning as termsShell/dataRecoveryShell
+  // above [live-requested: "calendar sync also like wide seems like using
+  // the mobile view can we make the kiosk dedicated view like showing the
+  // side bar recipe"]. Mobile never passes this, so its real pushed route
+  // (app/profile-settings/calendar-sync.tsx) is completely unchanged.
+  calendarSyncShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 } = {}) {
   const { colors, isDark, mode, setMode } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
@@ -1413,6 +1440,8 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   const [showTerms, setShowTerms] = useState(false);
   // Kiosk-only — see dataRecoveryShell's own comment.
   const [showDataRecovery, setShowDataRecovery] = useState(false);
+  // Kiosk-only — see calendarSyncShell's own comment.
+  const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   // Same "who's actually in this family right now" filter RosterTab uses —
   // soft-deleted members and not-yet-claimed pending invitees stay out of
@@ -1716,7 +1745,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           "APPEARANCE" labels overlapping the page title]. Mobile
           (columns=1) keeps the original 16 — its own hero card already
           sits between the title and first section there. */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns === 3 ? 28 : 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns > 1 ? 28 : 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
@@ -1870,10 +1899,14 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             its single-column layout is byte-identical to before. Family
             (above) is deliberately outside this grid, in its own full-
             width row — see its own comment for why. */}
-        <View style={columns === 3 ? { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' } : undefined}>
+        <View style={columns > 1 ? { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' } : undefined}>
 
         {/* Subscription */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Subscription" colors={colors} />
           <Row
             icon="star-outline"
@@ -1906,7 +1939,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             collapsed into one summary row that opens NotificationsSheet
             (categories, quiet hours, call alerts all together), same
             "tap a row → bottom sheet" pattern the app uses elsewhere. */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Notifications" colors={colors} />
           <Row
             icon="notifications-outline"
@@ -1935,7 +1972,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         />
 
         {/* Appearance */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Appearance" colors={colors} />
           <View style={{
             flexDirection: 'row', borderRadius: RADIUS.md, backgroundColor: colors.card,
@@ -1967,7 +2008,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         </View>
 
         {/* Security */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Security" colors={colors} />
           {bioAvailable && (
             <Row
@@ -2013,7 +2058,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             wrote a rename back to it); this is the first working rename
             path. Same parent-editable / read-only-for-others split as
             Currency below. */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Family" colors={colors} />
           <Row
             icon="home-outline"
@@ -2040,7 +2089,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             ParentReviewDeck) was hardcoded to a bare $ with no setting to
             change it at all. Parent-editable; everyone else sees the same
             row as read-only display, per explicit request. */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Currency" colors={colors} />
           <Row
             icon="cash-outline"
@@ -2070,16 +2123,24 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             purely for FreeBusy conflict detection (not full 2-way sync,
             see CalendarSyncScreen.tsx's own header comment). */}
         {isParent && (
-          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <SectionHeader label="Calendar" colors={colors} />
             <Row
               icon="calendar-outline"
               label="Calendar Sync"
               subtitle="Connect your work calendar to catch scheduling conflicts"
-              onPress={() => router.push('/profile-settings/calendar-sync')}
+              onPress={() => calendarSyncShell ? setShowCalendarSync(true) : router.push('/profile-settings/calendar-sync')}
               colors={colors} isDark={isDark}
             />
           </View>
+        )}
+
+        {calendarSyncShell && showCalendarSync && (
+          <>{calendarSyncShell(showCalendarSync, () => setShowCalendarSync(false), <CalendarSyncBody />)}</>
         )}
 
         {/* Legal — kiosk opens this as its own side drawer instead of
@@ -2090,7 +2151,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             inside this embedded tab, the same reason KioskProfileTab
             passes hideBackButton for THIS screen. Mobile (no termsShell)
             keeps the real route, completely unchanged. */}
-        <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+        <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
           <SectionHeader label="Legal" colors={colors} />
           <Row
             icon="document-text-outline"
@@ -2111,7 +2176,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             uses, so a non-admin parent never sees this row AND can't reach
             the gate by any other path either — see features/admin/_layout.tsx. */}
         {isParent && isAppAdmin && !hideSensitiveAdminRows && (
-          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <SectionHeader label="Admin" colors={colors} />
             <Row
               icon="shield-checkmark-outline"
@@ -2136,7 +2205,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             confirmation needed for the real-account case — signing out is
             normal, everyday UX. */}
         {isAuthLinked && viewingOwnProfile && !isAnonymousSession && (
-          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <Row
               icon="log-out-outline"
               label="Sign Out"
@@ -2174,7 +2247,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             of a real sign-out with no way back in. */}
         {isAuthLinked && viewingOwnProfile && isAnonymousSession && (
           <View style={[{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: colors.surface, padding: 14, gap: 6 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+            backgroundColor: colors.surface, padding: 14, gap: 6 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
               No Sign Out here
             </Text>
@@ -2191,7 +2268,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             purely a local activeMemberId swap gated by the real owner's
             own PIN, no Supabase call at all. */}
         {!viewingOwnProfile && authOwnerMember && (
-          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <Row
               icon="lock-closed-outline"
               label="Lock & Switch Back"
@@ -2214,7 +2295,11 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
 
         {/* Danger zone */}
         {canShowDangerZone && (
-          <View style={[{ marginBottom: 24 }, columns === 3 && { flexBasis: '31%', flexGrow: 0, minWidth: 280 }]}>
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          borderRadius: RADIUS.lg, padding: 14,
+        }]}>
             <SectionHeader label="Danger Zone" colors={colors} />
             {!showDangerConfirm ? (
               <Row

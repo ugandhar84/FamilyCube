@@ -576,37 +576,44 @@ const s = StyleSheet.create({
   // [live-requested: "dont waste the space on the card"] — tighter
   // padding all round, and cardRow1's own reserved clearance for the
   // battery badge cut down to just what that small badge actually needs.
+  // Cut down further [live-reported: "over sized too much blank spaces
+  // make it cute and nice"] — a fixed, content-hugging width instead of a
+  // percentage share of the row (percentage sizing was forcing every card
+  // as wide as the grid's own column math regardless of how little text
+  // actually needed that width), a smaller avatar/nav-button footprint,
+  // and every inter-row gap trimmed to the minimum that still reads as
+  // separate rows rather than a jammed block.
   card: {
-    flexBasis: '31%', flexGrow: 1, maxWidth: '31%', minWidth: 150,
-    flexDirection: 'column', alignItems: 'center', gap: 2,
-    paddingVertical: 6, paddingHorizontal: 6, position: 'relative',
+    width: 132,
+    flexDirection: 'column', alignItems: 'center', gap: 1,
+    paddingVertical: 5, paddingHorizontal: 5, position: 'relative',
   },
   // Row 1: avatar + name side by side [live-requested: "2 row avtar +
   // name / current location"].
-  cardRow1: { flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%', paddingRight: 24 },
+  cardRow1: { flexDirection: 'row', alignItems: 'center', gap: 5, width: '100%', paddingRight: 20 },
   avatar: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 26, height: 26, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarEmoji: { fontSize: 15 },
+  avatarEmoji: { fontSize: 13 },
   name: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
   // Battery %, pinned to the card's own top-right corner
   // [live-requested: "battery % on tthe top right"].
   batteryBadge: {
-    position: 'absolute', top: 5, right: 5,
+    position: 'absolute', top: 4, right: 4,
     flexDirection: 'row', alignItems: 'center', gap: 2,
     borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
     paddingHorizontal: 4, paddingVertical: 1,
   },
   batteryBadgeText: { fontSize: 9, fontWeight: '800' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 1 },
   status: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  addr: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 2, textAlign: 'center' },
+  addr: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 1, textAlign: 'center' },
   lowBattery: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   // Bottom action row — History always shows, Navigation only when live.
-  cardActionsRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  cardActionsRow: { flexDirection: 'row', gap: 5, marginTop: 1 },
   navBtn: {
-    width: 32, height: 32, borderRadius: 16, marginTop: 2,
+    width: 26, height: 26, borderRadius: 13, marginTop: 1,
     borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   // Location-history drawer rows.

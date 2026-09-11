@@ -116,6 +116,7 @@ import { fmtTime, localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, kioskRoleAccent, kioskOnAccent, type KioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, PanelHead, Well, Chip, ActionButton, EmptyNote, KioskListRow, KioskListRowAction } from '../components/KioskOS';
+import { KioskSchoolTodayWidget } from '../components/KioskSchoolTodayWidget';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from '../components/KioskFormDrawer';
 import { KioskMemorySlideshow } from '../components/KioskMemorySlideshow';
 import { useKioskPhotos } from '../useKioskPhotos';
@@ -2369,6 +2370,13 @@ export function KioskOverviewTab({
             {(isKid || isTeen) && (
               <KioskCheerSquadPanel active={active} members={members} k={k} isDark={isDark} />
             )}
+
+            {/* Parent-facing overview of every kid/teen's school day —
+                separate from the general today's timeline, per
+                [live-requested: "add the different section at the end of
+                the hub and overview with the school schedule if
+                available for all kids with happening now badge"]. */}
+            <KioskSchoolTodayWidget kids={kids} k={k} isDark={isDark} />
           </View>
         </View>
       ) : (

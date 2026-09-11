@@ -942,10 +942,10 @@ export default function ChatScreen() {
           parent's zIndex alone doesn't guarantee ordering against a
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, zIndex: 0, elevation: 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : colors.border, zIndex: 0, elevation: 0 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <ShieldCheck size={12} color="#10b981" />
-          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>{channelLabel}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: openCoupleChannel ? (colors.pink ?? colors.accent) : colors.primary }} numberOfLines={1}>{channelLabel}</Text>
           {/* A DM's participant count/avatars must be scoped to the 2
               people actually in it, not the whole family — this
               previously showed members.length/members unconditionally,
@@ -1110,7 +1110,11 @@ export default function ChatScreen() {
               inverted
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={{ paddingVertical: 6 }}
-              style={{ backgroundColor: colors.background }}
+              // Just Us gets a soft warm tint instead of the plain
+              // background — a deliberately different feel from the
+              // businesslike family chat, per request ("it is going to
+              // be romantic"). Purely cosmetic — no behavior change.
+              style={{ backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '08' : colors.background }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               // No tuning at all previously — FlatList's defaults render
@@ -1366,13 +1370,22 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {/* ── Just Us proposal chips — logistics only, no readiness/mood
-                signaling. Tapping one posts a couple_proposal system
-                message (see MessageBubble.tsx's CoupleProposalBubble) that
-                the other parent can Confirm/"Can't tonight" directly on. ── */}
+            {/* ── Just Us proposal chips — logistics/warmth only, no
+                readiness/mood signaling or any kind of tracking. Tapping
+                a proposal chip posts a couple_proposal system message
+                (see MessageBubble.tsx's CoupleProposalBubble) that the
+                other parent can Confirm/"Can't tonight" directly on;
+                "Thinking of you ❤️" is a plain warm message instead —
+                sends immediately, nothing to confirm/decline, just a
+                quick touchpoint without having to type. ── */}
             {!reviewing && !recording && (allChannels.find(c => c.id === channelId) as any)?.isCoupleChannel && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, backgroundColor: colors.card }}>
-                {['Date night?', 'Movie at home?', 'Coffee tomorrow?', 'Free tonight?', 'Early night?'].map(label => (
+                <Pressable
+                  onPress={() => sendMessage(channelId, activeMemberId ?? '', 'Thinking of you ❤️')}
+                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.pink ?? colors.accent }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#fff' }}>💌 Thinking of you</Text>
+                </Pressable>
+                {['Date night?', 'Movie at home?', 'Coffee tomorrow?', 'Free tonight?', 'Early night?', 'Surprise me tonight?', 'Your pick for dinner?', 'Slow morning together?'].map(label => (
                   <Pressable key={label}
                     onPress={() => sendMessage(channelId, activeMemberId ?? '', label, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
                       { type: 'couple_proposal', payload: { label } })}

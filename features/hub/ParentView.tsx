@@ -19,6 +19,7 @@ import type { ChoreTask } from '@/store/choreStore';
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import { HomeownerNotesSection } from './parent/HomeownerNotesSection';
+import { SchoolTodaySection } from './parent/SchoolTodaySection';
 import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
@@ -531,6 +532,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <FamilyGamesSection colors={colors} isDark={isDark} />
 
       <HomeownerNotesSection colors={colors} />
+
+      {/* Parent-facing overview of every kid/teen's school day, separate
+          from the general today's timeline above — [live-requested: "add
+          the different section at the end of the hub and overview with
+          the school schedule if available for all kids with happening
+          now badge"]. */}
+      <SchoolTodaySection members={members} colors={colors} isDark={isDark} />
 
       <PushbackSheet
         target={pushbackSheet} colors={colors} isDark={isDark}

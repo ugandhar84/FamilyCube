@@ -115,7 +115,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     coins:            c.categoryType === 'grandparent_quest' ? 0 : (c.basePoints > 0 ? c.basePoints : c.coinsReward),
     xpReward:         c.xpReward ?? 10,
     bonusCoins:       c.bonusCoins ?? 0,
-    bonusExpiresAt:   (c as any).bonusExpiresAt ?? undefined,
+    bonusExpiresAt:   c.bonusExpiresAt ?? undefined,
 
     assignedToId:     c.assignedToId,
     assignedToIds:    c.assignedToId ? [c.assignedToId] : [],

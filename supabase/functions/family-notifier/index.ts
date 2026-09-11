@@ -93,6 +93,7 @@ type NotifType =
   | 'quest_submitted'
   | 'bonus_activated'
   | 'bonus_expiring'
+  | 'bonus_expired_unclaimed'
   | 'bonus_expired_penalty'
   | 'deadline_reminder'
   | 'deadline_overdue'
@@ -321,6 +322,7 @@ type NotifCategory = 'chores' | 'family' | 'chat' | 'mentions' | 'rewards' | 're
 const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   quest_approved: 'chores', quest_declined: 'chores', quest_claimed: 'chores',
   quest_submitted: 'chores', bonus_activated: 'chores', bonus_expiring: 'chores',
+  bonus_expired_unclaimed: 'chores',
   bonus_expired_penalty: 'chores', deadline_reminder: 'chores', deadline_overdue: 'chores',
   penalty_applied: 'chores', force_assigned: 'chores', chore_ghosted: 'chores',
   chore_still_on: 'chores', chore_auto_released: 'chores',
@@ -512,10 +514,24 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };
+    // Never claimed by the time its 24h window ran out — quiet removal,
+    // no penalty. Distinct from bonus_expired_penalty below (which DOES
+    // apply a penalty, for the claimed-but-not-finished case) — these
+    // were previously conflated under one type whose copy only made
+    // sense for the penalty case.
+    case 'bonus_expired_unclaimed':
+      return {
+        title: '⏳ Bonus Expired',
+        body: `The flash bonus on "${p.questTitle}" wasn't claimed in time and is now gone — no worries, the base reward still stands.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
     case 'bonus_expired_penalty':
       return {
-        title: '⚠️ Bonus Ignored — Penalty',
-        body: `The flash bonus on "${p.questTitle}" expired unclaimed${p.coinPenalty ? ` — ${p.coinPenalty}🪙 deducted` : ''}`,
+        title: '⚠️ Bonus Window Missed',
+        body: p.kidName
+          ? `${p.kidName} claimed "${p.questTitle}" but didn't finish before the bonus window closed${p.coinPenalty ? ` — ${p.coinPenalty}🪙 deducted` : ''}`
+          : `You claimed "${p.questTitle}" but didn't finish before the bonus window closed${p.coinPenalty ? ` — ${p.coinPenalty}🪙 deducted` : ''}`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };

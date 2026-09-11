@@ -337,7 +337,106 @@ serve(async (req) => {
       }
     }
 
-    return json({ ok: true, swept: (chores ?? []).length, origination_swept: (originationChores ?? []).length, escalated: escalatedCount, notifications, auto_released: released, dryRun });
+    // ── Flash-bonus expiry sweep ──────────────────────────────────────────
+    // Confirmed dead until now: bonus_coins rendered indefinitely via
+    // FlashBonusBadge.tsx (a real countdown UI) with no expiry ever set or
+    // enforced (live-reported: a chore overdue since Sep 5 still showing
+    // "+10 bonus"). store/choreStore.ts now stamps bonus_expires_at to
+    // exactly 24h from whenever a bonus is activated (see updateChore's/
+    // addChore's bonusCoins handling) — this sweep is what actually acts
+    // on that expiry. Deliberately a SEPARATE query from the main chore
+    // sweep above, which is gated on having a due_date; a chore can have
+    // an active bonus with no due_date at all.
+    //
+    // Two outcomes, matching the product decision (bonus expiring on a
+    // chore nobody ever claimed shouldn't punish anyone; a kid who
+    // claimed it and then let the clock run out on the bonus window
+    // should lose exactly what they stood to gain — symmetric, easy to
+    // explain):
+    //   - status='todo' (never claimed): silently clear the bonus, no
+    //     penalty, no push — the bounty just wasn't taken in time.
+    //   - status='in_progress' + claimed_at set (claimed, not finished):
+    //     clear the bonus AND deduct bonus_coins from the claimant via
+    //     the existing award_coins RPC (already clamps at 0 and already
+    //     accepts a negative coins_delta — same helper chore-auto-approve
+    //     uses for the positive case), then notify both the kid and the
+    //     parents.
+    let bonusQuery = supabase
+      .from('chore_tasks')
+      .select('id, title, family_id, status, assigned_to_id, claimed_at, bonus_coins, bonus_expires_at, category_type, sponsor_user_id')
+      .not('bonus_expires_at', 'is', null)
+      .lte('bonus_expires_at', new Date().toISOString())
+      .is('bonus_expired_notified_at', null);
+    if (familyId) bonusQuery = bonusQuery.eq('family_id', familyId);
+    const { data: expiredBonusChores, error: bErr } = await bonusQuery;
+    if (bErr) throw new Error(`Bonus-expiry fetch failed: ${bErr.message}`);
+
+    let bonusExpired = 0;
+    let bonusPenalized = 0;
+    for (const c of (expiredBonusChores ?? [])) {
+      const bonusCoins = c.bonus_coins ?? 0;
+      const wasClaimed = c.status === 'in_progress' && !!c.claimed_at && !!c.assigned_to_id;
+
+      // Guarded update — .is('bonus_expired_notified_at', null) means a
+      // concurrent second invocation (overlapping cron tick, a manual
+      // + scheduled run racing, at-least-once retry) affects 0 rows here.
+      // MUST check that before doing anything further below: the
+      // original version of this sweep read `wasClaimed`/`bonusCoins`
+      // from the SELECT snapshot taken before either write landed, so
+      // both invocations would independently pass the "already claimed"
+      // check and BOTH call award_coins with a negative delta — a real
+      // double-penalty bug caught in code review before this ever
+      // shipped. Checking .select() + row count on the update itself
+      // (not the earlier SELECT) makes the whole per-chore block
+      // effectively idempotent — only the invocation that actually wins
+      // the race proceeds to notify/penalize.
+      if (!dryRun) {
+        const { data: updatedRows } = await supabase.from('chore_tasks')
+          .update({ bonus_coins: 0, bonus_expires_at: null, bonus_expired_notified_at: new Date().toISOString() })
+          .eq('id', c.id)
+          .is('bonus_expired_notified_at', null)
+          .select('id');
+        if (!updatedRows?.length) continue; // lost the race — another invocation already handled this chore
+      }
+      bonusExpired++;
+
+      if (wasClaimed && bonusCoins > 0) {
+        if (!dryRun) {
+          // Same wallet-selection rule as every real bonus PAYOUT path in
+          // store/choreStore.ts (categoryType === 'grandparent_quest' ||
+          // sponsorUserId -> 'gp' wallet, else 'main') — a hardcoded
+          // 'main' here would silently debit the wrong pool for any
+          // grandparent-sponsored quest, since its bonus was always
+          // destined to pay out of gp_coins, not coins/main_coins.
+          const wallet = (c.category_type === 'grandparent_quest' || c.sponsor_user_id) ? 'gp' : 'main';
+          const { error: awardErr } = await supabase.rpc('award_coins', {
+            member_id: c.assigned_to_id, coins_delta: -bonusCoins, xp_delta: 0, wallet,
+          });
+          if (awardErr) console.error('[chore-deadline-notifier] award_coins penalty failed', awardErr.message);
+          await supabase.from('activity_log').insert({
+            entity_type: 'chore', entity_id: c.id, family_id: c.family_id,
+            actor_id: null, action: 'bonus_expired_penalty',
+            from_status: c.status, to_status: c.status,
+            note: `Bonus window closed on "${c.title}" while claimed by ${c.assigned_to_id} but not finished — -${bonusCoins} coins`,
+          });
+        }
+        bonusPenalized++;
+        const kidTokens = tokensForMember(c.assigned_to_id);
+        const assignee = c.assigned_to_id ? memberMap[c.assigned_to_id] : null;
+        const parentTokens = parentTokensByFamily[c.family_id] ?? [];
+        await fire('bonus_expired_penalty', kidTokens, c.family_id, { questTitle: c.title, questId: c.id, coinPenalty: bonusCoins });
+        await fire('bonus_expired_penalty', parentTokens, c.family_id, { questTitle: c.title, questId: c.id, coinPenalty: bonusCoins, kidName: assignee?.name ?? 'A kid' }, { soft: true });
+      } else if (c.assigned_to_id) {
+        // Assigned but not actually "claimed" in the in_progress sense
+        // (e.g. still todo) — quiet removal, no penalty, informational
+        // only for whoever it's assigned to.
+        await fire('bonus_expired_unclaimed', tokensForMember(c.assigned_to_id), c.family_id, { questTitle: c.title, questId: c.id });
+      }
+      // Fully unclaimed pool chore with nobody assigned — nothing to
+      // notify, just clear the bonus silently (already done above).
+    }
+
+    return json({ ok: true, swept: (chores ?? []).length, origination_swept: (originationChores ?? []).length, escalated: escalatedCount, notifications, auto_released: released, bonus_expired: bonusExpired, bonus_penalized: bonusPenalized, dryRun });
 
   } catch (e: any) {
     console.error('[chore-deadline-notifier]', e);

@@ -98,6 +98,7 @@ export interface ChoreTask {
   basePoints: number;
   coinsReward: number;           // Aligns with existing coins_reward field
   bonusCoins?: number;           // Extra coins on top of basePoints, paid at approval
+  bonusExpiresAt?: string;       // ISO — fixed 24h from bonus activation; cleared when bonusCoins is cleared. See FlashBonusBadge.tsx (self-hides at expiry) and chore-deadline-notifier's expiry sweep.
   xpReward: number;
   status: ChoreStatus;
   assignedToId?: string;
@@ -721,6 +722,7 @@ function choreFromRow(row: any): ChoreTask {
     basePoints:              row.base_points ?? row.coins_reward ?? 0,
     coinsReward:             row.coins_reward ?? 0,
     bonusCoins:              row.bonus_coins ?? 0,
+    bonusExpiresAt:          row.bonus_expires_at ?? undefined,
     xpReward:                row.xp_reward ?? 0,
     status:                  (row.status ?? 'todo') as ChoreStatus,
     assignedToId:            row.assigned_to_id ?? undefined,
@@ -1645,6 +1647,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       base_points:              chore.basePoints,
       coins_reward:             chore.coinsReward,
       bonus_coins:              chore.bonusCoins ?? 0,
+      // Same 24h-from-activation stamping as updateChore's bonusCoins
+      // branch — a chore CREATED with a bonus already set (AddQuestModal's
+      // bonus field) must start its expiry window immediately, not only
+      // when later edited.
+      bonus_expires_at:         (chore.bonusCoins ?? 0) > 0 ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null,
       xp_reward:                chore.xpReward,
       status:                   chore.status,
       assigned_to_id:           chore.assignedToId,
@@ -2005,7 +2012,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('category'           in updates) patch.category                 = updates.category;
     if ('basePoints'         in updates) patch.base_points              = updates.basePoints;
     if ('coinsReward'        in updates) patch.coins_reward             = updates.coinsReward;
-    if ('bonusCoins'         in updates) patch.bonus_coins              = updates.bonusCoins;
+    if ('bonusCoins'         in updates) {
+      patch.bonus_coins = updates.bonusCoins;
+      // Flash-bonus expiration was confirmed dead — bonus_coins rendered
+      // indefinitely via FlashBonusBadge with no real expiry behind it
+      // (live-reported: a chore overdue since Sep 5 still showing "+10
+      // bonus"). Fixed at the single point bonusCoins is ever written,
+      // not duplicated into every caller: activating a bonus (0/undefined
+      // -> positive) stamps a fixed 24h window; clearing it back to 0
+      // clears the expiry too, so a manually-removed bonus doesn't leave
+      // a stale expiry for chore-deadline-notifier's cron to later act on.
+      const wasActive = (prevChore?.bonusCoins ?? 0) > 0;
+      const isActive  = (updates.bonusCoins ?? 0) > 0;
+      if (isActive && !wasActive) {
+        patch.bonus_expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        patch.bonus_expired_notified_at = null;
+      } else if (!isActive && wasActive) {
+        patch.bonus_expires_at = null;
+      }
+    }
     if ('difficulty'         in updates) patch.difficulty               = updates.difficulty;
     if ('dueDate'            in updates) patch.due_date                 = updates.dueDate;
     // Stamp the device's real timezone whenever due_time changes — see the

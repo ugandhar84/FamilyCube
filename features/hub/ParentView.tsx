@@ -538,7 +538,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           the different section at the end of the hub and overview with
           the school schedule if available for all kids with happening
           now badge"]. */}
-      <SchoolTodaySection members={members} colors={colors} isDark={isDark} />
+      <SchoolTodaySection members={members} colors={colors} isDark={isDark} activeName={active.name} activeMemberId={active.id} />
 
       <PushbackSheet
         target={pushbackSheet} colors={colors} isDark={isDark}

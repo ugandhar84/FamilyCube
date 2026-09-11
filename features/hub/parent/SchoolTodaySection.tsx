@@ -1,18 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { GraduationCap } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
-import { SectionCard } from '../hubComponents';
+import { SectionCard, EventDetailSheet } from '../hubComponents';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useSchoolStore } from '@/store/schoolStore';
 import { getTodayPeriodStatus } from '@/lib/schoolPeriodNow';
+import { useEventStore } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 
-export function SchoolTodaySection({ members, colors, isDark }: {
+export function SchoolTodaySection({ members, colors, isDark, activeName, activeMemberId }: {
   members: FamilyMember[]; colors: any; isDark: boolean;
+  activeName?: string; activeMemberId?: string;
 }) {
   const { schedules, loaded, loadFromStorage } = useSchoolStore();
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
+  const { events, updateEvent } = useEventStore();
+  // Tapping a row opens the SAME EventDetailSheet Hub's timeline/Calendar
+  // already use for every other event — a class period is a real
+  // materialized calendar_events row (materializePeriodEvent), just
+  // looked up via the period's own linkedEventId rather than rendered
+  // directly from `events` [live-requested: "if they tap on that
+  // schedule card it should open details bottom sheet"].
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const detailEvent = detailEventId ? events.find(e => e.id === detailEventId) : undefined;
 
   // Re-derive every minute so "happening now" and the current/next period
   // stay accurate while the Hub screen stays mounted.
@@ -54,14 +65,18 @@ export function SchoolTodaySection({ members, colors, isDark }: {
       >
         <View style={{ gap: 8 }}>
           {rows.map(({ kid, status }) => (
-            <View key={kid.id} style={{
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              paddingHorizontal: 12, paddingVertical: 10,
-              borderRadius: RADIUS.md,
-              backgroundColor: status?.isNow ? colors.tealLight : colors.surface,
-              borderWidth: 1,
-              borderColor: status?.isNow ? colors.teal + '55' : colors.border,
-            }}>
+            <Pressable
+              key={kid.id}
+              disabled={!status?.period.linkedEventId}
+              onPress={() => status?.period.linkedEventId && setDetailEventId(status.period.linkedEventId)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 10,
+                paddingHorizontal: 12, paddingVertical: 10,
+                borderRadius: RADIUS.md,
+                backgroundColor: status?.isNow ? colors.tealLight : colors.surface,
+                borderWidth: 1,
+                borderColor: status?.isNow ? colors.teal + '55' : colors.border,
+              }}>
               <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={38} ringColor={colors.kid} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
@@ -87,10 +102,22 @@ export function SchoolTodaySection({ members, colors, isDark }: {
                   <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
                 </View>
               )}
-            </View>
+            </Pressable>
           ))}
         </View>
       </SectionCard>
+
+      {detailEvent && (
+        <EventDetailSheet
+          ev={detailEvent}
+          members={members}
+          colors={colors} isDark={isDark}
+          activeName={activeName}
+          activeMemberId={activeMemberId}
+          updateEvent={updateEvent}
+          onClose={() => setDetailEventId(null)}
+        />
+      )}
     </View>
   );
 }

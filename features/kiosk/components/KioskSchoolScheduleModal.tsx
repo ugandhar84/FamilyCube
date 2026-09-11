@@ -43,7 +43,7 @@ interface Props {
 
 export function KioskSchoolScheduleModal({ visible, memberId, memberName, isParent, colors, isDark, onClose }: Props) {
   const { k } = useKioskColors();
-  const { schedules, addSchedule, updateSchedule } = useSchoolStore();
+  const { schedules, addSchedule, updateSchedule, addPeriod, updatePeriod: storeUpdatePeriod, deletePeriod: storeDeletePeriod } = useSchoolStore();
   const existing = schedules.find(s => s.memberId === memberId);
 
   const [schoolName,   setSchoolName]   = useState(existing?.school    ?? '');
@@ -97,24 +97,55 @@ export function KioskSchoolScheduleModal({ visible, memberId, memberName, isPare
   const sorted = [...periods].sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
 
   const [error, setError] = useState<string | null>(null);
-  const save = () => {
+  // Same real materialization fix as SchoolScheduleModal.tsx's own save()
+  // — diffs the locally-edited periods against what's actually stored and
+  // routes each add/change/removal through the store's real per-period
+  // actions (the only path that writes a calendar_events row via
+  // materializePeriodEvent), instead of a single bulk updateSchedule call
+  // that never touched the calendar at all [live-reported: class schedule
+  // missing from the Hub today timeline / kiosk Overview "My Schedule"].
+  const save = async () => {
     if (!schoolName.trim() && periods.length === 0) {
       setError('Add a school name or at least one period.');
       return;
     }
     setError(null);
-    const schedule: KidSchedule = {
+
+    const previousPeriods = existing?.periods ?? [];
+    const previousById = new Map(previousPeriods.map(p => [p.id, p]));
+    const currentIds = new Set(sorted.map(p => p.id));
+
+    for (const prev of previousPeriods) {
+      if (!currentIds.has(prev.id)) {
+        storeDeletePeriod(memberId, prev.id);
+      }
+    }
+    // Sequential, not Promise.all — addPeriod/updatePeriod each read/write
+    // the same schedules array via get()/set(), so concurrent calls would
+    // race and silently drop all but the last writer's change.
+    for (const period of sorted) {
+      const prev = previousById.get(period.id);
+      const { id, ...rest } = period;
+      if (!prev) {
+        await addPeriod(memberId, rest);
+      } else {
+        const changed = (Object.keys(rest) as (keyof typeof rest)[])
+          .some(k => JSON.stringify(rest[k]) !== JSON.stringify((prev as any)[k]));
+        if (changed) await storeUpdatePeriod(memberId, id, rest);
+      }
+    }
+
+    const scheduleMeta = {
       memberId, memberName,
-      semester:    'Fall',
-      year:        new Date().getFullYear(),
+      semester:    (existing?.semester ?? 'Fall') as KidSchedule['semester'],
+      year:        existing?.year ?? new Date().getFullYear(),
       gradeYear:   gradeLabel.trim() || undefined,
       school:      schoolName.trim() || undefined,
-      lunchPeriod: 'B',
-      dayType:     'Regular',
-      periods:     sorted,
+      lunchPeriod: existing?.lunchPeriod ?? 'B',
+      dayType:     existing?.dayType ?? 'Regular',
     };
-    if (existing) updateSchedule(memberId, schedule);
-    else           addSchedule(schedule);
+    if (existing) updateSchedule(memberId, scheduleMeta);
+    else           addSchedule({ ...scheduleMeta, periods: [] });
     onClose();
   };
 

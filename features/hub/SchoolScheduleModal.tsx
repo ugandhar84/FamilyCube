@@ -185,7 +185,7 @@ export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export function SchoolScheduleModal({ visible, memberId, memberName, isParent, colors, isDark, onClose }: Props) {
-  const { schedules, addSchedule, updateSchedule } = useSchoolStore();
+  const { schedules, addSchedule, updateSchedule, addPeriod, updatePeriod: storeUpdatePeriod, deletePeriod: storeDeletePeriod } = useSchoolStore();
   const existing = schedules.find(s => s.memberId === memberId);
 
   const [schoolName,   setSchoolName]   = useState(existing?.school    ?? '');
@@ -235,23 +235,63 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
 
   const sorted = [...periods].sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
 
-  const save = () => {
+  const save = async () => {
     if (!schoolName.trim() && periods.length === 0) {
       Alert.alert('Nothing to save', 'Add a school name or at least one period.');
       return;
     }
-    const schedule: KidSchedule = {
+    // Was a single updateSchedule/addSchedule bulk-replace call — the
+    // store's own per-period actions (addPeriod/updatePeriod/deletePeriod)
+    // are the ONLY path that materializes a class period as a real
+    // calendar_events row (materializePeriodEvent, schoolStore.ts), so a
+    // kid/teen's class schedule never showed up in the Hub's today
+    // timeline or the kiosk Overview's "My Schedule" widget — both read
+    // from useEventStore, and this modal never wrote there at all
+    // [live-reported: "Are we not showing the school schedule under
+    // kids/teens agenda? ... should be their today's timeline in hub and
+    // overview my schedule"]. Diffing the locally-edited `periods` array
+    // against what's actually stored and routing each add/change/removal
+    // through the real per-period actions is what actually materializes
+    // the calendar events, while keeping this screen's own "edit several
+    // rows, then Save once" UX unchanged.
+    const previousPeriods = existing?.periods ?? [];
+    const previousById = new Map(previousPeriods.map(p => [p.id, p]));
+    const currentIds = new Set(sorted.map(p => p.id));
+
+    for (const prev of previousPeriods) {
+      if (!currentIds.has(prev.id)) {
+        storeDeletePeriod(memberId, prev.id);
+      }
+    }
+    // Sequential, not Promise.all — addPeriod/updatePeriod each read/write
+    // the same schedules array via get()/set(), so concurrent calls would
+    // race and silently drop all but the last writer's change.
+    for (const period of sorted) {
+      const prev = previousById.get(period.id);
+      const { id, ...rest } = period;
+      if (!prev) {
+        await addPeriod(memberId, rest);
+      } else {
+        const changed = (Object.keys(rest) as (keyof typeof rest)[])
+          .some(k => JSON.stringify(rest[k]) !== JSON.stringify((prev as any)[k]));
+        if (changed) await storeUpdatePeriod(memberId, id, rest);
+      }
+    }
+
+    // School name/grade/lunch/dayType still go through the existing
+    // whole-schedule update — those fields have no per-field store action
+    // and don't materialize anything, so a bulk update is fine for them.
+    const scheduleMeta = {
       memberId, memberName,
-      semester:    'Fall',
-      year:        new Date().getFullYear(),
+      semester:    (existing?.semester ?? 'Fall') as KidSchedule['semester'],
+      year:        existing?.year ?? new Date().getFullYear(),
       gradeYear:   gradeLabel.trim() || undefined,
       school:      schoolName.trim() || undefined,
-      lunchPeriod: 'B',
-      dayType:     'Regular',
-      periods:     sorted,
+      lunchPeriod: existing?.lunchPeriod ?? 'B',
+      dayType:     existing?.dayType ?? 'Regular',
     };
-    if (existing) updateSchedule(memberId, schedule);
-    else           addSchedule(schedule);
+    if (existing) updateSchedule(memberId, scheduleMeta);
+    else           addSchedule({ ...scheduleMeta, periods: [] });
     onClose();
   };
 

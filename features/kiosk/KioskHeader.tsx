@@ -119,21 +119,6 @@ export function KioskHeader({
         <View style={s.brandCol}>
           <View style={s.brand}>
             <View style={[s.liveDot, { backgroundColor: k.sage }]} />
-            {/* Compact real weather next to the live dot. Renders only
-                once a real reading has actually come back
-                (useKioskWeather returns null otherwise) — never a
-                placeholder. No time shown here at all — the device's own
-                status-bar clock (top-left of the screen) already covers
-                that, and this header's own center clock was removed for
-                being exactly that same redundancy. */}
-            {weather && (
-              <View style={s.switcherMeta} accessible accessibilityRole="text" accessibilityLabel={`${weather.temperature}${weather.unit}, ${weather.condition}`}>
-                <Text style={s.switcherMetaIcon}>{weather.icon}</Text>
-                <Text style={[s.switcherMetaText, { color: k.textMuted }]} numberOfLines={1}>
-                  {weather.temperature}{weather.unit}
-                </Text>
-              </View>
-            )}
           </View>
         </View>
 
@@ -211,6 +196,26 @@ export function KioskHeader({
           switches to (a command) — tapping cycles
           system -> light -> dark -> system. */}
       <View style={s.right}>
+        {/* Weather — moved out from beside the live dot to its own chip
+            here, roughly the same footprint as an avatar (42px), so it
+            reads as its own glanceable readout rather than small print
+            buried next to the status dot [live-requested: "show the
+            temperature icon right side some where in middle similar size
+            of avatar"]. Still renders only once a real reading has come
+            back (useKioskWeather returns null otherwise) — never a
+            placeholder. */}
+        {weather && (
+          <View
+            style={[s.weatherChip, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+            accessible accessibilityRole="text"
+            accessibilityLabel={`${weather.temperature}${weather.unit}, ${weather.condition}`}
+          >
+            <Text style={s.weatherIcon}>{weather.icon}</Text>
+            <Text style={[s.weatherText, { color: k.textMuted }]} numberOfLines={1}>
+              {weather.temperature}{weather.unit}
+            </Text>
+          </View>
+        )}
         <HeaderButton
           Icon={themeIcon} label={themeLabel} accent={k.textMuted} k={k} isDark={isDark}
           onPress={cycleTheme}
@@ -301,15 +306,6 @@ const s = StyleSheet.create({
   left: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, minWidth: 0 },
   brandCol: { gap: 2 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs },
-  switcherMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  // Live-requested: size the weather readout to match the rest of the
-  // header's own small text (avatarName/brandText, both KIOSK_TYPO.micro)
-  // rather than standing out larger — the emoji specifically capped down a
-  // couple points below that, since an emoji glyph renders visually larger
-  // than Latin text at the same nominal font-size.
-  switcherMetaText: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  switcherMetaDot: { fontSize: KIOSK_TYPO.micro },
-  switcherMetaIcon: { fontSize: KIOSK_TYPO.micro - 2 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
   avatarScroll: { flex: 1, minWidth: 0 },
@@ -328,6 +324,13 @@ const s = StyleSheet.create({
   avatarName: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
 
   right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginLeft: 'auto' },
+  weatherChip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
+    height: KIOSK_HIT.min, minWidth: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.sm,
+    borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
+  },
+  weatherIcon: { fontSize: 17 },
+  weatherText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   headerBtn: {
     width: KIOSK_HIT.min, height: KIOSK_HIT.min, borderRadius: KIOSK_RADIUS.md, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',

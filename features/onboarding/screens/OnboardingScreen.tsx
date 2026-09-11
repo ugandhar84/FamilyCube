@@ -1,7 +1,7 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { registerForPushNotifications } from '@/shared/services/notifications.service';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, StatusBar,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -11,10 +11,9 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useAuthStore } from '@/store/authStore';
+import { useDeviceClass } from '@/lib/useDeviceClass';
+import { useAuthScale } from '@/lib/useAuthScale';
 import { TYPO } from '@/constants/theme';
-
-const { width, height } = Dimensions.get('window');
-const ILLO_H = Math.round(height * 0.52);
 
 // Generated illustrations (character-art style, matched set — see
 // docs/onboarding art direction) — one per slide, real photo/JPEG assets
@@ -145,6 +144,17 @@ export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const illoScrollRef  = useRef<ScrollView>(null);
   const cardScrollRef  = useRef<ScrollView>(null);
+
+  // Live width/height (not a module-scope Dimensions.get('window') snapshot)
+  // so the paging carousel stays correct across rotation/resize — a
+  // pre-existing bug independent of tablet support (a rotation or Stage
+  // Manager resize left the carousel using stale dimensions). useDeviceClass
+  // already derives these reactively via useWindowDimensions() and also
+  // unlocks landscape for tablet-class devices.
+  const { width, height } = useDeviceClass();
+  const ILLO_H = useMemo(() => Math.round(height * 0.52), [height]);
+  const scale = useAuthScale();
+  const s = useMemo(() => makeStyles(width, height, ILLO_H), [width, height, ILLO_H]);
   // Terms are now accepted via the checkbox on the signup screen itself —
   // the dedicated full-screen Terms wall this used to route to
   // unconditionally is a fallback now, not the default path. Most users
@@ -275,14 +285,20 @@ export default function OnboardingScreen() {
         >
           {SLIDES.map((sl) => (
             <View key={sl.key} style={s.copyPanel}>
-              {/* Pill chip */}
-              <View style={[s.chip, { backgroundColor: sl.btnColor + 'CC' }]}>
-                <Text style={s.chipTxt}>{sl.chip}</Text>
+              {/* The paging panel itself (s.copyPanel) must stay exactly
+                  `width` wide for the scrollTo/offset paging math above to
+                  work — only the text CONTENT inside gets narrowed and
+                  centered on tablet, nested in its own box. */}
+              <View style={scale.isTablet ? { width: '100%', maxWidth: scale.maxWidth, alignSelf: 'center' } : undefined}>
+                {/* Pill chip */}
+                <View style={[s.chip, { backgroundColor: sl.btnColor + 'CC' }]}>
+                  <Text style={s.chipTxt}>{sl.chip}</Text>
+                </View>
+                {/* Title — always white over dark gradient */}
+                <Text style={s.title}>{sl.title}</Text>
+                {/* Subtitle */}
+                <Text style={s.sub}>{sl.sub}</Text>
               </View>
-              {/* Title — always white over dark gradient */}
-              <Text style={s.title}>{sl.title}</Text>
-              {/* Subtitle */}
-              <Text style={s.sub}>{sl.sub}</Text>
             </View>
           ))}
         </ScrollView>
@@ -309,7 +325,7 @@ export default function OnboardingScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (width: number, height: number, ILLO_H: number) => StyleSheet.create({
   root:       { flex: 1, backgroundColor: '#000' },
   topBar:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
   floatBtn:   { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.30)', alignItems: 'center', justifyContent: 'center' },
@@ -321,6 +337,10 @@ const s = StyleSheet.create({
   dots:       { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingBottom: 14 },
   dot:        { height: 7, borderRadius: 3.5 } as any,
 
+  // width here MUST stay the full live screen width — this is the paging
+  // panel itself, keyed 1:1 to the scrollTo/offset math above. Tablet
+  // content-narrowing happens on an inner wrapper nested inside this, not
+  // here.
   copyPanel:  { width, paddingHorizontal: 28, gap: 10 },
   chip:       { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginBottom: 2 },
   chipTxt:    { fontSize: TYPO.body, fontWeight: '700', letterSpacing: 0.4, color: '#fff' },

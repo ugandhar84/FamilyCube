@@ -2,10 +2,9 @@ import { showAlert } from '@/components/AppAlert';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert,
+  Platform, Alert,
   ActivityIndicator, Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/components/GoogleIcon';
@@ -18,6 +17,8 @@ import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
+import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
+import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
 import {
   isBiometricEnabled, isBiometricAvailable, getBiometricLabel,
   authenticateWithBiometricsDetailed, getBiometricSession, clearBiometricSession,
@@ -307,7 +308,8 @@ export default function LoginScreen() {
     setLoading(false);
   };
 
-  const s = makeStyles(colors, isDark);
+  const scale = useAuthScale();
+  const s = makeStyles(colors, isDark, scale);
 
   const startCodeFlow = async () => {
     if (startingCode) return;
@@ -322,10 +324,12 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={s.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-
+    <ResponsiveAuthContainer
+      backgroundColor={colors.background}
+      keyboardAvoiding
+      contentContainerStyle={s.scroll}
+      scrollViewProps={{ keyboardShouldPersistTaps: 'handled' }}
+    >
           {/* Logo */}
           <View style={s.logoWrap}>
             <AnimatedCubeMark size={100} />
@@ -334,7 +338,7 @@ export default function LoginScreen() {
           </View>
 
           {mode === 'choose' && (
-            <View style={{ gap: SPACING.md, width: '100%', maxWidth: 420 }}>
+            <View style={{ gap: SPACING.md * scale.space, width: '100%', maxWidth: scale.maxWidth }}>
               {/* Log in with Face ID / Touch ID — a returning user's fastest
                   path, kept visible right on the fork instead of a tap
                   deeper, since biometric auto-triggers on mount anyway and
@@ -435,7 +439,7 @@ export default function LoginScreen() {
           )}
 
           {mode === 'email' && (
-            <View style={{ width: '100%', maxWidth: 420 }}>
+            <View style={{ width: '100%', maxWidth: scale.maxWidth }}>
               <TouchableOpacity style={s.backToChoice} onPress={() => setMode('choose')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
                 <Text style={s.backToChoiceText}>Back</Text>
@@ -497,7 +501,7 @@ export default function LoginScreen() {
                       ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
                       : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
                     cornerRadius={RADIUS.md}
-                    style={{ height: 52, marginTop: SPACING.sm }}
+                    style={{ height: 52 * scale.control, marginTop: SPACING.sm * scale.space }}
                     onPress={handleAppleLogin}
                   />
                 ) : (
@@ -533,112 +537,109 @@ export default function LoginScreen() {
               </View>
             </View>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ResponsiveAuthContainer>
   );
 }
 
-const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTheme>['colors'], isDark: boolean) =>
+const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTheme>['colors'], isDark: boolean, scale: AuthScale) =>
   StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.xxl },
-    logoWrap: { alignItems: 'center', marginBottom: SPACING.xxxl, width: '100%', maxWidth: 420 },
-    logoBrand: { width: 100, height: 100, marginBottom: SPACING.md, resizeMode: 'contain' },
-    logoText: { fontSize: 38, fontWeight: '700', color: colors.primaryText ?? colors.primary, letterSpacing: -0.5 },
-    logoSub: { fontSize: TYPO.body, color: colors.textSecondary, textAlign: 'center', marginTop: SPACING.xs, lineHeight: 20 },
+    scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.xxl * scale.space },
+    logoWrap: { alignItems: 'center', marginBottom: SPACING.xxxl * scale.space, width: '100%', maxWidth: scale.maxWidth },
+    logoBrand: { width: 100, height: 100, marginBottom: SPACING.md * scale.space, resizeMode: 'contain' },
+    logoText: { fontSize: 38 * scale.font, fontWeight: '700', color: colors.primaryText ?? colors.primary, letterSpacing: -0.5 },
+    logoSub: { fontSize: TYPO.body * scale.font, color: colors.textSecondary, textAlign: 'center', marginTop: SPACING.xs * scale.space, lineHeight: 20 * scale.font },
 
     biometricBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
       backgroundColor: colors.primaryLight,
-      borderRadius: RADIUS.lg, paddingVertical: 14, marginBottom: SPACING.lg,
+      borderRadius: RADIUS.lg, paddingVertical: 14 * scale.control, marginBottom: SPACING.lg * scale.space,
       borderWidth: 1, borderColor: colors.primary + '40',
     },
-    biometricEmoji: { fontSize: TYPO.title },
-    biometricText: { fontSize: TYPO.body, fontWeight: '600', color: colors.primaryText ?? colors.primary },
+    biometricEmoji: { fontSize: TYPO.title * scale.font },
+    biometricText: { fontSize: TYPO.body * scale.font, fontWeight: '600', color: colors.primaryText ?? colors.primary },
 
     bioBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-      borderWidth: 1.5, borderRadius: RADIUS.lg, paddingVertical: 14,
-      marginBottom: SPACING.lg,
+      borderWidth: 1.5, borderRadius: RADIUS.lg, paddingVertical: 14 * scale.control,
+      marginBottom: SPACING.lg * scale.space,
     },
-    bioText: { fontSize: TYPO.body, fontWeight: '700' },
+    bioText: { fontSize: TYPO.body * scale.font, fontWeight: '700' },
     switchBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-      marginTop: -SPACING.sm, marginBottom: SPACING.lg, paddingVertical: 6,
+      marginTop: -SPACING.sm, marginBottom: SPACING.lg * scale.space, paddingVertical: 6,
     },
-    switchText: { fontSize: TYPO.caption, fontWeight: '500' },
+    switchText: { fontSize: TYPO.caption * scale.font, fontWeight: '500' },
 
-    dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: SPACING.lg },
+    dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: SPACING.lg * scale.space },
     dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-    dividerText: { fontSize: TYPO.body, color: colors.textSecondary, whiteSpace: 'nowrap' } as any,
+    dividerText: { fontSize: TYPO.body * scale.font, color: colors.textSecondary, whiteSpace: 'nowrap' } as any,
 
     form: { width: '100%' },
-    label: { fontSize: TYPO.body, fontWeight: '500', color: colors.textSecondary, marginBottom: 6 },
+    label: { fontSize: TYPO.body * scale.font, fontWeight: '500', color: colors.textSecondary, marginBottom: 6 },
     input: {
-      height: 50,
+      height: 50 * scale.control,
       borderWidth: 1,
       borderColor: colors.inputBorder,
       borderRadius: RADIUS.md,
-      paddingHorizontal: SPACING.lg,
-      fontSize: TYPO.body,
+      paddingHorizontal: SPACING.lg * scale.space,
+      fontSize: TYPO.body * scale.font,
       color: colors.textPrimary,
       backgroundColor: colors.inputBg,
-      marginBottom: SPACING.sm,
+      marginBottom: SPACING.sm * scale.space,
     },
-    passwordWrap: { flexDirection: 'row', marginBottom: SPACING.sm },
+    passwordWrap: { flexDirection: 'row', marginBottom: SPACING.sm * scale.space },
     eyeBtn: {
-      width: 50, height: 50,
+      width: 50 * scale.control, height: 50 * scale.control,
       borderWidth: 1, borderLeftWidth: 0,
       borderColor: colors.inputBorder,
       borderTopRightRadius: RADIUS.md, borderBottomRightRadius: RADIUS.md,
       backgroundColor: colors.inputBg,
       alignItems: 'center', justifyContent: 'center',
     },
-    eyeText: { fontSize: TYPO.heading },
+    eyeText: { fontSize: TYPO.heading * scale.font },
 
     btn: {
-      height: 52,
+      height: 52 * scale.control,
       backgroundColor: colors.primary,
       borderRadius: RADIUS.md,
       alignItems: 'center', justifyContent: 'center',
-      marginTop: SPACING.md,
+      marginTop: SPACING.md * scale.space,
     },
-    btnText: { color: '#fff', fontSize: TYPO.subheading, fontWeight: '700' },
+    btnText: { color: '#fff', fontSize: TYPO.subheading * scale.font, fontWeight: '700' },
 
     appleBtn: {
-      height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-      borderRadius: RADIUS.md, marginTop: SPACING.sm,
+      height: 52 * scale.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      borderRadius: RADIUS.md, marginTop: SPACING.sm * scale.space,
     },
-    appleBtnText: { fontSize: TYPO.body, fontWeight: '600' },
+    appleBtnText: { fontSize: TYPO.body * scale.font, fontWeight: '600' },
     googleBtn: {
-      height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+      height: 52 * scale.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
       borderWidth: 1, borderColor: colors.borderMed,
-      borderRadius: RADIUS.md, marginTop: SPACING.sm,
+      borderRadius: RADIUS.md, marginTop: SPACING.sm * scale.space,
       backgroundColor: colors.card,
     },
 
-    googleText: { fontSize: TYPO.body, fontWeight: '500', color: colors.textPrimary },
+    googleText: { fontSize: TYPO.body * scale.font, fontWeight: '500', color: colors.textPrimary },
 
-    linkBtn: { marginTop: SPACING.lg, alignItems: 'center' },
-    forgotText: { fontSize: TYPO.body, color: colors.primaryText ?? colors.primary, fontWeight: '500' },
-    linkText: { fontSize: TYPO.body, color: colors.textSecondary },
+    linkBtn: { marginTop: SPACING.lg * scale.space, alignItems: 'center' },
+    forgotText: { fontSize: TYPO.body * scale.font, color: colors.primaryText ?? colors.primary, fontWeight: '500' },
+    linkText: { fontSize: TYPO.body * scale.font, color: colors.textSecondary },
 
     choiceCard: {
-      flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+      flexDirection: 'row', alignItems: 'center', gap: SPACING.md * scale.space,
       borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.lg,
-      backgroundColor: colors.card, padding: SPACING.lg,
+      backgroundColor: colors.card, padding: SPACING.lg * scale.space,
     },
     choiceIcon: {
-      width: 44, height: 44, borderRadius: RADIUS.md,
+      width: 44 * scale.control, height: 44 * scale.control, borderRadius: RADIUS.md,
       alignItems: 'center', justifyContent: 'center',
     },
-    choiceTitle: { fontSize: TYPO.subheading, fontWeight: '700', color: colors.textPrimary },
-    choiceSub: { fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 },
+    choiceTitle: { fontSize: TYPO.subheading * scale.font, fontWeight: '700', color: colors.textPrimary },
+    choiceSub: { fontSize: TYPO.caption * scale.font, color: colors.textSecondary, marginTop: 2 },
 
     backToChoice: {
       flexDirection: 'row', alignItems: 'center', gap: 2,
-      alignSelf: 'flex-start', marginBottom: SPACING.lg,
+      alignSelf: 'flex-start', marginBottom: SPACING.lg * scale.space,
     },
-    backToChoiceText: { fontSize: TYPO.body, color: colors.textSecondary, fontWeight: '500' },
+    backToChoiceText: { fontSize: TYPO.body * scale.font, color: colors.textSecondary, fontWeight: '500' },
   });

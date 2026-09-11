@@ -350,11 +350,21 @@ export default function AskCubeProposalCard({
   const d = proposal.data;
 
   if (compact && proposal.kind === 'meal') {
+    // Live-reported: tapping this card sometimes skipped straight to
+    // "Added" instead of opening the recipe view — a disabled Pressable
+    // (disabled={!onExpand}) doesn't reliably swallow its own touch on
+    // every iOS version (same "known-inconsistent... for already-mounted
+    // nested Pressables" issue this file's own Actions block already
+    // works around for added/discarded state — see that comment above).
+    // A no-op fallback keeps these two Pressables always genuinely
+    // enabled instead of conditionally disabled, so there's no path for
+    // the touch to fall through to a sibling underneath.
+    const handleExpand = onExpand ?? (() => {});
     return (
       <View style={{ backgroundColor: colors.card, borderRadius: 14,
         borderWidth: 1.5, borderColor: (added ? colors.success : accent) + '40', overflow: 'hidden',
         opacity: added ? 0.85 : 1 }}>
-        <Pressable onPress={onExpand} disabled={!onExpand}>
+        <Pressable onPress={handleExpand}>
           <MealHero imageUrl={d.imageUrl} emoji={d.emoji} accent={accent} height={72} />
           {added ? (
             <View style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
@@ -369,7 +379,7 @@ export default function AskCubeProposalCard({
             </Pressable>
           )}
         </Pressable>
-        <Pressable onPress={onExpand} disabled={!onExpand} style={{ padding: 10, gap: 4 }}>
+        <Pressable onPress={handleExpand} style={{ padding: 10, gap: 4 }}>
           <Text style={{ fontSize: 12.5, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{d.title}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {!!d.prepMinutes && (
@@ -383,6 +393,9 @@ export default function AskCubeProposalCard({
             </Text>
           </View>
         </Pressable>
+        {/* "Pick this" is the ONLY tap target that selects/adds the meal —
+            explicit, separate from the two Pressables above, own row, own
+            hit box, no shared area with the recipe-opening touch targets. */}
         <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
           {added ? (
             <View style={{ borderRadius: 8, paddingVertical: 7, alignItems: 'center', backgroundColor: colors.successLight }}>
@@ -477,16 +490,19 @@ export default function AskCubeProposalCard({
 
   if (proposal.kind === 'meal') {
     const chef = memberName(members, d.chefId);
+    // Same disabled-Pressable-doesn't-reliably-swallow-its-touch fix as the
+    // compact grid card above — a no-op fallback instead of `disabled`.
+    const handleExpand = onExpand ?? (() => {});
     return (
       <View style={{ marginTop: 8, maxWidth: '90%', backgroundColor: colors.card,
         borderRadius: 16, borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
         {/* Real dish photo when the model supplied one, else the emoji hero.
             The whole card (not just the hero band) opens the recipe detail
             sheet — a bigger, more obvious tap target than the image alone. */}
-        <Pressable onPress={onExpand} disabled={!onExpand}>
+        <Pressable onPress={handleExpand}>
           <MealHero imageUrl={d.imageUrl} emoji={d.emoji} accent={accent} height={110} />
         </Pressable>
-        <Pressable onPress={onExpand} disabled={!onExpand} style={{ padding: 14, gap: 8 }}>
+        <Pressable onPress={handleExpand} style={{ padding: 14, gap: 8 }}>
           {Header}
           <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{d.title}</Text>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: -4 }}>

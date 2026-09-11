@@ -16,7 +16,7 @@
  * '/admin', etc.) are real routes and still work unmodified from inside
  * kiosk since those DO push onto the stack.
  */
-import { Bell, DollarSign, Home, FileText, User, KeyRound } from 'lucide-react-native';
+import { Bell, DollarSign, Home, FileText, User, KeyRound, Calendar } from 'lucide-react-native';
 import ProfileSettingsScreen from '@/features/profile/ProfileSettingsScreen';
 import { KioskFormDrawer } from '../components/KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
@@ -59,9 +59,16 @@ export function KioskProfileTab() {
   // notifications; both rows previously opened the phone's own
   // AppBottomSheet on kiosk, which doesn't fit this shell [live-requested:
   // "should work uagsnadhr family USD - all should work like a mobile"].
+  // calendarSyncShell — Calendar Sync previously router.push'ed its own
+  // full-screen phone route, which stretched a single-column settings page
+  // edge-to-edge on a wide kiosk canvas [live-reported: "calendar sync
+  // also like wide seems like using the mobile view can we make the kiosk
+  // dedicated view like showing the side bar recipe"]. Same right-drawer
+  // swap as every other row above, around the exact same real OAuth/state
+  // (CalendarSyncBody) — no sync logic duplicated.
   return (
     <ProfileSettingsScreen
-      hideBackButton hideSensitiveAdminRows hideHero columns={3}
+      hideBackButton hideSensitiveAdminRows hideHero columns={2}
       notificationsShell={(visible, onClose, children) => (
         <KioskFormDrawer
           visible={visible}
@@ -140,6 +147,20 @@ export function KioskProfileTab() {
           subtitle="Family passcode that protects chat, location, and medical records"
           accent={k.danger}
           Icon={KeyRound}
+          k={k}
+          onClose={onClose}
+        >
+          {children}
+        </KioskFormDrawer>
+      )}
+      calendarSyncShell={(visible, onClose, children) => (
+        <KioskFormDrawer
+          visible={visible}
+          variant="drawer"
+          title="Calendar Sync"
+          subtitle="Connect work and personal calendars"
+          accent={k.primary}
+          Icon={Calendar}
           k={k}
           onClose={onClose}
         >

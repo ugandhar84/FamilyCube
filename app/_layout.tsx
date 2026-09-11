@@ -42,7 +42,7 @@ import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useHelpStore } from '@/store/helpStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
-import { useKioskNavStore, type KioskNavTab } from '@/store/kioskNavStore';
+import { useKioskNavStore, navigateFromNotification, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
@@ -84,50 +84,12 @@ LogBox.ignoreLogs([
 
 const TAG = 'RootLayout';
 
-// Phone tab route -> kiosk rail tab. Live-reported bug: every notification
-// destination (routeForNotification) is a hardcoded phone path like
-// '/(tabs)/tasks' — correct on a phone, but on a kiosk device only the Hub
-// route ('/(tabs)') actually renders the kiosk rail (HubScreen swaps to
-// KioskScreen there when deviceClass === 'kitchenHub'); every OTHER tab
-// route (tasks.tsx, calendar.tsx, chat.tsx, store.tsx, gps.tsx, etc.)
-// renders its own plain phone screen unconditionally, no kiosk gate at all.
-// [nav-safety audit] '/(tabs)/meals' was missing from this map even though
-// KioskMealsTab.tsx is a real kiosk tab ('meals' in kioskTabs.ts's own
-// KioskTabKey/KioskNavTab) — a meal_reminder notification tap on a kiosk
-// device fell through to the `?? 'hub'` default below instead of landing
-// on Meals. Grocery still has no kiosk-native tab at all (no
-// KioskGroceryTab.tsx exists), so that one genuinely has nowhere kiosk-safe
-// to go yet and correctly falls back to Hub rather than inventing a tab.
-const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
-  '/(tabs)': 'hub',
-  '/(tabs)/tasks': 'tasks',
-  '/(tabs)/quests': 'tasks',
-  '/(tabs)/chat': 'chat',
-  '/(tabs)/store': 'store',
-  '/(tabs)/gps': 'findfam',
-  '/(tabs)/memories': 'memories',
-  '/(tabs)/school': 'school',
-  '/(tabs)/family-health': 'health',
-  '/(tabs)/meals': 'meals',
-  '/profile-settings': 'profile',
-};
-
-/** Navigates to a notification's destination, kiosk-safe: on a kiosk
- * device, routes to '/(tabs)' (the only route KioskScreen actually lives
- * on) and sets the matching internal kiosk tab instead of pushing into a
- * bare phone-only route. `dest` may carry route params (the chat
- * channelId deep-link) — those are only meaningful on the phone path,
- * since kiosk's Chat tab has no per-channel deep-link support yet. */
-function navigateFromNotification(dest: string | { pathname: string; params?: Record<string, any> }, isKiosk: boolean) {
-  const pathname = typeof dest === 'string' ? dest : dest.pathname;
-  if (isKiosk) {
-    const kioskTab = PHONE_ROUTE_TO_KIOSK_TAB[pathname] ?? 'hub';
-    useKioskNavStore.getState().setPendingTab(kioskTab);
-    router.push('/(tabs)' as any);
-    return;
-  }
-  router.push(dest as any);
-}
+// navigateFromNotification and its phone-route -> kiosk-tab map now live in
+// store/kioskNavStore.ts (exported, reusable) — moved there so any other
+// call site in the app (not just this file's own notification listener)
+// can route through the same kiosk-safe helper instead of a bare
+// router.push that would bypass kiosk gating entirely. See that file's own
+// header comment for the original bug this closes.
 
 function RootNavigator() {
   useWidgetSync();

@@ -13,7 +13,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle } from 'lucide-react-native';
+import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
@@ -672,29 +672,6 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
-        {/* Floating header, over the map — no boxed card, translucent pills like Apple Maps.
-            mapHeaderChip's own backgroundColor is a hardcoded white
-            (rgba(255,255,255,0.92)) with no theme awareness at all — in
-            dark mode, colors.textPrimary is correctly near-white for use
-            on DARK backgrounds, so pairing it with this always-white pill
-            produced white-on-white, unreadable (direct feedback: "white
-            color pill on map"). The "1/2 live" pill next to it only
-            looked okay by accident — colors.textSecondary's dark-mode
-            value happens to still have some contrast left over white.
-            Overridden here to a real theme-aware translucent background
-            instead of patching the two text colors individually. */}
-        <View style={g.mapHeaderOverlay}>
-          <View style={[g.mapHeaderChip, { backgroundColor: isDark ? 'rgba(30,26,20,0.85)' : 'rgba(255,255,255,0.92)' }]}>
-            <Radio size={14} color={colors.teal} />
-            <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textPrimary, marginLeft: 6 }}>Family Radar</Text>
-          </View>
-          <View style={[g.mapHeaderChip, { backgroundColor: isDark ? 'rgba(30,26,20,0.85)' : 'rgba(255,255,255,0.92)' }]}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
-              {pinned.length}/{locations.length} live
-            </Text>
-          </View>
-        </View>
-
         {/* Share My Location — floating pill, bottom-right of the map like a Maps action button */}
         <TouchableOpacity onPress={toggleTracking} disabled={togglingTrack} style={g.trackFab}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -967,11 +944,6 @@ const g = StyleSheet.create({
                   borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   mapEmptyOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                      alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
-  mapHeaderOverlay: { position: 'absolute', top: 12, left: 12, right: 12,
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  mapHeaderChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.92)',
-                   borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
-                   shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   trackFab:     { position: 'absolute', right: 12, bottom: 16 },
   trackFabInner: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
                    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },

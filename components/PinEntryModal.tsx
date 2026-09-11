@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { FamilyMember, useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
+import { useDeviceClass } from '@/lib/useDeviceClass';
+import { KIOSK_RADIUS } from '@/features/kiosk/kioskTheme';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PIN_LENGTH = 4;
@@ -86,6 +88,16 @@ interface PinEntryModalProps {
 // ─── Modal ────────────────────────────────────────────────────────────────────
 export default function PinEntryModal({ visible, member, onSuccess, onCancel }: PinEntryModalProps) {
   const { colors, isDark } = useTheme();
+  // On a kiosk/tablet device this renders as a centered, shaped card
+  // (matching KioskFormDrawer's own centered "dialog" variant — same
+  // width/radius/maxHeight — so it reads as one of kiosk's own dialogs
+  // instead of a phone-style full-bleed pageSheet stretched across a much
+  // wider screen) [live-requested: "reduce this pin layout nicely centered
+  // with nice shape"]. Phone keeps the exact same pageSheet as before —
+  // this is a rendering branch only, none of the PIN/verification logic
+  // below changes for either device class.
+  const { deviceClass } = useDeviceClass();
+  const isTablet = deviceClass === 'kitchenHub';
 
   const [entered, setEntered]       = useState('');
   const [attempts, setAttempts]     = useState(0);
@@ -217,6 +229,80 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
 
   if (!member) return null;
 
+  const content = (
+    <>
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+          <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+        </Pressable>
+      </View>
+
+      {/* Avatar */}
+      <View style={styles.avatarSection}>
+        <View style={[styles.avatarCircle, {
+          backgroundColor: (member.role === 'parent' ? colors.parentLight : colors.kidLight),
+          borderColor: accentColor,
+        }]}>
+          <Text style={styles.avatarEmoji}>{member.emoji ?? member.name[0]}</Text>
+        </View>
+        <Text style={[styles.memberName, { color: colors.textPrimary }]}>{member.name}</Text>
+        <Text style={[styles.roleTag, { color: accentColor }]}>
+          {member.role === 'parent' ? '👑 Parent' : '🌟 Kid'}
+        </Text>
+        <Text style={[styles.prompt, { color: colors.textSecondary }]}>
+          {locked ? `🔒 Locked for ${lockRemaining}s` : 'Enter PIN to switch profile'}
+        </Text>
+      </View>
+
+      {/* PIN dots */}
+      <PinDots entered={entered.length} shaking={shakeAnim} color={accentColor} />
+
+      {/* Error */}
+      <View style={styles.errorWrap}>
+        {errorMsg ? (
+          <Text style={[styles.errorText, { color: colors.danger }]}>{errorMsg}</Text>
+        ) : null}
+      </View>
+
+      {/* Number pad */}
+      <View style={[styles.pad, { opacity: locked ? 0.4 : 1 }]}>
+        {KEYS.map((row, ri) => (
+          <View key={ri} style={styles.padRow}>
+            {row.map((key, ki) => (
+              <Key
+                key={ki}
+                label={key}
+                onPress={() => handleKey(key)}
+                disabled={locked || (key !== '⌫' && entered.length >= PIN_LENGTH)}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
+
+      {/* Forgot PIN hint */}
+      <Text style={[styles.hint, { color: colors.textTertiary }]}>
+        Forgot PIN? Ask a parent to reset it in Settings.
+      </Text>
+    </>
+  );
+
+  if (isTablet) {
+    return (
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+        <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
+          <Pressable
+            style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {content}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -225,62 +311,7 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
       onRequestClose={onCancel}
     >
       <View style={[styles.sheet, { backgroundColor: isDark ? colors.surface : colors.background }]}>
-
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
-          </Pressable>
-        </View>
-
-        {/* Avatar */}
-        <View style={styles.avatarSection}>
-          <View style={[styles.avatarCircle, {
-            backgroundColor: (member.role === 'parent' ? colors.parentLight : colors.kidLight),
-            borderColor: accentColor,
-          }]}>
-            <Text style={styles.avatarEmoji}>{member.emoji ?? member.name[0]}</Text>
-          </View>
-          <Text style={[styles.memberName, { color: colors.textPrimary }]}>{member.name}</Text>
-          <Text style={[styles.roleTag, { color: accentColor }]}>
-            {member.role === 'parent' ? '👑 Parent' : '🌟 Kid'}
-          </Text>
-          <Text style={[styles.prompt, { color: colors.textSecondary }]}>
-            {locked ? `🔒 Locked for ${lockRemaining}s` : 'Enter PIN to switch profile'}
-          </Text>
-        </View>
-
-        {/* PIN dots */}
-        <PinDots entered={entered.length} shaking={shakeAnim} color={accentColor} />
-
-        {/* Error */}
-        <View style={styles.errorWrap}>
-          {errorMsg ? (
-            <Text style={[styles.errorText, { color: colors.danger }]}>{errorMsg}</Text>
-          ) : null}
-        </View>
-
-        {/* Number pad */}
-        <View style={[styles.pad, { opacity: locked ? 0.4 : 1 }]}>
-          {KEYS.map((row, ri) => (
-            <View key={ri} style={styles.padRow}>
-              {row.map((key, ki) => (
-                <Key
-                  key={ki}
-                  label={key}
-                  onPress={() => handleKey(key)}
-                  disabled={locked || (key !== '⌫' && entered.length >= PIN_LENGTH)}
-                />
-              ))}
-            </View>
-          ))}
-        </View>
-
-        {/* Forgot PIN hint */}
-        <Text style={[styles.hint, { color: colors.textTertiary }]}>
-          Forgot PIN? Ask a parent to reset it in Settings.
-        </Text>
-
+        {content}
       </View>
     </Modal>
   );
@@ -343,4 +374,18 @@ const styles = StyleSheet.create({
   keyPlaceholder: { flex: 1 },
 
   hint: { fontSize: 12, marginTop: 28, textAlign: 'center' },
+
+  // Tablet/kiosk only — centered dialog card, same width/radius/maxHeight
+  // as KioskFormDrawer's own 'dialog' variant so this reads as one of
+  // kiosk's own dialogs rather than a phone pageSheet stretched wide.
+  tabletScrim: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)', padding: 24,
+  },
+  tabletCard: {
+    width: 420, maxWidth: '100%', maxHeight: '85%',
+    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg,
+    alignItems: 'center', paddingTop: 16, paddingBottom: 24,
+    overflow: 'hidden',
+  },
 });

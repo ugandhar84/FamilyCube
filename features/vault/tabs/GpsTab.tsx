@@ -161,6 +161,10 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const { members, activeMemberId } = useFamilyStore();
   const [locations, setLocations]   = useState<MemberLocation[]>([]);
   const [loading, setLoading]       = useState(true);
+  // Ref, not state — must NOT itself trigger a re-render when flipped, it
+  // only gates whether a future load() call is allowed to show the
+  // spinner. See load()'s own comment below for the full bug this fixes.
+  const hasLoadedOnceRef = useRef(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [tracking, setTracking]     = useState(false);
@@ -190,8 +194,20 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId;
 
+  // load() is called on first mount AND on every realtime location ping /
+  // 5-min poll from ANY family member — it used to setLoading(true) every
+  // time, and the render below early-returns a bare spinner in place of
+  // the whole <MapView> while loading is true. Net effect: the entire map
+  // (not just markers — FamilyMapMarker is correctly memoized and was
+  // never the issue) unmounted and rebuilt from scratch on every single
+  // location update, reading as a full blank flash instead of Life360's
+  // smooth in-place marker movement [live-reported: "refreshing whole map
+  // and going blank for a moment... not like Life360 smooth"]. Only the
+  // very first load should ever show the spinner — a hasLoadedOnce ref
+  // (not state, so flipping it doesn't itself trigger a re-render) gates
+  // setLoading so every later call is a silent background refresh.
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     const { data } = await supabase.from('member_locations').select('*');
     if (data) {
       const merged: MemberLocation[] = await Promise.all(data.map(async (loc: any) => {
@@ -217,6 +233,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       setLocations(merged);
     }
     setLoading(false);
+    hasLoadedOnceRef.current = true;
   }, [members]);
 
   useEffect(() => { load(); }, [load]);

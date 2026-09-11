@@ -5,7 +5,11 @@ import { TYPO, RADIUS } from '@/constants/theme';
 import { SectionCard, EventDetailSheet } from '../hubComponents';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useSchoolStore } from '@/store/schoolStore';
-import { getTodayPeriodStatus } from '@/lib/schoolPeriodNow';
+import { getTodayPeriodStatus, type TodayPeriodStatus, type HolidayStatus } from '@/lib/schoolPeriodNow';
+
+function isHoliday(s: TodayPeriodStatus | HolidayStatus | null): s is HolidayStatus {
+  return !!s && 'reason' in s;
+}
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -64,46 +68,54 @@ export function SchoolTodaySection({ members, colors, isDark, activeName, active
         colors={colors} isDark={isDark}
       >
         <View style={{ gap: 8 }}>
-          {rows.map(({ kid, status }) => (
-            <Pressable
-              key={kid.id}
-              disabled={!status?.period.linkedEventId}
-              onPress={() => status?.period.linkedEventId && setDetailEventId(status.period.linkedEventId)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 10,
-                paddingHorizontal: 12, paddingVertical: 10,
-                borderRadius: RADIUS.md,
-                backgroundColor: status?.isNow ? colors.tealLight : colors.surface,
-                borderWidth: 1,
-                borderColor: status?.isNow ? colors.teal + '55' : colors.border,
-              }}>
-              <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={38} ringColor={colors.kid} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
-                  {kid.name.split(' ')[0]}
-                </Text>
-                {status ? (
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 1 }}>
-                    {status.period.subject}{status.period.room ? ` · Rm ${status.period.room}` : ''} · {status.period.startTime}–{status.period.endTime}
-                  </Text>
-                ) : (
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 1 }}>
-                    No more classes today
-                  </Text>
-                )}
-              </View>
-              {status?.isNow && (
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 4,
-                  paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
-                  backgroundColor: colors.teal,
+          {rows.map(({ kid, status }) => {
+            const holiday = isHoliday(status);
+            const periodStatus = holiday ? null : (status as TodayPeriodStatus | null);
+            return (
+              <Pressable
+                key={kid.id}
+                disabled={!periodStatus?.period.linkedEventId}
+                onPress={() => periodStatus?.period.linkedEventId && setDetailEventId(periodStatus.period.linkedEventId)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                  paddingHorizontal: 12, paddingVertical: 10,
+                  borderRadius: RADIUS.md,
+                  backgroundColor: periodStatus?.isNow ? colors.tealLight : colors.surface,
+                  borderWidth: 1,
+                  borderColor: periodStatus?.isNow ? colors.teal + '55' : colors.border,
                 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
+                <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={38} ringColor={colors.kid} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                    {kid.name.split(' ')[0]}
+                  </Text>
+                  {holiday ? (
+                    <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 1 }}>
+                      🎉 No school — {(status as HolidayStatus).reason}
+                    </Text>
+                  ) : periodStatus ? (
+                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 1 }}>
+                      {periodStatus.period.subject}{periodStatus.period.room ? ` · Rm ${periodStatus.period.room}` : ''} · {periodStatus.period.startTime}–{periodStatus.period.endTime}
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 1 }}>
+                      No more classes today
+                    </Text>
+                  )}
                 </View>
-              )}
-            </Pressable>
-          ))}
+                {periodStatus?.isNow && (
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 4,
+                    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
+                    backgroundColor: colors.teal,
+                  }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff', letterSpacing: 0.3 }}>NOW</Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
       </SectionCard>
 

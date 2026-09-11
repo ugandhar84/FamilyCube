@@ -12,11 +12,13 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Plus, Trash2, ChevronDown, X } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Plus, Trash2, ChevronDown, X, PartyPopper, Calendar } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { TYPO } from '@/constants/theme';
-import { useSchoolStore, type ClassPeriod, type KidSchedule, subjectColor } from '@/store/schoolStore';
+import { TYPO, RADIUS } from '@/constants/theme';
+import { useSchoolStore, type ClassPeriod, type KidSchedule, type SchoolHoliday, subjectColor } from '@/store/schoolStore';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { localDateStr, fmtDate } from '@/lib/dates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,6 +188,165 @@ export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
           </Text>
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+// ─── Holidays / Breaks ──────────────────────────────────────────────────────
+// Date ranges (with a reason) that suppress class-period materialization —
+// Winter Break, a teacher in-service day, etc. Writes go straight through
+// useSchoolStore's addHoliday/removeHoliday (not staged in this modal's own
+// local draft state like periods are) since those actions already own their
+// full side effect (retroactively clearing/restoring materialized
+// occurrences) — deferring that to the outer Save button would mean a
+// holiday's clear/restore only happens on save, which is more surprising
+// than "add a holiday, it takes effect immediately" (same immediacy as
+// every other schedule action already reachable outside this modal, e.g.
+// deleting a period from the Vault's School tab).
+export function HolidaySection({ memberId, holidays, colors, isDark }: {
+  memberId: string; holidays: SchoolHoliday[]; colors: any; isDark: boolean;
+}) {
+  const { addHoliday, removeHoliday } = useSchoolStore();
+  const [adding, setAdding] = useState(false);
+  const [reason, setReason] = useState('');
+  const [rangeStart, setRangeStart] = useState(new Date());
+  const [rangeEnd, setRangeEnd] = useState(new Date());
+  const [pickingStart, setPickingStart] = useState(false);
+  const [pickingEnd, setPickingEnd] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const onPickStart = (_: any, date?: Date) => {
+    if (Platform.OS === 'android') setPickingStart(false);
+    if (date) {
+      setRangeStart(date);
+      if (date > rangeEnd) setRangeEnd(date);
+    }
+  };
+  const onPickEnd = (_: any, date?: Date) => {
+    if (Platform.OS === 'android') setPickingEnd(false);
+    if (date) setRangeEnd(date);
+  };
+
+  const startAdd = () => {
+    setReason('');
+    setRangeStart(new Date());
+    setRangeEnd(new Date());
+    setAdding(true);
+  };
+
+  const confirmAdd = async () => {
+    if (!reason.trim()) { Alert.alert('Add a reason', 'e.g. "Winter Break"'); return; }
+    setSaving(true);
+    try {
+      await addHoliday(memberId, {
+        startDate: localDateStr(rangeStart),
+        endDate:   localDateStr(rangeEnd),
+        reason:    reason.trim(),
+      });
+      setAdding(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          Holidays / Breaks
+        </Text>
+      </View>
+
+      {holidays.map(h => (
+        <View key={h.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+          borderRadius: 12, borderWidth: 1.5, borderColor: '#F59E0B50',
+          backgroundColor: isDark ? '#F59E0B12' : '#F59E0B08', padding: 10 }}>
+          <PartyPopper size={16} color="#F59E0B" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{h.reason}</Text>
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+              {fmtDate(h.startDate)} – {fmtDate(h.endDate)}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => removeHoliday(memberId, h.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Trash2 size={16} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {adding ? (
+        <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: '#F59E0B50',
+          backgroundColor: isDark ? '#F59E0B12' : '#F59E0B08', padding: 12, gap: 8 }}>
+          <TextInput
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Reason (e.g. Winter Break)"
+            placeholderTextColor={colors.textTertiary}
+            style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={() => { setPickingEnd(false); setPickingStart(true); }}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
+                borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
+              <Calendar size={13} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeStart))}</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>–</Text>
+            <TouchableOpacity onPress={() => { setPickingStart(false); setPickingEnd(true); }}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
+                borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
+              <Calendar size={13} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeEnd))}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {(pickingStart || pickingEnd) && (
+            <Modal transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
+              <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                activeOpacity={1} onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
+                <TouchableOpacity activeOpacity={1}
+                  style={{ backgroundColor: colors.card, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                      📅 {pickingStart ? 'From' : 'To'}
+                    </Text>
+                    <TouchableOpacity onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
+                      <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={pickingStart ? rangeStart : rangeEnd}
+                    mode="date" display="spinner"
+                    minimumDate={pickingEnd ? rangeStart : undefined}
+                    onChange={pickingStart ? onPickStart : onPickEnd}
+                    textColor={colors.textPrimary}
+                    style={{ height: 180, width: '100%' }}
+                  />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            </Modal>
+          )}
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={() => setAdding(false)}
+              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={confirmAdd} disabled={saving}
+              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: '#F59E0B', opacity: saving ? 0.6 : 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{saving ? 'Saving…' : 'Add'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={startAdd}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+            borderRadius: 14, paddingVertical: 13, borderWidth: 1.5, borderStyle: 'dashed',
+            borderColor: '#F59E0B60', backgroundColor: '#F59E0B08' }}>
+          <Plus size={16} color="#F59E0B" />
+          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#F59E0B' }}>Add Holiday</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -423,6 +584,8 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
             <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: BRAND.purple }}>Add Period</Text>
           </TouchableOpacity>
         </View>
+
+        <HolidaySection memberId={memberId} holidays={existing?.holidays ?? []} colors={colors} isDark={isDark} />
       </View>
             </ScrollView>
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { todayLocal, localDateStr } from '@/lib/dates';
+import { todayLocal, localDateStr, parseLocalDate } from '@/lib/dates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEventStore } from './eventStore';
+import { useEventStore, type FamilyEvent } from './eventStore';
 
 // 'mon'|'tue'|... (ClassPeriod.days) -> 0=Sun..6=Sat (EventRecurrenceRule.days)
 const DAY_NAME_TO_INDEX: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
@@ -55,6 +55,13 @@ export interface Homework {
   attachmentUrls?:     string[];
 }
 
+export interface SchoolHoliday {
+  id:        string;
+  startDate: string;   // 'YYYY-MM-DD'
+  endDate:   string;   // 'YYYY-MM-DD', inclusive
+  reason:    string;   // e.g. "Winter Break"
+}
+
 export interface KidSchedule {
   memberId:    string;
   memberName:  string;
@@ -65,6 +72,10 @@ export interface KidSchedule {
   lunchPeriod: LunchPeriod;
   dayType:     DayType;
   periods:     ClassPeriod[];
+  // Date ranges (with a reason) that suppress class-period materialization
+  // — e.g. Winter Break, a teacher in-service day. Per-kid, not a shared
+  // family-wide list, matching this store's existing per-schedule scope.
+  holidays?:   SchoolHoliday[];
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -86,6 +97,14 @@ interface SchoolState {
   updatePeriod:   (memberId: string, periodId: string, updates: Partial<Omit<ClassPeriod, 'id'>>) => void;
   deletePeriod:   (memberId: string, periodId: string) => void;
   reorderPeriods: (memberId: string, periods: ClassPeriod[]) => void;
+
+  // Holiday CRUD — date ranges (with a reason) that suppress class-period
+  // materialization. addHoliday clears already-materialized occurrences
+  // in the new range; removeHoliday re-materializes what that specific
+  // range had cleared (explicit product decision — not just a
+  // going-forward no-op).
+  addHoliday:    (memberId: string, holiday: Omit<SchoolHoliday, 'id'>) => Promise<void>;
+  removeHoliday: (memberId: string, holidayId: string) => Promise<void>;
 
   // Homework CRUD
   addHomework:    (hw: Omit<Homework, 'id' | 'createdAt' | 'status'>) => Homework;
@@ -198,10 +217,17 @@ export function subjectColor(subject: string): string {
 // real class, nothing meaningful to put on an external calendar. Returns
 // the new series anchor id, or undefined if this period shouldn't
 // materialize (lunch/break, or no real days set).
-async function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod, 'id'> & { id: string }): Promise<string | undefined> {
+async function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod, 'id'> & { id: string }, holidays?: SchoolHoliday[]): Promise<string | undefined> {
   if (period.isLunch || period.isBreak) return undefined;
   const days = (period.days ?? []).map(d => DAY_NAME_TO_INDEX[d.toLowerCase()]).filter(d => d !== undefined);
   if (!days.length) return undefined;
+  // Holiday ranges (Winter Break, a teacher in-service day, ...) suppress
+  // materialization for any date inside them — honored by BOTH this
+  // initial batch and every later window-extension, since both funnel
+  // through generateOccurrenceDates (eventStore.ts).
+  const excludeRanges = holidays?.length
+    ? holidays.map(h => ({ start: h.startDate, end: h.endDate }))
+    : undefined;
   return useEventStore.getState().addRecurringEvent(
     {
       title: period.subject,
@@ -214,7 +240,7 @@ async function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod
       location: period.room || undefined,
       notes: period.teacher ? `Teacher: ${period.teacher}` : undefined,
     },
-    { frequency: 'weekly', days },
+    { frequency: 'weekly', days, excludeRanges },
   );
 }
 
@@ -269,7 +295,8 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   // ─── Period CRUD ────────────────────────────────────────────────────────────
 
   addPeriod: async (memberId, period) => {
-    const linkedEventId = await materializePeriodEvent(memberId, { ...period, id: '' });
+    const holidays = get().schedules.find(s => s.memberId === memberId)?.holidays;
+    const linkedEventId = await materializePeriodEvent(memberId, { ...period, id: '' }, holidays);
     const withLink = linkedEventId ? { ...period, linkedEventId } : period;
     const next = get().schedules.map(s =>
       s.memberId !== memberId ? s : {
@@ -286,7 +313,8 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     // event, awaits the new one's server-confirmed id) — resolved BEFORE
     // the synchronous schedule map below, since a plain .map() callback
     // can't itself be awaited mid-array.
-    const existingPeriod = get().schedules.find(s => s.memberId === memberId)?.periods.find(p => p.id === periodId);
+    const schedule = get().schedules.find(s => s.memberId === memberId);
+    const existingPeriod = schedule?.periods.find(p => p.id === periodId);
     let materializedLinkedEventId: string | undefined;
     if (existingPeriod) {
       const merged = { ...existingPeriod, ...updates };
@@ -295,8 +323,16 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       // on every unrelated edit (e.g. just the room number).
       const relevantChanged = ['subject', 'startTime', 'endTime', 'days', 'isLunch', 'isBreak'].some(k => k in updates);
       if (relevantChanged) {
-        if (existingPeriod.linkedEventId) useEventStore.getState().deleteEvent(existingPeriod.linkedEventId);
-        materializedLinkedEventId = await materializePeriodEvent(memberId, merged);
+        // Whole-SERIES delete, not deleteEvent(linkedEventId) (anchor-only
+        // — logged bug, fixed here: that left every other occurrence in
+        // the series orphaned, still live with a seriesId pointing at a
+        // now-deleted anchor, since materializePeriodEvent's
+        // addRecurringEvent writes one real row per weekly occurrence,
+        // not a single expandable row).
+        if (existingPeriod.linkedEventId) {
+          await useEventStore.getState().deleteEventScoped(existingPeriod.linkedEventId, 'all');
+        }
+        materializedLinkedEventId = await materializePeriodEvent(memberId, merged, schedule?.holidays);
       }
     }
     const next = get().schedules.map(s => {
@@ -318,7 +354,11 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
 
   deletePeriod: (memberId, periodId) => {
     const target = get().schedules.find(s => s.memberId === memberId)?.periods.find(p => p.id === periodId);
-    if (target?.linkedEventId) useEventStore.getState().deleteEvent(target.linkedEventId);
+    // Whole-SERIES delete, not the old anchor-only deleteEvent — same
+    // orphaned-occurrences fix as updatePeriod above. Fire-and-forget
+    // (matches this action's existing sync signature/callers), not
+    // awaited — the local schedule removal below doesn't depend on it.
+    if (target?.linkedEventId) useEventStore.getState().deleteEventScoped(target.linkedEventId, 'all');
     const next = get().schedules.map(s =>
       s.memberId !== memberId ? s : { ...s, periods: s.periods.filter(p => p.id !== periodId) }
     );
@@ -328,6 +368,93 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   reorderPeriods: (memberId, periods) => {
     const next = get().schedules.map(s => s.memberId === memberId ? { ...s, periods } : s);
     set({ schedules: next }); save(next, get().homeworks);
+  },
+
+  // ─── Holiday CRUD ───────────────────────────────────────────────────────────
+
+  addHoliday: async (memberId, holiday) => {
+    const schedule = get().schedules.find(s => s.memberId === memberId);
+    if (!schedule) return;
+    const newHoliday: SchoolHoliday = { ...holiday, id: 'h' + Date.now() };
+    const nextHolidays = [...(schedule.holidays ?? []), newHoliday];
+    const next = get().schedules.map(s => s.memberId === memberId ? { ...s, holidays: nextHolidays } : s);
+    set({ schedules: next }); save(next, get().homeworks);
+
+    // Retroactively clear already-materialized occurrences in the new
+    // range, for every real (non-lunch/break) period on this schedule —
+    // future materialization is already covered going forward since
+    // materializePeriodEvent now reads schedule.holidays on every
+    // add/update, but this range's PAST inserts (already sitting in
+    // calendar_events from before the holiday existed) need their own
+    // sweep.
+    const eventStore = useEventStore.getState();
+    await Promise.all(
+      schedule.periods
+        .filter(p => p.linkedEventId)
+        .map(p => eventStore.deleteSeriesOccurrencesInRange(p.linkedEventId!, newHoliday.startDate, newHoliday.endDate))
+    );
+  },
+
+  removeHoliday: async (memberId, holidayId) => {
+    const schedule = get().schedules.find(s => s.memberId === memberId);
+    const removed = schedule?.holidays?.find(h => h.id === holidayId);
+    if (!schedule || !removed) return;
+    const nextHolidays = (schedule.holidays ?? []).filter(h => h.id !== holidayId);
+    const next = get().schedules.map(s => s.memberId === memberId ? { ...s, holidays: nextHolidays } : s);
+    set({ schedules: next }); save(next, get().homeworks);
+
+    // Re-materialize whatever THIS SPECIFIC range had cleared — explicit
+    // product decision (removing a holiday restores the class periods it
+    // suppressed, not just a going-forward no-op). Deliberately NOT a
+    // fresh materializePeriodEvent() call per period — that always
+    // creates a brand-new anchor/series via addRecurringEvent, which
+    // would duplicate the OTHER, still-live occurrences in the existing
+    // series rather than just filling the gap. Instead, insert one plain
+    // occurrence row per matching weekday-in-range, tagged onto the
+    // EXISTING series (seriesId = the period's own linkedEventId,
+    // isSeriesAnchor: false) — a targeted backfill, not a new series.
+    const eventStore = useEventStore.getState();
+    const inserts: Promise<unknown>[] = [];
+    for (const period of schedule.periods) {
+      if (period.isLunch || period.isBreak || !period.linkedEventId || !period.days?.length) continue;
+      const days = period.days.map(d => DAY_NAME_TO_INDEX[d.toLowerCase()]).filter(d => d !== undefined);
+      if (!days.length) continue;
+      // Skip any date that already has a LIVE occurrence in this series —
+      // a failed delete (addHoliday's own retroactive clear can partially
+      // fail) or an overlapping holiday range restored separately would
+      // otherwise get a duplicate row inserted on top of it.
+      const alreadyLive = await eventStore.getLiveSeriesDatesInRange(period.linkedEventId, removed.startDate, removed.endDate);
+      // Y/M/D component stepping, not epoch-ms + 86400_000 — the latter
+      // is DST-unsafe (confirmed via direct execution against the actual
+      // Nov 2026 US fall-back transition: adding 24h in ms to a local-
+      // midnight Date can fail to advance the calendar date across that
+      // boundary, silently double-processing one date). Mirrors
+      // eventStore.ts's own offsetDate() helper, which steps via
+      // `new Date(y, m-1, d+days)` for exactly this reason.
+      let cursor = removed.startDate;
+      while (cursor <= removed.endDate) {
+        const thisDate = cursor;
+        const cursorDate = parseLocalDate(thisDate);
+        const dow = cursorDate.getDay();
+        const [y, m, d] = thisDate.split('-').map(Number);
+        cursor = localDateStr(new Date(y, m - 1, d + 1));
+        if (!days.includes(dow) || alreadyLive.has(thisDate)) continue;
+        inserts.push(eventStore.addEvent({
+          title: period.subject,
+          date: thisDate,
+          time: period.startTime,
+          endTime: period.endTime,
+          memberId,
+          type: 'reminder',
+          category: 'School',
+          location: period.room || undefined,
+          notes: period.teacher ? `Teacher: ${period.teacher}` : undefined,
+          seriesId: period.linkedEventId,
+          isSeriesAnchor: false,
+        } as Omit<FamilyEvent, 'id'>));
+      }
+    }
+    await Promise.all(inserts);
   },
 
   // ─── Homework CRUD ──────────────────────────────────────────────────────────

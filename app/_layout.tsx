@@ -662,6 +662,15 @@ function RootNavigator() {
         if (dest) {
           console.log('[Notification] Routing to', dest, 'for type:', data?.type);
           navigateFromNotification(dest, isKioskDevice);
+        } else if (isKioskDevice) {
+          // NotificationPanel below is phone-owned chrome (kiosk has its
+          // own KioskNotificationPanel, opened from KioskHeader's bell) —
+          // opening it here would show the wrong, non-kiosk UI on a kiosk
+          // device with no real notification-type to route on anyway.
+          // Land on Overview instead, same fallback navigateFromNotification
+          // itself already uses for an unrecognized route.
+          console.log('[Notification] No specific route for type on kiosk, landing on Overview:', data?.type);
+          navigateFromNotification('/(tabs)', isKioskDevice);
         } else {
           console.log('[Notification] Opening notification panel for type:', data?.type);
           setNotifPanelOpen(true);
@@ -1174,6 +1183,11 @@ function RootNavigator() {
                 const dest = inAppNotif.type ? routeForNotification(inAppNotif.type, inAppNotif.data) : null;
                 if (dest) {
                   navigateFromNotification(dest, isKioskDevice);
+                } else if (isKioskDevice) {
+                  // Same fix as the push-notification listener above —
+                  // NotificationPanel is phone-only chrome, never open it
+                  // on a kiosk device.
+                  navigateFromNotification('/(tabs)', isKioskDevice);
                 } else {
                   setNotifPanelOpen(true);
                 }
@@ -1201,8 +1215,12 @@ function RootNavigator() {
 
       {/* Global notification panel — openable from the toast above, or any
           AppHeader bell. Mounted once here so the toast can trigger it
-          regardless of which tab is currently active. */}
-      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+          regardless of which tab is currently active. Phone-only chrome —
+          kiosk has its own KioskNotificationPanel (opened from
+          KioskHeader's bell) — visible is forced false on a kiosk device
+          as defense-in-depth even though every call site that sets it now
+          already checks isKioskDevice first. */}
+      <NotificationPanel visible={notifPanelOpen && !isKioskDevice} onClose={() => setNotifPanelOpen(false)} />
 
       {/* Blurs the screen and demands the active member's PIN after the app
           resumes from background past the same 5-min threshold Face ID

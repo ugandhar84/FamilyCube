@@ -22,6 +22,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { NotificationLog } from '@/lib/types';
 import { iconFor, relativeTime } from '@/lib/notifications/display';
+import { useDeviceClass } from '@/lib/useDeviceClass';
+import { navigateFromNotification } from '@/store/kioskNavStore';
 
 // ── Per-type icon + routing ──────────────────────────────────────────────────
 
@@ -160,6 +162,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
   const removeCachedNotifs = useNotifStore(s => s.removeCachedNotifs);
   const setUnreadCount = useNotifStore(s => s.setUnreadCount);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  const { deviceClass } = useDeviceClass();
 
   const handlePress = (n: NotificationLog) => {
     if (!n.read) {
@@ -172,7 +175,14 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     }
     const dest = routeFor(n);
     onClose();
-    if (dest) router.push(dest as any);
+    // Was a bare router.push — a real, reachable escape hatch, same class
+    // of bug already fixed for Ask Fam's chore-mention link this session.
+    // This component is phone-owned (kiosk has its own
+    // KioskNotificationPanel), but nothing ever actually prevented it from
+    // being opened on a kiosk device too (app/_layout.tsx's setNotifPanelOpen
+    // had no isKioskDevice gate) — routing through navigateFromNotification
+    // makes this safe regardless of whichever device ends up rendering it.
+    if (dest) navigateFromNotification(dest, deviceClass === 'kitchenHub');
   };
 
   const handleDeleteOne = (n: NotificationLog) => {

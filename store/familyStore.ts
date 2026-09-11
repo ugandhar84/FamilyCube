@@ -748,6 +748,29 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // special-case needed here since the row simply won't come back on
       // the next syncFromDB().
     }
+
+    // Location key self-heal — same forceRecheckLocationKeyWrap already
+    // called on app foreground (app/_layout.tsx), added HERE too because
+    // that call only ever repairs whichever member happens to be active
+    // AT FOREGROUND TIME. A member who is PIN-switched into on a shared/
+    // kiosk device (or whose own phone rarely gets backgrounded and
+    // re-foregrounded) could go a long time as the active member with no
+    // extra chance to self-heal their own wrap, even though becoming
+    // active is exactly the moment they're about to start writing/being
+    // viewed. getOrCreateLocationSessionKey only reads/creates a key in
+    // THIS device's own local SecureStore (lib/chatCrypto.ts) — it can
+    // only ever wrap the key for whoever is the real, physical user of
+    // THIS device right now, never for some other family member from a
+    // different device, so this call is only meaningful for the member
+    // actually being switched TO here, not previousActiveId.
+    if (id) {
+      const familyIdForWrap = switched?.familyId;
+      if (familyIdForWrap) {
+        import('@/lib/locationCrypto').then(({ forceRecheckLocationKeyWrap }) => {
+          forceRecheckLocationKeyWrap(familyIdForWrap, id).catch(() => {});
+        }).catch(() => {});
+      }
+    }
   },
 
   addMember: async (member) => {

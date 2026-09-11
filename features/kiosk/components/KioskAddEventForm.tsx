@@ -692,10 +692,13 @@ export function KioskAddEventForm({ visible, onClose, activeMemberId, prefill, i
     // either direction, next 14 days) — best-effort, only for a genuinely
     // NEW event (not an edit), and fails open (a network hiccup here must
     // never block a real create) rather than fails closed.
-    if (eventInput.time && familyId) {
+    // Was gated on eventInput.time truthy, skipping this entirely for an
+    // all-day event — check_likely_duplicate_event's own
+    // IS NOT DISTINCT FROM now handles a null start_time correctly.
+    if (familyId && eventInput.title) {
       try {
         const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
-          p_family_id: familyId, p_title: eventInput.title, p_start_time: eventInput.time, p_date: eventInput.date,
+          p_family_id: familyId, p_title: eventInput.title, p_start_time: eventInput.time ?? null, p_date: eventInput.date,
         });
         const match = Array.isArray(dupe) ? dupe[0] : dupe;
         if (match) {

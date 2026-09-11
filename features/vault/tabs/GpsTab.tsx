@@ -7,7 +7,7 @@
  * even while the app is backgrounded. Members without live GPS yet still
  * show in the list below with the existing manual status picker.
  */
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
@@ -96,6 +96,58 @@ const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> =
   walking:    { label: 'Walking',  Icon: Footprints },
   stationary: { label: 'Still',    Icon: MapPin },
 };
+
+// Extracted + memoized so ONE family member's location ping (any
+// unrelated row change in member_locations fires this whole screen's
+// realtime `load()`, re-rendering GpsTab entirely) doesn't force every
+// OTHER member's marker to redraw too [live-reported: "Map should not
+// refresh always... avatar change seamlessly if user moving.. I see map
+// is doing full rebuilt" / "How Life360 handles similar way"]. Two
+// things were actually happening: (1) each Marker's `coordinate` prop was
+// a brand-new `{ latitude, longitude }` object literal built fresh on
+// every GpsTab render (even when THIS member's own lat/lng hadn't
+// changed) — react-native-maps treats a new coordinate object as a real
+// position update and redraws/repositions the native marker layer for
+// it; (2) the marker's custom child view (FamilyAvatar + badge) was
+// inline JSX re-created fresh every render too, with no memo boundary to
+// stop React from re-diffing it. React.memo here, with primitive props
+// only (no fresh-object props that would defeat the memo same way the
+// coordinate object did), means a marker only actually re-renders when
+// ITS OWN member's lat/lng/name/emoji/status/speed genuinely changed —
+// exactly Life360's own "only the moved pin redraws, everyone else's
+// avatar stays visually still" behavior.
+const FamilyMapMarker = memo(function FamilyMapMarker({
+  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, speedMph, infoColor, g,
+}: {
+  lat: number; lng: number; name: string; statusText: string;
+  emoji?: string; avatarUrl?: string; siblingNames: string[];
+  ringColor: string; speedMph: number; infoColor: string;
+  g: { mapPinWrap: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
+}) {
+  // Stable across re-renders when lat/lng haven't actually changed — this
+  // is the object-identity fix from this component's own header comment.
+  const coordinate = useMemo(() => ({ latitude: lat, longitude: lng }), [lat, lng]);
+  const movement = classifyMovement(speedMph);
+  const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
+  return (
+    <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
+      <View style={g.mapPinWrap}>
+        <View>
+          <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
+            <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
+              siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={34} />
+          </View>
+          {movementMeta && (
+            <View style={[g.mapPinBadge, { backgroundColor: infoColor, borderColor: '#fff' }]}>
+              <movementMeta.Icon size={10} color="#fff" />
+            </View>
+          )}
+        </View>
+        <View style={[g.mapPinTail, { borderTopColor: ringColor }]} />
+      </View>
+    </Marker>
+  );
+});
 
 export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
   // Real tab bar height (includes the safe-area bottom inset the custom
@@ -290,11 +342,35 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const toggleExactAddress = async (value: boolean) => {
     if (!activeMemberId) return;
     setLocations(prev => prev.map(l => l.member_id === activeMemberId ? { ...l, share_exact_address: value } : l));
-    // Pass the new value straight through instead of letting
-    // refreshMyLocation re-derive it from `locations` — that state hasn't
-    // re-rendered yet at this point in the same tick, so it would read the
-    // pre-toggle value and immediately overwrite the switch back to it.
-    await refreshMyLocation(activeMemberId, value);
+    // Was: delegated entirely to refreshMyLocation(activeMemberId, value),
+    // which requires a granted foreground location permission AND a fresh
+    // GPS fix before it ever reaches the upsert that actually persists
+    // share_exact_address (Location.requestForegroundPermissionsAsync's
+    // own early `return` on a denied/not-yet-answered permission skips the
+    // write entirely) — a privacy PREFERENCE toggle shouldn't be gated on
+    // a real location fix succeeding at all [live-reported, repeatedly:
+    // "these 2 flags are staying persistent... are we correctly saving in
+    // the DB or not" — the optimistic local setLocations above always
+    // looked right, masking that the real write frequently never
+    // happened]. Write the flag directly and unconditionally first — this
+    // alone is what makes the preference durable regardless of GPS/
+    // permission state.
+    const { error } = await supabase.from('member_locations').upsert({
+      member_id: activeMemberId, family_id: familyId, share_exact_address: value,
+    }, { onConflict: 'member_id' });
+    if (error) {
+      console.error('[GpsTab] toggleExactAddress upsert failed:', error.message);
+      // Revert the optimistic UI update — the DB write is the one that
+      // didn't happen, so the switch showing "on" would be a lie.
+      setLocations(prev => prev.map(l => l.member_id === activeMemberId ? { ...l, share_exact_address: !value } : l));
+      return;
+    }
+    // Best-effort follow-up: if a real fix is already available/quick to
+    // get, also refresh the address text now so it reflects the new
+    // precision immediately rather than waiting for the next natural
+    // refresh — but this is no longer what persists the flag itself, so a
+    // permission denial or slow/failed fix here can't undo the toggle.
+    refreshMyLocation(activeMemberId, value).catch(() => {});
   };
 
   const updateStatus = async (memberId: string, status: LocStatus) => {
@@ -650,32 +726,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           {pinned.map(loc => {
             const rc = roleColor(loc.role);
             const m = members.find(mb => mb.id === loc.member_id);
-            // Same speed-based movement badge as the list row below
-            // (classifyMovement) — was list-row-only, so the map view (the
-            // primary "where's everyone right now" glance) had no
-            // Life360-style driving/walking indicator at all next to a
-            // moving member's pin.
-            const movement = classifyMovement(loc.speed_mph ?? 0);
-            const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
             return (
-              <Marker key={loc.member_id} coordinate={{ latitude: loc.lat!, longitude: loc.lng! }}
-                title={loc.name} description={loc.status_text ?? STATUS_LABELS[loc.status]}
-                anchor={{ x: 0.5, y: 1 }}>
-                <View style={g.mapPinWrap}>
-                  <View>
-                    <View style={[g.mapPinAvatar, { borderColor: rc }]}>
-                      <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={34} />
-                    </View>
-                    {movementMeta && (
-                      <View style={[g.mapPinBadge, { backgroundColor: colors.info, borderColor: '#fff' }]}>
-                        <movementMeta.Icon size={10} color="#fff" />
-                      </View>
-                    )}
-                  </View>
-                  <View style={[g.mapPinTail, { borderTopColor: rc }]} />
-                </View>
-              </Marker>
+              <FamilyMapMarker
+                key={loc.member_id}
+                lat={loc.lat!} lng={loc.lng!}
+                name={loc.name} statusText={loc.status_text ?? STATUS_LABELS[loc.status]}
+                emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                siblingNames={members.map(mb => mb.name)}
+                ringColor={rc} speedMph={loc.speed_mph ?? 0}
+                infoColor={colors.info}
+                g={g}
+              />
             );
           })}
         </MapView>

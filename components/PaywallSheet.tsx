@@ -12,21 +12,6 @@ import { useAuthStore } from '@/store/authStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { supabase } from '@/lib/supabase';
 
-// Pulled directly from constants/Colors.ts brand tokens
-const BRAND = {
-  terracotta:      '#CD7B57',
-  terracottaLight: '#F3E1D6',
-  terracottaDark:  '#A05939',
-  terracottaMid:   '#DA9977',
-  sage:            '#69927C',
-  sageLight:       '#E3EDE8',
-  sageDark:        '#4F7562',
-  lavender:        '#9686B5',
-  lavenderLight:   '#E9E3F1',
-  amber:           '#C8961A',
-  amberLight:      '#FDF3DC',
-};
-
 // Ionicons names (matches the icon set already used throughout this
 // component and the rest of the app, e.g. PinEntryModal) — SVG glyphs
 // instead of emoji, which render inconsistently across devices/OS versions.
@@ -247,10 +232,10 @@ export default function PaywallSheet({
 
         {/* Trial countdown banner */}
         {isTrial && trialDaysLeft > 0 && (
-          <View style={[s.trialBanner, { backgroundColor: dark ? 'rgba(200,150,26,0.15)' : BRAND.amberLight, borderColor: BRAND.amber }]}>
+          <View style={[s.trialBanner, { backgroundColor: dark ? 'rgba(200,150,26,0.15)' : colors.amberLight, borderColor: colors.amber }]}>
             <Text style={{ fontSize: 18 }}>⏳</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[s.trialBannerTitle, { color: BRAND.terracottaDark }]}>
+              <Text style={[s.trialBannerTitle, { color: colors.primaryText ?? colors.primary }]}>
                 {trialDaysLeft === 1 ? 'Last day of your free trial' : `${trialDaysLeft} days left in your free trial`}
               </Text>
               <Text style={[s.trialBannerSub, { color: colors.textSecondary }]}>
@@ -270,10 +255,10 @@ export default function PaywallSheet({
           {FEATURES.map((f, i) => (
             <View key={i} style={[s.featureRow, { borderBottomColor: colors.border }]}>
               <View style={s.featureIcon}>
-                <Ionicons name={f.icon} size={18} color={BRAND.terracotta} />
+                <Ionicons name={f.icon} size={18} color={colors.primary} />
               </View>
               <Text style={[s.featureText, { color: colors.textPrimary }]}>{f.text}</Text>
-              <Ionicons name="checkmark-circle" size={18} color={BRAND.sage} />
+              <Ionicons name="checkmark-circle" size={18} color={colors.teal} />
             </View>
           ))}
         </View>
@@ -287,7 +272,7 @@ export default function PaywallSheet({
               activeOpacity={0.85}
               style={[
                 s.billingOption,
-                billing === b && { backgroundColor: BRAND.terracotta, borderRadius: 11 },
+                billing === b && { backgroundColor: colors.primary, borderRadius: 11 },
               ]}
             >
               <Text style={[s.billingLabel, { color: billing === b ? '#fff' : colors.textSecondary }]}>
@@ -301,8 +286,8 @@ export default function PaywallSheet({
                   discount; now genuinely reflects whatever the admin
                   configures. */}
               {b === 'annual' && discountBadgeText && (
-                <View style={[s.savePill, { backgroundColor: billing === 'annual' ? 'rgba(255,255,255,0.25)' : BRAND.terracottaLight }]}>
-                  <Text style={[s.savePillText, { color: billing === 'annual' ? '#fff' : BRAND.terracottaDark }]}>{discountBadgeText}</Text>
+                <View style={[s.savePill, { backgroundColor: billing === 'annual' ? 'rgba(255,255,255,0.25)' : colors.primaryLight }]}>
+                  <Text style={[s.savePillText, { color: billing === 'annual' ? '#fff' : colors.primaryText ?? colors.primary }]}>{discountBadgeText}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -311,25 +296,25 @@ export default function PaywallSheet({
 
         {/* Price card */}
         <View style={[s.priceCard, {
-          backgroundColor: dark ? 'rgba(205,123,87,0.15)' : BRAND.terracottaLight,
-          borderColor: BRAND.terracotta,
+          backgroundColor: dark ? 'rgba(205,123,87,0.15)' : colors.primaryLight,
+          borderColor: colors.primary,
         }]}>
           <View style={s.priceRow}>
             {/* Strikethrough "was" price — admin-editable, only shown
                 when set [live-requested: "with discounted strike value
                 to show"]. */}
             {wasPrice && (
-              <Text style={[s.priceWas, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>
+              <Text style={[s.priceWas, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
                 {wasPrice}
               </Text>
             )}
-            <Text style={[s.priceMain, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>{price}</Text>
-            <Text style={[s.pricePer, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>
+            <Text style={[s.priceMain, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>{price}</Text>
+            <Text style={[s.pricePer, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
               {billing === 'annual' ? ' / year' : ' / month'}
             </Text>
           </View>
           {equiv && (
-            <Text style={[s.priceEquiv, { color: dark ? BRAND.terracottaMid : BRAND.terracottaDark }]}>
+            <Text style={[s.priceEquiv, { color: dark ? colors.primaryLight : colors.primaryText ?? colors.primary }]}>
               That's just {equiv} — less than a coffee
             </Text>
           )}
@@ -345,7 +330,7 @@ export default function PaywallSheet({
           onPress={handlePurchase}
           disabled={purchasing}
           activeOpacity={0.88}
-          style={[s.cta, { backgroundColor: BRAND.terracotta }]}
+          style={[s.cta, { backgroundColor: colors.primary }]}
         >
           {purchasing
             ? <ActivityIndicator color="#fff" />

@@ -55,7 +55,7 @@
  * zones rather than a bare map above a loose grid, and the roster rows use
  * the Well treatment every other migrated tab uses for a list row.
  */
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MapPin, BatteryLow, BatteryMedium, Navigation, History } from 'lucide-react-native';
@@ -121,6 +121,36 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+// Extracted + memoized so ONE family member's location ping doesn't force
+// every OTHER member's marker to redraw — same fix and same reasoning as
+// GpsTab.tsx's own FamilyMapMarker [live-reported: "Map should not refresh
+// always... avatar change seamlessly if user moving.. I see map is doing
+// full rebuilt" / "How Life360 handles similar way"]. A fresh `coordinate`
+// object literal on every render (even when THIS member's own lat/lng
+// hadn't changed) made react-native-maps redraw/reposition every marker's
+// native layer on any unrelated realtime tick — memoized here with a
+// stable coordinate object and primitive-only props so React.memo can
+// actually skip re-rendering a marker whose own data didn't change.
+const KioskFamilyMapMarker = memo(function KioskFamilyMapMarker({
+  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor,
+}: {
+  lat: number; lng: number; name: string; statusText: string;
+  emoji?: string; avatarUrl?: string; siblingNames: string[]; ringColor: string;
+}) {
+  const coordinate = useMemo(() => ({ latitude: lat, longitude: lng }), [lat, lng]);
+  return (
+    <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
+      <View style={s.mapPinWrap}>
+        <View style={[s.mapPinAvatar, { borderColor: ringColor }]}>
+          <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
+            siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={40} />
+        </View>
+        <View style={[s.mapPinTail, { borderTopColor: ringColor }]} />
+      </View>
+    </Marker>
+  );
+});
 
 export function KioskFindFamTab({ active, members }: {
   active: FamilyMember; members: FamilyMember[];
@@ -340,17 +370,15 @@ export function KioskFindFamTab({ active, members }: {
               const m = members.find(mb => mb.id === loc.member_id);
               const rc = roleColor(m?.role ?? 'kid');
               return (
-                <Marker key={loc.member_id} coordinate={{ latitude: loc.lat, longitude: loc.lng }}
-                  title={m?.name ?? 'Family member'} description={loc.status_text ?? STATUS_LABEL[loc.status]}
-                  anchor={{ x: 0.5, y: 1 }}>
-                  <View style={s.mapPinWrap}>
-                    <View style={[s.mapPinAvatar, { borderColor: rc }]}>
-                      <FamilyAvatar name={m?.name ?? ''} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                        siblings={members.map(mb => mb.name)} ringColor={rc} ringWidth={0} size={40} />
-                    </View>
-                    <View style={[s.mapPinTail, { borderTopColor: rc }]} />
-                  </View>
-                </Marker>
+                <KioskFamilyMapMarker
+                  key={loc.member_id}
+                  lat={loc.lat} lng={loc.lng}
+                  name={m?.name ?? 'Family member'}
+                  statusText={loc.status_text ?? STATUS_LABEL[loc.status]}
+                  emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                  siblingNames={members.map(mb => mb.name)}
+                  ringColor={rc}
+                />
               );
             })}
           </MapView>

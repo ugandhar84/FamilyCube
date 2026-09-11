@@ -440,10 +440,13 @@ export function KioskEventEditor({ event, active, members, onClose, colors, isDa
       // new rows the same way a create does, so it's the right place to
       // run the same real, read-only, best-effort check — fails open
       // (a network hiccup here must never block a real save).
-      if (patch.time && active.familyId) {
+      // Was gated on patch.time truthy, skipping this entirely for an
+      // all-day event — check_likely_duplicate_event's own
+      // IS NOT DISTINCT FROM now handles a null start_time correctly.
+      if (active.familyId && patch.title) {
         try {
           const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
-            p_family_id: active.familyId, p_title: patch.title, p_start_time: patch.time, p_date: patch.date,
+            p_family_id: active.familyId, p_title: patch.title, p_start_time: patch.time ?? null, p_date: patch.date,
           });
           const match = Array.isArray(dupe) ? dupe[0] : dupe;
           if (match) {

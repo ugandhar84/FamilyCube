@@ -654,10 +654,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // of something that already exists (the user asking the AI about an
       // existing ride, not realizing it's not new). Best-effort, fails
       // open — a check failure must never block a real create.
-      if (time && activeMember?.familyId) {
+      // Was gated on `time` truthy, skipping this entirely for an all-day
+      // AI-proposed event — check_likely_duplicate_event's own
+      // IS NOT DISTINCT FROM now handles a null start_time correctly.
+      if (activeMember?.familyId && base.title) {
         try {
           const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
-            p_family_id: activeMember.familyId, p_title: base.title, p_start_time: time, p_date: eventDate,
+            p_family_id: activeMember.familyId, p_title: base.title, p_start_time: time ?? null, p_date: eventDate,
           });
           const match = Array.isArray(dupe) ? dupe[0] : dupe;
           if (match) {

@@ -436,11 +436,15 @@ export async function reconcileAppleCalendar(
         // this local map), just point deviceEvent.id at the existing
         // family event id so future sweeps treat it as already-linked.
         let dupeEventId: string | null = null;
-        if (patch.title && patch.time && patch.date) {
+        // Was gated on patch.time truthy — skipped this check entirely for
+        // an all-day Apple Calendar event (deviceEvent.allDay ? undefined
+        // : ... above). check_likely_duplicate_event now matches a null
+        // start_time via IS NOT DISTINCT FROM instead of a bare `=`.
+        if (patch.title && patch.date) {
           const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
             p_family_id: familyId,
             p_title: patch.title,
-            p_start_time: patch.time,
+            p_start_time: patch.time ?? null,
             p_date: patch.date,
           });
           const dupe = Array.isArray(dupes) ? dupes[0] : dupes;

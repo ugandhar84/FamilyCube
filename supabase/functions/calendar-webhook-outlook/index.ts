@@ -145,11 +145,15 @@ async function reconcileOneOutlookEvent(supabase: any, connection: CalendarConne
     // the external link is created, so future Outlook-side edits reconcile
     // onto the real row via the update branch above.
     let dupeEventId: string | null = null;
-    if (patch.title && patch.startTime && patch.date) {
+    // Was gated on patch.startTime truthy — skipped this check entirely
+    // for an all-day inbound Outlook event, same gap fixed for Google/
+    // Apple. check_likely_duplicate_event now matches a null start_time
+    // via IS NOT DISTINCT FROM.
+    if (patch.title && patch.date) {
       const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
         p_family_id: connection.family_id,
         p_title: patch.title,
-        p_start_time: patch.startTime,
+        p_start_time: patch.startTime ?? null,
         p_date: patch.date,
       });
       const dupe = Array.isArray(dupes) ? dupes[0] : dupes;

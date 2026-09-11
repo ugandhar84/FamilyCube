@@ -20,11 +20,7 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import { CubeMark } from './FamilyCubeLogo';
-
-const PLUM  = '#6B2FD4';
-const TEAL  = '#1DC8BC';
-const AMBER = '#FFB347';
+import { IconCubeMark, BRAND } from './FamilyCubeLogo';
 
 interface Props {
   size?: number;
@@ -63,9 +59,14 @@ function Bar({ color, delay }: { color: string; delay: number }) {
   );
 }
 
-// CubeMark itself is a static mark (no built-in animation, unlike the old
-// PawBondLogo's `animated` prop) — a gentle pulse here keeps this reading
-// as "loading" rather than a frozen icon.
+// IconCubeMark, not CubeMark — CubeMark's top face is pink, which
+// diverges from every other cube-mark call site in the app (splash
+// screen, paywall, AppHeader, lock/login/signup screens all use
+// IconCubeMark's amber-top palette) [live-reported: "Brand name styles
+// colors should be identical to the splash screen wherever we refer...
+// I see cube letter has many colors"]. Static mark (no built-in
+// animation, unlike the old PawBondLogo's `animated` prop) — a gentle
+// pulse here keeps this reading as "loading" rather than a frozen icon.
 function PulsingCube({ size }: { size: number }) {
   const scale = useSharedValue(1);
   useEffect(() => {
@@ -79,7 +80,7 @@ function PulsingCube({ size }: { size: number }) {
   const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   return (
     <Animated.View style={style}>
-      <CubeMark size={size} />
+      <IconCubeMark size={size} />
     </Animated.View>
   );
 }
@@ -90,9 +91,14 @@ export default function FamilyCubeLoader({ size = 48, bars = true, isDark = fals
       <PulsingCube size={size} />
       {bars && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Bar color={PLUM}  delay={0}   />
-          <Bar color={TEAL}  delay={180} />
-          <Bar color={AMBER} delay={360} />
+          {/* Was a disconnected third palette (plum/teal/amber hex
+              literals matching neither BRAND nor constants/colors.ts) —
+              now the same three real brand hues the cube mark itself
+              uses, so the loading bars read as part of the same mark
+              rather than a mismatched accessory. */}
+          <Bar color={BRAND.purple} delay={0}   />
+          <Bar color={BRAND.teal}   delay={180} />
+          <Bar color={BRAND.amber}  delay={360} />
         </View>
       )}
     </View>

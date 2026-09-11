@@ -662,10 +662,15 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     // either direction, next 14 days) — best-effort, only for a genuinely
     // NEW event (not an edit), and fails open (a network hiccup here must
     // never block a real create) rather than fails closed.
-    if (eventInput.time && familyId) {
+    // Was gated on `eventInput.time` being truthy, which skipped this check
+    // entirely for an all-day event — check_likely_duplicate_event's own
+    // `ce.start_time IS NOT DISTINCT FROM p_start_time` now handles a null
+    // start_time correctly (two all-day events on the same day/title
+    // match), so gate on familyId/title only.
+    if (familyId && eventInput.title) {
       try {
         const { data: dupe } = await supabase.rpc('check_likely_duplicate_event', {
-          p_family_id: familyId, p_title: eventInput.title, p_start_time: eventInput.time, p_date: eventInput.date,
+          p_family_id: familyId, p_title: eventInput.title, p_start_time: eventInput.time ?? null, p_date: eventInput.date,
         });
         const match = Array.isArray(dupe) ? dupe[0] : dupe;
         if (match) {

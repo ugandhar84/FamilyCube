@@ -15,7 +15,7 @@
  */
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
-import { supabase } from './supabase';
+import { supabase, withSuppressedNetworkBanner } from './supabase';
 import { isFeatureEnabled } from './featureFlags';
 
 export const STORE_GEOFENCE_TASK_NAME = 'family-cube-store-geofence';
@@ -123,19 +123,29 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // effort real push via family-notifier, excluding the person who's
       // physically at the store.
       try {
-        const { data: self } = await supabase.from('members').select('name').eq('id', activeMemberIdRef).single();
-        const { data: others } = await supabase.from('members').select('id')
-          .eq('family_id', meta.familyId).neq('id', activeMemberIdRef ?? '');
-        const memberIds = (others ?? []).map((m: any) => m.id);
-        if (memberIds.length) {
-          await supabase.functions.invoke('family-notifier', {
-            body: {
-              type: 'store_proximity_arrived', familyId: meta.familyId, memberIds, persist: true,
-              excludeMemberId: activeMemberIdRef ?? undefined,
-              payload: { memberName: self?.name, store: meta.store, itemNames: names, extraCount: extra },
-            },
-          });
-        }
+        // This handler fires from a headless/backgrounded JS context on
+        // whatever connectivity the OS hands it (same class of call as
+        // lib/locationTracking.ts's own background push) — a transport
+        // failure here is common-by-nature, not a real "you're offline"
+        // moment for whoever's actively using the app elsewhere, so it
+        // shouldn't trip the same shared app-wide network-failure banner
+        // every foreground Supabase call also feeds [same fix applied to
+        // locationTracking.ts this session for the identical reason].
+        await withSuppressedNetworkBanner(async () => {
+          const { data: self } = await supabase.from('members').select('name').eq('id', activeMemberIdRef).single();
+          const { data: others } = await supabase.from('members').select('id')
+            .eq('family_id', meta.familyId).neq('id', activeMemberIdRef ?? '');
+          const memberIds = (others ?? []).map((m: any) => m.id);
+          if (memberIds.length) {
+            await supabase.functions.invoke('family-notifier', {
+              body: {
+                type: 'store_proximity_arrived', familyId: meta.familyId, memberIds, persist: true,
+                excludeMemberId: activeMemberIdRef ?? undefined,
+                payload: { memberName: self?.name, store: meta.store, itemNames: names, extraCount: extra },
+              },
+            });
+          }
+        });
       } catch (e) {
         console.warn('[storeGeofencing] family-notifier push failed', e);
       }

@@ -256,11 +256,18 @@ async function reconcileOneGoogleEvent(supabase: any, connection: CalendarConnec
   // preserved untouched; only the external link is created, so future
   // Google-side edits reconcile onto the real row via the update branch
   // above instead of drifting a separate copy.
-  if (patch.title && patch.startTime && patch.date) {
+  // Was gated on patch.startTime truthy, which skipped this check
+  // entirely for an all-day inbound Google event — every native
+  // all-day event ("Grandma visiting," "School holiday") that also
+  // exists on a synced Google calendar was never deduped. Fixed
+  // check_likely_duplicate_event now matches a null start_time via
+  // IS NOT DISTINCT FROM instead of a bare `=` (which NULL = NULL never
+  // satisfies), so this can call it unconditionally on title+date.
+  if (patch.title && patch.date) {
     const { data: dupes } = await supabase.rpc('check_likely_duplicate_event', {
       p_family_id: connection.family_id,
       p_title: patch.title,
-      p_start_time: patch.startTime,
+      p_start_time: patch.startTime ?? null,
       p_date: patch.date,
     });
     const dupe = Array.isArray(dupes) ? dupes[0] : dupes;

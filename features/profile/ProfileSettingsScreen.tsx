@@ -1899,11 +1899,25 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             its single-column layout is byte-identical to before. Family
             (above) is deliberately outside this grid, in its own full-
             width row — see its own comment for why. */}
-        <View style={columns > 1 ? { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' } : undefined}>
+        {/* Real two-column layout, not a flex-wrap grid — flex-wrap fills
+            left-to-right and only breaks to a new row once one is full, so
+            a short section (e.g. Appearance, 3 small pills) followed by a
+            tall one (e.g. Family/Currency) sat side by side and the row
+            below started wherever the taller one ended, leaving a visible
+            staggered gap under the shorter column [live-reported: "there
+            is lot of gap between" the sections, screenshot showing exactly
+            this staircase]. Two literal column Views (left/right) instead
+            — each just a plain top-to-bottom stack, so neither column's
+            height depends on the other's content at all. columns===1
+            (mobile) is untouched: single flat column, byte-identical to
+            before. Conditional sections may land in a different column
+            depending on which role is viewing (fewer sections rendered),
+            which is expected, not a bug — confirmed acceptable. */}
+        <View style={columns > 1 ? { flexDirection: 'row', gap: 16, alignItems: 'flex-start' } : undefined}>
+        <View style={columns > 1 ? { flex: 1, minWidth: 0 } : undefined}>
 
         {/* Subscription */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -1940,7 +1954,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             (categories, quiet hours, call alerts all together), same
             "tap a row → bottom sheet" pattern the app uses elsewhere. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -1973,7 +1986,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
 
         {/* Appearance */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2009,7 +2021,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
 
         {/* Security */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2059,7 +2070,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             path. Same parent-editable / read-only-for-others split as
             Currency below. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2084,13 +2094,15 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           />
         )}
 
+        </View>
+        <View style={columns > 1 ? { flex: 1, minWidth: 0 } : undefined}>
+
         {/* Currency — the coins-to-real-money conversion every kid's wallet/
             cash-out screen already displays (StoreScreen, ChildChoreBoard,
             ParentReviewDeck) was hardcoded to a bare $ with no setting to
             change it at all. Parent-editable; everyone else sees the same
             row as read-only display, per explicit request. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2124,7 +2136,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             see CalendarSyncScreen.tsx's own header comment). */}
         {isParent && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2152,7 +2163,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             passes hideBackButton for THIS screen. Mobile (no termsShell)
             keeps the real route, completely unchanged. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2177,7 +2187,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             the gate by any other path either — see features/admin/_layout.tsx. */}
         {isParent && isAppAdmin && !hideSensitiveAdminRows && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2206,7 +2215,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             normal, everyday UX. */}
         {isAuthLinked && viewingOwnProfile && !isAnonymousSession && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2248,7 +2256,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         {isAuthLinked && viewingOwnProfile && isAnonymousSession && (
           <View style={[{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
             backgroundColor: colors.surface, padding: 14, gap: 6 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2269,7 +2276,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             own PIN, no Supabase call at all. */}
         {!viewingOwnProfile && authOwnerMember && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2296,7 +2302,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         {/* Danger zone */}
         {canShowDangerZone && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          flexBasis: columns === 2 ? '48%' : '31%', flexGrow: 0, minWidth: 280,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
@@ -2359,6 +2364,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             )}
           </View>
         )}
+        </View>
         </View>
       </ScrollView>
       </KeyboardAvoidingView>

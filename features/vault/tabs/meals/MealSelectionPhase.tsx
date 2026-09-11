@@ -62,17 +62,26 @@ export default function MealSelectionPhase({
               });
             };
             return (
-              <TouchableOpacity key={idx} activeOpacity={0.8} onPress={toggleSelect}
+              // Was one TouchableOpacity spanning the whole card, so tapping
+              // ANYWHERE (title, tags, empty padding) toggled selection —
+              // the visual checkbox was purely decorative, not the actual
+              // hit target [live-reported: "on click selecting the card
+              // instead of opening recipe - we should only select the
+              // checkbox for selection"]. The checkbox below is now the
+              // ONLY interactive element; the card body is a plain,
+              // non-interactive View.
+              <View key={idx}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: isSelected ? 1.5 : 1,
                   borderColor: isSelected ? colors.accent : colors.border,
                   backgroundColor: isSelected ? colors.accent + '10' : 'transparent', padding: 10 }}>
-                {/* Checkbox */}
-                <View style={{ width: 20, height: 20, borderRadius: 5, borderWidth: 2,
-                  borderColor: isSelected ? colors.accent : colors.border,
-                  backgroundColor: isSelected ? colors.accent : 'transparent',
-                  alignItems: 'center', justifyContent: 'center' }}>
+                <TouchableOpacity activeOpacity={0.7} onPress={toggleSelect}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{ width: 20, height: 20, borderRadius: 5, borderWidth: 2,
+                    borderColor: isSelected ? colors.accent : colors.border,
+                    backgroundColor: isSelected ? colors.accent : 'transparent',
+                    alignItems: 'center', justifyContent: 'center' }}>
                   {isSelected && <Check size={12} color="#fff" strokeWidth={3} />}
-                </View>
+                </TouchableOpacity>
                 <Text style={{ fontSize: 18 }}>{opt.emoji ?? '🍽'}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>{opt.mealName}</Text>
@@ -93,7 +102,7 @@ export default function MealSelectionPhase({
                     ))}
                   </View>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
         </View>

@@ -21,39 +21,9 @@ import { useAuthStore } from '@/store/authStore';
 import { useFamilyStore } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { NotificationLog } from '@/lib/types';
+import { iconFor, relativeTime } from '@/lib/notifications/display';
 
 // ── Per-type icon + routing ──────────────────────────────────────────────────
-
-const TYPE_ICON: Record<string, string> = {
-  quest_posted:     '🎯',
-  quest_assigned:   '📋',
-  quest_claimed:    '🙋',
-  quest_submitted:  '📸',
-  quest_approved:   '✅',
-  quest_declined:   '❌',
-  quest_reopened:   '🔄',
-  force_assigned:   '📋',
-  bonus_activated:  '🔥',
-  bonus_expiring:   '⏰',
-  coins_awarded:    '🪙',
-  chore_ghosted:    '👻',
-  deadline_reminder:'📅',
-  deadline_overdue: '🚨',
-  penalty_applied:  '🪙',
-  help_requested:   '🆘',
-  help_resolved:    '✅',
-  reward_redeemed:  '🎁',
-  reward_decision:  '🎁',
-  kid_request:      '📣',
-  kid_request_decision: '📣',
-  chat_message:     '💬',
-  family_update:    '👨‍👩‍👧',
-};
-const DEFAULT_ICON = '🔔';
-
-function iconFor(type: string): string {
-  return TYPE_ICON[type] ?? DEFAULT_ICON;
-}
 
 /**
  * Basic per-type destination — a reasonable default, not a full deep-link
@@ -158,22 +128,6 @@ function routeFor(n: NotificationLog): string | null {
 function actorMemberId(n: NotificationLog): string | undefined {
   const d = n.data ?? {};
   return (d.fromMemberId ?? d.assigneeId ?? d.memberId ?? d.kidId ?? d.byId) as string | undefined;
-}
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (isNaN(then)) return '';
-  const diffMs = Date.now() - then;
-  const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return 'now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day === 1) return 'Yesterday';
-  if (day < 7) return `${day}d ago`;
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 // Matches AppHeader's bar: paddingVertical 10 (×2) + the 40px bell button,

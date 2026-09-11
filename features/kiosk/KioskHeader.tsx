@@ -48,7 +48,7 @@
  */
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Lock, Megaphone, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
+import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
@@ -57,9 +57,12 @@ import { useKioskColors, kioskRoleAccent } from './kioskPalette';
 import { useKioskLockSuspended } from './KioskActivityContext';
 import { useKioskWeather } from './useKioskWeather';
 import { KioskAvatar } from './components/KioskAvatar';
+import { KioskNotificationPanel } from './components/KioskNotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
+import type { KioskTabKey } from './kioskTabs';
 
 export function KioskHeader({
-  members, activeId, onSwitch, onIntercom, onLock,
+  members, activeId, onSwitch, onIntercom, onLock, onNavigate,
 }: {
   members: FamilyMember[];
   activeId: string;
@@ -70,9 +73,21 @@ export function KioskHeader({
    *  Available to anyone, not parent-gated — locking is a courtesy, not a
    *  permission. */
   onLock: () => void;
+  /** Switches KioskScreen's own internal tab — used by the notification
+   *  panel when a row is tapped, so navigation stays inside kiosk chrome
+   *  instead of a bare router.push to a phone-only route. */
+  onNavigate: (tab: KioskTabKey) => void;
 }) {
   const { k, isDark } = useKioskColors();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+  // Kiosk previously had no notification bell at all — a family using the
+  // wall-mounted tablet had no way to see or act on quest/chore/chat/
+  // reward alerts from that device [live-requested]. Same header-owned
+  // modal + useKioskLockSuspended pattern this file already uses for its
+  // own PinEntryModal above.
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadCount = useNotifStore(s => s.unreadCount);
+  useKioskLockSuspended(notifPanelOpen);
 
   const switchable = useMemo(
     () => members.filter(m => !m.deletedAt && m.inviteStatus !== 'pending'),
@@ -228,6 +243,12 @@ export function KioskHeader({
           hint="Broadcast an announcement to every family phone"
         />
         <HeaderButton
+          Icon={Bell} label="Notifications" accent={k.primary} k={k} isDark={isDark}
+          onPress={() => setNotifPanelOpen(true)}
+          hint="Chore, calendar, and family updates"
+          badgeCount={unreadCount}
+        />
+        <HeaderButton
           Icon={Lock} label="Lock" accent={k.textMuted} k={k} isDark={isDark}
           onPress={onLock}
           hint="Hide the current profile until someone signs back in"
@@ -241,6 +262,13 @@ export function KioskHeader({
         onSuccess={(member) => { onSwitch(member.id); setPinTarget(null); }}
         onCancel={() => setPinTarget(null)}
       />
+
+      <KioskNotificationPanel
+        visible={notifPanelOpen}
+        onClose={() => setNotifPanelOpen(false)}
+        onNavigate={(tab) => { onNavigate(tab); setNotifPanelOpen(false); }}
+        k={k}
+      />
     </View>
   );
 }
@@ -252,7 +280,7 @@ export function KioskHeader({
  * screen reader. Every one meets KIOSK_HIT.min.
  */
 function HeaderButton({
-  Icon, label, accent, k, isDark, onPress, hint, wide, neutral,
+  Icon, label, accent, k, isDark, onPress, hint, wide, neutral, badgeCount,
 }: {
   Icon: typeof Lock;
   label: string;
@@ -264,6 +292,8 @@ function HeaderButton({
   wide?: boolean;
   /** A quiet, un-tinted variant for a secondary action (Lock). */
   neutral?: boolean;
+  /** Small overlay count, top-right of the icon — hidden entirely at 0. */
+  badgeCount?: number;
 }) {
   return (
     <Pressable
@@ -278,7 +308,7 @@ function HeaderButton({
         pressed && { opacity: 0.7 },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={badgeCount ? `${label}, ${badgeCount} unread` : label}
       accessibilityHint={hint}
     >
       <Icon size={20} color={neutral ? k.textMuted : accent} />
@@ -286,6 +316,11 @@ function HeaderButton({
         <Text style={[s.headerBtnText, { color: neutral ? k.textMuted : accent }]} numberOfLines={1}>
           {label}
         </Text>
+      )}
+      {!!badgeCount && (
+        <View style={[s.headerBtnBadge, { backgroundColor: k.danger, borderColor: k.card }]}>
+          <Text style={s.headerBtnBadgeText} numberOfLines={1}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+        </View>
       )}
     </Pressable>
   );
@@ -340,4 +375,11 @@ const s = StyleSheet.create({
     paddingHorizontal: KIOSK_SPACE.md,
   },
   headerBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  // Same small-circle-overlay pattern as the avatar strip's own pinBadge —
+  // top-right of the icon, hidden entirely at 0 (see !!badgeCount above).
+  headerBtnBadge: {
+    position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  headerBtnBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 });

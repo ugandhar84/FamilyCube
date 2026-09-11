@@ -648,6 +648,20 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
     const rs = assigneeStyle(assignee, colors, isDark);
     const actions = deriveQuestActions(q, { id: active.id, role: active.role, isActiveApprover });
     const btn = primaryAction(q, actions);
+    // Kid/teen viewing their OWN not-yet-submitted chore gets the same
+    // quiet, fixed "Mark Done"/"Can't do" pill pair as the Overview
+    // widget's ChoreCardRow, instead of the single solid dynamic-label
+    // ActionButton every other role/state on this tab still uses
+    // [live-requested: "we need to simplify the kids chores card button
+    // simile to the kids overview action buttons done, can't do" /
+    // "chores cards - should match the overview tasks cards buttons"].
+    // Scoped narrowly: only this exact state (kid/teen, canSubmit, not yet
+    // claimed, no photo requirement) — Claim/Approve/Start
+    // Chore/photo-required and the parent's own view of any chore are all
+    // untouched, matching the confirmed scope ("kid/teen's own Chores-tab
+    // card only, parent view untouched").
+    const isKidOwnSimpleToDo = (active.role === 'kid' || active.role === 'teen')
+      && actions.canSubmit && q.status !== 'claimed' && !q.photoRequired;
     // Coins are a kid/teen incentive mechanic — an adult task or one
     // assigned to a parent/senior has no payout concept on the phone
     // either, so a stray coin figure here read as broken, not by-design.
@@ -840,7 +854,42 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
                     button in the header isn't needed [live-reported:
                     "remove edit button on the card as we have long press
                     to edit"]. */}
-                {!!btn && (
+                {!!btn && isKidOwnSimpleToDo ? (
+                  <View style={s.taskActionPair}>
+                    <Pressable
+                      onPress={() => { registerActivity(); btn.action(); }}
+                      style={({ pressed }) => [
+                        s.taskActionBtn,
+                        { backgroundColor: k.well, borderColor: k.cardBorder },
+                        pressed && { backgroundColor: btn.accent, borderColor: btn.accent },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${btn.label}: ${q.title}`}
+                      accessibilityHint={q.coins > 0 ? `Worth ${q.coins} coins` : undefined}
+                    >
+                      <Text style={[s.taskActionText, { color: k.text }]} numberOfLines={1}>
+                        {btn.label}
+                      </Text>
+                    </Pressable>
+                    {actions.canKidDecline && (
+                      <Pressable
+                        onPress={() => { registerActivity(); setDeclineTarget({ id: q.id, title: q.title }); }}
+                        style={({ pressed }) => [
+                          s.taskActionBtn,
+                          { backgroundColor: k.well, borderColor: k.cardBorder },
+                          pressed && { backgroundColor: k.danger, borderColor: k.danger },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Can't do this: ${q.title}`}
+                        accessibilityHint="Give a reason and put this chore back up for grabs"
+                      >
+                        <Text style={[s.taskActionText, { color: k.danger }]} numberOfLines={1}>
+                          Can't do
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ) : !!btn && (
                   <ActionButton
                     label={btn.label} Icon={btn.Icon} accent={btn.accent}
                     k={k} isDark={kioskDark} variant="solid"
@@ -2701,6 +2750,17 @@ const s = StyleSheet.create({
   // footprint.
   headerActionBtn: { paddingHorizontal: KIOSK_SPACE.sm, minHeight: 34, flexShrink: 1 },
   headerActionBtnText: { fontSize: KIOSK_TYPO.caption },
+  // Same quiet outlined-pill pair KioskKidWidgets.tsx's ChoreCardRow uses
+  // for "Mark Done"/"Can't do" — kept in lockstep with those exact values
+  // so a kid/teen's own to-do chore reads identically whether it's shown
+  // here (Chores tab) or on the Overview widget.
+  taskActionPair: { flexDirection: 'row', gap: KIOSK_SPACE.xs },
+  taskActionBtn: {
+    minHeight: 32, paddingHorizontal: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xs,
+    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  taskActionText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   // Matches WidgetHeader's own headerIcon exactly (38x38, KIOSK_RADIUS.md)
   // — the same icon-chip size/shape Overview uses everywhere, rather than
   // this card's own smaller one-off badge. Visual-polish pass only.

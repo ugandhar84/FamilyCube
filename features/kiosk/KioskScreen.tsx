@@ -327,6 +327,7 @@ export default function KioskScreen() {
           onSwitch={setActiveMember}
           onIntercom={() => setIntercomOpen(true)}
           onLock={lockNow}
+          onNavigate={setTab}
         />
 
         <View style={s.row}>

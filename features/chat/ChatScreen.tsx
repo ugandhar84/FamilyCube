@@ -62,7 +62,7 @@ import { formatDay, QUICK_REACTIONS, buildGroupChannels, REPLY_KIND_LABEL } from
 import { stripMentionBrackets } from './components/MentionText';
 import { s } from './components/styles';
 import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
-import { Pin, PinOff } from 'lucide-react-native';
+import { Pin, PinOff, Trash2 } from 'lucide-react-native';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ export default function ChatScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const {
-    channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage,
+    channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage, clearChannel,
     lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
     readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
   } = useChatStore();
@@ -1006,6 +1006,30 @@ export default function ChatScreen() {
           <Pressable onPress={togglePin}
             style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : colors.surface, borderColor: isPinned ? colors.primary : colors.border }]}>
             {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={colors.textSecondary} />}
+          </Pressable>
+        )}
+
+        {/* Just Us — "Clear all messages" in one shot, per explicit
+            request. Irreversible (real DB delete, not a local hide), so
+            gated behind a confirm dialog. Deliberately not offered on any
+            other channel — a shared family/DM history isn't "mine alone"
+            to wipe the way a private 2-person thread reasonably can be. */}
+        {openCoupleChannel && (
+          <Pressable
+            onPress={() => Alert.alert(
+              'Clear all messages?',
+              'This deletes every message in Just Us for both of you. This can\'t be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear All', style: 'destructive',
+                  onPress: () => clearChannel(channelId).catch(() =>
+                    Alert.alert('Could not clear messages', 'Check your connection and try again.')),
+                },
+              ],
+            )}
+            style={[s.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Trash2 size={15} color={colors.danger} />
           </Pressable>
         )}
 

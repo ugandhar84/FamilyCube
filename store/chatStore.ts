@@ -464,6 +464,12 @@ interface ChatState {
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
   deleteMessage: (channelId: string, messageId: string) => Promise<void>;
+  // Bulk-clears every message in one channel — RLS-safe as-is (any
+  // participant of the channel may already delete any message in it, per
+  // chat_messages_delete's is_chat_channel_participant() check; no new
+  // policy needed). Currently only exposed in the UI for the Just Us
+  // channel, per explicit request.
+  clearChannel:  (channelId: string) => Promise<void>;
   // Re-sends a failed message (status: 'failed') using the args captured
   // at failure time — the tap-to-retry counterpart to the automatic
   // background retry flushOfflineQueue already does.
@@ -1216,6 +1222,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     get()._removeMessage(channelId, messageId);
+  },
+
+  clearChannel: async (channelId) => {
+    const { error } = await supabase.from('chat_messages').delete().eq('channel_id', channelId);
+    if (error) {
+      console.warn('[chatStore] clearChannel error', error);
+      throw error;
+    }
+    set(s => {
+      const ch = s.channels[channelId];
+      if (!ch) return {};
+      return { channels: { ...s.channels, [channelId]: { ...ch, messages: [] } } };
+    });
   },
 
   // ── Blind-index search ────────────────────────────────────────────────────

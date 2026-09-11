@@ -91,12 +91,20 @@ export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
       {/* Subject + delete */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: col }} />
+        {/* Bold TYPO.body placeholder text was visually indistinguishable
+            from a section label/header rather than reading as an empty,
+            tappable input — [live-reported, with a screenshot: "no
+            subject field" on a period whose subject was genuinely just
+            never typed in yet]. Placeholder now renders lighter/thinner,
+            same convention every other field in this card already uses,
+            so an empty Subject field looks like the other empty fields
+            (Room, Teacher, Term) instead of like a static label. */}
         <TextInput
           value={period.subject}
           onChangeText={v => onChange({ ...period, subject: v })}
           placeholder="Subject / Class name"
           placeholderTextColor={colors.textTertiary}
-          style={{ flex: 1, fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}
+          style={{ flex: 1, fontSize: TYPO.body, fontWeight: period.subject ? '700' : '400', color: colors.textPrimary }}
         />
         <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Trash2 size={16} color="#EF4444" />

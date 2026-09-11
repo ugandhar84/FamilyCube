@@ -183,6 +183,26 @@ export default function HubScreen() {
     })();
   }, [activeMemberId, familyId, members, loadEvents]));
 
+  // Genuine gap, not covered by the Google/Apple sync useFocusEffects
+  // above (those only fire when a sync is actually enabled): a school
+  // period (or any event) created on a DIFFERENT screen/session — the
+  // Vault's School tab, another device, another parent — writes a real
+  // calendar_events row immediately, but selectDate's own SWR cache guard
+  // (store/eventStore.ts) no-ops a plain loadEvents() call whenever
+  // dayEvents already has ANY items for today, even if they predate the
+  // new row — [live-reported: "the same school schedule is not showing in
+  // kids hub" / "kids and tennis for them it's today"]. The mount-time
+  // loadEvents() at this file's top only ever runs once per app session
+  // (gated on `loaded`, not re-triggered by tab focus), so returning to
+  // Hub after creating a schedule elsewhere never re-fetches. Forces a
+  // real re-fetch on every Hub focus instead — cheap (one DB hit for
+  // today's events), and this is exactly the same "must refresh on every
+  // return to Hub" pattern already used above for the Google/Apple sync
+  // checks.
+  useFocusEffect(useCallback(() => {
+    loadEvents(true);
+  }, [loadEvents]));
+
   useEffect(() => {
     const id = setInterval(() => setClock(fmtClock()), 30_000);
     return () => clearInterval(id);

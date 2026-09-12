@@ -1551,6 +1551,35 @@ serve(async (req) => {
       }
     }
 
+    // Was: excludeMemberId's token-level filter only ran in the "raw
+    // tokens passed directly" branch above — never in the normal
+    // memberIds-driven path (the one every real caller actually uses),
+    // so excluding someone by member_id from the recipient LIST did
+    // nothing to stop them receiving the push on a SHARED device. A push
+    // token identifies a physical device, not a profile — on a
+    // PIN-switched shared device, the excluded member's own
+    // member_device_tokens row can carry the exact same token as another
+    // family member's row for that same device, so "notify everyone
+    // except X" still lands on X's own phone whenever X shares that
+    // phone with someone else on the recipient list [live-reported:
+    // "my active member is alex see im getting my own notifications" —
+    // Alex's low-battery alert, meant to exclude Alex, still reached
+    // Alex because Jak's device row on their shared phone carries the
+    // identical Expo push token]. Re-derive and strip the excluded
+    // member's own tokens by VALUE after the main resolution too, so this
+    // protection applies regardless of which branch populated pushTokens.
+    if (excludeMemberId && pushTokens.length) {
+      const excludedTokens = await resolveTokensForMembers(supabase, [excludeMemberId]);
+      if (excludedTokens.length) {
+        const excludedSet = new Set(excludedTokens);
+        pushTokens = pushTokens.filter(t => !excludedSet.has(t));
+        for (const [mId, set] of pushTokensByMember) {
+          for (const t of excludedTokens) set.delete(t);
+          if (set.size === 0) pushTokensByMember.delete(mId);
+        }
+      }
+    }
+
     // Build the notification shape from type + payload
     const message = buildMessage(type, payload ?? {});
 

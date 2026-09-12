@@ -124,6 +124,7 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
         type: 'low_battery',
         familyId: member.family_id,
         memberIds: recipientIds,
+        excludeMemberId: memberId,
         payload: { memberName: member.name, memberId, batteryLevel },
         persist: true,
       },

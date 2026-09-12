@@ -140,7 +140,7 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
 // full 0.2mi had passed (~4-5 minutes of walking). 80m is still well above
 // normal GPS jitter on a stationary phone (typically single-digit meters)
 // but responsive enough that "just started moving" shows up promptly.
-const MIN_DISTANCE_METERS = 80; // ~0.05 mi
+const MIN_DISTANCE_METERS = 25; // ~0.015 mi — matches startLocationUpdatesAsync's distanceInterval below
 
 let lastFamilyId: string | null = null;
 export function setBackgroundLocationFamilyId(id: string | null) {
@@ -577,15 +577,21 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
     // family map, not turn-by-turn navigation, and accuracy is the single
     // biggest battery-cost lever here.
     accuracy: Location.Accuracy.Balanced,
-    // Movement is the only real trigger — a stationary phone never wakes
-    // the GPS chip, so no update (and no battery read) happens while idle.
-    // timeInterval is a rarely-hit safety net, not a normal-operation
-    // keepalive: on iOS the OS's own motion coprocessor gates delivery
-    // regardless of this value, and on Android — which does honor it more
-    // literally — an hour is loose enough that it never becomes the
-    // effective polling rate; distanceInterval stays the real driver.
-    timeInterval: 60 * 60_000,
-    distanceInterval: MIN_DISTANCE_METERS, // ~0.05 mile (80m) — see MIN_DISTANCE_METERS' own comment
+    // Was: timeInterval 1hr (a rarely-hit safety net) + distanceInterval
+    // 80m as the sole real driver — a stale fix from before someone
+    // stopped moving (e.g. "Driving") sat untouched for up to an hour,
+    // read as live the whole time [live-reported: family members actually
+    // home still showed "Driving ... 2h ago" — "I want full experience
+    // like Life360, quick and real-time updates"]. Real-world Life360-
+    // style tracking needs a genuine timer, not just a distance gate that
+    // never fires once movement stops. 2 minutes while the OS is actually
+    // willing to wake this task is a meaningful battery tradeoff (accepted
+    // explicitly), still far short of turn-by-turn navigation polling.
+    // distanceInterval shrunk to match — 80m was tuned for the old
+    // rarely-updating model; a live-feeling map wants a much tighter
+    // "did they actually move" gate too.
+    timeInterval: 2 * 60_000,
+    distanceInterval: 25, // ~0.015 mile — meaningfully live without every GPS jitter counting as movement
     showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
     foregroundService: {
       notificationTitle: 'Family Cube',

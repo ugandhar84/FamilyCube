@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
-import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
+import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
@@ -123,13 +123,30 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   ringColor: string; speedMph: number; infoColor: string;
   g: { mapPinWrap: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
 }) {
-  // Stable across re-renders when lat/lng haven't actually changed — this
-  // is the object-identity fix from this component's own header comment.
-  const coordinate = useMemo(() => ({ latitude: lat, longitude: lng }), [lat, lng]);
+  // Was a plain Marker with a memoized-but-still-instant coordinate — the
+  // re-render/redraw bug (see this component's own earlier fix, above)
+  // was solved, but a real position CHANGE still hard-snapped the pin to
+  // its new spot with no glide, unlike Life360's own smoothly-sliding
+  // pins [live-requested: "ui building also like life360 it should not
+  // rebuild the whole map it should show seamless emoji movement on the
+  // map"]. AnimatedRegion + MarkerAnimated tweens lat/lng over a real
+  // duration instead of teleporting; the ref persists across renders so
+  // only .timing() is called on a coordinate change, not a fresh Marker.
+  const animatedCoord = useRef(new AnimatedRegion({
+    latitude: lat, longitude: lng, latitudeDelta: 0, longitudeDelta: 0,
+  })).current;
+  const prevCoordRef = useRef({ lat, lng });
+  useEffect(() => {
+    if (prevCoordRef.current.lat === lat && prevCoordRef.current.lng === lng) return;
+    prevCoordRef.current = { lat, lng };
+    (animatedCoord as any).timing({
+      latitude: lat, longitude: lng, duration: 1000, useNativeDriver: false,
+    }).start();
+  }, [lat, lng, animatedCoord]);
   const movement = classifyMovement(speedMph);
   const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
   return (
-    <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
+    <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
       <View style={g.mapPinWrap}>
         <View>
           <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
@@ -144,7 +161,7 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
         </View>
         <View style={[g.mapPinTail, { borderTopColor: ringColor }]} />
       </View>
-    </Marker>
+    </MarkerAnimated>
   );
 });
 
@@ -836,6 +853,16 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           const isMe = loc.member_id === activeMemberId;
           const isRefreshing = refreshingId === loc.member_id;
           const isLive = loc.lat != null && loc.lng != null && loc.share_location_enabled !== false;
+          // speed_mph only updates on a real GPS fix (movement past
+          // MIN_DISTANCE_METERS, or a rare hourly safety-net write) — it
+          // never resets to 0 when someone actually stops moving, so a
+          // "Driving" reading from hours ago kept rendering as if current
+          // [live-reported: family members genuinely home showed "Driving
+          // ... 2h ago" — "is it not live update like life360?"]. Gate the
+          // movement badge on how stale the fix actually is, not just
+          // whether lat/lng exist at all.
+          const fixAgeMs = loc.last_updated ? Date.now() - new Date(loc.last_updated).getTime() : Infinity;
+          const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 10 * 60_000;
           const sharingOff = loc.share_location_enabled === false;
           const isExpanded = expandedId === loc.member_id;
 
@@ -868,7 +895,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                   {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                  {isLive && (() => {
+                  {isLive && isFreshFix && (() => {
                     const movement = classifyMovement(loc.speed_mph ?? 0);
                     // "Still" is the common case (most people most of the
                     // time) — only surface the badge for actual movement,

@@ -413,21 +413,24 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       // so a manual refresh silently left it stale/zero. GPS speed is
       // meters/sec; negative/null readings happen at low accuracy, clamp to 0.
       const speedMph = pos.coords.speed && pos.coords.speed > 0 ? Math.round(pos.coords.speed * 2.237) : 0;
-      // Street name only, never the house number — this used to be gated
-      // behind a per-member "share exact address" toggle, removed after
-      // repeated failed patches left the toggle stuck/unreliable; the app
-      // now always shows street-name-only, the toggle's previous default.
-      let coarseAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      let neighborhood = coarseAddress;
+      // Always the full exact address, house number included — the old
+      // per-member "share exact address" toggle was removed after repeated
+      // failed patches left it stuck/unreliable [live-requested: "i want
+      // that ... make that default"], so every member's location now
+      // always shows the complete address, no toggle/opt-out.
+      let address = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      let neighborhood = address;
       try {
         const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
         if (geo) {
           const streetName = geo.street ?? geo.name ?? null;
-          coarseAddress = [streetName, geo.city].filter(Boolean).join(', ') || coarseAddress;
-          neighborhood = geo.district ?? geo.city ?? geo.region ?? coarseAddress;
+          address = [
+            [geo.streetNumber, streetName].filter(Boolean).join(' ') || streetName,
+            geo.city,
+          ].filter(Boolean).join(', ') || address;
+          neighborhood = geo.district ?? geo.city ?? geo.region ?? address;
         }
       } catch { /* best-effort */ }
-      const address = coarseAddress;
       const now = new Date().toISOString();
       const encAddress = await encryptLocationText(memberId, familyId, address);
       const encNeighborhood = await encryptLocationText(memberId, familyId, neighborhood);

@@ -406,22 +406,25 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     }
     lastFix = { lat, lng };
 
-    // Street name only, never the house number — this used to be gated
-    // behind a per-member "share exact address" toggle, removed after
-    // repeated failed patches left the toggle stuck/unreliable; the app
-    // now always shows street-name-only, the toggle's previous default.
+    // Always the full exact address, house number included — the old
+    // per-member "share exact address" toggle was removed after repeated
+    // failed patches left it stuck/unreliable [live-requested: "i want
+    // that ... make that default"], so every member's location now always
+    // shows the complete address, no toggle/opt-out.
     let street: string | null = null;
-    let coarseAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    let neighborhood = coarseAddress;
+    let address = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    let neighborhood = address;
     try {
       const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (geo) {
         street = geo.street ?? geo.name ?? null;
-        coarseAddress = [street, geo.city].filter(Boolean).join(', ') || coarseAddress;
-        neighborhood = geo.district ?? geo.city ?? geo.region ?? coarseAddress;
+        address = [
+          [geo.streetNumber, street].filter(Boolean).join(' ') || street,
+          geo.city,
+        ].filter(Boolean).join(', ') || address;
+        neighborhood = geo.district ?? geo.city ?? geo.region ?? address;
       }
     } catch { /* reverse geocode is best-effort — raw coords are still useful */ }
-    const address = coarseAddress;
 
     // Battery is only ever read here — inside a real, movement-triggered
     // update — never on a bare timer tick, per "if they're idle don't pull it".

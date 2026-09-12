@@ -288,21 +288,23 @@ export function Wordmark({ fontSize = 38, dark = false }: { fontSize?: number; d
               fill={BRAND.purple}
             />
           </Svg>
-          <Text style={{ fontSize, fontWeight: '800', color: familyColor, letterSpacing: -0.5 }}>
-            Family{' '}
+          {/* Was: the entire word "Family" one solid color, "Cube" another
+              solid color — this call site never actually matched the
+              splash screen's own wordmark (FamilyCubeSplashScreen.tsx's
+              SplashWordmark), which only colors the LEADING "F"/"C" and
+              leaves the rest of each word in the plain ink color
+              [live-reported, after the previous same-color-per-word fix:
+              "F is one color and C is should be another color" — i.e.
+              match the splash exactly, letter-by-letter, not word-by-word].
+              Mirrors SplashWordmark's exact styling now. */}
+          <Text style={{ fontSize, fontWeight: '800', letterSpacing: -0.5 }}>
+            <Text style={{ color: BRAND.purple }}>F</Text>
+            <Text style={{ color: familyColor }}>amily{' '}</Text>
           </Text>
         </View>
-        {/* "Cube" used to render each letter in a different BRAND color
-            (teal/amber/pink/purple) — inconsistent with the splash
-            screen's single-color mark and every other brand-name call
-            site [live-reported: "match to splash branding name" / "I see
-            cube letter has many colors" — the same complaint an earlier
-            fix already addressed for the cube ICON's top face
-            (FamilyCubeLoader.tsx), but this text wordmark was missed].
-            One consistent color now, matching the app's primary brand
-            hue. */}
-        <Text style={{ fontSize, fontWeight: '800', letterSpacing: -0.5, color: BRAND.purple }}>
-          Cube
+        <Text style={{ fontSize, fontWeight: '800', letterSpacing: -0.5 }}>
+          <Text style={{ color: BRAND.teal }}>C</Text>
+          <Text style={{ color: familyColor }}>ube</Text>
         </Text>
       </View>
     </View>

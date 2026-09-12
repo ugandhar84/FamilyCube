@@ -38,6 +38,58 @@ const json = (body: unknown, status = 200) =>
 const POOL_URGENT_WINDOW_MIN = 30;
 const CHECKIN_WINDOW_MIN = 15;
 
+// date/start_time are local wall-clock values with no offset of their own
+// — calendar_events.timezone exists and is populated client-side
+// (store/eventStore.ts) but was never read here, so "today" and the
+// due-instant comparison both implicitly assumed UTC [live-requested:
+// "all nudge notifications should go in user's time zone"]. Same fix
+// pattern as chore-deadline-notifier/call-reminder-sweeper's own
+// localWallClockToUTC — copied rather than shared (each Deno edge
+// function deploys its own bundle).
+function to24Hour(raw: string): string | null {
+  const clean = raw.trim().toUpperCase();
+  const ampm = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const min = ampm[2];
+    if (ampm[3] === 'PM' && h !== 12) h += 12;
+    if (ampm[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  const plain = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
+  return null;
+}
+
+function localWallClockToUTC(wallClock: string, timeZone: string): Date {
+  const naiveUTC = new Date(`${wallClock}Z`);
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(naiveUTC);
+    const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00';
+    const asIfLocal = Date.UTC(
+      Number(get('year')), Number(get('month')) - 1, Number(get('day')),
+      Number(get('hour')), Number(get('minute')), Number(get('second')),
+    );
+    const offsetMs = asIfLocal - naiveUTC.getTime();
+    return new Date(naiveUTC.getTime() - offsetMs);
+  } catch {
+    return naiveUTC;
+  }
+}
+
+function localDateStr(timeZone: string, when = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone }).format(when);
+  } catch {
+    return when.toISOString().split('T')[0];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -50,7 +102,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const today = new Date().toISOString().split('T')[0];
+    // Widened to yesterday..tomorrow (UTC) as a safe superset for the SQL
+    // filter — a family behind/ahead of UTC can have a "local today" that
+    // falls on a different UTC calendar date. The real per-row check
+    // happens below via calendar_events.timezone.
+    const yesterdayUTC = new Date(Date.now() - 24 * 3600_000).toISOString().split('T')[0];
+    const tomorrowUTC = new Date(Date.now() + 24 * 3600_000).toISOString().split('T')[0];
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
     const notifierHeaders = {
       'Content-Type': 'application/json',
@@ -62,8 +119,9 @@ serve(async (req) => {
     // philosophy for what counts as needing attention soon.
     let query = supabase
       .from('calendar_events')
-      .select('id, title, family_id, date, start_time, driver_id, driver_status, helper_id, helper_status, is_open_to_grandparents, is_open_to_teens, ride_pool_urgent_notified_at, ride_checkin_notified_at, pickup_confirmed_at, ride_required')
-      .eq('date', today)
+      .select('id, title, family_id, date, start_time, timezone, driver_id, driver_status, helper_id, helper_status, is_open_to_grandparents, is_open_to_teens, ride_pool_urgent_notified_at, ride_checkin_notified_at, pickup_confirmed_at, ride_required')
+      .gte('date', yesterdayUTC)
+      .lte('date', tomorrowUTC)
       .eq('ride_required', true)
       .is('deleted_at', null)
       .not('start_time', 'is', null);
@@ -74,8 +132,11 @@ serve(async (req) => {
     const familyIds = [...new Set((events ?? []).map((e: any) => e.family_id).filter(Boolean))];
     const { data: members } = await supabase
       .from('members')
-      .select('id, name, role, family_id, expo_push_token')
+      .select('id, name, role, family_id, expo_push_token, timezone')
       .in('family_id', familyIds.length ? familyIds : ['__none__']);
+
+    const memberMap: Record<string, any> = {};
+    for (const m of (members ?? [])) memberMap[m.id] = m;
 
     const allMemberIds = (members ?? []).map((m: any) => m.id);
     const { data: deviceTokenRows } = await supabase
@@ -120,7 +181,16 @@ serve(async (req) => {
     let checkinFired = 0;
 
     for (const e of (events ?? [])) {
-      const dueAt = new Date(`${e.date}T${e.start_time}`);
+      const assigneeId = e.driver_id ?? e.helper_id;
+      const assignee = assigneeId ? memberMap[assigneeId] : null;
+      const tz = e.timezone || assignee?.timezone || 'UTC';
+      const time24 = e.start_time ? to24Hour(e.start_time) : null;
+      const dueAt = time24
+        ? localWallClockToUTC(`${e.date}T${time24}:00`, tz)
+        : localWallClockToUTC(`${e.date}T23:59:59`, tz);
+      // Only process rides whose local date is actually today in their own
+      // zone — the SQL filter above only fetched a safe UTC-based superset.
+      if (localDateStr(tz) !== e.date) continue;
       const minutesUntilDue = (dueAt.getTime() - now) / 60_000;
       if (minutesUntilDue < 0) continue; // already past — chore-deadline-notifier's own overdue handling has no ride analogue asked for here
       const parentTokens = parentTokensByFamily[e.family_id] ?? [];
@@ -148,7 +218,6 @@ serve(async (req) => {
       // ── Claimed and confirmed, time is close, nobody's checked in yet ───
       if (hasAssignee && assigneeStatus === 'confirmed' && !e.pickup_confirmed_at && !e.ride_checkin_notified_at) {
         if (minutesUntilDue <= CHECKIN_WINDOW_MIN) {
-          const assigneeId = e.driver_id ?? e.helper_id;
           await fire('ride_still_on', tokensForMember(assigneeId), e.family_id, { eventTitle: e.title, eventId: e.id, minutesUntilDue: Math.round(minutesUntilDue) });
           checkinFired++;
           if (!dryRun) {

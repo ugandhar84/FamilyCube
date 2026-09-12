@@ -84,6 +84,68 @@ const POOL_URGENT_WINDOW_MIN = 30;
 const ORIGINATION_APPROVAL_WINDOW_HOURS = 24;
 const ORIGINATION_APPROVAL_NUDGE_HOURS = 15;
 
+// due_date/due_time are local wall-clock values with no offset of their
+// own — chore_tasks.timezone exists and is populated client-side
+// (store/choreStore.ts) but was never read here, so every comparison
+// below used to implicitly assume UTC (`new Date().toISOString()` for
+// "today", and naive `new Date(due_date+"T"+due_time)` parsing) — wrong
+// for any family not literally in UTC [live-reported: "why UTC why not
+// user's time zone"]. Same fix pattern as call-reminder-sweeper's own
+// localWallClockToUTC, copied here rather than shared across functions
+// (Deno edge functions each deploy their own bundle, no shared runtime).
+function localWallClockToUTC(wallClock: string, timeZone: string): Date {
+  const naiveUTC = new Date(`${wallClock}Z`); // parsed as if UTC, i.e. same digits
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(naiveUTC);
+    const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00';
+    const asIfLocal = Date.UTC(
+      Number(get('year')), Number(get('month')) - 1, Number(get('day')),
+      Number(get('hour')), Number(get('minute')), Number(get('second')),
+    );
+    const offsetMs = asIfLocal - naiveUTC.getTime();
+    return new Date(naiveUTC.getTime() - offsetMs);
+  } catch {
+    // Unknown/invalid IANA zone name — fall back to treating it as UTC
+    // rather than throwing and skipping the chore entirely.
+    return naiveUTC;
+  }
+}
+
+// due_time may be a 12-hour display string ("6:00 PM", what fmtTimeLabel in
+// the quest forms writes) or a plain 24-hour "HH:MM" — normalize to 24-hour
+// before building a wall-clock string, same helper call-reminder-sweeper
+// already needed for the same reason.
+function to24Hour(raw: string): string | null {
+  const clean = raw.trim().toUpperCase();
+  const ampm = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const min = ampm[2];
+    if (ampm[3] === 'PM' && h !== 12) h += 12;
+    if (ampm[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  const plain = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
+  return null;
+}
+
+// "Today" in a given IANA zone, as a 'YYYY-MM-DD' string — used per-chore
+// below (each chore may be in a different family/zone), via
+// Intl's en-CA locale which formats dates as YYYY-MM-DD natively.
+function localDateStr(timeZone: string, when = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone }).format(when);
+  } catch {
+    return when.toISOString().split('T')[0];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -96,7 +158,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const today = new Date().toISOString().split('T')[0];
+    // Widened to "tomorrow" (UTC) as a safe superset for the SQL filter —
+    // a family far ahead of UTC (e.g. UTC+13) can have a due_date of
+    // tomorrow that's already "today" or even overdue in their own zone.
+    // The real, timezone-correct comparison happens per-row in the loop
+    // below via chore_tasks.timezone; this just avoids fetching the
+    // entire table.
+    const tomorrowUTC = new Date(Date.now() + 24 * 3600_000).toISOString().split('T')[0];
     const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
     const notifierHeaders = {
       'Content-Type': 'application/json',
@@ -106,9 +174,9 @@ serve(async (req) => {
     // ── Fetch chores that need attention ──────────────────────────────────
     let choreQuery = supabase
       .from('chore_tasks')
-      .select('id, title, base_points, coins_reward, status, due_date, due_time, assigned_to_id, claimed_at, is_pool, family_id, invite_grandparents, is_open_to_teens, pool_urgent_notified_at')
+      .select('id, title, base_points, coins_reward, status, due_date, due_time, timezone, assigned_to_id, claimed_at, is_pool, family_id, invite_grandparents, is_open_to_teens, pool_urgent_notified_at')
       .in('status', ['todo', 'in_progress'])
-      .lte('due_date', today)
+      .lte('due_date', tomorrowUTC)
       .not('due_date', 'is', null);
 
     if (familyId) choreQuery = choreQuery.eq('family_id', familyId);
@@ -134,7 +202,7 @@ serve(async (req) => {
     ].filter(Boolean))];
     const { data: members } = await supabase
       .from('members')
-      .select('id, name, role, family_id, expo_push_token')
+      .select('id, name, role, family_id, expo_push_token, timezone')
       .in('family_id', familyIds.length ? familyIds : ['__none__']);
 
     const memberMap: Record<string, any> = {};
@@ -210,9 +278,21 @@ serve(async (req) => {
 
     for (const c of (chores ?? [])) {
       const assignee = c.assigned_to_id ? memberMap[c.assigned_to_id] : null;
-      const dueAt = c.due_time ? new Date(`${c.due_date}T${c.due_time}`) : new Date(`${c.due_date}T23:59:59`);
+      // Fallback chain matches med-reminders'/ask-cube's own convention:
+      // the chore's own stamped zone, else the assignee's member-level
+      // zone, else UTC as a last resort (never crashes, worst case treats
+      // an unknown zone as UTC same as before this fix).
+      const tz = c.timezone || assignee?.timezone || 'UTC';
+      const time24 = c.due_time ? to24Hour(c.due_time) : null;
+      const dueAt = time24
+        ? localWallClockToUTC(`${c.due_date}T${time24}:00`, tz)
+        : localWallClockToUTC(`${c.due_date}T23:59:59`, tz);
       const minutesUntilDue = (dueAt.getTime() - now) / 60_000;
       const daysOverdue = Math.max(0, Math.floor((now - dueAt.getTime()) / 86_400_000));
+      // Skip chores whose local due_date is still in the future in their
+      // OWN zone — the SQL filter above only fetched a safe UTC-based
+      // superset, this is the real per-row cutoff.
+      if (localDateStr(tz) < c.due_date) continue;
       const parentTokens = parentTokensByFamily[c.family_id] ?? [];
       const kidTokens = tokensForMember(c.assigned_to_id);
 

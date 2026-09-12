@@ -726,11 +726,16 @@ export function ChoreReviewSection({
   // reward requests, GP offers, kid-proposed chores, redo disputes, later
   // requests, dispute badges, bounty claims) all folded into one number —
   // inflated far past what a parent would call "pending" [live-requested:
-  // "only count pending waiting for review" / "todo and pending count"].
-  // Badge now only counts chores actually not-yet-done (todo) or already
-  // submitted and awaiting review (pending_approval).
-  const todoCount = chores.filter(c => c.status === 'todo').length;
-  const badgeCount = todoCount + pendingReviewsCount;
+  // "only count pending waiting for review"]. A follow-up attempt also
+  // added a `todoCount` (chores the KID hasn't done yet, status='todo')
+  // into this same badge — but this section is specifically "Chore
+  // Reviews," a submitted-work review queue; a chore still sitting at
+  // 'todo' has nothing for a PARENT to review yet, so counting it here
+  // inflated "1 Pending" with chores that were simply not done, not
+  // actually awaiting a decision [live-reported: "why is it coming as
+  // pending for parent as the chore pending on the kid"]. Badge is just
+  // pendingReviewsCount — genuinely submitted work awaiting review.
+  const badgeCount = pendingReviewsCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only

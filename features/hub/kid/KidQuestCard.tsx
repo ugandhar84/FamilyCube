@@ -8,6 +8,7 @@ import { fmtDateTime, fmtDateShort, parseLocalDate } from '@/lib/dates';
 import { KID } from './kidTheme';
 import { CollapsibleCard, QuestLiveness } from '../hubComponents';
 import { BonusCoinBadge } from './BonusCoinBadge';
+import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
@@ -113,7 +114,20 @@ export function KidQuestCard({
               <Text style={{ fontSize: KID.tiny }}>🪙</Text>
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.amber }}>{q.coins}</Text>
             </View>
-            {q.bonusCoins > 0 && <BonusCoinBadge bonusCoins={q.bonusCoins} />}
+            {/* Was: always the plain, no-countdown BonusCoinBadge — but
+                chore bonuses DO carry a real fixed 24h expiry
+                (bonusExpiresAt, choreStore.ts:2028/1654), the same field
+                the Quests tab's FlashBonusBadge already renders a live
+                countdown for. The Hub card silently dropped that
+                information [live-reported: "where is the 24h bonus timer
+                countdown?"] — show the same countdown badge here whenever
+                an expiry actually exists, falling back to the plain pill
+                only for a bonus with none. */}
+            {q.bonusCoins > 0 && (
+              q.bonusExpiresAt
+                ? <FlashBonusBadge bonusCoins={q.bonusCoins} expiresAt={q.bonusExpiresAt} />
+                : <BonusCoinBadge bonusCoins={q.bonusCoins} />
+            )}
             <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <meta.Icon size={11} color={meta.color} />
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: meta.color }}>{meta.label}</Text>

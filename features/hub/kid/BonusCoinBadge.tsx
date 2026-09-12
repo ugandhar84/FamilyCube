@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import { View, Text, Animated } from 'react-native';
 
 // A gentle, continuous pulse/glow on the bonus pill — draws the eye to it
-// on the kid's quest card without a countdown (plain bonusCoins has no
-// expiry, unlike the Quests tab's time-limited Flash Bonus/FlashBonusBadge).
+// on the kid's quest card without a countdown. Only used when a bonus has
+// no bonusExpiresAt at all; a bonus WITH a real expiry uses
+// FlashBonusBadge instead (see KidQuestCard.tsx), same countdown the
+// Quests tab already shows for the identical field.
 export function BonusCoinBadge({ bonusCoins }: { bonusCoins: number }) {
   const scale = useRef(new Animated.Value(1)).current;
   const glow  = useRef(new Animated.Value(0.5)).current;

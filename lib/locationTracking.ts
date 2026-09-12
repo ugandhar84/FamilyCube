@@ -406,36 +406,22 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     }
     lastFix = { lat, lng };
 
-    // Crisp street-level address — geo.street is the primary "which street"
-    // signal; name/city fill in when street is unavailable (e.g. rural).
-    // Precise (house number included) is only used when the member has
-    // opted into share_exact_address — otherwise we fall back to the
-    // street-name-only coarse version, same privacy default as the manual
-    // refresh path in GpsTab.tsx.
+    // Street name only, never the house number — this used to be gated
+    // behind a per-member "share exact address" toggle, removed after
+    // repeated failed patches left the toggle stuck/unreliable; the app
+    // now always shows street-name-only, the toggle's previous default.
     let street: string | null = null;
     let coarseAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    let preciseAddress = coarseAddress;
     let neighborhood = coarseAddress;
     try {
       const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (geo) {
         street = geo.street ?? geo.name ?? null;
         coarseAddress = [street, geo.city].filter(Boolean).join(', ') || coarseAddress;
-        preciseAddress = [
-          [geo.streetNumber, street].filter(Boolean).join(' ') || street,
-          geo.city,
-        ].filter(Boolean).join(', ') || coarseAddress;
         neighborhood = geo.district ?? geo.city ?? geo.region ?? coarseAddress;
       }
     } catch { /* reverse geocode is best-effort — raw coords are still useful */ }
-
-    let shareExact = false;
-    try {
-      const { data: pref } = await supabase.from('member_locations')
-        .select('share_exact_address').eq('member_id', activeMemberId).maybeSingle();
-      shareExact = pref?.share_exact_address ?? false;
-    } catch { /* default to coarse on lookup failure */ }
-    const address = shareExact ? preciseAddress : coarseAddress;
+    const address = coarseAddress;
 
     // Battery is only ever read here — inside a real, movement-triggered
     // update — never on a bare timer tick, per "if they're idle don't pull it".
@@ -495,17 +481,6 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // it is on reinstall reset to false in UI" — same root cause, a race
       // rather than only the reinstall path this column was first added for).
       share_location_enabled: true,
-      // Was omitted entirely — the exact same INSERT-branch-default-false
-      // race as share_location_enabled above, just never fixed for this
-      // column. shareExact is already read fresh from the DB right above
-      // (to decide which address string to use THIS update), so passing
-      // it straight back through here costs nothing extra and closes the
-      // gap where this task's own first-ever write for a member could
-      // silently reset "share exact address" back to off (live-reported:
-      // "share exact address is not sticking, persistent every relaunch,
-      // going off" — the toggle's own write in GpsTab.tsx was correct;
-      // this background task's write was the one silently clobbering it).
-      share_exact_address: shareExact,
     }, { onConflict: 'member_id' }));
     if (upsertErr) {
       console.error('[locationTracking] member_locations upsert failed:', upsertErr.message);

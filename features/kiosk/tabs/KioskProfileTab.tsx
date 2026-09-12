@@ -16,7 +16,7 @@
  * '/admin', etc.) are real routes and still work unmodified from inside
  * kiosk since those DO push onto the stack.
  */
-import { Bell, DollarSign, Home, FileText, User, KeyRound, Calendar } from 'lucide-react-native';
+import { Bell, DollarSign, Home, FileText, User, KeyRound, Calendar, UserPlus } from 'lucide-react-native';
 import ProfileSettingsScreen from '@/features/profile/ProfileSettingsScreen';
 import { KioskFormDrawer } from '../components/KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
@@ -161,6 +161,20 @@ export function KioskProfileTab() {
           subtitle="Connect work and personal calendars"
           accent={k.primary}
           Icon={Calendar}
+          k={k}
+          onClose={onClose}
+        >
+          {children}
+        </KioskFormDrawer>
+      )}
+      inviteShell={(visible, onClose, children) => (
+        <KioskFormDrawer
+          visible={visible}
+          variant="drawer"
+          title="Invite Family Member"
+          subtitle="Add their details, then share the code they'll use to join"
+          accent={k.primary}
+          Icon={UserPlus}
           k={k}
           onClose={onClose}
         >

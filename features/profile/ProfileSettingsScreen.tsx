@@ -580,10 +580,16 @@ const INVITE_ROLES: { value: MemberRole; label: string; emoji: string }[] = [
 ];
 
 function InviteMemberSheet({
-  visible, onClose, familyId, callerMemberId, members, colors, isDark,
+  visible, onClose, familyId, callerMemberId, members, colors, isDark, renderShell,
 }: {
   visible: boolean; onClose: () => void; familyId: string; callerMemberId: string;
   members: FamilyMember[]; colors: any; isDark: boolean;
+  // Same renderShell extraction pattern as CurrencySheet/FamilyNameSheet
+  // above — lets a kiosk caller swap the phone AppBottomSheet for a
+  // KioskFormDrawer side panel [live-requested: "invite family also
+  // should be side form" — the same phone-shell-on-kiosk gap the School
+  // Schedule form had before its own fix this session].
+  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 }) {
   const addPendingMember = useFamilyStore(s => s.addPendingMember);
   const [name, setName] = useState('');
@@ -732,9 +738,8 @@ function InviteMemberSheet({
     } catch { return '--'; }
   };
 
-  return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Invite Family Member"
-      subtitle="Add their details, then share the code they'll use to join" minHeight="65%" maxHeight="92%">
+  const body = (
+    <>
 
       <SectionHeader label="Add Someone New" colors={colors} />
       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Name</Text>
@@ -987,6 +992,13 @@ function InviteMemberSheet({
           ))}
         </View>
       )}
+    </>
+  );
+  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Invite Family Member"
+      subtitle="Add their details, then share the code they'll use to join" minHeight="65%" maxHeight="92%">
+      {body}
     </AppBottomSheet>
   );
 }
@@ -1319,7 +1331,7 @@ function TypeToConfirmRow({
   );
 }
 
-export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, calendarSyncShell }: {
+export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, calendarSyncShell, inviteShell }: {
   hideBackButton?: boolean; hideSensitiveAdminRows?: boolean;
   // Kiosk-only: the identity card (avatar/name/role, tappable to edit) is
   // redundant there — the same identity already sits in kiosk's own
@@ -1389,6 +1401,12 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // side bar recipe"]. Mobile never passes this, so its real pushed route
   // (app/profile-settings/calendar-sync.tsx) is completely unchanged.
   calendarSyncShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
+  // Kiosk-only: same renderShell swap as currencyShell/familyNameShell, for
+  // the Invite Family Member sheet [live-requested: "invite family also
+  // should be side firm"] — mirrors the earlier School Schedule modal fix
+  // this session (KioskSchoolScheduleModal converting to KioskFormDrawer).
+  // Mobile never passes this, so its own AppBottomSheet is unchanged.
+  inviteShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 } = {}) {
   const { colors, isDark, mode, setMode } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
@@ -1908,7 +1926,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         {isParent && familyId && (
           <InviteMemberSheet visible={showInviteSheet} onClose={() => setShowInviteSheet(false)}
             familyId={familyId} callerMemberId={activeMember.id} members={allMembers}
-            colors={colors} isDark={isDark} />
+            colors={colors} isDark={isDark} renderShell={inviteShell} />
         )}
 
         {/* Kiosk-only: from here down, every section is an independent

@@ -24,21 +24,35 @@ import {
 import { ensureDeviceRegistered, getUniqueWrapTargets } from './deviceRegistry';
 import { isFeatureEnabled } from './featureFlags';
 
-// Devices this session has already confirmed are wrapped for — avoids
-// re-checking/re-wrapping on every single location update (only actually
-// needs to happen once per app session per member, or when a new device
-// joins, which a future session will naturally re-run this for).
-const _locationKeyEnsured = new Set<string>();
-
 /**
  * Makes sure `memberId`'s location session key exists on this device and
  * is wrapped for every currently-registered family device. Cheap to call
- * on every location update (no-ops after the first successful run this
- * session) — the actual wrap-for-every-device work only happens once.
+ * on every location update — always re-checks member_location_keys against
+ * the family's CURRENT device directory (see the removed-cache comment
+ * below), so a newly-registered device is always caught, not just on the
+ * first call this app process ever made for this member.
  */
 async function ensureLocationKeyWrapped(familyId: string, memberId: string): Promise<Uint8Array | null> {
   const sessionKey = await getOrCreateLocationSessionKey(memberId);
-  if (_locationKeyEnsured.has(memberId)) return sessionKey;
+  // Was: `if (_locationKeyEnsured.has(memberId)) return sessionKey;` here —
+  // a process-lifetime cache keyed only by memberId, with no awareness of
+  // the family's device SET. A shared/PIN-switching device registering a
+  // NEW device_id (reinstall, or a family member's first switch-in on it)
+  // WHILE this app process stays alive (no full relaunch — normal for a
+  // background/foreground cycle) left every OTHER already-"ensured" member
+  // permanently skipping this whole function forever after, even though
+  // the DB-authoritative check below (existingDeviceIds/missing) exists
+  // specifically to catch exactly this — it just never got to run
+  // [live-reported: shared-device family, some members' location stuck on
+  // "[🔒 encrypted — wrong key or corrupted]" for other viewers, confirmed
+  // via direct DB query: member_location_keys had wraps for every
+  // long-lived device but was missing the family's newest device_id
+  // entirely, for members who had genuinely switched into that device
+  // since]. Removed — this function is already documented "cheap to call
+  // on every location update," so always re-checking is by design, not a
+  // performance regression; the one-time cost that check skipped was
+  // meant to only ever be the extra ensureDeviceRegistered/getUniqueWrapTargets
+  // round trip, not skipping detection of a genuinely new missing device.
   try {
     await ensureDeviceRegistered(familyId, memberId);
     // getUniqueWrapTargets collapses the raw per-profile device directory to
@@ -52,33 +66,25 @@ async function ensureLocationKeyWrapped(familyId: string, memberId: string): Pro
     // shared across more than one member profile).
     const directory = await getUniqueWrapTargets(familyId);
     if (directory.length === 0) return sessionKey;
-    // The in-memory _locationKeyEnsured flag only proves a wrap succeeded
-    // at some point THIS app process — it has no way to know the server
-    // row was later deleted out from under it (e.g. a data reset, or the
-    // family's device set changing after this device already marked
-    // itself done). Checking which of the CURRENT directory's devices
-    // already have a row is cheap and makes this authoritative against
-    // the DB instead of a same-process assumption — live-reported: after
-    // wiping member_location_keys for a clean re-test, a device that had
-    // already run this once kept silently skipping the re-wrap on every
-    // subsequent write, so the table stayed empty forever despite fresh
-    // ciphertext appearing (encryptWithSessionKey doesn't need the
-    // directory, only the wrap-and-upsert step below does, and that step
-    // was the one being skipped).
+    // Checking which of the CURRENT directory's devices already have a row
+    // is cheap and makes this authoritative against the DB every single
+    // call, rather than trusting any same-process assumption — a device
+    // set can change (new device registered, family reset) between two
+    // calls in the same app session just as easily as between two
+    // different sessions.
     const { data: existingRows } = await supabase
       .from('member_location_keys')
       .select('device_id')
       .eq('member_id', memberId);
     const existingDeviceIds = new Set((existingRows ?? []).map(r => r.device_id));
     const missing = directory.filter(d => !existingDeviceIds.has(d.deviceId));
-    if (missing.length === 0) { _locationKeyEnsured.add(memberId); return sessionKey; }
+    if (missing.length === 0) return sessionKey;
     const wrapped = await wrapLocationKeyForDevices(sessionKey, missing, familyId);
     const { error } = await supabase.from('member_location_keys').upsert(
       wrapped.map(w => ({ member_id: memberId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
       { onConflict: 'member_id,device_id' },
     );
     if (error) { console.warn('[locationCrypto] ensureLocationKeyWrapped upsert failed', error.message); return sessionKey; }
-    _locationKeyEnsured.add(memberId);
   } catch (e: any) {
     console.warn('[locationCrypto] ensureLocationKeyWrapped failed', e?.message ?? e);
   }
@@ -88,8 +94,9 @@ async function ensureLocationKeyWrapped(familyId: string, memberId: string): Pro
 /**
  * Encrypts one piece of location text (address/street/neighborhood) for
  * `memberId`'s location row. Call for every location update — cheap even
- * though it internally calls ensureLocationKeyWrapped, since that no-ops
- * after the first successful run this session.
+ * though it internally calls ensureLocationKeyWrapped, since that's a
+ * single indexed select plus (usually) zero writes once the device
+ * directory is already fully wrapped.
  */
 export async function encryptLocationText(memberId: string, familyId: string | null | undefined, plaintext: string): Promise<string> {
   if (!isFeatureEnabled('per_device_e2e') || !familyId) return encryptMessage(plaintext);
@@ -122,8 +129,8 @@ export async function encryptLocationText(memberId: string, familyId: string | n
  *
  * This forces that check NOW, independent of any real GPS fix — safe to
  * call on every app foreground for whichever member this device is
- * actively tracking (ensureLocationKeyWrapped's own in-memory cache keeps
- * it a no-op after the first success, same as the write path).
+ * actively tracking (ensureLocationKeyWrapped always re-checks the DB
+ * directly, so this stays cheap and correct even called repeatedly).
  */
 export async function forceRecheckLocationKeyWrap(familyId: string | null | undefined, memberId: string | null | undefined): Promise<void> {
   if (!isFeatureEnabled('per_device_e2e') || !familyId || !memberId) return;

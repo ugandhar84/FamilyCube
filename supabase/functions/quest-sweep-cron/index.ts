@@ -47,7 +47,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const today = new Date().toISOString().split('T')[0];
     const baseUrl = Deno.env.get('SUPABASE_URL')!;
     const authHeader = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` };
 
@@ -78,13 +77,18 @@ serve(async (req) => {
       byFamily[chore.family_id].push(chore);
     }
 
-    for (const [fId, fChores] of Object.entries(byFamily)) {
-      // ── 2. Deadline / ghost sweep per family ─────────────────────────────
-      const hasIssues = fChores.some(c => c.due_date && c.due_date <= today);
-      if (hasIssues) {
-        await call('chore-deadline-notifier', { familyId: fId, dryRun });
-        report.deadlineSwept++;
-      }
+    // Was gated on `c.due_date <= today` with `today` computed from UTC —
+    // same bug class already fixed in chore-deadline-notifier/
+    // ride-deadline-notifier: a family ahead of UTC could have a chore due
+    // "today" in their own zone that this UTC-based comparison hadn't
+    // rolled over to yet, silently skipping the family's sweep entirely
+    // for that whole window. chore-deadline-notifier itself is already
+    // timezone-correct per-row and cheap/no-op when nothing is actually
+    // due — just delegate to it for every family with any open chore,
+    // rather than trying to duplicate its own due-date logic here.
+    for (const fId of Object.keys(byFamily)) {
+      await call('chore-deadline-notifier', { familyId: fId, dryRun });
+      report.deadlineSwept++;
     }
 
     console.log('[quest-sweep-cron]', JSON.stringify(report));

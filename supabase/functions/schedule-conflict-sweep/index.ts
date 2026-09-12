@@ -37,6 +37,22 @@ function minutesBetween(a: string, b: string): number {
   return Math.abs((ah * 60 + am) - (bh * 60 + bm));
 }
 
+// "Today" in a given IANA zone, as 'YYYY-MM-DD' — calendar_events.date is a
+// local wall-clock value tied to calendar_events.timezone (populated
+// client-side, store/eventStore.ts), but this sweep used to compare it
+// against `new Date().toISOString()`'s UTC date [same bug class already
+// fixed this session in chore-deadline-notifier/ride-deadline-notifier —
+// a family behind/ahead of UTC could have its "today" scan miss or
+// misdate real double-bookings]. Widen the query to a safe UTC superset,
+// then filter per-row against each event's own zone.
+function localDateStr(timeZone: string, when = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone }).format(when);
+  } catch {
+    return when.toISOString().split('T')[0];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -49,12 +65,16 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Safe UTC superset — a family far ahead/behind UTC can have a "local
+    // today" that falls on the UTC-adjacent date. Real per-row check below.
+    const yesterdayUTC = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
+    const tomorrowUTC = new Date(Date.now() + 24 * 3600_000).toISOString().slice(0, 10);
 
     let q = supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, category, family_id, helper_name, helper_status, driver_name, driver_status, conflict_acknowledged, conflict_notified_pair')
-      .eq('date', today)
+      .select('id, title, date, start_time, timezone, category, family_id, helper_name, helper_status, driver_name, driver_status, conflict_acknowledged, conflict_notified_pair')
+      .gte('date', yesterdayUTC)
+      .lte('date', tomorrowUTC)
       .not('start_time', 'is', null)
       .neq('category', 'Work')
       .eq('conflict_acknowledged', false)
@@ -66,7 +86,9 @@ serve(async (req) => {
     const events = (rows ?? []).filter(r => {
       const status = r.helper_name ? r.helper_status : r.driver_status;
       const name = r.helper_name ?? r.driver_name;
-      return !!name && status !== 'rejected';
+      if (!name || status === 'rejected') return false;
+      const tz = (r as any).timezone || 'UTC';
+      return localDateStr(tz) === r.date;
     });
 
     // Group candidate pairs the same way ParentView.tsx's O(n²) scan does

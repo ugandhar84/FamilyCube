@@ -1,7 +1,10 @@
 // FamilyCube — Edge Function: chore-deadline-notifier
 // Called on a schedule (or on-demand) to sweep chores and fire reminders.
-// Handles: due-today reminders, overdue warnings, claimed-but-silent
-// check-ins with auto-release, and ghosted-claim alerts to parents.
+// Handles: claimed-but-silent check-ins with auto-release, and
+// ghosted-claim alerts to parents. Per-chore "due today"/"overdue" pushes
+// for not-yet-claimed chores were removed [live-requested: "we don't need
+// detailed [and] individual reminders"] — see the todo/!is_pool branch
+// below.
 //
 // FIXED (QA master-flow audit): this function queried a table literally
 // named `quests`, which no client code anywhere in the app ever reads from
@@ -207,26 +210,20 @@ serve(async (req) => {
 
     for (const c of (chores ?? [])) {
       const assignee = c.assigned_to_id ? memberMap[c.assigned_to_id] : null;
-      const coins = c.base_points ?? c.coins_reward ?? 0;
       const dueAt = c.due_time ? new Date(`${c.due_date}T${c.due_time}`) : new Date(`${c.due_date}T23:59:59`);
       const minutesUntilDue = (dueAt.getTime() - now) / 60_000;
       const daysOverdue = Math.max(0, Math.floor((now - dueAt.getTime()) / 86_400_000));
-      const assigneeIsMinor = assignee?.role === 'child' || assignee?.role === 'teenager';
-      const isSameDayMiss = daysOverdue === 0 || c.due_date === today;
-      const shouldEscalateToParent = assigneeIsMinor && isSameDayMiss;
       const parentTokens = parentTokensByFamily[c.family_id] ?? [];
       const kidTokens = tokensForMember(c.assigned_to_id);
 
-      // ── status=todo, not pool, due today or overdue → remind the kid ────
+      // ── status=todo, not pool → no per-chore due/overdue push ───────────
+      // Was: fired a detailed "due today" / "overdue" reminder per
+      // individual chore, every 15-min cron tick [live-requested: "we
+      // don't need detailed [and] individual reminders"]. Removed
+      // entirely — no replacement summary push, per explicit scope. Pool
+      // urgency, check-in, auto-release, and ghosting alerts below are
+      // untouched.
       if (c.status === 'todo' && !c.is_pool) {
-        if (daysOverdue === 0 && minutesUntilDue >= 0) {
-          await fire('deadline_reminder', kidTokens, c.family_id, { questTitle: c.title, questId: c.id, coins });
-        } else if (daysOverdue > 0) {
-          await fire('deadline_overdue', kidTokens, c.family_id, { questTitle: c.title, questId: c.id, daysOverdue });
-          if (shouldEscalateToParent) {
-            await fire('deadline_overdue', parentTokens, c.family_id, { questTitle: c.title, questId: c.id, daysOverdue, kidName: assignee?.name ?? 'A kid' }, { soft: true });
-          }
-        }
         continue;
       }
 

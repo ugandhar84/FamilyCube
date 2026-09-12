@@ -30,7 +30,6 @@ interface MemberLocation {
   address: string;
   street?: string | null;
   neighborhood: string;
-  share_exact_address?: boolean;
   // Logged QA gap, fixed: turning "Share my location" off only stopped
   // future writes — it never cleared lat/lng, so a stale pin kept showing
   // on the map indefinitely, contradicting the toggle's own "your family
@@ -354,42 +353,6 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     }
   };
 
-  const shareExactAddress = locations.find(l => l.member_id === activeMemberId)?.share_exact_address ?? false;
-
-  const toggleExactAddress = async (value: boolean) => {
-    if (!activeMemberId) return;
-    setLocations(prev => prev.map(l => l.member_id === activeMemberId ? { ...l, share_exact_address: value } : l));
-    // Was: delegated entirely to refreshMyLocation(activeMemberId, value),
-    // which requires a granted foreground location permission AND a fresh
-    // GPS fix before it ever reaches the upsert that actually persists
-    // share_exact_address (Location.requestForegroundPermissionsAsync's
-    // own early `return` on a denied/not-yet-answered permission skips the
-    // write entirely) — a privacy PREFERENCE toggle shouldn't be gated on
-    // a real location fix succeeding at all [live-reported, repeatedly:
-    // "these 2 flags are staying persistent... are we correctly saving in
-    // the DB or not" — the optimistic local setLocations above always
-    // looked right, masking that the real write frequently never
-    // happened]. Write the flag directly and unconditionally first — this
-    // alone is what makes the preference durable regardless of GPS/
-    // permission state.
-    const { error } = await supabase.from('member_locations').upsert({
-      member_id: activeMemberId, family_id: familyId, share_exact_address: value,
-    }, { onConflict: 'member_id' });
-    if (error) {
-      console.error('[GpsTab] toggleExactAddress upsert failed:', error.message);
-      // Revert the optimistic UI update — the DB write is the one that
-      // didn't happen, so the switch showing "on" would be a lie.
-      setLocations(prev => prev.map(l => l.member_id === activeMemberId ? { ...l, share_exact_address: !value } : l));
-      return;
-    }
-    // Best-effort follow-up: if a real fix is already available/quick to
-    // get, also refresh the address text now so it reflects the new
-    // precision immediately rather than waiting for the next natural
-    // refresh — but this is no longer what persists the flag itself, so a
-    // permission denial or slow/failed fix here can't undo the toggle.
-    refreshMyLocation(activeMemberId, value).catch(() => {});
-  };
-
   const updateStatus = async (memberId: string, status: LocStatus) => {
     setUpdatingId(memberId);
     setOpenPicker(null);
@@ -433,7 +396,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // now instead of waiting for the next background-triggered update. Only
   // meaningful for the active member (we can't force someone else's phone
   // to report in), so this re-requests + upserts the local device position.
-  const refreshMyLocation = async (memberId: string, shareExactOverride?: boolean) => {
+  const refreshMyLocation = async (memberId: string) => {
     if (memberId !== activeMemberId) { load(); return; }
     setRefreshingId(memberId);
     try {
@@ -450,26 +413,21 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       // so a manual refresh silently left it stale/zero. GPS speed is
       // meters/sec; negative/null readings happen at low accuracy, clamp to 0.
       const speedMph = pos.coords.speed && pos.coords.speed > 0 ? Math.round(pos.coords.speed * 2.237) : 0;
+      // Street name only, never the house number — this used to be gated
+      // behind a per-member "share exact address" toggle, removed after
+      // repeated failed patches left the toggle stuck/unreliable; the app
+      // now always shows street-name-only, the toggle's previous default.
       let coarseAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      let preciseAddress = coarseAddress;
       let neighborhood = coarseAddress;
       try {
         const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
         if (geo) {
-          // streetNumber + street → the exact house/building. street alone
-          // (no number) is the privacy-safe fallback when the toggle is off.
           const streetName = geo.street ?? geo.name ?? null;
           coarseAddress = [streetName, geo.city].filter(Boolean).join(', ') || coarseAddress;
-          preciseAddress = [
-            [geo.streetNumber, streetName].filter(Boolean).join(' ') || streetName,
-            geo.city,
-          ].filter(Boolean).join(', ') || coarseAddress;
           neighborhood = geo.district ?? geo.city ?? geo.region ?? coarseAddress;
         }
       } catch { /* best-effort */ }
-      const loc0 = locations.find(l => l.member_id === memberId);
-      const shareExact = shareExactOverride ?? loc0?.share_exact_address ?? false;
-      const address = shareExact ? preciseAddress : coarseAddress;
+      const address = coarseAddress;
       const now = new Date().toISOString();
       const encAddress = await encryptLocationText(memberId, familyId, address);
       const encNeighborhood = await encryptLocationText(memberId, familyId, neighborhood);
@@ -480,10 +438,10 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       // not this refresh's actual reading. Read it fresh, same as the
       // background task does.
       const { level: batteryLevel, isCharging } = await readBatteryStatus();
-      console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, shareExact, batteryLevel, isCharging });
+      console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, batteryLevel, isCharging });
       const { error: upsertErr } = await supabase.from('member_locations').upsert({
         member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
-        neighborhood: encNeighborhood, share_exact_address: shareExact,
+        neighborhood: encNeighborhood,
         speed_mph: speedMph,
         ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
         ...(isCharging !== null ? { is_charging: isCharging } : {}),
@@ -842,26 +800,6 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             </Text>
           </View>
         )}
-
-        {/* Was only rendered while tracking===true, so a user with location
-            sharing off had no way to even discover this setting exists.
-            Always shown now, and always interactive — this is just a
-            preference for whenever sharing IS on, not something that
-            needs sharing on right now to set. */}
-        <View style={[g.exactToggleRow, { borderColor: colors.border }]}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
-              Share exact address
-            </Text>
-            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
-              {shareExactAddress
-                ? 'Family sees your exact street number, e.g. "412 Wimberley Dr"'
-                : 'Family sees street name only, e.g. "Wimberley Dr"'}
-            </Text>
-          </View>
-          <Switch value={shareExactAddress} onValueChange={toggleExactAddress}
-            trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />
-        </View>
 
         {/* A real, repeated background-write failure (RLS denial, bad
             payload — see lib/locationTracking.ts's recordLocationSyncError)

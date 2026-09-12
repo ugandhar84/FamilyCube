@@ -18,7 +18,7 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase, withSuppressedNetworkBanner } from './supabase';
+import { supabase, withSuppressedNetworkBanner, setActiveMemberIdHeaderOverride } from './supabase';
 import { encryptLocationText } from './locationCrypto';
 
 // Persisted fallback for activeMemberId/lastFamilyId below — was IN-MEMORY
@@ -367,6 +367,17 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       console.warn('[locationTracking] background task fired with no known active member (memory + storage both empty) — skipping write');
       return;
     }
+    // Real bug, found tracing "share exact address doesn't stick": this
+    // headless context's Supabase calls never carried an x-active-member-id
+    // header (lib/supabase.ts's own getActiveMemberIdHeader() reads
+    // useFamilyStore, which isn't hydrated here) — so the server-side RLS
+    // check `member_id = resolve_active_member_id()` fell through to an
+    // "arbitrary pick among the session's members" fallback, wrong for any
+    // multi-member family, and silently rejected every write this task
+    // ever made. Set the override to the member id THIS task already knows
+    // is correct (see this file's own header comment on why that's tracked
+    // separately from familyStore in the first place).
+    setActiveMemberIdHeaderOverride(activeMemberId);
     const { locations } = (data as { locations: Location.LocationObject[] }) ?? { locations: [] };
     const loc = locations?.[locations.length - 1];
     if (!loc) return;
@@ -522,6 +533,14 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);
       if (activeMemberId) await recordLocationSyncError(activeMemberId, 'callback', (e as Error)?.message ?? e);
+    } finally {
+      // Must always clear — this is a shared module-level override on the
+      // ONE Supabase client instance, and the foreground app can resume
+      // (or a foreground Supabase call can interleave) in the same JS
+      // context right after this task runs. Leaving it set would send the
+      // WRONG active-member header on the next foreground call, for
+      // whoever the person actually switches to.
+      setActiveMemberIdHeaderOverride(undefined);
     }
   });
   taskDefined = true;

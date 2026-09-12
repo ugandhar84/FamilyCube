@@ -55,7 +55,30 @@ function extractLabel(url: string): string {
 // migration 20260903170000_add_active_member_header_support.sql for the
 // server-side verification (the header is untrusted input: RLS must
 // confirm it actually belongs to auth.uid()'s family before trusting it).
+// Real bug, found tracing "share exact address doesn't stick": the
+// background location TaskManager task (lib/locationTracking.ts) runs in
+// a headless JS context that keeps its OWN member-id tracker (a plain
+// module variable, persisted separately to AsyncStorage — see that
+// file's own comment on why it can't just read useFamilyStore) — that
+// context frequently has no hydrated familyStore at all, so
+// getActiveMemberIdHeader() silently returned undefined for every one of
+// the background task's own Supabase calls. With no x-active-member-id
+// header, resolve_active_member_id() (server-side) falls through to its
+// documented "arbitrary pick among the session's members" fallback —
+// wrong for any multi-member family — so the background task's upsert
+// failed RLS's `member_id = resolve_active_member_id()` check and was
+// silently rejected, an entirely different failure than the two
+// (correctly fixed) INSERT-default-clobber races this same file already
+// documents. This override lets a background/headless caller that
+// already knows its own correct member id hand it over explicitly,
+// bypassing the store dependency instead of trying to hydrate it.
+let activeMemberIdOverride: string | undefined;
+export function setActiveMemberIdHeaderOverride(memberId: string | undefined) {
+  activeMemberIdOverride = memberId;
+}
+
 function getActiveMemberIdHeader(): string | undefined {
+  if (activeMemberIdOverride) return activeMemberIdOverride;
   try {
     const { useFamilyStore } = require('@/store/familyStore');
     return useFamilyStore.getState().activeMemberId ?? undefined;

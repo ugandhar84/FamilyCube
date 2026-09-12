@@ -29,6 +29,22 @@ function fmtDateDisplay(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// homeowner_notes.due_date has no per-row timezone column of its own —
+// same fallback convention already used by med-reminders/ask-cube:
+// resolve "today"/"a week from today" per family from a representative
+// member's members.timezone, falling back to UTC. Was: a single UTC
+// `today`/`weekOut` pair for every family, which could shift which day a
+// note reads as "due today"/"a week out" by one for any family not
+// literally in UTC [live-requested: "we must use the user's timezone if
+// required"].
+function localDateStr(timeZone: string, when = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone }).format(when);
+  } catch {
+    return when.toISOString().split('T')[0];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -38,15 +54,31 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const weekOutStr = new Date(Date.now() + 7 * 24 * 3600_000).toISOString().slice(0, 10);
+    // Widened to a safe UTC superset (±1 day beyond the naive today/weekOut
+    // window) — the real per-family match happens below using each
+    // family's own resolved timezone.
+    const todayUTC = new Date().toISOString().slice(0, 10);
+    const weekOutUTC = new Date(Date.now() + 7 * 24 * 3600_000).toISOString().slice(0, 10);
+    const dayBeforeToday = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
+    const dayAfterWeekOut = new Date(Date.now() + 8 * 24 * 3600_000).toISOString().slice(0, 10);
 
     const { data: notes, error } = await supabase
       .from('homeowner_notes')
       .select('id, family_id, title, due_date, week_before_notified_at, due_day_notified_at')
       .is('completed_at', null)
-      .in('due_date', [todayStr, weekOutStr]);
+      .in('due_date', [dayBeforeToday, todayUTC, weekOutUTC, dayAfterWeekOut]);
     if (error) throw new Error(`notes fetch failed: ${error.message}`);
+
+    const familyIds = [...new Set((notes ?? []).map(n => n.family_id).filter(Boolean))];
+    const { data: members } = await supabase
+      .from('members')
+      .select('family_id, timezone')
+      .in('family_id', familyIds.length ? familyIds : ['__none__'])
+      .not('timezone', 'is', null);
+    const tzByFamily: Record<string, string> = {};
+    for (const m of (members ?? []) as any[]) {
+      if (!tzByFamily[m.family_id]) tzByFamily[m.family_id] = m.timezone;
+    }
 
     let weekBeforeSent = 0;
     let dueDaySent = 0;
@@ -55,6 +87,9 @@ serve(async (req) => {
     for (const note of notes ?? []) {
       try {
         const now = new Date().toISOString();
+        const tz = tzByFamily[note.family_id] || 'UTC';
+        const todayStr = localDateStr(tz);
+        const weekOutStr = localDateStr(tz, new Date(Date.now() + 7 * 24 * 3600_000));
 
         if (note.due_date === weekOutStr && !note.week_before_notified_at) {
           const { error: notifyErr } = await supabase.functions.invoke('family-notifier', {

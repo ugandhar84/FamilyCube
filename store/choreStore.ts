@@ -2167,8 +2167,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // deleting a FamilyCube event deletes it from a connected calendar.
     if (deletedChore?.linkedEventId) {
       try {
+        // Was: plain deleteEvent(linkedEventId) — if that row happened to
+        // be a recurring series' ANCHOR (e.g. a repeating chore reminder),
+        // this deleted only the anchor with no promotion, silently
+        // orphaning every other occurrence: they'd keep showing on the
+        // calendar but the series would quietly stop generating new future
+        // rows once the rolling window ran out, with zero signal to
+        // anyone (same bug class deleteEventScoped's own 'this' branch
+        // exists to prevent). The chore itself is gone, so every
+        // occurrence of its reminder should go too — deleteEventScoped's
+        // 'all' scope already handles both "not part of a series" (falls
+        // back to a plain delete) and "part of a series" (deletes every
+        // occurrence) correctly, so use it unconditionally here instead.
         const { useEventStore } = require('./eventStore');
-        await useEventStore.getState().deleteEvent(deletedChore.linkedEventId);
+        await useEventStore.getState().deleteEventScoped(deletedChore.linkedEventId, 'all');
       } catch (e) {
         console.warn('[choreStore] deleteChore linked-event cleanup failed', e);
       }

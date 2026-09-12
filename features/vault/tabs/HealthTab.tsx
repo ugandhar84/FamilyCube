@@ -223,23 +223,23 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     const entry = encodeTakenEntry(todayStr, time);
     const existingDates = med.taken_dates ?? [];
     const wasTaken = existingDates.includes(entry);
-    const newDates = wasTaken
-      ? existingDates.filter(d => d !== entry)
-      : [...existingDates, entry];
-    const timesForMed = med.frequency_times?.length ? med.frequency_times : ['08:00'];
-    const allDosesTakenToday = timesForMed.every(t => newDates.includes(encodeTakenEntry(todayStr, timesForMed.length > 1 ? t : null)));
-    const newDate = allDosesTakenToday ? todayStr : null;
-    const { error } = await supabase.from('family_medications')
-      .update({
-        taken_date: newDate,
-        taken_dates: newDates,
-        modified_by: activeMember?.id ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', med.id);
-    if (!error) {
+    // Was: computed the new taken_dates array (and the derived taken_date)
+    // entirely client-side from `med`'s possibly-stale snapshot, then
+    // blindly overwrote the whole column — two people toggling different
+    // dose-times for the same medication near-simultaneously could have
+    // whichever write landed second silently clobber the first's entry.
+    // toggle_medication_dose does the append/remove atomically against the
+    // row's CURRENT state in one statement, so concurrent calls serialize
+    // instead of racing (same fix as useMedications.ts's own toggleMed).
+    const { data: newDates, error } = await supabase.rpc('toggle_medication_dose', {
+      p_med_id: med.id, p_entry: entry, p_mark_taken: !wasTaken,
+      p_today: todayStr, p_modified_by: activeMember?.id ?? null,
+    });
+    if (!error && newDates) {
+      const timesForMed = med.frequency_times?.length ? med.frequency_times : ['08:00'];
+      const allDosesTakenToday = timesForMed.every(t => (newDates as string[]).includes(encodeTakenEntry(todayStr, timesForMed.length > 1 ? t : null)));
       setMeds(prev => prev.map(m => m.id === med.id
-        ? { ...m, taken_date: newDate, taken_dates: newDates, modified_by: activeMember?.id ?? null }
+        ? { ...m, taken_date: allDosesTakenToday ? todayStr : null, taken_dates: newDates as string[], modified_by: activeMember?.id ?? null }
         : m));
       showToast(wasTaken ? 'Marked as not taken' : 'Marked as taken');
     }

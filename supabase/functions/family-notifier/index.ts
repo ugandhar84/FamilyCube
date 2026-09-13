@@ -609,11 +609,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Hearth', memberId: p.memberId },
       };
     case 'possible_crash':
-      // Framed as "possible," not confirmed — this is derived purely from
-      // speed data (a sudden drop after sustained highway speed), not a
-      // real accelerometer impact reading, so it genuinely can't be
-      // certain. See lib/locationTracking.ts's handleDrivingTrip comment
-      // for the full guardrail rationale.
+      // Framed as "possible," not confirmed — triggered by a real
+      // accelerometer G-force spike during a CoreMotion-confirmed drive
+      // (lib/locationTracking.ts's evaluateCrashSignal, fed by
+      // lib/motionTracking.ts), which is real impact data, not a proxy —
+      // but even a real G-force spike has known false-positive cases (a
+      // dropped phone, a large pothole), so this still can't claim
+      // certainty.
       return {
         title: `🚨 Possible accident detected for ${p.memberName}`,
         body: `${p.memberName} may have been in an accident — check on them`,

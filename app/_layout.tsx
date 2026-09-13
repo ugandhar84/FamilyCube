@@ -1102,6 +1102,23 @@ function RootNavigator() {
     if (familyId) setBackgroundLocationFamilyId(familyId);
   }, [activeMemberId]);
 
+  // Historical driving-activity reconciliation (lib/motionTracking.ts) —
+  // the fallback for whatever driving happened while this app was fully
+  // killed, since CoreMotion cannot wake a killed process the way the
+  // location task's own background delivery can (see motionTracking.ts's
+  // header comment for the full platform-limit explanation). Runs on
+  // every real app foreground/relaunch for the currently active member —
+  // cheap no-op if CoreMotion is unavailable or this member has never
+  // enabled location sharing (reconcileHistoricalDriving's own guards).
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    if (!familyId) return;
+    import('@/lib/motionTracking').then(({ reconcileHistoricalDriving }) => {
+      reconcileHistoricalDriving(activeMemberId, familyId).catch(() => {});
+    });
+  }, [activeMemberId]);
+
   // Device battery + identity (device_status, separate from the per-member
   // battery_level above) — live-requested: "we should also send the device
   // battery - kiosk device model and name its battery." Fires once per

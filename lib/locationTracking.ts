@@ -172,11 +172,25 @@ async function handleDrivingTrip(
   const now = Date.now();
   const isDriving = speedMph > DRIVING_SPEED_MPH;
 
+  // A profile switch mid-trip (activeMemberId changed since the trip
+  // opened) must not let the REST of the drive get attributed to whoever
+  // is now active — close out the old member's trip as-is rather than
+  // silently continuing to update it under the new identity.
+  if (activeTripId && activeTripMemberId && activeTripMemberId !== memberId) {
+    await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
+    activeTripId = null;
+    activeTripMemberId = null;
+    activeTripLastFixAt = null;
+    recentFixes = [];
+    pendingCrashCheck = null;
+  }
+
   // Trip gap timeout — a stale open trip (car parked, phone lost signal)
   // must not hang open forever; close it out before considering this fix.
   if (activeTripId && activeTripLastFixAt && now - activeTripLastFixAt > TRIP_GAP_TIMEOUT_MS) {
     await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
     activeTripId = null;
+    activeTripMemberId = null;
     activeTripLastFixAt = null;
     recentFixes = [];
     pendingCrashCheck = null;
@@ -194,6 +208,7 @@ async function handleDrivingTrip(
       }).select('id').single();
       if (error || !trip) { console.warn('[locationTracking] driving_trips insert failed:', error?.message); return; }
       activeTripId = trip.id;
+      activeTripMemberId = memberId;
     } else {
       const distanceDelta = lastFix ? haversineMiles(lastFix.lat, lastFix.lng, lat, lng) : 0;
       const { data: current } = await supabase.from('driving_trips')
@@ -261,6 +276,7 @@ async function handleDrivingTrip(
     if (activeTripId) {
       await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
       activeTripId = null;
+      activeTripMemberId = null;
       activeTripLastFixAt = null;
       recentFixes = [];
     }
@@ -515,6 +531,7 @@ const DRIVING_SPEED_MPH = 8; // matches GpsTab.tsx's classifyMovement driving cu
 const DEFAULT_SPEEDING_THRESHOLD_MPH = 70; // families.speeding_threshold_mph's own column default — used only if that read fails
 const TRIP_GAP_TIMEOUT_MS = 10 * 60_000; // no fix for this long — car parked / lost signal, close the trip rather than hang it open forever
 let activeTripId: number | null = null;
+let activeTripMemberId: string | null = null; // guards against a profile switch mid-trip misattributing the rest of a drive to the new active member
 let activeTripLastFixAt: number | null = null; // Date.now() of the trip's most recent fix, for the gap-timeout check
 // Crash guardrail state — see this file's own comment further down at the
 // speed-drop check for why this can't be decided synchronously in one fix.
@@ -524,6 +541,13 @@ let pendingCrashCheck: { tripId: number; droppedAt: number } | null = null;
 // general-purpose history (member_location_history already exists for that).
 const HIGHWAY_SPEED_MPH = 40;
 const CRASH_MIN_ACCURACY_M = 20;
+// Evaluated only when the NEXT fix arrives (this task has no timer of its
+// own between fixes) — a genuinely stopped phone won't produce another fix
+// until the next scheduled ~2-min tick, so the alert can land up to ~2 min
+// late relative to this constant, not at exactly 60s. Acceptable slop for
+// a possible-crash alert (still far faster than a 10-min trip-close
+// timeout would allow) but worth being explicit about — this isn't a
+// precise timer.
 const CRASH_RESUME_GRACE_MS = 60_000;
 let recentFixes: { speedMph: number; accuracy: number | null }[] = [];
 

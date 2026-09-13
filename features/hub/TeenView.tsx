@@ -25,6 +25,8 @@ import type { Quest, QuestCheer } from '@/store/questStore';
 import { localToday, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
+import { MedicationsCard } from './senior/MedicationsCard';
+import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
@@ -111,6 +113,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const { sendRequest, requests, cancelRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const sendMessage = useChatStore(s => s.sendMessage);
   const today = localToday();
+  // Was missing entirely from Kid/Teen Hub views — same shared hook
+  // ParentView/SeniorView already use [live-requested: "It should also
+  // show in kids view right and teens too"].
+  const { meds, addMed, toggleMed, deleteMed } = useMedications(familyId, active.id);
+  const medsTaken = Object.fromEntries(meds.map(m => [m.id, m.taken_date === today])) as Record<string, boolean>;
 
   useEffect(() => {
     if (!kidRequestsLoaded) loadKidRequests();
@@ -514,6 +521,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           onConfirmPickup={() => {}} onSendDriverLate={() => {}}
           lateNudgeSent={{}}
         />
+      )}
+
+      {meds.length > 0 && (
+        <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
       )}
 
       <MyQuestsSection

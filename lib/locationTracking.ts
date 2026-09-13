@@ -159,11 +159,24 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
 
 /**
  * Driving Reports — opens/updates/closes a driving_trips row and fires the
- * speeding/possible-crash alerts, all derived purely from the fixes the
- * background task above already produces (see this file's DRIVING_SPEED_MPH
- * etc. declarations for the full design rationale). Deliberately NOT using
- * lastFix/MIN_DISTANCE_METERS's own gate — trips need every genuine fix at
- * driving speed, even sub-25m ones, to compute accurate max speed/distance.
+ * speeding/possible-crash alerts, derived from the fixes the background
+ * task above already produces (see this file's DRIVING_SPEED_MPH etc.
+ * declarations for the full design rationale).
+ *
+ * Self-review correction: this function is only ever reached AFTER the
+ * task body's own `if (moved < MIN_DISTANCE_METERS) return` gate (this
+ * file, near `lastFix`'s declaration) — it is NOT independent of that 25m
+ * gate, despite an earlier version of this comment claiming otherwise.
+ * In practice this rarely matters for a trip already in progress (at any
+ * real driving speed, 2 minutes of movement almost always clears 25m
+ * between fixes), but it means: (a) the very first few fixes of a trip
+ * just pulling away from a stop can be delayed in clearing
+ * DRIVING_SPEED_MPH's threshold if they haven't yet cleared 25m either,
+ * and (b) `lastFix` (used below for the trip's own distance-delta calc)
+ * is the last WRITTEN fix, not strictly the immediately-prior raw
+ * callback — which is actually fine for distance accumulation (each
+ * accepted fix's delta is still real ground covered), just worth knowing
+ * this isn't measuring "every callback," only every accepted one.
  */
 async function handleDrivingTrip(
   memberId: string, familyId: string, speedMph: number,
@@ -223,13 +236,13 @@ async function handleDrivingTrip(
 
     // Speeding alert — once per trip, not once per over-threshold fix.
     // Threshold is per-family configurable (families.speeding_threshold_mph).
-    const speedingThreshold = await getSpeedingThreshold(familyId);
-    if (speedMph > speedingThreshold) {
+    const familySettings = await getFamilyDrivingSettings(familyId);
+    if (speedMph > familySettings.thresholdMph) {
       const { data: trip } = await supabase.from('driving_trips')
         .select('speeding_alerted').eq('id', activeTripId).single();
       if (trip && !trip.speeding_alerted) {
         await supabase.from('driving_trips').update({ speeding_alerted: true }).eq('id', activeTripId);
-        await notifyParents(memberId, 'speeding_alert', { speedMph });
+        await notifyParents(memberId, 'speeding_alert', { speedDisplay: formatSpeedForAlert(speedMph, familySettings.speedUnit) });
       }
     }
 
@@ -268,7 +281,8 @@ async function handleDrivingTrip(
         .select('possible_crash_alerted').eq('id', pendingCrashCheck.tripId).single();
       if (trip && !trip.possible_crash_alerted) {
         await supabase.from('driving_trips').update({ possible_crash_alerted: true }).eq('id', pendingCrashCheck.tripId);
-        await notifyParents(memberId, 'possible_crash', { speedMph });
+        const { speedUnit } = await getFamilyDrivingSettings(familyId);
+        await notifyParents(memberId, 'possible_crash', { speedDisplay: formatSpeedForAlert(speedMph, speedUnit) });
       }
       pendingCrashCheck = null;
     }
@@ -558,20 +572,35 @@ let recentFixes: { speedMph: number; accuracy: number | null }[] = [];
 // not instantly, which is an acceptable tradeoff for one extra query saved
 // per fix.
 const THRESHOLD_CACHE_TTL_MS = 15 * 60_000;
-let cachedThreshold: { familyId: string; value: number; at: number } | null = null;
+let cachedFamilySettings: { familyId: string; thresholdMph: number; speedUnit: 'mph' | 'kmh'; at: number } | null = null;
 
-async function getSpeedingThreshold(familyId: string): Promise<number> {
-  if (cachedThreshold && cachedThreshold.familyId === familyId && Date.now() - cachedThreshold.at < THRESHOLD_CACHE_TTL_MS) {
-    return cachedThreshold.value;
+async function getFamilyDrivingSettings(familyId: string): Promise<{ thresholdMph: number; speedUnit: 'mph' | 'kmh' }> {
+  if (cachedFamilySettings && cachedFamilySettings.familyId === familyId && Date.now() - cachedFamilySettings.at < THRESHOLD_CACHE_TTL_MS) {
+    return cachedFamilySettings;
   }
   try {
-    const { data } = await supabase.from('families').select('speeding_threshold_mph').eq('id', familyId).single();
-    const value = data?.speeding_threshold_mph ?? DEFAULT_SPEEDING_THRESHOLD_MPH;
-    cachedThreshold = { familyId, value, at: Date.now() };
-    return value;
+    const { data } = await supabase.from('families').select('speeding_threshold_mph, speed_unit').eq('id', familyId).single();
+    const result = {
+      familyId,
+      thresholdMph: data?.speeding_threshold_mph ?? DEFAULT_SPEEDING_THRESHOLD_MPH,
+      speedUnit: (data?.speed_unit === 'kmh' ? 'kmh' : 'mph') as 'mph' | 'kmh',
+      at: Date.now(),
+    };
+    cachedFamilySettings = result;
+    return result;
   } catch {
-    return DEFAULT_SPEEDING_THRESHOLD_MPH;
+    return { thresholdMph: DEFAULT_SPEEDING_THRESHOLD_MPH, speedUnit: 'mph' };
   }
+}
+
+// Notification copy (family-notifier) has no access to the family's
+// speed_unit setting on its own — self-review gap: an earlier version of
+// this file passed raw speedMph straight through, so a family that
+// configured km/h in the Driver Reports settings (GpsTab.tsx) would still
+// get a push saying "X mph." Format here, where the setting is already
+// being read, and pass a ready-to-display string instead of a bare number.
+function formatSpeedForAlert(speedMph: number, unit: 'mph' | 'kmh'): string {
+  return unit === 'kmh' ? `${Math.round(speedMph * 1.60934)} km/h` : `${speedMph} mph`;
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {

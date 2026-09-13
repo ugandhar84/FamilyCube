@@ -599,9 +599,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Hearth', memberId: p.memberId },
       };
     case 'speeding_alert':
+      // speedDisplay is pre-formatted by the caller (locationTracking.ts's
+      // formatSpeedForAlert) in the family's own configured unit — this
+      // function has no access to families.speed_unit on its own, so
+      // formatting happens at the source rather than re-deriving it here.
       return {
         title: `⚠️ Speeding alert for ${p.memberName}`,
-        body: `${p.memberName} was going ${p.speedMph} mph`,
+        body: `${p.memberName} was going ${p.speedDisplay}`,
         data: { screen: 'Hearth', memberId: p.memberId },
       };
     case 'possible_crash':

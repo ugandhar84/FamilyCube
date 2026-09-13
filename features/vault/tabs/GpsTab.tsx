@@ -526,12 +526,6 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const [tripsLoading, setTripsLoading] = useState(false);
   const [speedUnit, setSpeedUnit] = useState<'mph' | 'kmh'>('mph');
 
-  useEffect(() => {
-    if (!familyId) return;
-    supabase.from('families').select('speed_unit').eq('id', familyId).single()
-      .then(({ data }) => { if (data?.speed_unit === 'kmh') setSpeedUnit('kmh'); });
-  }, [familyId]);
-
   const fmtSpeed = (mph: number) => speedUnit === 'kmh' ? `${Math.round(mph * 1.60934)} km/h` : `${mph} mph`;
   const fmtDistance = (miles: number) => speedUnit === 'kmh' ? `${(miles * 1.60934).toFixed(1)} km` : `${miles.toFixed(1)} mi`;
 

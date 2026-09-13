@@ -102,6 +102,11 @@ type NotifType =
   | 'geofence_exit'
   | 'geofence_arrive'
   | 'low_battery'
+  // Driving Reports — parent-only alerts derived from the background
+  // location task's speed readings (lib/locationTracking.ts). Both fire
+  // once per trip (dedup flags on driving_trips), not once per fix.
+  | 'speeding_alert'
+  | 'possible_crash'
   | 'chat_mention'
   // Plain (non-@mention) chat messages previously sent ZERO push
   // notifications at all — chatStore.ts's sendMessage only ever fired
@@ -327,6 +332,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   penalty_applied: 'chores', force_assigned: 'chores', chore_ghosted: 'chores',
   chore_still_on: 'chores', chore_auto_released: 'chores',
   geofence_exit: 'family', geofence_arrive: 'family', low_battery: 'family',
+  speeding_alert: 'family', possible_crash: 'family',
   chat_mention: 'mentions', chat_message: 'chat',
   coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards', reward_removed: 'rewards',
   help_requested: 'requests', help_resolved: 'requests',
@@ -590,6 +596,27 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return {
         title: `🔋 ${p.memberName}'s battery is low`,
         body: `${p.memberName} is at ${p.batteryLevel}% battery — they may go offline soon`,
+        data: { screen: 'Hearth', memberId: p.memberId },
+      };
+    case 'speeding_alert':
+      // speedDisplay is pre-formatted by the caller (locationTracking.ts's
+      // formatSpeedForAlert) in the family's own configured unit — this
+      // function has no access to families.speed_unit on its own, so
+      // formatting happens at the source rather than re-deriving it here.
+      return {
+        title: `⚠️ Speeding alert for ${p.memberName}`,
+        body: `${p.memberName} was going ${p.speedDisplay}`,
+        data: { screen: 'Hearth', memberId: p.memberId },
+      };
+    case 'possible_crash':
+      // Framed as "possible," not confirmed — this is derived purely from
+      // speed data (a sudden drop after sustained highway speed), not a
+      // real accelerometer impact reading, so it genuinely can't be
+      // certain. See lib/locationTracking.ts's handleDrivingTrip comment
+      // for the full guardrail rationale.
+      return {
+        title: `🚨 Possible accident detected for ${p.memberName}`,
+        body: `${p.memberName} may have been in an accident — check on them`,
         data: { screen: 'Hearth', memberId: p.memberId },
       };
     case 'chat_mention':

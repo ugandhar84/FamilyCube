@@ -72,7 +72,7 @@ export function SectionLabel({ label }: { label: string }) {
 
 export function SectionCard({
   icon, title, subtitle, badge, badgeLabel, badgeColor, statusBadge, headerAccessory, accent, seeAll, seeAllLabel, actionBtn, children, colors, isDark,
-  collapsible = false, defaultExpanded = true, large = false,
+  collapsible = false, defaultExpanded = true, large = false, alertTint,
 }: {
   icon: React.ReactNode; title: string; subtitle?: string; badge?: number; badgeColor?: string;
   /** Word appended after the count — mock's "5 Events" / "2 Pending" / "3 Active", not a bare digit. */
@@ -88,6 +88,13 @@ export function SectionCard({
   collapsible?: boolean; defaultExpanded?: boolean;
   /** Senior Hub sizing — bigger header type, roomier tap area. */
   large?: boolean;
+  /** Wraps the whole section in a tinted card (border + faint background)
+   * for a genuine alert state — e.g. an overdue medication dose — visible
+   * even while collapsed, not just a header-level accent color. Was
+   * missing entirely: SectionCard has no bordered "card" chrome of its
+   * own to tint by default [live-requested: "should show on hub with red
+   * tint card if it is overdue"]. */
+  alertTint?: string;
   children: React.ReactNode; colors: any; isDark: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -114,7 +121,13 @@ export function SectionCard({
   const Header = collapsible ? Pressable : View;
 
   return (
-    <View style={{ marginBottom: 18 }}>
+    <View style={{
+      marginBottom: 18,
+      ...(alertTint ? {
+        borderWidth: 1.5, borderColor: alertTint, borderRadius: 14,
+        backgroundColor: alertTint + '0F', padding: 10,
+      } : null),
+    }}>
       <Header
         onPress={collapsible ? () => { userToggledRef.current = true; setExpanded(v => !v); } : undefined}
         style={{

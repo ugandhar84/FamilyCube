@@ -24,6 +24,8 @@ import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestPro
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 
+import { MedicationsCard } from './senior/MedicationsCard';
+import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { KidTodaySection } from './kid/KidTodaySection';
@@ -114,6 +116,13 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   }, [active.id]);
 
   const today       = localToday();
+  // Was missing entirely from Kid/Teen Hub views — same shared hook
+  // ParentView/SeniorView already use, so a kid's own medications (and
+  // the overdue red-tint) are visible without needing a parent to check
+  // for them [live-requested: "It should also show in kids view right
+  // and teens too"].
+  const { meds, addMed, toggleMed, deleteMed } = useMedications(familyId, active.id);
+  const medsTaken = Object.fromEntries(meds.map(m => [m.id, m.taken_date === today])) as Record<string, boolean>;
   // Scenarios 2.6/5.4/5.5 — a sensitive/private/Medical event about a
   // sibling is hidden from this kid entirely (never even a busy block —
   // 5.4's "no scheduling dependency by default" for siblings). Own events
@@ -471,6 +480,10 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
           standalone row — "Need a Ride?" was removed entirely (it opened
           the identical KidRequestModal AskParentSheet's own "Ask for a
           Ride" choice already does). */}
+      {meds.length > 0 && (
+        <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
+      )}
+
       <KidTodaySection
         active={active} members={members} events={visibleEvents} updateEvent={updateEvent}
         colors={colors} isDark={isDark}

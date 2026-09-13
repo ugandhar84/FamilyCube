@@ -12,6 +12,24 @@ import { Medication, FREQ_LABELS, encodeTakenEntry, formatDoseTime, today as tod
 // app) — kept as one local constant.
 const MONEY_GREEN = '#10B981';
 
+// A dose whose scheduled frequency_times slot has already passed today,
+// and isn't marked taken, was indistinguishable from any other pending
+// dose — same teal "Mark Taken" pill whether it's due in 6 hours or was
+// due 6 hours ago [live-requested: "should show on hub with red tint
+// card if it is overdue"]. time is "HH:MM" (24h, as stored in
+// frequency_times); compares against the real current wall-clock time,
+// not just the date, so a dose due later today never reads as overdue
+// early.
+function isDoseOverdue(time: string | null): boolean {
+  if (!time) return false;
+  const [h, m] = time.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return false;
+  const now = new Date();
+  const due = new Date();
+  due.setHours(h, m, 0, 0);
+  return now.getTime() > due.getTime();
+}
+
 export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemoveMed, colors, isDark, active, allMembers }: {
   meds: Medication[];
   medsTaken: Record<string, boolean>;
@@ -38,6 +56,21 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
 }) {
   const [showAddMed, setShowAddMed] = useState(false);
 
+  // Any pending (not-taken) dose whose time has already passed today —
+  // drives the card's own red-tint border/background, same signal as the
+  // per-row pill below but visible even while the section is collapsed.
+  const hasOverdueDose = meds.some(med => {
+    if (medsTaken[med.id]) return false;
+    const times = med.frequency_times?.length ? med.frequency_times : [null];
+    return times.some(time => {
+      const multiDose = (med.frequency_times?.length ?? 0) > 1;
+      const doseTaken = multiDose
+        ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time))
+        : medsTaken[med.id];
+      return !doseTaken && isDoseOverdue(time);
+    });
+  });
+
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <SectionCard
@@ -46,6 +79,7 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
         title="Today's Medications"
         badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor={colors.danger}
         collapsible defaultExpanded={meds.some(m => !medsTaken[m.id])}
+        alertTint={hasOverdueDose ? colors.danger : undefined}
         colors={colors} isDark={isDark}>
         {meds.map((med, i) => {
           const taken = !!medsTaken[med.id];
@@ -81,11 +115,16 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
                   const doseTaken = multiDose
                     ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time))
                     : taken;
+                  const overdue = !doseTaken && isDoseOverdue(time);
                   return (
                     <Pressable key={time ?? idx} onPress={() => toggleMed(med, multiDose ? time : null)}
-                      style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: doseTaken ? MONEY_GREEN + '20' : BRAND.teal, borderWidth: doseTaken ? 1 : 0, borderColor: MONEY_GREEN + '40' }}>
+                      style={{
+                        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
+                        backgroundColor: doseTaken ? MONEY_GREEN + '20' : overdue ? colors.danger : BRAND.teal,
+                        borderWidth: doseTaken ? 1 : 0, borderColor: MONEY_GREEN + '40',
+                      }}>
                       <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: doseTaken ? MONEY_GREEN : '#fff' }}>
-                        {multiDose ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : ''}` : (doseTaken ? 'Taken' : 'Mark Taken')}
+                        {multiDose ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : overdue ? ' ⚠' : ''}` : (doseTaken ? 'Taken' : overdue ? 'Overdue' : 'Mark Taken')}
                       </Text>
                     </Pressable>
                   );

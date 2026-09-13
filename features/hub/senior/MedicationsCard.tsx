@@ -56,9 +56,12 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
 }) {
   const [showAddMed, setShowAddMed] = useState(false);
 
-  // Any pending (not-taken) dose whose time has already passed today —
-  // drives the card's own red-tint border/background, same signal as the
-  // per-row pill below but visible even while the section is collapsed.
+  // Whether any dose is overdue still expands the section by default (a
+  // real "needs attention" signal), but the red tint itself belongs on
+  // just that ONE medication's row — tinting the whole card also
+  // highlighted already-taken, unrelated medications [live-reported:
+  // "why whole section red it should show only the overdue card red
+  // tinted"].
   const hasOverdueDose = meds.some(med => {
     if (medsTaken[med.id]) return false;
     const times = med.frequency_times?.length ? med.frequency_times : [null];
@@ -79,7 +82,6 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
         title="Today's Medications"
         badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor={colors.danger}
         collapsible defaultExpanded={meds.some(m => !medsTaken[m.id])}
-        alertTint={hasOverdueDose ? colors.danger : undefined}
         colors={colors} isDark={isDark}>
         {meds.map((med, i) => {
           const taken = !!medsTaken[med.id];
@@ -94,8 +96,27 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
           // able to tell it wasn't something they added themselves.
           const addedByOther = med.assigned_by && med.assigned_by !== active.id;
           const addedByName = addedByOther ? allMembers.find(m => m.id === med.assigned_by)?.name?.split(' ')[0] : null;
+          // Was tinting the WHOLE card red whenever ANY medication had an
+          // overdue dose, which also highlighted unrelated, already-taken
+          // medications in the same list [live-reported: "why whole
+          // section red it should show only the overdue card red
+          // tinted"]. Scoped down to just this one row.
+          const rowOverdue = !taken && (med.frequency_times?.length ? med.frequency_times : [null]).some(time => {
+            const multiDose = (med.frequency_times?.length ?? 0) > 1;
+            const doseTaken = multiDose ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time)) : taken;
+            return !doseTaken && isDoseOverdue(time);
+          });
           return (
-            <View key={med.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: i < meds.length - 1 ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
+            <View key={med.id} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14,
+              paddingHorizontal: rowOverdue ? 10 : 0,
+              borderRadius: rowOverdue ? 12 : 0,
+              backgroundColor: rowOverdue ? colors.danger + '14' : 'transparent',
+              borderWidth: rowOverdue ? 1 : 0, borderColor: rowOverdue ? colors.danger + '40' : 'transparent',
+              marginBottom: rowOverdue ? 4 : 0,
+              borderBottomWidth: rowOverdue ? 1 : (i < meds.length - 1 ? 1 : 0),
+              borderBottomColor: rowOverdue ? colors.danger + '40' : (isDark ? colors.border : '#F1F5F9'),
+            }}>
               <Pill size={22} color={taken ? colors.textTertiary : BRAND.teal} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: GP.sub, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>

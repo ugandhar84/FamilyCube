@@ -180,10 +180,17 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
  */
 async function handleDrivingTrip(
   memberId: string, familyId: string, speedMph: number,
-  lat: number, lng: number, accuracy: number | null, nowIso: string,
+  lat: number, lng: number, nowIso: string,
+  // Real classifier result from CoreMotion (lib/motionTracking.ts), when
+  // available — undefined means "CoreMotion unavailable/not yet reported
+  // this cycle," in which case this falls back to the speed-only
+  // heuristic rather than assuming not-driving (see this file's plan
+  // rationale on the battery/graceful-degradation safety valve).
+  isDrivingOverride?: boolean | null,
 ): Promise<void> {
   const now = Date.now();
-  const isDriving = speedMph > DRIVING_SPEED_MPH;
+  const isDriving = isDrivingOverride ?? (speedMph > DRIVING_SPEED_MPH);
+  const detectionMethod: 'motion_classifier' | 'speed_heuristic' = (isDrivingOverride !== undefined && isDrivingOverride !== null) ? 'motion_classifier' : 'speed_heuristic';
 
   // A profile switch mid-trip (activeMemberId changed since the trip
   // opened) must not let the REST of the drive get attributed to whoever
@@ -194,8 +201,6 @@ async function handleDrivingTrip(
     activeTripId = null;
     activeTripMemberId = null;
     activeTripLastFixAt = null;
-    recentFixes = [];
-    pendingCrashCheck = null;
   }
 
   // Trip gap timeout — a stale open trip (car parked, phone lost signal)
@@ -205,19 +210,15 @@ async function handleDrivingTrip(
     activeTripId = null;
     activeTripMemberId = null;
     activeTripLastFixAt = null;
-    recentFixes = [];
-    pendingCrashCheck = null;
   }
 
   if (isDriving) {
-    recentFixes.push({ speedMph, accuracy });
-    if (recentFixes.length > 5) recentFixes.shift();
-
     if (!activeTripId) {
       const { data: trip, error } = await supabase.from('driving_trips').insert({
         member_id: memberId, family_id: familyId,
         started_at: nowIso, max_speed_mph: speedMph,
         start_lat: lat, start_lng: lng, end_lat: lat, end_lng: lng,
+        detection_method: detectionMethod,
       }).select('id').single();
       if (error || !trip) { console.warn('[locationTracking] driving_trips insert failed:', error?.message); return; }
       activeTripId = trip.id;
@@ -246,55 +247,64 @@ async function handleDrivingTrip(
       }
     }
 
-    // Crash guardrail conditions 1-3 (see this file's header comment on
-    // DRIVING_SPEED_MPH/HIGHWAY_SPEED_MPH for the full rationale) — only
-    // arms the pending check; condition 4 (no resume within 60s) is
-    // resolved on a LATER fix or the non-driving branch below, since it
-    // can't be known synchronously here.
-    const sustainedHighway = recentFixes.length >= 3 &&
-      recentFixes.slice(-3).every(f => f.speedMph > HIGHWAY_SPEED_MPH);
-    const lastFixGoodAccuracy = accuracy !== null && accuracy < CRASH_MIN_ACCURACY_M;
-    if (sustainedHighway && lastFixGoodAccuracy && !pendingCrashCheck) {
-      // Armed here, but the actual drop (condition 2) is only known once a
-      // LOW-speed fix actually arrives — see the non-driving branch below.
-      // Nothing to do yet on a still-fast fix.
-    }
   } else {
-    // Non-driving fix — this is where a real speed-drop (condition 2) is
-    // observed, using the driving state from just before this fix.
-    if (activeTripId && recentFixes.length >= 3 && !pendingCrashCheck) {
-      const sustainedHighway = recentFixes.slice(-3).every(f => f.speedMph > HIGHWAY_SPEED_MPH);
-      const lastAccuracyOk = recentFixes[recentFixes.length - 1]?.accuracy !== null &&
-        (recentFixes[recentFixes.length - 1]!.accuracy as number) < CRASH_MIN_ACCURACY_M;
-      const suddenDrop = speedMph < 5;
-      if (sustainedHighway && lastAccuracyOk && suddenDrop) {
-        pendingCrashCheck = { tripId: activeTripId, droppedAt: now };
-      }
-    } else if (pendingCrashCheck && speedMph > 5) {
-      // Resumed within the grace window — condition 4 fails, this was a
-      // normal brief stop, not a crash. Disarm.
-      pendingCrashCheck = null;
-    }
-
-    if (pendingCrashCheck && now - pendingCrashCheck.droppedAt >= CRASH_RESUME_GRACE_MS) {
-      const { data: trip } = await supabase.from('driving_trips')
-        .select('possible_crash_alerted').eq('id', pendingCrashCheck.tripId).single();
-      if (trip && !trip.possible_crash_alerted) {
-        await supabase.from('driving_trips').update({ possible_crash_alerted: true }).eq('id', pendingCrashCheck.tripId);
-        const { speedUnit } = await getFamilyDrivingSettings(familyId);
-        await notifyParents(memberId, 'possible_crash', { speedDisplay: formatSpeedForAlert(speedMph, speedUnit) });
-      }
-      pendingCrashCheck = null;
-    }
-
+    // Non-driving fix — trip ends. Crash detection is no longer done via
+    // a speed-drop heuristic here (removed per explicit request, now that
+    // real G-force detection — evaluateCrashSignal below, fed by
+    // lib/motionTracking.ts's accelerometer stream — is strictly better:
+    // it's instantaneous, while a speed-drop guardrail could only ever
+    // fire on the NEXT location fix, up to ~2 min later. See
+    // evaluateCrashSignal's own comment for the full history of why this
+    // changed).
     if (activeTripId) {
       await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
       activeTripId = null;
       activeTripMemberId = null;
       activeTripLastFixAt = null;
-      recentFixes = [];
     }
   }
+}
+
+// Called from lib/motionTracking.ts's accelerometer handler — kept as a
+// thin export into this file's own trip-state machine (activeTripId etc.
+// stay module-private here) rather than duplicating trip bookkeeping in
+// two files. No-ops if there's no currently open trip (a hard-brake signal
+// arriving just as a trip closes is a real, harmless race — the event is
+// simply not attributable to any trip at that point).
+export async function recordHardBrakeOnActiveTrip(): Promise<void> {
+  if (!activeTripId) return;
+  const { data: trip } = await supabase.from('driving_trips')
+    .select('hard_brake_count').eq('id', activeTripId).single();
+  await supabase.from('driving_trips')
+    .update({ hard_brake_count: (trip?.hard_brake_count ?? 0) + 1 })
+    .eq('id', activeTripId);
+}
+
+/**
+ * Real G-force crash signal (from lib/motionTracking.ts's accelerometer
+ * handler, which only samples while a trip is confirmed .automotive).
+ *
+ * The original design paired this with a speed-drop heuristic
+ * (pendingCrashCheck) as a "belt and suspenders" confirming check — removed
+ * per explicit request once real G-force detection was working, since it's
+ * strictly better: instantaneous, versus a speed-drop guardrail that could
+ * only ever fire on the NEXT location fix (up to ~2 min later). A
+ * high-confidence G-force spike during a motion-classifier-confirmed trip
+ * is sufficient on its own.
+ */
+export async function evaluateCrashSignal(memberId: string, gForceMagnitude: number): Promise<void> {
+  if (!activeTripId) return;
+  if (gForceMagnitude < CRASH_GFORCE_THRESHOLD) return;
+  const { data: trip } = await supabase.from('driving_trips')
+    .select('possible_crash_alerted').eq('id', activeTripId).single();
+  if (!trip || trip.possible_crash_alerted) return;
+  await supabase.from('driving_trips').update({ possible_crash_alerted: true }).eq('id', activeTripId);
+  // No speed value at this call site (G-force magnitude, not a location
+  // fix) — the possible_crash copy in family-notifier doesn't actually
+  // reference speedDisplay today (see family-notifier's own comment), so
+  // passing 'high-impact detected' here is honest rather than fabricating
+  // a speed number this signal doesn't have.
+  await notifyParents(memberId, 'possible_crash', { speedDisplay: 'high-impact detected' });
 }
 
 // ~0.05 mile — the OS only calls the task again once the device has moved
@@ -544,26 +554,29 @@ let lastFix: { lat: number; lng: number } | null = null;
 const DRIVING_SPEED_MPH = 8; // matches GpsTab.tsx's classifyMovement driving cutoff
 const DEFAULT_SPEEDING_THRESHOLD_MPH = 70; // families.speeding_threshold_mph's own column default — used only if that read fails
 const TRIP_GAP_TIMEOUT_MS = 10 * 60_000; // no fix for this long — car parked / lost signal, close the trip rather than hang it open forever
+// Set by lib/motionTracking.ts (setMotionClassification), read by
+// handleDrivingTrip below — deliberately NOT an import of motionTracking.ts
+// itself, since that file imports FROM this one (recordHardBrakeOnActiveTrip,
+// evaluateCrashSignal) and a two-way import would be circular. null means
+// "no real CoreMotion result yet for this cycle" (unavailable device, or
+// motionTracking.ts's own module never loaded) — handleDrivingTrip treats
+// null as "use the speed-only heuristic," never as "definitely not driving."
+let latestMotionClassification: boolean | null = null;
+export function setMotionClassification(isAutomotive: boolean | null) {
+  latestMotionClassification = isAutomotive;
+}
+
 let activeTripId: number | null = null;
 let activeTripMemberId: string | null = null; // guards against a profile switch mid-trip misattributing the rest of a drive to the new active member
 let activeTripLastFixAt: number | null = null; // Date.now() of the trip's most recent fix, for the gap-timeout check
-// Crash guardrail state — see this file's own comment further down at the
-// speed-drop check for why this can't be decided synchronously in one fix.
-let pendingCrashCheck: { tripId: number; droppedAt: number } | null = null;
-// Rolling window of the last few fixes' (speed, accuracy) — only as long as
-// needed for the "sustained highway speed" guardrail (3 fixes), not a
-// general-purpose history (member_location_history already exists for that).
-const HIGHWAY_SPEED_MPH = 40;
-const CRASH_MIN_ACCURACY_M = 20;
-// Evaluated only when the NEXT fix arrives (this task has no timer of its
-// own between fixes) — a genuinely stopped phone won't produce another fix
-// until the next scheduled ~2-min tick, so the alert can land up to ~2 min
-// late relative to this constant, not at exactly 60s. Acceptable slop for
-// a possible-crash alert (still far faster than a 10-min trip-close
-// timeout would allow) but worth being explicit about — this isn't a
-// precise timer.
-const CRASH_RESUME_GRACE_MS = 60_000;
-let recentFixes: { speedMph: number; accuracy: number | null }[] = [];
+// G-force magnitude threshold for evaluateCrashSignal (lib/motionTracking.ts's
+// accelerometer handler) — 1.0G is gravity alone at rest; a real crash
+// impact is a large, brief spike well above normal driving G-forces
+// (hard braking is typically 0.5-1G; this needs real on-device tuning,
+// not a first-pass constant — starting conservative to favor fewer false
+// positives per the plan's explicit "no false positives" priority).
+const CRASH_GFORCE_THRESHOLD = 4.0;
+const HARD_BRAKE_GFORCE_THRESHOLD = 2.5;
 
 // Per-family speeding threshold — configurable (live-requested), stored on
 // `families.speeding_threshold_mph`. Cached briefly rather than queried on
@@ -778,21 +791,40 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     await clearLastLocationSyncError(activeMemberId);
 
     if (lastFamilyId) {
-      const { error: historyErr } = await withSuppressedNetworkBanner(() => supabase.from('member_location_history').insert({
-        member_id: activeMemberId, family_id: lastFamilyId,
-        lat, lng, address: encAddress,
-        battery_level: batteryLevel, is_charging: isCharging,
-        recorded_at: now,
-      }));
-      if (historyErr) console.warn('[locationTracking] member_location_history insert failed:', historyErr.message);
+      // Dedup against GpsTab.tsx's own history writer (refreshMyLocation) —
+      // that function's 5-min foreground heartbeat can land within seconds
+      // of this background task's own fix at nearly the same coordinates,
+      // producing the same near-duplicate-row pairs GpsTab.tsx's own
+      // comment on this same dedup check describes. This task already has
+      // its own 25m MIN_DISTANCE_METERS gate above (making a same-spot
+      // duplicate from ITS OWN fixes unlikely), but that gate knows nothing
+      // about a write the OTHER path just made — this check catches that.
+      const { data: lastRow } = await supabase.from('member_location_history')
+        .select('lat, lng, recorded_at').eq('member_id', activeMemberId)
+        .order('recorded_at', { ascending: false }).limit(1).maybeSingle();
+      const isDuplicate = lastRow
+        && (Date.now() - new Date(lastRow.recorded_at).getTime()) < 60_000
+        && Math.abs(lastRow.lat - lat) < 0.0002 && Math.abs(lastRow.lng - lng) < 0.0002;
+      if (!isDuplicate) {
+        const { error: historyErr } = await withSuppressedNetworkBanner(() => supabase.from('member_location_history').insert({
+          member_id: activeMemberId, family_id: lastFamilyId,
+          lat, lng, address: encAddress,
+          battery_level: batteryLevel, is_charging: isCharging,
+          recorded_at: now,
+        }));
+        if (historyErr) console.warn('[locationTracking] member_location_history insert failed:', historyErr.message);
+      }
     }
 
-    // Driving Reports — trip open/update/close, riding entirely on the fix
-    // this task already produced above. See this file's header-level
-    // comment block near activeTripId's declaration for why no new native
-    // tracking is involved.
+    // Driving Reports — trip open/update/close. latestMotionClassification
+    // (set by lib/motionTracking.ts's activity-update listener, no direct
+    // import here to avoid a circular dependency between the two files —
+    // see this module's own comment on that variable) provides a real
+    // CoreMotion result when available; handleDrivingTrip falls back to
+    // the speed-only heuristic itself when it's null (CoreMotion
+    // unavailable, or motionTracking.ts never loaded on this device).
     if (lastFamilyId) {
-      await handleDrivingTrip(activeMemberId, lastFamilyId, speedMph, lat, lng, loc.coords.accuracy ?? null, now);
+      await handleDrivingTrip(activeMemberId, lastFamilyId, speedMph, lat, lng, now, latestMotionClassification);
     }
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);

@@ -65,6 +65,12 @@ const config = {
       NSLocationAlwaysAndWhenInUseUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
       NSLocationAlwaysUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
       NSFaceIDUsageDescription: "Family Cube uses Face ID to sign you in quickly and securely.",
+      // Required for the core-motion module's CMMotionActivityManager/
+      // CMMotionManager use (real driving/crash detection, replacing the
+      // old speed-only heuristic) — without this the CoreMotion API
+      // throws/instantly denies rather than showing a prompt, same story
+      // as every other usage-description key on this list.
+      NSMotionUsageDescription: "Family Cube uses motion & fitness data to detect driving and possible accidents for family safety alerts.",
       // Was missing entirely — chat voice notes/dictation (expo-audio's
       // AudioModule.requestRecordingPermissionsAsync, ChatScreen.tsx) is a
       // real, live mic use with no NSMicrophoneUsageDescription string at

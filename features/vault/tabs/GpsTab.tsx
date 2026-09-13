@@ -19,6 +19,7 @@ import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling, getLastLocationSyncError } from '@/lib/locationTracking';
+import { startMotionTracking, stopMotionTracking } from '@/lib/motionTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
@@ -287,6 +288,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         setTracking(true);
         setBackgroundLocationMemberId(activeMemberId);
         setBackgroundLocationFamilyId(familyId ?? null);
+        startMotionTracking(activeMemberId).catch(() => {});
         return;
       }
       // Native task isn't running, but check whether the person's actual
@@ -302,6 +304,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         if (ok) {
           setTracking(true);
           startBatteryPolling(activeMemberId);
+          startMotionTracking(activeMemberId).catch(() => {});
         }
       }
     })();
@@ -335,6 +338,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       if (tracking) {
         await stopBackgroundLocationTracking();
         stopBatteryPolling();
+        await stopMotionTracking().catch(() => {});
         setTracking(false);
         // Persisted intent, independent of the live native task state — a
         // reinstall wipes the OS-level task registration but not this row,
@@ -357,6 +361,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           // invisible on the map until you happen to walk 0.1mi.
           await refreshMyLocation(activeMemberId);
           startBatteryPolling(activeMemberId);
+          startMotionTracking(activeMemberId).catch(() => {});
           await supabase.from('member_locations').upsert({
             member_id: activeMemberId, family_id: familyId, share_location_enabled: true,
           }, { onConflict: 'member_id' });
@@ -475,12 +480,30 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       }, { onConflict: 'member_id' });
       if (upsertErr) console.error('[GpsTab] member_locations upsert failed:', upsertErr.message);
       if (familyId) {
-        const { error: histErr } = await supabase.from('member_location_history').insert({
-          member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
-          battery_level: batteryLevel, is_charging: isCharging,
-          recorded_at: now,
-        });
-        if (histErr) console.error('[GpsTab] member_location_history insert failed:', histErr.message);
+        // Dedup — this function fires both from a manual refresh tap AND
+        // the 5-min foreground heartbeat interval (see this file's own
+        // useEffect a few lines below), which can land within seconds of
+        // the background task's own fix at nearly the same coordinates.
+        // Live-reported: the Location History modal showed pairs of
+        // near-identical rows (same minute, same address) back to back.
+        // Skip the insert if the most recent existing row is both very
+        // recent AND essentially the same spot — a real subsequent move
+        // still logs normally, only a redundant near-simultaneous repeat
+        // is suppressed.
+        const { data: lastRow } = await supabase.from('member_location_history')
+          .select('lat, lng, recorded_at').eq('member_id', memberId)
+          .order('recorded_at', { ascending: false }).limit(1).maybeSingle();
+        const isDuplicate = lastRow
+          && (Date.now() - new Date(lastRow.recorded_at).getTime()) < 60_000
+          && Math.abs(lastRow.lat - lat) < 0.0002 && Math.abs(lastRow.lng - lng) < 0.0002;
+        if (!isDuplicate) {
+          const { error: histErr } = await supabase.from('member_location_history').insert({
+            member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
+            battery_level: batteryLevel, is_charging: isCharging,
+            recorded_at: now,
+          });
+          if (histErr) console.error('[GpsTab] member_location_history insert failed:', histErr.message);
+        }
       }
     } finally {
       await load();
@@ -520,6 +543,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   type DrivingTrip = {
     id: number; started_at: string; ended_at: string | null;
     max_speed_mph: number; distance_miles: number; speeding_alerted: boolean;
+    detection_method: 'speed_heuristic' | 'motion_classifier' | null;
+    hard_brake_count: number;
   };
   const [driverReportFor, setDriverReportFor] = useState<{ member_id: string; name: string } | null>(null);
   const [trips, setTrips] = useState<DrivingTrip[]>([]);
@@ -555,7 +580,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     setTripsLoading(true);
     const { data } = await supabase
       .from('driving_trips')
-      .select('id, started_at, ended_at, max_speed_mph, distance_miles, speeding_alerted')
+      .select('id, started_at, ended_at, max_speed_mph, distance_miles, speeding_alerted, detection_method, hard_brake_count')
       .eq('member_id', memberId)
       .order('started_at', { ascending: false })
       .limit(30);
@@ -1175,11 +1200,30 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                       </View>
                       <View style={[g.historyDot, { backgroundColor: t.speeding_alerted ? colors.danger : colors.teal }]} />
                       <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>
-                          {fmtDistance(t.distance_miles)}{durationMin ? ` · ${durationMin} min` : ''}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>
+                            {fmtDistance(t.distance_miles)}{durationMin ? ` · ${durationMin} min` : ''}
+                          </Text>
+                          {/* Detection method badge — lets a parent tell which
+                              trips used the real CoreMotion-based detector vs
+                              the older speed-only heuristic (see
+                              lib/motionTracking.ts). Older rows predate this
+                              distinction (detection_method is null) and show
+                              no badge at all, rather than guessing. */}
+                          {t.detection_method && (
+                            <View style={{
+                              paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6,
+                              backgroundColor: t.detection_method === 'motion_classifier' ? colors.tealLight : colors.surface,
+                            }}>
+                              <Text style={{ fontSize: 9, fontWeight: '700', color: t.detection_method === 'motion_classifier' ? colors.teal : colors.textTertiary }}>
+                                {t.detection_method === 'motion_classifier' ? 'Motion-verified' : 'Speed estimate'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={{ fontSize: 12, fontWeight: '700', color: t.speeding_alerted ? colors.danger : colors.textTertiary }}>
                           Max {fmtSpeed(t.max_speed_mph)}{t.speeding_alerted ? ' — speeding' : ''}
+                          {t.hard_brake_count > 0 ? ` · ${t.hard_brake_count} hard brake${t.hard_brake_count > 1 ? 's' : ''}` : ''}
                         </Text>
                       </View>
                     </View>

@@ -27,8 +27,40 @@ import CubeSpinner from '@/components/CubeSpinner';
 
 const EMPTY_FRAME_IMAGE = require('@/assets/empty/family-frame.jpg');
 
-export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
+/**
+ * Turns the Hub frame on/off — the only thing ProfileSettingsScreen.tsx's
+ * "Family Photo" toggle does. Turning it on does NOT open a picker; it
+ * just makes the (empty-illustration) frame appear on the Hub, where the
+ * existing long-press-to-upload flow (below) is how a photo actually gets
+ * set. Upserts frame_enabled without touching photo_url — a parent who
+ * already has a photo and toggles off/on again keeps it (this never sends
+ * photo_url: null), matching "off" meaning "don't show the card," not
+ * "forget the photo."
+ */
+export async function setFamilyPhotoFrameEnabled(familyId: string, memberId: string, enabled: boolean): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('family_photo_frame')
+      .upsert({ family_id: familyId, member_id: memberId, frame_enabled: enabled, updated_by: memberId, updated_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (e: any) {
+    Alert.alert("Couldn't update setting", e?.message ?? 'Please try again.');
+    return false;
+  }
+}
+
+export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height, onFrameStateChange }: {
   colors: any; isDark: boolean; width?: number; height?: number;
+  // Was: this card always rendered, falling back to a static placeholder
+  // illustration when no photo was set — reads as a half-finished/empty
+  // frame taking up layout space rather than a deliberate design choice.
+  // Live-requested: the frame should only appear at all once a parent has
+  // explicitly turned it on via Profile settings (setFamilyPhotoFrameEnabled
+  // above) — NOT merely once a photo exists, since turning it on shows the
+  // empty illustration first (ready for long-press-to-upload), before any
+  // photo is picked. Reports frame_enabled so the parent (TodayView.tsx)
+  // can decide whether to render this card's column at all.
+  onFrameStateChange?: (enabled: boolean) => void;
 }) {
   const frameH = height ?? width * 1.25;
   const { members, activeMemberId } = useFamilyStore();
@@ -51,13 +83,17 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
     // dev/crash reporting; a failed load is retried automatically next time
     // this card remounts (e.g. navigating back to Hub).
     const { data, error } = await supabase.from('family_photo_frame')
-      .select('photo_url, storage_path').eq('family_id', familyId).eq('member_id', myId).maybeSingle();
+      .select('photo_url, storage_path, frame_enabled').eq('family_id', familyId).eq('member_id', myId).maybeSingle();
     if (error) console.warn('[FamilyPhotoFrameCard] loadLatest failed:', error.message);
     setPhotoUrl(data?.photo_url ?? null);
     setStoragePath(data?.storage_path ?? null);
     setPhotoFailed(false);
     setLoading(false);
-  }, [familyId, myId]);
+    // No row yet (this parent has never touched the setting) defaults to
+    // enabled — matches the column's own DEFAULT true and the pre-existing
+    // "frame always visible" behavior for anyone who hasn't opted out.
+    onFrameStateChange?.(data ? data.frame_enabled : true);
+  }, [familyId, myId, onFrameStateChange]);
 
   useEffect(() => { loadLatest(); }, [loadLatest]);
 
@@ -80,7 +116,7 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
     try {
       const { signedUrl, path } = await uploadFamilyFramePhoto(familyId, myId, res.assets[0].uri);
       const { data, error } = await supabase.from('family_photo_frame')
-        .upsert({ family_id: familyId, member_id: myId, photo_url: signedUrl, storage_path: path, updated_by: myId, updated_at: new Date().toISOString() })
+        .upsert({ family_id: familyId, member_id: myId, photo_url: signedUrl, storage_path: path, frame_enabled: true, updated_by: myId, updated_at: new Date().toISOString() })
         .select('photo_url, storage_path').single();
       if (error) throw new Error(error.message);
       if (data) { setPhotoUrl(data.photo_url); setStoragePath(data.storage_path); setPhotoFailed(false); }
@@ -103,6 +139,10 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height }: {
             setPhotoUrl(null);
             setStoragePath(null);
             setPhotoFailed(false);
+            // Removing the photo doesn't turn the frame off — it just goes
+            // back to the empty illustration, still visible, still
+            // long-press-able to set a new one. Only the Profile toggle
+            // (setFamilyPhotoFrameEnabled) controls visibility.
           } catch (e: any) {
             Alert.alert("Couldn't remove photo", e?.message ?? 'Please try again.');
           } finally {

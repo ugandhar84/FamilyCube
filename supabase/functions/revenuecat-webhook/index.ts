@@ -52,12 +52,33 @@ serve(async (req) => {
 
     if (!appUserId) return new Response('Missing app_user_id', { status: 400 });
 
+    // Subscriptions are per FAMILY, not per purchasing user — a parent
+    // subscribing must show as premium for every family member's PIN
+    // profile, not just the one who paid [explicitly confirmed:
+    // "subscription per family id right"]. Resolve family_id from the
+    // purchasing member's own row rather than trusting the webhook
+    // payload for it (RC has no concept of "family," only app_user_id =
+    // this Supabase auth user's id).
+    const { data: purchaserMember } = await supabase
+      .from('members')
+      .select('family_id')
+      .eq('auth_user_id', appUserId)
+      .maybeSingle();
+    const familyId = purchaserMember?.family_id as string | undefined;
+    if (!familyId) {
+      console.warn(`[revenuecat-webhook] no family found for app_user_id ${appUserId} — cannot scope subscription`);
+      return new Response(JSON.stringify({ ok: true, skipped: 'no family for app_user_id' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     if (ACTIVE_EVENTS.has(eventType)) {
       // entitlement_ids should carry the premium entitlement for any of
       // these event types on a single-product app — if RC ever sends one
       // without it (e.g. a product change to something unexpected), treat
       // it as free rather than guessing.
       await supabase.from('subscriptions').upsert({
+        family_id:              familyId,
         user_id:                appUserId,
         tier:                   hasPremium ? 'premium' : 'free',
         status:                 'active',
@@ -66,14 +87,14 @@ serve(async (req) => {
         expires_at:             expiresAt,
         revenuecat_app_user_id: appUserId,
         updated_at:             new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+      }, { onConflict: 'family_id' });
 
     } else if (GRACE_EVENTS.has(eventType)) {
       // Billing issue: keep current tier but move to grace_period — do NOT downgrade
       await supabase.from('subscriptions').update({
         status:     'grace_period',
         updated_at: new Date().toISOString(),
-      }).eq('user_id', appUserId);
+      }).eq('family_id', familyId);
 
     } else if (INACTIVE_EVENTS.has(eventType)) {
       // On expiry / cancellation, revert to free — single-tier app, so
@@ -83,18 +104,19 @@ serve(async (req) => {
       const { data: existing } = await supabase
         .from('subscriptions')
         .select('expires_at')
-        .eq('user_id', appUserId)
+        .eq('family_id', familyId)
         .maybeSingle();
 
       const effectiveExpiresAt = expiresAt ?? existing?.expires_at ?? new Date().toISOString();
 
       await supabase.from('subscriptions').upsert({
+        family_id:     familyId,
         user_id:       appUserId,
         tier:          'free',
         status:        eventType === 'EXPIRATION' ? 'expired' : 'cancelled',
         expires_at:    effectiveExpiresAt,
         updated_at:    new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+      }, { onConflict: 'family_id' });
     }
 
     return new Response(JSON.stringify({ ok: true }), {

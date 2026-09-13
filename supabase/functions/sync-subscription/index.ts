@@ -54,7 +54,20 @@ serve(async (req) => {
 
     if (!isActive) return json({ tier: 'free' });
 
+    // Subscriptions are per FAMILY, not per purchasing user — see
+    // revenuecat-webhook/index.ts's matching comment. Resolve family_id
+    // from the caller's own member row (service-role client bypasses
+    // RLS, so this lookup is explicit rather than relying on a policy).
+    const { data: purchaserMember } = await supabaseClient
+      .from('members')
+      .select('family_id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+    const familyId = purchaserMember?.family_id as string | undefined;
+    if (!familyId) return json({ error: 'no family found for this user' }, 400);
+
     await supabaseClient.from('subscriptions').upsert({
+      family_id:    familyId,
       user_id:      user.id,
       tier:         'premium',
       status:       'active',
@@ -63,7 +76,7 @@ serve(async (req) => {
       expires_at:   activeEnt.expires_date,
       revenuecat_app_user_id: user.id,
       updated_at:   new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    }, { onConflict: 'family_id' });
 
     return json({ tier: 'premium' });
   } catch (e: any) {

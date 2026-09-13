@@ -100,10 +100,20 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
       ? `${todayEventsCount} event${todayEventsCount !== 1 ? 's' : ''} today · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention`
       : `${todayEventsCount} event${todayEventsCount !== 1 ? 's' : ''} today`;
 
+  // Was: the frame card always rendered, falling back to a static
+  // placeholder illustration when no photo was set — read as unfinished/
+  // empty space next to the greeting rather than a deliberate layout.
+  // Live-requested: hide the frame entirely until a parent has explicitly
+  // turned it on via the new Profile settings toggle
+  // (setFamilyPhotoFrameEnabled in FamilyPhotoFrameCard.tsx) — NOT merely
+  // once a photo exists, since turning the toggle on shows the empty
+  // illustration first. Greeting gets the full row until then.
+  const [frameEnabled, setFrameEnabled] = useState(false);
+
   return (
     <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8,
       flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-      <View style={{ flex: 1, paddingRight: 12 }}>
+      <View style={{ flex: 1, paddingRight: frameEnabled ? 12 : 0 }}>
         <Text style={{
           fontSize: 24, fontWeight: '800',
           color: colors.textPrimary,
@@ -138,8 +148,13 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
         </View>
       </View>
 
-      <View>
-        <FamilyPhotoFrameCard colors={colors} isDark={isDark} width={196} height={132} />
+      {/* Rendered unconditionally (so its own load effect can always fire
+          and report frameEnabled via onFrameStateChange), but visually
+          collapsed to zero width/height when the toggle is off — a plain
+          conditional unmount here would never get the chance to report
+          "still off" back on a later check. */}
+      <View style={frameEnabled ? undefined : { width: 0, height: 0, overflow: 'hidden' }}>
+        <FamilyPhotoFrameCard colors={colors} isDark={isDark} width={196} height={132} onFrameStateChange={setFrameEnabled} />
       </View>
     </View>
   );

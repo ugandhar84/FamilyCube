@@ -23,6 +23,7 @@ import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMemb
 import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
 import { supabase, uploadMemberAvatar } from '@/lib/supabase';
+import { setFamilyPhotoFrameEnabled } from '@/features/hub/parent/FamilyPhotoFrameCard';
 import { showAlert } from '@/components/AppAlert';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { restorePurchases, isRevenueCatReady } from '@/lib/subscription';
@@ -1657,6 +1658,18 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
     isBiometricEnabled().then(setBioEnabled);
   }, []);
 
+  // Family Photo frame toggle — defaults true (no row yet = never touched
+  // the setting = matches the column's own DEFAULT true / the pre-existing
+  // "frame always visible" behavior), same load pattern as
+  // FamilyPhotoFrameCard.tsx's own loadLatest.
+  const [familyPhotoFrameEnabled, setFamilyPhotoFrameEnabled_] = useState(true);
+  useEffect(() => {
+    if (!familyId || !activeMemberId) return;
+    supabase.from('family_photo_frame').select('frame_enabled')
+      .eq('family_id', familyId).eq('member_id', activeMemberId).maybeSingle()
+      .then(({ data }) => setFamilyPhotoFrameEnabled_(data ? data.frame_enabled : true));
+  }, [familyId, activeMemberId]);
+
   if (!activeMember) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
@@ -2167,6 +2180,40 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             colors={colors} isDark={isDark}
             renderShell={currencyShell}
           />
+        )}
+
+        {/* Family Photo — a simple on/off toggle for whether the Hub
+            greeting's photo frame (TodayView.tsx) appears at all. ON by
+            default (matches the frame_enabled column's own default),
+            OFF hides the card entirely; turning it back on shows the
+            empty-illustration frame, ready for the existing
+            long-press-to-upload flow — this toggle does NOT open a picker
+            itself [live-requested: "don't open the gallery upon setting it,
+            it just appears the frame card with empty model"]. */}
+        {isParent && (
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+            backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            borderRadius: RADIUS.lg, padding: 14,
+          }]}>
+            <SectionHeader label="Family Photo" colors={colors} />
+            <Row
+              icon="image-outline"
+              label="Show photo frame on Hub"
+              subtitle="Long-press the frame on your Hub to set a photo"
+              colors={colors} isDark={isDark}
+              right={
+                <Switch
+                  value={familyPhotoFrameEnabled}
+                  onValueChange={async (next) => {
+                    setFamilyPhotoFrameEnabled_(next);
+                    if (familyId && activeMemberId) await setFamilyPhotoFrameEnabled(familyId, activeMemberId, next);
+                  }}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
         )}
 
         {/* Calendar Sync — parent-only, per-member OAuth connection used

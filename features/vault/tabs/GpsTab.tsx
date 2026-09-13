@@ -193,6 +193,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const [tracking, setTracking]     = useState(false);
   const [togglingTrack, setTogglingTrack] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  // Synchronous re-entry guard for refreshMyLocation — the button's own
+  // `disabled={isRefreshing}` reads refreshingId (React state), which
+  // doesn't update until after re-render, so several rapid taps within
+  // the same frame all passed through before the button visually
+  // disabled. Live-reported: 7 near-identical member_location_history
+  // rows at the same minute despite the dedup check added earlier — that
+  // check itself has a read-then-write race under concurrent calls (each
+  // one reads "no recent row yet" before any of them has written),
+  // which this closes at the source instead of patching the dedup query
+  // further.
+  const refreshInFlightRef = useRef(false);
   // Tap-to-expand roster row — Find My-style: a row expands into a
   // highlighted card with quick actions (Directions/Contact) instead of
   // every row looking identical and tapping straight into location
@@ -426,6 +437,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // to report in), so this re-requests + upserts the local device position.
   const refreshMyLocation = async (memberId: string) => {
     if (memberId !== activeMemberId) { load(); return; }
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     setRefreshingId(memberId);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -508,6 +521,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     } finally {
       await load();
       setRefreshingId(null);
+      refreshInFlightRef.current = false;
     }
   };
 

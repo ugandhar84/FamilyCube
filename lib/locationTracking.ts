@@ -273,6 +273,52 @@ export function stopBatteryPolling(): void {
   batteryPollMemberId = null;
 }
 
+const LOCATION_HEARTBEAT_INTERVAL_MS = 15 * 60_000;
+
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let heartbeatMemberId: string | null = null;
+
+async function writeLocationHeartbeat(memberId: string): Promise<void> {
+  try {
+    // UPDATE-only, same reasoning as writeBatteryStatus above — must never
+    // be the write that creates member_locations' row (would default
+    // share_location_enabled to false). Only touches last_updated: lat/lng/
+    // address stay whatever the real GPS-fix writer last recorded, since a
+    // stationary person's actual position hasn't changed.
+    await supabase.from('member_locations').update({ last_updated: new Date().toISOString() })
+      .eq('member_id', memberId).eq('share_location_enabled', true);
+  } catch { /* best-effort — next tick will retry */ }
+}
+
+/**
+ * Keeps member_locations.last_updated fresh for a stationary member, who
+ * would otherwise sit at whatever timestamp their last real 25m+ move
+ * produced — potentially many hours ago (live-reported: three different
+ * family members all stuck at "3h ago"/"6h ago" while just at home; not a
+ * write-path failure, this is the actual by-design behavior of the
+ * movement-gated background task above, which correctly has no reason to
+ * fire for someone who hasn't moved). That gate is right for lat/lng/
+ * address/battery (nothing there has changed, no reason to re-derive them),
+ * but a frozen last_updated reads as "tracking broke" to a family member
+ * looking at the map, not as "they're just home" — Life360 and similar
+ * apps keep a visibly-recent "last seen" even for a stationary pin. Same
+ * root-mounted, screen-independent lifecycle as startBatteryPolling (see
+ * its own comment) rather than GpsTab.tsx, so this doesn't stop the moment
+ * someone navigates off the GPS tab.
+ */
+export function startLocationHeartbeat(memberId: string): void {
+  if (heartbeatTimer && heartbeatMemberId === memberId) return;
+  stopLocationHeartbeat();
+  heartbeatMemberId = memberId;
+  heartbeatTimer = setInterval(() => writeLocationHeartbeat(memberId), LOCATION_HEARTBEAT_INTERVAL_MS);
+}
+
+export function stopLocationHeartbeat(): void {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+  heartbeatMemberId = null;
+}
+
 /**
  * Writes this physical device's own battery + identity to the
  * device_status table (one row per device, keyed by getDeviceId() — the

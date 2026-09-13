@@ -116,11 +116,11 @@ const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> =
 // exactly Life360's own "only the moved pin redraws, everyone else's
 // avatar stays visually still" behavior.
 const FamilyMapMarker = memo(function FamilyMapMarker({
-  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, speedMph, infoColor, g,
+  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, speedMph, isFreshFix, infoColor, g,
 }: {
   lat: number; lng: number; name: string; statusText: string;
   emoji?: string; avatarUrl?: string; siblingNames: string[];
-  ringColor: string; speedMph: number; infoColor: string;
+  ringColor: string; speedMph: number; isFreshFix: boolean; infoColor: string;
   g: { mapPinWrap: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
 }) {
   // Was a plain Marker with a memoized-but-still-instant coordinate — the
@@ -143,7 +143,13 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
       latitude: lat, longitude: lng, duration: 1000, useNativeDriver: false,
     }).start();
   }, [lat, lng, animatedCoord]);
-  const movement = classifyMovement(speedMph);
+  // speed_mph freezes at whatever a real GPS fix last recorded — same
+  // staleness issue the roster list row already gates on via isFreshFix
+  // (see its own comment above) — this map pin badge was reading raw
+  // speedMph with no such check, so someone stopped for hours still showed
+  // a walking/driving badge on their pin [live-reported: "even they
+  // stopped walk[ing]" — pin still showed the footprints icon].
+  const movement = isFreshFix ? classifyMovement(speedMph) : 'stationary';
   const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
@@ -721,6 +727,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           {pinned.map(loc => {
             const rc = roleColor(loc.role);
             const m = members.find(mb => mb.id === loc.member_id);
+            const fixAgeMs = loc.last_updated ? Date.now() - new Date(loc.last_updated).getTime() : Infinity;
+            const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 10 * 60_000;
             return (
               <FamilyMapMarker
                 key={loc.member_id}
@@ -728,7 +736,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 name={loc.name} statusText={loc.status_text ?? STATUS_LABELS[loc.status]}
                 emoji={m?.emoji} avatarUrl={m?.avatarUrl}
                 siblingNames={members.map(mb => mb.name)}
-                ringColor={rc} speedMph={loc.speed_mph ?? 0}
+                ringColor={rc} speedMph={loc.speed_mph ?? 0} isFreshFix={isFreshFix}
                 infoColor={colors.info}
                 g={g}
               />

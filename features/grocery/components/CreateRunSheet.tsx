@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
   Modal, Platform, Keyboard, StyleSheet, TouchableOpacity,
@@ -28,8 +28,16 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   const DEFAULT_STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
   const STORE_SUGGESTIONS = [...new Set([...pastStores, ...DEFAULT_STORE_SUGGESTIONS])].slice(0, 9);
 
+  // Was: guarded only by `saving` state — a fast double-tap can fire
+  // onPress twice before React re-renders with the disabled button, since
+  // setSaving(true) doesn't take effect synchronously [live-reported: two
+  // identical "Walmart trip" rows created "just now"]. savingRef is a
+  // synchronous, same-tick lock that closes this gap; state stays for the
+  // actual UI (spinner/disabled look).
+  const savingRef = useRef(false);
   const handleSave = async () => {
-    if (!store.trim()) return;
+    if (!store.trim() || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     const run = await createRun({
       familyId,
@@ -39,6 +47,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
       shopperId: memberId,
       plannedAt: plannedAt?.toISOString(),
     });
+    savingRef.current = false;
     setSaving(false);
     if (run) { setName(''); setStore(''); setPlannedAt(null); onCreated(run); }
   };

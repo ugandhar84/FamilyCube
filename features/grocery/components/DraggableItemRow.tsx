@@ -77,7 +77,20 @@ export function DraggableItemRow({
     }
   }, []);
 
+  // Was: Gesture.Pan() built unconditionally on every render of every row,
+  // even though the GestureDetector below only mounts it when
+  // (dragEnabled || inFlight) — the config object (and its worklet
+  // closures) still got allocated for every row regardless [live-reported:
+  // "God taking time to load groceries with 30 items" — a real per-row
+  // cost that scales with item count, unlike this screen's actual data
+  // fetch/grouping, which is a single flat query + O(n) reduces].
+  // enabled(false) is the react-native-gesture-handler-supported way to
+  // keep a SINGLE stable gesture instance (required — Gesture objects
+  // aren't meant to be conditionally constructed across renders) while
+  // still skipping its actual recognition work when this row's drag isn't
+  // currently relevant.
   const pan = Gesture.Pan()
+    .enabled(dragEnabled || inFlight)
     .onStart(() => {
       isActive.value = true;
       draggingId.value = item.id;

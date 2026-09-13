@@ -435,13 +435,18 @@ export function itemEmoji(name: string | undefined | null): string | null {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Was purely relative ("just now"/"Xm ago"/"Xh ago" for anything under
+// 24h) with no way to ever see the actual date/time — two trips created
+// seconds apart were both stuck reading "just now" with no way to tell
+// them apart [live-reported: "should show date time of updated"]. Always
+// shows the real timestamp now: today's trips get a time-of-day
+// ("2:15 PM"), older ones get a date ("Sep 12") — still compact for a
+// list row, but never ambiguous between two close-together entries.
 export function fmtDate(iso: string) {
   const d = new Date(iso);
   const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  if (diff < 60_000)   return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 

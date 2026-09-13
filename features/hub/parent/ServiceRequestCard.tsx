@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Money-green — "GP Welcome" confirmed-state accent, distinct from brand
 // teal used for this card's main styling. Not colors.success (which IS
@@ -30,12 +31,15 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
   // is a plain additive write (no idempotency check) and approveRequest's
   // own pending-status guard only protects the status flip itself, not the
   // coin award/chat message that ran alongside it. Without this, two rapid
-  // taps on "Approve +N¢" paid the kid coins twice.
-  const [submitting, setSubmitting] = useState(false);
+  // taps on "Approve +N¢" paid the kid coins twice. Was a plain `submitting`
+  // state check — not synchronous, so a fast-enough double-tap could still
+  // land both calls before the disabled state took effect [live-requested
+  // app-wide after the same race duplicated a grocery trip: "We should
+  // avoid double tab submit for all the app wide"]. useSubmitGuard's ref
+  // check is synchronous.
+  const { submitting, guard } = useSubmitGuard();
 
-  const handleApprove = () => {
-    if (submitting) return;
-    setSubmitting(true);
+  const handleApprove = guard(async () => {
     const coins = parseInt(coinOffer, 10);
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Approve" on "${typeLabel}" for ${kidName} (id=${req.id}) coinOffer=${coinOffer || 0} → approveRequest [features/hub/parent/ServiceRequestCard.tsx:90]`);
     if (canOfferCoins && coins > 0) {
@@ -46,7 +50,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
     } else {
       approveRequest(req.id, active.id);
     }
-  };
+  });
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1.5,
@@ -122,15 +126,13 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
               `Add a note for ${kidName} — why can't this happen?`,
               [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Send & Decline', style: 'destructive', onPress: (note: string | undefined) => {
-                  if (submitting) return;
-                  setSubmitting(true);
+                { text: 'Send & Decline', style: 'destructive', onPress: guard(async (note: string | undefined) => {
                   const finalNote = note?.trim() || undefined;
                   console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Decline" on "${typeLabel}" for ${kidName} (id=${req.id}) → declineRequest [features/hub/parent/ServiceRequestCard.tsx:106]`);
                   declineRequest(req.id, active.id, finalNote);
                   const msg = `❌ ${active.name.split(' ')[0]} declined your ${req.type} request: "${req.detail}"${finalNote ? `\n📝 "${finalNote}"` : ''}`;
                   useChatStore.getState().sendMessage('all', active.id, msg);
-                }},
+                })},
               ],
               'plain-text',
               '',

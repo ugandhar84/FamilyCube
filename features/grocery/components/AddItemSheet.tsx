@@ -10,6 +10,7 @@ import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from './types';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { showToast } from '@/components/AppToast';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -29,7 +30,10 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
   const [store, setStore] = useState('');
   const [storeFocused, setStoreFocused] = useState(false);
   const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
+  // Was a plain `saving` state — a fast double-tap could fire this twice,
+  // adding the same grocery item twice [live-requested app-wide: "We
+  // should avoid double tab submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [aiSuggestions, setAiSuggestions] = useState<{ name: string; cat: string; emoji: string }[]>(QUICK_SUGGESTIONS);
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -66,9 +70,8 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
 
   const reset = () => { setName(''); setQty(''); setCat(''); setStore(''); setNotes(''); };
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     if (!name.trim()) return;
-    setSaving(true);
     if (isEdit && editItem) {
       await supabase.from('grocery_items').update({
         name: name.trim(),
@@ -84,11 +87,10 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
         addedBy: memberId, notes: notes.trim() || undefined,
       });
     }
-    setSaving(false);
     showToast(isEdit ? 'Item updated' : 'Item added');
     reset();
     onClose();
-  };
+  });
 
   const sheetBg = colors.card;
   const border  = colors.border;

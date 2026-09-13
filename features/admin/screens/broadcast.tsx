@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { showAlert } from '@/components/AppAlert';
 import { sendAdminBroadcast, type BroadcastAudience } from '@/lib/db/admin';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 const AUDIENCES: { key: BroadcastAudience; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'all', label: 'Everyone', description: 'Every device with a push token', icon: 'people-outline' },
@@ -21,7 +22,12 @@ export default function BroadcastScreen() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<BroadcastAudience>('all');
-  const [sending, setSending] = useState(false);
+  // Was a plain `sending` state — the confirm-Alert already provides a
+  // real barrier against a stray double-tap, but this is a broadcast to
+  // every device, so it gets the same synchronous guard as everything
+  // else rather than relying solely on that [live-requested app-wide:
+  // "We should avoid double tab submit for all the app wide"].
+  const { submitting: sending, guard } = useSubmitGuard();
 
   const canSend = title.trim().length > 0 && body.trim().length > 0 && !sending;
 
@@ -37,8 +43,7 @@ export default function BroadcastScreen() {
     );
   };
 
-  const doSend = async () => {
-    setSending(true);
+  const doSend = guard(async () => {
     try {
       const { sent } = await sendAdminBroadcast(title.trim(), body.trim(), audience);
       showAlert('Broadcast sent', `Delivered to ${sent} ${sent === 1 ? 'device' : 'devices'}.`);
@@ -46,10 +51,8 @@ export default function BroadcastScreen() {
       setBody('');
     } catch (e: any) {
       showAlert("Couldn't send broadcast", e?.message ?? 'Something went wrong.');
-    } finally {
-      setSending(false);
     }
-  };
+  });
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

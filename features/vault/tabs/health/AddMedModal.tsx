@@ -13,6 +13,7 @@ import {
   fmtDate, fmtDateDisplay, aStyles, doseCountForFrequency,
 } from './types';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Stepper — was one long scroll cramming 7 sections (category, name,
 // dosage, frequency, prescriber, supply, escalation) into a single pass;
@@ -47,7 +48,11 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
 }) {
   const [form, setForm]               = useState<MedForm>(BLANK_MED);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
-  const [saving, setSaving]           = useState(false);
+  // Was a plain `saving` state with no synchronous check at all before
+  // proceeding — a fast double-tap on Save could fire onSave twice,
+  // creating a duplicate medication record [live-requested app-wide:
+  // "We should avoid double tab submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [showRefillPicker, setShowRefillPicker] = useState(false);
   const [refillDate, setRefillDate]   = useState<Date | null>(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
@@ -149,7 +154,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   };
   const goBack = () => { if (stepIndex > 0) setStepIndex(i => i - 1); };
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     setSubmitAttempted(true);
     if (medErrors.name || medErrors.dosage || medErrors.member) {
       // Jump back to whichever step actually has the problem instead of
@@ -159,12 +164,10 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
       setStepIndex(medErrors.name || medErrors.member ? 0 : 1);
       return;
     }
-    setSaving(true);
     await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' }, editing?.medId);
-    setSaving(false);
     reset();
     onClose();
-  };
+  });
 
   const catColors = getCatColors(colors);
   const catColor = catColors[form.category] ?? colors.primary;

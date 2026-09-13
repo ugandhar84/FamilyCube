@@ -12,6 +12,7 @@ import {
   fmtDate, fmtDateDisplay, aStyles,
 } from './types';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Stepper — same rationale as AddMedModal.tsx's own comment: was one long
 // scroll across 5 sections, broken into steps matching the existing
@@ -46,7 +47,11 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
 }) {
   const [form, setForm]               = useState<VaxForm>(BLANK_VAX);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
-  const [saving, setSaving]           = useState(false);
+  // Was a plain `saving` state with no synchronous check — a fast
+  // double-tap on Save could fire onSave twice, duplicating a vaccine
+  // record [live-requested app-wide: "We should avoid double tab submit
+  // for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [adminDate, setAdminDate]     = useState<Date>(new Date());
   const [nextDate, setNextDate]       = useState<Date | null>(null);
   const [showAdminPick, setShowAdminPick]   = useState(false);
@@ -106,22 +111,20 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
   };
   const goBack = () => { if (stepIndex > 0) setStepIndex(i => i - 1); };
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     setVaxSubmitAttempted(true);
     if (vaxErrors.title || vaxErrors.member) {
       setStepIndex(0);
       return;
     }
-    setSaving(true);
     await onSave(selectedMember, {
       ...form,
       date: fmtDate(adminDate),
       next_due_date: nextDate ? fmtDate(nextDate) : '',
     }, editing?.vaxId);
-    setSaving(false);
     reset();
     onClose();
-  };
+  });
 
   const suggestions = useMemo(() => {
     if (!form.title.trim()) return VAX_SUGGESTIONS.slice(0, 6);

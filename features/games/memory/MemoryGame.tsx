@@ -474,6 +474,20 @@ function MultiplayerMemory({ gridWidth, sessionId, onGameOverChange }: { gridWid
     if (activeMemberId) ensurePresence(sessionId, activeMemberId);
   });
 
+  // Same polling safety net as TicTacToeGame.tsx's own copy — a silently
+  // stalled realtime socket (no clean close event) leaves
+  // ensureSessionRealtime's dedup guard thinking the channel is still
+  // healthy, so it never resubscribes and this device stops receiving
+  // the opponent's moves at all, with both players' screens open the
+  // whole time [live-reported: two devices showing genuinely divergent
+  // boards for the same session].
+  useEffect(() => {
+    const gameOver = activeSession?.status === 'completed' || activeSession?.status === 'abandoned';
+    if (gameOver) return;
+    const interval = setInterval(() => loadSession(sessionId), 5000);
+    return () => clearInterval(interval);
+  }, [sessionId, activeSession?.status]);
+
   const session = activeSession?.id === sessionId ? activeSession : null;
   const isParticipant = !!session && (session.challengerId === activeMemberId || session.challengedId === activeMemberId);
 

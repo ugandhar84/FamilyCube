@@ -9,11 +9,13 @@
  * path back to their board (live-requested: rejoin-after-close support,
  * same card style as ChallengeIncomingPrompt/ChallengeOutgoingPrompt).
  */
+import { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
-import { type GameSession } from '@/store/gameStore';
+import { useGameStore, type GameSession } from '@/store/gameStore';
+import { showAlert } from '@/components/AppAlert';
 
 const GAME_LABEL: Record<string, string> = { tic_tac_toe: 'Tic-Tac-Toe', memory: 'Memory' };
 const GAME_ROUTE: Record<string, '/hub/games/tic-tac-toe' | '/hub/games/memory'> = {
@@ -22,10 +24,28 @@ const GAME_ROUTE: Record<string, '/hub/games/tic-tac-toe' | '/hub/games/memory'>
 
 export function ChallengeResumePrompt({ session, colors, activeMemberId }: { session: GameSession; colors: any; activeMemberId: string }) {
   const members = useFamilyStore(s => s.members);
+  const leaveGame = useGameStore(s => s.leaveGame);
+  const [leaving, setLeaving] = useState(false);
   const opponentId = session.challengerId === activeMemberId ? session.challengedId : session.challengerId;
   const opponent = members.find(m => m.id === opponentId);
   const gameLabel = GAME_LABEL[session.gameType] ?? session.gameType;
   const myTurn = session.currentTurnMemberId === activeMemberId;
+
+  // Was Resume-only — the only way to walk away from a stale/unwanted
+  // active game was to open it and find the in-game Leave button there
+  // [live-requested: "we should have the resume or leave button on that
+  // card"]. leaveGame() already exists and is exactly what the in-game
+  // screens call — reused here directly so this card can end the game
+  // without navigating into it first.
+  const handleLeave = () => {
+    showAlert('Leave this game?', `${opponent?.name?.split(' ')[0] ?? 'They'} will be credited the win.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave Game', style: 'destructive',
+        onPress: async () => { setLeaving(true); await leaveGame(session.id); setLeaving(false); },
+      },
+    ]);
+  };
 
   return (
     <View style={{
@@ -38,12 +58,21 @@ export function ChallengeResumePrompt({ session, colors, activeMemberId }: { ses
       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
         {myTurn ? "It's your turn" : `Waiting on ${opponent?.name?.split(' ')[0] ?? 'them'}`}
       </Text>
-      <TouchableOpacity
-        onPress={() => router.push({ pathname: GAME_ROUTE[session.gameType] as any, params: { mode: 'multiplayer', sessionId: session.id } })}
-        style={{ borderRadius: RADIUS.md, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.accent }}
-      >
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Resume Game</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity
+          onPress={() => router.push({ pathname: GAME_ROUTE[session.gameType] as any, params: { mode: 'multiplayer', sessionId: session.id } })}
+          style={{ flex: 1, borderRadius: RADIUS.md, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.accent }}
+        >
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Resume Game</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleLeave}
+          disabled={leaving}
+          style={{ borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', borderWidth: 1, borderColor: colors.danger }}
+        >
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>{leaving ? '…' : 'Leave'}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

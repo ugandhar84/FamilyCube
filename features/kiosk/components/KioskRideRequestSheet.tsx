@@ -72,6 +72,7 @@ import { useKioskColors } from '../kioskPalette';
 import type { KioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 type RideChoice = 'none' | 'dropoff' | 'pickup' | 'both';
 
@@ -129,7 +130,13 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
   const [pickupTime, setPickupTime] = useState<Date | null>(null);
   const [showPickupDatePick, setShowPickupDatePick] = useState(false);
   const [showPickupTimePick, setShowPickupTimePick] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  // Had a manual `if (!active || !category || submitting) return;` — still
+  // just a `useState` read, not synchronous, so a fast double-tap on a ride
+  // choice card could fire addEvent twice, creating a duplicate ride
+  // request [live-requested app-wide: "We should avoid double tab submit
+  // for all the app wide"]. Same fix as KidRequestModal.tsx's own copy of
+  // this state.
+  const { submitting, guard } = useSubmitGuard();
   const [done, setDone] = useState(false);
 
   const catMeta = category ? ALL_CATEGORIES.find(c => c.key === category) ?? null : null;
@@ -143,7 +150,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
     setPickupDate(null); setPickupTime(null);
     setShowPickupDatePick(false); setShowPickupTimePick(false);
     setShowDatePick(false); setShowTimePick(false);
-    setAlertCall(false); setWithSiblings([]); setSubmitting(false);
+    setAlertCall(false); setWithSiblings([]);
     setEventDate(() => {
       const d = new Date(); const m = d.getMinutes();
       d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1);
@@ -152,9 +159,8 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
   };
   const close = () => { reset(); onClose(); };
 
-  const submit = (choice: RideChoice) => {
-    if (!active || !category || submitting) return;
-    setSubmitting(true);
+  const submit = guard(async (choice: RideChoice) => {
+    if (!active || !category) return;
     setRideChoice(choice);
 
     // Same RIDE: encoding parseRideMeta (features/hub/parent/rideLegs.ts)
@@ -192,10 +198,9 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
     };
 
     addEvent(eventInput);
-    setSubmitting(false);
     setDone(true);
     setTimeout(close, 1600);
-  };
+  });
 
   const pickRide = (choice: RideChoice) => {
     setRideChoice(choice);

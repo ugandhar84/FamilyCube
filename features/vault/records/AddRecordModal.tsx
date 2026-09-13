@@ -10,6 +10,7 @@ import { Lock, Shield, FileText, Camera, Image, FolderOpen, X } from 'lucide-rea
 import AppBottomSheet from '@/components/AppBottomSheet';
 import PhotoRedactModal, { RedactableImage } from '@/components/PhotoRedactModal';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 interface Props {
   visible:        boolean;
@@ -38,7 +39,11 @@ export default function AddRecordModal({
   const [form,      setForm]      = useState<RecordForm>(BLANK_FORM);
   const [selMember, setSelMember] = useState(activeMemberId ?? members[0]?.id ?? '');
   const [file,      setFile]      = useState<DocumentPicker.DocumentPickerAsset | null>(null);
-  const [saving,    setSaving]    = useState(false);
+  // Was a plain `saving` state — a fast double-tap on "Save to Vault" could
+  // fire onSave twice, uploading/creating the same record twice
+  // [live-requested app-wide: "We should avoid double tab submit for all
+  // the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [tried,     setTried]     = useState(false);
   // A camera/library photo pick goes through the redact step below before
   // becoming `file` — analyze-medical-record sends the raw image to Gemini
@@ -49,7 +54,7 @@ export default function AddRecordModal({
 
   useEffect(() => {
     if (visible) {
-      setForm(BLANK_FORM); setFile(null); setSaving(false); setTried(false);
+      setForm(BLANK_FORM); setFile(null); setTried(false);
       setSelMember(activeMemberId ?? members[0]?.id ?? '');
     }
   }, [visible, activeMemberId, members]);
@@ -128,14 +133,12 @@ export default function AddRecordModal({
     setPendingPhoto(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     setTried(true);
     if (errors.title || errors.member) return;
-    setSaving(true);
     await onSave(selMember, form, file);
-    setSaving(false);
     onClose();
-  };
+  });
 
   const inp = [s.inp, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }];
 

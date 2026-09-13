@@ -11,6 +11,7 @@ import { useChatStore } from '@/store/chatStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // A non-Ride event (Sports/Study/Medical/etc) that separately flagged
 // "needs a ride" (rideRequired) — distinct from RideRequestCard, which only
@@ -40,6 +41,14 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   const pickupIsDifferentDay = rideMeta.pickupDate && rideMeta.pickupDate !== ev.date;
   const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
   const [reassignOpen, setReassignOpen] = useState(false);
+  // forkRide (Approve & Split) calls forkRideLegs, which CREATES a brand new
+  // sibling event with no dedup at all — this card had no double-tap guard
+  // whatsoever before, so a fast double-tap on "Approve & Split" could
+  // create two duplicate pickup-leg events [live-requested app-wide: "We
+  // should avoid double tab submit for all the app wide"]. iDrive/
+  // reassignTo share the same guard for consistency even though
+  // reassignEvent itself is closer to idempotent-by-id.
+  const { submitting, guard } = useSubmitGuard();
   const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id);
   // Live-reported: "Helpers" (open to GP/teen pool) showed even in a
   // family with zero teen or grandparent members — nobody could ever act
@@ -64,7 +73,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // later one-off swap for just one occurrence happens through
   // HelperEventCard's Take-Over action instead, which stays scoped to
   // 'this' only.
-  const iDrive = async () => {
+  const iDrive = guard(async () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx:47]`);
     // Routed through the ONE shared reassignEvent (store/eventStore.ts) —
     // every surface that can reassign a driver/helper now calls the same
@@ -76,7 +85,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       // going forward" moment — propagate to future occurrences.
       updateEventScoped(ev.id, { driverName: active.name, driverId: active.id, driverStatus: 'confirmed' }, 'following');
     }
-  };
+  });
 
   // A parent who can't drive this themselves previously had no path at
   // all — this card offered only "I'll Drive," a dead end. RideRequestCard
@@ -129,7 +138,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   // someone other than yourself starts 'pending' (the RPC's own status
   // logic), requiring the new parent's own confirm, not auto-confirmed
   // the way "I'll Drive" is.
-  const reassignTo = async (m: FamilyMember) => {
+  const reassignTo = guard(async (m: FamilyMember) => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Reassign to ${m.name}" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx]`);
     notifyTakeover(ev, m.name, members, active.name, active.id);
     // Routed through the ONE shared reassignEvent — see iDrive's comment
@@ -138,9 +147,9 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
     // reassign_event itself, not duplicated here.
     await useEventStore.getState().reassignEvent(ev.id, m.id, 'driver', active.id);
     setReassignOpen(false);
-  };
+  });
 
-  const forkRide = async (selfDrive: boolean) => {
+  const forkRide = guard(async (selfDrive: boolean) => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${selfDrive ? "I'll Drive" : 'Approve & Split'}" on "${ev.title}" (id=${ev.id}) selfDrive=${selfDrive} → forkRideLegs [features/hub/parent/RideRequiredEventCard.tsx:65]`);
     await forkRideLegs({
       ev, selfDrive,
@@ -153,7 +162,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       pickupTimeOverride: pickupTimeOverride ?? undefined,
     });
     showToast(selfDrive ? "You're driving ✓" : 'Split into 2 legs ✓');
-  };
+  });
 
   return (
     <CollapsibleCard flat accent={colors.warning} colors={colors} isDark={isDark} defaultExpanded
@@ -222,13 +231,13 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={() => forkRide(false)}
-              style={{ flex: 2, backgroundColor: DROPOFF_GREEN, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            <Pressable disabled={submitting} onPress={() => forkRide(false)}
+              style={{ flex: 2, backgroundColor: DROPOFF_GREEN, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitting ? 0.6 : 1 }}>
               <CheckCircle2 size={14} color="#fff" />
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve & Split</Text>
             </Pressable>
-            <Pressable onPress={() => forkRide(true)}
-              style={{ flex: 1, backgroundColor: `${DROPOFF_GREEN}20`, borderWidth: 1, borderColor: `${DROPOFF_GREEN}40`, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+            <Pressable disabled={submitting} onPress={() => forkRide(true)}
+              style={{ flex: 1, backgroundColor: `${DROPOFF_GREEN}20`, borderWidth: 1, borderColor: `${DROPOFF_GREEN}40`, paddingVertical: 10, borderRadius: 12, alignItems: 'center', opacity: submitting ? 0.6 : 1 }}>
               <Car size={13} color={DROPOFF_GREEN} />
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: DROPOFF_GREEN }}>I'll Drive</Text>
             </Pressable>
@@ -237,8 +246,8 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       ) : (
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Pressable onPress={iDrive}
-              style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
+            <Pressable disabled={submitting} onPress={iDrive}
+              style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3, opacity: submitting ? 0.6 : 1 }}>
               <CheckCircle2 size={12} color="#fff" />
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }} numberOfLines={1}>I'll Drive</Text>
             </Pressable>
@@ -276,7 +285,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
           {reassignOpen && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {otherParents.map(m => (
-                <Pressable key={m.id} onPress={() => reassignTo(m)}
+                <Pressable key={m.id} disabled={submitting} onPress={() => reassignTo(m)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9,
                     borderRadius: 999, borderWidth: 1.5, borderColor: colors.parent + '50', backgroundColor: colors.parent + '14' }}>
                   <UserCog size={13} color={colors.parent} />

@@ -13,6 +13,7 @@ import { SectionCard } from '../hubComponents';
 import { ReasonPromptModal } from '@/components/ReasonPromptModal';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Money-green — "Save" jar accent in the coin-split preview, distinct from
 // brand teal used for this card's header. Not colors.success (which IS
@@ -113,8 +114,13 @@ function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparent
 }) {
   const sponsor = members.find(m => m.id === c.sponsorUserId);
   const kid = members.find(m => m.id === c.assignedToId);
+  // Had no double-tap guard at all — a fast double-tap on "Nudge" could
+  // fire sendMessage/family-notifier twice, duplicating the reminder
+  // [live-requested app-wide: "We should avoid double tab submit for all
+  // the app wide"].
+  const { submitting: nudging, guard } = useSubmitGuard();
 
-  const nudgeSponsor = () => {
+  const nudgeSponsor = guard(async () => {
     if (!sponsor) return;
     const msg = `👋 ${kid?.name.split(' ')[0] ?? 'Your grandchild'} submitted "${c.title}" a bit ago — it's waiting on you to review and cheer!`;
     useChatStore.getState().sendMessage(sponsor.id, active.id, msg);
@@ -132,7 +138,7 @@ function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparent
       }).catch((e: any) => console.warn('[ChoreReviewSection] nudgeSponsor push failed', e?.message));
     }
     Alert.alert('Nudge sent!', `A reminder was sent to ${sponsor.name.split(' ')[0]}.`);
-  };
+  });
 
   const fallbackApprove = () => Alert.alert(
     'Approve on behalf of ' + (sponsor?.name.split(' ')[0] ?? 'the grandparent') + '?',
@@ -157,9 +163,9 @@ function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparent
         </View>
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Pressable onPress={nudgeSponsor}
+        <Pressable disabled={nudging} onPress={nudgeSponsor}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-            paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.teal + '60' }}>
+            paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.teal + '60', opacity: nudging ? 0.6 : 1 }}>
           <MessageCircle size={13} color={colors.teal} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.teal }}>Nudge {sponsor?.name.split(' ')[0] ?? 'GP'}</Text>
         </Pressable>

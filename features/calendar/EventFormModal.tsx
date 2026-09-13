@@ -61,6 +61,7 @@ import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestio
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
 import { showToast } from '@/components/AppToast';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
 // One stepper shell + one recurrence picker + one call-reminder toggle + one
@@ -141,7 +142,11 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const [title,          setTitle]          = useState(prefill?.title ?? '');
   const [titleFocused,   setTitleFocused]   = useState(false);
   const [notes,          setNotes]          = useState(prefill?.notes ?? '');
-  const [saving,         setSaving]         = useState(false);
+  // Was a plain `saving` state — a fast double-tap on "Add to Family
+  // Schedule" could fire submit twice, creating a duplicate event (or, for
+  // a recurring one, a whole duplicate series) [live-requested app-wide:
+  // "We should avoid double tab submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   // Scenarios 2.6/5.4 — explicit privacy tag. A Medical-category event is
   // ALSO always treated as sensitive regardless of this toggle (see
   // isEventSensitive) — this only controls the OPTIONAL tag for any other
@@ -514,10 +519,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     });
   };
 
-  const submit = async () => {
+  const submit = guard(async () => {
     if (!canSubmit) return;
     if (!(await confirmLargeRecurrence())) return;
-    setSaving(true);
 
     const primaryKidRideDate = isKid && kidRideNeeded
       ? (kidDropoffOn && kidDropoffDate
@@ -684,7 +688,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               ],
             );
           });
-          if (!proceed) { setSaving(false); return; }
+          if (!proceed) { return; }
         }
       } catch (e: any) {
         console.warn('[EventFormModal] check_likely_duplicate_event failed (proceeding):', e?.message);
@@ -793,7 +797,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             // daily rule's 85 pairs meant up to 170 sequential awaited round
             // trips. Live-reported: "step 4 still showing in progress" —
             // the save spinner stayed up the whole time this ran, since
-            // setSaving(false) only fires after this entire block finishes.
+            // the guard's finally only fires after this entire block finishes.
             // Pairing is just two independent-per-row column writes with no
             // cross-row ordering requirement, so run them as direct
             // Supabase writes in parallel instead of routing each one
@@ -964,11 +968,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       }
     }
 
-    setSaving(false);
     showToast('Event created');
     reset();
     onClose();
-  };
+  });
 
   const catColor = CATEGORIES.find(c => c.key === category)?.color ?? BRAND.purple;
   const catEmoji = CATEGORIES.find(c => c.key === category)?.emoji ?? '📅';
@@ -1857,7 +1860,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editMemberIds, setEditMemberIds] = useState<string[]>(
     event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : []
   );
-  const [saving,        setSaving]        = useState(false);
+  // Was a plain `saving` state — save() is usually a pure update-by-id, but
+  // when "Needs pickup too?" is toggled on it also FORKS a brand-new pickup
+  // event/series (forkOne/forkSiblings, addRecurringEvent) — a fast
+  // double-tap on Save could fire that fork twice, creating a duplicate
+  // pickup event [live-requested app-wide: "We should avoid double tab
+  // submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [editGPOpen,    setEditGPOpen]    = useState(event.isOpenToGrandparents ?? false);
   const [editTeenOpen,  setEditTeenOpen]  = useState(event.isOpenToTeens ?? false);
   const [editRideCoins, setEditRideCoins] = useState(event.rideCoins != null ? String(event.rideCoins) : '');
@@ -1951,8 +1960,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     setHelperTouched(true);
   };
 
-  const save = async () => {
-    setSaving(true);
+  const save = guard(async () => {
     const patch: Partial<FamilyEvent> = {};
     // Past/restricted: notes is the one field still editable (matches the
     // quest pattern — everything locks after the fact except a note).
@@ -1964,7 +1972,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
       if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
       if (Object.keys(patch).length > 0) { updateEvent(event.id, patch); showToast('Event updated'); }
-      setSaving(false);
       onClose();
       return;
     }
@@ -2212,7 +2219,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       } else if (Object.keys(patch).length > 0) {
         showToast('Event updated');
       }
-      setSaving(false);
       onClose();
     };
 
@@ -2223,17 +2229,22 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           ? 'Apply this to just this event, or every occurrence?'
           : 'Apply this change to just this event, or the whole series?',
         [
-          { text: 'Cancel', style: 'cancel', onPress: () => setSaving(false) },
-          { text: 'Just this one', onPress: () => { applyScope('this'); } },
-          { text: 'This and following', onPress: () => { applyScope('following'); } },
-          { text: 'All events', onPress: () => { applyScope('all'); } },
+          { text: 'Cancel', style: 'cancel' },
+          // Each scope choice re-enters through its own guard() call — save()
+          // itself already returned (and released the ref) by the time the
+          // user taps a button here, so a fast double-tap on one of THESE
+          // buttons needs its own synchronous protection against forking the
+          // pickup leg/series twice.
+          { text: 'Just this one', onPress: guard(() => applyScope('this')) },
+          { text: 'This and following', onPress: guard(() => applyScope('following')) },
+          { text: 'All events', onPress: guard(() => applyScope('all')) },
         ],
       );
       return;
     }
 
     await applyScope('this');
-  };
+  });
 
   const handleDelete = () => {
     if (restricted) return; // blocked in UI

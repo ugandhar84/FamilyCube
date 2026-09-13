@@ -9,6 +9,7 @@ import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { fmtDate } from '@/lib/dates';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Confirmed-green — "GP Welcome" toggle accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -25,6 +26,11 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   onLongPress?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
+  // Reclaim had no double-tap guard at all — a fast double-tap on
+  // "Reclaim" in the confirm Alert could fire the reassign_chore RPC (plus
+  // its own quest-event-notifier push) twice [live-requested app-wide:
+  // "We should avoid double tab submit for all the app wide"].
+  const { submitting: reclaiming, guard } = useSubmitGuard();
   const assignee   = members.find(m => m.id === q.assignedToId);
   const choreData  = useChoreStore(s => s.chores.find(c => c.id === q.id));
   const si         = choreData?.shoppingItems ?? (q as any).shoppingItems;
@@ -62,7 +68,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
     `Reassign "${q.title}" to yourself?`,
     [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Reclaim', onPress: () => {
+      { text: 'Reclaim', onPress: guard(async () => {
         console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reclaim" on "${q.title}" (id=${q.id}) → reassign_chore [features/hub/parent/backlog/OthersAdultQuestCard.tsx:43]`);
         // Was assignedToId-only — never touched status/isPool at all,
         // the exact "missing both" asymmetry the audit flagged.
@@ -88,7 +94,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
               }).catch((e: any) => console.warn('[OthersAdultQuestCard] reassign notify failed', e?.message));
             }
           });
-      } },
+      }) },
     ]
   );
   };
@@ -199,11 +205,11 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
           <MessageCircle size={13} color={colors.warning} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>Nudge</Text>
         </Pressable>
-        <Pressable onPress={reclaim} /* logging inside reclaim() */
+        <Pressable disabled={reclaiming} onPress={reclaim} /* logging inside reclaim() */
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: colors.primary + '18',
             borderWidth: 1.5, borderColor: colors.primary + '50',
-            borderRadius: 10, paddingVertical: 8 }}>
+            borderRadius: 10, paddingVertical: 8, opacity: reclaiming ? 0.6 : 1 }}>
           <ArrowRightLeft size={13} color={colors.primary} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary }}>Reclaim</Text>
         </Pressable>

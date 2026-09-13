@@ -68,6 +68,7 @@ import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from '@/features/grocery/com
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, item }: {
   visible: boolean;
@@ -95,7 +96,13 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
   const [cat, setCat] = useState('');
   const [store, setStore] = useState('');
   const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
+  // Had a manual `if (!canSubmit || saving) return;` — still just a
+  // `useState` read, not synchronous, so a fast double-tap on "Add to
+  // List"/"Save Changes" could fire addItem/updateItem twice, adding the
+  // same grocery item twice [live-requested app-wide: "We should avoid
+  // double tab submit for all the app wide"]. Same fix as AddItemSheet.tsx's
+  // own copy of this state.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -117,9 +124,8 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
   const input = kioskInputStyle(k);
   const canSubmit = name.trim().length > 0;
 
-  const submit = async () => {
-    if (!canSubmit || saving) return;
-    setSaving(true);
+  const submit = guard(async () => {
+    if (!canSubmit) return;
     if (isEdit && item) {
       await updateItem(item.id, {
         name: name.trim(),
@@ -138,9 +144,8 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
         notes: notes.trim() || undefined,
       });
     }
-    setSaving(false);
     onClose();
-  };
+  });
 
   const handleDeletePress = async () => {
     if (!item) return;

@@ -9,6 +9,7 @@ import { fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFo
 import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { KidRequest } from '@/store/kidRequestStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Scenario 1.4 — a Kid's suggested chore ("Can I wash the car for 15 coins?")
 // awaiting a parent's Approve-as-is / Approve-with-Changes / Decline
@@ -37,8 +38,11 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
   // Guards a fast double-tap on Approve/Decline — onApprove calls addChore
   // (no dedup, creates a new chore every call) and onDecline calls
   // declineRequest; without this, two rapid taps created two live pool
-  // quests for the same proposal plus two chat notifications.
-  const [submitting, setSubmitting] = useState(false);
+  // quests for the same proposal plus two chat notifications. Was a plain
+  // `submitting` state checked manually before each call — not synchronous
+  // enough to close the gap on a genuinely fast double-tap [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  const { submitting, guard } = useSubmitGuard();
 
   const finalCoins = Math.max(0, Math.round(parseInt(coinsText, 10) || 0));
   const wasEdited = finalCoins !== (req.rewardCoins ?? 15);
@@ -125,11 +129,9 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
             `Let ${kidName} know why "${req.detail}" wasn't approved (optional).`,
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Decline', style: 'destructive', onPress: (reason?: string) => {
-                if (submitting) return;
-                setSubmitting(true);
+              { text: 'Decline', style: 'destructive', onPress: guard(async (reason?: string) => {
                 onDecline(reason?.trim() || undefined);
-              } },
+              }) },
             ],
             'plain-text',
           )}
@@ -141,14 +143,12 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
         </Pressable>
         <Pressable
           disabled={submitting}
-          onPress={() => {
-            if (submitting) return;
-            setSubmitting(true);
+          onPress={guard(async () => {
             onApprove(finalCoins, alertCall ? {
               dueDate: localDateStr(dueDate), dueTime: fmtTimeLabel(dueDate),
               alertCall, alertCallLeadMinutes,
             } : undefined);
-          }}
+          })}
           style={{ flex: 2, backgroundColor: colors.parent, paddingVertical: 10, borderRadius: 12,
             alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, opacity: submitting ? 0.6 : 1 }}>
           <Check size={14} color="#fff" />

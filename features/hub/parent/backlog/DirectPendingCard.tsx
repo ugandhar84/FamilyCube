@@ -7,6 +7,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { showToast } from '@/components/AppToast';
 import { supabase } from '@/lib/supabase';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Money-green — "Accept" action accent, distinct from brand amber used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -23,6 +24,11 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
   const [isExp, setExp] = useState(false);
   const assigner = members.find(m => m.id === a.assignedBy);
   const assignee = members.find(m => m.id === a.assignedTo);
+  // This card had no double-tap guard at all — a fast double-tap on
+  // "Accept" fired respondToParentQuest AND sendMessage twice, duplicating
+  // the "accepted" chat message/push [live-requested app-wide: "We should
+  // avoid double tab submit for all the app wide"].
+  const { submitting: accepting, guard } = useSubmitGuard();
 
   return (
     <View style={{
@@ -54,7 +60,7 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={() => {
+        <Pressable disabled={accepting} onPress={guard(async () => {
           console.log(`[UserAction] screen=Hub role=parent tapped "Accept" on "${chore.title}" from ${assigner?.name ?? 'partner'} (id=${a.id}) → respondToParentQuest [features/hub/parent/backlog/DirectPendingCard.tsx:55]`);
           respondToParentQuest(a.id, { action: 'ACCEPT' });
           // System A never notifies the assigner of Accept/Decline/Complete
@@ -76,9 +82,9 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
               },
             }).catch((e: any) => console.warn('[DirectPendingCard] accept push failed', e?.message));
           }
-        }}
+        })}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-            backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 8 }}>
+            backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 8, opacity: accepting ? 0.6 : 1 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
         </Pressable>

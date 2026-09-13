@@ -52,6 +52,7 @@ import {
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_RADIUS, KIOSK_TYPO } from '../kioskTheme';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isDark }: {
   visible: boolean;
@@ -64,7 +65,11 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
   const { k, isDark: kioskDark } = useKioskColors();
   const [form, setForm] = useState<MedForm>(BLANK_MED);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
-  const [saving, setSaving] = useState(false);
+  // Was a plain `saving` state — a fast double-tap on Save could fire
+  // onSave twice, creating a duplicate medication record [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  // Same fix as AddMedModal.tsx's own copy of this state.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [refillDate, setRefillDate] = useState<Date | null>(null);
   const [showRefillPicker, setShowRefillPicker] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
@@ -142,14 +147,12 @@ export function KioskAddMedForm({ visible, onClose, onSave, members, colors, isD
   // still selectable, only strictly-past days are blocked.
   const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     setSubmitAttempted(true);
     if (!canSubmit) return;
-    setSaving(true);
     await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' });
-    setSaving(false);
     onClose();
-  };
+  });
 
   return (
     <KioskFormDrawer

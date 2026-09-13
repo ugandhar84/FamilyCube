@@ -12,6 +12,7 @@ import { ScanDateField } from '../health/ScanDateField';
 import { fmtDate } from '../health/types';
 import { MAINTENANCE_PRESETS, CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
 import type { HomeownerNoteCategory, HomeownerNotePriority } from '@/store/homeownerNotesStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 const CATEGORIES: HomeownerNoteCategory[] = ['general', 'hvac', 'plumbing', 'electrical', 'appliance', 'exterior', 'safety', 'warranty'];
 const PRIORITIES: HomeownerNotePriority[] = ['low', 'normal', 'high'];
@@ -36,7 +37,10 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
   const [recurDays, setRecurDays] = useState('');
   const [priority, setPriority] = useState<HomeownerNotePriority>('normal');
   const [room, setRoom] = useState('');
-  const [saving, setSaving] = useState(false);
+  // Was a plain `saving` state — a fast double-tap on "Save" could fire
+  // onSave twice, creating a duplicate homeowner note [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
 
   const [showMore, setShowMore] = useState(false);
   const [serialNumber, setSerialNumber] = useState('');
@@ -73,9 +77,8 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
     items: filteredPresets.filter(p => p.category === cat),
   })).filter(g => g.items.length > 0);
 
-  const save = async () => {
+  const save = guard(async () => {
     if (!title.trim()) return;
-    setSaving(true);
     await onSave({
       title: title.trim(),
       notes: notes.trim() || undefined,
@@ -92,9 +95,8 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
       priority,
       room: room.trim() || undefined,
     });
-    setSaving(false);
     close();
-  };
+  });
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>

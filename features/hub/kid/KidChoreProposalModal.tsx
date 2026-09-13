@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import { VoiceTextField } from './VoiceTextField';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Matches the same bottom-sheet chrome every other kid-facing request modal
 // in KidModals.tsx uses (that file's own local `f` isn't exported).
@@ -33,7 +34,12 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
   const [forId, setForId] = useState(active?.id ?? '');
-  const [submitting, setSubmitting] = useState(false);
+  // Had a manual `if (!trimmed || submitting) return;` state check, but
+  // that's still just a `useState` read — not synchronous enough to stop a
+  // fast double-tap on "Send to Parent" from firing the propose_kid_chore
+  // RPC twice, sending the same chore proposal twice [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  const { submitting, guard } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   if (!active) return null;
@@ -41,18 +47,17 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   const pickableMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const accent = BRAND.purple;
 
-  const dismiss = () => { setTitle(''); setForId(active.id); setError(null); setSubmitting(false); onClose(); };
+  const dismiss = () => { setTitle(''); setForId(active.id); setError(null); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
-  const submit = async () => {
+  const submit = guard(async () => {
     const trimmed = title.trim();
-    if (!trimmed || submitting) return;
+    if (!trimmed) return;
     const target = members.find(m => m.id === forId);
     if (!target || (target.role !== 'kid' && target.role !== 'teen')) {
       setError('Chores can only be for you or a brother/sister.');
       return;
     }
-    setSubmitting(true);
     setError(null);
     try {
       const { error: rpcError } = await supabase.rpc('propose_kid_chore', {
@@ -68,9 +73,8 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
       Alert.alert('Sent! ✅', 'Your parent will review it and set a coin reward.');
     } catch (e: any) {
       setError(e?.message ?? "Couldn't send that — try again.");
-      setSubmitting(false);
     }
-  };
+  });
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>

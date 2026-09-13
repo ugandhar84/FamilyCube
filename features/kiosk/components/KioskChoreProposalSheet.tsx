@@ -38,6 +38,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 export function KioskChoreProposalSheet({ visible, onClose, active, members, familyId }: {
   visible: boolean; onClose: () => void;
@@ -46,7 +47,12 @@ export function KioskChoreProposalSheet({ visible, onClose, active, members, fam
   const { k } = useKioskColors();
   const [title, setTitle] = useState('');
   const [forId, setForId] = useState(active?.id ?? '');
-  const [busy, setBusy] = useState(false);
+  // Had a manual `if (!trimmed || busy) return;` — still just a `useState`
+  // read, not synchronous, so a fast double-tap on "Send to Parent" could
+  // fire the propose_kid_chore RPC twice [live-requested app-wide: "We
+  // should avoid double tab submit for all the app wide"]. Same fix as
+  // KidChoreProposalModal.tsx's own copy of this state.
+  const { submitting: busy, guard } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   const accent = k.purple;
@@ -59,18 +65,17 @@ export function KioskChoreProposalSheet({ visible, onClose, active, members, fam
   const pickable = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
   const dismiss = () => {
-    setTitle(''); setForId(active.id); setError(null); setBusy(false); onClose();
+    setTitle(''); setForId(active.id); setError(null); onClose();
   };
 
-  const submit = async () => {
+  const submit = guard(async () => {
     const trimmed = title.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed) return;
     const target = members.find(m => m.id === forId);
     if (!target || (target.role !== 'kid' && target.role !== 'teen')) {
       setError('Chores can only be for you or a brother/sister.');
       return;
     }
-    setBusy(true);
     setError(null);
     try {
       const { error: rpcError } = await supabase.rpc('propose_kid_chore', {
@@ -86,9 +91,8 @@ export function KioskChoreProposalSheet({ visible, onClose, active, members, fam
       Alert.alert('Sent! ✅', 'Your parent will review it and set a coin reward.');
     } catch (e: any) {
       setError(e?.message ?? "Couldn't send that — try again.");
-      setBusy(false);
     }
-  };
+  });
 
   return (
     <KioskFormDrawer

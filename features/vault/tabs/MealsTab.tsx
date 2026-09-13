@@ -24,6 +24,7 @@ import AiPlannerBanner from './meals/AiPlannerBanner';
 import MealSelectionPhase from './meals/MealSelectionPhase';
 import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
@@ -65,7 +66,11 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
   const [editMeal, setEditMeal]         = useState<Meal | null>(null);
   const [addDay, setAddDay]             = useState<string | null>(null);
-  const [savingMeal, setSavingMeal]     = useState(false);
+  // Was a plain `savingMeal` state — a fast double-tap on MealFormSheet's
+  // Save could fire saveMeal twice, inserting the same manual meal twice
+  // (add mode) [live-requested app-wide: "We should avoid double tab
+  // submit for all the app wide"].
+  const { submitting: savingMeal, guard: guardSaveMeal } = useSubmitGuard();
 
   // Pulse animation for the AI dot
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -317,40 +322,35 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   // (addManualMeal/updateMeal) each hand-maintaining their own insert/
   // update + cooking-quest logic; merged since MealFormSheet.tsx itself
   // is now the single component backing both flows.
-  const saveMeal = async (patch: {
+  const saveMeal = guardSaveMeal(async (patch: {
     title: string; type: string; emoji: string; chef_id: string | null;
     prep_minutes: number | null; dietary_tags: string[]; ingredients: string[];
     prep_steps: string[]; start_time: string | null; timezone: string | null;
   }) => {
-    setSavingMeal(true);
-    try {
-      if (editMeal) {
-        const prevChefId = editMeal.chef_id;
-        const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...patch });
-        const fullPatch = { ...patch, linked_event_id: linkedEventId };
-        await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
-        setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
-        showToast('Meal updated');
-        if (patch.chef_id && patch.chef_id !== prevChefId) {
-          createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
-        }
-        setEditMeal(null);
-      } else if (addDay) {
-        const newId = `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`;
-        const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
-        const { data } = await supabase.from('family_meals').insert({
-          id: newId,
-          family_id: familyId, week_of: curWeek, day: addDay,
-          ...patch, ai_generated: false, linked_event_id: linkedEventId,
-        }).select().single();
-        if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
-        if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
-        setAddDay(null);
+    if (editMeal) {
+      const prevChefId = editMeal.chef_id;
+      const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...patch });
+      const fullPatch = { ...patch, linked_event_id: linkedEventId };
+      await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
+      setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
+      showToast('Meal updated');
+      if (patch.chef_id && patch.chef_id !== prevChefId) {
+        createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
       }
-    } finally {
-      setSavingMeal(false);
+      setEditMeal(null);
+    } else if (addDay) {
+      const newId = `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`;
+      const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
+      const { data } = await supabase.from('family_meals').insert({
+        id: newId,
+        family_id: familyId, week_of: curWeek, day: addDay,
+        ...patch, ai_generated: false, linked_event_id: linkedEventId,
+      }).select().single();
+      if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
+      if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+      setAddDay(null);
     }
-  };
+  });
 
   const deleteMeal = async (id: string) => {
     const meal = meals.find(m => m.id === id);

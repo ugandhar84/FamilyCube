@@ -33,6 +33,7 @@ import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './
 import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_RADIUS, KIOSK_TYPO, KIOSK_HIT } from '../kioskTheme';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 function imageAssetToDoc(asset: ImagePicker.ImagePickerAsset): DocumentPicker.DocumentPickerAsset {
   const name = asset.fileName ?? `photo_${Date.now()}.jpg`;
@@ -56,14 +57,18 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
   const [form, setForm] = useState<RecordForm>(BLANK_FORM);
   const [selMember, setSelMember] = useState(activeMemberId ?? members[0]?.id ?? '');
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Was a plain `saving` state — a fast double-tap on "Save to Vault" could
+  // fire onSave twice, creating a duplicate record [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  // Same fix as AddRecordModal.tsx's own copy of this state.
+  const { submitting: saving, guard } = useSubmitGuard();
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{ asset: ImagePicker.ImagePickerAsset; redactImg: RedactableImage } | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      setForm(BLANK_FORM); setFile(null); setSaving(false); setSubmitAttempted(false);
+      setForm(BLANK_FORM); setFile(null); setSubmitAttempted(false);
       setSelMember(activeMemberId ?? members[0]?.id ?? '');
     }
   }, [visible, activeMemberId, members]);
@@ -109,14 +114,12 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
     setPendingPhoto(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = guard(async () => {
     setSubmitAttempted(true);
     if (!canSubmit) return;
-    setSaving(true);
     await onSave(selMember, form, file);
-    setSaving(false);
     onClose();
-  };
+  });
 
   const input = kioskInputStyle(k);
 

@@ -1016,10 +1016,15 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                       <History size={15} color={colors.textSecondary} />
                     </TouchableOpacity>
-                    {/* Driving Reports — parent-only, only for a kid's own
-                        row (client-side gate; the real enforcement is
-                        driving_trips' own RLS SELECT policy, parent-only). */}
-                    {activeMember?.role === 'parent' && m?.role === 'kid' && (
+                    {/* Driving Reports — a parent can open ANY member's row
+                        (co-parent, kid, or themselves); a non-parent can
+                        only open their OWN row, not a sibling's or a
+                        parent's [live-requested correction: was kid-rows-
+                        only, which meant a parent could never see their
+                        own driving reports]. Client-side gate mirrors
+                        driving_trips' own RLS SELECT policy
+                        (20260968000000_driving_trips_self_view.sql). */}
+                    {(activeMember?.role === 'parent' || isMe) && (
                       <TouchableOpacity
                         onPress={() => openDriverReport(loc.member_id, loc.name)}
                         style={[g.actionPill, g.actionPillIconOnly, { backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: colors.border }]}
@@ -1109,7 +1114,13 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             {/* Speeding threshold + unit — family-wide setting, editable
                 right here since this is the only screen that uses it.
                 Always stored in mph (see migration comment); the field
-                shows/accepts whichever unit is currently selected. */}
+                shows/accepts whichever unit is currently selected.
+                Parent-only to EDIT (families.speeding_threshold_mph's own
+                RLS UPDATE policy already requires a parent) — now that a
+                non-parent can open their own Driver Report, this row must
+                stay read-only for them rather than exposing edit controls
+                that would just fail silently against RLS. */}
+            {activeMember?.role === 'parent' && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, backgroundColor: isDark ? colors.card : '#F5F3EE', borderRadius: 12, padding: 10 }}>
               <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1 }}>Speeding alert over</Text>
               <TouchableOpacity
@@ -1136,6 +1147,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal }}>{speedUnit === 'kmh' ? 'km/h' : 'mph'}</Text>
               </TouchableOpacity>
             </View>
+            )}
 
             {tripsLoading ? (
               <View style={{ alignItems: 'center', paddingVertical: 24 }}>

@@ -423,6 +423,7 @@ interface GameState {
   createUnoGame: (humanMemberIds: string[], aiDifficulties: ('easy' | 'medium' | 'hard')[]) => Promise<UnoGame | null>;
   loadUnoGame: (gameId: string) => Promise<void>;
   loadMyUnoGames: (familyId: string) => Promise<void>;
+  leaveUnoGame: (gameId: string) => Promise<UnoGame | null>;
   playUnoCard: (gameId: string, card: { color: string; value: string }, chosenColor?: string) => Promise<UnoGame | null>;
   drawUnoCard: (gameId: string) => Promise<UnoGame | null>;
   callUno: (gameId: string) => Promise<boolean>;
@@ -1052,6 +1053,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       .in('status', ['lobby', 'active']);
     if (gameError || !gameRows) { console.warn('[gameStore] loadMyUnoGames (games) failed', gameError?.message); return; }
     set({ myUnoGames: gameRows.map(fromUnoGameRow) });
+  },
+
+  // Was missing entirely — UnoResumePrompt only ever offered "Resume
+  // Game," no way to walk away from a stale/unwanted table [live-reported:
+  // "why there is no leave option on the resume card"]. Ends the table
+  // for every seated player, mirroring leaveGame's own forfeit-ends-it
+  // shape for the 1v1 games — no AI takeover for the vacated seat.
+  leaveUnoGame: async (gameId) => {
+    const activeMemberId = getActiveMemberId();
+    if (!activeMemberId) return null;
+    const { data, error } = await supabase.rpc('leave_uno_game', {
+      p_game_id: gameId, p_member_id: activeMemberId,
+    });
+    if (error || !data) { console.warn('[gameStore] leaveUnoGame failed', error?.message); return null; }
+    const game = fromUnoGameRow(data);
+    set(s => ({ activeUnoGame: game, myUnoGames: s.myUnoGames.filter(g => g.id !== gameId) }));
+    return game;
   },
 
   playUnoCard: async (gameId, card, chosenColor) => {

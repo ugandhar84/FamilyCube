@@ -13,7 +13,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle } from 'lucide-react-native';
+import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle, Gauge } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
@@ -512,6 +512,63 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const [history, setHistory] = useState<{ lat: number; lng: number; address: string | null; recorded_at: string }[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Driving Reports — parent-only, for kid drivers. See
+  // lib/locationTracking.ts's handleDrivingTrip for how trips are detected
+  // and speeding_alert/possible_crash alerts fire; this is just the
+  // read-only report list, same bottom-sheet-modal convention as the
+  // location-history modal above.
+  type DrivingTrip = {
+    id: number; started_at: string; ended_at: string | null;
+    max_speed_mph: number; distance_miles: number; speeding_alerted: boolean;
+  };
+  const [driverReportFor, setDriverReportFor] = useState<{ member_id: string; name: string } | null>(null);
+  const [trips, setTrips] = useState<DrivingTrip[]>([]);
+  const [tripsLoading, setTripsLoading] = useState(false);
+  const [speedUnit, setSpeedUnit] = useState<'mph' | 'kmh'>('mph');
+
+  useEffect(() => {
+    if (!familyId) return;
+    supabase.from('families').select('speed_unit').eq('id', familyId).single()
+      .then(({ data }) => { if (data?.speed_unit === 'kmh') setSpeedUnit('kmh'); });
+  }, [familyId]);
+
+  const fmtSpeed = (mph: number) => speedUnit === 'kmh' ? `${Math.round(mph * 1.60934)} km/h` : `${mph} mph`;
+  const fmtDistance = (miles: number) => speedUnit === 'kmh' ? `${(miles * 1.60934).toFixed(1)} km` : `${miles.toFixed(1)} mi`;
+
+  // Kept lightweight — no separate profile-wide unit-preference system,
+  // just this one family-level speeding threshold/display-unit pair, edited
+  // right where it's used. speeding_threshold_mph is ALWAYS stored in mph
+  // (see the migration's own comment); this only converts for display/entry.
+  const [speedingThresholdMph, setSpeedingThresholdMph] = useState(70);
+  useEffect(() => {
+    if (!familyId) return;
+    supabase.from('families').select('speed_unit, speeding_threshold_mph').eq('id', familyId).single()
+      .then(({ data }) => {
+        if (data?.speed_unit === 'kmh') setSpeedUnit('kmh');
+        if (data?.speeding_threshold_mph) setSpeedingThresholdMph(data.speeding_threshold_mph);
+      });
+  }, [familyId]);
+
+  const saveDrivingSettings = async (unit: 'mph' | 'kmh', thresholdMph: number) => {
+    setSpeedUnit(unit);
+    setSpeedingThresholdMph(thresholdMph);
+    if (!familyId) return;
+    await supabase.from('families').update({ speed_unit: unit, speeding_threshold_mph: thresholdMph }).eq('id', familyId);
+  };
+
+  const openDriverReport = async (memberId: string, name: string) => {
+    setDriverReportFor({ member_id: memberId, name });
+    setTripsLoading(true);
+    const { data } = await supabase
+      .from('driving_trips')
+      .select('id, started_at, ended_at, max_speed_mph, distance_miles, speeding_alerted')
+      .eq('member_id', memberId)
+      .order('started_at', { ascending: false })
+      .limit(30);
+    setTrips(data ?? []);
+    setTripsLoading(false);
+  };
+
   const openHistory = async (memberId: string, name: string) => {
     setHistoryFor({ member_id: memberId, name });
     setHistoryLoading(true);
@@ -965,6 +1022,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                       <History size={15} color={colors.textSecondary} />
                     </TouchableOpacity>
+                    {/* Driving Reports — parent-only, only for a kid's own
+                        row (client-side gate; the real enforcement is
+                        driving_trips' own RLS SELECT policy, parent-only). */}
+                    {activeMember?.role === 'parent' && m?.role === 'kid' && (
+                      <TouchableOpacity
+                        onPress={() => openDriverReport(loc.member_id, loc.name)}
+                        style={[g.actionPill, g.actionPillIconOnly, { backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: colors.border }]}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                        <Gauge size={15} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </View>
@@ -1021,6 +1089,96 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                     </Text>
                   </View>
                 ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!driverReportFor} animationType="slide" transparent onRequestClose={() => setDriverReportFor(null)}>
+        <View style={g.historyBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDriverReportFor(null)} />
+          <View style={[g.historySheet, { backgroundColor: colors.background }]}>
+            <View style={g.grabber} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary }}>
+                {driverReportFor?.name}'s Driving Reports
+              </Text>
+              <TouchableOpacity onPress={() => setDriverReportFor(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: 10 }}>
+              Last 30 trips
+            </Text>
+
+            {/* Speeding threshold + unit — family-wide setting, editable
+                right here since this is the only screen that uses it.
+                Always stored in mph (see migration comment); the field
+                shows/accepts whichever unit is currently selected. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, backgroundColor: isDark ? colors.card : '#F5F3EE', borderRadius: 12, padding: 10 }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1 }}>Speeding alert over</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  const currentDisplay = speedUnit === 'kmh' ? Math.round(speedingThresholdMph * 1.60934) : speedingThresholdMph;
+                  Alert.prompt(
+                    'Speeding threshold',
+                    `Enter the speed limit (${speedUnit === 'kmh' ? 'km/h' : 'mph'})`,
+                    (text) => {
+                      const n = parseInt(text, 10);
+                      if (!Number.isFinite(n) || n <= 0) return;
+                      const mph = speedUnit === 'kmh' ? Math.round(n / 1.60934) : n;
+                      saveDrivingSettings(speedUnit, mph);
+                    },
+                    'plain-text', String(currentDisplay),
+                  );
+                }}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : '#fff', borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>{fmtSpeed(speedingThresholdMph)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => saveDrivingSettings(speedUnit === 'kmh' ? 'mph' : 'kmh', speedingThresholdMph)}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : '#fff', borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal }}>{speedUnit === 'kmh' ? 'km/h' : 'mph'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {tripsLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                <CubeSpinner size={24} />
+              </View>
+            ) : trips.length === 0 ? (
+              <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', paddingVertical: 24 }}>
+                No trips recorded yet.
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                {trips.map(t => {
+                  const durationMin = t.ended_at
+                    ? Math.max(1, Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60_000))
+                    : null;
+                  return (
+                    <View key={t.id} style={g.historyRow}>
+                      <View style={g.historyTimeCol}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+                          {new Date(t.started_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary }}>
+                          {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                      <View style={[g.historyDot, { backgroundColor: t.speeding_alerted ? colors.danger : colors.teal }]} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>
+                          {fmtDistance(t.distance_miles)}{durationMin ? ` · ${durationMin} min` : ''}
+                        </Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: t.speeding_alerted ? colors.danger : colors.textTertiary }}>
+                          Max {fmtSpeed(t.max_speed_mph)}{t.speeding_alerted ? ' — speeding' : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </ScrollView>
             )}
           </View>

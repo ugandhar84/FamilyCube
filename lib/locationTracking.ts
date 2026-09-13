@@ -132,6 +132,141 @@ export async function maybeAlertLowBattery(memberId: string, batteryLevel: numbe
   } catch { /* best-effort — a missed alert isn't worth failing the location update over */ }
 }
 
+/** Resolves this member's family's parents and sends a family-notifier push — same self-contained pattern maybeAlertLowBattery above already uses. */
+async function notifyParents(memberId: string, type: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    const { data: member } = await supabase.from('members')
+      .select('name, family_id').eq('id', memberId).single();
+    if (!member?.family_id) return;
+    const { data: parents } = await supabase.from('members')
+      .select('id').eq('family_id', member.family_id).eq('role', 'parent').neq('id', memberId);
+    const recipientIds = (parents ?? []).map((m: any) => m.id);
+    if (!recipientIds.length) return;
+    await supabase.functions.invoke('family-notifier', {
+      body: {
+        type, familyId: member.family_id, memberIds: recipientIds,
+        excludeMemberId: memberId,
+        payload: { memberName: member.name, memberId, ...payload },
+        persist: true,
+      },
+    });
+  } catch { /* best-effort — a missed alert isn't worth failing the location update over */ }
+}
+
+function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  return haversineMeters(lat1, lng1, lat2, lng2) / 1609.344;
+}
+
+/**
+ * Driving Reports — opens/updates/closes a driving_trips row and fires the
+ * speeding/possible-crash alerts, all derived purely from the fixes the
+ * background task above already produces (see this file's DRIVING_SPEED_MPH
+ * etc. declarations for the full design rationale). Deliberately NOT using
+ * lastFix/MIN_DISTANCE_METERS's own gate — trips need every genuine fix at
+ * driving speed, even sub-25m ones, to compute accurate max speed/distance.
+ */
+async function handleDrivingTrip(
+  memberId: string, familyId: string, speedMph: number,
+  lat: number, lng: number, accuracy: number | null, nowIso: string,
+): Promise<void> {
+  const now = Date.now();
+  const isDriving = speedMph > DRIVING_SPEED_MPH;
+
+  // Trip gap timeout — a stale open trip (car parked, phone lost signal)
+  // must not hang open forever; close it out before considering this fix.
+  if (activeTripId && activeTripLastFixAt && now - activeTripLastFixAt > TRIP_GAP_TIMEOUT_MS) {
+    await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
+    activeTripId = null;
+    activeTripLastFixAt = null;
+    recentFixes = [];
+    pendingCrashCheck = null;
+  }
+
+  if (isDriving) {
+    recentFixes.push({ speedMph, accuracy });
+    if (recentFixes.length > 5) recentFixes.shift();
+
+    if (!activeTripId) {
+      const { data: trip, error } = await supabase.from('driving_trips').insert({
+        member_id: memberId, family_id: familyId,
+        started_at: nowIso, max_speed_mph: speedMph,
+        start_lat: lat, start_lng: lng, end_lat: lat, end_lng: lng,
+      }).select('id').single();
+      if (error || !trip) { console.warn('[locationTracking] driving_trips insert failed:', error?.message); return; }
+      activeTripId = trip.id;
+    } else {
+      const distanceDelta = lastFix ? haversineMiles(lastFix.lat, lastFix.lng, lat, lng) : 0;
+      const { data: current } = await supabase.from('driving_trips')
+        .select('max_speed_mph, distance_miles').eq('id', activeTripId).single();
+      await supabase.from('driving_trips').update({
+        max_speed_mph: Math.max(current?.max_speed_mph ?? 0, speedMph),
+        distance_miles: (current?.distance_miles ?? 0) + distanceDelta,
+        end_lat: lat, end_lng: lng,
+      }).eq('id', activeTripId);
+    }
+    activeTripLastFixAt = now;
+
+    // Speeding alert — once per trip, not once per over-threshold fix.
+    // Threshold is per-family configurable (families.speeding_threshold_mph).
+    const speedingThreshold = await getSpeedingThreshold(familyId);
+    if (speedMph > speedingThreshold) {
+      const { data: trip } = await supabase.from('driving_trips')
+        .select('speeding_alerted').eq('id', activeTripId).single();
+      if (trip && !trip.speeding_alerted) {
+        await supabase.from('driving_trips').update({ speeding_alerted: true }).eq('id', activeTripId);
+        await notifyParents(memberId, 'speeding_alert', { speedMph });
+      }
+    }
+
+    // Crash guardrail conditions 1-3 (see this file's header comment on
+    // DRIVING_SPEED_MPH/HIGHWAY_SPEED_MPH for the full rationale) — only
+    // arms the pending check; condition 4 (no resume within 60s) is
+    // resolved on a LATER fix or the non-driving branch below, since it
+    // can't be known synchronously here.
+    const sustainedHighway = recentFixes.length >= 3 &&
+      recentFixes.slice(-3).every(f => f.speedMph > HIGHWAY_SPEED_MPH);
+    const lastFixGoodAccuracy = accuracy !== null && accuracy < CRASH_MIN_ACCURACY_M;
+    if (sustainedHighway && lastFixGoodAccuracy && !pendingCrashCheck) {
+      // Armed here, but the actual drop (condition 2) is only known once a
+      // LOW-speed fix actually arrives — see the non-driving branch below.
+      // Nothing to do yet on a still-fast fix.
+    }
+  } else {
+    // Non-driving fix — this is where a real speed-drop (condition 2) is
+    // observed, using the driving state from just before this fix.
+    if (activeTripId && recentFixes.length >= 3 && !pendingCrashCheck) {
+      const sustainedHighway = recentFixes.slice(-3).every(f => f.speedMph > HIGHWAY_SPEED_MPH);
+      const lastAccuracyOk = recentFixes[recentFixes.length - 1]?.accuracy !== null &&
+        (recentFixes[recentFixes.length - 1]!.accuracy as number) < CRASH_MIN_ACCURACY_M;
+      const suddenDrop = speedMph < 5;
+      if (sustainedHighway && lastAccuracyOk && suddenDrop) {
+        pendingCrashCheck = { tripId: activeTripId, droppedAt: now };
+      }
+    } else if (pendingCrashCheck && speedMph > 5) {
+      // Resumed within the grace window — condition 4 fails, this was a
+      // normal brief stop, not a crash. Disarm.
+      pendingCrashCheck = null;
+    }
+
+    if (pendingCrashCheck && now - pendingCrashCheck.droppedAt >= CRASH_RESUME_GRACE_MS) {
+      const { data: trip } = await supabase.from('driving_trips')
+        .select('possible_crash_alerted').eq('id', pendingCrashCheck.tripId).single();
+      if (trip && !trip.possible_crash_alerted) {
+        await supabase.from('driving_trips').update({ possible_crash_alerted: true }).eq('id', pendingCrashCheck.tripId);
+        await notifyParents(memberId, 'possible_crash', { speedMph });
+      }
+      pendingCrashCheck = null;
+    }
+
+    if (activeTripId) {
+      await supabase.from('driving_trips').update({ ended_at: nowIso }).eq('id', activeTripId);
+      activeTripId = null;
+      activeTripLastFixAt = null;
+      recentFixes = [];
+    }
+  }
+}
+
 // ~0.05 mile — the OS only calls the task again once the device has moved
 // at least this far, so an idle/stationary phone simply never re-fires and
 // nothing gets written. That's the "don't pull battery when idle" behavior:
@@ -371,6 +506,50 @@ export function setBackgroundLocationMemberId(id: string | null) {
 
 let lastFix: { lat: number; lng: number } | null = null;
 
+// Driving Reports — trip boundaries derived entirely from the fixes this
+// background task already produces, no new native tracking/permission/task.
+// Reset on a background relaunch same as lastFix/activeMemberId — a
+// relaunch mid-trip just starts a fresh trip row on the next qualifying
+// fix, no worse than lastFix's own baseline already resetting today.
+const DRIVING_SPEED_MPH = 8; // matches GpsTab.tsx's classifyMovement driving cutoff
+const DEFAULT_SPEEDING_THRESHOLD_MPH = 70; // families.speeding_threshold_mph's own column default — used only if that read fails
+const TRIP_GAP_TIMEOUT_MS = 10 * 60_000; // no fix for this long — car parked / lost signal, close the trip rather than hang it open forever
+let activeTripId: number | null = null;
+let activeTripLastFixAt: number | null = null; // Date.now() of the trip's most recent fix, for the gap-timeout check
+// Crash guardrail state — see this file's own comment further down at the
+// speed-drop check for why this can't be decided synchronously in one fix.
+let pendingCrashCheck: { tripId: number; droppedAt: number } | null = null;
+// Rolling window of the last few fixes' (speed, accuracy) — only as long as
+// needed for the "sustained highway speed" guardrail (3 fixes), not a
+// general-purpose history (member_location_history already exists for that).
+const HIGHWAY_SPEED_MPH = 40;
+const CRASH_MIN_ACCURACY_M = 20;
+const CRASH_RESUME_GRACE_MS = 60_000;
+let recentFixes: { speedMph: number; accuracy: number | null }[] = [];
+
+// Per-family speeding threshold — configurable (live-requested), stored on
+// `families.speeding_threshold_mph`. Cached briefly rather than queried on
+// every single fix (this task can fire every 2 min while driving); a
+// family changing their limit mid-trip picks it up within one cache TTL,
+// not instantly, which is an acceptable tradeoff for one extra query saved
+// per fix.
+const THRESHOLD_CACHE_TTL_MS = 15 * 60_000;
+let cachedThreshold: { familyId: string; value: number; at: number } | null = null;
+
+async function getSpeedingThreshold(familyId: string): Promise<number> {
+  if (cachedThreshold && cachedThreshold.familyId === familyId && Date.now() - cachedThreshold.at < THRESHOLD_CACHE_TTL_MS) {
+    return cachedThreshold.value;
+  }
+  try {
+    const { data } = await supabase.from('families').select('speeding_threshold_mph').eq('id', familyId).single();
+    const value = data?.speeding_threshold_mph ?? DEFAULT_SPEEDING_THRESHOLD_MPH;
+    cachedThreshold = { familyId, value, at: Date.now() };
+    return value;
+  } catch {
+    return DEFAULT_SPEEDING_THRESHOLD_MPH;
+  }
+}
+
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6_371_000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -507,6 +686,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // moved noticeably, map never updated, no error shown). Logging here
     // doesn't fix a real RLS mismatch by itself, but makes the next
     // occurrence actually diagnosable instead of a silent no-op.
+    const speedMph = loc.coords.speed ? Math.max(0, Math.round(loc.coords.speed * 2.237)) : 0;
     const { error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert({
       member_id: activeMemberId,
       family_id: lastFamilyId,
@@ -515,7 +695,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       street: encStreet,
       ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
       ...(isCharging !== null ? { is_charging: isCharging } : {}),
-      speed_mph: loc.coords.speed ? Math.max(0, Math.round(loc.coords.speed * 2.237)) : 0,
+      speed_mph: speedMph,
       last_updated: now,
       // This callback only ever runs while the native background task is
       // genuinely active, so sharing is unconditionally "on" here — explicit,
@@ -552,6 +732,14 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
         recorded_at: now,
       }));
       if (historyErr) console.warn('[locationTracking] member_location_history insert failed:', historyErr.message);
+    }
+
+    // Driving Reports — trip open/update/close, riding entirely on the fix
+    // this task already produced above. See this file's header-level
+    // comment block near activeTripId's declaration for why no new native
+    // tracking is involved.
+    if (lastFamilyId) {
+      await handleDrivingTrip(activeMemberId, lastFamilyId, speedMph, lat, lng, loc.coords.accuracy ?? null, now);
     }
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);

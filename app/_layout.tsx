@@ -45,7 +45,7 @@ import NotificationPanel, { routeForNotification } from '@/components/Notificati
 import { useKioskNavStore, navigateFromNotification, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
-import { startBatteryPolling, stopBatteryPolling, startLocationHeartbeat, stopLocationHeartbeat } from '@/lib/locationTracking';
+import { startBatteryPolling, stopBatteryPolling, startLocationHeartbeat, stopLocationHeartbeat, setBackgroundLocationMemberId, setBackgroundLocationFamilyId } from '@/lib/locationTracking';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
@@ -1078,6 +1078,28 @@ function RootNavigator() {
     if (!activeMemberId) { stopLocationHeartbeat(); return; }
     startLocationHeartbeat(activeMemberId);
     return () => stopLocationHeartbeat();
+  }, [activeMemberId]);
+
+  // Real bug found live: the background location task's own identity
+  // (activeMemberId/lastFamilyId module vars in lib/locationTracking.ts,
+  // set via setBackgroundLocationMemberId/setBackgroundLocationFamilyId)
+  // was ONLY ever updated from GpsTab.tsx's own mount effect — never on a
+  // profile switch that happened while the GPS tab wasn't mounted (the
+  // common case; most navigation happens on Hub/Chat/etc). A PIN-switch
+  // to a different family member left the background task still writing
+  // location fixes under the PREVIOUS member's identity, which
+  // resolve_active_member_id() (server-side) then rejected outright once
+  // that identity no longer matched the currently active member — live-
+  // reported as "new row violates row-level security policy for table
+  // member_locations" for a PIN-only member (Kate) on a shared device.
+  // Root-mounted here, same lifecycle as startBatteryPolling/
+  // startLocationHeartbeat above, so this stays correct regardless of
+  // which tab is open when a profile switch happens.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    setBackgroundLocationMemberId(activeMemberId);
+    const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    if (familyId) setBackgroundLocationFamilyId(familyId);
   }, [activeMemberId]);
 
   // Device battery + identity (device_status, separate from the per-member

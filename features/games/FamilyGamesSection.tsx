@@ -37,12 +37,43 @@ export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: bo
   // matching store-side half of this fix (live-reported: "the other
   // person is not showing the realtime invitation on the hub (showing
   // after relaunch)").
+  // Was keyed on [familyId, activeMemberId] only — on a cold launch,
+  // activeMemberId can already be correct (persisted/cached) WHILE
+  // `members` is still hydrating, so familyId briefly resolves to null,
+  // the guard below skips this run, and members.length changing afterward
+  // was never itself a dependency — only a later change to familyId's
+  // primitive VALUE would re-trigger this effect, and on some hydration
+  // orderings that value never actually changes again (e.g. members
+  // arrives all at once already containing the right familyId, so the
+  // effective familyId goes null -> real in one micro-step this effect
+  // can miss if React batches it before the null-run's own render
+  // committed) [live-reported: "sometimes only not always showing this
+  // card" after accepting a challenge and force-quitting]. Depending on
+  // members.length too forces a re-check on every hydration step, not
+  // just whenever familyId's own value happens to differ.
   useEffect(() => {
     if (!familyId) return;
     loadChallenges(familyId);
     ensureChallengeRealtime(familyId);
     loadMyUnoGames(familyId);
-  }, [familyId, activeMemberId]);
+  }, [familyId, activeMemberId, members.length]);
+
+  // useAppStateRefresh below only fires on a background->active
+  // TRANSITION — a cold launch after a force-quit is never such a
+  // transition (AppState.currentState starts at 'active' with nothing to
+  // transition FROM), so it provides no safety net for exactly the
+  // scenario most likely to race: force-quit, relaunch, mount effect
+  // above runs before store hydration finishes. One extra retry shortly
+  // after mount catches that specific case without needing a real
+  // app-state transition to trigger it.
+  useEffect(() => {
+    if (!familyId) return;
+    const t = setTimeout(() => {
+      loadChallenges(familyId);
+      loadMyUnoGames(familyId);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [familyId]);
 
   // A silently dropped Realtime socket (common after the app spends time
   // backgrounded on iOS) previously had NO recovery path short of a full

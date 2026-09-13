@@ -316,12 +316,32 @@ let _rtSessionId = '';
 // existed anywhere in this feature before).
 let _rtPresenceChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtPresenceSessionId = '';
+// Family-wide presence (distinct from the per-session one above) — tracks
+// who currently has the Games area open, surfaced in the invite picker.
+let _rtFamilyPresenceChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtFamilyPresenceFamilyId = '';
 
-// Uno table polling — scoped to ONE game, active only while its lobby or
-// table screen is mounted. See ensureUnoRealtime's own comment for why
-// this is a short-poll rather than a postgres_changes subscription.
+// Uno realtime — Broadcast channel (not postgres_changes), scoped to ONE
+// game, active only while its lobby or table screen is mounted. See
+// ensureUnoRealtime's own comment for why Broadcast rather than
+// postgres_changes. _unoPollTimer is retained only so stopUnoRealtime can
+// still clear a stale interval left over from a hot-reloaded older
+// version of this store; ensureUnoRealtime itself no longer creates one.
 let _unoPollTimer: ReturnType<typeof setInterval> | null = null;
+let _unoBroadcastChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtUnoGameId = '';
+
+// game_win_tallies/member_arcade_stats — unlike Uno's hand data, these
+// carry no per-viewer secrecy at all (scores are visible to the whole
+// family by design, per their own plain grant+RLS), so a real
+// postgres_changes subscription works here without the Broadcast
+// workaround Uno needed. Was fetch-once with no live updates at all
+// [live-requested: "users should see realtime scores as well along with
+// moves"] — a completed game elsewhere in the family never updated an
+// already-open Leaderboard/Launcher screen until it was manually
+// reopened.
+let _rtScoresChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtScoresFamilyId = '';
 
 interface GameState {
   incomingChallenges: GameSession[];
@@ -338,9 +358,22 @@ interface GameState {
 
   activeUnoGame: UnoGame | null;
   activeUnoPlayers: UnoPlayer[];
+  // Every non-completed/abandoned Uno table this member is currently
+  // seated at — was nothing at all (Uno's own "join" is really just
+  // being silently seated at creation time, per create_uno_game; without
+  // this list, a seated player who misses the one-shot invite push has no
+  // other way to ever find and enter the table) [live-reported: "once
+  // the family member joins they are unable to play their game"].
+  myUnoGames: UnoGame[];
 
   winTallies: Record<string, GameWinTally>; // key: `${memberId}:${gameType}`
   arcadeStats: Record<string, ArcadeStats>; // key: memberId
+  // Bumped by ensureScoresRealtime's handlers on every real-time score
+  // change — screens that keep their own local state (LeaderboardScreen's
+  // RecordsTab fetches into useState rather than reading winTallies
+  // directly) depend on this in a useEffect to know when to re-fetch,
+  // since a plain number change is the cheapest possible re-render trigger.
+  scoresVersion: number;
 
   lastChallengeError: string | null;
 
@@ -351,6 +384,12 @@ interface GameState {
   // its first sync, so UI can distinguish "unknown yet" from "confirmed
   // offline" if it wants to.
   opponentOnline: boolean | undefined;
+  // Family-wide equivalent — every member currently on the Games area,
+  // for the invite picker's online/offline indicator. Empty set (not
+  // undefined) before the first sync — "not known to be online" reads
+  // safely as "offline" for a badge, unlike opponentOnline's own
+  // undefined/unknown distinction which that per-session UI cares about.
+  onlineMemberIds: Set<string>;
 
   loadChallenges: (familyId: string) => Promise<void>;
   createChallenge: (gameType: GameType, difficulty: Difficulty, challengedId: string) => Promise<GameSession | null>;
@@ -376,9 +415,14 @@ interface GameState {
   stopSessionRealtime: () => void;
   ensurePresence: (sessionId: string, memberId: string) => void;
   stopPresence: () => void;
+  ensureFamilyPresence: (familyId: string, memberId: string) => void;
+  stopFamilyPresence: () => void;
+  ensureScoresRealtime: (familyId: string) => void;
+  stopScoresRealtime: () => void;
 
   createUnoGame: (humanMemberIds: string[], aiDifficulties: ('easy' | 'medium' | 'hard')[]) => Promise<UnoGame | null>;
   loadUnoGame: (gameId: string) => Promise<void>;
+  loadMyUnoGames: (familyId: string) => Promise<void>;
   playUnoCard: (gameId: string, card: { color: string; value: string }, chosenColor?: string) => Promise<UnoGame | null>;
   drawUnoCard: (gameId: string) => Promise<UnoGame | null>;
   callUno: (gameId: string) => Promise<boolean>;
@@ -395,11 +439,14 @@ export const useGameStore = create<GameState>((set, get) => ({
   activeSession: null,
   leaderboard: {},
   activeUnoGame: null,
+  myUnoGames: [],
   activeUnoPlayers: [],
   winTallies: {},
+  scoresVersion: 0,
   arcadeStats: {},
   lastChallengeError: null,
   opponentOnline: undefined,
+  onlineMemberIds: new Set(),
 
   loadChallenges: async (familyId) => {
     const activeMemberId = getActiveMemberId();
@@ -640,7 +687,22 @@ export const useGameStore = create<GameState>((set, get) => ({
     // on to a different session (e.g. user backed out and opened another
     // game) — never clobber a newer activeSession with a stale one.
     if (get().activeSession && get().activeSession!.id !== sessionId && _rtSessionId !== sessionId) return;
-    set({ activeSession: fromSessionRow(data) });
+    const incoming = fromSessionRow(data);
+    // Was: unconditionally overwrote activeSession, unlike
+    // ensureSessionRealtime's own handler just above (which correctly
+    // guards on moveCount so a delayed/out-of-order realtime echo can
+    // never regress the board). loadSession is called on every screen
+    // mount right alongside ensureSessionRealtime — if an opponent's move
+    // lands via realtime FIRST (a very real race: a just-accepted
+    // challenge's screen mount and the challenger's near-simultaneous
+    // first move), this fetch could still resolve afterward with the
+    // OLDER pre-move snapshot and silently revert the board/turn
+    // indicator right back [live-reported: "once they move their turn
+    // other person not seeing that move realtime" — traced to this
+    // exact clobber, not a missing/broken subscription]. Same guard now.
+    const current = get().activeSession;
+    if (current && current.id === sessionId && (current.moveCount ?? 0) > (incoming.moveCount ?? 0)) return;
+    set({ activeSession: incoming });
   },
 
   // Explicit "I'm done" — was NO way to end an active game at all
@@ -789,6 +851,64 @@ export const useGameStore = create<GameState>((set, get) => ({
     _rtSessionId = '';
   },
 
+  // Live score/leaderboard updates — game_win_tallies and
+  // member_arcade_stats both carry a plain grant+RLS (unlike Uno's hand
+  // data, scores have no per-viewer secrecy), so a real postgres_changes
+  // subscription works directly, no Broadcast workaround needed. Call
+  // from any screen showing scores (Leaderboard, GameLauncher) while
+  // mounted; re-fetches whichever cache actually changed rather than
+  // trying to patch the row in place, since a winTallies cache key is
+  // `${memberId}:${gameType}` and arcadeStats is keyed by memberId alone
+  // — simplest to just re-run the same loader this screen already calls
+  // on mount.
+  ensureScoresRealtime: (familyId) => {
+    if (_rtScoresFamilyId === familyId && _rtScoresChannel) return;
+    if (_rtScoresChannel) { supabase.removeChannel(_rtScoresChannel); _rtScoresChannel = null; }
+    const staleTopic = `realtime:scores:${familyId}`;
+    supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
+    _rtScoresFamilyId = familyId;
+
+    const refetchTally = async (memberId: string, gameType: string) => {
+      const { data } = await supabase.from('game_win_tallies').select('*')
+        .eq('family_id', familyId).eq('member_id', memberId).eq('game_type', gameType).maybeSingle();
+      if (data) set(s => ({ winTallies: { ...s.winTallies, [`${memberId}:${gameType}`]: fromWinTallyRow(data) }, scoresVersion: s.scoresVersion + 1 }));
+    };
+    const refetchStats = async (memberId: string) => {
+      await useGameStore.getState().loadArcadeStats(familyId, memberId);
+      set(s => ({ scoresVersion: s.scoresVersion + 1 }));
+    };
+
+    _rtScoresChannel = supabase
+      .channel(`scores:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'game_win_tallies', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as any;
+          if (row?.member_id && row?.game_type) refetchTally(row.member_id, row.game_type);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'member_arcade_stats', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as any;
+          if (row?.member_id) refetchStats(row.member_id);
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          _rtScoresChannel = null;
+          _rtScoresFamilyId = '';
+        }
+      });
+  },
+
+  stopScoresRealtime: () => {
+    if (_rtScoresChannel) { supabase.removeChannel(_rtScoresChannel); _rtScoresChannel = null; }
+    _rtScoresFamilyId = '';
+  },
+
   // Supabase Realtime Presence — was missing entirely (live-requested:
   // "other person should notify that he is offline at that moement").
   // Each player's own game screen calls this while mounted; `track()`
@@ -838,6 +958,50 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ opponentOnline: undefined });
   },
 
+  // Family-wide presence — was missing at the INVITE step entirely: the
+  // per-session Presence above only ever tracks whether the OPPONENT of
+  // an already-active game is currently on that specific game's screen.
+  // The invite picker (ChallengeInviteSheet) had no way to show who's
+  // actually likely to see a new challenge soon [live-requested: "we
+  // should ... detect and prompt to log in to the board"]. Tracked while
+  // the Games area (GameLauncherScreen/FamilyGamesSection) is mounted —
+  // not truly "logged in anywhere in the app," but a reasonable, buildable
+  // proxy: "currently viewing the games area right now."
+  ensureFamilyPresence: (familyId, memberId) => {
+    if (_rtFamilyPresenceFamilyId === familyId && _rtFamilyPresenceChannel) return;
+    if (_rtFamilyPresenceChannel) { supabase.removeChannel(_rtFamilyPresenceChannel); _rtFamilyPresenceChannel = null; }
+    const staleTopic = `realtime:presence:family-games:${familyId}`;
+    supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
+    _rtFamilyPresenceFamilyId = familyId;
+
+    const recompute = (channel: ReturnType<typeof supabase.channel>) => {
+      const state = channel.presenceState<{ memberId: string }>();
+      const online = new Set(Object.values(state).flat().map(p => p.memberId).filter(Boolean));
+      useGameStore.setState({ onlineMemberIds: online });
+    };
+
+    _rtFamilyPresenceChannel = supabase.channel(`presence:family-games:${familyId}`, { config: { presence: { key: memberId } } });
+    _rtFamilyPresenceChannel
+      .on('presence', { event: 'sync' }, () => recompute(_rtFamilyPresenceChannel!))
+      .on('presence', { event: 'join' }, () => recompute(_rtFamilyPresenceChannel!))
+      .on('presence', { event: 'leave' }, () => recompute(_rtFamilyPresenceChannel!))
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await _rtFamilyPresenceChannel?.track({ memberId, onlineAt: new Date().toISOString() });
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          _rtFamilyPresenceChannel = null;
+          _rtFamilyPresenceFamilyId = '';
+          useGameStore.setState({ onlineMemberIds: new Set() });
+        }
+      });
+  },
+
+  stopFamilyPresence: () => {
+    if (_rtFamilyPresenceChannel) { supabase.removeChannel(_rtFamilyPresenceChannel); _rtFamilyPresenceChannel = null; }
+    _rtFamilyPresenceFamilyId = '';
+    set({ onlineMemberIds: new Set() });
+  },
+
   createUnoGame: async (humanMemberIds, aiDifficulties) => {
     const familyId = getFamilyId();
     const activeMemberId = getActiveMemberId();
@@ -862,6 +1026,32 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (gameError || !gameRow) { console.warn('[gameStore] loadUnoGame failed', gameError?.message); return; }
     if (playersError || !playerRows) { console.warn('[gameStore] loadUnoGame (players) failed', playersError?.message); return; }
     set({ activeUnoGame: fromUnoGameRow(gameRow), activeUnoPlayers: playerRows.map(fromUnoPlayerRow) });
+  },
+
+  // Every Uno table this member is currently seated at (lobby or active
+  // status) — the only way, besides tapping the one-shot invite push, for
+  // a seated player to discover and enter a table they were silently
+  // placed at. Call from wherever the Games launcher/Hub renders a
+  // "resume" style card (see ChallengeResumePrompt's own equivalent for
+  // Tic-Tac-Toe/Memory).
+  loadMyUnoGames: async (familyId) => {
+    const activeMemberId = getActiveMemberId();
+    if (!activeMemberId) return;
+    const { data: seatRows, error: seatError } = await supabase
+      .from('uno_players_public')
+      .select('game_id')
+      .eq('member_id', activeMemberId);
+    if (seatError) { console.warn('[gameStore] loadMyUnoGames (seats) failed', seatError.message); return; }
+    const gameIds = [...new Set((seatRows ?? []).map((r: any) => r.game_id))];
+    if (!gameIds.length) { set({ myUnoGames: [] }); return; }
+    const { data: gameRows, error: gameError } = await supabase
+      .from('uno_games_public')
+      .select('*')
+      .eq('family_id', familyId)
+      .in('id', gameIds)
+      .in('status', ['lobby', 'active']);
+    if (gameError || !gameRows) { console.warn('[gameStore] loadMyUnoGames (games) failed', gameError?.message); return; }
+    set({ myUnoGames: gameRows.map(fromUnoGameRow) });
   },
 
   playUnoCard: async (gameId, card, chosenColor) => {
@@ -937,26 +1127,44 @@ export const useGameStore = create<GameState>((set, get) => ({
     return game;
   },
 
-  // Uno has no usable postgres_changes path: uno_games/uno_players both
-  // revoke all base-table grants from `authenticated` and carry zero RLS
-  // policies (the plan's own deliberate access model — reads only ever go
-  // through the redacting *_public views). Realtime's row-change delivery
+  // Was: a 2-second setInterval poll, not real-time at all [live-reported:
+  // "it should be time sensitive it should be real time not near
+  // realtime"]. uno_games/uno_players have no usable postgres_changes
+  // path — both tables revoke all base-table grants from `authenticated`
+  // and carry zero RLS policies (deliberate: reads only go through the
+  // redacting *_public views), and Realtime's row-change delivery
   // re-checks the SUBSCRIBING client's own SELECT privileges against the
-  // base table it names, so a table with no grant and no policy delivers
-  // nothing no matter what a view built on top of it allows. Short-poll
-  // the public views instead while a lobby/table screen is mounted — the
-  // same tradeoff other UNO-style turn-based games make when they don't
-  // control their own realtime layer.
+  // base table it names, so a table with no grant delivers nothing no
+  // matter what a view on top of it allows — and postgres_changes can't
+  // subscribe to a view directly either (views have no independent WAL
+  // entries). Supabase Broadcast sidesteps this: play_uno_card/
+  // draw_uno_card/call_uno now explicitly push a message via
+  // realtime.send() (migration 20260962000000) after each committed
+  // write, and every client just subscribes to that same
+  // `uno:{game_id}` channel and re-fetches through the existing
+  // redaction views on receipt — genuinely push-based, not polled.
   ensureUnoRealtime: (gameId) => {
-    if (_rtUnoGameId === gameId && _unoPollTimer) return;
+    if (_rtUnoGameId === gameId && _unoBroadcastChannel) return;
+    if (_unoBroadcastChannel) { supabase.removeChannel(_unoBroadcastChannel); _unoBroadcastChannel = null; }
     if (_unoPollTimer) { clearInterval(_unoPollTimer); _unoPollTimer = null; }
+    const staleTopic = `realtime:uno:${gameId}`;
+    supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
     _rtUnoGameId = gameId;
-    _unoPollTimer = setInterval(() => {
-      if (_rtUnoGameId === gameId) get().loadUnoGame(gameId);
-    }, 2000);
+    _unoBroadcastChannel = supabase
+      .channel(`uno:${gameId}`)
+      .on('broadcast', { event: 'uno_update' }, () => {
+        if (_rtUnoGameId === gameId) get().loadUnoGame(gameId);
+      })
+      .subscribe((status) => {
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          _unoBroadcastChannel = null;
+          _rtUnoGameId = '';
+        }
+      });
   },
 
   stopUnoRealtime: () => {
+    if (_unoBroadcastChannel) { supabase.removeChannel(_unoBroadcastChannel); _unoBroadcastChannel = null; }
     if (_unoPollTimer) { clearInterval(_unoPollTimer); _unoPollTimer = null; }
     _rtUnoGameId = '';
   },

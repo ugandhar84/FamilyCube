@@ -147,13 +147,29 @@ function RecordsTab() {
   const activeMemberId = useFamilyStore(s => s.activeMemberId) ?? members[0]?.id ?? null;
   const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? (members[0] as any)?.familyId ?? null;
   const loadFamilyWinTallies = useGameStore(s => s.loadFamilyWinTallies);
+  const ensureScoresRealtime = useGameStore(s => s.ensureScoresRealtime);
+  const stopScoresRealtime = useGameStore(s => s.stopScoresRealtime);
+  // Was fetch-once with no live updates — a family member finishing a
+  // game elsewhere never updated an already-open Records tab
+  // [live-requested: "users should see realtime scores as well along
+  // with moves"]. scoresVersion bumps on every real-time win-tally
+  // change (gameStore.ts's ensureScoresRealtime); the sole purpose of
+  // depending on it here is to re-run the same fetch this effect already
+  // does on mount/gameType change.
+  const scoresVersion = useGameStore(s => s.scoresVersion);
   const activeAccent = RECORD_GAME_TYPES.find(g => g.key === gameType)!.accent;
+
+  useEffect(() => {
+    if (!familyId) return;
+    ensureScoresRealtime(familyId);
+    return () => stopScoresRealtime();
+  }, [familyId]);
 
   useEffect(() => {
     if (!familyId) return;
     setLoading(true);
     loadFamilyWinTallies(familyId, gameType).then(setTallies).finally(() => setLoading(false));
-  }, [familyId, gameType]);
+  }, [familyId, gameType, scoresVersion]);
 
   // Ranked by wins desc, ties broken by fewer losses. A row with zero
   // wins/losses/draws carries no real information (every genuine write to

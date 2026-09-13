@@ -14,6 +14,7 @@ import { useAppStateRefresh } from '@/lib/useAppStateRefresh';
 import { ChallengeIncomingPrompt } from './ChallengeIncomingPrompt';
 import { ChallengeOutgoingPrompt } from './ChallengeOutgoingPrompt';
 import { ChallengeResumePrompt } from './ChallengeResumePrompt';
+import { UnoResumePrompt } from './UnoResumePrompt';
 
 export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: boolean }) {
   const members = useFamilyStore(s => s.members);
@@ -22,7 +23,9 @@ export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: bo
   const incomingChallenges = useGameStore(s => s.incomingChallenges);
   const outgoingChallenges = useGameStore(s => s.outgoingChallenges);
   const myActiveSessions = useGameStore(s => s.myActiveSessions);
+  const myUnoGames = useGameStore(s => s.myUnoGames);
   const loadChallenges = useGameStore(s => s.loadChallenges);
+  const loadMyUnoGames = useGameStore(s => s.loadMyUnoGames);
   const ensureChallengeRealtime = useGameStore(s => s.ensureChallengeRealtime);
 
   // Was keyed on [familyId] only — PIN-switching between two family
@@ -38,6 +41,7 @@ export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: bo
     if (!familyId) return;
     loadChallenges(familyId);
     ensureChallengeRealtime(familyId);
+    loadMyUnoGames(familyId);
   }, [familyId, activeMemberId]);
 
   // A silently dropped Realtime socket (common after the app spends time
@@ -49,6 +53,7 @@ export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: bo
     if (!familyId) return;
     loadChallenges(familyId);
     ensureChallengeRealtime(familyId);
+    loadMyUnoGames(familyId);
   });
 
   return (
@@ -83,6 +88,9 @@ export function FamilyGamesSection({ colors, isDark }: { colors: any; isDark: bo
 
       {myActiveSessions.map(session => (
         <ChallengeResumePrompt key={session.id} session={session} colors={colors} activeMemberId={activeMemberId ?? ''} />
+      ))}
+      {myUnoGames.map(game => (
+        <UnoResumePrompt key={game.id} game={game} colors={colors} />
       ))}
       {incomingChallenges.map(session => (
         <ChallengeIncomingPrompt key={session.id} session={session} colors={colors} isDark={isDark} />

@@ -159,10 +159,17 @@ function ArcadeLevelBadge() {
   const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? (members[0] as any)?.familyId ?? null;
   const loadArcadeStats = useGameStore(s => s.loadArcadeStats);
   const stats = useGameStore(s => (activeMemberId ? s.arcadeStats[activeMemberId] : undefined));
+  const ensureScoresRealtime = useGameStore(s => s.ensureScoresRealtime);
+  const stopScoresRealtime = useGameStore(s => s.stopScoresRealtime);
 
   useEffect(() => {
     if (!familyId || !activeMemberId) return;
     loadArcadeStats(familyId, activeMemberId);
+    // Live XP updates — was fetch-once, so finishing a game elsewhere
+    // never updated this badge until the screen reopened [live-requested:
+    // "users should see realtime scores as well along with moves"].
+    ensureScoresRealtime(familyId);
+    return () => stopScoresRealtime();
   }, [familyId, activeMemberId]);
 
   const totalXp = stats?.totalXp ?? 0;
@@ -204,6 +211,22 @@ function ArcadeLevelBadge() {
 }
 
 export default function GameLauncherScreen() {
+  const members = useFamilyStore(s => s.members);
+  const activeMemberId = useFamilyStore(s => s.activeMemberId) ?? members[0]?.id ?? null;
+  const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? (members[0] as any)?.familyId ?? null;
+  const ensureFamilyPresence = useGameStore(s => s.ensureFamilyPresence);
+  const stopFamilyPresence = useGameStore(s => s.stopFamilyPresence);
+
+  useEffect(() => {
+    if (!familyId || !activeMemberId) return;
+    // Tracked while this screen is mounted, so ChallengeInviteSheet (opened
+    // from a GameCard below) can show who's currently viewing the games
+    // area too [live-requested: "detect and prompt to log in to the
+    // board"].
+    ensureFamilyPresence(familyId, activeMemberId);
+    return () => stopFamilyPresence();
+  }, [familyId, activeMemberId]);
+
   return (
     <ArcadeScreen title="FAMILY GAMES">
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 32 }}>

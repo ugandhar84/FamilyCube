@@ -818,6 +818,33 @@ function RootNavigator() {
       const body  = content?.body ?? undefined;
       const data  = (content?.data ?? undefined) as Record<string, any> | undefined;
       showInAppToast({ title, body, type: data?.type, data });
+
+      // Was: relied entirely on the recipient's own games:{familyId}
+      // postgres_changes channel to surface a new/updated challenge —
+      // that channel only exists while FamilyGamesSection happens to be
+      // mounted (Hub visible), so a recipient elsewhere in the app (or
+      // whose channel silently stalled, same class of issue as the game
+      // session's own realtime gap) never saw the invite until manually
+      // reopening the Hub [live-reported: sender sees no error, but the
+      // recipient's device shows no realtime card at all]. This push
+      // arriving is itself independent proof the recipient should have
+      // fresh challenge state — a fallback refetch here doesn't depend on
+      // any websocket channel being alive.
+      const GAME_NOTIF_TYPES = new Set([
+        'game_challenge_received', 'game_challenge_accepted', 'game_challenge_declined',
+        'game_move_made', 'game_completed', 'uno_game_invite', 'uno_your_turn',
+      ]);
+      if (data?.type && GAME_NOTIF_TYPES.has(data.type)) {
+        import('@/store/gameStore').then(({ useGameStore }) => {
+          const { useFamilyStore } = require('@/store/familyStore');
+          const s = useFamilyStore.getState();
+          const m = s.members.find((mm: any) => mm.id === s.activeMemberId) ?? s.members[0];
+          const familyId = (m as any)?.familyId;
+          if (!familyId) return;
+          useGameStore.getState().loadChallenges(familyId);
+          useGameStore.getState().loadMyUnoGames(familyId);
+        }).catch(() => {});
+      }
     });
     return () => {
       sub.remove();

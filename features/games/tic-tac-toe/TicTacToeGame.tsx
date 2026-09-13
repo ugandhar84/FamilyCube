@@ -407,6 +407,25 @@ function MultiplayerTicTacToe({ boardSize, cellSize, sessionId, onGameOverChange
     if (activeMemberId) ensurePresence(sessionId, activeMemberId);
   });
 
+  // Realtime websockets can silently stall (network transition, carrier
+  // NAT timeout) with no clean CLOSED/ERROR event — ensureSessionRealtime's
+  // dedup guard then sees a channel object that still LOOKS alive and
+  // never resubscribes, so that device stops receiving the opponent's
+  // moves entirely, with no error shown. useAppStateRefresh above only
+  // helps on an actual background->foreground transition, which never
+  // happens if both players just leave their screens open [live-reported,
+  // with two devices showing genuinely divergent boards for the same
+  // session: "it is not still real time"]. A plain periodic re-fetch,
+  // independent of the channel's own status callbacks, is the safety net
+  // realtime alone can't provide — loadSession's moveCount guard already
+  // makes this a safe no-op whenever the channel IS healthy.
+  useEffect(() => {
+    const gameOver = activeSession?.status === 'completed' || activeSession?.status === 'abandoned';
+    if (gameOver) return;
+    const interval = setInterval(() => loadSession(sessionId), 5000);
+    return () => clearInterval(interval);
+  }, [sessionId, activeSession?.status]);
+
   const session = activeSession?.id === sessionId ? activeSession : null;
   const board: Board = (session?.boardState?.cells as Board) ?? emptyBoard();
   const winningLine = checkWinningLine(board);

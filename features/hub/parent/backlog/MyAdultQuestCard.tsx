@@ -10,6 +10,7 @@ import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDate } from '@/lib/dates';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // A parent-only quest assigned to the current parent — mark it done (closing
 // the linked assignment too, if one exists, or a second "Done" card would
@@ -26,6 +27,11 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
   onLongPress?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
+  // "Done" had no double-tap guard at all — completeParentQuest awards
+  // coins/records completion with no dedup, so a fast double-tap could
+  // fire it twice [live-requested app-wide: "We should avoid double tab
+  // submit for all the app wide"].
+  const { submitting: completing, guard } = useSubmitGuard();
 
   // Previously this card showed only "Done / Reassign" with zero indication
   // of whether the task was self-created or handed to you by a co-parent —
@@ -135,12 +141,12 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
           </>
         ) : (
           <>
-            <Pressable onPress={() => {
+            <Pressable disabled={completing} onPress={guard(async () => {
               const a = useChoreStore.getState().getLiveAssignmentForChore(q.id);
               if (a) completeParentQuest(a.id, active.id);
               else updateQuest(q.id, { status: 'done' });
-            }}
-              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8 }}>
+            })}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8, opacity: completing ? 0.6 : 1 }}>
               <Check size={13} color="#fff" />
               <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>
             </Pressable>

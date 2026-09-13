@@ -62,6 +62,7 @@ import { RIDE_PICKUP_TIME_UNKNOWN, parseRideMeta } from '../hub/parent/rideLegs'
 import type { EventCategory } from './components/eventForm/types';
 import type { FamilyEvent, EventType } from '@/store/eventStore';
 import { showToast } from '@/components/AppToast';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 type RideChoice = 'none' | 'dropoff' | 'pickup' | 'both';
 
@@ -158,7 +159,13 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
     if (editRideMeta?.isDropoff) return 'dropoff';
     return null;
   });
-  const [submitting, setSubmitting] = useState(false);
+  // Was a plain `submitting` state — a fast double-tap on a ride-choice card
+  // (or "Send request") could fire submit twice, creating (or, in edit
+  // mode, double-updating) the same kid request [live-requested app-wide:
+  // "We should avoid double tab submit for all the app wide"]. Guarded for
+  // consistency with every other submit handler even though the update
+  // branch is technically idempotent by id — the create branch is not.
+  const { submitting, guard } = useSubmitGuard();
   const [done, setDone] = useState(false);
   // "Bring me home" and "Both ways" both need a pickup TIME before they can
   // submit — previously left entirely to the parent to guess (+90min
@@ -234,9 +241,8 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   const accentColor = catMeta?.color ?? BRAND.purple;
   const canSubmitStep2 = title.trim().length > 0;
 
-  const submit = async (choice: RideChoice) => {
+  const submit = guard(async (choice: RideChoice) => {
     if (!active || !category) return;
-    setSubmitting(true);
     setRideChoice(choice);
 
     // Same RIDE: encoding parseRideMeta (features/hub/parent/rideLegs.ts)
@@ -277,7 +283,6 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
           ? { driverStatus: choice !== 'none' ? 'pending' as const : undefined }
           : {}),
       });
-      setSubmitting(false);
       setDone(true);
       setTimeout(close, 1200);
       return;
@@ -311,10 +316,9 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
     };
 
     addEvent(eventInput);
-    setSubmitting(false);
     setDone(true);
     setTimeout(close, 1600);
-  };
+  });
 
   if (!visible) return null;
 

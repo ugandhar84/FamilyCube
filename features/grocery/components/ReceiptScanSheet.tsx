@@ -18,6 +18,7 @@ import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { supabase } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
 const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
@@ -109,7 +110,11 @@ export function ReceiptScanSheet({
   const [store, setStore]       = useState('');
   const [receiptDate, setReceiptDate] = useState('');
   const [total, setTotal]       = useState(0);
-  const [saving, setSaving]     = useState(false);
+  // Was a plain `saving` state — a fast double-tap on "Add items to List"
+  // could fire addToList twice, inserting each selected receipt item into
+  // grocery_items twice [live-requested app-wide: "We should avoid double
+  // tab submit for all the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
 
   // ── Scan beam animation ───────────────────────────────────────────────────
   const beamY     = useRef(new Animated.Value(0)).current;
@@ -212,8 +217,7 @@ export function ReceiptScanSheet({
     await runScan(b64);
   };
 
-  const addToList = async () => {
-    setSaving(true);
+  const addToList = guard(async () => {
     try {
       const toAdd = items.filter((_, i) => selected.has(i));
       for (const item of toAdd) {
@@ -226,8 +230,8 @@ export function ReceiptScanSheet({
       handleClose();
     } catch (err: any) {
       Alert.alert('Failed to add items', err?.message);
-    } finally { setSaving(false); }
-  };
+    }
+  });
 
   const toggleItem = (i: number) => {
     const next = new Set(selected);

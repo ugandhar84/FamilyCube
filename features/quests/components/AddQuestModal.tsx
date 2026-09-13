@@ -30,6 +30,7 @@ import { AddQuestRecurrenceSection } from './AddQuestRecurrenceSection';
 import { AddQuestAssignSection } from './AddQuestAssignSection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
 // The same stepper shell, voice box, due-date picker and call-reminder
@@ -116,7 +117,11 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const [desc,         setDesc]         = useState('');
   const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
   const [bonusCoins,   setBonusCoins]   = useState('');
-  const [saving,       setSaving]       = useState(false);
+  // Was a plain `saving` state — a fast double-tap on the final submit
+  // button could fire doCreate twice, creating a duplicate quest/chore
+  // [live-requested app-wide: "We should avoid double tab submit for all
+  // the app wide"].
+  const { submitting: saving, guard } = useSubmitGuard();
   const [titleFocused, setTitleFocused] = useState(false);
   const [titleTouched, setTitleTouched] = useState(false);
   const [descTouched,  setDescTouched]  = useState(false);
@@ -534,36 +539,41 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     return openPoolChores.find(c => isLikelyDuplicateTitle(c.title, title)) ?? null;
   };
 
-  const submit = async () => {
+  const submit = guard(async () => {
     if (!title.trim() || !desc.trim()) return;
     const dupe = findSimilarOpenPoolChore();
     if (dupe) {
-      Alert.alert(
-        'Similar chore already exists',
-        `"${dupe.title}" is already open in the pool — merge or keep both?`,
-        [
-          {
-            text: 'Merge',
-            style: 'cancel',
-            // Merge = the existing quest already covers it. Cancel this new
-            // one and do nothing else — no DB write, just close the modal.
-            onPress: () => { reset(); onClose(); },
-          },
-          {
-            text: 'Keep Both',
-            // Keep Both = proceed with creating the new one exactly as if
-            // no duplicate had been detected. Never a hard block.
-            onPress: () => { void doCreate(); },
-          },
-        ],
-      );
+      // Both Alert buttons run inside THIS already-guarded submit() call —
+      // the guard's ref stays held (and the Approve/Merge button disabled)
+      // for the whole span the Alert is open, since neither branch resolves
+      // submit() until the user picks one.
+      await new Promise<void>(resolve => {
+        Alert.alert(
+          'Similar chore already exists',
+          `"${dupe.title}" is already open in the pool — merge or keep both?`,
+          [
+            {
+              text: 'Merge',
+              style: 'cancel',
+              // Merge = the existing quest already covers it. Cancel this new
+              // one and do nothing else — no DB write, just close the modal.
+              onPress: () => { reset(); onClose(); resolve(); },
+            },
+            {
+              text: 'Keep Both',
+              // Keep Both = proceed with creating the new one exactly as if
+              // no duplicate had been detected. Never a hard block.
+              onPress: () => { doCreate().then(resolve); },
+            },
+          ],
+        );
+      });
       return;
     }
     await doCreate();
-  };
+  });
 
   const doCreate = async () => {
-    setSaving(true);
     const bonus       = parseInt(bonusCoins) || 0;
     const isMulti     = !isPool && assignIds.length > 1;
     const filledItems = shoppingLines.map(s => s.trim()).filter(Boolean);
@@ -761,7 +771,6 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       }
     }
 
-    setSaving(false);
     // Scenario 1.13 — a teen whose reward exceeded the household co-sign
     // threshold got zero indication of it: the modal just closed the same
     // as any other quest, with the flag silently set server-side. The quest

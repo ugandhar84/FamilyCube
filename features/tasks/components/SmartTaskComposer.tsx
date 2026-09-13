@@ -46,6 +46,7 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import { AddQuestGrocerySection } from '@/features/quests/components/AddQuestGrocerySection';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 const MIN_CHARS = 4;
 
@@ -205,6 +206,11 @@ export default function SmartTaskComposer({
   const [suggestion, setSuggestion] = useState<AssignmentSuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // create() had NO double-tap guard at all — a fast double-tap on
+  // "Create Event/Chore" could fire addEvent/addQuest twice, creating a
+  // duplicate row [live-requested app-wide: "We should avoid double tab
+  // submit for all the app wide"].
+  const { submitting: creating, guard } = useSubmitGuard();
 
   const reset = () => {
     setInput(''); setDetection(null); setVoiceError(null);
@@ -501,7 +507,7 @@ export default function SmartTaskComposer({
     (detected?.when.date ?? todayLocal()) + `T${detected?.when.time ?? fallbackTimeFor(detected?.when.date ?? todayLocal())}:00`
   );
 
-  const create = async () => {
+  const create = guard(async () => {
     if (!detected) return;
     const finalTitle = (title || detected.title).trim();
     if (!finalTitle) return;
@@ -739,7 +745,7 @@ export default function SmartTaskComposer({
       onCreated?.('quest');
     }
     close();
-  };
+  });
 
   return (
     <AppBottomSheet visible={visible} onClose={close} title="What do you need?" subtitle="Describe it — everything else is detected automatically"
@@ -1505,11 +1511,13 @@ export default function SmartTaskComposer({
                 style={{ flex: 1, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
               </Pressable>
-              <Pressable onPress={create} disabled={!title.trim() && !detected.title}
-                style={{ flex: 2, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', backgroundColor: colors.primary }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-                  {isEvent && recurFreq !== 'once' ? 'Set Up Recurring →' : `Create ${isEvent ? 'Event' : 'Chore'}`}
-                </Text>
+              <Pressable onPress={create} disabled={(!title.trim() && !detected.title) || creating}
+                style={{ flex: 2, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', backgroundColor: colors.primary, opacity: creating ? 0.6 : 1 }}>
+                {creating
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
+                      {isEvent && recurFreq !== 'once' ? 'Set Up Recurring →' : `Create ${isEvent ? 'Event' : 'Chore'}`}
+                    </Text>}
               </Pressable>
             </View>
 

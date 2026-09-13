@@ -29,6 +29,7 @@ import type { Reward, RewardCategory } from '@/store/rewardStore';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_SPACE, KIOSK_TYPO } from '../kioskTheme';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Same real catalog PerkModal.tsx offers — CATEGORIES/EMOJIS constants.
 const CATEGORIES: RewardCategory[] = ['Screen Time', 'Food', 'Activity', 'Shopping', 'Special', 'Experience'];
@@ -68,8 +69,14 @@ export function KioskAddRewardForm({ visible, editing, onClose, onSave }: {
   const error = useMemo(() => (!name.trim() ? 'Perk title is required' : null), [name]);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const canSubmit = !!name.trim();
+  // Had no double-tap guard and hardcoded submitting={false} below — a fast
+  // double-tap on "Publish Perk"/"Save Changes" could fire onSave (a
+  // synchronous addReward/updateReward with no dedup) twice, creating a
+  // duplicate reward [live-requested app-wide: "We should avoid double tab
+  // submit for all the app wide"].
+  const { submitting, guard } = useSubmitGuard();
 
-  const submit = () => {
+  const submit = guard(async () => {
     setSubmitAttempted(true);
     if (!canSubmit) return;
     onSave({
@@ -80,7 +87,7 @@ export function KioskAddRewardForm({ visible, editing, onClose, onSave }: {
       category: cat,
     });
     onClose();
-  };
+  });
 
   const input = kioskInputStyle(k);
 
@@ -91,7 +98,7 @@ export function KioskAddRewardForm({ visible, editing, onClose, onSave }: {
       accent={k.primary} Icon={Gift} k={k} onClose={onClose}
       variant="drawer"
       submitLabel={editing ? 'Save Changes' : 'Publish Perk to Family Store'}
-      onSubmit={submit} canSubmit={canSubmit} submitting={false}
+      onSubmit={submit} canSubmit={canSubmit} submitting={submitting}
       error={submitAttempted && !canSubmit ? error : null}
     >
       <KioskFieldLabel k={k}>PERK TITLE</KioskFieldLabel>

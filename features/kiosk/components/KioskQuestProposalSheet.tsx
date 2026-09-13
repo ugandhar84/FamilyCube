@@ -31,6 +31,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Kiosk-only convenience: one-tap coin amounts, so a kid at a wall-mounted
 // tablet does not have to summon a number keypad for the common cases. The
@@ -44,17 +45,22 @@ export function KioskQuestProposalSheet({ visible, onClose, active }: {
   const sendRequest = useKidRequestStore(s => s.sendRequest);
   const [title, setTitle] = useState('');
   const [coins, setCoins] = useState('15');
-  const [busy, setBusy] = useState(false);
+  // Had a manual `if (!trimmed || busy) return;` — still just a `useState`
+  // read, not synchronous, so a fast double-tap on "Send to Parent" could
+  // fire sendRequest twice, sending the same chore proposal twice
+  // [live-requested app-wide: "We should avoid double tab submit for all
+  // the app wide"]. Same fix as QuestProposalModal's (KidModals.tsx) own
+  // copy of this state.
+  const { submitting: busy, guard } = useSubmitGuard();
 
   const accent = k.primary;
   const input = kioskInputStyle(k);
 
-  const dismiss = () => { setTitle(''); setCoins('15'); setBusy(false); onClose(); };
+  const dismiss = () => { setTitle(''); setCoins('15'); onClose(); };
 
-  const submit = async () => {
+  const submit = guard(async () => {
     const trimmed = title.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
+    if (!trimmed) return;
     const rewardCoins = Math.max(0, Math.round(parseInt(coins, 10) || 0));
     try {
       await sendRequest({
@@ -67,10 +73,9 @@ export function KioskQuestProposalSheet({ visible, onClose, active }: {
       dismiss();
       Alert.alert('Sent! 🧩', 'Your parent will review your chore idea.');
     } catch {
-      setBusy(false);
       Alert.alert("Couldn't send", 'Try that again in a moment.');
     }
-  };
+  });
 
   return (
     <KioskFormDrawer

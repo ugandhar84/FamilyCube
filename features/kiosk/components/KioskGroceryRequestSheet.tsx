@@ -63,6 +63,7 @@ import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Same prefix constant KidModals.tsx defines. Duplicated rather than
 // imported so kiosk carries no import edge into the phone modal module;
@@ -149,7 +150,13 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [globalCat, setGlobalCat] = useState('Snacks');
   const [notes, setNotes] = useState('');
-  const [busy, setBusy] = useState(false);
+  // Had a manual `if (!canSubmit || busy) return;` — still just a
+  // `useState` read, not synchronous, so a fast double-tap on "Send items
+  // to Parent" could fire sendRequest/appendItems twice, sending the same
+  // grocery request twice [live-requested app-wide: "We should avoid
+  // double tab submit for all the app wide"]. Same fix as GroceryModal's
+  // (KidModals.tsx) own copy of this state.
+  const { submitting: busy, guard } = useSubmitGuard();
 
   const accent = k.sage;
   const input = kioskInputStyle(k);
@@ -157,7 +164,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
   const validLines = lines.filter(l => l.name.trim());
   const canSubmit = validLines.length > 0;
 
-  const reset = () => { setLines([emptyLine()]); setGlobalCat('Snacks'); setNotes(''); setBusy(false); };
+  const reset = () => { setLines([emptyLine()]); setGlobalCat('Snacks'); setNotes(''); };
   const dismiss = () => { reset(); onClose(); };
 
   const updateLine = (idx: number, patch: Partial<Line>) =>
@@ -165,9 +172,8 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
   const removeLine = (idx: number) => setLines(prev => prev.filter((_, i) => i !== idx));
   const addLine = () => setLines(prev => [...prev, emptyLine(globalCat)]);
 
-  const submit = async () => {
-    if (!canSubmit || busy) return;
-    setBusy(true);
+  const submit = guard(async () => {
+    if (!canSubmit) return;
     const newItems: KidRequestItem[] = validLines.map((l, i) => ({
       id: `item-${Date.now()}-${i}`,
       name: l.name.trim(),
@@ -208,10 +214,9 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
         Alert.alert('Request sent! 🛒', `${n} item${plural} sent to parent for approval.`);
       }
     } catch {
-      setBusy(false);
       Alert.alert("Couldn't send", 'Try that again in a moment.');
     }
-  };
+  });
 
   return (
     <KioskFormDrawer

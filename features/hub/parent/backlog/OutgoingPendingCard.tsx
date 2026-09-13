@@ -7,6 +7,7 @@ import { showToast } from '@/components/AppToast';
 import { supabase } from '@/lib/supabase';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // A task I delegated that's still waiting on the other parent. Still
 // PENDING (not yet accepted/bounced) gets a Recall action — the delegator
@@ -33,6 +34,11 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
 }) {
   const [isExp, setExp] = useState(false);
   const assignee = members.find(m => m.id === a.assignedTo);
+  // Recall had no double-tap guard at all — a fast double-tap on the
+  // confirm Alert's "Recall" button could fire onRecall twice
+  // [live-requested app-wide: "We should avoid double tab submit for all
+  // the app wide"].
+  const { submitting: recalling, guard } = useSubmitGuard();
 
   const sendNudge = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${chore.title}" waiting on ${assignee?.name ?? 'partner'} (id=${a.id}) → sendMessage [features/hub/parent/backlog/OutgoingPendingCard.tsx:28]`);
@@ -112,13 +118,14 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
           )}
           {onRecall && (
             <Pressable
+              disabled={recalling}
               onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Recall" on "${chore.title}" from ${assignee?.name ?? 'partner'} (id=${a.id}) [features/hub/parent/backlog/OutgoingPendingCard.tsx:79]`); Alert.alert(
                 'Take this back?',
                 `"${chore.title}" will be un-delegated and assigned back to you. ${assignee?.name?.split(' ')[0] ?? 'They'} will be notified.`,
-                [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Recall" on "${chore.title}" (id=${a.id}) → onRecall [features/hub/parent/backlog/OutgoingPendingCard.tsx:82]`); onRecall?.(); } }],
+                [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: guard(async () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Recall" on "${chore.title}" (id=${a.id}) → onRecall [features/hub/parent/backlog/OutgoingPendingCard.tsx:82]`); onRecall?.(); }) }],
               ); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8 }}>
+                borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8, opacity: recalling ? 0.6 : 1 }}>
               <Undo2 size={13} color={colors.textSecondary} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Recall</Text>
             </Pressable>

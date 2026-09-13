@@ -40,6 +40,7 @@ import type { KidRequestItem } from '@/store/kidRequestStore';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 /** Must stay byte-identical to KidModals.tsx's SUPPLIES_PREFIX — wire format. */
 const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
@@ -88,7 +89,13 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
   const [items, setItems] = useState<{ name: string; qty: string }[]>([{ name: '', qty: '' }]);
   const [urgency, setUrgency] = useState<'normal' | 'soon'>('normal');
   const [notes, setNotes] = useState('');
-  const [busy, setBusy] = useState(false);
+  // Had a manual `if (!canSubmit || busy) return;` — still just a
+  // `useState` read, not synchronous, so a fast double-tap on "Send to
+  // Parent" could fire sendRequest/appendItems twice, sending the same
+  // supplies request twice [live-requested app-wide: "We should avoid
+  // double tab submit for all the app wide"]. Same fix as SuppliesModal's
+  // (KidModals.tsx) own copy of this state.
+  const { submitting: busy, guard } = useSubmitGuard();
 
   const accent = k.blue;
   const input = kioskInputStyle(k);
@@ -96,7 +103,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
   const validItems = items.filter(i => i.name.trim());
   const canSubmit = validItems.length > 0;
 
-  const reset = () => { setItems([{ name: '', qty: '' }]); setUrgency('normal'); setNotes(''); setBusy(false); };
+  const reset = () => { setItems([{ name: '', qty: '' }]); setUrgency('normal'); setNotes(''); };
   const dismiss = () => { reset(); onClose(); };
 
   const updateItem = (idx: number, field: 'name' | 'qty', val: string) =>
@@ -104,9 +111,8 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
   const addRow = () => setItems(prev => [...prev, { name: '', qty: '' }]);
   const removeRow = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
 
-  const submit = async () => {
-    if (!canSubmit || busy) return;
-    setBusy(true);
+  const submit = guard(async () => {
+    if (!canSubmit) return;
     const newItems: KidRequestItem[] = validItems.map((it, i) => ({
       id: `item-${Date.now()}-${i}`,
       name: it.name.trim(),
@@ -138,10 +144,9 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
         Alert.alert('Sent! 📚', `${n} item${plural} sent to parent for approval.`);
       }
     } catch {
-      setBusy(false);
       Alert.alert("Couldn't send", 'Try that again in a moment.');
     }
-  };
+  });
 
   return (
     <KioskFormDrawer

@@ -63,6 +63,7 @@ import { stripMentionBrackets } from './components/MentionText';
 import { s } from './components/styles';
 import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
 import { Pin, PinOff, Trash2 } from 'lucide-react-native';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -94,6 +95,12 @@ export default function ChatScreen() {
   // typed-looking message, same on-device engine Ask Cube's chat input uses.
   const preDictationText = useRef('');
   const dictation = useVoiceDictation();
+  // handleSend had no double-tap guard at all — sendMessage does real
+  // network work (blind-index build, encryption, DB insert) and a fast
+  // double-tap on Send landing before `text`/`attachUri` visually clear
+  // could fire it twice, sending the same message twice [live-requested
+  // app-wide: "We should avoid double tab submit for all the app wide"].
+  const { submitting: sendingMessage, guard: guardSend } = useSubmitGuard();
   const [moderationWarning, setModerationWarning] = useState(false);
   const [sharedCardPayload, setSharedCardPayload] = useState<any>(null);
   const [actionMsg, setActionMsg]         = useState<ChatMessage | null>(null);
@@ -502,7 +509,7 @@ export default function ChatScreen() {
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  const handleSend = async () => {
+  const handleSend = guardSend(async () => {
     let sourceText = text;
     if (dictation.state === 'listening') {
       const finalTranscript = await dictation.stop();
@@ -578,7 +585,7 @@ export default function ChatScreen() {
         }
       } catch (e) { console.warn('[ChatScreen] image/video upload failed', e); }
     }
-  };
+  });
 
   // Tapping a different channel tab left every piece of in-progress compose
   // state (reply banner, edit banner, attachment preview, moderation
@@ -1464,12 +1471,13 @@ export default function ChatScreen() {
 
                 {/* Mic → Send */}
                 {canSend ? (
-                  <Pressable onPress={handleSend}
+                  <Pressable onPress={handleSend} disabled={sendingMessage}
                     style={[s.sendBtn, {
                       backgroundColor: colors.primary,
                       shadowColor: colors.primary,
                       shadowOpacity: 0.35, shadowRadius: 8,
                       shadowOffset: { width: 0, height: 3 }, elevation: 5,
+                      opacity: sendingMessage ? 0.6 : 1,
                     }]}>
                     <Send size={17} color="#fff" />
                   </Pressable>

@@ -16,6 +16,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -166,16 +167,20 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
   const [urgency,       setUrgency]       = useState<Urgency>('High');
   const [preferredHelper, setPreferredHelper] = useState('');   // '' = any
   const [rewardCoins,   setRewardCoins]   = useState(20);
-  const [submitting,    setSubmitting]    = useState(false);
+  // Had a manual `if (!title.trim() || submitting) return;` — still just a
+  // `useState` read, not synchronous, so a fast double-tap on "Submit Help
+  // Request" could fire sendRequest twice, creating a duplicate help
+  // request [live-requested app-wide: "We should avoid double tab submit
+  // for all the app wide"].
+  const { submitting, guard } = useSubmitGuard();
 
   const reset = () => {
     setTitle(''); setCategory('Homework'); setUrgency('High');
     setPreferredHelper(''); setRewardCoins(20); setSelectedKidId(kids[0]?.id ?? '');
   };
 
-  const handleSubmit = async () => {
-    if (!title.trim() || submitting) return;
-    setSubmitting(true);
+  const handleSubmit = guard(async () => {
+    if (!title.trim()) return;
     await new Promise(r => setTimeout(r, 800));
 
     const requesterId = isAdult ? selectedKidId : activeMemberId;
@@ -202,10 +207,9 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
       status:        (isAdult && assignedHelper && !(isSenior && ['Ride', 'ChoreAssist'].includes(category))) ? 'approved' : 'pending',
     } as any);
 
-    setSubmitting(false);
     reset();
     onClose();
-  };
+  });
 
   const helperOptions = [
     { id: 'any',      name: '👥 Any Available Adult' },

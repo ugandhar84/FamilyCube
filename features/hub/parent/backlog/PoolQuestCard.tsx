@@ -6,6 +6,7 @@ import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDate } from '@/lib/dates';
+import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // Money-green — "enabled" status accent, distinct from brand teal used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -25,6 +26,11 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
   onDelegate: (choreId: string, title: string) => void;
 }) {
   const [isExp, setExp] = useState(false);
+  // "Take It" had no double-tap guard at all — onTakeIt claims this pool
+  // item for the current parent with no dedup, so a fast double-tap could
+  // fire the claim twice [live-requested app-wide: "We should avoid double
+  // tab submit for all the app wide"].
+  const { submitting: claiming, guard } = useSubmitGuard();
   const isDisabled = chore.isDisabled ?? false;
   const hasDetail = chore.description || chore.dueDate || (chore as any).shoppingItems?.length > 0;
 
@@ -104,16 +110,16 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
 
       {!isDisabled && (
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-          <Pressable onPress={() => {
+          <Pressable disabled={claiming} onPress={guard(async () => {
               console.log(`[UserAction] screen=Hub role=parent tapped "Take It" on "${chore.title}" (id=${chore.id}) → onTakeIt [features/hub/parent/backlog/PoolQuestCard.tsx:106]`);
               // Clear the stale decline marker the moment it's re-actioned —
               // otherwise "declined by X" would keep showing on this same
               // record forever even after someone else picked it up.
               if (declineNote) useChoreStore.getState().updateChore(chore.id, { rejectionReason: undefined, declinedAt: undefined });
               onTakeIt(chore);
-            }}
+            })}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-              backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 7 }}>
+              backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 7, opacity: claiming ? 0.6 : 1 }}>
             <HandHelping size={13} color="#fff" />
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Take It</Text>
           </Pressable>

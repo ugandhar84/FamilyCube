@@ -189,7 +189,10 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     await addItemToRun(run.id, itemId);
     const detail = await loadRunDetail(run.id);
     setRunItems(detail?.runItems ?? []);
-    setTab('items');
+    // Was: setTab('items') here, bouncing the user to the List tab after
+    // every single tap — live-reported as unwanted when adding several
+    // suggested items in a row from the + Add tab. Stay put; the user can
+    // switch tabs themselves when done adding.
     setAdding(false);
   };
 
@@ -207,7 +210,6 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
       const detail = await loadRunDetail(run.id);
       setRunItems(detail?.runItems ?? []);
       setQuickAddName('');
-      setTab('items');
       showToast('Item added');
     } else {
       showToast("Couldn't add item — try again", 'info');

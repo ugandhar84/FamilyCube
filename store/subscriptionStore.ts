@@ -89,8 +89,17 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     }
     set({ loading: true });
     try {
+      // Was keyed on the CALLING user's own userId — a kid's PIN profile
+      // never saw the family's real premium status unless the specific
+      // parent who purchased was the one currently active, since the
+      // subscriptions row only ever matched that one user_id
+      // [explicitly confirmed: "subscription per family id right"].
+      // Reads by family_id now, so every member sees the same entitlement
+      // regardless of who actually purchased it.
       const [subResult, familyResult] = await Promise.all([
-        supabase.from('subscriptions').select('tier, status, expires_at, fallback_tier').eq('user_id', userId).maybeSingle(),
+        familyId
+          ? supabase.from('subscriptions').select('tier, status, expires_at, fallback_tier').eq('family_id', familyId).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
         familyId ? supabase.from('families').select('created_at').eq('id', familyId).maybeSingle() : Promise.resolve({ data: null, error: null }),
       ]);
 

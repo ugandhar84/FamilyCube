@@ -45,7 +45,7 @@ import NotificationPanel, { routeForNotification } from '@/components/Notificati
 import { useKioskNavStore, navigateFromNotification, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
-import { startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
+import { startBatteryPolling, stopBatteryPolling, startLocationHeartbeat, stopLocationHeartbeat } from '@/lib/locationTracking';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
@@ -1062,6 +1062,22 @@ function RootNavigator() {
     if (!activeMemberId) { stopBatteryPolling(); return; }
     startBatteryPolling(activeMemberId);
     return () => stopBatteryPolling();
+  }, [activeMemberId]);
+
+  // A stationary member's member_locations.last_updated freezes at whatever
+  // their last real 25m+ move produced — the movement-gated background
+  // task correctly has no reason to fire again, but a frozen timestamp
+  // reads as "tracking is broken" to family looking at the Radar map, not
+  // "they're just home" [live-reported: three different family members all
+  // stuck at "3h ago"/"6h ago" while simply stationary]. This no-ops via
+  // its own UPDATE...WHERE share_location_enabled=true for anyone not
+  // actually sharing, so it's safe to run unconditionally like
+  // startBatteryPolling above — root-mounted so it keeps running
+  // regardless of which tab is open, not just while GpsTab is mounted.
+  useEffect(() => {
+    if (!activeMemberId) { stopLocationHeartbeat(); return; }
+    startLocationHeartbeat(activeMemberId);
+    return () => stopLocationHeartbeat();
   }, [activeMemberId]);
 
   // Device battery + identity (device_status, separate from the per-member

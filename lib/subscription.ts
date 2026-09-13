@@ -69,8 +69,28 @@ export async function getOfferings(): Promise<any | null> {
   if (isExpoGo || !Purchases) return null;
   try {
     const offerings = await _fetchOfferings();
+    // Was a bare `catch { return null }` with no visibility at all into
+    // WHY offerings came back empty — PaywallSheet's own getPkg() just
+    // silently shows "Subscription products are loading. Please try
+    // again in a moment." regardless of the real cause, indistinguishable
+    // from a genuine transient load [live-reported: real device stuck on
+    // this message]. Logging here doesn't fix a misconfigured RC
+    // dashboard offering/product by itself, but makes the next
+    // occurrence diagnosable — check these logs for "no current offering"
+    // (RC dashboard has no offering marked "current," or it has zero
+    // packages) vs a genuine fetch failure (network/API key issue) vs
+    // packages present but not matching PRODUCT_IDS (App Store Connect
+    // product id mismatch/not yet approved).
+    if (!offerings.current) {
+      console.warn('[RC] getOfferings: no current offering', {
+        allOfferingKeys: Object.keys(offerings.all ?? {}),
+      });
+    } else if (!offerings.current.availablePackages?.length) {
+      console.warn('[RC] getOfferings: current offering has zero packages', offerings.current.identifier);
+    }
     return offerings.current ?? null;
-  } catch {
+  } catch (e: any) {
+    console.warn('[RC] getOfferings failed:', e?.message ?? e, e?.userInfo ?? '');
     return null;
   }
 }

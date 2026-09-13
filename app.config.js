@@ -229,6 +229,7 @@ const config = {
     "./plugins/withCallKeep.js",
     "./plugins/withFirebasePodfileFixes.js",
     "./plugins/withFmtConstevalFix.js",
+    "./plugins/withAndroidJetifier.js",
   ],
   experiments: {
     typedRoutes: true,

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { todayLocal, localDateStr, parseLocalDate } from '@/lib/dates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 import { useEventStore, type FamilyEvent } from './eventStore';
 
 // 'mon'|'tue'|... (ClassPeriod.days) -> 0=Sun..6=Sat (EventRecurrenceRule.days)
@@ -244,6 +245,67 @@ async function materializePeriodEvent(memberId: string, period: Omit<ClassPeriod
   );
 }
 
+// ─── Supabase sync (kid_schedules) ─────────────────────────────────────────────
+// Was AsyncStorage-only forever (see ClassPeriod.linkedEventId's own comment
+// above) — live-reported: a scanned class schedule doesn't show up for
+// anyone but the device it was scanned on, and doesn't survive a reinstall.
+// AsyncStorage stays as the offline cache/seed fallback; Supabase is now the
+// source of truth whenever it's reachable, same layering as every other
+// store here (eventStore, rewardStore, ...).
+
+function getFamilyId(): string | null {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const s = useFamilyStore.getState();
+    const m = s.members.find((m: any) => m.id === s.activeMemberId) ?? s.members[0];
+    return (m as any)?.familyId ?? null;
+  } catch { return null; }
+}
+
+function scheduleToRow(familyId: string, s: KidSchedule): Record<string, unknown> {
+  return {
+    member_id: s.memberId,
+    family_id: familyId,
+    member_name: s.memberName,
+    semester: s.semester,
+    year: s.year,
+    grade_year: s.gradeYear ?? null,
+    school: s.school ?? null,
+    lunch_period: s.lunchPeriod,
+    day_type: s.dayType,
+    periods: s.periods,
+    holidays: s.holidays ?? [],
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function scheduleFromRow(row: any): KidSchedule {
+  return {
+    memberId: row.member_id,
+    memberName: row.member_name,
+    semester: row.semester,
+    year: row.year,
+    gradeYear: row.grade_year ?? undefined,
+    school: row.school ?? undefined,
+    lunchPeriod: row.lunch_period,
+    dayType: row.day_type,
+    periods: row.periods ?? [],
+    holidays: row.holidays ?? [],
+  };
+}
+
+async function syncScheduleUpsert(schedule: KidSchedule): Promise<void> {
+  const familyId = getFamilyId();
+  if (!familyId) return;
+  const { error } = await supabase.from('kid_schedules').upsert([scheduleToRow(familyId, schedule)]);
+  if (error) console.warn('[schoolStore] schedule sync upsert failed', error.message);
+}
+
+async function syncScheduleDelete(memberId: string): Promise<void> {
+  const { error } = await supabase.from('kid_schedules').delete().eq('member_id', memberId);
+  if (error) console.warn('[schoolStore] schedule sync delete failed', error.message);
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useSchoolStore = create<SchoolState>((set, get) => ({
@@ -257,11 +319,25 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
         AsyncStorage.getItem(SCHED_KEY),
         AsyncStorage.getItem(HW_KEY),
       ]);
-      const schedules = sRaw  ? (JSON.parse(sRaw)  as KidSchedule[]) : SEED_SCHEDULES;
+      let schedules = sRaw  ? (JSON.parse(sRaw)  as KidSchedule[]) : SEED_SCHEDULES;
       const homeworks = hwRaw ? (JSON.parse(hwRaw) as Homework[])    : SEED_HOMEWORKS;
       if (!sRaw)  AsyncStorage.setItem(SCHED_KEY, JSON.stringify(SEED_SCHEDULES));
       if (!hwRaw) AsyncStorage.setItem(HW_KEY,    JSON.stringify(SEED_HOMEWORKS));
       set({ schedules, homeworks, loaded: true });
+
+      // Supabase is the source of truth once reachable — refresh in the
+      // background and overwrite the AsyncStorage-seeded state above the
+      // moment real rows come back, same "show cached, then reconcile"
+      // pattern as every other store's loadFromStorage.
+      const familyId = getFamilyId();
+      if (familyId) {
+        const { data, error } = await supabase.from('kid_schedules').select('*').eq('family_id', familyId);
+        if (!error && data) {
+          const remote = data.map(scheduleFromRow);
+          set({ schedules: remote });
+          save(remote, get().homeworks);
+        }
+      }
     } catch {
       set({ schedules: SEED_SCHEDULES, homeworks: SEED_HOMEWORKS, loaded: true });
     }
@@ -272,11 +348,14 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   addSchedule: (schedule) => {
     const next = [...get().schedules.filter(s => s.memberId !== schedule.memberId), schedule];
     set({ schedules: next }); save(next, get().homeworks);
+    syncScheduleUpsert(schedule).catch(() => {});
   },
 
   updateSchedule: (memberId, updates) => {
     const next = get().schedules.map(s => s.memberId === memberId ? { ...s, ...updates } : s);
     set({ schedules: next }); save(next, get().homeworks);
+    const updated = next.find(s => s.memberId === memberId);
+    if (updated) syncScheduleUpsert(updated).catch(() => {});
   },
 
   // Logged QA gap, fixed: this previously only ever dropped the member's
@@ -290,6 +369,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     const nextHomeworks = get().homeworks.filter(h => h.memberId !== memberId);
     set({ schedules: nextSchedules, homeworks: nextHomeworks });
     save(nextSchedules, nextHomeworks);
+    syncScheduleDelete(memberId).catch(() => {});
   },
 
   // ─── Period CRUD ────────────────────────────────────────────────────────────
@@ -306,6 +386,8 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       }
     );
     set({ schedules: next }); save(next, get().homeworks);
+    const updated = next.find(s => s.memberId === memberId);
+    if (updated) syncScheduleUpsert(updated).catch(() => {});
   },
 
   updatePeriod: async (memberId, periodId, updates) => {
@@ -350,6 +432,8 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       };
     });
     set({ schedules: next }); save(next, get().homeworks);
+    const updated = next.find(s => s.memberId === memberId);
+    if (updated) syncScheduleUpsert(updated).catch(() => {});
   },
 
   deletePeriod: (memberId, periodId) => {
@@ -363,11 +447,15 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       s.memberId !== memberId ? s : { ...s, periods: s.periods.filter(p => p.id !== periodId) }
     );
     set({ schedules: next }); save(next, get().homeworks);
+    const updated = next.find(s => s.memberId === memberId);
+    if (updated) syncScheduleUpsert(updated).catch(() => {});
   },
 
   reorderPeriods: (memberId, periods) => {
     const next = get().schedules.map(s => s.memberId === memberId ? { ...s, periods } : s);
     set({ schedules: next }); save(next, get().homeworks);
+    const updated = next.find(s => s.memberId === memberId);
+    if (updated) syncScheduleUpsert(updated).catch(() => {});
   },
 
   // ─── Holiday CRUD ───────────────────────────────────────────────────────────

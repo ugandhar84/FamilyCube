@@ -355,7 +355,7 @@ export function HolidaySection({ memberId, holidays, colors, isDark }: {
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export function SchoolScheduleModal({ visible, memberId, memberName, isParent, colors, isDark, onClose }: Props) {
-  const { schedules, addSchedule, updateSchedule, addPeriod, updatePeriod: storeUpdatePeriod, deletePeriod: storeDeletePeriod } = useSchoolStore();
+  const { schedules, addSchedule, updateSchedule, removeSchedule, addPeriod, updatePeriod: storeUpdatePeriod, deletePeriod: storeDeletePeriod } = useSchoolStore();
   const existing = schedules.find(s => s.memberId === memberId);
 
   const [schoolName,   setSchoolName]   = useState(existing?.school    ?? '');
@@ -468,6 +468,21 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
+  // Was missing entirely — removeSchedule (which deletes the whole
+  // schedule + every period + linked calendar_events, and now syncs the
+  // delete to Supabase) had no UI entry point anywhere in the app;
+  // deletePeriod (one period at a time) was the only wired-up delete
+  // action, live-reported as "we don't have complete delete of the
+  // schedule, we now have only class schedule delete only." Live-requested
+  // afterward: a plain Cancel/Delete alert isn't enough friction for
+  // something this destructive (every period + every linked calendar
+  // event, gone) — require typing the kid's name first, same
+  // type-to-confirm pattern ProfileSettingsScreen.tsx's own danger-zone
+  // delete already uses.
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const expectedDeleteWord = memberName.split(' ')[0].toUpperCase();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -485,6 +500,15 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
                   {`📚 ${memberName}'s Schedule`}
                 </Text>
               </View>
+              {isParent && existing && (
+                <TouchableOpacity
+                  onPress={() => setShowDeleteConfirm(true)}
+                  hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                  style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginRight: 8 }}>
+                  <Trash2 size={16} color="#EF4444" />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
@@ -498,6 +522,59 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
               keyboardShouldPersistTaps="always"
               contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
               showsVerticalScrollIndicator={false}>
+      {showDeleteConfirm ? (
+        <View style={{
+          padding: 14, borderRadius: RADIUS.md, backgroundColor: colors.card,
+          borderWidth: 1.5, borderColor: '#EF444450',
+        }}>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#EF4444', marginBottom: 6 }}>
+            Delete entire schedule?
+          </Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 }}>
+            This removes all of {memberName.split(' ')[0]}'s classes and every linked calendar entry for this schedule — this can't be undone.
+          </Text>
+          <View style={{ marginTop: 4, marginBottom: 14 }}>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+              Type <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{expectedDeleteWord}</Text> to confirm.
+            </Text>
+            <TextInput
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder={expectedDeleteWord}
+              placeholderTextColor={colors.textTertiary}
+              style={{
+                borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.sm,
+                paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
+                color: colors.textPrimary, backgroundColor: colors.surface,
+              }}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
+              style={{
+                flex: 1, paddingVertical: 11, borderRadius: RADIUS.sm, alignItems: 'center',
+                backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+              }}
+            >
+              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={deleteConfirmText.trim().toUpperCase() !== expectedDeleteWord}
+              onPress={() => { removeSchedule(memberId); onClose(); }}
+              style={{
+                flex: 1, paddingVertical: 11, borderRadius: RADIUS.sm, alignItems: 'center',
+                backgroundColor: '#EF4444',
+                opacity: deleteConfirmText.trim().toUpperCase() !== expectedDeleteWord ? 0.4 : 1,
+              }}
+            >
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
       <View style={{ gap: 14, paddingHorizontal: 4 }}>
         {/* School info */}
         <View style={{ gap: 10 }}>
@@ -588,9 +665,11 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
 
         <HolidaySection memberId={memberId} holidays={existing?.holidays ?? []} colors={colors} isDark={isDark} />
       </View>
+      )}
             </ScrollView>
 
             {/* Sticky footer */}
+            {!showDeleteConfirm && (
             <View style={{ padding: 16, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
               <TouchableOpacity onPress={save}
                 style={{ borderRadius: 16, paddingVertical: 15, alignItems: 'center', backgroundColor: BRAND.purple }}>
@@ -599,6 +678,7 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
                 </Text>
               </TouchableOpacity>
             </View>
+            )}
 
           </View>
         </View>

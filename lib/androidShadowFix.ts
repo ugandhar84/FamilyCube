@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 /**
  * Android's `elevation` shadow is clipped/suppressed entirely by
@@ -22,30 +23,31 @@ import { Platform } from 'react-native';
  * rounded-corner clipping itself still works via `borderRadius` alone
  * (Android clips content to borderRadius independently of `overflow`,
  * this only affects whether the OS-drawn shadow gets clipped too).
+ *
+ * Typed as StyleProp<ViewStyle> throughout (not a bare Record<string, any>)
+ * so this is a drop-in replacement at any `style={...}` prop — an earlier
+ * version returned a loosely-typed object on the Android strip path, which
+ * widened `overflow` from its real union type to `string` and broke every
+ * call site's own type-check (`Type 'string' is not assignable to type
+ * '"visible" | "hidden" | "scroll" | undefined'`) — caught by a real
+ * `npx tsc --noEmit` run across the full rollout, not assumed clean from
+ * an earlier (as it turned out, stale-cached) pass.
  */
-// Accepts the same shape a component already passes to `style` — a single
-// object, or (the far more common case in this codebase) an array of
-// style objects/falsy values RN merges itself, e.g.
-// `style={[s.perkCard, { shadowColor: accent, overflow: 'hidden' }]}`.
-// The overflow:'hidden' and the shadow props can live on DIFFERENT entries
-// in that array (as they do in StoreScreen.tsx: elevation lives on
-// s.perkCard, overflow:'hidden' on the second object) — so this must
-// inspect the MERGED result, not any single entry in isolation.
-type StyleInput = Record<string, any> | false | null | undefined | StyleInput[];
+type StyleInput = StyleProp<ViewStyle>;
 
-function flattenStyle(style: StyleInput): Record<string, any> {
+function flattenStyle(style: unknown): ViewStyle {
   if (!style) return {};
   if (Array.isArray(style)) {
-    return style.reduce((acc: Record<string, any>, s) => ({ ...acc, ...flattenStyle(s) }), {});
+    return style.reduce((acc: ViewStyle, s) => ({ ...acc, ...flattenStyle(s) }), {});
   }
-  return style;
+  return style as ViewStyle;
 }
 
-export function withAndroidShadowFix<T extends StyleInput>(style: T): Record<string, any> | T {
+export function withAndroidShadowFix(style: StyleInput): StyleInput {
   if (Platform.OS !== 'android') return style;
   const merged = flattenStyle(style);
   if (merged.overflow !== 'hidden') return style;
   if (merged.shadowColor === undefined && merged.elevation === undefined) return style;
   const { overflow, ...rest } = merged;
-  return rest;
+  return rest as ViewStyle;
 }

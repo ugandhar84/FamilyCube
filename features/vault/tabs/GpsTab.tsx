@@ -23,6 +23,7 @@ import { startMotionTracking, stopMotionTracking } from '@/lib/motionTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 type LocStatus = 'at_home' | 'at_school' | 'at_work' | 'in_transit' | 'at_activity';
 
@@ -864,7 +865,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           ScrollView's own scroll gesture below it — the grabber sits in its
           own small non-scrolling header row so dragging it never fights
           with scrolling the roster list. */}
-      <Animated.View style={[g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight, overflow: 'hidden' }]}>
+      <Animated.View style={withAndroidShadowFix([g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight, overflow: 'hidden' }])}>
         {/* Grabber row — generous fixed-height pan target (not just the 4px
             bar itself) so it's easy to grab without precision. A plain View
             with the raw panHandlers, NOT a Touchable — layering

@@ -10,6 +10,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { fmtDate } from '@/lib/dates';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Confirmed-green — "GP Welcome" toggle accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -100,13 +101,13 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   };
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
       backgroundColor: isDark ? colors.card : '#FFFFFF', overflow: 'hidden',
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-    }}>
+    })}>
       <Pressable onPress={() => { if (hasDetail) { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isExp ? 'Collapse' : 'Expand'}" on "${q.title}" (id=${q.id}) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:55]`); setExp(e => !e); } }} onLongPress={onLongPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>

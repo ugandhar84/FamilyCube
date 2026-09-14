@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { LucideIcon, Check, Clock } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Legacy "PawBond"-era hardcoded palette — no longer used by this file's own
 // components (SCard/CardHeader/AddBtn/etc. below all take `colors` from
@@ -30,13 +31,13 @@ export function SCard({ children, colors, isDark, style, accent }: {
 }) {
   const wash = accent ?? colors.primary;
   return (
-    <View style={[sh.scard, {
+    <View style={withAndroidShadowFix([sh.scard, {
       backgroundColor: colors.card,
       borderColor: accent ? accent + '35' : colors.border,
       shadowColor: accent ?? colors.textPrimary,
       overflow: 'hidden',
       ...style,
-    }]}>
+    }])}>
       <LinearGradient
         colors={[wash + (accent ? '1C' : '0C'), wash + '00']}
         start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}

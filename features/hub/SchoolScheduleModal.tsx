@@ -18,6 +18,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useSchoolStore, type ClassPeriod, type KidSchedule, type SchoolHoliday, subjectColor } from '@/store/schoolStore';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { localDateStr, fmtDate } from '@/lib/dates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -752,10 +753,10 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
 
   return (
     <>
-      <View style={{ backgroundColor: colors.card, borderRadius: 18,
+      <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderRadius: 18,
         borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
         shadowColor: colors.textPrimary, shadowOpacity: 0.06, shadowRadius: 12,
-        shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
+        shadowOffset: { width: 0, height: 3 }, elevation: 3 })}>
         <LinearGradient
           colors={[colors.primary + '0C', colors.primary + '00']}
           start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}

@@ -6,6 +6,7 @@ import { GroceryCategory, useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { GROCERY_CATS } from './constants';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Grocery modal ────────────────────────────────────────────────────────────
 
@@ -40,10 +41,10 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16, overflow: 'hidden',
+        <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16, overflow: 'hidden',
           maxHeight: keyboardAwareMaxHeight ?? '75%',
           borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
+          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <ShoppingCart size={20} color={colors.teal} />

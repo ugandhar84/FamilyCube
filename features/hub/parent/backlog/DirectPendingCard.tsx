@@ -8,6 +8,7 @@ import { useChatStore } from '@/store/chatStore';
 import { showToast } from '@/components/AppToast';
 import { supabase } from '@/lib/supabase';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Money-green — "Accept" action accent, distinct from brand amber used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -31,14 +32,14 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
   const { submitting: accepting, guard } = useSubmitGuard();
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
       backgroundColor: isDark ? colors.card : '#FFFFFF', overflow: 'hidden',
       borderLeftWidth: 3, borderLeftColor: colors.warning,
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-    }}>
+    })}>
       <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${a.id}) [features/hub/parent/backlog/DirectPendingCard.tsx:34]`); setExp(e => !e); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>

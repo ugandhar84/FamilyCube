@@ -11,6 +11,7 @@ import type { ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDate } from '@/lib/dates';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // A parent-only quest assigned to the current parent — mark it done (closing
 // the linked assignment too, if one exists, or a second "Done" card would
@@ -82,14 +83,14 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
   };
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
       backgroundColor: isDark ? colors.card : '#FFFFFF', overflow: 'hidden',
       borderLeftWidth: 3, borderLeftColor: colors.primary,
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-    }}>
+    })}>
       <Pressable onPress={() => setExp(e => !e)} onLongPress={onLongPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <View style={{ flex: 1 }}>

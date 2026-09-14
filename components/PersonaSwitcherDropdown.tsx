@@ -11,6 +11,7 @@ import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
 import { BRAND } from './FamilyCubeLogo';
 import { showAlert } from './AppAlert';
@@ -341,11 +342,11 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
       <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} activeOpacity={1} onPress={handleClose}>
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={{
+            <View style={withAndroidShadowFix({
               marginTop: HEADER_OFFSET, marginHorizontal: 12, borderRadius: 22, overflow: 'hidden',
               backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
               shadowColor: '#000', shadowOpacity: isDark ? 0.4 : 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 16,
-            }}>
+            })}>
               {/* Multi-family membership — only renders at all when
                   myFamilies has more than one entry, which itself only
                   happens for a member switched-in via their own real

@@ -7,6 +7,7 @@ import type { ChoreTask } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDate } from '@/lib/dates';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Money-green — "enabled" status accent, distinct from brand teal used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -56,7 +57,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
   const declineNote = chore.declinedAt ? (chore as any).rejectionReason : undefined;
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 14, borderWidth: 1,
       borderColor: isDisabled ? colors.border : (isDark ? colors.border : 'rgba(225,218,203,0.7)'),
       backgroundColor: isDisabled ? colors.surface : (isDark ? colors.card : '#FFFFFF'),
@@ -64,7 +65,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDisabled ? 0 : (isDark ? 0.4 : 1), shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDisabled ? 0 : (isDark ? 3 : 2),
-    }}>
+    })}>
       <Pressable onPress={() => { if (hasDetail) { console.log(`[UserAction] screen=Hub role=parent tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${chore.id}) [features/hub/parent/backlog/PoolQuestCard.tsx:61]`); setExp(e => !e); } }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>

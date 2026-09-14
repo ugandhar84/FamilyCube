@@ -187,9 +187,25 @@ async function handleDrivingTrip(
   // heuristic rather than assuming not-driving (see this file's plan
   // rationale on the battery/graceful-degradation safety valve).
   isDrivingOverride?: boolean | null,
+  // GPS horizontal accuracy in meters (loc.coords.accuracy) — null when
+  // the platform doesn't report it. Live-reported: a stationary device
+  // (map pin sitting on "Home," zero net movement) logged 7+ separate
+  // "trips" in 11 minutes, each 0.0 mi with a wildly different "max speed"
+  // (12-47 mph) and a false speeding alert. loc.coords.speed is a raw
+  // Doppler-derived instantaneous estimate that gets genuinely noisy on a
+  // low-accuracy fix (weak signal indoors/near buildings) — the position
+  // barely moves but the reported speed can spike well past
+  // DRIVING_SPEED_MPH on pure GPS jitter, with nothing else to cross-check
+  // it against on a single-fix "trip." Only trusting the speed-only
+  // heuristic when the fix is reasonably precise (<= 50m, i.e. a real
+  // outdoor GPS lock, not estimated-from-cell-towers) filters this out at
+  // the source; motion_classifier-driven trips (CoreMotion's real driving
+  // detection) are unaffected since they don't depend on this at all.
+  accuracyMeters?: number | null,
 ): Promise<void> {
   const now = Date.now();
-  const isDriving = isDrivingOverride ?? (speedMph > DRIVING_SPEED_MPH);
+  const speedHeuristicTrustworthy = accuracyMeters === null || accuracyMeters === undefined || accuracyMeters <= 50;
+  const isDriving = isDrivingOverride ?? (speedHeuristicTrustworthy && speedMph > DRIVING_SPEED_MPH);
   const detectionMethod: 'motion_classifier' | 'speed_heuristic' = (isDrivingOverride !== undefined && isDrivingOverride !== null) ? 'motion_classifier' : 'speed_heuristic';
 
   // A profile switch mid-trip (activeMemberId changed since the trip
@@ -824,7 +840,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // the speed-only heuristic itself when it's null (CoreMotion
     // unavailable, or motionTracking.ts never loaded on this device).
     if (lastFamilyId) {
-      await handleDrivingTrip(activeMemberId, lastFamilyId, speedMph, lat, lng, now, latestMotionClassification);
+      await handleDrivingTrip(activeMemberId, lastFamilyId, speedMph, lat, lng, now, latestMotionClassification, loc.coords.accuracy ?? null);
     }
     } catch (e) {
       console.warn('[locationTracking] background task callback failed:', (e as Error)?.message ?? e);

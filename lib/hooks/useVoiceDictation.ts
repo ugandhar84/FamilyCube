@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Platform } from 'react-native';
 import { resolveSpeechLocale } from '@/lib/units';
 
 // Plain speech-to-text capture — no AI classification step, unlike
@@ -46,7 +47,16 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
   const getVoice = useCallback(async () => {
     if (VoiceRef.current) return VoiceRef.current;
     try {
-      const mod = await import('@react-native-voice/voice');
+      // Android: @react-native-voice/voice is a legacy-bridge-only module
+      // with no TurboModule/codegen support, and this app runs with
+      // newArchEnabled: true — under the New Architecture, NativeModules.Voice
+      // resolves to null ("Cannot read property 'startSpeech' of null",
+      // live-reported and confirmed unfixable via RN's own TurboModule-
+      // interop feature flag across three separate attempts). iOS's voice
+      // input already works via the real library and is left untouched.
+      const mod = Platform.OS === 'android'
+        ? await import('@/lib/voiceCompat')
+        : await import('@react-native-voice/voice');
       VoiceRef.current = mod.default ?? mod;
       return VoiceRef.current;
     } catch {

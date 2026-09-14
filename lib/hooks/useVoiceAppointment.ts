@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Platform } from 'react-native';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { resolveSpeechLocale } from '@/lib/units';
@@ -35,7 +36,11 @@ export function useVoiceAppointment(onParsed: (fields: ParsedAppointment) => voi
   const getVoice = useCallback(async () => {
     if (VoiceRef.current) return VoiceRef.current;
     try {
-      const mod = await import('@react-native-voice/voice');
+      // Android uses expo-speech-recognition via a compat shim — see
+      // lib/voiceCompat.ts's header comment. iOS keeps the real library.
+      const mod = Platform.OS === 'android'
+        ? await import('@/lib/voiceCompat')
+        : await import('@react-native-voice/voice');
       VoiceRef.current = mod.default ?? mod;
       return VoiceRef.current;
     } catch {

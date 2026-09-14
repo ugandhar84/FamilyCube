@@ -251,6 +251,17 @@ const config = {
         speechRecognitionPermission: "Family Cube uses speech recognition for voice messages.",
       },
     ],
+    // Android-only real fix for @react-native-voice/voice resolving to null
+    // under the New Architecture — see lib/voiceCompat.ts's header comment.
+    // iOS keeps using @react-native-voice/voice unchanged (plugin above),
+    // so this one is additive, not a replacement.
+    [
+      "expo-speech-recognition",
+      {
+        microphonePermission: "Family Cube uses your microphone for voice messages in family chat.",
+        speechRecognitionPermission: "Family Cube uses speech recognition for voice messages.",
+      },
+    ],
     "expo-splash-screen",
     ["@bacons/apple-targets"],
     [
@@ -272,7 +283,6 @@ const config = {
     "./plugins/withFmtConstevalFix.js",
     "./plugins/withAndroidJetifier.js",
     "./plugins/withAndroidSpeechQueries.js",
-    "./plugins/withAndroidTurboModuleInterop.js",
   ],
   experiments: {
     typedRoutes: true,

@@ -26,7 +26,21 @@ if (Platform.OS === 'android') {
       if (data?.type !== 'call_reminder') return;
       try {
         const RNCallKeep = require('react-native-callkeep').default;
-        const uuid = `${Date.now()}`;
+        // Use the server's own callUUID (apns.ts's sendFcmDataMessage) so
+        // the killed-app path's cached fields land under the same key the
+        // live listenForForegroundCallReminder/answer listener in
+        // lib/callAlert.ts would use, keeping both paths consistent.
+        const uuid = data.callUUID ?? `${Date.now()}`;
+        // Persisted to AsyncStorage, not lib/callAlert.ts's in-memory Map —
+        // this handler runs before any JS/React module (including that
+        // Map) is guaranteed to exist, and the app may still be fully
+        // killed when the call is later answered. listenForAndroidCallReminderAnswered
+        // reads this back once JS does mount.
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem(
+          `call_reminder_pending:${uuid}`,
+          JSON.stringify({ itemType: data.itemType, itemId: data.itemId, dueAtIso: data.dueAtIso }),
+        );
         await RNCallKeep.displayIncomingCall(
           uuid,
           data.callerName ?? 'Family Cube Reminder',

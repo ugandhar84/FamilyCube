@@ -51,7 +51,7 @@ import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
   listenForCallReminderAnswered, wasReminderCallJustAnswered,
-  listenForCallReminderEnded,
+  listenForCallReminderEnded, listenForAndroidCallReminderAnswered,
   checkLastAnsweredCallOnColdStart, shipPendingCallDebugTraceIfAny,
 } from '@/lib/callAlert';
 
@@ -1245,7 +1245,8 @@ function RootNavigator() {
     }
     registerAndroidVoipToken(activeMemberId, familyId).catch(() => {});
     const unforeground = listenForForegroundCallReminder();
-    return unforeground;
+    const unansweredAndroid = listenForAndroidCallReminderAnswered();
+    return () => { unforeground(); unansweredAndroid(); };
   }, [activeMemberId]);
 
   return (

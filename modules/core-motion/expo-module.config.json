@@ -1,7 +1,10 @@
 {
-  "platforms": ["ios"],
+  "platforms": ["ios", "android"],
   "ios": {
     "modules": ["CoreMotionModule"],
     "podspecPath": "core-motion.podspec"
+  },
+  "android": {
+    "modules": ["com.familycube.coremotion.CoreMotionModule"]
   }
 }

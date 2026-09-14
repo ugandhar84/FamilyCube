@@ -26,6 +26,9 @@ android/
 ios/
 # Allow local Expo module native sources
 !modules/*/ios/
+!modules/*/android/
+modules/*/android/build/
+modules/*/android/.gradle/
 
 # OS
 .DS_Store

@@ -574,6 +574,22 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   };
 
   const handleAddAiSuggestion = (s: { title: string; category: string; cost: number; emoji: string; reason: string }) => {
+    // Guards against duplicate perks from double-tapping "Add" (or any other
+    // repeat call with the same suggestion) — live-reported: the Store
+    // showed two identical "Extra Gaming Hour"/"Pizza Night Pick" cards
+    // after a rapid double-tap, since addReward itself has no dedup at any
+    // level (not in this handler, not in the store, not as a DB constraint).
+    // Matching on title (case-insensitive) within the CURRENT catalog is
+    // enough here — this suggestion list is small and title collisions are
+    // exactly the "same suggestion added twice" case this guards against,
+    // not a general uniqueness rule for user-typed perks elsewhere.
+    const alreadyExists = rewards.some(
+      (r) => r.title.trim().toLowerCase() === s.title.trim().toLowerCase(),
+    );
+    if (alreadyExists) {
+      showToast(`"${s.title}" is already in the store`);
+      return;
+    }
     addReward?.({
       title: s.title, category: s.category, cost: s.cost, emoji: s.emoji,
       description: s.reason, available: true, requiresApproval: true,

@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import { PermissionsAndroid } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
 
 // CMMotionActivityConfidence's own raw values (0-3) — see
@@ -56,9 +58,31 @@ function toActivityUpdate(raw: any): ActivityUpdate {
   };
 }
 
+/**
+ * Android-only: ACTIVITY_RECOGNITION needs a runtime grant on Android 10+,
+ * not just the manifest declaration (app.config.js's android.permissions),
+ * same story as ACCESS_BACKGROUND_LOCATION. No-op resolving true on iOS,
+ * which uses the Info.plist-usage-description-only model instead.
+ */
+export async function requestActivityPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const result = await PermissionsAndroid.request(
+      'android.permission.ACTIVITY_RECOGNITION' as any,
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 export async function startActivityMonitoring(): Promise<void> {
   const m = mod();
   if (!m) return;
+  if (Platform.OS === 'android') {
+    const granted = await requestActivityPermission();
+    if (!granted) return;
+  }
   try { await m.startActivityMonitoring(); } catch (e: any) {
     console.error('[core-motion] startActivityMonitoring failed:', e?.message);
   }

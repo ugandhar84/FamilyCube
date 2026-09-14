@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "88",
+    buildNumber: "89",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -159,9 +159,24 @@ const config = {
       "android.permission.USE_FULL_SCREEN_INTENT",
       "android.permission.FOREGROUND_SERVICE",
       "android.permission.FOREGROUND_SERVICE_PHONE_CALL",
+      // Android 14+ (API 34, this emulator's target) requires a specific
+      // foreground-service TYPE permission on top of the generic
+      // FOREGROUND_SERVICE above, or expo-location's startLocationUpdatesAsync
+      // (with its foregroundService option — lib/locationTracking.ts's
+      // background-tracking notification) rejects with "Foreground service
+      // permissions were not found in the manifest," live-reproduced on
+      // this same emulator right after the ACCESS_BACKGROUND_LOCATION fix
+      // resolved the previous error at this same call site.
+      "android.permission.FOREGROUND_SERVICE_LOCATION",
       "android.permission.BIND_TELECOM_CONNECTION_SERVICE",
       "android.permission.READ_PHONE_STATE",
       "android.permission.MANAGE_OWN_CALLS",
+      // ActivityRecognitionApi (modules/core-motion/android's driving/
+      // walking/stationary classifier, Android's counterpart to iOS's
+      // CMMotionActivityManager) requires this runtime permission on
+      // Android 10+ or requestActivityTransitionUpdates silently never
+      // delivers any results.
+      "android.permission.ACTIVITY_RECOGNITION",
     ],
   },
   web: {

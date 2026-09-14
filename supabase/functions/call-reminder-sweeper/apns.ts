@@ -206,6 +206,10 @@ async function sendFcmDataMessage(token: string, payload: RingPayload, recipient
   if (!auth) return { ok: false, error: 'FCM not configured' };
 
   try {
+    // Generated fresh per push, mirroring sendApnsVoip's own callUUID —
+    // gives the Android ConnectionService a stable per-call identifier to
+    // key its Connection object/cached state, same as iOS's CXProvider.
+    const callUUID = crypto.randomUUID();
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${auth.projectId}/messages:send`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
@@ -215,6 +219,7 @@ async function sendFcmDataMessage(token: string, payload: RingPayload, recipient
           android: { priority: 'high' },
           data: {
             type: 'call_reminder',
+            callUUID,
             callerName: payload.callerName,
             itemType: payload.itemType,
             itemId: payload.itemId,

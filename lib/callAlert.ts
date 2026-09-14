@@ -8,6 +8,7 @@
 //    natively in AppDelegate.swift, this is a required no-op re-call there)
 //  - VoIP/FCM token registration → voip_push_tokens table
 import { Platform, NativeModules, DeviceEventEmitter } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
 let RNCallKeep: typeof import('react-native-callkeep').default | null = null;
@@ -378,13 +379,82 @@ export function listenForForegroundCallReminder(): () => void {
     return fbMessaging.onMessage(app, async (remoteMessage) => {
       const data = remoteMessage?.data as Record<string, string> | undefined;
       if (data?.type !== 'call_reminder') return;
-      const uuid = `${Date.now()}`;
+      // Use the server's own callUUID (apns.ts's sendFcmDataMessage) rather
+      // than minting a throwaway one here — keeps this call's identifier
+      // consistent with whatever the sweeper/mark-call-reminder-answered
+      // path logs it as, same as the iOS CXProvider/APNs VoIP path already
+      // does with its own server-generated callUUID.
+      const uuid = data.callUUID ?? `${Date.now()}`;
       const name = data.callerName ?? 'Family Cube Reminder';
+      cachePendingCallReminder(uuid, { itemType: data.itemType, itemId: data.itemId, dueAtIso: data.dueAtIso });
       RNCallKeep!.displayIncomingCall(uuid, name, name, 'generic', false, {
         itemType: data.itemType, itemId: data.itemId, dueAtIso: data.dueAtIso, callUUID: uuid,
       });
     });
   } catch {
+    return () => {};
+  }
+}
+
+// ── Android answer/end handling ─────────────────────────────────────────────
+// iOS's ring→answer→speak→hang-up lifecycle is entirely native (CallKit +
+// AppDelegate.swift's CXCallObserverDelegate — see this file's header
+// comment). Android's react-native-callkeep instead surfaces answer/end as
+// JS events (RNCallKeepPerformAnswerCallAction / RNCallKeepPerformEndCallAction)
+// carrying only { callUUID } — no itemType/itemId/dueAtIso — so this cache
+// (keyed by the same callUUID displayIncomingCall was given above) is what
+// lets the answer handler below find the fields mark-call-reminder-answered
+// needs. Without this, Android would never call that edge function at all
+// (the two listenForCallReminder* exports below were both iOS-only until
+// now, silently no-op-ing on Android's own equivalent event).
+const pendingCallReminders = new Map<string, { itemType?: string; itemId?: string; dueAtIso?: string }>();
+
+function cachePendingCallReminder(callUUID: string, fields: { itemType?: string; itemId?: string; dueAtIso?: string }): void {
+  pendingCallReminders.set(callUUID, fields);
+}
+
+async function resolvePendingCallReminder(callUUID: string): Promise<{ itemType?: string; itemId?: string; dueAtIso?: string } | undefined> {
+  const inMemory = pendingCallReminders.get(callUUID);
+  if (inMemory) return inMemory;
+  // Falls back to AsyncStorage for the killed-app path — index.js's
+  // setBackgroundMessageHandler writes here since it runs before this
+  // module's in-memory Map is guaranteed to exist yet.
+  try {
+    const raw = await AsyncStorage.getItem(`call_reminder_pending:${callUUID}`);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function listenForAndroidCallReminderAnswered(): () => void {
+  if (Platform.OS !== 'android' || !RNCallKeep) return () => {};
+  try {
+    const onAnswer = async ({ callUUID }: { callUUID: string }) => {
+      const fields = await resolvePendingCallReminder(callUUID);
+      if (!fields?.itemType || !fields?.itemId || !fields?.dueAtIso) return;
+      markReminderCallRecent(Date.now());
+      try {
+        await supabase.functions.invoke('mark-call-reminder-answered', {
+          body: { itemType: fields.itemType, itemId: fields.itemId, dueAtIso: fields.dueAtIso },
+        });
+      } catch (err) {
+        console.warn('[callAlert] mark-call-reminder-answered failed (android)', err);
+      }
+    };
+    const onEnd = ({ callUUID }: { callUUID: string }) => {
+      markReminderCallRecent(Date.now());
+      pendingCallReminders.delete(callUUID);
+      AsyncStorage.removeItem(`call_reminder_pending:${callUUID}`).catch(() => {});
+    };
+    RNCallKeep.addEventListener('answerCall', onAnswer);
+    RNCallKeep.addEventListener('endCall', onEnd);
+    return () => {
+      RNCallKeep!.removeEventListener('answerCall');
+      RNCallKeep!.removeEventListener('endCall');
+    };
+  } catch (e) {
+    console.warn('[callAlert] listenForAndroidCallReminderAnswered threw', e);
     return () => {};
   }
 }

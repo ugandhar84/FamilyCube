@@ -40,6 +40,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Sparkles, UserCircle2 } from 'lucide-react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
@@ -369,7 +370,7 @@ export default function KioskScreen() {
                   <Pressable
                     key={key}
                     onPress={() => setTab(key)}
-                    style={({ pressed }) => [
+                    style={({ pressed }) => withAndroidShadowFix([
                       s.railBtn,
                       on
                         ? {
@@ -385,7 +386,7 @@ export default function KioskScreen() {
                             elevation: isDark ? 0 : 3,
                           }
                         : { backgroundColor: pressed ? k.cardHover : 'transparent' },
-                    ]}
+                    ])}
                     accessibilityRole="tab"
                     accessibilityState={{ selected: on }}
                     accessibilityLabel={label}

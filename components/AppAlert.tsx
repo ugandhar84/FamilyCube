@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, BackHandler, Platform } from 'react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { markNetworkOffline, isNetworkError } from '@/lib/networkStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export interface AlertButton {
   text: string;
@@ -125,7 +126,7 @@ export default function AppAlert() {
       }}
     >
       <View style={ss.overlay}>
-        <View style={[ss.card, { backgroundColor: cardBg }]}>
+        <View style={withAndroidShadowFix([ss.card, { backgroundColor: cardBg }])}>
 
           <View style={ss.header}>
             <Text style={[ss.title, { color: titleCol }]}>{state.title}</Text>

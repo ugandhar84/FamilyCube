@@ -8,6 +8,7 @@ import { useRef } from 'react';
 import { Text, Pressable, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { ARCADE, ARCADE_FONT_DISPLAY_BOLD } from '../theme/gameTheme';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export function ArcadePrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -25,13 +26,13 @@ export function ArcadePrimaryButton({ label, onPress, disabled }: { label: strin
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled: !!disabled }}
-        style={{
+        style={withAndroidShadowFix({
           minHeight: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
           paddingHorizontal: 20, paddingVertical: 10,
           backgroundColor: ARCADE.primary,
           shadowColor: ARCADE.primaryGlow, shadowOpacity: 1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
           elevation: 8,
-        }}
+        })}
       >
         <Text
           numberOfLines={1}

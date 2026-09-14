@@ -31,6 +31,7 @@ import { View, Text, Pressable, TextInput, Modal, LayoutAnimation, Platform, UIM
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -178,7 +179,7 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
         style={{ flex: 1, justifyContent: 'flex-end' }}
         pointerEvents={visible ? 'auto' : 'none'}>
 
-        <View style={{
+        <View style={withAndroidShadowFix({
           backgroundColor: colors.surface,
           borderTopLeftRadius: 28, borderTopRightRadius: 28,
           paddingHorizontal: 20,
@@ -187,7 +188,7 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
           shadowColor: '#000', shadowOpacity: 0.1,
           shadowOffset: { width: 0, height: -3 }, shadowRadius: 10,
           elevation: 20,
-        }}>
+        })}>
           {/* Drag handle */}
           <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 4 }}>
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
@@ -233,7 +234,7 @@ function FABBtn({ label, color, onPress, outline, disabled }: {
 }) {
   return (
     <Pressable onPress={onPress} disabled={disabled}
-      style={({ pressed }) => ({
+      style={({ pressed }) => withAndroidShadowFix({
         flex: 1, paddingVertical: 14, borderRadius: 18, alignItems: 'center',
         backgroundColor: outline ? 'transparent' : disabled ? color + '50' : color,
         borderWidth: outline ? 1.5 : 0, borderColor: outline ? color + '80' : undefined,

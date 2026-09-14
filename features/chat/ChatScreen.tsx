@@ -64,6 +64,7 @@ import { s } from './components/styles';
 import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
 import { Pin, PinOff, Trash2 } from 'lucide-react-native';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -1126,11 +1127,11 @@ export default function ChatScreen() {
                 content on screen; the full centered spinner still owns the
                 true "nothing loaded yet" case via ListEmptyComponent. */}
             {channelLoading && reversedItems.length > 0 && (
-              <View pointerEvents="none" style={{ position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5,
+              <View pointerEvents="none" style={withAndroidShadowFix({ position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5,
                 flexDirection: 'row', alignItems: 'center', gap: 6,
                 backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
                 borderWidth: 1, borderColor: colors.border,
-                shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+                shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 })}>
                 <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Syncing…</Text>
               </View>
@@ -1275,10 +1276,10 @@ export default function ChatScreen() {
                 affordance rather than two different-looking buttons. */}
             {showScrollBtn && (
               <Pressable onPress={() => flatRef.current?.scrollToOffset({ offset: 0, animated: true })}
-                style={{ position: 'absolute', bottom: 12, alignSelf: 'center',
+                style={withAndroidShadowFix({ position: 'absolute', bottom: 12, alignSelf: 'center',
                   flexDirection: 'row', alignItems: 'center', gap: 4,
                   backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
-                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 })}>
                 <ChevronDown size={14} color="#fff" />
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Latest</Text>
               </Pressable>
@@ -1360,8 +1361,8 @@ export default function ChatScreen() {
 
             {/* ── Mention picker — grows upward from just above input bar ── */}
             {mentionSuggestions.length > 0 && (
-              <View style={{ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border,
-                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: -3 }, elevation: 10 }}>
+              <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border,
+                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: -3 }, elevation: 10 })}>
                 {mentionSuggestions.map((m, i) => (
                   <Pressable key={m.id} onPress={() => insertMention(m)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11,
@@ -1472,13 +1473,13 @@ export default function ChatScreen() {
                 {/* Mic → Send */}
                 {canSend ? (
                   <Pressable onPress={handleSend} disabled={sendingMessage}
-                    style={[s.sendBtn, {
+                    style={withAndroidShadowFix([s.sendBtn, {
                       backgroundColor: colors.primary,
                       shadowColor: colors.primary,
                       shadowOpacity: 0.35, shadowRadius: 8,
                       shadowOffset: { width: 0, height: 3 }, elevation: 5,
                       opacity: sendingMessage ? 0.6 : 1,
-                    }]}>
+                    }])}>
                     <Send size={17} color="#fff" />
                   </Pressable>
                 ) : (
@@ -1503,7 +1504,7 @@ export default function ChatScreen() {
       {/* ── Quick emoji (double-tap) ── */}
       <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setQuickEmojiFor(null)}>
-          <View style={{ flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
+          <View style={withAndroidShadowFix({ flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 })}>
             {QUICK_REACTIONS.map(e => (
               <Pressable key={e} onPress={() => {
                 if (quickEmojiFor && activeMemberId) addReaction(channelId, quickEmojiFor.id, e, activeMemberId);

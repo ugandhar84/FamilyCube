@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useRef } from 'react';
 import { Animated, Text, StyleSheet, View } from 'react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 interface Props {
   visible: boolean;
@@ -43,7 +44,7 @@ export default function CoinToast({ visible, amount, label = 'coins earned!', on
   if (!visible) return null;
 
   return (
-    <Animated.View style={[s.wrap, { opacity, transform: [{ translateY }, { scale }] }]}>
+    <Animated.View style={withAndroidShadowFix([s.wrap, { opacity, transform: [{ translateY }, { scale }] }])}>
       <Text style={s.coin}>🪙</Text>
       <View>
         <Text style={s.amount}>+{amount}</Text>

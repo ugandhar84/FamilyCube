@@ -18,6 +18,7 @@
  */
 import { View, Text } from 'react-native';
 import { ARCADE, ARCADE_FONT_DISPLAY_BOLD, ARCADE_FONT_DISPLAY_EXTRABOLD } from '../theme/gameTheme';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { UnoCard, UNO_COLOR_HEX, valueLabel } from './unoLogic';
 
 // Base card geometry. Bumped up substantially from the old 52x74 — the
@@ -55,7 +56,7 @@ export function UnoCardFace({
 
   return (
     <View
-      style={{
+      style={withAndroidShadowFix({
         width: w,
         height: h,
         borderRadius: 10 * size,
@@ -69,7 +70,7 @@ export function UnoCardFace({
         shadowRadius: highlighted ? 8 : 4,
         shadowOffset: { width: 0, height: highlighted ? 4 : 2 },
         elevation: highlighted ? 8 : 3,
-      }}
+      })}
     >
       <View
         style={{
@@ -151,7 +152,7 @@ export function UnoCardBack({ size = 1, faded = false }: { size?: number; faded?
   const h = CARD_H * size;
   return (
     <View
-      style={{
+      style={withAndroidShadowFix({
         width: w,
         height: h,
         borderRadius: 10 * size,
@@ -163,7 +164,7 @@ export function UnoCardBack({ size = 1, faded = false }: { size?: number; faded?
         shadowRadius: 4,
         shadowOffset: { width: 0, height: 2 },
         elevation: 3,
-      }}
+      })}
     >
       <View
         style={{

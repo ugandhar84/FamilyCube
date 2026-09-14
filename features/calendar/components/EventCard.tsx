@@ -777,10 +777,10 @@ export function BusyBlockCard({ time, endTime, colors, isDark }: {
   time?: string; endTime?: string; colors: any; isDark: boolean;
 }) {
   return (
-    <View style={[s.eventCard, {
+    <View style={withAndroidShadowFix([s.eventCard, {
       backgroundColor: isDark ? colors.surface : '#F1F5F9',
       borderColor: colors.border, opacity: 0.75,
-    }]}>
+    }])}>
       <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={{ fontSize: 14 }}>🔒</Text>
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>

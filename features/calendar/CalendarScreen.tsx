@@ -51,6 +51,7 @@ import { CalendarSearchBar } from './components/CalendarSearchBar';
 import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid, isEventPast, collapseSeries } from './components/calendarDateHelpers';
 import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView';
 import WeekView from './components/WeekView';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import AgendaView from './components/AgendaView';
 import SwipeableEventCard from './components/SwipeableEventCard';
 import DaySlotView from './components/DaySlotView';
@@ -1205,11 +1206,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   { key: 'day' as const,    label: 'Day' },
                 ]).map(v => (
                   <TouchableOpacity key={v.key} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${v.label}" for "view mode" [features/calendar/CalendarScreen.tsx:1102]`); setViewMode(v.key); }}
-                    style={{
+                    style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9,
                       backgroundColor: viewMode === v.key ? colors.card : 'transparent',
                       shadowColor: colors.textPrimary, shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
-                    }}>
+                    })}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700',
                       color: viewMode === v.key ? colors.textPrimary : colors.textSecondary }}>
                       {v.label}
@@ -1371,10 +1372,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               opacity: dayDockAnim,
               transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
             }}>
-              <View style={{ marginHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
+              <View style={withAndroidShadowFix({ marginHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
                 backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 8, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}>
+                shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } })}>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1270]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronLeft c={colors.textSecondary} size={15} />

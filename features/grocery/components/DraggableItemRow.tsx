@@ -14,7 +14,7 @@
  * viewport edges — this component has no knowledge of sections at all.
  */
 import { useCallback, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
@@ -108,15 +108,21 @@ export function DraggableItemRow({
       runOnJS(finishDrop)(item.id, finalY);
     });
 
+  // withAndroidShadowFix is a plain (non-worklet) JS helper and can't be
+  // called from inside a Reanimated worklet — the Android strip is done
+  // inline here instead, keeping the same "no elevation/shadow on Android,
+  // ever" rule as every other card/component in the app.
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }, { scale: isActive.value ? 1.03 : 1 }],
     zIndex: isActive.value ? 10 : 0,
     opacity: isActive.value ? 0.92 : 1,
-    shadowColor: '#000',
-    shadowOpacity: isActive.value ? 0.25 : 0,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: isActive.value ? 6 : 0,
+    ...(Platform.OS === 'android' ? {} : {
+      shadowColor: '#000',
+      shadowOpacity: isActive.value ? 0.25 : 0,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 6 },
+    }),
+    elevation: Platform.OS === 'android' ? 0 : (isActive.value ? 6 : 0),
   }));
 
   return (

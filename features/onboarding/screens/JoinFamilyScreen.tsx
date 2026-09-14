@@ -21,6 +21,7 @@ import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
 import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const AVATARS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
 // Member's own profile-color choice — a genuine swatch picker, not app
@@ -594,7 +595,7 @@ export default function JoinFamilyScreen() {
                   {COLORS.map(c => (
                     <TouchableOpacity
                       key={c}
-                      style={[s.colorDot, { backgroundColor: c }, color === c && s.colorDotActive]}
+                      style={withAndroidShadowFix([s.colorDot, { backgroundColor: c }, color === c && s.colorDotActive])}
                       onPress={() => setColor(c)}
                     />
                   ))}

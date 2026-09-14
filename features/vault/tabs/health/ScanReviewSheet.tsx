@@ -12,6 +12,7 @@ import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../../u
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { ScanDateField } from './ScanDateField';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export interface ScanReviewSheetHandle {
   open: (mode: 'rx' | 'vaccine') => void;
@@ -589,13 +590,13 @@ export default function ScanReviewSheet({
                   <TouchableOpacity
                     disabled={scanning}
                     onPress={() => pickImage('camera')}
-                    style={{
+                    style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
                       backgroundColor: isDark ? '#1E1E2E' : '#fff',
                       borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
                       gap: 10, opacity: scanning ? 0.5 : 1,
                       shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    }}>
+                    })}>
                     <Svg width={36} height={36} viewBox="0 0 24 24">
                       <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
                       <Circle cx={12} cy={13} r={4} stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" />
@@ -607,13 +608,13 @@ export default function ScanReviewSheet({
                   <TouchableOpacity
                     disabled={scanning}
                     onPress={() => pickImage('library')}
-                    style={{
+                    style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
                       backgroundColor: isDark ? '#1E1E2E' : '#fff',
                       borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
                       gap: 10, opacity: scanning ? 0.5 : 1,
                       shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    }}>
+                    })}>
                     <Svg width={36} height={36} viewBox="0 0 24 24">
                       <Rect x={3} y={3} width={18} height={18} rx={2} stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" />
                       <Circle cx={8.5} cy={8.5} r={1.5} fill={scanMode === 'vaccine' ? colors.teal : colors.accent} />
@@ -626,13 +627,13 @@ export default function ScanReviewSheet({
                   <TouchableOpacity
                     disabled={scanning}
                     onPress={() => pickAndScan('document')}
-                    style={{
+                    style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
                       backgroundColor: isDark ? '#1E1E2E' : '#fff',
                       borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
                       gap: 10, opacity: scanning ? 0.5 : 1,
                       shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    }}>
+                    })}>
                     <Svg width={36} height={36} viewBox="0 0 24 24">
                       <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
                       <Polyline points="14 2 14 8 20 8" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />

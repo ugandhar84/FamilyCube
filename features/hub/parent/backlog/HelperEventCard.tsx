@@ -9,6 +9,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import { fmtDate, fmtTime } from '@/lib/dates';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Confirmed-green — "confirmed" status accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -55,14 +56,14 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
   );
 
   return (
-    <View style={{ borderRadius: 14, borderWidth: 1,
+    <View style={withAndroidShadowFix({ borderRadius: 14, borderWidth: 1,
       borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
       backgroundColor: isDark ? colors.card : '#FFFFFF',
       borderLeftWidth: 3, borderLeftColor: colors.parent,
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-      padding: 12, gap: 4 }}>
+      padding: 12, gap: 4 })}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <CatIcon size={15} color={colors.parent} />
         <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>

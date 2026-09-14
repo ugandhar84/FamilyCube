@@ -4,6 +4,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import { MemberAvatar } from '../shared';
 import { Medication, Vaccine, FREQ_LABELS, getCatColors } from './types';
 import { hf } from './styles';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export type MedFilters = {
   search: string; members: string[]; categories: string[];
@@ -193,7 +194,7 @@ export default function HealthFilterSheet({
                     <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{opt.desc}</Text>
                   </View>
                   <View style={[hf.toggle, { backgroundColor: val ? colors.primary : colors.border }]}>
-                    <View style={[hf.toggleThumb, { transform: [{ translateX: val ? 18 : 2 }] }]} />
+                    <View style={withAndroidShadowFix([hf.toggleThumb, { transform: [{ translateX: val ? 18 : 2 }] }])} />
                   </View>
                 </TouchableOpacity>
               );

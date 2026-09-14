@@ -27,6 +27,7 @@ import Animated, {
 import { ARCADE, ARCADE_FONT_DISPLAY_EXTRABOLD, ARCADE_TYPO, ARCADE_SPRING_BOUNCY } from '../theme/gameTheme';
 import { UnoCard, UNO_COLOR_HEX } from './unoLogic';
 import { UnoCardFace, UnoCardBack, CARD_W, CARD_H } from './UnoCardViews';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const PILE_SCALE = 1.25;
 
@@ -144,12 +145,12 @@ export function UnoTableCenter({
             <StackShadows width={w} height={h} depth={3} scattered />
             {topCard ? (
               <View
-                style={{
+                style={withAndroidShadowFix({
                   shadowColor: glowColor,
                   shadowOpacity: 0.9,
                   shadowRadius: 12,
                   shadowOffset: { width: 0, height: 0 },
-                }}
+                })}
               >
                 <UnoCardFace card={topCard} size={PILE_SCALE} />
               </View>
@@ -222,7 +223,7 @@ function PendingDrawBadge({ count }: { count: number }) {
   const style = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
   return (
     <Animated.View
-      style={[
+      style={withAndroidShadowFix([
         {
           position: 'absolute', top: -12, right: -14,
           paddingHorizontal: 9, paddingVertical: 3,
@@ -232,7 +233,7 @@ function PendingDrawBadge({ count }: { count: number }) {
           shadowColor: ARCADE.uno, shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
         },
         style,
-      ]}
+      ])}
     >
       <Text style={{ fontFamily: ARCADE_FONT_DISPLAY_EXTRABOLD, fontSize: 14, color: '#fff' }}>+{count}</Text>
     </Animated.View>

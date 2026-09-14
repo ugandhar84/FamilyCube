@@ -58,6 +58,7 @@ import {
 import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon, Lock } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useGroceryStore, type GroceryItem, type GroceryRun } from '@/store/groceryStore';
@@ -1350,7 +1351,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         mode, distinct from the existing single-item delete already in
         KioskGroceryItemSheet. */}
     {isSelecting && (
-      <View style={[s.bulkBar, { backgroundColor: k.primary }]}>
+      <View style={withAndroidShadowFix([s.bulkBar, { backgroundColor: k.primary }])}>
         <Text style={[s.bulkCount, { color: k.onAccent }]}>{selectedIds.size} selected</Text>
         <Pressable
           onPress={() => setSelectedIds(new Set(visibleItems.map(it => it.id)))}

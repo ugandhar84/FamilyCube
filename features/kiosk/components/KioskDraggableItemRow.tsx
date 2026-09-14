@@ -40,6 +40,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { GripVertical } from 'lucide-react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import type { KioskColors } from '../kioskPalette';
 
 export function KioskDraggableItemRow({
@@ -101,7 +102,7 @@ export function KioskDraggableItemRow({
   }));
 
   return (
-    <Animated.View style={[animatedStyle, style]}>
+    <Animated.View style={withAndroidShadowFix([animatedStyle, style])}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {(dragEnabled || inFlight) && (
           <GestureDetector gesture={pan}>

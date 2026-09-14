@@ -3,6 +3,7 @@ import { View, Text, Pressable, Animated } from 'react-native';
 import { AudioModule, createAudioPlayer } from 'expo-audio';
 import { Play, Pause, Trash2, Send, Square } from 'lucide-react-native';
 import { VOICE_COLOR, WF_BARS, WF_H, formatDuration, seedWaveform } from './constants';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Live waveform (recording / playing) — sine-physics at ~30fps ────────────
 
@@ -235,9 +236,9 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
         {formatDuration(playing ? progress * duration : duration)}
       </Text>
       {/* Send */}
-      <Pressable onPress={onSend} style={{ width: 40, height: 40, borderRadius: 20,
+      <Pressable onPress={onSend} style={withAndroidShadowFix({ width: 40, height: 40, borderRadius: 20,
         backgroundColor: VOICE_COLOR, alignItems: 'center', justifyContent: 'center',
-        shadowColor: VOICE_COLOR, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 }}>
+        shadowColor: VOICE_COLOR, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 })}>
         <Send size={16} color="#fff" />
       </Pressable>
     </View>
@@ -286,9 +287,9 @@ export function RecordingBar({ elapsed, isDark, onStop }: {
       )}
       {/* Stop button */}
       <Pressable onPress={onStop}
-        style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
+        style={withAndroidShadowFix({ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
           alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 }}>
+          shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 })}>
         <Square size={16} color="#fff" fill="#fff" />
       </Pressable>
     </View>

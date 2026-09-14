@@ -61,6 +61,7 @@ import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { fmtTime } from '@/lib/dates';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { showToast } from '@/components/AppToast';
@@ -711,7 +712,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             style={s.threadRight}
             pointerEvents="box-none"
           >
-            <View style={s.threadShadowWrap}>
+            <View style={withAndroidShadowFix(s.threadShadowWrap)}>
             <View style={[s.threadPanel, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
               <View style={s.threadHead}>
                 <Pressable
@@ -962,7 +963,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
           {/* ── Attach menu popup ── */}
           {showAttachMenu && (
-            <View style={[s.attachMenu, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)]}>
+            <View style={withAndroidShadowFix([s.attachMenu, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)])}>
               {([
                 { Icon: Camera, label: 'Camera', color: k.purple, onPress: () => { setShowAttachMenu(false); pickCamera(); } },
                 { Icon: ImageIcon, label: 'Photo', color: k.sage, onPress: () => { setShowAttachMenu(false); pickImage(); } },
@@ -1077,7 +1078,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             accessibilityRole="button"
             accessibilityLabel="Dismiss reaction picker"
           >
-            <View style={[s.emojiPicker, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)]}>
+            <View style={withAndroidShadowFix([s.emojiPicker, { backgroundColor: k.card, borderColor: k.cardBorderStrong }, kioskElevation(k.primary, kioskDark, 2)])}>
               {QUICK_REACTIONS.map(e => (
                 <Pressable
                   key={e}

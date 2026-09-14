@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 interface AppBottomSheetProps {
   visible: boolean;
@@ -141,8 +142,8 @@ export default function AppBottomSheet({
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
 
           {/* Sheet panel */}
-          <View style={[s.sheet, { backgroundColor: colors.card, height: sheetHeight, maxHeight: maxPx },
-            isWide ? { width: sheetWidth, maxWidth: sheetWidth, alignSelf: 'center', borderBottomLeftRadius: 24, borderBottomRightRadius: 24, marginBottom: 24 } : null]}>
+          <View style={withAndroidShadowFix([s.sheet, { backgroundColor: colors.card, height: sheetHeight, maxHeight: maxPx },
+            isWide ? { width: sheetWidth, maxWidth: sheetWidth, alignSelf: 'center', borderBottomLeftRadius: 24, borderBottomRightRadius: 24, marginBottom: 24 } : null])}>
 
             <View onLayout={(e: LayoutChangeEvent) => setChromeHeight(e.nativeEvent.layout.height)}>
               {/* Drag handle */}

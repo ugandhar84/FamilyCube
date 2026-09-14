@@ -15,6 +15,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { SPACING, RADIUS, TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 interface InviteData {
   id: string;
@@ -223,7 +224,7 @@ export default function MemberInviteScreen() {
         </View>
 
         <TouchableOpacity
-          style={[s.acceptBtn, accepting && { opacity: 0.7 }]}
+          style={withAndroidShadowFix([s.acceptBtn, accepting && { opacity: 0.7 }])}
           onPress={handleAccept}
           disabled={accepting}
         >

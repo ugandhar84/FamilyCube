@@ -7,6 +7,7 @@ import Svg, { Path } from 'react-native-svg';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export type TabStatus = 'all' | 'todo' | 'review' | 'completed';
 
@@ -145,7 +146,7 @@ export function QuestFilters({
               <TouchableOpacity
                 key={tab.key}
                 onPress={() => onSetTabStatus(tab.key)}
-                style={{
+                style={withAndroidShadowFix({
                   flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 20,
                   backgroundColor: active ? colors.card : 'transparent',
                   shadowColor: active ? '#000' : 'transparent',
@@ -153,7 +154,7 @@ export function QuestFilters({
                   shadowRadius: active ? 4 : 0,
                   shadowOffset: { width: 0, height: 1 },
                   elevation: active ? 2 : 0,
-                }}
+                })}
               >
                 <Text style={{
                   fontSize: 12, fontWeight: active ? '800' : '600',

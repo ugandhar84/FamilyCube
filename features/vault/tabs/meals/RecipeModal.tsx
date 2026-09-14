@@ -5,6 +5,7 @@ import { Check, X, Send, Star, ShoppingBag } from 'lucide-react-native';
 import { useChatStore } from '@/store/chatStore';
 import { Meal } from './types';
 import { rm } from './styles';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Recipe Modal ─────────────────────────────────────────────────────────────
 
@@ -135,7 +136,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
         <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16, flexDirection: 'row', gap: 10 }}>
           {!hideAddToGrocery && (
             <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
-              style={[rm.fab, { backgroundColor: cartDone ? colors.success : colors.teal, flex: 1 }]}>
+              style={withAndroidShadowFix([rm.fab, { backgroundColor: cartDone ? colors.success : colors.teal, flex: 1 }])}>
               {addingCart
                 ? <ActivityIndicator size="small" color="#fff" />
                 : cartDone
@@ -143,7 +144,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
                   : <><ShoppingBag size={15} color="#fff" /><Text style={rm.fabTxt}>Add to Grocery</Text></>}
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={shareRecipe} style={[rm.fab, { backgroundColor: colors.accent, flex: 1 }]}>
+          <TouchableOpacity onPress={shareRecipe} style={withAndroidShadowFix([rm.fab, { backgroundColor: colors.accent, flex: 1 }])}>
             <Send size={15} color="#fff" />
             <Text style={rm.fabTxt}>Share Recipe</Text>
           </TouchableOpacity>

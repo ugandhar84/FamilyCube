@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { format, addDays, isToday } from 'date-fns';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 type Props = {
   weekStart: Date;
@@ -36,7 +37,7 @@ export default function WeekCard({
   const isTodaySelected = selectedDate === dateKey(new Date());
 
   return (
-    <View style={[s.card, { backgroundColor: colors.card }]}>
+    <View style={withAndroidShadowFix([s.card, { backgroundColor: colors.card }])}>
       {/* ── Nav row ── */}
       <View style={s.navRow}>
         <TouchableOpacity

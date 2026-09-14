@@ -13,6 +13,7 @@ import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle, Trash2 } from 'lucide-react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { localDateStr, todayLocal } from '@/lib/dates';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
@@ -1053,10 +1054,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
             {showScrollToBottom && (
               <Pressable
                 onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
-                style={{ position: 'absolute', bottom: 12, alignSelf: 'center',
+                style={withAndroidShadowFix({ position: 'absolute', bottom: 12, alignSelf: 'center',
                   flexDirection: 'row', alignItems: 'center', gap: 4,
                   backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
-                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 })}>
                 <ChevronDown size={14} color="#fff" />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Latest</Text>
               </Pressable>

@@ -52,6 +52,7 @@ import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
@@ -315,13 +316,13 @@ export default function TasksScreen() {
                 if (aiOpen) setAiOpen(false);
               }}
               activeOpacity={0.85}
-              style={[
+              style={withAndroidShadowFix([
                 styles.tabCard,
                 {
                   backgroundColor: active ? accent : (isDark ? colors.card : '#FFFFFF'),
                   borderColor: active ? accent : colors.border,
                 },
-              ]}
+              ])}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <View style={{

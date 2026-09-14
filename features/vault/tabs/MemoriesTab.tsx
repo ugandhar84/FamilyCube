@@ -33,6 +33,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { EmptyState } from './shared';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useFamilyMemories, canDeleteMemory, type Memory as FamilyMemory } from './useFamilyMemories';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // Fixed cap instead of PostMedia's dynamic source-ratio sizing — a tall
@@ -349,10 +350,10 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
               {/* ── The keepsake card — hero photo + handwritten-style note,
                   tucked into corner mounts like an album page, not a
                   full-bleed feed hero competing for attention. ── */}
-              <View style={{ backgroundColor: isDark ? '#26222E' : '#F2ECE1', borderRadius: 4, padding: 14,
+              <View style={withAndroidShadowFix({ backgroundColor: isDark ? '#26222E' : '#F2ECE1', borderRadius: 4, padding: 14,
                 paddingBottom: 18, marginHorizontal: 8, marginBottom: rest.length ? 6 : 22,
                 transform: [{ rotate: '-0.6deg' }],
-                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } }}>
+                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } })}>
                 {hero ? (
                   <View style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 3, overflow: 'hidden',
                     backgroundColor: isDark ? '#2b2436' : colors.border + '40' }}>
@@ -669,14 +670,14 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
     // corner mounts on the media, note-style caption in a serif face,
     // hearts read as "N loved this" rather than a raw like-button row.
     <View style={{ marginHorizontal: 16, marginBottom: 30, marginTop: 6 }}>
-      <View style={{ backgroundColor: isDark ? '#26222E' : '#EBE2D2', borderRadius: 4, padding: 14, paddingBottom: 16,
+      <View style={withAndroidShadowFix({ backgroundColor: isDark ? '#26222E' : '#EBE2D2', borderRadius: 4, padding: 14, paddingBottom: 16,
         transform: [{ rotate: '-1.1deg' }],
         shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.22, shadowRadius: 20, shadowOffset: { width: 0, height: 12 },
         elevation: 8,
         // Momentary highlight ring when this is the memory a push
         // notification deep-linked to, so the auto-scroll lands somewhere
         // visibly confirmable rather than an unmarked card among many.
-        ...(highlighted ? { borderWidth: 2, borderColor: colors.primary } : null) }}>
+        ...(highlighted ? { borderWidth: 2, borderColor: colors.primary } : null) })}>
 
         {/* Header — same eyebrow/title treatment as the composer's own
             header ("for the family album" / "Tuck away a memory"): a small
@@ -735,10 +736,10 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
             contentContainerStyle={{ gap: 10, paddingTop: 10, paddingHorizontal: 2 }}>
             {allUrls.map((u, i) => (
               <TouchableOpacity key={u + i} onPress={() => mediaRef.current?.scrollToIndex(i)}
-                style={{ width: 52, height: 52, borderRadius: 3, backgroundColor: isDark ? '#1c1924' : '#e8e0d2',
+                style={withAndroidShadowFix({ width: 52, height: 52, borderRadius: 3, backgroundColor: isDark ? '#1c1924' : '#e8e0d2',
                   padding: 3, transform: [{ rotate: i % 2 === 0 ? '-2.5deg' : '2deg' }],
                   borderWidth: activeSlide === i ? 1.5 : 0, borderColor: colors.primary,
-                  shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }}>
+                  shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } })}>
                 <ExpoImage source={{ uri: u }} style={{ width: '100%', height: '100%', borderRadius: 2 }} contentFit="cover" cachePolicy="memory-disk" />
                 {typeAtIdx(i) === 'video' && (
                   <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,

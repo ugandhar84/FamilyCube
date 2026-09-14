@@ -10,6 +10,7 @@ import { Animated, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 type ToastKind = 'success' | 'info' | 'error';
 
@@ -64,7 +65,7 @@ export default function AppToast() {
   return (
     <Animated.View
       pointerEvents="none"
-      style={[
+      style={withAndroidShadowFix([
         s.wrap,
         {
           top: insets.top + 8,
@@ -74,7 +75,7 @@ export default function AppToast() {
           borderColor: (state.kind === 'error' ? colors.danger : colors.success) + '50',
           shadowColor: isDark ? '#000' : 'rgba(0,0,0,0.15)',
         },
-      ]}
+      ])}
     >
       {state.kind === 'error'
         ? <AlertCircle size={16} color={colors.danger} />

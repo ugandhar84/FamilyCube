@@ -21,6 +21,7 @@ import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
 import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const AVATARS = ['👩','👨','🧑','👩‍💼','👨‍💼','🦸‍♀️','🦸‍♂️','🧙‍♀️','🧙‍♂️','🧑‍🏫','🧑‍🍳','🌟'];
 // Member's own profile-color choice — a genuine swatch picker, not app
@@ -70,11 +71,11 @@ function PinLockSvg({ colors }: { colors: any }) {
 
 function CodeRevealSvg({ code, colors }: { code: string; colors: any }) {
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 20, backgroundColor: colors.primary, paddingVertical: 20, paddingHorizontal: 28,
       alignItems: 'center', shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 14,
       shadowOffset: { width: 0, height: 6 }, elevation: 8,
-    }}>
+    })}>
       <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10 }}>
         Family Invite Code
       </Text>

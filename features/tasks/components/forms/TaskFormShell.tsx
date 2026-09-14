@@ -31,6 +31,7 @@ import { TYPO } from '@/constants/theme';
 import StepProgressBar from '@/components/StepProgressBar';
 import StepTransition from '@/components/StepTransition';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export function TaskFormShell({
   visible, onClose, stepIds, stepTitles, step, setStep,
@@ -107,10 +108,10 @@ export function TaskFormShell({
           that could end up mispositioned on its own. */}
         <View style={[s.backdrop, { paddingBottom: keyboardHeight }]}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={[s.sheet, { backgroundColor: colors.card,
+          <View style={withAndroidShadowFix([s.sheet, { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8,
-            ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }]}>
+            ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }])}>
             {/* Drag handle */}
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 

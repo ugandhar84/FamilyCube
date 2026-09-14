@@ -1,6 +1,7 @@
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { usePickerLoadingStore } from '@/lib/pickerLoading';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export default function PickerLoadingOverlay() {
   const visible = usePickerLoadingStore(s => s.visible);
@@ -9,7 +10,7 @@ export default function PickerLoadingOverlay() {
   if (!visible) return null;
   return (
     <View style={s.backdrop}>
-      <View style={[s.card, { backgroundColor: colors.card }]}>
+      <View style={withAndroidShadowFix([s.card, { backgroundColor: colors.card }])}>
         <ActivityIndicator size="large" color={colors.primaryText ?? colors.primary} />
         <Text style={[s.label, { color: colors.textPrimary }]}>{message}</Text>
       </View>

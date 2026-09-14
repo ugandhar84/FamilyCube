@@ -256,6 +256,7 @@ const config = {
     "./plugins/withFirebasePodfileFixes.js",
     "./plugins/withFmtConstevalFix.js",
     "./plugins/withAndroidJetifier.js",
+    "./plugins/withAndroidSpeechQueries.js",
   ],
   experiments: {
     typedRoutes: true,

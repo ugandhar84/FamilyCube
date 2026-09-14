@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { usePickerOverlayStore } from '@/store/pickerOverlayStore';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export default function PickerOverlay() {
   const { visible, title, options, hide } = usePickerOverlayStore();
@@ -17,7 +18,7 @@ export default function PickerOverlay() {
   return (
     <View style={ss.overlay}>
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={hide} />
-      <View style={[ss.card, { backgroundColor: cardBg }]}>
+      <View style={withAndroidShadowFix([ss.card, { backgroundColor: cardBg }])}>
         <View style={ss.header}>
           <Text style={[ss.title, { color: titleCol }]}>{title}</Text>
         </View>

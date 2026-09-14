@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Clock3, Sparkles, ClipboardList, CheckCircle2, MessageCircle, RotateCcw, Gift } from 'lucide-react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from '../kioskTheme';
 import { KioskCard, KioskZoneHeader } from '../components/KioskSurface';
 import { useKioskColors } from '../kioskPalette';
@@ -285,11 +286,11 @@ export function KioskHubTab({ active, members, colors, isDark }: {
                   <View key={ev.id}>
                     <View style={s.tlItem}>
                       <Text style={[s.tlTime, { color: colors.textSecondary }]}>{ev.time ? fmtTime(ev.time) : 'All day'}</Text>
-                      <View style={[s.tlDot, { backgroundColor: accent, borderColor: colors.background, shadowColor: accent }]} />
-                      <View style={[s.tlCard, {
+                      <View style={withAndroidShadowFix([s.tlDot, { backgroundColor: accent, borderColor: colors.background, shadowColor: accent }])} />
+                      <View style={withAndroidShadowFix([s.tlCard, {
                         backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: accent,
                         shadowColor: accent, shadowOpacity: isDark ? 0 : 0.1, elevation: isDark ? 0 : 3,
-                      }]}>
+                      }])}>
                         <Text style={[s.tlTitle, { color: colors.textPrimary }]} numberOfLines={1}>{ev.title}</Text>
                         {!!ev.location && <Text style={[s.tlMeta, { color: colors.textSecondary }]} numberOfLines={1}>📍 {ev.location}</Text>}
                         {hasAssignee && (
@@ -317,10 +318,10 @@ export function KioskHubTab({ active, members, colors, isDark }: {
           <SectionLabel text="In Progress" color={colors.amber} colors={colors} />
           <View style={s.col3Scroll}>
             {inProgress.slice(0, 4).map(q => (
-              <View key={q.id} style={[s.choreCard, {
+              <View key={q.id} style={withAndroidShadowFix([s.choreCard, {
                 backgroundColor: colors.card, borderColor: colors.border,
                 shadowColor: colors.primary, shadowOpacity: isDark ? 0 : 0.08, elevation: isDark ? 0 : 2,
-              }]}>
+              }])}>
                 <View style={[s.choreEmoji, { backgroundColor: colors.amberLight }]}>
                   <Text style={{ fontSize: 20 }}>🧺</Text>
                 </View>

@@ -1,5 +1,6 @@
 import { View, Text, Pressable, Alert } from 'react-native';
 import { GroceryItem } from '@/store/groceryStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Return mode toolbar ────────────────────────────────────────────────────
 
@@ -15,11 +16,11 @@ export function ReturnModeToolbar({ returnMode, returnIds, colors, onOpenAssigne
 }) {
   if (!returnMode || returnIds.size === 0) return null;
   return (
-    <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16,
+    <View style={withAndroidShadowFix({ position: 'absolute', bottom: 90, left: 16, right: 16,
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: colors.warningDark, borderRadius: 20,
       paddingVertical: 12, paddingHorizontal: 16, gap: 10,
-      shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 }}>
+      shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 })}>
       <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: colors.textInverse }}>
         {returnIds.size} item{returnIds.size !== 1 ? 's' : ''} to return
       </Text>
@@ -47,11 +48,11 @@ export function BulkSelectToolbar({
 }) {
   if (!isSelecting) return null;
   return (
-    <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16,
+    <View style={withAndroidShadowFix({ position: 'absolute', bottom: 90, left: 16, right: 16,
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: P, borderRadius: 20,
       paddingVertical: 10, paddingHorizontal: 16, gap: 10,
-      shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}>
+      shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 })}>
       <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: colors.textInverse }}>
         {selectedIds.size} selected
       </Text>

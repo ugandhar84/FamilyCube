@@ -32,6 +32,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { ArcadeScreen } from '../arcade/ArcadeScreen';
 import { ArcadePrimaryButton } from '../arcade/ArcadePrimaryButton';
 import { CardFlip } from '../shared/CardFlip';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { ARCADE, ARCADE_FONT_DISPLAY_BOLD, ARCADE_FONT_DISPLAY_EXTRABOLD, ARCADE_TYPO, ARCADE_AI_THINK_MS } from '../theme/gameTheme';
 import { playSfx } from '../theme/gameAudio';
 import { speakEvent } from '../theme/gameVoice';
@@ -84,11 +85,11 @@ function MemoryCardView({ card, size, onPress, disabled }: { card: MemoryCard; s
             </View>
           }
           back={
-            <View style={{
+            <View style={withAndroidShadowFix({
               width: size, height: size, borderRadius: 14, backgroundColor: ARCADE.surfaceRaised,
               borderWidth: 2, borderColor: ARCADE.memory, alignItems: 'center', justifyContent: 'center',
               shadowColor: ARCADE.memory, shadowOpacity: 0.45, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
-            }}>
+            })}>
               <View style={{
                 width: size * 0.62, height: size * 0.62, borderRadius: (size * 0.62) / 2,
                 backgroundColor: `${ARCADE.memory}33`, alignItems: 'center', justifyContent: 'center',

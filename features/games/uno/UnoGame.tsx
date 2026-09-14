@@ -43,6 +43,7 @@ import {
   ARCADE_AI_THINK_MS, ARCADE_SPRING, ARCADE_SPRING_BOUNCY,
 } from '../theme/gameTheme';
 import { playSfx } from '../theme/gameAudio';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { speakEvent, speakText } from '../theme/gameVoice';
 import { UnoCard, UNO_COLOR_HEX, REAL_COLORS, legalCardsInHand, isWild, aiBotName } from './unoLogic';
 import { UnoOpponentSeat } from './UnoOpponentSeat';
@@ -560,12 +561,12 @@ export default function UnoGame() {
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={`Choose ${color}`}
-                  style={{
+                  style={withAndroidShadowFix({
                     width: 62, height: 62, borderRadius: 31,
                     backgroundColor: UNO_COLOR_HEX[color],
                     borderWidth: 3, borderColor: '#fff',
                     shadowColor: UNO_COLOR_HEX[color], shadowOpacity: 0.8, shadowRadius: 12, shadowOffset: { width: 0, height: 0 },
-                  }}
+                  })}
                 />
               ))}
             </View>
@@ -604,7 +605,7 @@ function CallUnoButton({ onPress }: { onPress: () => void }) {
   }));
 
   return (
-    <Animated.View style={[{ alignSelf: 'center', marginBottom: 4, shadowColor: ARCADE.uno, shadowOffset: { width: 0, height: 0 } }, style]}>
+    <Animated.View style={withAndroidShadowFix([{ alignSelf: 'center', marginBottom: 4, shadowColor: ARCADE.uno, shadowOffset: { width: 0, height: 0 } }, style])}>
       <Pressable
         onPress={() => {
           hit.value = withSequence(

@@ -17,6 +17,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ function SelectField<T extends string>({
         <Text style={{ color: colors.textTertiary }}>▾</Text>
       </TouchableOpacity>
       {open && (
-        <View style={[sf.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={withAndroidShadowFix([sf.dropdown, { backgroundColor: colors.card, borderColor: colors.border }])}>
           {options.map(o => (
             <TouchableOpacity
               key={o.value}

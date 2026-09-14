@@ -38,6 +38,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams } from 'expo-router';
 import { ArcadeScreen } from '../arcade/ArcadeScreen';
 import { ArcadePrimaryButton } from '../arcade/ArcadePrimaryButton';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { ARCADE, ARCADE_FONT_DISPLAY_BOLD, ARCADE_FONT_DISPLAY_EXTRABOLD, ARCADE_TYPO, ARCADE_SPRING_BOUNCY, ARCADE_AI_THINK_MS } from '../theme/gameTheme';
 import { playSfx } from '../theme/gameAudio';
 import { speakEvent } from '../theme/gameVoice';
@@ -227,12 +228,12 @@ function BoardShell({
       </View>
 
       {/* Cabinet board */}
-      <View style={{
+      <View style={withAndroidShadowFix({
         width: boardSize + 24, padding: 12, borderRadius: 28,
         backgroundColor: ARCADE.surface, borderWidth: 2, borderColor: ARCADE.lineGlow,
         shadowColor: ARCADE.primaryGlow, shadowOpacity: 1, shadowRadius: 24, shadowOffset: { width: 0, height: 0 },
         elevation: 12,
-      }}>
+      })}>
         <View style={{ width: boardSize, height: boardSize, flexDirection: 'row', flexWrap: 'wrap', gap: CELL_GAP }}>
           {board.map((cell, i) => (
             <ArcadeCell

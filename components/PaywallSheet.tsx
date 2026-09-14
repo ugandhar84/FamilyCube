@@ -11,6 +11,7 @@ import { getOfferings, purchasePackage, restorePurchases, isRevenueCatReady } fr
 import { useAuthStore } from '@/store/authStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { supabase } from '@/lib/supabase';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Ionicons names (matches the icon set already used throughout this
 // component and the rest of the app, e.g. PinEntryModal) — SVG glyphs
@@ -330,7 +331,7 @@ export default function PaywallSheet({
           onPress={handlePurchase}
           disabled={purchasing}
           activeOpacity={0.88}
-          style={[s.cta, { backgroundColor: colors.primary }]}
+          style={withAndroidShadowFix([s.cta, { backgroundColor: colors.primary }])}
         >
           {purchasing
             ? <ActivityIndicator color="#fff" />

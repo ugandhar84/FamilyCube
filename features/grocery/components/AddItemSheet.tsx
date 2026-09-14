@@ -11,6 +11,7 @@ import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -284,9 +285,9 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
                   more scrollable content so it can never end up clipped or
                   mispositioned independently of the fields above it. */}
               <Pressable onPress={handleSave} disabled={!name.trim() || saving}
-                style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
+                style={withAndroidShadowFix({ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
                   backgroundColor: (!name.trim() || saving) ? colors.textDisabled : P,
-                  shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 }}>
+                  shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 })}>
                 {saving
                   ? <ActivityIndicator color={colors.textInverse} size="small" />
                   : <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textInverse, letterSpacing: 0.3 }}>

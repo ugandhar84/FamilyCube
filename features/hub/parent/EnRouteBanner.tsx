@@ -7,6 +7,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { useDriverLocation } from '@/lib/hooks/useDriverLocation';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import type { FamilyMember } from '@/store/familyStore';
 
 const DEFAULT_ETA = 10;
@@ -197,7 +198,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
           <Pressable
             disabled={rideLocked}
             onPress={() => onDispatchRide(DEFAULT_ETA)}
-            style={{
+            style={withAndroidShadowFix({
               flexDirection: 'row', alignItems: 'center', gap: 10,
               backgroundColor: isDark ? colors.card : '#FFFFFF',
               borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
@@ -205,7 +206,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
               shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
               shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
               elevation: isDark ? 3 : 2,
-            }}>
+            })}>
             <Text style={{ fontSize: 22 }}>{nextRide.kidEmoji ?? '🧒'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success, textTransform: 'uppercase', letterSpacing: 0.6 }}>

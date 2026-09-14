@@ -13,7 +13,7 @@
  * device, not just local state.
  */
 import { useState } from 'react';
-import { View, ScrollView, Text, TouchableOpacity, Modal, Pressable, LayoutChangeEvent } from 'react-native';
+import { View, ScrollView, Text, TouchableOpacity, Modal, Pressable, LayoutChangeEvent, Platform } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
@@ -176,11 +176,18 @@ function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onComm
       transform: [{ translateY: isActive.value ? baseY + dragY.value : withSpring(baseY, { damping: 22, stiffness: 260 }) }],
       zIndex: isActive.value ? 10 : 1,
       opacity: isActive.value ? 0.96 : 1,
-      shadowColor: '#000',
-      shadowOpacity: isActive.value ? 0.22 : 0,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: isActive.value ? 4 : 0,
+      // This style object is built inside a Reanimated worklet
+      // (useAnimatedStyle), which runs on the UI thread — the shared
+      // withAndroidShadowFix helper isn't a worklet, so it can't be
+      // called from here. Same "no shadow/elevation on Android" behavior
+      // is inlined directly instead.
+      ...(Platform.OS === 'android' ? {} : {
+        shadowColor: '#000',
+        shadowOpacity: isActive.value ? 0.22 : 0,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      }),
+      elevation: Platform.OS === 'android' ? 0 : (isActive.value ? 4 : 0),
     };
   });
 

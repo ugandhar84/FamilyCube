@@ -15,6 +15,7 @@ import {
 } from '@/lib/db/rewards';
 import { supabase } from '@/lib/supabase';
 import { TYPO } from '@/constants/theme';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -416,7 +417,7 @@ export default function RewardsScreen({ onClose }: { onClose?: () => void }) {
       {/* Scroll-to-top FAB */}
       {showFab && (
         <TouchableOpacity
-          style={[s.fab, { bottom: insets.bottom + 16 }]}
+          style={withAndroidShadowFix([s.fab, { bottom: insets.bottom + 16 }])}
           onPress={scrollToTop}
           activeOpacity={0.85}
         >

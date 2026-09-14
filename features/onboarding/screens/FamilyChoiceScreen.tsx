@@ -16,6 +16,7 @@ import { showAlert } from '@/components/AppAlert';
 import { LogOut } from 'lucide-react-native';
 import ResponsiveAuthContainer from '@/components/ResponsiveAuthContainer';
 import { useAuthScale, type AuthScale } from '@/lib/useAuthScale';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Hero SVG — family silhouette ─────────────────────────────────────────────
 function FamilyHeroSvg({ colors, width }: { colors: any; width: number }) {
@@ -159,7 +160,7 @@ export default function FamilyChoiceScreen() {
         <View style={s.cards}>
           {/* Create family */}
           <TouchableOpacity
-            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.primary }]}
+            style={withAndroidShadowFix([s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.primary }])}
             activeOpacity={0.85}
             onPress={() => router.push('/onboarding/setup-family')}
           >
@@ -175,7 +176,7 @@ export default function FamilyChoiceScreen() {
 
           {/* Join with code */}
           <TouchableOpacity
-            style={[s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.teal }]}
+            style={withAndroidShadowFix([s.card, { backgroundColor: colors.card ?? colors.surface, borderColor: colors.teal }])}
             activeOpacity={0.85}
             onPress={() => router.push('/onboarding/join-family')}
           >

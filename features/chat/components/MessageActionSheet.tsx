@@ -4,6 +4,7 @@ import {
 } from 'lucide-react-native';
 import { ChatMessage } from '@/store/chatStore';
 import { QUICK_REACTIONS } from './constants';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Long-press action sheet ──────────────────────────────────────────────────
 
@@ -40,9 +41,9 @@ export function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose}>
-        <Pressable onPress={() => {}} style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40,
+        <Pressable onPress={() => {}} style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40,
           borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
+          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
 
           {/* Quick emoji reactions */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 18 }}>

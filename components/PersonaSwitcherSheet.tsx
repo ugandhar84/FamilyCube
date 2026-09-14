@@ -18,6 +18,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from './FamilyAvatar';
 import { showAlert } from './AppAlert';
 import { supabase } from '@/lib/supabase';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Role theming ─────────────────────────────────────────────────────────────
 
@@ -463,14 +464,14 @@ function Sheet({ visible, onClose, children, isDark }: {
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(4,10,28,0.72)', justifyContent: 'flex-end' }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <Animated.View style={[aStyle, {
+        <Animated.View style={[aStyle, withAndroidShadowFix({
           backgroundColor: isDark ? '#0B1422' : '#FFFFFF',
           borderTopLeftRadius: 28, borderTopRightRadius: 28,
           borderTopWidth: 1, borderColor: isDark ? '#1A2840' : '#E2EAF8',
           paddingBottom: 40,
           shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
           shadowOpacity: 0.25, shadowRadius: 24, elevation: 24,
-        }]}>
+        })]}>
           {children}
         </Animated.View>
       </View>

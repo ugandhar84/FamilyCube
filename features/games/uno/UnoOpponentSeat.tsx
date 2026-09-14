@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { ARCADE, ARCADE_FONT_DISPLAY_BOLD, ARCADE_FONT_DISPLAY_EXTRABOLD, ARCADE_TYPO, ARCADE_SPRING } from '../theme/gameTheme';
 import { UnoCardBack } from './UnoCardViews';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Max card-backs drawn in a fan. Beyond this the fan is visually "full"
 // and the count label communicates the remainder.
@@ -71,7 +72,7 @@ export function UnoOpponentSeat({
 
   return (
     <Animated.View
-      style={[
+      style={withAndroidShadowFix([
         {
           alignItems: 'center',
           gap: 5,
@@ -85,7 +86,7 @@ export function UnoOpponentSeat({
           minWidth: 112,
         },
         seatStyle,
-      ]}
+      ])}
     >
       {/* Soft inner glow layer — fades in and out with the turn pulse. */}
       <Animated.View

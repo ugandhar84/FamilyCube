@@ -42,6 +42,7 @@ import { KioskAppBottomSheet as AppBottomSheet } from './KioskAppBottomSheet';
 import { KioskDueDateTimePicker } from './KioskDueDateTimePicker';
 import { fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFormShared';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
@@ -884,13 +885,13 @@ export default function KioskSmartTaskComposer({
                   dictation.start();
                 }
               }}
-              style={{
+              style={withAndroidShadowFix({
                 width: 72, height: 72, borderRadius: 36,
                 alignItems: 'center', justifyContent: 'center',
                 backgroundColor: dictation.state === 'listening' ? colors.danger : colors.primary,
                 shadowColor: dictation.state === 'listening' ? colors.danger : colors.primary,
                 shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
-              }}>
+              })}>
               {dictation.state === 'listening'
                 ? <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: '#fff' }} />
                 : <Mic size={28} color="#fff" />}

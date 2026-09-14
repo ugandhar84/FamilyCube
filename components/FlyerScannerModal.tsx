@@ -48,6 +48,7 @@ import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -472,10 +473,10 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     >
       {/* ── TOAST ── */}
       <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 8, left: 0, right: 0, zIndex: 99, opacity: toastOpacity }}>
-        <View style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+        <View style={withAndroidShadowFix({ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
           backgroundColor: toastMsg.success ? '#059669' : '#EF4444',
           flexDirection: 'row', alignItems: 'center', gap: 8,
-          shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
+          shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 })}>
           <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{toastMsg.text}</Text>
         </View>
       </Animated.View>

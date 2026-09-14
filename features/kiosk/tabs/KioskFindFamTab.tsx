@@ -65,6 +65,7 @@ import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../co
 import { KioskFormDrawer } from '../components/KioskFormDrawer';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { supabase } from '@/lib/supabase';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import type { FamilyMember } from '@/store/familyStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -142,7 +143,7 @@ const KioskFamilyMapMarker = memo(function KioskFamilyMapMarker({
   return (
     <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
       <View style={s.mapPinWrap}>
-        <View style={[s.mapPinAvatar, { borderColor: ringColor }]}>
+        <View style={withAndroidShadowFix([s.mapPinAvatar, { borderColor: ringColor }])}>
           <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
             siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={40} />
         </View>

@@ -50,6 +50,7 @@ import { RunsTabBody } from './components/RunsTabBody';
 import { mapBoughtRow, itemEmoji } from './components/types';
 import { s } from './components/styles';
 import { showToast } from '@/components/AppToast';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -466,11 +467,11 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             const isRuns = t.key === 'runs';
             return (
               <Pressable key={t.key} onPress={() => setTab(t.key)}
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14,
+                style={withAndroidShadowFix({ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14,
                   backgroundColor: active ? P : colors.surface,
                   borderWidth: active ? 0 : StyleSheet.hairlineWidth,
                   borderColor: colors.border,
-                  shadowColor: P, shadowOpacity: active ? 0.35 : 0, shadowRadius: 8, elevation: active ? 4 : 0 }}>
+                  shadowColor: P, shadowOpacity: active ? 0.35 : 0, shadowRadius: 8, elevation: active ? 4 : 0 })}>
                 <Ionicons name={t.icon} size={20} color={active ? colors.textInverse : colors.textSecondary} style={{ marginBottom: 3 }} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: active ? colors.textInverse : colors.textSecondary }}>
                   {t.label}
@@ -681,9 +682,9 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
       }}>
         <Pressable
           onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
-          style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryLight,
+          style={withAndroidShadowFix({ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryLight,
             alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 }}>
+            shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 })}>
           <Ionicons name="chevron-up" size={22} color={P} />
         </Pressable>
       </Animated.View>

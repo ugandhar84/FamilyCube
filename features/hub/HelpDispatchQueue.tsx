@@ -15,6 +15,7 @@ import type { KidRequest, KidRequestItem } from '@/store/kidRequestStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -506,7 +507,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                       </View>
 
                       {helperOpen[req.id] && (
-                        <View style={[q.helperDropdown, { backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+                        <View style={withAndroidShadowFix([q.helperDropdown, { backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }])}>
                           {adultHelpers
                             .filter(h => h.id !== req.assignedHelper)
                             .map(h => (
@@ -636,7 +637,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                         <Text style={{ color: colors.textTertiary }}>▾</Text>
                       </TouchableOpacity>
                       {helperOpen[req.id] && (
-                        <View style={[q.helperDropdown, { top: 36, backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+                        <View style={withAndroidShadowFix([q.helperDropdown, { top: 36, backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }])}>
                           {adultHelpers.filter(h => h.id !== aHelper).map(h => (
                             <TouchableOpacity
                               key={h.id}

@@ -19,6 +19,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { supabase } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
 const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
@@ -362,9 +363,9 @@ export function ReceiptScanSheet({
                     { label: 'File', sub: 'Image file', icon: <FileIcon c={P} />, onPress: pickPDF },
                   ].map(btn => (
                     <TouchableOpacity key={btn.label} disabled={scanning} onPress={btn.onPress}
-                      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
+                      style={withAndroidShadowFix({ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
                         backgroundColor: isDark ? '#1E1E2E' : '#fff', borderWidth: 1.5, borderColor: bdr, gap: 8, opacity: scanning ? 0.45 : 1,
-                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 })}>
                       {btn.icon}
                       <Text style={{ fontSize: 12, fontWeight: '800', color: txtP }}>{btn.label}</Text>
                       <Text style={{ fontSize: 10, fontWeight: '600', color: txtS, marginTop: -4 }}>{btn.sub}</Text>

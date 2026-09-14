@@ -6,6 +6,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { KID } from './kidTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // Money-green — "goal met" positive accent on the quest-progress bar; also
 // matches the "ride" accent used throughout the Kid Hub (KidNeedsYouSection's
@@ -48,9 +49,9 @@ export function KidHeroCard({
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 20, gap: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <View style={{
+        <View style={withAndroidShadowFix({
           shadowColor: colors.kid, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-        }}>
+        })}>
           {/* Was a hardcoded active.emoji-or-fallback Text glyph, never
               reading avatarUrl at all — every other avatar in the app
               (AppHeader, PersonaSwitcherDropdown) uses FamilyAvatar's

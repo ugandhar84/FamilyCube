@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Animated } from 'react-native';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Flash Bonus Badge ────────────────────────────────────────────────────────
 export function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number; expiresAt: string }) {
@@ -48,11 +49,11 @@ export function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number;
   const shadow = isCritical ? '#EF4444' : '#F59E0B';
 
   return (
-    <Animated.View style={{
+    <Animated.View style={withAndroidShadowFix({
       transform: [{ scale }], opacity,
       shadowColor: shadow, shadowOpacity: 0.65, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
       elevation: 6,
-    }}>
+    })}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: bg, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 6 }}>
         <Text style={{ fontSize: 14 }}>🔥</Text>
         <View>

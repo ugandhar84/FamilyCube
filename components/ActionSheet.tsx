@@ -4,6 +4,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export interface ActionSheetAction {
   label: string;
@@ -58,7 +59,7 @@ export default function ActionSheet({ visible, onClose, actions }: Props) {
         <View style={ss.backdrop} />
       </TouchableWithoutFeedback>
 
-      <View style={[ss.panel, { backgroundColor: panelBg, paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View style={withAndroidShadowFix([ss.panel, { backgroundColor: panelBg, paddingBottom: Math.max(insets.bottom, 16) }])}>
         {rows.map((row, i) => (
           <View key={i} style={ss.row}>
             {row.map(a => <Pill key={a.label} a={a} />)}

@@ -8,6 +8,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { SCard, CardHeader, MemberAvatar, StatusPill, AddBtn, EmptyState } from './shared';
 import { TYPO } from '@/constants/theme';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const CAT_EMOJI: Record<string, string> = {
   'Screen Time': '📱', Food: '🍔', Activity: '🏃', Shopping: '🛍️',
@@ -39,9 +40,9 @@ function RewardModal({ visible, onClose, onSave, initial, colors, isDark }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20,
+          <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
+            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
             <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>
               {initial ? 'Edit Reward' : 'New Reward'}

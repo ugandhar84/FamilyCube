@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 interface Props {
   visible: boolean;
@@ -74,11 +75,11 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
         <TouchableWithoutFeedback onPress={dismiss}>
           <View style={{ flex: 1 }} />
         </TouchableWithoutFeedback>
-          <View style={[ss.sheet, {
+          <View style={withAndroidShadowFix([ss.sheet, {
             backgroundColor: colors.card,
             paddingBottom: Math.max(insets.bottom, extraBottom ?? 0) + 8,
             ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}),
-          }, style]}>
+          }, style])}>
             {/* Drag handle */}
             <View style={ss.handle}>
               <View style={[ss.handleBar, { backgroundColor: colors.border }]} />

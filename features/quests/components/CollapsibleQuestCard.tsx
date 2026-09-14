@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/ThemeContext';
 import { I } from './icons';
 import { s } from './questCardStyles';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Collapsible chore card — frosted-glass shell, header always visible,
 // body expands on tap. Real BlurView on iOS (Android falls back to a
@@ -43,7 +44,7 @@ export function CollapsibleQuestCard({
     lastTap.current = now;
   };
   return (
-    <View style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord, shadowColor: accentColor }]}>
+    <View style={withAndroidShadowFix([s.questCard, { backgroundColor: cardBg, borderColor: cardBord, shadowColor: accentColor }])}>
       {/* Soft accent wash under the glass — barely-there gradient, not a
           solid fill, so the card reads tinted rather than colored. */}
       <LinearGradient

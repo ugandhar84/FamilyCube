@@ -25,6 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect, ClipPath, Defs, G } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { eventAssignee } from '@/store/eventStore';
@@ -575,7 +576,7 @@ export function EventCardTimeline({
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>
-      <View style={[s.eventCard, { backgroundColor: colors.card, borderColor: accentColor + '40', shadowColor: accentColor }]}>
+      <View style={withAndroidShadowFix([s.eventCard, { backgroundColor: colors.card, borderColor: accentColor + '40', shadowColor: accentColor }])}>
         <LinearGradient
           colors={[accentColor + '14', accentColor + '00']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0.6 }}

@@ -21,6 +21,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { RADIUS, TYPO } from '@/constants/theme';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { supabase, uploadFamilyFramePhoto, deleteFamilyFramePhoto } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import CubeSpinner from '@/components/CubeSpinner';
@@ -171,14 +172,14 @@ export function FamilyPhotoFrameCard({ colors, isDark, width = 124, height, onFr
       <Pressable
         onLongPress={onLongPress}
         delayLongPress={350}
-        style={{
+        style={withAndroidShadowFix({
           transform: [{ rotate: '4deg' }],
           width, height: frameH,
           borderRadius: RADIUS.lg, overflow: 'hidden',
           backgroundColor: colors.card, borderWidth: 5, borderColor: colors.card,
           shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.18, shadowRadius: 10,
           elevation: 6,
-        }}
+        })}
       >
         {loading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>

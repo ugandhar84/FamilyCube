@@ -45,6 +45,7 @@ import {
   initialSnake, nextHead, isOutOfBounds, isSelfCollision, isOpposite, randomEmptyCell, computeSnakeScore,
 } from './snakeLogic';
 import { useGameStore } from '@/store/gameStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 const STARTING_LENGTH = initialSnake().length;
 
@@ -232,11 +233,11 @@ export default function SnakeGame() {
         </View>
 
         <GestureDetector gesture={panGesture}>
-        <View style={{
+        <View style={withAndroidShadowFix({
           width: boardSize, height: boardSize, borderRadius: 20, backgroundColor: '#04120A',
           borderWidth: 2, borderColor: ARCADE.snake, overflow: 'hidden',
           shadowColor: ARCADE.snake, shadowOpacity: 0.5, shadowRadius: 16, shadowOffset: { width: 0, height: 0 },
-        }}>
+        })}>
           {Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, i) => {
             const x = i % GRID_SIZE;
             const y = Math.floor(i / GRID_SIZE);

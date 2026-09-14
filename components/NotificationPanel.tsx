@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { RADIUS, TYPO } from '@/constants/theme';
 import { useNotifStore } from '@/store/notifStore';
 import { useAuthStore } from '@/store/authStore';
@@ -232,7 +233,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
       >
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={[s.panel, {
+            <View style={withAndroidShadowFix([s.panel, {
               backgroundColor: colors.card,
               shadowColor: isDark ? '#000' : '#3D2068',
               // AppHeader's own bar (paddingVertical 10 + the 40px bell
@@ -242,7 +243,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
               // area and rendered UNDER/behind the header bar instead of
               // sliding down from beneath the bell.
               marginTop: HEADER_HEIGHT,
-            }]}>
+            }])}>
               {/* Header */}
               <View style={[s.header, { borderBottomColor: colors.border }]}>
                 <Text style={[s.title, { color: colors.textPrimary, flex: 1 }]}>Notifications</Text>

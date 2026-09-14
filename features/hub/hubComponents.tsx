@@ -18,6 +18,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import { eventAssignee, useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
 import { EventCardRow } from '@/features/calendar/components/EventCard';
 import { fmtDateShort } from '@/lib/dates';
@@ -218,12 +219,12 @@ export function CollapsibleCard({
   }
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 16, borderWidth: 1, backgroundColor: bg, borderColor: border, overflow: 'hidden',
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-    }}>
+    })}>
       <Pressable
         onPress={() => children && setExpanded(e => !e)}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>

@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // A task I delegated that's still waiting on the other parent. Still
 // PENDING (not yet accepted/bounced) gets a Recall action — the delegator
@@ -66,14 +67,14 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
   const isBounced = a.status === 'PARKED';
 
   return (
-    <View style={{
+    <View style={withAndroidShadowFix({
       borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
       backgroundColor: isDark ? colors.card : '#FFFFFF', overflow: 'hidden',
       borderLeftWidth: 3, borderLeftColor: colors.textTertiary,
       shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
-    }}>
+    })}>
       <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${a.id}) [features/hub/parent/backlog/OutgoingPendingCard.tsx:44]`); setExp(e => !e); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <Clock size={14} color={colors.textTertiary} />

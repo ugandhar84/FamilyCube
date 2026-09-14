@@ -272,6 +272,7 @@ const config = {
     "./plugins/withFmtConstevalFix.js",
     "./plugins/withAndroidJetifier.js",
     "./plugins/withAndroidSpeechQueries.js",
+    "./plugins/withAndroidTurboModuleInterop.js",
   ],
   experiments: {
     typedRoutes: true,

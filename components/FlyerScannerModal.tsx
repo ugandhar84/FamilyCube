@@ -296,11 +296,15 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   };
 
   // ── Save single event ──
-  const handleConfirmEvent = () => {
+  const handleConfirmEvent = async () => {
     if (!event) return;
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid for this event'); return; }
+    // Same fire-and-forget bug as handleConfirmMulti below — await each
+    // addEvent call and only claim success for the ones that actually
+    // persisted (addEvent returns '' on failure, a real row id on success).
+    let succeeded = 0;
     for (const kidId of selectedKids) {
-      addEvent({
+      const id = await addEvent({
         title:    event.title,
         date:     event.date ?? dateToStr(new Date()),
         time:     event.time ?? undefined,
@@ -313,6 +317,11 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         color:    BRAND.teal,
         approvalPending: false,
       });
+      if (id) succeeded++;
+    }
+    if (succeeded === 0) {
+      Alert.alert("Couldn't add event", 'Check your connection and try again.');
+      return;
     }
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
     showToast(`✓ "${event.title}" added for ${kidNames}`);
@@ -320,14 +329,27 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   };
 
   // ── Save multi calendar events ──
-  const handleConfirmMulti = () => {
+  const [importingMulti, setImportingMulti] = useState(false);
+  const handleConfirmMulti = async () => {
     if (!multiCal) return;
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid'); return; }
     const toAdd = multiCal.events.filter((_, i) => selectedEvents.has(i));
     if (toAdd.length === 0) { Alert.alert('Select at least one event to import'); return; }
+    if (importingMulti) return;
+    setImportingMulti(true);
+    // Was fire-and-forget: addEvent is async and can fail per-call (its own
+    // error path already shows a toast), but this loop never awaited any of
+    // the resulting promises before showing a hardcoded success toast and
+    // closing the modal — live-reported: 38 flyer-scanned events "imported"
+    // successfully per the toast, but zero of them ever landed in
+    // calendar_events (confirmed via direct DB query). Awaiting each call
+    // and counting real successes/failures is what actually tells the user
+    // (and this code) what happened.
+    let succeeded = 0;
+    let failed = 0;
     for (const ev of toAdd) {
       for (const kidId of selectedKids) {
-        addEvent({
+        const id = await addEvent({
           title:    ev.title,
           date:     ev.date ?? dateToStr(new Date()),
           time:     ev.time ?? undefined,
@@ -340,11 +362,20 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           color:    BRAND.teal,
           approvalPending: false,
         });
+        if (id) succeeded++; else failed++;
       }
     }
+    setImportingMulti(false);
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
-    showToast(`✓ ${toAdd.length} event${toAdd.length !== 1 ? 's' : ''} imported for ${kidNames}`);
-    setTimeout(resetAndClose, 2600);
+    if (failed === 0) {
+      showToast(`✓ ${succeeded} event${succeeded !== 1 ? 's' : ''} imported for ${kidNames}`);
+      setTimeout(resetAndClose, 2600);
+    } else if (succeeded === 0) {
+      Alert.alert("Couldn't import events", 'None of the events could be saved — check your connection and try again.');
+    } else {
+      Alert.alert('Some events failed', `${succeeded} of ${succeeded + failed} events were imported for ${kidNames}. ${failed} failed — check your connection and try again.`);
+      setTimeout(resetAndClose, 2600);
+    }
   };
 
   // ── Save timetable ──

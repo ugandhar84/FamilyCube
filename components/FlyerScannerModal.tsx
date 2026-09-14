@@ -43,6 +43,8 @@ import { compressImage } from '@/lib/compressImage';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useSchoolStore } from '@/store/schoolStore';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -156,6 +158,27 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
   const { schedules, addSchedule, updateSchedule } = useSchoolStore();
+  const { tier, isTrial } = useSubscriptionStore();
+
+  // calendar_events' own INSERT RLS policy (family_can_create_content)
+  // blocks writes once a family's 15-day trial ends without an active
+  // subscription — live-reported: scanning a flyer with 39 events showed
+  // "Couldn't import events... check your connection" (the new, honest
+  // error from awaiting addEvent — see handleConfirmMulti's own comment)
+  // when the REAL cause was an expired trial, not connectivity. Checking
+  // this up front and showing the paywall directly avoids a doomed
+  // multi-insert attempt and gives the actual reason instead of a
+  // misleading connection-error message. Mirrors the same tier/isTrial
+  // gate ProfileSettingsScreen.tsx and ParentView.tsx already use.
+  const canCreateContent = tier !== 'free' || isTrial;
+  const blockIfPaywalled = (): boolean => {
+    if (canCreateContent) return false;
+    usePaywallSheetStore.getState().show({
+      headline: 'Your trial has ended',
+      body: 'Upgrade to keep adding events, chores, and more for your family.',
+    });
+    return true;
+  };
 
   const allNames = members.map(m => m.name);
   const kids     = members.filter(m => m.role === 'kid');
@@ -299,6 +322,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const handleConfirmEvent = async () => {
     if (!event) return;
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid for this event'); return; }
+    if (blockIfPaywalled()) return;
     // Same fire-and-forget bug as handleConfirmMulti below — await each
     // addEvent call and only claim success for the ones that actually
     // persisted (addEvent returns '' on failure, a real row id on success).
@@ -335,6 +359,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid'); return; }
     const toAdd = multiCal.events.filter((_, i) => selectedEvents.has(i));
     if (toAdd.length === 0) { Alert.alert('Select at least one event to import'); return; }
+    if (blockIfPaywalled()) return;
     if (importingMulti) return;
     setImportingMulti(true);
     // Was fire-and-forget: addEvent is async and can fail per-call (its own

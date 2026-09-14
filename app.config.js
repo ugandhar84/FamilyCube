@@ -227,6 +227,7 @@ const config = {
     "@react-native-firebase/messaging",
     "react-native-quick-crypto",
     "./plugins/withCallKeep.js",
+    "./plugins/withCallKeepAndroid.js",
     "./plugins/withFirebasePodfileFixes.js",
     "./plugins/withFmtConstevalFix.js",
     "./plugins/withAndroidJetifier.js",

@@ -13,6 +13,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
+import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
@@ -175,7 +176,7 @@ function PerkCard({ reward, index = 0, myCoins, myMaxAffordable, isKid, isParent
       onPress={() => onOpenDetail(reward)}
       onLongPress={isParent ? () => onEdit(reward) : undefined}
       delayLongPress={350}
-      style={[s.perkCard, { backgroundColor: isDark ? accent + '20' : accent + '1E', borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
+      style={withAndroidShadowFix([s.perkCard, { backgroundColor: isDark ? accent + '20' : accent + '1E', borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }])}>
 
       {/* Icon circle — solid-tint chip matching the Hub quick-action tiles'
           bold "badge" treatment, not a bare floating emoji on a wash.

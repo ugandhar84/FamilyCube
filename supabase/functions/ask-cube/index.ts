@@ -667,6 +667,14 @@ async function callClaude(messages: any[], tools: unknown[]) {
       system: systemMsg?.content,
       messages: anthropicMessages,
       tools: anthropicTools,
+      // Automatic prompt caching: a single top-level cache_control (rather
+      // than manually placed per-block breakpoints) lets Anthropic place
+      // the cache boundary at the last cacheable block itself and move it
+      // forward as this multi-turn chat's own message history grows —
+      // right fit here since ask-cube is a real back-and-forth conversation,
+      // not a single one-shot call, so later turns in the same chat reuse
+      // the system prompt + prior turns instead of reprocessing them.
+      cache_control: { type: 'ephemeral' },
     }),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${await res.text()}`);

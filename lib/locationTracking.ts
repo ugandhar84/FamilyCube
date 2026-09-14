@@ -251,14 +251,24 @@ async function handleDrivingTrip(
     }
     activeTripLastFixAt = now;
 
-    // Speeding alert — once per trip, not once per over-threshold fix.
+    // Speeding alert — live-requested: don't spam parents every over-
+    // threshold fix, but DO re-alert if the driver crosses the threshold
+    // again after a real cooldown (5 min), rather than "once per trip,
+    // ever" (the old plain-boolean behavior). speeding_alerted stays as
+    // "has this trip EVER had a speeding alert" (e.g. for a trip-summary
+    // badge); speeding_last_alerted_at is the new cooldown clock.
     // Threshold is per-family configurable (families.speeding_threshold_mph).
     const familySettings = await getFamilyDrivingSettings(familyId);
     if (speedMph > familySettings.thresholdMph) {
       const { data: trip } = await supabase.from('driving_trips')
-        .select('speeding_alerted').eq('id', activeTripId).single();
-      if (trip && !trip.speeding_alerted) {
-        await supabase.from('driving_trips').update({ speeding_alerted: true }).eq('id', activeTripId);
+        .select('speeding_last_alerted_at').eq('id', activeTripId).single();
+      const lastAlertedAt = trip?.speeding_last_alerted_at ? new Date(trip.speeding_last_alerted_at).getTime() : null;
+      const cooldownElapsed = lastAlertedAt === null || (now - lastAlertedAt) >= SPEEDING_ALERT_COOLDOWN_MS;
+      if (cooldownElapsed) {
+        await supabase.from('driving_trips').update({
+          speeding_alerted: true,
+          speeding_last_alerted_at: nowIso,
+        }).eq('id', activeTripId);
         await notifyParents(memberId, 'speeding_alert', { speedDisplay: formatSpeedForAlert(speedMph, familySettings.speedUnit) });
       }
     }
@@ -570,6 +580,7 @@ let lastFix: { lat: number; lng: number } | null = null;
 const DRIVING_SPEED_MPH = 8; // matches GpsTab.tsx's classifyMovement driving cutoff
 const DEFAULT_SPEEDING_THRESHOLD_MPH = 70; // families.speeding_threshold_mph's own column default — used only if that read fails
 const TRIP_GAP_TIMEOUT_MS = 10 * 60_000; // no fix for this long — car parked / lost signal, close the trip rather than hang it open forever
+const SPEEDING_ALERT_COOLDOWN_MS = 5 * 60_000; // live-requested: re-alert if still/again speeding after this long, not just once per entire trip
 // Set by lib/motionTracking.ts (setMotionClassification), read by
 // handleDrivingTrip below — deliberately NOT an import of motionTracking.ts
 // itself, since that file imports FROM this one (recordHardBrakeOnActiveTrip,

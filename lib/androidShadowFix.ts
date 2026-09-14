@@ -2,27 +2,23 @@ import { Platform } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 /**
- * Android's `elevation` shadow is clipped/suppressed entirely by
- * `overflow: 'hidden'` on the SAME view — a well-known cross-platform
- * quirk (iOS's shadow* props have no such conflict with overflow: hidden).
- * Live-reported: perk cards on Android (features/store/StoreScreen.tsx)
- * rendered with a flat, muted shadow instead of the soft per-category
- * tinted shadow iOS shows, because `overflow: 'hidden'` (needed there to
- * clip the rounded card corners) was set on the exact same style object
- * that also carries shadowColor/elevation.
+ * Android's `elevation` shadow renders fundamentally differently from
+ * iOS's `shadow*` props — it's a soft, always-neutral-gray/black ambient +
+ * key-light effect that never picks up `shadowColor`, and (separately)
+ * used to get clipped to invisible entirely by `overflow: 'hidden'` on the
+ * same view. Live-reported, after trying to tune elevation up to
+ * compensate for the flat/muted look: don't carry ANY elevation/shadow on
+ * Android at all, on any card or component — simpler and more consistent
+ * than chasing a per-card elevation value that tries (and fails) to
+ * visually match iOS's colored, soft shadows. The card's own border
+ * (borderWidth/borderColor, already present everywhere this is applied)
+ * is what defines the card shape on Android; iOS keeps its real shadow
+ * completely untouched, since this function is a pure passthrough there.
  *
- * This is a REPO-WIDE pattern (40+ files combine overflow:'hidden' with a
- * shadow on one view), so fixing it means either restructuring every
- * card's JSX into an extra wrapper view (invasive, real risk of breaking
- * iOS layouts in the process) or normalizing it once at the style level.
- * withAndroidShadowFix(style) is the single choke point every affected
- * component calls: on iOS it's a pure passthrough (zero behavior change,
- * confirmed by the Platform.OS check below never running on iOS), on
- * Android it drops `overflow: 'hidden'` from the merged style so the
- * elevation shadow can render outside the view's bounds again — the
- * rounded-corner clipping itself still works via `borderRadius` alone
- * (Android clips content to borderRadius independently of `overflow`,
- * this only affects whether the OS-drawn shadow gets clipped too).
+ * Kept as one shared choke point (not reverted to hand-editing every call
+ * site again) since ~23 files already call this — only the Android-side
+ * behavior changes here, every existing call site keeps working with zero
+ * further changes needed.
  *
  * Typed as StyleProp<ViewStyle> throughout (not a bare Record<string, any>)
  * so this is a drop-in replacement at any `style={...}` prop — an earlier
@@ -43,11 +39,14 @@ function flattenStyle(style: unknown): ViewStyle {
   return style as ViewStyle;
 }
 
+const SHADOW_KEYS = ['shadowColor', 'shadowOpacity', 'shadowRadius', 'shadowOffset', 'elevation'] as const;
+
 export function withAndroidShadowFix(style: StyleInput): StyleInput {
   if (Platform.OS !== 'android') return style;
   const merged = flattenStyle(style);
-  if (merged.overflow !== 'hidden') return style;
-  if (merged.shadowColor === undefined && merged.elevation === undefined) return style;
-  const { overflow, ...rest } = merged;
+  const hasShadow = SHADOW_KEYS.some((k) => (merged as Record<string, unknown>)[k] !== undefined);
+  if (!hasShadow) return style;
+  const rest: Record<string, unknown> = { ...merged };
+  for (const k of SHADOW_KEYS) delete rest[k];
   return rest as ViewStyle;
 }

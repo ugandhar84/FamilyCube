@@ -130,6 +130,16 @@ const config = {
       "android.permission.CAMERA",
       "android.permission.ACCESS_FINE_LOCATION",
       "android.permission.ACCESS_COARSE_LOCATION",
+      // Was missing entirely — live-reported crash: "Could not update
+      // location sharing... Something went wrong" on the FindFam/GPS tab.
+      // expo-location's requestBackgroundPermissionsAsync (called from
+      // lib/locationTracking.ts's startBackgroundLocationTracking, the
+      // exact same call path already working on iOS) rejects outright on
+      // Android 10+ without this declared — foreground-only
+      // ACCESS_FINE_LOCATION/ACCESS_COARSE_LOCATION above aren't sufficient
+      // for background tracking, a real Android-specific requirement iOS's
+      // permission model doesn't have.
+      "android.permission.ACCESS_BACKGROUND_LOCATION",
       "android.permission.USE_BIOMETRIC",
       "android.permission.USE_FINGERPRINT",
       "android.permission.VIBRATE",

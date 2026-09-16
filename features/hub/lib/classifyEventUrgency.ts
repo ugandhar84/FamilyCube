@@ -51,6 +51,20 @@ export function classifyEventUrgency(
   const myPending: FamilyEvent[] = [];
   const coParentPending: FamilyEvent[] = [];
 
+  // Live-reported: Household Backlog showed 41 cards at once — myPending/
+  // coParentPending had "no upper bound" by design (see each bucket's own
+  // comment below), so a daily-recurring event (e.g. school drop-off)
+  // stacked one card per FUTURE occurrence for as far as the series was
+  // materialized, not just the ones actually coming up soon. Backlog is
+  // for "handle this shortly," not a preview of the whole recurring
+  // series — bounded to the next 3 days; anything further out still shows
+  // up on its actual date via Schedule once it's closer.
+  const in3DaysStr = (() => {
+    const d = new Date(`${today}T00:00:00`);
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().slice(0, 10);
+  })();
+
   for (const e of events) {
     if (isWorkEvent(e)) continue;
     const a = eventAssignee(e);
@@ -72,14 +86,15 @@ export function classifyEventUrgency(
     // someone with no member row.
     const isViewer = a.id ? a.id === viewer.id : a.name === viewer.name;
     if (isViewer) {
-      // Mirrors the original myHelperEvents' date-only bound (no upper
-      // hoursUntilEvent cutoff) and its exclusion of confirmed/rejected —
-      // a settled commitment belongs in Schedule, not Backlog; a
-      // self-rejected assignment was already excluded before this
-      // refactor too (it resurfaces once decline_event_assignment's
-      // auto-reopen clears the assignee entirely, landing it back in
-      // `unassigned` on the next pass).
-      if ((e.date ?? '') >= today && a.status !== 'confirmed' && a.status !== 'rejected') {
+      // Bounded to the next 3 days (see in3DaysStr above — live-reported:
+      // an unbounded recurring series stacked one card per future
+      // occurrence). Also excludes confirmed/rejected — a settled
+      // commitment belongs in Schedule, not Backlog; a self-rejected
+      // assignment was already excluded before this refactor too (it
+      // resurfaces once decline_event_assignment's auto-reopen clears the
+      // assignee entirely, landing it back in `unassigned` on the next
+      // pass).
+      if ((e.date ?? '') >= today && (e.date ?? '') <= in3DaysStr && a.status !== 'confirmed' && a.status !== 'rejected') {
         myPending.push(e);
       }
       continue;
@@ -95,12 +110,12 @@ export function classifyEventUrgency(
     // assignment (e.g. a 1:30pm appointment, still unconfirmed at 10pm)
     // silently vanished from the co-parent's awareness surface exactly
     // when it most needed attention, while remaining visible in myPending
-    // for the assignee (that bucket, line 82, only ever checked
-    // `e.date >= today`, no time-of-day cutoff at all). Matched to
-    // myPending's own date-only bound so both buckets treat "still
-    // relevant" the same way — an unresolved assignment stays visible
-    // until its DAY has passed, not the instant its clock time does.
-    if (a.status !== 'confirmed' && (e.date ?? '') >= today) {
+    // for the assignee. Matched to myPending's own date bound (today
+    // through in3DaysStr) so both buckets treat "still relevant" the same
+    // way — an unresolved assignment stays visible until its DAY has
+    // passed (not the instant its clock time does), and drops off after
+    // 3 days out for the same reason myPending does.
+    if (a.status !== 'confirmed' && (e.date ?? '') >= today && (e.date ?? '') <= in3DaysStr) {
       coParentPending.push(e);
     }
   }

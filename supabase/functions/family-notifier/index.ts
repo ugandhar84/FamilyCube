@@ -1463,7 +1463,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty', 'homeowner_note_due'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added', 'location_request'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type
@@ -1548,8 +1548,13 @@ serve(async (req) => {
     // feeds the persist step further down unfiltered by quiet hours) — a
     // person shouldn't lose the notification entirely just because it
     // arrived at 2am, only the buzz/sound.
+    // location_request is an on-demand "locate now" tap, not an ambient
+    // alert — the requester is actively waiting on it right now, so it
+    // must reach the target device immediately regardless of their quiet
+    // hours (same reasoning as an incoming call bypassing Do Not Disturb).
+    // [live-requested: "it should ignore quite hours for ondemand fetch"]
     let pushEligibleIds = resolvedMemberIds;
-    if (pushEligibleIds.length) {
+    if (pushEligibleIds.length && type !== 'location_request') {
       const { data: quietRows } = await supabase
         .from('members')
         .select('id, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone')

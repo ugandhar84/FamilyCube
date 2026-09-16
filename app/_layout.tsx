@@ -845,6 +845,24 @@ function RootNavigator() {
           useGameStore.getState().loadMyUnoGames(familyId);
         }).catch(() => {});
       }
+
+      // Someone else tapped refresh on OUR card in Family Radar — report a
+      // real live GPS fix right now instead of leaving them with our last
+      // cached position. [live-requested: "when person clicks other user
+      // refresh icon it should pull the real location of that user direcllt
+      // from the other party mobile"]
+      if (data?.type === 'location_request') {
+        const { useFamilyStore } = require('@/store/familyStore');
+        const s = useFamilyStore.getState();
+        const targetMemberId = (data?.memberId as string | undefined) ?? s.activeMemberId;
+        const m = s.members.find((mm: any) => mm.id === targetMemberId);
+        const familyId = (m as any)?.familyId;
+        if (targetMemberId && familyId) {
+          import('@/lib/locationTracking').then(({ reportLiveLocationNow }) => {
+            reportLiveLocationNow(targetMemberId, familyId);
+          }).catch(() => {});
+        }
+      }
     });
     return () => {
       sub.remove();

@@ -415,6 +415,50 @@ export async function readBatteryStatus(): Promise<{ level: number | null; isCha
   }
 }
 
+// Answers another family member's "refresh" tap on THIS member's card —
+// they can't reach into this phone's GPS directly, so instead their tap
+// sends a silent 'location_request' push (family-notifier, type registered
+// in NOTIFY_SPECIFIC) which app/_layout.tsx's foreground listener routes
+// here for whichever member is active on this device. Mirrors GpsTab.tsx's
+// own refreshMyLocation upsert exactly (same fields, same encryption), just
+// callable outside the component tree since this fires from a push handler,
+// not a button press inside GpsTab.
+export async function reportLiveLocationNow(memberId: string, familyId: string): Promise<void> {
+  const { status } = await Location.getForegroundPermissionsAsync();
+  if (status !== 'granted') return;
+  try {
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const { latitude: lat, longitude: lng } = pos.coords;
+    const speedMph = pos.coords.speed && pos.coords.speed > 0 ? Math.round(pos.coords.speed * 2.237) : 0;
+    let address = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    let neighborhood = address;
+    try {
+      const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (geo) {
+        const streetName = geo.street ?? geo.name ?? null;
+        address = [
+          [geo.streetNumber, streetName].filter(Boolean).join(' ') || streetName,
+          geo.city,
+        ].filter(Boolean).join(', ') || address;
+        neighborhood = geo.district ?? geo.city ?? geo.region ?? address;
+      }
+    } catch { /* best-effort */ }
+    const { level: batteryLevel, isCharging } = await readBatteryStatus();
+    const encAddress = await encryptLocationText(memberId, familyId, address);
+    const encNeighborhood = await encryptLocationText(memberId, familyId, neighborhood);
+    await supabase.from('member_locations').upsert({
+      member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
+      neighborhood: encNeighborhood,
+      speed_mph: speedMph,
+      ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
+      ...(isCharging !== null ? { is_charging: isCharging } : {}),
+      last_updated: new Date().toISOString(),
+    }, { onConflict: 'member_id' });
+  } catch (e) {
+    console.warn('[locationTracking] reportLiveLocationNow failed:', e);
+  }
+}
+
 const BATTERY_POLL_INTERVAL_MS = 5 * 60_000;
 
 let batteryPollTimer: ReturnType<typeof setInterval> | null = null;

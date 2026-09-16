@@ -146,7 +146,8 @@ async function ensureSyncCalendarId(forceCreate = false): Promise<string | null>
     }
     // Android needs a real account-backed source — reuse whatever source
     // the device's existing calendars already use rather than fabricating one.
-    const source = calendars[0]?.source;
+    const androidCalendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    const source = androidCalendars[0]?.source;
     if (!source) {
       console.warn('[calendarSync2Way] no existing calendar source found on Android to attach the sync calendar to');
       return null;

@@ -432,12 +432,37 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     } catch { return '--'; }
   };
 
-  // Manual per-person refresh — pulls this member's own fresh GPS fix right
-  // now instead of waiting for the next background-triggered update. Only
-  // meaningful for the active member (we can't force someone else's phone
-  // to report in), so this re-requests + upserts the local device position.
+  // Manual per-person refresh — for the active member, pulls a fresh GPS fix
+  // right now instead of waiting for the next background-triggered update.
+  // For anyone else, sends that member's own device a silent 'location_request'
+  // push (family-notifier) — their app's foreground/background listener runs
+  // this exact same refreshMyLocation for themselves on receipt, then their
+  // upsert lands in member_locations and this device picks it up via the
+  // existing realtime subscription. [live-requested: "when person clicks
+  // other user refresh icon it should pull the real location of that user
+  // direcllt from the other party mobile"]
   const refreshMyLocation = async (memberId: string) => {
-    if (memberId !== activeMemberId) { load(); return; }
+    if (memberId !== activeMemberId) {
+      setRefreshingId(memberId);
+      try {
+        await supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'location_request',
+            familyId,
+            memberIds: [memberId],
+            excludeMemberId: activeMemberId,
+            payload: { memberId, fromMemberId: activeMemberId },
+            persist: false,
+          },
+        });
+      } catch (e) {
+        console.warn('[GpsTab] location_request push failed:', e);
+      } finally {
+        await load();
+        setRefreshingId(null);
+      }
+      return;
+    }
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     setRefreshingId(memberId);

@@ -192,6 +192,18 @@ export function CalendarSyncBody() {
           supabase.functions.invoke('calendar-backfill-sync', { body: { memberId: activeMemberId, familyId } })
             .catch(e => console.warn('[CalendarSyncScreen] initial backfill failed', e?.message));
         }
+        // Live-requested: connecting should immediately resync everything
+        // inbound too, not just wait for the next scheduled poll —
+        // reconcileGoogleChanges has no stored sync_token for a brand-new
+        // connection, so this naturally does a full pull (bounded to the
+        // 90-day forward window — see _shared/googleReconcile.ts) rather
+        // than a delta sync. Google-only: Outlook uses a real push
+        // subscription (registered by calendar-channel-renewal above) with
+        // no on-demand poll equivalent needed.
+        if (provider === 'google') {
+          supabase.functions.invoke('calendar-google-poll', { body: { memberId: activeMemberId } })
+            .catch(e => console.warn('[CalendarSyncScreen] initial resync failed', e?.message));
+        }
       }
     } catch (e: any) {
       if (e?.message !== 'Connection cancelled.') {
@@ -208,12 +220,39 @@ export function CalendarSyncBody() {
       `Disconnect ${PROVIDER_LABEL[connection.provider]}?`,
       isWork
         ? 'FamilyCube will stop checking this calendar for scheduling conflicts.'
-        : 'FamilyCube will stop syncing events with this calendar. Events already pushed there will stay, but future changes won\'t sync either way.',
+        // Live-requested: every disconnect should clear out what THIS
+        // connection pulled in, not leave stale FamilyCube-side copies
+        // around — matches handleCleanupInbound's own behavior, just
+        // folded into Disconnect itself so a user doesn't have to
+        // remember two separate actions. Events already pushed OUT to
+        // the external calendar still stay there (that's
+        // handleCleanupExternal's job, a separate opt-in action) — this
+        // only ever touches FamilyCube's own copies.
+        : 'FamilyCube will stop syncing with this calendar, and events pulled in from it will be removed here in FamilyCube. Events FamilyCube already pushed out to the external calendar will stay there; future changes won\'t sync either way.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect', style: 'destructive', onPress: async () => {
             if (!activeMemberId) return;
+            // Clean up FamilyCube's own copies of what this connection
+            // pulled in BEFORE calling calendar-disconnect — that function
+            // deletes the connection row itself (and calendar-sync-cleanup-
+            // inbound needs it to still exist to resolve provider/ownership).
+            // Best-effort: a failure here shouldn't block the disconnect
+            // itself, same as every other fire-and-forget cleanup call in
+            // this screen.
+            if (!isWork) {
+              try {
+                const { data: cleanup } = await supabase.functions.invoke('calendar-sync-cleanup-inbound', {
+                  body: { connectionId: connection.id, memberId: activeMemberId },
+                });
+                if (cleanup?.ok && cleanup.deletedIds?.length) {
+                  useEventStore.getState().removeEventsLocally(cleanup.deletedIds);
+                }
+              } catch (e: any) {
+                console.warn('[CalendarSyncScreen] inbound cleanup on disconnect failed', e?.message);
+              }
+            }
             // calendar_connections has no client-facing delete grant at all
             // (token columns are service-role-only) — a direct
             // supabase.from('calendar_connections').delete() always fails

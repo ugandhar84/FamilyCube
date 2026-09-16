@@ -387,6 +387,16 @@ export function AlertBanner({
       {neverDispatchedEvents.map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
         const assignee = eventAssignee(ev);
+        // assignee.name is a string frozen onto the event row at
+        // confirm-time (helper/driverName) — it does NOT update if the
+        // member is later renamed. assignee.id is the real, live member
+        // id, so resolve the CURRENT name through it whenever the
+        // assignee is still a real family member (falls back to the
+        // frozen string only for an external non-member name with no id).
+        // [live-reported: renamed a member, this banner still showed
+        // their old name]
+        const assigneeMember = assignee.id ? members.find(m => m.id === assignee.id) : undefined;
+        const assigneeName = assigneeMember?.name ?? assignee.name;
         // id-based when possible — a name compare only ever stood in for
         // a real id column, which calendar_events now has
         // (driver_id/helper_id); falls back to name only for an external
@@ -411,7 +421,7 @@ export function AlertBanner({
                     EVERY parent, not just the confirmed driver), where
                     knowing exactly who by name is clearer than the
                     familiar framing. */}
-                <Text style={{ fontWeight: '700', color: colors.danger }}>{(assignee.name?.split(' ')[0] ?? 'Driver')}</Text> confirmed
+                <Text style={{ fontWeight: '700', color: colors.danger }}>{(assigneeName?.split(' ')[0] ?? 'Driver')}</Text> confirmed
                 {kid ? ` ${kid.name.split(' ')[0]}'s pickup` : ' this ride'} for {fmtTime(ev.time)}, but never started the trip.
               </Text>
               {isMe && onDispatch ? (

@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "92",
+    buildNumber: "93",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",

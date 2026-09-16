@@ -115,6 +115,28 @@ export function CalendarSyncBody() {
           return;
         }
       }
+      // Live-audited gap: turning this toggle off is Apple's own version
+      // of "Disconnect" (there's no separate disconnect button for the
+      // on-device calendar), but unlike handleDisconnect it never cleaned
+      // up anything — the on-device "FamilyCube" calendar kept showing
+      // every previously-pushed event, and local source_provider='apple'
+      // rows stuck around indefinitely. Matches handleDisconnect's own
+      // two-step cleanup (external device calendar wipe, then local row
+      // cleanup) exactly, just via Apple's on-device functions instead of
+      // an edge function. Best-effort — a failure here shouldn't block
+      // turning the toggle off, same as every other cleanup call in this
+      // screen.
+      if (!next) {
+        try {
+          const { clearAppleSyncedEvents, clearInboundAppleEvents } = await import('@/lib/calendarSync2Way');
+          await clearAppleSyncedEvents(activeMemberId);
+          // Purges the local eventStore cache itself internally — see
+          // that function's own comment.
+          await clearInboundAppleEvents(activeMemberId);
+        } catch (e: any) {
+          console.warn('[CalendarSyncScreen] Apple cleanup on toggle-off failed', e?.message);
+        }
+      }
       await updateMember(activeMemberId, { appleCalendarSyncEnabled: next });
       showToast(next ? 'Apple Calendar sync on' : 'Apple Calendar sync off');
       if (next) {
@@ -211,16 +233,34 @@ export function CalendarSyncBody() {
         // Google sync ever created BEFORE the fresh pull means there's
         // nothing left to collide with — a real clean slate rather than
         // relying on title/date matching to survive the link wipe.
-        if (provider === 'google') {
-          supabase.functions.invoke('calendar-sync-clean-slate', { body: { memberId: activeMemberId, provider: 'google' } })
-            .then(({ data: cleanSlate }) => {
-              if (cleanSlate?.ok && cleanSlate.deletedIds?.length) {
-                useEventStore.getState().removeEventsLocally(cleanSlate.deletedIds);
-              }
+        // Live-audited gap: this clean-slate call was gated to Google
+        // only, but calendar-disconnect cascades event_external_links the
+        // exact same way for BOTH providers (calendar-disconnect/index.ts
+        // has no provider branch on that cascade) — Outlook hits the
+        // identical dedup-fingerprint-wipe bug on reconnect, just less
+        // often reported since fewer families connect Outlook.
+        // calendar-sync-clean-slate itself is already fully provider-
+        // agnostic (takes any provider string) — this was a pure client
+        // wiring gap, not a backend limitation.
+        supabase.functions.invoke('calendar-sync-clean-slate', { body: { memberId: activeMemberId, provider } })
+          .then(({ data: cleanSlate }) => {
+            if (cleanSlate?.ok && cleanSlate.deletedIds?.length) {
+              useEventStore.getState().removeEventsLocally(cleanSlate.deletedIds);
+            }
+            // Live-requested: connecting should immediately resync
+            // everything inbound too, not just wait for the next
+            // scheduled poll — reconcileGoogleChanges has no stored
+            // sync_token for a brand-new connection, so this naturally
+            // does a full pull (bounded to the 90-day forward window —
+            // see _shared/googleReconcile.ts) rather than a delta sync.
+            // Google-only: Outlook uses a real push subscription
+            // (registered by calendar-channel-renewal above) with no
+            // on-demand poll equivalent needed.
+            if (provider === 'google') {
               return supabase.functions.invoke('calendar-google-poll', { body: { memberId: activeMemberId } });
-            })
-            .catch(e => console.warn('[CalendarSyncScreen] clean-slate resync failed', e?.message));
-        }
+            }
+          })
+          .catch(e => console.warn('[CalendarSyncScreen] clean-slate resync failed', e?.message));
       }
     } catch (e: any) {
       if (e?.message !== 'Connection cancelled.') {

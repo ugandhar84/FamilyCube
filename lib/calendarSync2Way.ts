@@ -101,10 +101,30 @@ async function ensurePermission(): Promise<boolean> {
 // (no usable calendar source, iCloud not signed in) and previously did so
 // with zero feedback to the member at all.
 export { ensureSyncCalendarId as ensureSyncCalendarIdForUI };
-async function ensureSyncCalendarId(): Promise<string | null> {
+// Live-requested (matching the same fix applied to Google/Outlook's own
+// dedicated sub-calendars): "only delete subcalender just after connect
+// and create before sync starts on reconnection" — a reused existing
+// on-device "FamilyCube" calendar carries every event synced from BEFORE
+// this toggle-on, which is exactly the kind of leftover state that
+// produces duplicates once toggled off and back on. Exported so
+// CalendarSyncScreen's toggle-on handler can request a genuinely fresh
+// calendar instead of the reuse-if-exists default.
+export async function recreateSyncCalendarIdForUI(): Promise<string | null> {
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   const existing = calendars.find(c => c.title === SYNC_CALENDAR_NAME);
-  if (existing) return existing.id;
+  if (existing) {
+    try { await Calendar.deleteCalendarAsync(existing.id); } catch (e) {
+      console.warn('[calendarSync2Way] delete stale on-device FamilyCube calendar failed', e);
+    }
+  }
+  return ensureSyncCalendarId(true);
+}
+async function ensureSyncCalendarId(forceCreate = false): Promise<string | null> {
+  if (!forceCreate) {
+    const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    const existing = calendars.find(c => c.title === SYNC_CALENDAR_NAME);
+    if (existing) return existing.id;
+  }
 
   try {
     if (Platform.OS === 'ios') {

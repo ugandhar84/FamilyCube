@@ -160,13 +160,32 @@ const FAMILYCUBE_CALENDAR_NAME = 'FamilyCube';
 // external_calendar_id everywhere calendar-sync-push/googleReconcile.ts
 // already read `connection.external_calendar_id ?? 'primary'`).
 async function ensureGoogleFamilyCubeCalendar(accessToken: string): Promise<string> {
+  // Live-requested: "only delete subcalender just after connect and
+  // create before sync starts on reconnection" — a reused existing
+  // "FamilyCube" calendar carries every event/link accumulated from
+  // BEFORE this (re)connect, which is exactly what produced dozens of
+  // duplicate "Drop-off to School" events on reconnect (event_external_
+  // links gets wiped locally by calendar-disconnect, but the events
+  // sitting on the actual Google calendar were never touched — the next
+  // inbound sync re-imported them as "new" all over again). Deleting any
+  // existing same-named calendar and creating a genuinely fresh one on
+  // every connect means the resync that follows always starts from a
+  // real clean slate on the Google side too, not just locally.
   const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=owner', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (listRes.ok) {
     const list = await listRes.json();
     const existing = (list.items ?? []).find((c: any) => c.summary === FAMILYCUBE_CALENDAR_NAME);
-    if (existing?.id) return existing.id;
+    if (existing?.id) {
+      const delRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(existing.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!delRes.ok && delRes.status !== 404 && delRes.status !== 410) {
+        console.warn('[calendar-oauth-exchange] delete stale Google FamilyCube calendar failed', delRes.status, await delRes.text().catch(() => ''));
+      }
+    }
   }
   const createRes = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
     method: 'POST',
@@ -178,8 +197,9 @@ async function ensureGoogleFamilyCubeCalendar(accessToken: string): Promise<stri
 }
 
 // Outlook/Microsoft Graph equivalent — a secondary calendar under the
-// member's own mailbox, same "FamilyCube" name, same idempotent
-// find-or-create shape.
+// member's own mailbox, same "FamilyCube" name. Same delete-then-create
+// (not find-or-reuse) shape as ensureGoogleFamilyCubeCalendar above, same
+// reasoning — a genuinely fresh calendar on every connect.
 async function ensureOutlookFamilyCubeCalendar(accessToken: string): Promise<string> {
   const listRes = await fetch('https://graph.microsoft.com/v1.0/me/calendars', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -187,7 +207,15 @@ async function ensureOutlookFamilyCubeCalendar(accessToken: string): Promise<str
   if (listRes.ok) {
     const list = await listRes.json();
     const existing = (list.value ?? []).find((c: any) => c.name === FAMILYCUBE_CALENDAR_NAME);
-    if (existing?.id) return existing.id;
+    if (existing?.id) {
+      const delRes = await fetch(`https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(existing.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!delRes.ok && delRes.status !== 404) {
+        console.warn('[calendar-oauth-exchange] delete stale Outlook FamilyCube calendar failed', delRes.status, await delRes.text().catch(() => ''));
+      }
+    }
   }
   const createRes = await fetch('https://graph.microsoft.com/v1.0/me/calendars', {
     method: 'POST',

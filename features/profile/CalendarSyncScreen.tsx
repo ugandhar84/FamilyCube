@@ -105,8 +105,8 @@ export function CalendarSyncBody() {
         // previously showed "Apple Calendar sync on" regardless, leaving
         // the member with a toggle that looks enabled but never syncs
         // anything at all with no way to tell why.
-        const { ensureSyncCalendarIdForUI } = await import('@/lib/calendarSync2Way');
-        const calendarId = await ensureSyncCalendarIdForUI();
+        const { recreateSyncCalendarIdForUI } = await import('@/lib/calendarSync2Way');
+        const calendarId = await recreateSyncCalendarIdForUI();
         if (!calendarId) {
           showAlert(
             "Couldn't set up Apple Calendar sync",
@@ -245,20 +245,38 @@ export function CalendarSyncBody() {
         // the external calendar still stay there (that's
         // handleCleanupExternal's job, a separate opt-in action) — this
         // only ever touches FamilyCube's own copies.
-        : 'FamilyCube will stop syncing with this calendar, and events pulled in from it will be removed here in FamilyCube. Events FamilyCube already pushed out to the external calendar will stay there; future changes won\'t sync either way.',
+        // Live-asked directly: "are we still not delete the family cube
+        // calendar from google calendar on reconnect?" — no, and this is
+        // why: calendar-sync-clean-slate (run on the NEXT connect) only
+        // ever deletes FamilyCube's own local rows; it has no Google API
+        // access at all. Without also deleting the real events on Google
+        // itself here, on disconnect, every reconnect's fresh inbound
+        // pull just re-imports the exact same stale Google-side events
+        // as "new" again — live-confirmed, disconnect+reconnect kept
+        // producing dozens of duplicate "Drop-off to School" events over
+        // and over because the actual Google Calendar clutter was never
+        // touched, only FamilyCube's local mirror of it.
+        : 'FamilyCube will stop syncing with this calendar. Events FamilyCube added to this calendar will be deleted there, and events pulled in from it will be removed here in FamilyCube.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect', style: 'destructive', onPress: async () => {
             if (!activeMemberId) return;
-            // Clean up FamilyCube's own copies of what this connection
-            // pulled in BEFORE calling calendar-disconnect — that function
-            // deletes the connection row itself (and calendar-sync-cleanup-
-            // inbound needs it to still exist to resolve provider/ownership).
-            // Best-effort: a failure here shouldn't block the disconnect
-            // itself, same as every other fire-and-forget cleanup call in
-            // this screen.
+            // Both cleanups run BEFORE calendar-disconnect, while the
+            // connection row (and its OAuth token) still exists — that
+            // function deletes the connection row itself, and both
+            // calendar-sync-cleanup-external/-inbound need it to still be
+            // there to resolve the provider/token/ownership. Best-effort:
+            // a failure here shouldn't block the disconnect itself, same
+            // as every other fire-and-forget cleanup call in this screen.
             if (!isWork) {
+              try {
+                await supabase.functions.invoke('calendar-sync-cleanup-external', {
+                  body: { connectionId: connection.id, memberId: activeMemberId },
+                });
+              } catch (e: any) {
+                console.warn('[CalendarSyncScreen] external cleanup on disconnect failed', e?.message);
+              }
               try {
                 const { data: cleanup } = await supabase.functions.invoke('calendar-sync-cleanup-inbound', {
                   body: { connectionId: connection.id, memberId: activeMemberId },

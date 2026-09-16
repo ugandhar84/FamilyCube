@@ -200,9 +200,26 @@ export function CalendarSyncBody() {
         // than a delta sync. Google-only: Outlook uses a real push
         // subscription (registered by calendar-channel-renewal above) with
         // no on-demand poll equivalent needed.
+        //
+        // Real clean-slate first: disconnecting cascades event_external_
+        // links for the old connection (calendar-disconnect), wiping the
+        // dedup fingerprint the resync's own duplicate-detection relies
+        // on — live-confirmed, a single disconnect+reconnect of one
+        // recurring Google event created 42 separate local rows for it,
+        // one per occurrence, since nothing but an exact-date local match
+        // could dedupe against. Deleting every local row this member's
+        // Google sync ever created BEFORE the fresh pull means there's
+        // nothing left to collide with — a real clean slate rather than
+        // relying on title/date matching to survive the link wipe.
         if (provider === 'google') {
-          supabase.functions.invoke('calendar-google-poll', { body: { memberId: activeMemberId } })
-            .catch(e => console.warn('[CalendarSyncScreen] initial resync failed', e?.message));
+          supabase.functions.invoke('calendar-sync-clean-slate', { body: { memberId: activeMemberId, provider: 'google' } })
+            .then(({ data: cleanSlate }) => {
+              if (cleanSlate?.ok && cleanSlate.deletedIds?.length) {
+                useEventStore.getState().removeEventsLocally(cleanSlate.deletedIds);
+              }
+              return supabase.functions.invoke('calendar-google-poll', { body: { memberId: activeMemberId } });
+            })
+            .catch(e => console.warn('[CalendarSyncScreen] clean-slate resync failed', e?.message));
         }
       }
     } catch (e: any) {

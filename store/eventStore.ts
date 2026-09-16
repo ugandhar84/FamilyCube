@@ -427,6 +427,18 @@ interface EventState {
   addEvent:    (e: Omit<FamilyEvent, 'id'>) => Promise<string>;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => Promise<void>;
   deleteEvent: (id: string) => void;
+  // Removes events from local state ONLY — for callers (calendar-sync-
+  // cleanup-inbound/-external) that already soft-deleted these rows
+  // server-side via their own edge function and just need the client's
+  // cache to catch up without waiting on realtime. Live-reported: events
+  // stayed visible in the app after a sync cleanup ran, because the only
+  // client-side reaction to that edge-function call was a toast — nothing
+  // purged the local cache, so it depended entirely on a realtime UPDATE
+  // event actually arriving (which a bulk service-role .update().in() may
+  // not fan out the same way an interactive single-row write does, and
+  // which this app's own realtime channels have been observed going
+  // TIMED_OUT and needing a resubscribe).
+  removeEventsLocally: (ids: string[]) => void;
 
   // Creates a recurring event: the first occurrence (on `first.date`) plus
   // every future occurrence implied by `rule`, materialized as real rows up
@@ -2747,6 +2759,28 @@ export const useEventStore = create<EventState>((set, get) => ({
       set({ stripRows: get().stripRows.filter(r =>
         !(r.date === ev.date && r.category === ev.category && r.memberId === ev.memberId)) });
     }
+  },
+
+  removeEventsLocally: (ids) => {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    set(s => ({
+      dayEvents: s.dayEvents.filter(e => !idSet.has(e.id)),
+      events: s.events.filter(e => !idSet.has(e.id)),
+      rangeEvents: s.rangeEvents.filter(e => !idSet.has(e.id)),
+    }));
+    // Also purge from the SWR caches, or a stale cache entry re-serves
+    // these events the next time that date/range is viewed, before any
+    // TTL-driven refetch happens.
+    const dayCache = { ...get()._dayCache };
+    for (const key of Object.keys(dayCache)) {
+      dayCache[key] = { ...dayCache[key], events: dayCache[key].events.filter(e => !idSet.has(e.id)) };
+    }
+    const rangeCache = { ...get()._rangeCache };
+    for (const key of Object.keys(rangeCache)) {
+      rangeCache[key] = { ...rangeCache[key], events: rangeCache[key].events.filter(e => !idSet.has(e.id)) };
+    }
+    set({ _dayCache: dayCache, _rangeCache: rangeCache });
   },
 
   addRecurringEvent: async (first, rule) => {

@@ -96,7 +96,15 @@ serve(async (req) => {
     // above.
     await supabase.from('event_external_links').delete().in('event_id', inboundEvents.map(e => e.id));
 
-    return json({ ok: true, deleted: inboundEvents.length });
+    // Returning the actual ids (not just a count) lets the client purge
+    // them from its own local store immediately — live-reported: the
+    // events stayed visible in the app after this ran, because the
+    // caller only showed a toast and relied entirely on realtime to
+    // reflect the soft-delete. This is a bulk `.update().in()` from an
+    // edge function using the service-role key; whether/how fast that
+    // fans out as a realtime UPDATE isn't something the client should
+    // have to depend on for something the caller already knows happened.
+    return json({ ok: true, deleted: inboundEvents.length, deletedIds: inboundEvents.map(e => e.id) });
   } catch (e: any) {
     console.error('[calendar-sync-cleanup-inbound]', e?.message ?? e);
     return json({ ok: false, error: e?.message ?? 'cleanup failed' }, 500);

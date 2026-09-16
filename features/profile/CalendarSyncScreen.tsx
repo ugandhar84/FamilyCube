@@ -309,6 +309,14 @@ export function CalendarSyncBody() {
                 body: { connectionId: connection.id, memberId: activeMemberId },
               });
               if (error || !data?.ok) { showAlert('Could not remove events', data?.error ?? error?.message ?? 'Please try again.'); return; }
+              // Was relying entirely on realtime to reflect the server-side
+              // soft-delete — live-reported: events pulled in from Google
+              // stayed visible in the app after this ran. The edge function
+              // already knows exactly which ids it deleted; purge them from
+              // the local store directly instead of waiting on a realtime
+              // UPDATE that a bulk service-role write may not fan out the
+              // same way an interactive one does.
+              if (data.deletedIds?.length) useEventStore.getState().removeEventsLocally(data.deletedIds);
               showToast(data.deleted > 0 ? `Removed ${data.deleted} synced event${data.deleted === 1 ? '' : 's'}` : 'Nothing to remove');
             } finally {
               setCleaningInboundConnectionId(null);

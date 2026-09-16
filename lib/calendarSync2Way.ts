@@ -231,6 +231,14 @@ export async function clearInboundAppleEvents(memberId: string): Promise<{ delet
   }
   if (mapChanged) await saveMap(memberId, map);
 
+  // Same gap as calendar-sync-cleanup-inbound's edge function (see
+  // CalendarSyncScreen.tsx's own comment on that call) — this soft-
+  // deleted the rows server-side but never told the local eventStore
+  // cache, which only reflected it once/if a realtime UPDATE happened to
+  // arrive and be applied.
+  const { useEventStore } = require('@/store/eventStore');
+  useEventStore.getState().removeEventsLocally(ids);
+
   return { deleted: ids.length };
 }
 

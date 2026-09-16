@@ -7,9 +7,18 @@
 // (one invocation per event, action:'create') rather than duplicating its
 // push/field-mapping logic, so there is exactly one place that logic lives.
 //
-// Full history, past and future — a member who connects mid-way through
-// using the app expects their whole existing Schedule to show up, not
-// just events from today onward.
+// Full PAST history, but future events are capped to the next 90 days —
+// live-reported: a member's Google Calendar app showed a "Drop-off to
+// School" event out in May 2027, because this backfill pushed EVERY
+// future-dated local row verbatim with no bound at all (unlike a real
+// recurring push, which caps its own RRULE's UNTIL to 84 days —
+// calendarFieldMapping.ts's buildRRule — these were non-recurring
+// individual rows with genuinely far-future dates, so that cap never
+// applied). Matches the same 90-day forward window the inbound Google
+// sync already uses (_shared/googleReconcile.ts's timeMax) — a member
+// who connects mid-way through using the app still gets their whole past
+// Schedule pushed, just not years of future one-off dates they'd never
+// expect to see appear on their real calendar.
 //
 // Deploy: supabase functions deploy calendar-backfill-sync
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -55,11 +64,16 @@ serve(async (req) => {
     // the anchor (or a genuinely non-recurring event) needs a real push;
     // the other occurrence rows are local-only materializations already
     // covered by the anchor's own recurrence rule.
+    const in90Days = new Date();
+    in90Days.setDate(in90Days.getDate() + 90);
+    const in90DaysStr = in90Days.toISOString().slice(0, 10);
+
     const { data: events, error } = await supabase.from('calendar_events')
       .select('id')
       .eq('created_by', memberId)
       .is('deleted_at', null)
-      .or('series_id.is.null,is_series_anchor.eq.true');
+      .or('series_id.is.null,is_series_anchor.eq.true')
+      .lte('date', in90DaysStr);
     if (error) throw new Error(error.message);
     if (!events?.length) return json({ ok: true, backfilled: 0, reason: 'no existing events' });
 

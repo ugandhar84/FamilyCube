@@ -5,42 +5,129 @@
  * lat/lng are never touched here — they stay plaintext by design, still
  * needed for live map rendering without decrypting every row.
  *
- * Was: a per-device X25519 envelope (one long-lived AES session key per
- * member, wrapped separately for every family device via ECDH, mirroring
- * chat's per-device E2E). Removed after repeated live failures that traced
- * back to the wrap/unwrap key-pairing itself, not a fixable staleness bug
- * — a device holding a family-scoped RECOVERED identity publishes its
- * REAL public key in device_keys (ensureDeviceRegistered always registers
- * the real identity, with no familyId), but decrypts using
- * getDeviceKeyPair(familyId), which prefers the recovered private key
- * whenever one is installed. Those two don't form a matching ECDH pair,
- * so a device with a recovered identity permanently failed to decrypt
- * ANY location wrapped for it, regardless of which family member wrote
- * it or how many times the wrap step re-ran [live-reported, after several
- * prior attempts at narrower fixes: "encryption decryption is not working
- * properly for the location" / "I want this feature seamlessly working
- * whatever the state user in"]. Chat has the same structural mismatch but
- * is unaffected in practice because messages are numerous/disposable and
- * each carries its own fresh session key — a location row is a single
- * long-lived key an unlucky reader gets permanently stuck on.
+ * Was: a per-device X25519 envelope, then chatCrypto.ts's local
+ * SecureStore-only "shared" key (Option 1 — passcode-wrapped). That second
+ * scheme never actually synced across devices for location: chatCrypto's
+ * getKey() silently generates a brand-new RANDOM key per device when none
+ * exists locally, and the only code path that ever unwraps a real shared
+ * key from a passcode is ChatScreen.tsx's manual passcode-entry flow, which
+ * location never goes through. Every device was therefore encrypting with
+ * its OWN independently-generated key, so any OTHER member/device's
+ * location text was permanently undecryptable [live-reported, screenshot:
+ * "[locked] encrypted — wrong key or corrupted" for other members while
+ * the viewer's own row displayed fine].
  *
- * Now always uses the same shared-family-key scheme as chat's own
- * pre-per-device-E2E baseline (encryptMessage/decryptMessage in
- * chatCrypto.ts) — one AES key per family device, synced via the family
- * passcode, no per-device ECDH pairing to get wrong. lat/lng were already
- * plaintext, so this only affects the address STRING's protection model,
- * not location precision.
+ * Now: one raw AES key per FAMILY, stored server-side in
+ * family_location_keys (RLS-gated to that family's own members, same trust
+ * boundary as every other family-scoped table) — fetched/created once and
+ * cached per familyId, no passcode step, no per-device pairing to get
+ * wrong. [live-requested: "just make it simple... just do encrypt using
+ * the family chat sec key"]
  */
-import { encryptMessage, decryptMessage } from './chatCrypto';
+import * as SecureStore from 'expo-secure-store';
+import { supabase } from './supabase';
 
-export async function encryptLocationText(_memberId: string, _familyId: string | null | undefined, plaintext: string): Promise<string> {
-  return encryptMessage(plaintext);
+const ALGO = { name: 'AES-GCM', length: 256 } as const;
+const SECURE_STORE_PREFIX = 'familycube_location_aes_v1_';
+
+const memCache = new Map<string, CryptoKey>();
+const memberFamilyCache = new Map<string, string>();
+
+async function resolveFamilyId(memberId: string): Promise<string | null> {
+  const cached = memberFamilyCache.get(memberId);
+  if (cached) return cached;
+  const { data } = await supabase.from('members').select('family_id').eq('id', memberId).maybeSingle();
+  const familyId = (data as { family_id?: string } | null)?.family_id ?? null;
+  if (familyId) memberFamilyCache.set(memberId, familyId);
+  return familyId;
 }
 
-export async function decryptLocationText(_memberId: string, ciphertext: string): Promise<string> {
-  return decryptMessage(ciphertext);
+function buf2b64(buf: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function b642buf(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function getFamilyLocationKey(familyId: string): Promise<CryptoKey> {
+  const cached = memCache.get(familyId);
+  if (cached) return cached;
+
+  const secureStoreKey = SECURE_STORE_PREFIX + familyId;
+  const localB64 = await SecureStore.getItemAsync(secureStoreKey);
+  if (localB64) {
+    const key = await crypto.subtle.importKey('raw', b642buf(localB64), ALGO, true, ['encrypt', 'decrypt']);
+    memCache.set(familyId, key);
+    return key;
+  }
+
+  // Not cached locally yet — fetch the family's existing shared key, or
+  // create one if this is the first device ever to touch it.
+  const { data: row } = await supabase
+    .from('family_location_keys')
+    .select('aes_key_b64')
+    .eq('family_id', familyId)
+    .maybeSingle();
+
+  let keyB64 = row?.aes_key_b64 as string | undefined;
+  if (!keyB64) {
+    const newKey = await crypto.subtle.generateKey(ALGO, true, ['encrypt', 'decrypt']);
+    keyB64 = buf2b64(await crypto.subtle.exportKey('raw', newKey));
+    // Insert can race with another device doing the same first-time create —
+    // ON CONFLICT DO NOTHING semantics via upsert-ignore, then re-read
+    // whichever row actually won, so every device converges on ONE key.
+    const { error: insertErr } = await supabase
+      .from('family_location_keys')
+      .insert({ family_id: familyId, aes_key_b64: keyB64 });
+    if (insertErr) {
+      const { data: winner } = await supabase
+        .from('family_location_keys')
+        .select('aes_key_b64')
+        .eq('family_id', familyId)
+        .maybeSingle();
+      if (winner?.aes_key_b64) keyB64 = winner.aes_key_b64;
+    }
+  }
+  if (!keyB64) throw new Error('[locationCrypto] could not resolve or create family location key');
+
+  const key = await crypto.subtle.importKey('raw', b642buf(keyB64), ALGO, true, ['encrypt', 'decrypt']);
+  await SecureStore.setItemAsync(secureStoreKey, keyB64);
+  memCache.set(familyId, key);
+  return key;
+}
+
+export async function encryptLocationText(_memberId: string, familyId: string | null | undefined, plaintext: string): Promise<string> {
+  if (!familyId) return plaintext;
+  const key = await getFamilyLocationKey(familyId);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+  return `${buf2b64(iv.buffer)}:${buf2b64(cipher)}`;
+}
+
+export async function decryptLocationText(memberId: string, ciphertext: string, familyIdHint?: string | null): Promise<string> {
+  // familyIdHint lets a caller that already has it skip the extra lookup;
+  // every existing call site only ever passed (memberId, ciphertext), so
+  // this resolves it from memberId itself rather than requiring any of
+  // those 9 call sites to change.
+  const familyId = familyIdHint ?? await resolveFamilyId(memberId);
+  if (!familyId) return ciphertext;
+  try {
+    const [ivB64, dataB64] = ciphertext.split(':');
+    if (!ivB64 || !dataB64) return ciphertext;
+    const key = await getFamilyLocationKey(familyId);
+    const iv = new Uint8Array(b642buf(ivB64));
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, b642buf(dataB64));
+    return new TextDecoder().decode(plainBuf);
+  } catch {
+    return '[🔒 encrypted — wrong key or corrupted]';
+  }
 }
 
 // No-op — kept so existing call sites (app/_layout.tsx, store/familyStore.ts)
-// don't need to change; per-device key wrapping no longer exists for location.
+// don't need to change; there is no per-device key wrapping to recheck
+// anymore, only the one shared server-stored family key.
 export async function forceRecheckLocationKeyWrap(_familyId: string | null | undefined, _memberId: string | null | undefined): Promise<void> {}

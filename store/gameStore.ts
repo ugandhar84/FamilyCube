@@ -1066,7 +1066,20 @@ export const useGameStore = create<GameState>((set, get) => ({
     const { data, error } = await supabase.rpc('leave_uno_game', {
       p_game_id: gameId, p_member_id: activeMemberId,
     });
-    if (error || !data) { console.warn('[gameStore] leaveUnoGame failed', error?.message); return null; }
+    // The RPC raises (not just returns null) whenever the game is already
+    // abandoned/finished or the caller isn't seated in it — both mean the
+    // table is already gone server-side, so the card is stale, not
+    // un-leaveable. Previously this errored out here and left the card
+    // stuck forever with no way to dismiss it [live-reported, screenshot:
+    // several identical "Uno table in progress" cards on a kid's Hub,
+    // Leave doing nothing]. Drop it from local state regardless — a
+    // failed leave on an already-gone game should still clear the stale
+    // card, not persist it.
+    if (error || !data) {
+      console.warn('[gameStore] leaveUnoGame failed (removing stale card locally)', error?.message);
+      set(s => ({ myUnoGames: s.myUnoGames.filter(g => g.id !== gameId) }));
+      return null;
+    }
     const game = fromUnoGameRow(data);
     set(s => ({ activeUnoGame: game, myUnoGames: s.myUnoGames.filter(g => g.id !== gameId) }));
     return game;

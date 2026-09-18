@@ -41,7 +41,25 @@ export default function HelperAssignmentSection({
           placeholderTextColor={colors.textTertiary}
           value={helperName}
           onChangeText={t => { setHelperName(t); if (!t) setHelperId(undefined); }}
-          onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Helper name" on "HelperAssignmentSection category=${category}" newValue=${helperName} [features/calendar/components/eventForm/HelperAssignmentSection.tsx:43]`)}
+          onBlur={() => {
+            // This field is meant for an external, non-member helper — but
+            // nothing stops a parent from typing a REAL family member's own
+            // name here instead of using MemberPicker above. That left
+            // helperId unset while helperStatus still got written as
+            // 'pending', which broke both auto-confirm-on-self-assign AND
+            // the "Confirm I'll do it" button (every confirm/reassign RPC
+            // requires helper_id to find the row) [live-reported: parent
+            // created a Medical appointment, typed their own name as
+            // "Accompanied by," and confirming it afterward failed with
+            // "could not save"]. Resolve a real member id whenever the
+            // typed name exactly matches one of this event's eligible
+            // adults, same as picking them from MemberPicker would.
+            if (!helperId) {
+              const match = adults.find((m: any) => m.name?.trim().toLowerCase() === helperName.trim().toLowerCase());
+              if (match) handleHelperSelect(match.id);
+            }
+            console.log(`[UserAction] FORM screen=Schedule field="Helper name" on "HelperAssignmentSection category=${category}" newValue=${helperName} [features/calendar/components/eventForm/HelperAssignmentSection.tsx:43]`);
+          }}
         />
       )}
     </>

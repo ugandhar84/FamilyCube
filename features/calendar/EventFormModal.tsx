@@ -2506,7 +2506,29 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       placeholderTextColor={colors.textTertiary}
                       value={helperName}
                       onChangeText={t => { setHelperName(t); setHelperTouched(true); }}
-                      onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Helper name" on "${event.title}" (id=${event.id}) newValue=${helperName} [features/calendar/EventFormModal.tsx:1617]`)}
+                      onBlur={() => {
+                        // The free-text field is meant for an external,
+                        // non-member person ("e.g. external tutor") — but a
+                        // parent can just as easily type a REAL family
+                        // member's own name here instead of using the
+                        // MemberPicker above. That left helperId null while
+                        // helperStatus was still written as 'pending', which
+                        // both (a) made a self-assigned event show as
+                        // needing confirmation in the Household Backlog
+                        // instead of auto-confirming, and (b) made tapping
+                        // "Confirm I'll do it" fail outright — every
+                        // confirm/reassign RPC requires helper_id to find
+                        // the row at all [live-reported: "alex created
+                        // medical appointment my self - and assined to
+                        // himself as accopanied ... even thought alex click
+                        // confirm i will do it - it says it could not
+                        // save"]. Resolve a real member id whenever the
+                        // typed name exactly matches one, same as picking
+                        // them from MemberPicker would.
+                        const match = members.find(m => m.name.trim().toLowerCase() === helperName.trim().toLowerCase());
+                        if (match) handleHelperSelect(match.id);
+                        console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Helper name" on "${event.title}" (id=${event.id}) newValue=${helperName} [features/calendar/EventFormModal.tsx:1617]`);
+                      }}
                     />
                   )}
                 </View>

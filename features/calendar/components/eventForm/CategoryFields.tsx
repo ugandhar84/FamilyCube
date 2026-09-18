@@ -243,7 +243,22 @@ export default function CategoryFields({
                             placeholderTextColor={colors.textTertiary}
                             value={driverName}
                             onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
-                            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Driver name" on "CategoryFields(${category}) Study" newValue=${driverName} [features/calendar/components/eventForm/CategoryFields.tsx:244]`)}
+                            onBlur={() => {
+                              // Same gap as HelperAssignmentSection's free-
+                              // text field: nothing stops a parent from
+                              // typing a REAL family member's own name here
+                              // instead of using MemberPicker, leaving
+                              // driverId unset while driverStatus is still
+                              // written as 'pending' — breaks both auto-
+                              // confirm-on-self-assign and the "Confirm
+                              // I'll do it" button (every confirm/reassign
+                              // RPC requires driver_id to find the row).
+                              if (!driverId) {
+                                const match = adults.find((m: any) => m.name?.trim().toLowerCase() === driverName.trim().toLowerCase());
+                                if (match) handleDriverSelect(match.id);
+                              }
+                              console.log(`[UserAction] FORM screen=Schedule field="Driver name" on "CategoryFields(${category}) Study" newValue=${driverName} [features/calendar/components/eventForm/CategoryFields.tsx:244]`);
+                            }}
                           />
                         )}
                       </View>

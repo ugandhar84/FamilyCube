@@ -2601,7 +2601,19 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                           placeholderTextColor={colors.textTertiary}
                           value={editDriverName}
                           onChangeText={setEditDriverName}
-                          onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Driver name" on "${event.title}" (id=${event.id}) newValue=${editDriverName} [features/calendar/EventFormModal.tsx:1673]`)}
+                          onBlur={() => {
+                            // Same gap already fixed for the helper field
+                            // above: typing a REAL family member's own name
+                            // here instead of using MemberPicker leaves
+                            // driverId unset while driverStatus is still
+                            // 'pending' — breaks auto-confirm and "Confirm
+                            // I'll do it".
+                            if (!editDriverId) {
+                              const match = members.find(m => m.name.trim().toLowerCase() === editDriverName.trim().toLowerCase());
+                              if (match) handleDriverSelect(match.id);
+                            }
+                            console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Driver name" on "${event.title}" (id=${event.id}) newValue=${editDriverName} [features/calendar/EventFormModal.tsx:1673]`);
+                          }}
                         />
                       )}
                     </View>

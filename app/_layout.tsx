@@ -387,19 +387,13 @@ function RootNavigator() {
         savePushToken(session.user.id).catch((e) =>
           dbgWarn(TAG, 'savePushToken failed', e?.message)
         );
-        // Save token to the active family member row (FamilyCube push routing).
-        // If members haven't loaded yet, subscribe and fire once they do.
-        const activeMemberId = useFamilyStore.getState().activeMemberId;
-        if (activeMemberId) {
-          saveTokenToMember(activeMemberId).catch(() => {});
-        } else {
-          const unsub = useFamilyStore.subscribe((state) => {
-            if (state.activeMemberId) {
-              saveTokenToMember(state.activeMemberId).catch(() => {});
-              unsub();
-            }
-          });
-        }
+        // Save token to the active family member row (FamilyCube push
+        // routing) now happens in a real [activeMemberId]-reactive effect
+        // below (re-fires on every PIN-switch, not just once at boot) —
+        // that effect also naturally covers the "members haven't loaded
+        // yet" case this block used to hand-roll a one-shot subscription
+        // for, since it just re-runs once useFamilyStore actually
+        // populates activeMemberId.
         registerNotificationCategories().catch(() => {});
 
         // Seed home_timezone + timezone on first sign-in if not yet set.
@@ -1080,6 +1074,24 @@ function RootNavigator() {
     if (!activeMemberId) { stopBatteryPolling(); return; }
     startBatteryPolling(activeMemberId);
     return () => stopBatteryPolling();
+  }, [activeMemberId]);
+
+  // Re-register this device's push token to whichever member is CURRENTLY
+  // active, on every PIN-switch — not just once at boot. The one-shot
+  // subscription right after login (savePushToken/saveTokenToMember above)
+  // only ever fires for the FIRST member active after app launch; every
+  // family member sharing one physical device's real OS notification
+  // channel then kept receiving pushes meant for whoever logged in first,
+  // not whoever is actually holding the phone right now [live-reported: a
+  // shared-device family saw notifications that looked like "self-
+  // notification" but were really for a DIFFERENT member's PIN profile,
+  // because the device's expo_push_token row was still registered to the
+  // member who was active hours/days earlier; user: "in shared device we
+  // should not be using same expo to across all memeber the expo should
+  // swith to active memebr based on the pinswitch"].
+  useEffect(() => {
+    if (!activeMemberId) return;
+    saveTokenToMember(activeMemberId).catch(() => {});
   }, [activeMemberId]);
 
   // A stationary member's member_locations.last_updated freezes at whatever

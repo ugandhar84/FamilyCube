@@ -328,7 +328,15 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
-    if (consentChecked && !consented) { setShowSheet(true); return; }
+    // Fail-SAFE, not fail-open: block sending unless consent has been
+    // POSITIVELY confirmed. The async DB/AsyncStorage check
+    // (useAskCubeConsent) hasn't necessarily resolved yet on a fresh app
+    // launch — `consentChecked && !consented` let a message through
+    // whenever the check simply hadn't finished, silently skipping the
+    // consent gate entirely on the very first message of a session
+    // [live-reported: "still i didnt get the concent form on ask Fam
+    // bottom sheet model"].
+    if (!consented) { setShowSheet(true); return; }
     // Layer 1 only here — Ask Cube is a private parent<->AI chat, not a
     // shared family thread, so the "flag for other parents" layer 2 doesn't
     // apply the same way; still worth blocking obvious profanity before it

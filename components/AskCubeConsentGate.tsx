@@ -17,7 +17,7 @@
 // to the DB check. [live-requested: "we should record that concent in
 // the DB, concent notes also should present in DB"]
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Sparkles } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -98,10 +98,20 @@ export default function AskCubeConsentSheet({
   const theme = useTheme();
   const colors = colorsProp ?? theme.colors;
 
+  // A real nested <Modal> here (React Native's Modal renders into its own
+  // separate native window/layer on iOS) competed with AskCubeChat's own
+  // outer Modal, which was already presenting — a second Modal mounted
+  // while the first is up doesn't reliably stack visibly above it on iOS,
+  // and could render invisible/behind/not-at-all depending on OS version
+  // [live-reported: "still that oncent is not visible since askfam is the
+  // bottomsheet is somthing blocking that"]. This is now a plain absolute-
+  // positioned overlay INSIDE the parent Modal's own layer instead — no
+  // second native modal to fight with.
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <View style={{ backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 24, maxWidth: 420, width: '100%', gap: 16 }}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, elevation: 1000, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <View style={{ backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 24, maxWidth: 420, width: '100%', gap: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Sparkles size={24} color={colors.accent} />
             <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Before you chat with Cube</Text>
@@ -127,9 +137,8 @@ export default function AskCubeConsentSheet({
               <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#fff' }}>I agree</Text>
             </Pressable>
           </View>
-        </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 

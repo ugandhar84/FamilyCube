@@ -15,6 +15,7 @@ import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Regi
 import * as Location from 'expo-location';
 import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle, Gauge } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
@@ -444,6 +445,21 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   const refreshMyLocation = async (memberId: string) => {
     if (memberId !== activeMemberId) {
       setRefreshingId(memberId);
+      // A location_request push is silent and its round trip (target
+      // device wakes, gets a GPS fix, writes member_locations) has real,
+      // variable latency — sometimes seconds, sometimes it never lands at
+      // all (app killed, OS throttled the background wake, no network on
+      // their end). The old code called load() immediately after just
+      // SENDING the push, which almost always re-showed the same stale
+      // cached row and looked like the button did nothing [live-reported:
+      // "did you fix on demand location fetch if somehow dynamic is not
+      // working in find fam"]. Now waits for member_locations' timestamp
+      // to actually move past what it was before the request, polling for
+      // up to 15s, and is honest with the user either way instead of
+      // silently no-op'ing.
+      const { data: beforeRow } = await supabase.from('member_locations')
+        .select('last_updated').eq('member_id', memberId).maybeSingle();
+      const beforeTs = beforeRow?.last_updated ? new Date(beforeRow.last_updated).getTime() : 0;
       try {
         await supabase.functions.invoke('family-notifier', {
           body: {
@@ -455,8 +471,25 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             persist: false,
           },
         });
+        const POLL_INTERVAL_MS = 1500;
+        const TIMEOUT_MS = 15_000;
+        const deadline = Date.now() + TIMEOUT_MS;
+        let updated = false;
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+          const { data: row } = await supabase.from('member_locations')
+            .select('last_updated').eq('member_id', memberId).maybeSingle();
+          const ts = row?.last_updated ? new Date(row.last_updated).getTime() : 0;
+          if (ts > beforeTs) { updated = true; break; }
+        }
+        if (updated) {
+          showToast('Location updated ✓');
+        } else {
+          showToast("Couldn't reach their device — showing last known location", 'info');
+        }
       } catch (e) {
         console.warn('[GpsTab] location_request push failed:', e);
+        showToast("Couldn't request their location — try again", 'error');
       } finally {
         await load();
         setRefreshingId(null);

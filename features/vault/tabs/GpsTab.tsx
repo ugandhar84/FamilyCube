@@ -969,6 +969,16 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 trackColor={{ false: colors.border, true: colors.teal }} thumbColor="#fff" />}
         </View>
 
+        {/* Small consent-style disclosure right at the toggle — off by
+            default, this is the exact point of decision. [live-requested:
+            "put small concent text there for user" — also the point Apple
+            App Review's guideline 2.5.4 rejection response references:
+            this is where a reviewer would find the feature's disclosure] */}
+        <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 14 }}>
+          Turning this on shares your live location — including while the app is in the
+          background — with the other members of your family only. You can turn it off anytime.
+        </Text>
+
         {!tracking && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12 }}>
             <ShieldOff size={11} color={colors.textTertiary} />

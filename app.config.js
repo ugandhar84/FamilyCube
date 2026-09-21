@@ -100,7 +100,7 @@ const config = {
     // which Play Console rejects as a duplicate on the second+ upload.
     // Bump by 1 on every new Android build/submission, same discipline as
     // ios.buildNumber above.
-    versionCode: 1,
+    versionCode: 2,
     // Android's manifest has no per-idiom orientation split like iOS's
     // ~ipad Info.plist keys, so this locks the default (phones) to portrait;
     // lib/useDeviceClass.ts unlocks landscape at runtime specifically for

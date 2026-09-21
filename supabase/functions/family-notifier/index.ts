@@ -427,6 +427,14 @@ interface NotifShape {
   sound?: 'default' | null;
   badge?: number;
   data?: Record<string, unknown>;
+  // Silent/background push (no visible alert, no sound) — Expo's
+  // _contentAvailable flag, which maps to APNs content-available:1 /
+  // FCM's data-only delivery, reliably waking the app in the background
+  // to run code (as opposed to a normal push, which the OS may or may
+  // not hand to JS while backgrounded). Used by location_request, which
+  // has nothing for a human to read — it's a "locate now" command the
+  // target device answers automatically.
+  contentAvailable?: boolean;
 }
 
 // A kid_request's `detail` field is sometimes an internal-only encoded
@@ -1349,6 +1357,18 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Hub', gameType: 'uno', gameId: p.gameId },
       };
 
+    case 'location_request':
+      // Silent — nothing for a human to read, this is a "locate now"
+      // command the target device answers automatically
+      // (app/_layout.tsx's foreground listener calls
+      // reportLiveLocationNow). No title/body/sound, and
+      // contentAvailable so it reliably reaches the app even while
+      // backgrounded, not just foregrounded.
+      return {
+        title: '', body: '', sound: null, contentAvailable: true,
+        data: { type: 'location_request', memberId: p.memberId },
+      };
+
     case 'custom':
     default:
       return {
@@ -1393,6 +1413,7 @@ async function sendExpoPush(tokens: string[], message: NotifShape): Promise<{ se
       data: message.data ?? {},
       priority: 'high',
       channelId: 'default',
+      ...(message.contentAvailable ? { _contentAvailable: true } : {}),
     }));
 
     try {

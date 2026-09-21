@@ -216,6 +216,48 @@ if (Notifications) {
   });
 }
 
+// ── Background silent-push handling (location_request) ────────────────────────
+// addNotificationReceivedListener (app/_layout.tsx) only fires while the app
+// is FOREGROUNDED — a location_request push (family-notifier, silent/
+// contentAvailable, no title/body) arriving while the target's app is
+// backgrounded was never handled at all, so tapping "refresh" on someone
+// else's Family Radar card did nothing for them unless they happened to
+// have the app open at that exact moment [live-reported: "that is not
+// updating the other parent location eventondemand refresh in the find
+// fam"]. TaskManager's background-notification task is the real fix — the
+// OS wakes the app briefly to run this even when backgrounded/killed
+// (iOS/Android's counterpart to the foreground listener), as long as the
+// push actually is silent (content-available, which family-notifier now
+// sets for this type).
+const BACKGROUND_NOTIFICATION_TASK = 'familycube-background-notification';
+
+try {
+  const TaskManager = require('expo-task-manager');
+  TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any) => {
+    if (error) { console.warn('[notifications] background task error:', error); return; }
+    const notifData = data?.notification?.request?.content?.data ?? data?.data;
+    if (notifData?.type !== 'location_request') return;
+    const targetMemberId = notifData.memberId as string | undefined;
+    if (!targetMemberId) return;
+    try {
+      const { supabase: sb } = require('@/lib/supabase');
+      const { data: member } = await sb.from('members').select('family_id').eq('id', targetMemberId).single();
+      if (!member?.family_id) return;
+      const { reportLiveLocationNow } = require('@/lib/locationTracking');
+      await reportLiveLocationNow(targetMemberId, member.family_id);
+    } catch (e) {
+      console.warn('[notifications] background location_request handling failed:', e);
+    }
+  });
+  if (Notifications) {
+    Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((e: any) =>
+      console.warn('[notifications] registerTaskAsync failed:', e)
+    );
+  }
+} catch (e) {
+  console.warn('[notifications] expo-task-manager not available for background notification task:', e);
+}
+
 // ── Register for push notifications ──────────────────────────────────────────
 
 export async function registerForPushNotifications(): Promise<string | null> {
@@ -345,6 +387,23 @@ export async function saveTokenToMember(memberId: string): Promise<void> {
         .delete()
         .eq('device_id', deviceId)
         .neq('member_id', memberId);
+
+      // Same invariant, the other direction: this exact expo_push_token
+      // might still be sitting under a DIFFERENT (now-stale) device_id —
+      // e.g. a reinstall regenerated getDeviceId()'s persisted UUID while
+      // Expo re-issued the same underlying push token for this physical
+      // device. A real UNIQUE(expo_push_token) index now enforces this
+      // DB-side (20260975000000); clear any other row holding this token
+      // first, or the upsert below fails outright. Left uncaught before,
+      // this stale row let a family member's own device receive pushes
+      // meant for someone else who ended up sharing its token [live-
+      // reported: "parent sending a message to family channel - hismelf
+      // also getting notification"].
+      await supabase
+        .from('member_device_tokens')
+        .delete()
+        .eq('expo_push_token', token)
+        .neq('device_id', deviceId);
 
       await supabase.from('member_device_tokens').upsert(
         {

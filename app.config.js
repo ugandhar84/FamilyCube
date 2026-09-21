@@ -113,17 +113,18 @@ const config = {
     package: "com.familycube.android",
     // react-native-maps needs the Android Maps SDK API key declared in the
     // manifest — iOS uses Apple Maps by default via the same library, so
-    // this is purely additive, no iOS equivalent needed. Was missing
-    // entirely — live-reported crash on the GPS/FindFam tab:
-    // "java.lang.RuntimeException: API key not found." Reusing the same
-    // key already in google-services.json (same Firebase/GCP project,
-    // family-cube-8b803) rather than provisioning a second key — if this
-    // key turns out to be restricted to Firebase-only APIs, the map will
-    // still fail and a dedicated Maps SDK key needs enabling in Google
-    // Cloud Console for this same project.
+    // this is purely additive, no iOS equivalent needed. First attempt
+    // reused the Firebase key (google-services.json) — confirmed via a
+    // real device's logcat this was wrong: "Authorization failure...
+    // Ensure that the following Android Key exists" for this app's real
+    // signing fingerprint, which blanked the whole Hub screen on first
+    // Android launch (react-native-maps failing to init can crash the
+    // render tree, not just the map view itself) [live-reported: "my home
+    // hub screen si sblank"]. Now uses a dedicated Maps-scoped key with
+    // both "Maps SDK for Android" and "Maps JavaScript API" enabled.
     config: {
       googleMaps: {
-        apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY ?? "AIzaSyA8o-nMZ7QqmiHN63UtKrqzQ7Sijr8RWLc",
+        apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY ?? "AIzaSyB02ITA7U3T4619D1zCM5ZXAmQhnd_afPk",
       },
     },
     permissions: [

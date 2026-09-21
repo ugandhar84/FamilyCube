@@ -9,7 +9,25 @@
 //  - VoIP/FCM token registration → voip_push_tokens table
 import { Platform, NativeModules, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Localization from 'expo-localization';
 import { supabase } from '@/lib/supabase';
+
+// Apple App Review rejection (guideline 5, Sept 2026): China's MIIT
+// requested CallKit be deactivated in every app on the China App Store.
+// "This app cannot be approved with CallKit functionality active in
+// China." VoIP calling itself is still allowed there, just without
+// CallKit's native UI — since this app has no non-CallKit fallback ring
+// UI, the simplest compliant fix is to skip CallKit setup entirely for a
+// device whose region is China, rather than trying to half-build a second
+// ring experience for one territory.
+function isChinaRegion(): boolean {
+  try {
+    const region = Localization.getLocales()?.[0]?.regionCode;
+    return region === 'CN';
+  } catch {
+    return false;
+  }
+}
 
 let RNCallKeep: typeof import('react-native-callkeep').default | null = null;
 try {
@@ -55,6 +73,7 @@ let didSetup = false;
 
 export async function setupCallAlerts(): Promise<void> {
   if (!RNCallKeep || didSetup) return;
+  if (Platform.OS === 'ios' && isChinaRegion()) return;
   try {
     await RNCallKeep.setup(CALLKEEP_OPTIONS);
     didSetup = true;

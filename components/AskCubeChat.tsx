@@ -37,6 +37,7 @@ import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
+import AskCubeConsentSheet, { useAskCubeConsent } from '@/components/AskCubeConsentGate';
 
 // History sheet row timestamp — "Today 5:55 AM" / "Yesterday 5:55 AM" for the
 // last two days, then a short weekday/date for anything older, matching the
@@ -128,6 +129,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const declineKidRequest = useKidRequestStore(s => s.declineRequest);
 
   const [expandedRecipe, setExpandedRecipe] = useState<{ msgId: string; index: number } | null>(null);
+
+  // App Store rejection (guidelines 5.1.1(i)/5.1.2(i)) — must explicitly
+  // disclose and get consent before sending a member's message to the
+  // third-party AI provider. See AskCubeConsentGate.tsx.
+  const { checked: consentChecked, consented, showSheet, setShowSheet, markConsented } = useAskCubeConsent(activeMember?.id);
 
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -322,6 +328,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    if (consentChecked && !consented) { setShowSheet(true); return; }
     // Layer 1 only here — Ask Cube is a private parent<->AI chat, not a
     // shared family thread, so the "flag for other parents" layer 2 doesn't
     // apply the same way; still worth blocking obvious profanity before it
@@ -1214,6 +1221,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           </View>
         )}
       </AppBottomSheet>
+
+      <AskCubeConsentSheet
+        visible={showSheet}
+        memberId={activeMember?.id}
+        familyId={activeMember?.familyId}
+        colors={colors}
+        isDark={isDark}
+        onAgree={() => { setShowSheet(false); markConsented(); }}
+        onDecline={() => setShowSheet(false)}
+      />
 
       <AskCubeMealDayPicker
         visible={!!pendingMealCreate}

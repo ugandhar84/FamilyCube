@@ -203,6 +203,12 @@ const config = {
   },
   plugins: [
     "expo-font",
+    // Used to detect the device's region so CallKit setup can be skipped in
+    // China — Apple guideline 5, MIIT requested CallKit be deactivated for
+    // all China App Store apps (App Review rejection: "This app cannot be
+    // approved with CallKit functionality active in China"). See
+    // lib/callAlert.ts's setupCallAlerts().
+    "expo-localization",
     "expo-asset",
     "expo-router",
     "expo-secure-store",

@@ -73,7 +73,10 @@ let didSetup = false;
 
 export async function setupCallAlerts(): Promise<void> {
   if (!RNCallKeep || didSetup) return;
-  if (Platform.OS === 'ios' && isChinaRegion()) return;
+  if (Platform.OS === 'ios' && isChinaRegion()) {
+    console.log('[callAlert] Skipping CallKeep setup — device region is China');
+    return;
+  }
   try {
     await RNCallKeep.setup(CALLKEEP_OPTIONS);
     didSetup = true;

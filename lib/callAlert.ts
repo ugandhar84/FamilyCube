@@ -20,18 +20,22 @@ import { supabase } from '@/lib/supabase';
 // device whose region is China, rather than trying to half-build a second
 // ring experience for one territory.
 //
-// require()'d lazily, not a static top-level import — expo-localization's
-// native module isn't present until a full native rebuild runs (same
-// requireOptionalNativeModule-style issue as this file's own RNCallKeep/
-// fbMessaging below); a static import throws at MODULE-EVAL time, which
-// crashed the entire app boot on a dev client / Metro session that
-// predates the native rebuild, before the try/catch inside this function
-// ever got a chance to run [live-reported crash: "Cannot find native
-// module 'ExpoLocalization'"].
+// Uses Intl (built into Hermes, zero native module) instead of
+// expo-localization — that package's native module lookup throws
+// "Cannot find native module 'ExpoLocalization'" as an UNCAUGHT error
+// that bypasses a plain JS try/catch (RN's TurboModuleRegistry lazy-proxy
+// throws outside the synchronous catch's reach in this RN version),
+// crashing app boot on any dev client / Metro session that predates a
+// native rebuild — confirmed live via Metro's own red-box screen showing
+// "Uncaught Error" despite the try/catch wrapping the call. Intl's locale
+// string (e.g. "zh-CN", "en-US") carries the same region code as its
+// last hyphenated segment, with no native module at all, so it works
+// identically in dev and production builds without ever needing a
+// rebuild for this specific check.
 function isChinaRegion(): boolean {
   try {
-    const Localization = require('expo-localization');
-    const region = Localization.getLocales()?.[0]?.regionCode;
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+    const region = locale.split('-').pop()?.toUpperCase();
     return region === 'CN';
   } catch {
     return false;

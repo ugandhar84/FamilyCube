@@ -11,20 +11,24 @@
 // messages with an AI provider isn't something one parent can give on
 // behalf of everyone in the family.
 //
-// The real, auditable record lives in ask_cube_ai_consents (Postgres) —
-// AsyncStorage is only a fast local cache so re-opening Ask Cube doesn't
-// have to round-trip the DB every time; a reinstall/new device falls back
-// to the DB check. [live-requested: "we should record that concent in
-// the DB, concent notes also should present in DB"]
+// ask_cube_ai_consents (Postgres) is the ONLY source of truth — a
+// per-app-run in-memory cache avoids a redundant read on a second check
+// within the same session, but every fresh app launch re-verifies against
+// the DB. An earlier version of this trusted a local AsyncStorage flag on
+// its own with no DB cross-check at all, which meant a stale flag written
+// by an EARLIER build of this feature (before the DB table existed)
+// permanently bypassed consent forever with zero real record behind it
+// [live-reported: "sill no concet option" on a device that had exactly
+// this stale flag]. [live-requested: "we should record that concent in
+// the DB, concent notes also should present in DB" / "why to do that it
+// is db driven flag right"]
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Sparkles } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
-const CONSENT_KEY_PREFIX = 'familycube_ask_cube_consent_v1_';
 const CONSENT_VERSION = 'v1';
 
 // The exact text shown to the member — stored verbatim alongside the
@@ -37,14 +41,6 @@ export const ASK_CUBE_CONSENT_TEXT =
   "We don't send your full chat history, health records, or location to the AI provider — " +
   "only what's needed to answer your specific question.";
 
-async function hasLocalConsent(memberId: string): Promise<boolean> {
-  try {
-    return (await AsyncStorage.getItem(CONSENT_KEY_PREFIX + memberId)) === 'true';
-  } catch {
-    return false;
-  }
-}
-
 async function hasDbConsent(memberId: string): Promise<boolean> {
   try {
     const { data } = await supabase.from('ask_cube_ai_consents')
@@ -55,20 +51,26 @@ async function hasDbConsent(memberId: string): Promise<boolean> {
   }
 }
 
+// The DB (ask_cube_ai_consents) is the real source of truth — AsyncStorage
+// is ONLY a perf cache to skip the round-trip on the common case, never
+// trusted on its own. A prior version of this function returned early on
+// a local-cache hit with no DB check at all, which meant a stale local
+// flag (written by an EARLIER build of this feature, before the DB table
+// existed) permanently bypassed consent forever with no real record
+// behind it [live-reported: "sill no concet option" — traced to exactly
+// this: a device with a stale local flag but zero DB row]. Always verify
+// against the DB now; the local flag only shortcuts a *second* identical
+// DB read this session (memory-cached per app run), not future ones.
+let dbConsentMemoCache = new Map<string, boolean>();
+
 export async function hasAskCubeConsent(memberId: string): Promise<boolean> {
-  if (await hasLocalConsent(memberId)) return true;
-  // Local cache miss doesn't necessarily mean "never consented" — could be
-  // a reinstall or a different device for the same member. Check the real
-  // record before deciding to ask again.
+  if (dbConsentMemoCache.has(memberId)) return dbConsentMemoCache.get(memberId)!;
   const dbConsented = await hasDbConsent(memberId);
-  if (dbConsented) {
-    try { await AsyncStorage.setItem(CONSENT_KEY_PREFIX + memberId, 'true'); } catch {}
-  }
+  dbConsentMemoCache.set(memberId, dbConsented);
   return dbConsented;
 }
 
 async function recordAskCubeConsent(memberId: string, familyId: string | undefined): Promise<void> {
-  try { await AsyncStorage.setItem(CONSENT_KEY_PREFIX + memberId, 'true'); } catch {}
   if (!familyId) return;
   try {
     await supabase.from('ask_cube_ai_consents').insert({
@@ -77,9 +79,10 @@ async function recordAskCubeConsent(memberId: string, familyId: string | undefin
       consent_version: CONSENT_VERSION,
       consent_text: ASK_CUBE_CONSENT_TEXT,
     });
+    // Only cache "consented" once the DB write actually succeeds — the DB
+    // is the real record, this just avoids a redundant read this session.
+    dbConsentMemoCache.set(memberId, true);
   } catch (e) {
-    // Local cache already set above — the member isn't re-prompted even if
-    // this write fails, but log so a missing DB record is at least visible.
     console.warn('[AskCubeConsentGate] failed to record consent in DB:', e);
   }
 }

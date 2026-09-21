@@ -9,7 +9,6 @@
 //  - VoIP/FCM token registration → voip_push_tokens table
 import { Platform, NativeModules, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Localization from 'expo-localization';
 import { supabase } from '@/lib/supabase';
 
 // Apple App Review rejection (guideline 5, Sept 2026): China's MIIT
@@ -20,8 +19,18 @@ import { supabase } from '@/lib/supabase';
 // UI, the simplest compliant fix is to skip CallKit setup entirely for a
 // device whose region is China, rather than trying to half-build a second
 // ring experience for one territory.
+//
+// require()'d lazily, not a static top-level import — expo-localization's
+// native module isn't present until a full native rebuild runs (same
+// requireOptionalNativeModule-style issue as this file's own RNCallKeep/
+// fbMessaging below); a static import throws at MODULE-EVAL time, which
+// crashed the entire app boot on a dev client / Metro session that
+// predates the native rebuild, before the try/catch inside this function
+// ever got a chance to run [live-reported crash: "Cannot find native
+// module 'ExpoLocalization'"].
 function isChinaRegion(): boolean {
   try {
+    const Localization = require('expo-localization');
     const region = Localization.getLocales()?.[0]?.regionCode;
     return region === 'CN';
   } catch {

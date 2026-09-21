@@ -506,6 +506,18 @@ export function CalendarSyncBody() {
             Reconnect to also sync Google Tasks into Chores
           </Text>
         )}
+        {/* Prominent disclosure at the point of connection, same pattern as
+            Find Fam's "Share my location" toggle — explains what data
+            leaves the app and where, before the user taps Connect.
+            [live-requested: "even for calender connect .. also whereever
+            we needed concents"] */}
+        {!connection && (
+          <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 10, lineHeight: 14 }}>
+            Connecting shares your {PROVIDER_LABEL[provider]} events with Family Cube so they can
+            appear on your shared family calendar, and syncs family events you create back to
+            {' '}{PROVIDER_LABEL[provider]}. You can disconnect anytime.
+          </Text>
+        )}
         <TouchableOpacity
           onPress={() => connection ? handleDisconnect(connection) : handleConnect(provider, purpose)}
           disabled={isConnecting}

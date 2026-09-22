@@ -124,7 +124,7 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   lat: number; lng: number; name: string; statusText: string;
   emoji?: string; avatarUrl?: string; siblingNames: string[];
   ringColor: string; speedMph: number; isFreshFix: boolean; infoColor: string;
-  g: { mapPinWrap: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
+  g: { mapPinWrap: any; mapPinAvatarShadow: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
 }) {
   // Was a plain Marker with a memoized-but-still-instant coordinate — the
   // re-render/redraw bug (see this component's own earlier fix, above)
@@ -197,9 +197,21 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
       tracksViewChanges={tracksViewChanges}>
       <View style={g.mapPinWrap}>
         <View>
-          <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
-            <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
-              siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={34} />
+          {/* elevation/shadow on the SAME view as borderRadius is a known
+              react-native-maps Android snapshot conflict — the native
+              bitmap can capture the shadow's own (larger, unclipped)
+              bounding box instead of the circular clipped content,
+              rendering as a big blank/light square with the tiny avatar
+              floating inside [live-reported, screenshot: exactly this —
+              a large rounded-square with a tiny emoji in the middle].
+              Split the shadow onto an outer wrapper with no radius of
+              its own, keep the radius+clip on an inner view with no
+              shadow. */}
+          <View style={g.mapPinAvatarShadow}>
+            <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
+              <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
+                siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={34} />
+            </View>
           </View>
           {movementMeta && (
             <View style={[g.mapPinBadge, { backgroundColor: infoColor, borderColor: '#fff' }]}>
@@ -1362,8 +1374,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 
 const g = StyleSheet.create({
   mapPinWrap:   { alignItems: 'center' },
-  mapPinAvatar: { borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2,
-                  shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
+  mapPinAvatarShadow: { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
+  mapPinAvatar: { borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2 },
   mapPinTail:   { width: 0, height: 0, marginTop: -2,
                   borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
                   borderLeftColor: 'transparent', borderRightColor: 'transparent' },

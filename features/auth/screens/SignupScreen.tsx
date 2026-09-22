@@ -300,8 +300,10 @@ export default function SignupScreen() {
             <Text style={s.sub}>Start your Family Cube journey today</Text>
           </View>
 
-          {/* Apple sign-up */}
-          {isIOS ? (
+          {/* Apple sign-up — iOS only, same reasoning as LoginScreen.tsx
+              [live-requested: "for familyCube app - on the android dont
+              show the apple id singin"] */}
+          {isIOS && (
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
               buttonStyle={isDark
@@ -311,14 +313,6 @@ export default function SignupScreen() {
               style={{ height: 52 * scale.control, marginBottom: SPACING.sm * scale.space }}
               onPress={handleAppleSignup}
             />
-          ) : (
-            <TouchableOpacity
-              style={[s.appleBtn, { backgroundColor: isDark ? '#fff' : '#000' }]}
-              onPress={handleAppleSignup}
-              disabled={loading}>
-              <Text style={{ fontSize: TYPO.heading, color: isDark ? '#000' : '#fff' }}></Text>
-              <Text style={[s.appleBtnText, { color: isDark ? '#000' : '#fff' }]}>Sign up with Apple</Text>
-            </TouchableOpacity>
           )}
 
           {/* Google sign-up */}

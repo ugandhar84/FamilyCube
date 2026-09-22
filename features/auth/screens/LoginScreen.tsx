@@ -493,8 +493,14 @@ export default function LoginScreen() {
                   <View style={s.dividerLine} />
                 </View>
 
-                {/* Apple Sign In — native on iOS, web OAuth on Android */}
-                {isIOS ? (
+                {/* Apple Sign In — iOS only. Android previously had a
+                    fallback web-OAuth "Sign in with Apple" button here,
+                    but Apple ID sign-in has no real purpose for an
+                    Android user with no Apple account context, and reads
+                    as out of place on that platform. [live-requested:
+                    "for familyCube app - on the android dont show the
+                    apple id singin"] */}
+                {isIOS && (
                   <AppleAuthentication.AppleAuthenticationButton
                     buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
                     buttonStyle={isDark
@@ -504,11 +510,6 @@ export default function LoginScreen() {
                     style={{ height: 52 * scale.control, marginTop: SPACING.sm * scale.space }}
                     onPress={handleAppleLogin}
                   />
-                ) : (
-                  <TouchableOpacity style={[s.appleBtn, { backgroundColor: isDark ? '#fff' : '#000' }]} onPress={handleAppleLogin} disabled={loading}>
-                    <Text style={{ fontSize: TYPO.heading, color: isDark ? '#000' : '#fff' }}></Text>
-                    <Text style={[s.appleBtnText, { color: isDark ? '#000' : '#fff' }]}>Sign in with Apple</Text>
-                  </TouchableOpacity>
                 )}
 
                 {/* Google */}

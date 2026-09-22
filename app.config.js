@@ -278,6 +278,17 @@ const config = {
         color: "#CD7B57",
         androidMode: "default",
         androidCollapsedTitle: "Family Cube",
+        // Required for the background-notification TaskManager task
+        // (shared/services/notifications.service.ts) that answers
+        // location_request silent pushes while the app is backgrounded —
+        // without this, registerTaskAsync throws "Background remote
+        // notifications have not been configured" and the task never
+        // actually registers, so on-demand location refresh silently does
+        // nothing whenever the target member's app isn't in the
+        // foreground [live-reported: "if i do ondemand fetch for the
+        // family memeberis it is not fetching thie location" — confirmed
+        // via an earlier Metro trace showing exactly this error].
+        enableBackgroundRemoteNotifications: true,
       },
     ],
     "expo-web-browser",

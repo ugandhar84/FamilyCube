@@ -102,6 +102,14 @@ function OtherFamilyRecoveryCard({ family, memberId, colors, s }: {
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
     setPasscode('');
+    // Same re-decrypt-in-place fix as the other recovery flow below.
+    try {
+      const { useChatStore } = await import('@/store/chatStore');
+      const openChannelIds = Object.keys(useChatStore.getState().channels);
+      await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
+    } catch (e) {
+      console.warn('[DataRecoveryScreen] chat re-decrypt after recovery failed:', e);
+    }
     showAlert('Recovered', `This device can now access ${family.name}'s chat, location, and medical records history.`);
   };
 
@@ -364,6 +372,20 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
     setSaving(false);
     if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
     setCurrentForRecover('');
+    // Re-decrypt anything already loaded in memory with the newly-installed
+    // recovered key — without this, a chat screen left open from before
+    // recovery kept showing "wrong key or corrupted" until the user force-
+    // quit and relaunched, since resolveMessageText only ever runs once per
+    // message on load, not automatically after a key becomes available.
+    // [live-requested: "as soon as user enters the Revoverykey and save we
+    // should refetch all the messages with the key decrypt"]
+    try {
+      const { useChatStore } = await import('@/store/chatStore');
+      const openChannelIds = Object.keys(useChatStore.getState().channels);
+      await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
+    } catch (e) {
+      console.warn('[DataRecoveryScreen] chat re-decrypt after recovery failed:', e);
+    }
     showAlert('Recovered', 'This device can now access your family’s chat, location, and medical records history.');
   };
 

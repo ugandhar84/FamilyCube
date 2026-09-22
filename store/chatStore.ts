@@ -13,6 +13,7 @@ import {
   encryptMessage, decryptMessage,
   buildBlindIndex, hashQuery,
   getDeviceId, encryptForDevices, decryptFromDevice,
+  RECOVERY_DEVICE_ID,
 } from '@/lib/chatCrypto';
 import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
 import { isFeatureEnabled } from '@/lib/featureFlags';
@@ -345,12 +346,33 @@ async function resolveMessageText(row: DBRow): Promise<string> {
   if (!isFeatureEnabled('per_device_e2e')) return decryptMessage(cipher);
   try {
     const deviceId = await getDeviceId();
-    const { data: keyRow } = await supabase
+    let { data: keyRow } = await supabase
       .from('chat_message_keys')
       .select('wrapped_key')
       .eq('message_id', row.id)
       .eq('device_id', deviceId)
       .maybeSingle();
+    // A brand-new device has its OWN real identity registered (only new
+    // messages sent after that get wrapped for it), but a message from
+    // BEFORE this device existed was only ever wrapped for the sentinel
+    // 'recovery' device_id (backfillChatRecoveryWraps) — never for this
+    // device's own real device_id, since that id didn't exist yet when
+    // the backfill ran. decryptFromDevice already tries the recovered
+    // keypair before falling back to the real identity, but that's moot
+    // if the envelope lookup above never finds a row to decrypt in the
+    // first place. [live-reported: fresh Android install, entered the
+    // family recovery code, chat still "wrong key or corrupted" — traced
+    // to exactly this: 154 messages wrapped for 'recovery', 0 of them
+    // ever looked up because the query only checked this device's own id]
+    if (!keyRow) {
+      const { data: recoveryKeyRow } = await supabase
+        .from('chat_message_keys')
+        .select('wrapped_key')
+        .eq('message_id', row.id)
+        .eq('device_id', RECOVERY_DEVICE_ID)
+        .maybeSingle();
+      keyRow = recoveryKeyRow;
+    }
     if (!keyRow || !row.sender_device_id) return decryptMessage(cipher); // legacy message, no envelope for this device
     // device_keys is one row per (family, device, member) — a shared
     // device (parent's phone also used by PIN-switched kids) has one row

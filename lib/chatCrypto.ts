@@ -16,7 +16,6 @@
  *    the search key is synced (wrapped alongside the data key).
  */
 import * as SecureStore from 'expo-secure-store';
-import { supabase } from './supabase';
 
 const LOCAL_AES_KEY    = 'familycube_chat_aes_v1';
 const LOCAL_SEARCH_KEY = 'familycube_chat_search_v1';
@@ -39,18 +38,6 @@ function b642buf(b64: string): ArrayBuffer {
 
 // ─── AES data key ─────────────────────────────────────────────────────────────
 
-// A real, ONE shared key per family, stored server-side in
-// family_chat_keys (RLS-gated to that family's own members) — same
-// pattern as locationCrypto.ts's family_location_keys, which fixed the
-// identical bug for location text. Was: getKey() only ever checked local
-// SecureStore and silently generated a brand-new RANDOM key per device
-// when none existed there; the documented "passcode → unwrapKeyWithPasscode"
-// recovery path had no real call site anywhere in the app (confirmed via
-// full-codebase grep), so entering a recovery code never actually synced
-// a device onto the real shared key. Every device was therefore quietly
-// using its own orphaned key, so any other member's/device's messages
-// could never decrypt [live-reported: entered recovery code on a fresh
-// Android install, chat still showed "wrong key or corrupted"].
 export async function getKey(): Promise<CryptoKey> {
   if (_aesKey) return _aesKey;
   const stored = await SecureStore.getItemAsync(LOCAL_AES_KEY);
@@ -58,53 +45,7 @@ export async function getKey(): Promise<CryptoKey> {
     _aesKey = await crypto.subtle.importKey('raw', b642buf(stored), ALGO, true, ['encrypt', 'decrypt']);
     return _aesKey;
   }
-  return fetchOrCreateFamilyKey();
-}
-
-async function fetchOrCreateFamilyKey(): Promise<CryptoKey> {
-  const familyId = await resolveActiveFamilyId();
-  if (!familyId) return generateAndStoreAesKey();
-
-  const { data: row } = await supabase
-    .from('family_chat_keys')
-    .select('aes_key_b64')
-    .eq('family_id', familyId)
-    .maybeSingle();
-
-  let keyB64 = row?.aes_key_b64 as string | undefined;
-  if (!keyB64) {
-    const newKey = await crypto.subtle.generateKey(ALGO, true, ['encrypt', 'decrypt']);
-    keyB64 = buf2b64(await crypto.subtle.exportKey('raw', newKey));
-    const { error: insertErr } = await supabase
-      .from('family_chat_keys')
-      .insert({ family_id: familyId, aes_key_b64: keyB64 });
-    if (insertErr) {
-      // Raced with another device doing the same first-time create —
-      // re-read whichever row actually won, so every device converges on
-      // ONE key.
-      const { data: winner } = await supabase
-        .from('family_chat_keys')
-        .select('aes_key_b64')
-        .eq('family_id', familyId)
-        .maybeSingle();
-      if (winner?.aes_key_b64) keyB64 = winner.aes_key_b64;
-    }
-  }
-  if (!keyB64) return generateAndStoreAesKey();
-
-  const key = await crypto.subtle.importKey('raw', b642buf(keyB64), ALGO, true, ['encrypt', 'decrypt']);
-  await SecureStore.setItemAsync(LOCAL_AES_KEY, keyB64);
-  _aesKey = key;
-  return key;
-}
-
-async function resolveActiveFamilyId(): Promise<string | null> {
-  try {
-    const { useFamilyStore } = require('@/store/familyStore');
-    return useFamilyStore.getState().activeFamilyId ?? null;
-  } catch {
-    return null;
-  }
+  return generateAndStoreAesKey();
 }
 
 async function generateAndStoreAesKey(): Promise<CryptoKey> {

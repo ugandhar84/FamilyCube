@@ -564,7 +564,20 @@ function RootNavigator() {
         }
         return;
       }
-      if (!url.startsWith('familycube://auth/callback') && !url.startsWith('pawbond://auth/callback') && !url.includes('/--/auth/callback') && !url.includes('auth/callback')) {
+      // Was requiring an explicit /auth/callback path — but confirmed live
+      // on Android that Google OAuth (via Supabase's own redirect
+      // handling) can come back as a BARE `familycube://#access_token=...`
+      // with no path segment at all, which this guard rejected outright
+      // ("Not an auth callback, ignoring") even though it plainly carried
+      // a real access_token in the fragment. That meant a genuinely
+      // successful Google sign-in (confirmed server-side: auth.users.
+      // last_sign_in_at updated) never actually established a client-side
+      // session, leaving the Hub permanently blank post-login
+      // [live-reported: "i still see blank home when i login" / "not
+      // proper sigin"]. Now also accepts any familycube:// URL that
+      // carries an access_token in its fragment/query, regardless of path.
+      const hasAuthFragmentTokens = url.startsWith('familycube://') && (url.includes('access_token=') || url.includes('#access_token'));
+      if (!url.startsWith('familycube://auth/callback') && !url.startsWith('pawbond://auth/callback') && !url.includes('/--/auth/callback') && !url.includes('auth/callback') && !hasAuthFragmentTokens) {
         console.log('[FamilyCube:DeepLink] Not an auth callback, ignoring');
         return;
       }

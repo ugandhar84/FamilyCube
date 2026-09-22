@@ -132,6 +132,13 @@ export default function ChatScreen() {
   const recordStartRef  = useRef<number>(0);
   const recordTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Just Us proposal suggestions — collapsed behind one pill by default,
+  // expands upward (the pill row sits directly above the input bar, so
+  // "up" is the only direction with room) to show the full set.
+  // [live-requested: "suggestions should be one pill suggestion on that
+  // click it should show all expanded suggestion grow top direction"]
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+
   const flatRef    = useRef<FlatList>(null);
   const inputRef   = useRef<TextInput>(null);
   const searchAnim = useRef(new Animated.Value(0)).current;
@@ -1031,8 +1038,16 @@ export default function ChatScreen() {
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Clear All', style: 'destructive',
-                  onPress: () => clearChannel(channelId).catch(() =>
-                    Alert.alert('Could not clear messages', 'Check your connection and try again.')),
+                  onPress: () => clearChannel(channelId).catch((e: any) => {
+                    // Was a fixed "check your connection" message regardless
+                    // of the real error — made this genuinely undiagnosable
+                    // from the field [live-reported: "clear all messages is
+                    // not working on this just us could not clear messages
+                    // check your connection error"]. Surface the real
+                    // Postgres/Supabase error text instead.
+                    console.warn('[ChatScreen] clearChannel failed', e);
+                    Alert.alert('Could not clear messages', e?.message ?? 'Check your connection and try again.');
+                  }),
                 },
               ],
             )}
@@ -1411,21 +1426,41 @@ export default function ChatScreen() {
                 sends immediately, nothing to confirm/decline, just a
                 quick touchpoint without having to type. ── */}
             {!reviewing && !recording && (allChannels.find(c => c.id === channelId) as any)?.isCoupleChannel && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, backgroundColor: colors.card }}>
-                <Pressable
-                  onPress={() => sendMessage(channelId, activeMemberId ?? '', 'Thinking of you ❤️')}
-                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.pink ?? colors.accent }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#fff' }}>💌 Thinking of you</Text>
-                </Pressable>
-                {['Date night?', 'Movie at home?', 'Coffee tomorrow?', 'Free tonight?', 'Early night?', 'Surprise me tonight?', 'Your pick for dinner?', 'Slow morning together?'].map(label => (
-                  <Pressable key={label}
-                    onPress={() => sendMessage(channelId, activeMemberId ?? '', label, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-                      { type: 'couple_proposal', payload: { label } })}
-                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: (colors.pink ?? colors.accent) + '50', backgroundColor: (colors.pink ?? colors.accent) + '10' }}>
-                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.pink ?? colors.accent }}>{label}</Text>
+              suggestionsExpanded ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, backgroundColor: colors.card }}>
+                  <Pressable
+                    onPress={() => { sendMessage(channelId, activeMemberId ?? '', 'Thinking of you ❤️'); setSuggestionsExpanded(false); }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.pink ?? colors.accent }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#fff' }}>💌 Thinking of you</Text>
                   </Pressable>
-                ))}
-              </View>
+                  {['Date night?', 'Movie at home?', 'Coffee tomorrow?', 'Free tonight?', 'Early night?', 'Surprise me tonight?', 'Your pick for dinner?', 'Slow morning together?'].map(label => (
+                    <Pressable key={label}
+                      onPress={() => {
+                        sendMessage(channelId, activeMemberId ?? '', label, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                          { type: 'couple_proposal', payload: { label } });
+                        setSuggestionsExpanded(false);
+                      }}
+                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: (colors.pink ?? colors.accent) + '50', backgroundColor: (colors.pink ?? colors.accent) + '10' }}>
+                      <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.pink ?? colors.accent }}>{label}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable
+                    onPress={() => setSuggestionsExpanded(false)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.surface }}>
+                    <ChevronDown size={13} color={colors.textSecondary} />
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.textSecondary }}>Hide</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, backgroundColor: colors.card }}>
+                  <Pressable
+                    onPress={() => setSuggestionsExpanded(true)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: (colors.pink ?? colors.accent) + '50', backgroundColor: (colors.pink ?? colors.accent) + '10' }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.pink ?? colors.accent }}>💕 Suggestions</Text>
+                    <ChevronUp size={13} color={colors.pink ?? colors.accent} />
+                  </Pressable>
+                </View>
+              )
             )}
 
             {/* ── Input bar ── */}

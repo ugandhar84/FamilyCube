@@ -8,7 +8,7 @@
  * show in the list below with the existing manual status picker.
  */
 import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder, Image } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
@@ -166,19 +166,34 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // briefly after mount/whenever the avatar/badge content actually
   // changes, then freezes — a well-documented react-native-maps pattern
   // for custom marker views.
-  // 300ms wasn't long enough for a real network avatarUrl image to finish
-  // loading on a real device — the snapshot froze BEFORE the <Image> had
-  // rendered, leaving the marker looking like the avatar was "hiding"
-  // inside its own circular border [live-reported: "avtar is hiding
-  // inside some container on the map"]. 1.2s comfortably covers a real
-  // (often already-cached after first load) network fetch without
-  // reintroducing the constant-resnapshot OOM this whole mechanism exists
-  // to prevent.
+  // A fixed delay (tried 300ms, then 1.2s) still left a real photo
+  // avatarUrl invisible on the marker — this is a known react-native-maps
+  // Android limitation, not just slow loading: the native bitmap snapshot
+  // (Marker.setIcon) is taken from the Android View hierarchy, and a
+  // remote <Image> can still composite as blank/transparent in THAT
+  // specific snapshot even after RN's own onLoad has fired, because
+  // there's a real timing gap between RN's JS-side "loaded" event and the
+  // native image pipeline (Fresco) actually finishing compositing pixels
+  // into the underlying View [live-reported: "bur avtar is hiding inside
+  // somecontaineron the mao"]. Pre-fetching via Image.prefetch (which
+  // resolves only once the image is genuinely decoded into RN's native
+  // image cache) and gating the freeze on THAT — not a fixed timer —
+  // fixes the real race instead of guessing at a delay long enough to
+  // outlast it.
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
   useEffect(() => {
+    let cancelled = false;
     setTracksViewChanges(true);
-    const t = setTimeout(() => setTracksViewChanges(false), 1200);
-    return () => clearTimeout(t);
+    const freeze = () => { if (!cancelled) setTimeout(() => { if (!cancelled) setTracksViewChanges(false); }, 150); };
+    if (avatarUrl) {
+      Image.prefetch(avatarUrl).then(freeze).catch(freeze);
+    } else {
+      // Emoji/initials tier has no network image to wait on — a short
+      // fixed delay is enough for that content to lay out.
+      const t = setTimeout(freeze, 300);
+      return () => { cancelled = true; clearTimeout(t); };
+    }
+    return () => { cancelled = true; };
   }, [avatarUrl, emoji, ringColor, movementMeta]);
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}

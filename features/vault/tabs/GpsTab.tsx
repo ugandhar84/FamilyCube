@@ -166,10 +166,18 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // briefly after mount/whenever the avatar/badge content actually
   // changes, then freezes — a well-documented react-native-maps pattern
   // for custom marker views.
+  // 300ms wasn't long enough for a real network avatarUrl image to finish
+  // loading on a real device — the snapshot froze BEFORE the <Image> had
+  // rendered, leaving the marker looking like the avatar was "hiding"
+  // inside its own circular border [live-reported: "avtar is hiding
+  // inside some container on the map"]. 1.2s comfortably covers a real
+  // (often already-cached after first load) network fetch without
+  // reintroducing the constant-resnapshot OOM this whole mechanism exists
+  // to prevent.
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
   useEffect(() => {
     setTracksViewChanges(true);
-    const t = setTimeout(() => setTracksViewChanges(false), 300);
+    const t = setTimeout(() => setTracksViewChanges(false), 1200);
     return () => clearTimeout(t);
   }, [avatarUrl, emoji, ringColor, movementMeta]);
   return (

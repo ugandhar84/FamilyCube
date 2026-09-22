@@ -8,7 +8,7 @@
  * show in the list below with the existing manual status picker.
  */
 import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
@@ -166,34 +166,31 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // briefly after mount/whenever the avatar/badge content actually
   // changes, then freezes — a well-documented react-native-maps pattern
   // for custom marker views.
-  // A fixed delay (tried 300ms, then 1.2s) still left a real photo
-  // avatarUrl invisible on the marker — this is a known react-native-maps
-  // Android limitation, not just slow loading: the native bitmap snapshot
-  // (Marker.setIcon) is taken from the Android View hierarchy, and a
-  // remote <Image> can still composite as blank/transparent in THAT
-  // specific snapshot even after RN's own onLoad has fired, because
-  // there's a real timing gap between RN's JS-side "loaded" event and the
-  // native image pipeline (Fresco) actually finishing compositing pixels
-  // into the underlying View [live-reported: "bur avtar is hiding inside
-  // somecontaineron the mao"]. Pre-fetching via Image.prefetch (which
-  // resolves only once the image is genuinely decoded into RN's native
-  // image cache) and gating the freeze on THAT — not a fixed timer —
-  // fixes the real race instead of guessing at a delay long enough to
-  // outlast it.
+  // Every attempt to freeze tracksViewChanges after a delay for a real
+  // photo avatarUrl (300ms, then 1.2s, then gated on Image.prefetch)
+  // still left the marker showing a wrong/incomplete snapshot — live-
+  // reported as the avatar hidden, then edges clipped after a padding
+  // attempt, then a large blank rounded-square with the tiny emoji
+  // floating inside after reverting that. Every variant is the same root
+  // issue: react-native-maps' Android bitmap snapshot (Marker.setIcon)
+  // can be taken at a moment this component's own render/layout hasn't
+  // fully settled at yet, and there's no reliable "now it's really done"
+  // signal available from JS for that specific native snapshot step —
+  // Image.prefetch resolving only proves the bytes are decoded, not that
+  // the View's borderRadius/overflow clipping has been composited into
+  // the bitmap. For a member with a real photo, just keep tracking view
+  // changes permanently — correctness matters more than the OOM
+  // optimization for what's realistically only ever one or two photo
+  // avatars on screen at once. Emoji/initials markers (the common case —
+  // most members use emoji) have no image-compositing race at all, so
+  // they keep the freeze-after-mount optimization that's worked
+  // correctly for them throughout.
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
   useEffect(() => {
-    let cancelled = false;
+    if (avatarUrl) { setTracksViewChanges(true); return; }
     setTracksViewChanges(true);
-    const freeze = () => { if (!cancelled) setTimeout(() => { if (!cancelled) setTracksViewChanges(false); }, 150); };
-    if (avatarUrl) {
-      Image.prefetch(avatarUrl).then(freeze).catch(freeze);
-    } else {
-      // Emoji/initials tier has no network image to wait on — a short
-      // fixed delay is enough for that content to lay out.
-      const t = setTimeout(freeze, 300);
-      return () => { cancelled = true; clearTimeout(t); };
-    }
-    return () => { cancelled = true; };
+    const t = setTimeout(() => setTracksViewChanges(false), 300);
+    return () => clearTimeout(t);
   }, [avatarUrl, emoji, ringColor, movementMeta]);
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}

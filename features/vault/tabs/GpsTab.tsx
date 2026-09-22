@@ -199,17 +199,7 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}
       tracksViewChanges={tracksViewChanges}>
       <View style={g.mapPinWrap}>
-        {/* The status badge hangs outside mapPinAvatar's own box via
-            negative bottom/right offsets (a normal absolute-positioning
-            pattern) — but react-native-maps' Android bitmap-snapshot
-            (Marker.setIcon) only captures what fits within this
-            wrapper's OWN measured bounds, silently clipping anything
-            positioned beyond them. Padding here reserves real, counted
-            space for the badge's overhang so the true bounding box
-            includes it instead of cutting off the avatar/badge's right
-            and bottom edge [live-reported: "not showing full circle of
-            avtar , right snf bottom side is going behind something"]. */}
-        <View style={{ padding: 4 }}>
+        <View>
           <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
             <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
               siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={34} />

@@ -195,7 +195,16 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}
       tracksViewChanges={tracksViewChanges}>
-      <View style={g.mapPinWrap}>
+      {/* react-native-maps' Android marker host view doesn't tightly
+          measure auto-sized custom content — mapPinWrap had no explicit
+          width/height, leaving the native bitmap container too SMALL to
+          fit the avatar + badge (which hangs outside the avatar's own
+          box via negative offsets) + tail, clipping/distorting them
+          [live-reported directly: "it is not issue with avtar or
+          photo- it is the container diments of that pin"]. 40x46
+          confirmed correct via live on-device testing (tried 64x72 too
+          big, 36x42 too small). */}
+      <View style={[g.mapPinWrap, { width: 40, height: 46 }]}>
         <View>
           <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>
             <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
@@ -1361,7 +1370,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 }
 
 const g = StyleSheet.create({
-  mapPinWrap:   { alignItems: 'center' },
+  mapPinWrap:   { alignItems: 'center', justifyContent: 'flex-end' },
   mapPinAvatar: { borderRadius: 20, borderWidth: 2.5, backgroundColor: '#fff', padding: 2,
                   shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
   mapPinTail:   { width: 0, height: 0, marginTop: -2,

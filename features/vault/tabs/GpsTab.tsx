@@ -154,8 +154,27 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // stopped walk[ing]" — pin still showed the footprints icon].
   const movement = isFreshFix ? classifyMovement(speedMph) : 'stationary';
   const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
+  // Was defaulting to react-native-maps' tracksViewChanges=true, which
+  // re-snapshots this Marker's custom child view (FamilyAvatar image +
+  // badge) into a native bitmap on EVERY render — including every single
+  // animation frame from animatedCoord's .timing() tween above, since
+  // MarkerAnimated redraws internally on each tween step independent of
+  // this component's own React re-render cycle. With several animated
+  // family markers on screen, that's dozens of bitmap re-snapshots per
+  // second, which live-crashed with OutOfMemoryError in
+  // MapMarker.updateMarkerIcon on a real device. Tracks view changes only
+  // briefly after mount/whenever the avatar/badge content actually
+  // changes, then freezes — a well-documented react-native-maps pattern
+  // for custom marker views.
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  useEffect(() => {
+    setTracksViewChanges(true);
+    const t = setTimeout(() => setTracksViewChanges(false), 300);
+    return () => clearTimeout(t);
+  }, [avatarUrl, emoji, ringColor, movementMeta]);
   return (
-    <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
+    <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}
+      tracksViewChanges={tracksViewChanges}>
       <View style={g.mapPinWrap}>
         <View>
           <View style={[g.mapPinAvatar, { borderColor: ringColor }]}>

@@ -183,7 +183,7 @@ serve(async (req) => {
     // never re-ringing after a time change.
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at, notes, location, category')
+      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at, notes, location, category, driver_id, driver_status, helper_id, helper_status')
       .eq('alert_call', true)
       .in('date', dateWindow)
       .is('deleted_at', null);
@@ -205,7 +205,7 @@ serve(async (req) => {
       }
     }
 
-    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[]; notes?: string | null; location?: string | null; subjectMemberId?: string | null }[] = [];
+    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[]; notes?: string | null; location?: string | null; subjectMemberId?: string | null; driverHelperIds: string[] }[] = [];
     for (const e of (events ?? [])) {
       if (!e.start_time) continue;
       const t24 = to24Hour(e.start_time);
@@ -214,7 +214,25 @@ serve(async (req) => {
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);
-        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null, subjectMemberId: e.member_id ?? null });
+        // A driver/helper assigned directly on calendar_events (the normal
+        // path every ride/event creation form actually writes to — see
+        // EventFormModal.tsx) never gets a row in event_participants unless
+        // it was later touched by the reassign_event/assign_event_role
+        // RPCs. Only reading event_participants below meant a self-assigned
+        // driver who never went through a reassignment flow was silently
+        // never rung at all — confirmed live: "Schedules are not working
+        // with the call kit, only chores working," since chores only ever
+        // use the single assigned_to_id column with no separate
+        // participants table to fall out of sync with. Read confirmed
+        // driver_id/helper_id straight off the row here as a floor,
+        // in addition to (not instead of) the event_participants lookup
+        // below, which still matters for reassignments made through those
+        // RPCs after creation.
+        const driverHelperIds = [
+          (e as any).driver_status === 'confirmed' ? (e as any).driver_id : null,
+          (e as any).helper_status === 'confirmed' ? (e as any).helper_id : null,
+        ].filter((id): id is string => !!id);
+        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null, subjectMemberId: e.member_id ?? null, driverHelperIds });
       }
     }
 
@@ -240,7 +258,7 @@ serve(async (req) => {
         (participantsByEvent[row.event_id] ??= []).push(row.member_id as string);
       }
       for (const e of dueEvents) {
-        const ids = [...new Set([...(participantsByEvent[e.id] ?? []), ...e.memberIds])];
+        const ids = [...new Set([...(participantsByEvent[e.id] ?? []), ...e.driverHelperIds, ...e.memberIds])];
         targets.push({
           itemType: 'event', itemId: e.id, title: e.title, dueAt: e.dueAt, memberIds: ids,
           category: (e as any).category ?? null,
@@ -292,11 +310,18 @@ serve(async (req) => {
       const choreIds = missed.filter(m => m.item_type === 'chore').map(m => m.item_id);
       const eventIds = missed.filter(m => m.item_type === 'event').map(m => m.item_id);
       const [{ data: missedChores }, { data: missedEvents }] = await Promise.all([
+        // status is now selected AND the missed-follow-up loop below skips
+        // anything no longer 'todo'/'in_progress' — the original ring at
+        // fired_at time correctly required this (see the main sweep's own
+        // chores query above), but this re-fetch 3-4 minutes later never
+        // re-checked it, so a chore completed in between still got a
+        // "Missed reminder" push and notification. Live-reported: got a
+        // missed-reminder notification for a chore already marked done.
         choreIds.length
-          ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description, family_id').in('id', choreIds)
+          ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description, family_id, status').in('id', choreIds)
           : Promise.resolve({ data: [] as any[] }),
         eventIds.length
-          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids, family_id').in('id', eventIds).is('deleted_at', null)
+          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids, family_id, driver_id, driver_status, helper_id, helper_status').in('id', eventIds).is('deleted_at', null)
           : Promise.resolve({ data: [] as any[] }),
       ]);
       const choreById = Object.fromEntries((missedChores ?? []).map((c: any) => [c.id, c]));
@@ -323,11 +348,29 @@ serve(async (req) => {
         const isChore = m.item_type === 'chore';
         const source = isChore ? choreById[m.item_id] : eventById[m.item_id];
         if (!source) continue; // item was deleted since it rang — nothing to follow up on
+        // A chore marked done (by hand, or via any path other than
+        // answering this specific call) between the original ring and this
+        // 3-4-minute-later follow-up check is not "missed" — it's done.
+        // The original ring correctly only rings todo/in_progress chores
+        // (see the main sweep query above); this check was the one place
+        // that guard was missing, so an already-completed chore still got
+        // a "Missed reminder" push + notification.
+        if (isChore && source.status !== 'todo' && source.status !== 'in_progress') continue;
 
+        // Same driver_id/helper_id floor as the main sweep above — a
+        // self-assigned driver/helper who never went through the
+        // reassign_event/assign_event_role RPCs has no event_participants
+        // row, so the missed-call follow-up needs the same direct-column
+        // read to actually find them.
+        const directDriverHelperIds = !isChore ? [
+          source.driver_status === 'confirmed' ? source.driver_id : null,
+          source.helper_status === 'confirmed' ? source.helper_id : null,
+        ].filter((id: string | null): id is string => !!id) : [];
         const memberIds = isChore
           ? [source.assigned_to_id].filter(Boolean)
           : [...new Set([
               ...(missedParticipantsByEvent[m.item_id] ?? []),
+              ...directDriverHelperIds,
               ...(source.member_id ? [source.member_id] : (source.member_ids ?? [])),
             ])];
         if (memberIds.length === 0) continue;
@@ -489,7 +532,7 @@ serve(async (req) => {
     const allMemberIds = [...new Set(toRing.flatMap(t => t.memberIds))];
     const { data: tokenRows } = await supabase
       .from('voip_push_tokens')
-      .select('member_id, token, platform')
+      .select('member_id, token, platform, updated_at')
       .in('member_id', allMemberIds.length ? allMemberIds : ['__none__']);
     const { data: memberRows } = await supabase
       .from('members')
@@ -500,9 +543,17 @@ serve(async (req) => {
     // so the native TTS greeting can address whoever's own device this
     // specific push actually reaches ("Hi Priya") — flatMap-ping tokens
     // without carrying the member id lost that association entirely.
-    const tokensByMember: Record<string, { token: string; platform: string; recipientName?: string }[]> = {};
+    // tokenUpdatedAt lets sendVoipPush distinguish "a token that was just
+    // registered/refreshed is getting BadDeviceToken" (near-certain
+    // sandbox/production APNS_ENVIRONMENT mismatch — confirmed live as the
+    // actual root cause of an entire session's "CallKit doesn't work"
+    // investigation, previously misdiagnosed as a native CallKit race) from
+    // "an old, genuinely stale token is getting BadDeviceToken" (normal,
+    // safe to prune). Without this distinction, both looked identical and
+    // the real fix (checking APNS_ENVIRONMENT) took hours to find.
+    const tokensByMember: Record<string, { token: string; platform: string; recipientName?: string; updatedAt: string }[]> = {};
     for (const row of (tokenRows ?? [])) {
-      (tokensByMember[row.member_id] ??= []).push({ token: row.token, platform: row.platform, recipientName: nameOf[row.member_id] });
+      (tokensByMember[row.member_id] ??= []).push({ token: row.token, platform: row.platform, recipientName: nameOf[row.member_id], updatedAt: row.updated_at });
     }
 
     let rung = 0;
@@ -531,6 +582,31 @@ serve(async (req) => {
       // on a retry sweep would be a duplicate, not a fix. due_at being
       // part of the key means an edit that moves the item to a new time
       // is free to ring again on its own schedule regardless.
+      //
+      // delivery_result is written back onto the SAME claim row so a real
+      // ring's actual outcome (sent/failed/skipped counts, APNs/FCM error
+      // strings) survives past this one HTTP response — previously the
+      // only place this was ever visible, and only for the ~1-2s before
+      // the next cron tick's "alreadyRung" response overwrote any chance
+      // to read it. A silently-failed real reminder used to leave zero
+      // trace anywhere; now it's a normal `select * from call_reminder_log`.
+      await supabase
+        .from('call_reminder_log')
+        .update({ delivery_result: delivery })
+        .eq('item_type', t.itemType)
+        .eq('item_id', t.itemId)
+        .eq('due_at', dueAtKey(t.dueAt));
+
+      // Stale tokens (BadDeviceToken/NotRegistered) are permanently dead —
+      // deleting them here means the next sweep for this member (and any
+      // future manual/debug send) only ever attempts tokens that still
+      // have a chance of working, instead of accumulating dead rows
+      // forever (one real member had 6 of 9 stored tokens already dead by
+      // the time this was added).
+      if (delivery.staleTokens.length > 0) {
+        await supabase.from('voip_push_tokens').delete().in('token', delivery.staleTokens);
+      }
+
       rung++;
     }
 

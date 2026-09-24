@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "104",
+    buildNumber: "105",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -91,6 +91,15 @@ const config = {
       // "voip" wakes the app on a PushKit VoIP push (call-reminder-sweeper
       // edge function) so CallKeep can call reportNewIncomingCall() and show
       // the native ringing UI even when the app is backgrounded/killed.
+      // "remote-notification" was briefly added here explicitly on
+      // 2026-09-24, then reverted after a CallKit foreground regression —
+      // turned out to be moot either way: expo-notifications' own plugin
+      // config below (enableBackgroundRemoteNotifications: true, pre-
+      // existing, unrelated to today's session) already injects this same
+      // mode into Info.plist independently of this array. Confirmed via
+      // prebuild output: it's present here whether or not it's listed in
+      // this array. The actual regression cause is still unidentified —
+      // do not assume this mode is it.
       UIBackgroundModes: ["fetch", "location", "voip"],
     },
   },

@@ -739,7 +739,20 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
           // before ever reaching this toggle.
           assigneePatch: () => (
             usesDriverField
-              ? { driverName: eventInput.driverName, driverStatus: eventInput.driverStatus, rideRequired: true }
+              // driverId was missing from this patch entirely — both forked
+              // legs got driverName/driverStatus but no driverId, so
+              // eventAssignee()/isSelfAssigned (id-based per its own
+              // comment, deriveCardActions.ts) could never recognize a
+              // self-assigned pickup/drop-off leg as self-assigned even
+              // when driverStatus correctly said 'confirmed'. Also
+              // recompute status here from the id compare directly, rather
+              // than trusting eventInput.driverStatus's own value — if that
+              // was captured from stale component state before this
+              // callback ran, the wrong ('pending') status would otherwise
+              // get baked into both forked legs with nothing left to
+              // reconcile it against, since driverId was never there to
+              // compare in the first place.
+              ? { driverName: eventInput.driverName, driverId: assignedId, driverStatus: (assignedId && assignedId === activeMemberId) ? 'confirmed' as const : eventInput.driverStatus, rideRequired: true }
               : { helper: eventInput.helper, helperId: eventInput.helperId, helperStatus: eventInput.helperStatus }
           ),
           updateEvent, addEvent, tryAutoDispatch: () => {},
@@ -2104,7 +2117,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         selfDrive: !!(assignedId && assignedId === activeMemberId),
         assigneePatch: () => (
           usesDriverField
-            ? { driverName: ev.driverName, driverStatus: ev.driverStatus, rideRequired: true }
+            // driverId omitted here previously — see the matching fix and
+            // comment on the create-path forkRideLegs call above in this
+            // same file; same bug, same fix (id-based isSelfAssigned
+            // needs driverId to actually be present on the forked legs).
+            ? { driverName: ev.driverName, driverId: assignedId, driverStatus: (assignedId && assignedId === activeMemberId) ? 'confirmed' as const : ev.driverStatus, rideRequired: true }
             : { helper: ev.helper, helperId: ev.helperId, helperStatus: ev.helperStatus }
         ),
         updateEvent, addEvent, tryAutoDispatch: () => {},

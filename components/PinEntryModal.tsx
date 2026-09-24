@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { FamilyMember, useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
+import { getDeviceId } from '@/lib/chatCrypto';
 import { useDeviceClass } from '@/lib/useDeviceClass';
 import { KIOSK_RADIUS } from '@/features/kiosk/kioskTheme';
 
@@ -175,7 +176,11 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
     // generic "couldn't confirm" error, since the server had no way to
     // trust the switch without either the real login or this grant.
     const rpcName = member.authUserId ? 'verify_member_pin_and_grant' : 'verify_member_pin';
-    supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: submittedPin })
+    // device_id scopes the resulting grant token to THIS device (migration
+    // 20260979000000) — without it, PIN-switching into this same member on
+    // a second device would silently invalidate this device's own grant.
+    (member.authUserId ? getDeviceId() : Promise.resolve(undefined))
+      .then(deviceId => supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: submittedPin, ...(deviceId ? { p_device_id: deviceId } : {}) }))
       .then(({ data, error }) => {
         setVerifying(false);
         if (error) {

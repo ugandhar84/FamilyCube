@@ -1,0 +1,9 @@
+-- Placeholder: this timestamp was found applied on the remote database
+-- (via `supabase migration list`) with no corresponding file anywhere in
+-- this repo's git history or any local checkout, on 2026-09-24. Likely
+-- applied directly via the SQL editor or from an unsynced machine/session.
+-- Content unknown — this stub exists only so `supabase migration repair`
+-- can mark it applied and unblock `supabase db push` for later migrations.
+-- If you find the original SQL, replace this file's contents with it for
+-- an accurate history; do not delete this file without confirming the DB
+-- itself doesn't still depend on whatever it changed.

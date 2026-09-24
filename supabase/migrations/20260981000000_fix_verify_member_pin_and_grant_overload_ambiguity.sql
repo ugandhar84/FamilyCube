@@ -1,0 +1,24 @@
+-- Real regression from 20260979000000_per_device_grant_tokens.sql: that
+-- migration's `create or replace function
+-- verify_member_pin_and_grant(p_member_id text, p_entered_pin text,
+-- p_device_id text default null)` does NOT replace the original 2-argument
+-- verify_member_pin_and_grant(p_member_id text, p_entered_pin text) —
+-- CREATE OR REPLACE only replaces a function with the exact same parameter
+-- TYPES; a different parameter list creates a separate overload instead.
+-- This left BOTH versions live in the database simultaneously. A client
+-- call with exactly 2 arguments (p_member_id, p_entered_pin) — which
+-- happens whenever p_device_id is omitted, e.g. getDeviceId() throwing/
+-- returning undefined in the PIN-switch call sites — became genuinely
+-- ambiguous between the two overloads, and Postgres/PostgREST reject an
+-- ambiguous overload call outright rather than picking one. From the
+-- client's side this surfaced as a real PIN entry failure (RPC call
+-- erroring instead of returning ok/false), live-reported immediately after
+-- this session's per-device grant fix shipped: "why swirch pin is not
+-- working."
+--
+-- Fix: explicitly drop the stale 2-argument overload, leaving only the
+-- 3-argument version (with its default) as the single, unambiguous
+-- definition — the 3-arg version already handles a 2-arg-shaped call
+-- correctly via p_device_id's default, once it's the ONLY overload left to
+-- resolve to.
+drop function if exists public.verify_member_pin_and_grant(text, text);

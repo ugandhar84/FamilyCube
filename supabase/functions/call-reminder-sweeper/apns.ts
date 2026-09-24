@@ -8,7 +8,7 @@
 // RingPayload.memberNames below which is the whole batch of everyone this
 // reminder rings — the spoken greeting needs to address the actual person
 // holding THIS device, not read out the full target list.
-interface VoipTarget { token: string; platform: string; recipientName?: string }
+interface VoipTarget { token: string; platform: string; recipientName?: string; updatedAt?: string }
 interface RingPayload {
   callerName: string;
   itemType: 'chore' | 'event';
@@ -240,14 +240,41 @@ async function sendFcmDataMessage(token: string, payload: RingPayload, recipient
   }
 }
 
+// Stale-token detection — APNs' BadDeviceToken and FCM's NotRegistered/
+// UNREGISTERED both mean the token itself is permanently dead (uninstalled
+// app, restored-from-backup device), never a transient delivery problem —
+// UNLESS the token was just registered/refreshed, in which case the same
+// error almost certainly means APNS_ENVIRONMENT doesn't match how this
+// device's build was signed (dev-signed builds need sandbox, TestFlight/
+// App Store need production) — confirmed live as the actual root cause of
+// an entire session's "CallKit never rings" investigation, which had
+// wrongly settled on a native CallKit race as the explanation before this
+// was found. A genuinely dead token accumulates over days/weeks since the
+// app was last opened on that device; a token that failed within minutes
+// of being (re)registered failing for the SAME reason is a config problem,
+// not a dead device — pruning it would be actively harmful (it'll just
+// re-register and fail again next launch, forever, while the real fix
+// — checking APNS_ENVIRONMENT — never gets surfaced).
+const FRESH_TOKEN_THRESHOLD_MS = 10 * 60_000;
+function isStaleTokenError(error: string | undefined): boolean {
+  if (!error) return false;
+  return error.includes('BadDeviceToken') || error.includes('NotRegistered') || error.includes('UNREGISTERED');
+}
+function looksLikeEnvironmentMismatch(error: string | undefined, updatedAt: string | undefined): boolean {
+  if (!isStaleTokenError(error) || !updatedAt) return false;
+  return Date.now() - new Date(updatedAt).getTime() < FRESH_TOKEN_THRESHOLD_MS;
+}
+
 export async function sendVoipPush(
   targets: VoipTarget[],
   payload: RingPayload,
-): Promise<{ sent: number; failed: number; skipped: number; errors: string[] }> {
-  if (targets.length === 0) return { sent: 0, failed: 0, skipped: 0, errors: ['No VoIP tokens registered'] };
+): Promise<{ sent: number; failed: number; skipped: number; errors: string[]; staleTokens: string[]; possibleEnvironmentMismatch: boolean }> {
+  if (targets.length === 0) return { sent: 0, failed: 0, skipped: 0, errors: ['No VoIP tokens registered'], staleTokens: [], possibleEnvironmentMismatch: false };
 
   let sent = 0, failed = 0, skipped = 0;
   const errors: string[] = [];
+  const staleTokens: string[] = [];
+  let possibleEnvironmentMismatch = false;
 
   for (const t of targets) {
     const result = t.platform === 'ios'
@@ -269,9 +296,24 @@ export async function sendVoipPush(
       console.warn('[call-reminder-sweeper] push skipped, not configured', { platform: t.platform });
     } else {
       failed++; if (result.error) errors.push(result.error);
+      if (looksLikeEnvironmentMismatch(result.error, t.updatedAt)) {
+        // Do NOT add to staleTokens here — pruning a fresh token that's
+        // failing for an environment reason just makes it silently
+        // re-register and fail again next launch forever, burying the
+        // actual fix (checking APNS_ENVIRONMENT) instead of surfacing it.
+        possibleEnvironmentMismatch = true;
+        console.error(
+          '[call-reminder-sweeper] LIKELY APNS_ENVIRONMENT MISMATCH — a token registered/refreshed within the last 10 min is already failing with a "dead token" error. ' +
+          'This almost always means the sending device\'s build type (dev-signed needs sandbox, TestFlight/App Store needs production) does not match the APNS_ENVIRONMENT secret. ' +
+          'Check that secret before assuming this token or device is actually broken.',
+          { platform: t.platform, tokenPrefix: t.token.slice(0, 8), tokenUpdatedAt: t.updatedAt, error: result.error },
+        );
+      } else if (isStaleTokenError(result.error)) {
+        staleTokens.push(t.token);
+      }
       console.error('[call-reminder-sweeper] push failed', { platform: t.platform, tokenPrefix: t.token.slice(0, 8), error: result.error });
     }
   }
 
-  return { sent, failed, skipped, errors };
+  return { sent, failed, skipped, errors, staleTokens, possibleEnvironmentMismatch };
 }

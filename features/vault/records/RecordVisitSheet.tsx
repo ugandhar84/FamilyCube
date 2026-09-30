@@ -32,6 +32,7 @@ import { BRAND } from '../tabs/shared';
 import { MedRecord, AiAnalysis, AppointmentAnalysis } from './types';
 import { encryptAnalysis } from './recordsCrypto';
 import AiReviewSheet from './AiReviewSheet';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 const WARNING_AT_SECS = 45 * 60;
 
@@ -112,6 +113,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   const [pendingRecord, setPendingRecord] = useState<MedRecord | null>(null);
   const [pendingAnalysis, setPendingAnalysis] = useState<AiAnalysis | AppointmentAnalysis | null>(null);
   const [notMedical, setNotMedical] = useState<string | null>(null);
+  const { checked: aiConsentChecked, consented: aiConsented, showSheet: showAiConsent, setShowSheet: setShowAiConsent, markConsented: markAiConsented } = useAiConsent(actorId);
 
   // durationMillis already excludes paused time on its own — no manual
   // elapsed-tracking timer needed, unlike ChatScreen.tsx's own
@@ -151,6 +153,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   }, [recording, paused]);
 
   const startRecording = async () => {
+    if (aiConsentChecked && !aiConsented) { setShowAiConsent(true); return; }
     const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microphone permission required', 'Enable microphone access in Settings to record this visit.'); return; }
     await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
@@ -445,6 +448,14 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <AiConsentSheet
+        visible={showAiConsent}
+        memberId={actorId}
+        familyId={familyId}
+        colors={colors}
+        onAgree={() => { setShowAiConsent(false); markAiConsented(); startRecording(); }}
+        onDecline={() => setShowAiConsent(false)}
+      />
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' }}>
         <View style={{
           backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,

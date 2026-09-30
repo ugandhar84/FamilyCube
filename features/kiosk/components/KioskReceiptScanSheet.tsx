@@ -37,6 +37,7 @@ import { compressImage } from '@/lib/compressImage';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer } from './KioskFormDrawer';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 interface ExtractedItem {
   name: string; quantity: number; unit: string;
@@ -66,6 +67,8 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
   const [store, setStore] = useState('');
   const [total, setTotal] = useState(0);
   const [saving, setSaving] = useState(false);
+  const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
+  const pendingScanAction = useRef<(() => void) | null>(null);
 
   const reset = useCallback(() => {
     setPage(1); setScanning(false); setScanError(null);
@@ -128,7 +131,13 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
     }
   };
 
-  const pickCamera = async () => {
+  const withAiConsent = (action: () => void) => {
+    if (!consentChecked || consented) { action(); return; }
+    pendingScanAction.current = action;
+    setShowConsent(true);
+  };
+
+  const pickCamera = () => withAiConsent(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, base64: false, allowsEditing: true });
@@ -136,9 +145,9 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  };
+  });
 
-  const pickLibrary = async () => {
+  const pickLibrary = () => withAiConsent(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Photo access needed', 'Allow photo library in Settings.'); return; }
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, base64: false });
@@ -146,14 +155,14 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  };
+  });
 
-  const pickFile = async () => {
+  const pickFile = () => withAiConsent(async () => {
     const res = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) return;
     const b64 = await FileSystem.readAsStringAsync(res.assets[0].uri, { encoding: 'base64' });
     await runScan(b64);
-  };
+  });
 
   const addToList = async () => {
     setSaving(true);
@@ -183,6 +192,20 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
   };
 
   return (
+    <>
+    <AiConsentSheet
+      visible={showConsent}
+      memberId={memberId}
+      familyId={familyId}
+      colors={{ card: k.card, textPrimary: k.text, textSecondary: k.textFaint, border: k.cardBorder, accent: k.gold }}
+      onAgree={() => {
+        setShowConsent(false);
+        markConsented();
+        pendingScanAction.current?.();
+        pendingScanAction.current = null;
+      }}
+      onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
+    />
     <KioskFormDrawer
       visible={visible}
       variant="drawer"
@@ -307,6 +330,7 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
         </>
       )}
     </KioskFormDrawer>
+    </>
   );
 }
 

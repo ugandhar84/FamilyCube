@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   TextInput, ScrollView, Alert,
@@ -22,6 +22,7 @@ import { downloadSingle, downloadZip } from '../records/recordsDownload';
 import { MedRecord, AiAnalysis, AppointmentAnalysis, RecordForm } from '../records/types';
 import type * as DocumentPicker from 'expo-document-picker';
 import { showToast } from '@/components/AppToast';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     }
   }, []));
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const { checked: aiConsentChecked, consented: aiConsented, showSheet: showAiConsent, setShowSheet: setShowAiConsent, markConsented: markAiConsented } = useAiConsent(activeMemberId ?? undefined);
+  const pendingAnalyzeAction = useRef<(() => void) | null>(null);
   const [pending,     setPending]     = useState<Record<string, AiAnalysis | AppointmentAnalysis>>({});
   const [notMedical,  setNotMedical]  = useState<Record<string, string>>({});
   const [reviewRec,   setReviewRec]   = useState<MedRecord | null>(null);
@@ -188,8 +191,17 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // from here independently of that sheet ever being reopened: closing it
   // before submitting leaves a real, unanalyzed row that shows up in this
   // list like any other, with its own Analyze/Delete actions.
-  const analyzeRecord = async (rec: MedRecord) => {
+  const analyzeRecord = (rec: MedRecord) => {
     if (rec.ai_analyzed) return;
+    if (aiConsentChecked && !aiConsented) {
+      pendingAnalyzeAction.current = () => analyzeRecordNow(rec);
+      setShowAiConsent(true);
+      return;
+    }
+    analyzeRecordNow(rec);
+  };
+
+  const analyzeRecordNow = async (rec: MedRecord) => {
     setAnalyzingId(rec.id);
     const isVisitRecording = rec.tag === 'visit_recording';
     try {
@@ -338,6 +350,20 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
+      <AiConsentSheet
+        visible={showAiConsent}
+        memberId={activeMemberId ?? ''}
+        familyId={familyId}
+        colors={colors}
+        isDark={isDark}
+        onAgree={() => {
+          setShowAiConsent(false);
+          markAiConsented();
+          pendingAnalyzeAction.current?.();
+          pendingAnalyzeAction.current = null;
+        }}
+        onDecline={() => { setShowAiConsent(false); pendingAnalyzeAction.current = null; }}
+      />
       <View style={{ padding: 16 }}>
         {/* No "Medical Records" title/header here — the outer screen
             header and Health/Immunizations/Records switch above this

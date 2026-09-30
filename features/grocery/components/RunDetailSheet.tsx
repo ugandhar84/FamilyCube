@@ -11,6 +11,7 @@ import { useQuestStore } from '@/store/choreAdapter';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { sh, rd } from './styles';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 // ─── Run Detail Sheet ─────────────────────────────────────────────────────────
 
@@ -45,24 +46,31 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   // 75% is max but fit to the content" — was a flat 90%, no keyboard
   // awareness at all despite the "add" tab's own TextInput.
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
+  const pendingScanAction = useRef<(() => void) | null>(null);
 
-  const pickReceipt = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed'); return; }
-    // Pick at low quality — base64 only needed for AI, full res not needed
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, base64: false, quality: 1 });
-    if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
-      setReceiptUri(uri);
-      // Compress to max 800px wide, JPEG quality 0.5 (~100-200 KB)
-      const ImageManipulator = await import('expo-image-manipulator');
-      const compressed = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 800 } }],
-        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-      );
-      await analyzeReceipt(compressed.base64 ?? '');
-    }
+  const pickReceipt = () => {
+    const action = async () => {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed'); return; }
+      // Pick at low quality — base64 only needed for AI, full res not needed
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, base64: false, quality: 1 });
+      if (!result.canceled && result.assets[0]) {
+        const uri = result.assets[0].uri;
+        setReceiptUri(uri);
+        // Compress to max 800px wide, JPEG quality 0.5 (~100-200 KB)
+        const ImageManipulator = await import('expo-image-manipulator');
+        const compressed = await ImageManipulator.manipulateAsync(
+          uri,
+          [{ resize: { width: 800 } }],
+          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        );
+        await analyzeReceipt(compressed.base64 ?? '');
+      }
+    };
+    if (!consentChecked || consented) { action(); return; }
+    pendingScanAction.current = action;
+    setShowConsent(true);
   };
 
   const analyzeReceipt = async (base64: string) => {
@@ -377,6 +385,20 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
 
   return (
     <>
+    <AiConsentSheet
+      visible={showConsent}
+      memberId={memberId}
+      familyId={run?.familyId}
+      colors={colors}
+      isDark={isDark}
+      onAgree={() => {
+        setShowConsent(false);
+        markConsented();
+        pendingScanAction.current?.();
+        pendingScanAction.current = null;
+      }}
+      onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
+    />
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
         <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border,

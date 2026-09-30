@@ -51,6 +51,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,9 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { addEvent } = useEventStore();
   const { schedules, addSchedule, updateSchedule } = useSchoolStore();
   const { tier, isTrial } = useSubscriptionStore();
+  const activeMember = members.find(m => m.id === activeMemberId);
+  const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(activeMemberId ?? undefined);
+  const pendingScanAction = useRef<(() => void) | null>(null);
 
   // calendar_events' own INSERT RLS policy (family_can_create_content)
   // blocks writes once a family's 15-day trial ends without an active
@@ -271,7 +275,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   };
 
   // ── AI call ──
-  const processImages = async () => {
+  const processImagesNow = async () => {
     if (!images.length) { Alert.alert('Add at least one photo or PDF'); return; }
     setStep('processing');
     setError('');
@@ -316,6 +320,12 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       setError(e.message ?? 'Something went wrong');
       setStep('capture');
     }
+  };
+
+  const processImages = () => {
+    if (!consentChecked || consented) { processImagesNow(); return; }
+    pendingScanAction.current = processImagesNow;
+    setShowConsent(true);
   };
 
   // ── Save single event ──
@@ -527,6 +537,20 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       maxHeight="92%"
       footer={footer}
     >
+      <AiConsentSheet
+        visible={showConsent}
+        memberId={activeMemberId ?? ''}
+        familyId={activeMember?.familyId}
+        colors={colors}
+        isDark={isDark}
+        onAgree={() => {
+          setShowConsent(false);
+          markConsented();
+          pendingScanAction.current?.();
+          pendingScanAction.current = null;
+        }}
+        onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
+      />
       {/* ── TOAST ── */}
       <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 8, left: 0, right: 0, zIndex: 99, opacity: toastOpacity }}>
         <View style={withAndroidShadowFix({ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,

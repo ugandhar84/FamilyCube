@@ -45,9 +45,15 @@ function isChinaRegion(): boolean {
 let RNCallKeep: typeof import('react-native-callkeep').default | null = null;
 try {
   RNCallKeep = require('react-native-callkeep').default;
-} catch {
+  console.log('[callAlert] react-native-callkeep loaded successfully');
+} catch (e) {
   // Native module not present in this build (e.g. Expo Go) — every export
-  // below degrades to a no-op rather than crashing the app on import.
+  // below degrades to a no-op rather than crashing the app on import. This
+  // was previously silent on failure, which is exactly why "why aren't any
+  // [callAlert] logs showing, not even at startup" was unanswerable without
+  // reading source — every function in this file early-returns on
+  // `!RNCallKeep` with no log at all once this catch fires.
+  console.warn('[callAlert] react-native-callkeep failed to load — CallKit will not work in this build:', e);
 }
 
 // @react-native-firebase/messaging v22+ modular API (getMessaging/getToken/

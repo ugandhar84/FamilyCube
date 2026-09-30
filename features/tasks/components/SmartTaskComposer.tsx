@@ -613,7 +613,11 @@ export default function SmartTaskComposer({
         conflict: false,
         location,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
-        ...(helper ? { helper, helperStatus: 'pending' as const } : {}),
+        // Self-assignment auto-confirms — see CLAUDE.md's Push/Call/
+        // Notification Rules #5. This picker had no self-check at all
+        // (unlike EventFormModal.tsx's equivalent field), always hardcoding
+        // 'pending' even when the creator picked themselves as helper.
+        ...(helper ? { helper, helperId, helperStatus: (helperId && helperId === activeMemberId) ? 'confirmed' as const : 'pending' as const } : {}),
         ...(finalCategory === 'Medical' && doctorName.trim() ? { doctorName: doctorName.trim() } : {}),
         ...(finalCategory === 'Sports' && coachName.trim() ? { coachName: coachName.trim() } : {}),
         ...(isRide ? {

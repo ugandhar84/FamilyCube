@@ -811,6 +811,17 @@ FirebaseApp.configure()
     // is weired").
     let subjectName   = data["subjectName"]   as? String
 
+    // NOTE: a defensive RNCallKeep.setup() re-call was added and tested
+    // here (cold-launch CXProvider race theory) but reverted — after
+    // rebuilding with it, foreground ringing broke too (previously
+    // reliable) and zero CallKit/RNCallKeep logs appeared in the device
+    // console at all, meaning this delegate method likely wasn't even
+    // being reached, a different and worse symptom than the original bug.
+    // Root cause of the original background/killed-app ring failure is
+    // still open — do not re-attempt this exact fix without first
+    // confirming via device console logs that pushRegistry(
+    // didReceiveIncomingPushWith:) is actually invoked on a killed-app
+    // launch in the first place.
     let d = UserDefaults.standard
     d.set(itemType,   forKey: "familycube_call_itemType_\(callUUID)")
     d.set(itemId,     forKey: "familycube_call_itemId_\(callUUID)")

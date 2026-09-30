@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
 const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
@@ -116,6 +117,9 @@ export function ReceiptScanSheet({
   // grocery_items twice [live-requested app-wide: "We should avoid double
   // tab submit for all the app wide"].
   const { submitting: saving, guard } = useSubmitGuard();
+  const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
+  // Holds whichever picker action was blocked pending consent, so "I agree" can replay it.
+  const pendingScanAction = useRef<(() => void) | null>(null);
 
   // ── Scan beam animation ───────────────────────────────────────────────────
   const beamY     = useRef(new Animated.Value(0)).current;
@@ -191,7 +195,15 @@ export function ReceiptScanSheet({
     }
   };
 
-  const pickCamera = async () => {
+  // Consent gate: if the member hasn't agreed yet, show the sheet and stash
+  // the picker action to replay on "I agree" rather than let the scan fire.
+  const withAiConsent = (action: () => void) => {
+    if (!consentChecked || consented) { action(); return; }
+    pendingScanAction.current = action;
+    setShowConsent(true);
+  };
+
+  const pickCamera = () => withAiConsent(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, base64: false, allowsEditing: true });
@@ -199,9 +211,9 @@ export function ReceiptScanSheet({
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  };
+  });
 
-  const pickLibrary = async () => {
+  const pickLibrary = () => withAiConsent(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Photo access needed', 'Allow photo library in Settings.'); return; }
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, base64: false });
@@ -209,14 +221,14 @@ export function ReceiptScanSheet({
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  };
+  });
 
-  const pickPDF = async () => {
+  const pickPDF = () => withAiConsent(async () => {
     const res = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) return;
     const b64 = await FileSystem.readAsStringAsync(res.assets[0].uri, { encoding: 'base64' });
     await runScan(b64);
-  };
+  });
 
   const addToList = guard(async () => {
     try {
@@ -257,6 +269,20 @@ export function ReceiptScanSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <AiConsentSheet
+        visible={showConsent}
+        memberId={memberId}
+        familyId={familyId}
+        colors={{ card: bg, textPrimary: txtP, textSecondary: txtS, border: bdr, accent: P }}
+        isDark={isDark}
+        onAgree={() => {
+          setShowConsent(false);
+          markConsented();
+          pendingScanAction.current?.();
+          pendingScanAction.current = null;
+        }}
+        onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
+      />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />

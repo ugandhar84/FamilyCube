@@ -634,7 +634,10 @@ export default function KioskSmartTaskComposer({
         conflict: false,
         location,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
-        ...(helper ? { helper, helperStatus: 'pending' as const } : {}),
+        // Self-assignment auto-confirms — see CLAUDE.md's Push/Call/
+        // Notification Rules #5. Same bug/fix as the equivalent
+        // SmartTaskComposer.tsx picker: no self-check at all previously.
+        ...(helper ? { helper, helperId, helperStatus: (helperId && helperId === activeMemberId) ? 'confirmed' as const : 'pending' as const } : {}),
         ...(finalCategory === 'Medical' && doctorName.trim() ? { doctorName: doctorName.trim() } : {}),
         ...(finalCategory === 'Sports' && coachName.trim() ? { coachName: coachName.trim() } : {}),
         ...(isRide ? {

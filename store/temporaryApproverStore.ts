@@ -116,7 +116,7 @@ interface TemporaryApproverState {
   // expiresAt. Any prior still-active grant to the SAME member is
   // superseded (revoked) rather than stacking multiple overlapping grants.
   grantTemporaryApprover: (grantedToMemberId: string, grantedByMemberId: string, expiresAt: string) => Promise<void>;
-  revokeTemporaryApprover: (grantId: string) => Promise<void>;
+  revokeTemporaryApprover: (grantId: string, actorId: string) => Promise<void>;
 
   // Point-in-time check — true iff memberId holds a currently-active
   // (not expired, not revoked) grant. This is the ONLY function outside
@@ -247,7 +247,7 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
     } catch (e) { console.warn('[temporaryApproverStore] grant parent-notify error', e); }
   },
 
-  revokeTemporaryApprover: async (grantId) => {
+  revokeTemporaryApprover: async (grantId, actorId) => {
     const now = new Date().toISOString();
     const grant = get().grants.find(g => g.id === grantId);
     // DB-is-truth: await the write before reflecting the revoke locally.
@@ -285,14 +285,21 @@ export const useTemporaryApproverStore = create<TemporaryApproverState>((set, ge
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'temp_approver_revoked', familyId: grant.familyId, memberIds: [grant.grantedToMemberId],
-          persist: true, payload: { toSelf: true, byName: granterName },
+          persist: true, excludeMemberId: actorId, payload: { toSelf: true, byName: granterName },
         },
       }).catch(e => console.warn('[temporaryApproverStore] revoke notify (self) failed:', e?.message));
 
       try {
         const { useFamilyStore } = require('./familyStore');
+        // actorId excluded here too — whoever tapped "Revoke" isn't
+        // necessarily grant.grantedByMemberId (any parent can revoke any
+        // grant, not just the one who originally created it), so filtering
+        // only grantedToMemberId previously left the actual actor in
+        // otherParentIds when they revoked someone ELSE's grant — a self-
+        // notification about the exact action they just performed. Mirrors
+        // grantTemporaryApprover's own already-correct exclusion above.
         const otherParentIds = useFamilyStore.getState().members
-          .filter((m: any) => m.role === 'parent' && m.id !== grant.grantedToMemberId)
+          .filter((m: any) => m.role === 'parent' && m.id !== grant.grantedToMemberId && m.id !== actorId)
           .map((m: any) => m.id);
         if (otherParentIds.length) {
           supabase.functions.invoke('family-notifier', {

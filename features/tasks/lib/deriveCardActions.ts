@@ -271,7 +271,20 @@ export function deriveEventActions(
   const showAssignToMe = showReassign && !isSelfAssigned && viewer.hasCar !== false;
   const showOverride = !isPast && !isWork && isViewerParent && helperConfirmed && !isSelfAssigned;
   const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);
-  const showConfirm = !isPast && !isWork && isSelfAssigned && helperPending;
+  // Self-assignment is ALWAYS auto-confirmed at the moment it's made — see
+  // CLAUDE.md's Push/Call/Notification Rules #5 and the forkRideLegs
+  // driverId fix (features/calendar/EventFormModal.tsx,
+  // features/kiosk/components/KioskAddEventForm.tsx) that stops NEW
+  // self-assignments from ever landing as 'pending'. This flag staying
+  // true is still needed as a repair path for rows created BEFORE that fix
+  // shipped (or by any other write path not yet audited) — hiding this
+  // entirely (an earlier version of this fix did exactly that) left an
+  // already-stuck 'pending' self-assignment with literally no way to fix
+  // itself from the UI: showCantMakeIt covers backing out, but nothing
+  // covered "yes, still confirm it." Once every write path is confirmed to
+  // always stamp 'confirmed' on self-assign, this can revert to unreachable
+  // dead code; until then it's the escape hatch.
+  const showConfirm = isSelfAssigned && helperPending;
 
   return { assignee, assigneeRole, isSelfAssigned, showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm };
 }

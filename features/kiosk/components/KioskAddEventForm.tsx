@@ -768,7 +768,12 @@ export function KioskAddEventForm({ visible, onClose, activeMemberId, prefill, i
           // before ever reaching this toggle.
           assigneePatch: () => (
             usesDriverField
-              ? { driverName: eventInput.driverName, driverStatus: eventInput.driverStatus, rideRequired: true }
+              // driverId was missing from this patch — see the matching fix
+              // in features/calendar/EventFormModal.tsx (same bug, same
+              // fork helper, duplicated into this file). Without it,
+              // eventAssignee()/isSelfAssigned (id-based) could never
+              // recognize a self-assigned forked leg as self-assigned.
+              ? { driverName: eventInput.driverName, driverId: assignedId, driverStatus: (assignedId && assignedId === activeMemberId) ? 'confirmed' as const : eventInput.driverStatus, rideRequired: true }
               : { helper: eventInput.helper, helperId: eventInput.helperId, helperStatus: eventInput.helperStatus }
           ),
           updateEvent, addEvent, tryAutoDispatch: () => {},
@@ -2130,7 +2135,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         selfDrive: !!(assignedId && assignedId === activeMemberId),
         assigneePatch: () => (
           usesDriverField
-            ? { driverName: ev.driverName, driverStatus: ev.driverStatus, rideRequired: true }
+            // driverId omitted here previously — same bug/fix as the
+            // create-path forkRideLegs call above in this file.
+            ? { driverName: ev.driverName, driverId: assignedId, driverStatus: (assignedId && assignedId === activeMemberId) ? 'confirmed' as const : ev.driverStatus, rideRequired: true }
             : { helper: ev.helper, helperId: ev.helperId, helperStatus: ev.helperStatus }
         ),
         updateEvent, addEvent, tryAutoDispatch: () => {},

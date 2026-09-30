@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from '@/lib/supabase';
+import { useAiConsent } from '@/components/AiConsentGate';
 
 export interface ParsedMedication {
   name: string;
@@ -94,13 +95,27 @@ const PICKER_OPTS: ImagePicker.ImagePickerOptions = {
   allowsMultipleSelection: false,
 };
 
-export function usePrescriptionScanner() {
+/**
+ * memberId/familyId gate every scan behind the app-wide AI consent sheet —
+ * this hook sends photos/PDFs to the parse-prescription edge function
+ * (Gemini Vision), so it's one of the features the App Store rejection
+ * (5.1.1(i)/5.1.2(i)) requires consent for. Callers must render the
+ * returned `consentSheet` element so the sheet actually shows.
+ */
+export function usePrescriptionScanner(memberId?: string, familyId?: string) {
   const [scanning, setScanning]         = useState(false);
   const [scanResult, setScanResult]     = useState<ScanResult | null>(null);
   const [showReview, setShowReview]     = useState(false);
   const [scanError, setScanError]       = useState<string | null>(null);
   /** Up to 3 images picked and cropped, waiting for optional redaction. */
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
+  const pendingScanAction = useRef<(() => void) | null>(null);
+  const withAiConsent = (action: () => void) => {
+    if (!memberId || !consentChecked || consented) { action(); return; }
+    pendingScanAction.current = action;
+    setShowConsent(true);
+  };
 
   const pickImage = async (source: 'camera' | 'library') => {
     setScanError(null);
@@ -154,7 +169,7 @@ export function usePrescriptionScanner() {
   };
 
   /** Send all accumulated (possibly redacted) images to the AI edge function. */
-  const scan = async (redactedImages: PendingImage[]) => {
+  const scanNow = async (redactedImages: PendingImage[]) => {
     if (redactedImages.length === 0) return;
     setScanError(null);
     setScanning(true);
@@ -193,6 +208,9 @@ export function usePrescriptionScanner() {
       setScanning(false);
     }
   };
+
+  const scan = (redactedImages: PendingImage[]) =>
+    new Promise<void>(resolve => withAiConsent(() => { scanNow(redactedImages).then(resolve); }));
 
   /** PDF path: pick → read → scan directly (no redact step for PDFs). */
   const pickAndScan = async (source: 'document') => {
@@ -236,5 +254,18 @@ export function usePrescriptionScanner() {
     pendingImages, maxPhotos: MAX_PHOTOS,
     pickImage, scan, pickAndScan,
     removeImage, clearPending, clearScan, setScanResult,
+    // Consent sheet — caller renders <AiConsentSheet {...aiConsent} />.
+    aiConsent: {
+      visible: showConsent,
+      memberId: memberId ?? '',
+      familyId,
+      onAgree: () => {
+        setShowConsent(false);
+        markConsented();
+        pendingScanAction.current?.();
+        pendingScanAction.current = null;
+      },
+      onDecline: () => { setShowConsent(false); pendingScanAction.current = null; },
+    },
   };
 }

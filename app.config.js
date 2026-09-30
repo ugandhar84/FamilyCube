@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "103",
+    buildNumber: "106",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -91,6 +91,15 @@ const config = {
       // "voip" wakes the app on a PushKit VoIP push (call-reminder-sweeper
       // edge function) so CallKeep can call reportNewIncomingCall() and show
       // the native ringing UI even when the app is backgrounded/killed.
+      // "remote-notification" was briefly added here explicitly on
+      // 2026-09-24, then reverted after a CallKit foreground regression —
+      // turned out to be moot either way: expo-notifications' own plugin
+      // config below (enableBackgroundRemoteNotifications: true, pre-
+      // existing, unrelated to today's session) already injects this same
+      // mode into Info.plist independently of this array. Confirmed via
+      // prebuild output: it's present here whether or not it's listed in
+      // this array. The actual regression cause is still unidentified —
+      // do not assume this mode is it.
       UIBackgroundModes: ["fetch", "location", "voip"],
     },
   },
@@ -100,7 +109,7 @@ const config = {
     // which Play Console rejects as a duplicate on the second+ upload.
     // Bump by 1 on every new Android build/submission, same discipline as
     // ios.buildNumber above.
-    versionCode: 4,
+    versionCode: 6,
     // Android's manifest has no per-idiom orientation split like iOS's
     // ~ipad Info.plist keys, so this locks the default (phones) to portrait;
     // lib/useDeviceClass.ts unlocks landscape at runtime specifically for

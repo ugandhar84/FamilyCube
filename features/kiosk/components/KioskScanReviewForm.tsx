@@ -46,6 +46,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Camera, Image as ImageIcon, FileText, ScanLine, Syringe, X } from 'lucide-react-native';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '@/features/vault/usePrescriptionScanner';
+import AiConsentSheet from '@/components/AiConsentGate';
 import { RedactStep } from '@/features/vault/tabs/health/RedactStep';
 import { ScanDateField } from '@/features/vault/tabs/health/ScanDateField';
 import { KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
@@ -86,7 +87,8 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
     pendingImages, maxPhotos,
     pickImage, scan, pickAndScan,
     clearPending, clearScan,
-  } = usePrescriptionScanner();
+    aiConsent,
+  } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId);
 
   // One entry per medication/vaccine the scan found — was a single object
   // each (only the first item on a multi-item document). Same fix as
@@ -169,6 +171,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <AiConsentSheet {...aiConsent} colors={{ card: k.card, textPrimary: k.text, textSecondary: k.textFaint, border: k.cardBorder, accent: k.gold }} />
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}

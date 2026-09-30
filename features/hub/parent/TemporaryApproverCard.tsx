@@ -25,7 +25,7 @@ export function TemporaryApproverCard({
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   activeGrants: TemporaryApproverGrant[];
   grantTemporaryApprover: (memberId: string, byId: string, expiresAt: string) => void;
-  revokeTemporaryApprover: (grantId: string) => void;
+  revokeTemporaryApprover: (grantId: string, actorId: string) => void;
 }) {
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   // Eligible grantees — any adult who isn't already a parent (GP is the
@@ -72,7 +72,7 @@ export function TemporaryApproverCard({
                 <Pressable
                   onPress={() => Alert.alert('Revoke Access', `End ${grantee?.name.split(' ')[0] ?? 'their'} temporary approval access now?`, [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Revoke', style: 'destructive', onPress: () => revokeTemporaryApprover(g.id) },
+                    { text: 'Revoke', style: 'destructive', onPress: () => revokeTemporaryApprover(g.id, active.id) },
                   ])}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   style={{ padding: 6, borderRadius: 8, backgroundColor: colors.danger + '15' }}>

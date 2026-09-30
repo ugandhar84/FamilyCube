@@ -18,6 +18,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from './FamilyAvatar';
 import { showAlert } from './AppAlert';
 import { supabase } from '@/lib/supabase';
+import { getDeviceId } from '@/lib/chatCrypto';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 // ─── Role theming ─────────────────────────────────────────────────────────────
@@ -295,7 +296,11 @@ function PinPad({ member, isDark, onSuccess, onCancel, allNames }: {
     if (next.length === PIN_LENGTH) {
       setVerifying(true);
       const rpcName = member.authUserId ? 'verify_member_pin_and_grant' : 'verify_member_pin';
-      supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: next })
+      // device_id scopes the resulting grant token to THIS device (migration
+      // 20260979000000) — without it, PIN-switching into this same member on
+      // a second device would silently invalidate this device's own grant.
+      (member.authUserId ? getDeviceId() : Promise.resolve(undefined))
+        .then(deviceId => supabase.rpc(rpcName, { p_member_id: member.id, p_entered_pin: next, ...(deviceId ? { p_device_id: deviceId } : {}) }))
         .then(({ data, error: rpcError }) => {
           setVerifying(false);
           if (rpcError) {

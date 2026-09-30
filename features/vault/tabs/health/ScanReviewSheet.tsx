@@ -9,6 +9,7 @@ import { AlertCircle, X, Syringe, ScanLine } from 'lucide-react-native';
 import Svg, { Path, Circle, Rect, Polyline } from 'react-native-svg';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../../usePrescriptionScanner';
+import AiConsentSheet from '@/components/AiConsentGate';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { ScanDateField } from './ScanDateField';
@@ -42,7 +43,8 @@ export default function ScanReviewSheet({
     pendingImages, maxPhotos,
     pickImage, scan, pickAndScan,
     removeImage, clearPending, clearScan, setScanResult,
-  } = usePrescriptionScanner();
+    aiConsent,
+  } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId);
 
   // Report scanning state up so the parent's AI banner can show its spinner
   useEffect(() => { onScanningChange?.(scanning); }, [scanning]);
@@ -273,6 +275,7 @@ export default function ScanReviewSheet({
         neutral-gray photo/redact chrome). Left as documented hardcoded
         swatches rather than guessing a wrong mapping. */
     <Modal visible={visible} animationType="slide" transparent onRequestClose={closeScanSheet}>
+      <AiConsentSheet {...aiConsent} colors={colors} isDark={isDark} />
       {/* ── REDACT MODE: full-screen layout ── */}
       {pendingImages.length > 0 && !scanning && (() => {
         const img    = pendingImages[activeRedactIdx];

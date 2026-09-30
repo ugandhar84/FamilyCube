@@ -1,9 +1,24 @@
 # AGENT_CONTEXT — Family Cube Project State
 
-**Last Updated:** 2026-08-03 by Claude Sonnet 4.6  
-**Session:** PostDetailScreen UX overhaul + comment reply threading + photo frame fix + social feed UX
+**Last Updated:** 2026-09-30 by Claude Sonnet 5
+**Session:** App Store rejection (5.1.1(i)/5.1.2(i)) — AI data-sharing consent extended to all remaining AI features + external privacy policy rewrite
 
 This document is updated after every agent session. It's the living source of truth for the project state.
+
+> **NOTE (2026-09-30):** Most of the sections below (Stack & Versions, Architecture, AI feature list) describe the Petkoinia/PawBond pet-care app, not FamilyCube — they appear to have been copy-pasted from the wrong project at some point. Not corrected in this session (out of scope); flagging so the next agent doesn't trust them at face value for FamilyCube specifics. Use ARCHITECTURE.md's edge-function list (or `supabase/functions/`) as source of truth for FamilyCube's real AI integrations instead.
+
+## Session 2026-09-30 — AI consent coverage + privacy policy
+
+**What:** Ask Cube already had a per-member AI-consent gate (`AskCubeConsentGate.tsx` / `ask_cube_ai_consents` table) from a prior rejection response, but 5 other AI-calling features had none: prescription scan, flyer scan, grocery receipt scan (3 call sites: mobile, kiosk, RunDetailSheet), appointment-recording analysis, and medical-record analysis. Apple's rejection language applies per-feature, not just to the chat assistant, which is almost certainly why this recurred.
+
+**Fix:**
+- New migration `supabase/migrations/20260930173849_app_wide_ai_consent.sql` — `ai_consents` table, same RLS-per-member pattern as `ask_cube_ai_consents`, but ONE consent covers all 5 remaining features (not per-feature) since it's the same underlying disclosure.
+- New `components/AiConsentGate.tsx` — generalized clone of `AskCubeConsentGate.tsx` (`useAiConsent` hook + `AiConsentSheet` component), DB-backed via `ai_consents`.
+- Wired into: `usePrescriptionScanner.ts` (gates the shared `scan()` choke point, used by both `ScanReviewSheet.tsx` and `KioskScanReviewForm.tsx`), `FlyerScannerModal.tsx`, `ReceiptScanSheet.tsx`, `KioskReceiptScanSheet.tsx`, `RunDetailSheet.tsx`, `RecordsTab.tsx` (`analyzeRecord`, covers both medical-record and appointment-recording analysis), `RecordVisitSheet.tsx` (gates `startRecording` itself, before any audio is captured, since the recording only exists to be sent to AI).
+- **Also fixed the external privacy policy** at `peopleontech.com/privacy` (separate repo: `ugandhar84/peopleontech-website`) — it was a 2-sentence placeholder with zero data-collection/AI-disclosure content, which is likely the primary rejection cause per Apple's explicit note that in-app Terms of Service alone isn't sufficient. Rewrote `privacy.html` there to name data collected, how, all uses, and the named AI providers (Gemini, DeepSeek, Anthropic Claude) — pushed directly to that repo's `main` (GitHub Pages, no staging).
+- Bumped `app.config.js`: iOS buildNumber 105→106, Android versionCode 5→6.
+
+**Not done / left for next agent:** No consent copy is feature-specific (deliberately — see above); if Apple wants per-feature disclosure instead of one umbrella consent, each of the 5 sites already has its own `withAiConsent`-style gate ready to swap in separate copy/table. `AGENT_CONTEXT.md`'s stale pet-app content (see NOTE above) not cleaned up.
 
 ---
 

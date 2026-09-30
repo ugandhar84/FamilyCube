@@ -103,6 +103,19 @@ function getActiveMemberGrantHeader(): string | undefined {
   }
 }
 
+// require()'d lazily (like the store helpers above) rather than imported at
+// module scope — chatCrypto.ts pulls in expo-secure-store and this file's
+// module-level code runs very early in app boot, before that's guaranteed
+// safe to touch on every platform this file is used from.
+async function getDeviceIdSafe(): Promise<string | undefined> {
+  try {
+    const { getDeviceId } = require('@/lib/chatCrypto');
+    return await getDeviceId();
+  } catch {
+    return undefined; // falls back to the '__legacy_unscoped__' server-side row
+  }
+}
+
 // Multi-family membership support — see migration
 // 20260931200000_multi_family_membership_active_family_header.sql. Only
 // meaningful when activeMemberId is unset (resolve_active_member_id's own
@@ -153,11 +166,19 @@ const debugFetch: typeof fetch = async (input, init) => {
   const activeMemberId = getActiveMemberIdHeader();
   const activeMemberGrant = getActiveMemberGrantHeader();
   const activeFamilyId = getActiveFamilyIdHeader();
+  // Only needed when a grant token is actually in play (PIN-switch to a
+  // member with their own login) — resolve_active_member_id's grant check
+  // is now scoped per (member_id, device_id) instead of a single shared
+  // column on members (see migration 20260979000000), so this device's own
+  // grant must be distinguishable from any other device's. Skipped
+  // otherwise to avoid an extra SecureStore read on every single request.
+  const deviceId = activeMemberGrant ? await getDeviceIdSafe() : undefined;
   if (activeMemberId || activeMemberGrant || activeFamilyId) {
     const headers = new Headers(init?.headers ?? (input as Request)?.headers);
     if (activeMemberId) headers.set('x-active-member-id', activeMemberId);
     if (activeMemberGrant) headers.set('x-active-member-grant', activeMemberGrant);
     if (activeFamilyId) headers.set('x-active-family-id', activeFamilyId);
+    if (deviceId) headers.set('x-device-id', deviceId);
     init = { ...init, headers };
   }
   const url    = typeof input === 'string' ? input : (input as Request).url;

@@ -5,6 +5,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { SectionCard } from '../hubComponents';
 import { GP } from './seniorTheme';
 import AddMedModal from '@/features/vault/tabs/health/AddMedModal';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { Medication, FREQ_LABELS, encodeTakenEntry, formatDoseTime, today as todayLocalStr } from '@/features/vault/tabs/health/types';
 
 // Money-green — "taken" status accent, distinct from brand teal used
@@ -46,13 +47,19 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
   onAddMed: (form: any, targetMemberId?: string) => Promise<void>;
   onRemoveMed: (id: string) => void;
   colors: any; isDark: boolean;
-  active: { id: string; name: string };
+  active: { id: string; name: string; emoji?: string; avatarUrl?: string };
   // Full family, so AddMedModal's member picker has more than one option
   // and so each row can show WHO added it when it wasn't the viewer
   // themselves (this card's list itself stays filtered to just `active`'s
   // own meds — a kid's Hub never shows anyone else's medications, only who
   // added their own).
-  allMembers: { id: string; name: string }[];
+  // Widened from {id, name} — callers already pass the full family member
+  // objects (which carry emoji/avatarUrl), but this type previously
+  // dropped them, which is why each row fell back to a generic Pill icon
+  // instead of the medication's own member avatar even when one was set
+  // (live-reported: "on medical card we are not showing the avatar even
+  // it is available").
+  allMembers: { id: string; name: string; emoji?: string; avatarUrl?: string }[];
 }) {
   const [showAddMed, setShowAddMed] = useState(false);
 
@@ -96,6 +103,11 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
           // able to tell it wasn't something they added themselves.
           const addedByOther = med.assigned_by && med.assigned_by !== active.id;
           const addedByName = addedByOther ? allMembers.find(m => m.id === med.assigned_by)?.name?.split(' ')[0] : null;
+          // Medication rows are scoped to `active`, but a parent/senior card
+          // can include meds a parent added FOR a different member — show
+          // that member's own avatar (not always `active`'s) so it's clear
+          // at a glance whose medication this row is.
+          const medMember = allMembers.find(m => m.id === med.member_id) ?? active;
           // Was tinting the WHOLE card red whenever ANY medication had an
           // overdue dose, which also highlighted unrelated, already-taken
           // medications in the same list [live-reported: "why whole
@@ -117,7 +129,9 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
               borderBottomWidth: rowOverdue ? 1 : (i < meds.length - 1 ? 1 : 0),
               borderBottomColor: rowOverdue ? colors.danger + '40' : (isDark ? colors.border : '#F1F5F9'),
             }}>
-              <Pill size={22} color={taken ? colors.textTertiary : BRAND.teal} />
+              <FamilyAvatar name={medMember.name} emoji={medMember.emoji} avatarUrl={medMember.avatarUrl}
+                siblings={allMembers.map(m => m.name)} size={28}
+                ringColor={taken ? colors.textTertiary : BRAND.teal} ringWidth={1.5} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: GP.sub, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
                 <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>

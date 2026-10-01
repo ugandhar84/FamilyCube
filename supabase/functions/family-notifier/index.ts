@@ -287,6 +287,11 @@ type NotifType =
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
   | 'medication_missed'
+  // med-dose-reminders' own cron — a dose-time nudge sent to the medication's
+  // own subject (not parents — see medication_missed above, which
+  // deliberately excludes the subject). Distinct type since the phrasing and
+  // the recipient are both the opposite of medication_missed.
+  | 'medication_due'
   // Homeowner Notes maintenance reminders — homeowner-notes-sweeper's own
   // daily cron, one week before due and again on the due day itself
   // [live-requested: "a week before and on the day"]. payload.when
@@ -1272,6 +1277,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Health', memberId: p.subjectMemberId },
       };
+    case 'medication_due':
+      return {
+        title: `💊 Time for your medication`,
+        body: `It's time to take "${p.medName}"${p.dosage ? ` (${p.dosage})` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Health', memberId: p.memberId },
+      };
     case 'homeowner_note_due':
       return p.when === 'today'
         ? {
@@ -1484,7 +1496,7 @@ serve(async (req) => {
 
     // Auto-route: if no memberIds passed, resolve by type
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty', 'homeowner_note_due'];
-    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added', 'location_request'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'help_offered', 'help_accepted', 'help_declined', 'reward_decision', 'reward_removed', 'kid_request_decision', 'kid_request_helper_assigned', 'kid_request_completed', 'kid_request_items_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue', 'medication_added', 'medication_due', 'location_request'];
 
     // kid_request fans out to every parent, but not every request TYPE is
     // something a grandparent could act on — grocery/supplies (type

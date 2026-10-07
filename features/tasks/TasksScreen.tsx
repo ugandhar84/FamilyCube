@@ -105,7 +105,7 @@ export default function TasksScreen() {
   // KidRequestModal directly and only covered rides — this FAB covers
   // every ask category from one place, matching the Hub's own FAB.
   const isKidCreator = activeMember?.role === 'kid';
-  const [segment, setSegment] = useState<Segment>('schedule');
+  const [segment, setSegment] = useState<Segment>('chores');
 
   // One search query per segment — kept separate so switching tabs doesn't
   // carry a Schedule search term into Chores' unrelated result set.
@@ -308,22 +308,17 @@ export default function TasksScreen() {
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
 
-  // Page title + the 2 status-count tab-cards + the collapsible search bar
-  // that drops down from whichever card is active — passed into
-  // CalendarScreen/QuestsScreen as headerContent so it scrolls away with
-  // the rest of the page instead of staying pinned above it.
-  // Figma: segmented pill below h1 — Calendar / Tasks / Queue
-  // Injected into CalendarScreen's own ScrollView so it scrolls with content.
-  const tasksHeader = (
-    <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 2 }}>
-      {/* Figma h1 */}
-      <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginBottom: 4 }}>
-        {(activeMember?.role === 'kid' || activeMember?.role === 'teen') ? 'My schedule' : 'The family plan'}
-      </Text>
+  // Figma TasksPage header — injected into QuestsScreen/CalendarScreen's own
+  // ScrollView via headerContent so it scrolls with content.
+  const doneToday = chores.filter(c => c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed').length;
+  const stillOpen = choreCounts.pending + choreCounts.active;
+  const helpers = chores.filter(c => c.status === 'in_progress' || c.status === 'pending_approval').length;
 
-      {/* Figma .tabs — segmented control: Calendar · Tasks · Queue */}
+  const tasksHeader = (
+    <View>
+      {/* Figma .tabs — Calendar / Tasks / Queue — at very top of injected content */}
       <View style={{
-        flexDirection: 'row', gap: 4, marginTop: 10, marginBottom: 2,
+        flexDirection: 'row', gap: 4, marginHorizontal: 20, marginTop: 8, marginBottom: 2,
         padding: 4, borderRadius: 14,
         backgroundColor: isDark ? colors.surface : '#EEEDF3',
       }}>
@@ -333,7 +328,7 @@ export default function TasksScreen() {
           ...(isParent ? [{ key: 'queue' as const, label: 'Queue' }] : []),
         ] as { key: Segment; label: string }[]).map(({ key, label }) => {
           const active = segment === key;
-          const needsAttention = !active && (key === 'chores' ? choreCounts.pending : queueCounts.pending) > 0;
+          const needsAttention = !active && (key === 'chores' ? choreCounts.pending > 0 : queueCounts.pending > 0);
           return (
             <TouchableOpacity
               key={key}
@@ -358,6 +353,80 @@ export default function TasksScreen() {
           );
         })}
       </View>
+
+      {/* Only show tasks chrome when on the chores segment */}
+      {segment === 'chores' && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
+          {/* Figma TopBar title equivalent — h1 "Tasks, shared" */}
+          <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginBottom: 2 }}>
+            Tasks, shared
+          </Text>
+          {/* Figma .intro */}
+          <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 2 }}>
+            {stillOpen > 0
+              ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
+              : 'All clear! Nothing left to do.'}
+          </Text>
+
+          {/* Figma .quick-capture */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={openCreator}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+              marginTop: 14, marginBottom: 2,
+              height: 48, borderRadius: 14,
+              backgroundColor: colors.card,
+              borderWidth: 1, borderColor: colors.border,
+              paddingHorizontal: 14,
+            }}
+          >
+            <Text style={{ flex: 1, fontSize: 14, color: colors.textTertiary }}>What needs doing?</Text>
+            <View style={{
+              width: 36, height: 36, borderRadius: 10,
+              backgroundColor: colors.pink, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 22, color: '#fff', fontWeight: '300', lineHeight: 26, marginTop: -1 }}>+</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Figma .task-summary — 3 tiles */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+            {[
+              { val: doneToday, label: 'done today',    bg: isDark ? 'rgba(123,94,167,0.18)' : '#EFE8F8', color: '#7B5EA7' },
+              { val: stillOpen, label: 'still open',    bg: isDark ? 'rgba(223,97,60,0.18)' : '#FBEADF', color: '#DF613C' },
+              { val: helpers,   label: 'people helping',bg: isDark ? 'rgba(61,122,90,0.18)' : '#E1EFE7', color: '#3D7A5A' },
+            ].map(({ val, label, bg, color }) => (
+              <View key={label} style={{
+                flex: 1, borderRadius: 16, backgroundColor: bg,
+                paddingVertical: 12, paddingHorizontal: 12, alignItems: 'flex-start',
+              }}>
+                <Text style={{ fontSize: 24, fontWeight: '800', color, lineHeight: 28 }}>{val}</Text>
+                <Text style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8 }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Figma .section-title */}
+          <View style={{ marginTop: 20, marginBottom: 4 }}>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+              TODAY &amp; THIS WEEK
+            </Text>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginTop: 3, letterSpacing: -0.3 }}>
+              Household tasks
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Calendar segment gets its own h1 injected — Figma: "Family calendar" */}
+      {segment === 'schedule' && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 2 }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
+            {(activeMember?.role === 'kid' || activeMember?.role === 'teen') ? 'My schedule' : 'Family calendar'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 

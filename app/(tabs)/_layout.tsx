@@ -61,14 +61,14 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // visible tab-bar entry point is gone.
 const TABS_DEFAULT = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'tasks',    label: 'Calendar' },
+  { name: 'tasks',    label: 'Tasks'    },
   { name: 'store',    label: 'Store'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'gps',      label: 'FindFam'  },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'tasks',    label: 'Calendar' },
+  { name: 'tasks',    label: 'Tasks'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
 ] as const;

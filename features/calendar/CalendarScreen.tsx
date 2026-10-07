@@ -604,7 +604,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // chronological single-day timeline. 'agenda' — grouped-by-date list
   // spanning many upcoming days. Defaults to 'agenda' — the most useful
   // at-a-glance view across the whole family's upcoming schedule.
-  const [viewMode,      setViewMode]      = useState<'month' | 'week' | 'day' | 'agenda'>('agenda');
+  const [viewMode,      setViewMode]      = useState<'month' | 'week' | 'day' | 'agenda'>('month');
   const [monthCursor,   setMonthCursor]   = useState(() => parseDate(toDateStr(new Date())));
   const [weekCursor,    setWeekCursor]    = useState(() => {
     const b = currentWeekBounds();
@@ -1198,23 +1198,24 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               isParentOrSenior specifically; this is pure navigation, not a
               permission. */}
           {canUseFullCalendarToolbar && (
-            <View style={{ marginTop: 16 }}>
-              {/* Figma segmented tabs: Month / Week / Day / Agenda */}
+            <View style={{ marginTop: 12 }}>
+              {/* Figma .tabs — Month / Week / Day (3 pills, matches Figma CalendarPage exactly) */}
               <View style={{ flexDirection: 'row', marginHorizontal: 20, backgroundColor: isDark ? colors.surface : '#EEEDF3', borderRadius: 14, padding: 4, gap: 0 }}>
                 {([
                   { key: 'month' as const,  label: 'Month' },
                   { key: 'week' as const,   label: 'Week' },
                   { key: 'day' as const,    label: 'Day' },
-                  { key: 'agenda' as const, label: 'Agenda' },
                 ]).map(v => (
                   <TouchableOpacity key={v.key} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${v.label}" for "view mode" [features/calendar/CalendarScreen.tsx:1102]`); setViewMode(v.key); }}
                     style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-                      backgroundColor: viewMode === v.key ? colors.card : 'transparent',
-                      shadowColor: colors.navy, shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
+                      backgroundColor: viewMode === v.key || (v.key === 'day' && viewMode === 'agenda') ? colors.card : 'transparent',
+                      shadowColor: colors.navy,
+                      shadowOpacity: (viewMode === v.key || (v.key === 'day' && viewMode === 'agenda')) && !isDark ? 0.06 : 0,
+                      shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
                     })}>
-                    <Text style={{ fontSize: 12, fontWeight: viewMode === v.key ? '700' : '500',
-                      color: viewMode === v.key ? colors.pink : colors.textSecondary }}>
+                    <Text style={{ fontSize: 12, fontWeight: (viewMode === v.key || (v.key === 'day' && viewMode === 'agenda')) ? '700' : '500',
+                      color: (viewMode === v.key || (v.key === 'day' && viewMode === 'agenda')) ? colors.pink : colors.textSecondary }}>
                       {v.label}
                     </Text>
                   </TouchableOpacity>
@@ -1343,33 +1344,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             />
           </View>
         ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
-          // Simple hour-slot list — matches the reference's Day view.
-          // The full date card scrolls away normally as part of the
-          // content (no stickyHeaderIndices — that fought this row's
-          // flexDirection layout and only ever pins something in place
-          // immediately, not the "scroll away, then dock" behavior this
-          // needed). Instead a slim compact bar sits fixed under the app
-          // header, hidden until the full card has scrolled out of view,
-          // then fades/slides in — the standard iOS collapsing-header
-          // pattern, driven by tracking scroll position against the
-          // card's own measured height.
-          <View ref={dayWrapperRef} style={{ paddingTop: 12, height: dayViewportHeight, position: 'relative' }}
+          // Figma Day view: .day-summary (AT A GLANCE card) + .section-title + .day-timeline
+          <View ref={dayWrapperRef} style={{ paddingTop: 8, height: dayViewportHeight, position: 'relative' }}
             onLayout={() => {
               dayWrapperRef.current?.measureInWindow((_x, pageY) => {
-                const available = windowHeight - pageY - 90; // ~90px breathing room above the tab bar
+                const available = windowHeight - pageY - 90;
                 if (available > 200) setDayViewportHeight(available);
               });
             }}>
-            {/* Docked compact bar — absolutely positioned over the top of
-                the scroller, invisible/non-interactive until scrolled past
-                the full card. Sits flush at true top:0 (not offset by the
-                wrapper's paddingTop, which only affects the ScrollView's
-                content below it) with its own full-bleed opaque background
-                so no sliver of the scrolled-away card can show through
-                behind or beside it. */}
+            {/* Docked compact bar */}
             <Animated.View pointerEvents={dayDockedVisible ? 'auto' : 'none'} style={{
               position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-              paddingTop: 12, paddingBottom: 8,
+              paddingTop: 8, paddingBottom: 8,
               backgroundColor: colors.background,
               opacity: dayDockAnim,
               transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
@@ -1378,14 +1364,14 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 backgroundColor: colors.card, paddingVertical: 8, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } })}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1270]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronLeft c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
                   {selectedDateLabel}
                 </Text>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1277]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronRight c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
@@ -1403,36 +1389,102 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   Animated.timing(dayDockAnim, { toValue: shouldShow ? 1 : 0, duration: 180, useNativeDriver: true }).start();
                 }
               }}>
-              <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}
-                style={{ marginHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
-                backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 10, paddingHorizontal: 14,
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1299]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronLeft c={colors.textSecondary} size={16} />
-                </TouchableOpacity>
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-                    {selectedDateLabel}
+
+              {/* Figma .day-summary — AT A GLANCE card */}
+              <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}>
+                <View style={{
+                  marginHorizontal: 20, marginTop: 4, marginBottom: 12,
+                  borderRadius: 22, padding: 18,
+                  backgroundColor: isDark ? 'rgba(123,94,167,0.18)' : '#EFE8F8',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.pink, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                        AT A GLANCE
+                      </Text>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginTop: 4 }}>
+                        {dayEvents.filter(ev => ev.category !== 'Holiday').length} event{dayEvents.filter(ev => ev.category !== 'Holiday').length === 1 ? '' : 's'} today
+                      </Text>
+                      {(() => {
+                        const upcoming = dayEvents.filter(ev => ev.category !== 'Holiday' && ev.time && !isEventPast(ev.date, ev.time));
+                        const next = upcoming[0];
+                        return next ? (
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                            Next event starts at {next.time}.
+                          </Text>
+                        ) : null;
+                      })()}
+                    </View>
+                    {/* .day-status badge */}
+                    {(() => {
+                      const pending = dayEvents.filter(ev => ev.approvalPending || ev.helperStatus === 'pending' || ev.driverStatus === 'pending');
+                      const allCovered = pending.length === 0 && dayEvents.filter(ev => ev.category !== 'Holiday').length > 0;
+                      return (
+                        <View style={{
+                          borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
+                          backgroundColor: allCovered
+                            ? (isDark ? 'rgba(61,122,90,0.25)' : '#E5F3ED')
+                            : (isDark ? 'rgba(217,119,6,0.25)' : '#FDF1D6'),
+                        }}>
+                          <Text style={{
+                            fontSize: 11, fontWeight: '700',
+                            color: allCovered ? (isDark ? '#5FA37D' : '#527D6D') : (isDark ? '#F5A85A' : '#92600A'),
+                          }}>
+                            {allCovered ? 'All covered' : `${pending.length} pending`}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                  </View>
+                  {/* Day nav arrows */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
+                    <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <I.ChevronLeft c={colors.pink} size={14} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Previous</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Next</Text>
+                      <I.ChevronRight c={colors.pink} size={14} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Figma .section-title above timeline */}
+                <View style={{ paddingHorizontal: 20, marginBottom: 10 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {selectedDateLabel.toUpperCase()}
                   </Text>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }}>
-                    {dayEvents.filter(ev => ev.category !== 'Holiday').length} Scheduled Activit{dayEvents.filter(ev => ev.category !== 'Holiday').length === 1 ? 'y' : 'ies'}
+                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginTop: 3, letterSpacing: -0.3 }}>
+                    Day timeline
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1311]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronRight c={colors.textSecondary} size={16} />
-                </TouchableOpacity>
               </View>
 
               <DaySlotView
                 dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
                 members={members}
                 colors={colors} isDark={isDark}
-                onSelect={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Day slot view → open detail sheet [features/calendar/CalendarScreen.tsx:1321]`); setDetailEv(ev); }}
-                onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Day slot view → routeLongPress [features/calendar/CalendarScreen.tsx:1322]`); routeLongPress(ev); }}
-                onAddAtTime={(hourTimeKey) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Tap to add event" at hour=${hourTimeKey} in Day slot view → open EventFormAdd [features/calendar/CalendarScreen.tsx:1323]`); setShowAdd(true); }}
+                onSelect={(ev) => { setDetailEv(ev); }}
+                onLongPressEvent={(ev) => { routeLongPress(ev); }}
+                onAddAtTime={(_hourTimeKey) => { setShowAdd(true); }}
               />
+
+              {/* Figma .floating-add button at bottom of day timeline */}
+              {isParentOrSenior && !hideCreateButton && (
+                <TouchableOpacity
+                  onPress={() => setShowAdd(true)}
+                  style={{
+                    marginHorizontal: 20, marginTop: 14, marginBottom: 8,
+                    height: 48, borderRadius: 14,
+                    backgroundColor: colors.pink,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>+ Add event</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
           </View>
         ) : (

@@ -22,6 +22,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 
+export type TripPhase = 'assigned' | 'en_route' | 'picked_up' | 'arrived';
+
 export interface Trip {
   id: string;
   familyId: string;
@@ -31,6 +33,8 @@ export interface Trip {
   startedAt: string;       // ISO
   completedAt?: string;    // ISO
   overdueAlertSent: boolean;
+  phase: TripPhase;
+  driverNotes?: string;
   // Real gap fixed: reassign_event's "close out the prior driver's trip"
   // side effect used to match on driver_member_id alone, so reassigning
   // one event's driver could silently complete that same driver's
@@ -51,6 +55,8 @@ interface TripRow {
   completed_at: string | null;
   overdue_alert_sent: boolean;
   event_id: string | null;
+  phase: TripPhase | null;
+  driver_notes: string | null;
 }
 
 function fromRow(row: TripRow): Trip {
@@ -63,6 +69,8 @@ function fromRow(row: TripRow): Trip {
     startedAt: row.started_at,
     completedAt: row.completed_at ?? undefined,
     overdueAlertSent: row.overdue_alert_sent,
+    phase: row.phase ?? 'assigned',
+    driverNotes: row.driver_notes ?? undefined,
     eventId: row.event_id ?? undefined,
   };
 }
@@ -90,6 +98,7 @@ interface TripState {
   updateEta: (tripId: string, etaMinutes: number) => Promise<void>;
   markOverdueAlertSent: (tripId: string) => Promise<void>;
   complete: (tripId: string) => Promise<void>;
+  advancePhase: (tripId: string, phase: TripPhase, notes?: string) => Promise<void>;
 }
 
 function deriveActiveTrip(trips: Trip[]): Trip | null {
@@ -243,7 +252,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
     const trip: Trip = {
       id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
-      overdueAlertSent: false, eventId,
+      overdueAlertSent: false, phase: 'assigned', eventId,
     };
     const nextTrips = [...get().activeTrips, trip];
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
@@ -300,6 +309,29 @@ export const useTripStore = create<TripState>((set, get) => ({
       return;
     }
     const nextTrips = get().activeTrips.filter(t => t.id !== tripId);
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
+  },
+
+  advancePhase: async (tripId, phase, notes) => {
+    const trip = get().activeTrips.find(t => t.id === tripId);
+    if (!trip) return;
+    const { error } = await supabase.rpc('advance_trip_phase', {
+      p_trip_id:   tripId,
+      p_new_phase: phase,
+      p_notes:     notes ?? null,
+    });
+    if (error) {
+      console.warn('[tripStore] advancePhase failed', error.message);
+      return;
+    }
+    const isArrived = phase === 'arrived';
+    const nextTrips = isArrived
+      ? get().activeTrips.filter(t => t.id !== tripId)
+      : get().activeTrips.map(t => t.id === tripId
+          ? { ...t, phase, driverNotes: notes ?? t.driverNotes,
+              completedAt: isArrived ? new Date().toISOString() : t.completedAt }
+          : t);
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
   },

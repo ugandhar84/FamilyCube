@@ -3,23 +3,23 @@ import {
   View, Text, ScrollView, Pressable, TextInput,
 } from 'react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { useTripStore, type TripPhase } from '@/store/tripStore';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { RADIUS } from '@/constants/theme';
 
-const STAGES = ['Assigned', 'En route', 'Picked up', 'Arrived'] as const;
-type RideStage = typeof STAGES[number];
+const STAGES: { phase: TripPhase; label: string }[] = [
+  { phase: 'assigned',  label: 'Confirmed'  },
+  { phase: 'en_route',  label: 'On the way' },
+  { phase: 'picked_up', label: 'Got them'   },
+  { phase: 'arrived',   label: 'Home'       },
+];
 
-function stageIndex(driverStatus?: string): number {
-  switch (driverStatus) {
-    case 'confirmed': return 1;
-    case 'picked_up': return 2;
-    case 'arrived':   return 3;
-    default:          return 0;
-  }
+function phaseIndex(phase: TripPhase): number {
+  return STAGES.findIndex(s => s.phase === phase);
 }
 
-function MemberAvatar({ name, size, bg, colors }: { name: string; size: number; bg: string; colors: any }) {
+function MemberAvatar({ name, size, bg }: { name: string; size: number; bg: string }) {
   return (
     <View style={{
       width: size, height: size, borderRadius: size / 2,
@@ -32,23 +32,25 @@ function MemberAvatar({ name, size, bg, colors }: { name: string; size: number; 
   );
 }
 
-export function ActiveTripDetailScreen({ eventId, onClose }: {
-  eventId: string;
+export function ActiveTripDetailScreen({ tripId, onClose }: {
+  tripId: string;
   onClose: () => void;
 }) {
   const { colors, isDark } = useTheme();
+  const activeTrips = useTripStore(s => s.activeTrips);
+  const advancePhase = useTripStore(s => s.advancePhase);
   const events = useEventStore(s => s.events);
   const members = useFamilyStore(s => s.members);
   const [etaNote, setEtaNote] = useState('');
 
-  const event = Object.values(events).flat().find(e => e.id === eventId);
+  const trip = activeTrips.find(t => t.id === tripId);
 
   const cardBorder = {
     borderWidth: 1,
     borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
   };
 
-  if (!event) {
+  if (!trip) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Text style={{ color: colors.textTertiary, fontSize: 15 }}>Trip not found</Text>
@@ -59,14 +61,27 @@ export function ActiveTripDetailScreen({ eventId, onClose }: {
     );
   }
 
-  const driver = members.find(m => m.id === event.driverId);
-  const driverName = driver?.name ?? event.driverName ?? 'Unassigned';
-  const driverInitial = driverName.charAt(0).toUpperCase();
+  // Find linked event if any
+  const linkedEvent = trip.eventId
+    ? Object.values(events).flat().find(e => e.id === trip.eventId)
+    : undefined;
 
-  const helper = members.find(m => m.id === event.helperId);
-  const helperName = helper?.name ?? event.helper ?? null;
+  const driver = members.find(m => m.id === trip.driverMemberId);
+  const driverName = driver?.name ?? 'Driver';
 
-  const activeStage = stageIndex(event.driverStatus);
+  const pickupMember = members.find(m => m.id === trip.pickupMemberId);
+  const pickupName = pickupMember?.name ?? linkedEvent?.title ?? 'Family';
+
+  const activeIdx = phaseIndex(trip.phase);
+
+  // Next phase for the CTA
+  const nextStage = STAGES[activeIdx + 1];
+
+  async function handleAdvance() {
+    if (!nextStage || !trip) return;
+    await advancePhase(trip.id, nextStage.phase, etaNote || undefined);
+    if (nextStage.phase === 'arrived') onClose();
+  }
 
   return (
     <ScrollView
@@ -82,7 +97,7 @@ export function ActiveTripDetailScreen({ eventId, onClose }: {
       {/* Title + status */}
       <View style={{ gap: 10 }}>
         <Text style={{ color: colors.textPrimary, fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 36 }}>
-          {event.title}
+          {linkedEvent?.title ?? `Picking up ${pickupName}`}
         </Text>
         <View style={{
           alignSelf: 'flex-start',
@@ -96,57 +111,51 @@ export function ActiveTripDetailScreen({ eventId, onClose }: {
       {/* Route schematic card */}
       <View style={{
         backgroundColor: colors.tealLight, borderRadius: RADIUS.xxl,
-        padding: 20, gap: 16, ...cardBorder,
+        padding: 20, gap: 12, ...cardBorder,
       }}>
         <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: '600' }}>Route</Text>
 
-        {/* From */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.teal }} />
-          <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '400' }}>
-            Departure
-          </Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Departure</Text>
         </View>
 
-        {/* Connector */}
         <View style={{ width: 2, height: 20, backgroundColor: colors.border, marginLeft: 3 }} />
 
-        {/* To */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.primary }} />
-          <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '400' }}>
-            {event.location ?? 'Destination'}
+          <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+            {linkedEvent?.location ?? 'Destination'}
           </Text>
         </View>
 
-        {/* ETA */}
         <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '500', marginTop: 4 }}>
-          ETA: {event.time ?? 'Updating...'}
+          ETA: {trip.etaMinutes} min{trip.etaMinutes === 1 ? '' : 's'}{trip.driverNotes ? ` · ${trip.driverNotes}` : ''}
         </Text>
       </View>
 
       {/* Progress track */}
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', gap: 3 }}>
-          {STAGES.map((_, i) => (
-            <View key={i} style={{
+          {STAGES.map((s, i) => (
+            <View key={s.phase} style={{
               flex: 1, height: 4, borderRadius: 2,
-              backgroundColor: i < activeStage
+              backgroundColor: i < activeIdx
                 ? colors.teal
-                : i === activeStage
+                : i === activeIdx
                   ? colors.primary
                   : colors.surface,
             }} />
           ))}
         </View>
         <View style={{ flexDirection: 'row' }}>
-          {STAGES.map((stage, i) => (
-            <Text key={i} style={{
+          {STAGES.map((s, i) => (
+            <Text key={s.phase} style={{
               flex: 1, textAlign: 'center',
               fontSize: 9, fontWeight: '400',
-              color: i <= activeStage ? colors.textSecondary : colors.textTertiary,
+              color: i <= activeIdx ? colors.textSecondary : colors.textTertiary,
             }}>
-              {stage}
+              {s.label}
             </Text>
           ))}
         </View>
@@ -157,45 +166,45 @@ export function ActiveTripDetailScreen({ eventId, onClose }: {
         backgroundColor: colors.card, borderRadius: RADIUS.xxl,
         padding: 18, gap: 12, ...cardBorder,
       }}>
-        {/* Driver row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <MemberAvatar name={driverName} size={36} bg={colors.primary} colors={colors} />
+          <MemberAvatar name={driverName} size={36} bg={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.textPrimary, fontSize: 15, fontWeight: '600' }}>{driverName}</Text>
-            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '400' }}>Driver</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Taking them</Text>
           </View>
           <View style={{
             backgroundColor: colors.primaryLight, borderRadius: 100,
             paddingHorizontal: 8, paddingVertical: 3,
           }}>
-            <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600' }}>Driver</Text>
+            <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600' }}>With them</Text>
           </View>
         </View>
 
-        {/* Divider */}
-        {(helperName ?? false) && (
-          <View style={{ height: 1, backgroundColor: isDark ? colors.border : 'rgba(44,39,34,0.06)' }} />
-        )}
-
-        {/* Helper row */}
-        {helperName ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <MemberAvatar name={helperName} size={28} bg={colors.surface} colors={colors} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '500' }}>{helperName}</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '400' }}>Helper</Text>
+        {pickupMember && (
+          <>
+            <View style={{ height: 1, backgroundColor: isDark ? colors.border : 'rgba(44,39,34,0.06)' }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <MemberAvatar name={pickupMember.name} size={28} bg={colors.surface} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '500' }}>
+                  {pickupMember.name}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Being picked up</Text>
+              </View>
             </View>
-          </View>
-        ) : null}
+          </>
+        )}
       </View>
 
-      {/* ETA update field */}
+      {/* ETA / note field */}
       <View style={{ gap: 6 }}>
-        <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '500' }}>Update ETA</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '500' }}>
+          Driver update (optional)
+        </Text>
         <TextInput
           value={etaNote}
           onChangeText={setEtaNote}
-          placeholder="e.g. 5 minutes away"
+          placeholder="e.g. 5 minutes away, stuck at lights…"
           placeholderTextColor={colors.textTertiary}
           style={{
             backgroundColor: colors.surface, borderRadius: RADIUS.md,
@@ -205,20 +214,44 @@ export function ActiveTripDetailScreen({ eventId, onClose }: {
         />
       </View>
 
-      {/* Primary action */}
-      <Pressable
-        onPress={onClose}
-        style={{
-          backgroundColor: colors.primary, borderRadius: RADIUS.md,
-          paddingVertical: 16, alignItems: 'center',
-          shadowColor: colors.primary, shadowOpacity: 0.25,
-          shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
-        }}
-      >
-        <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>
-          Mark as picked up →
-        </Text>
-      </Pressable>
+      {/* Primary action — advance to next phase */}
+      {nextStage && (
+        <Pressable
+          onPress={handleAdvance}
+          style={{
+            backgroundColor: colors.primary, borderRadius: RADIUS.md,
+            paddingVertical: 16, alignItems: 'center',
+            shadowColor: colors.primary, shadowOpacity: 0.25,
+            shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+          }}
+        >
+          <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>
+            {nextStage.phase === 'en_route'  ? "I'm on my way →"     :
+             nextStage.phase === 'picked_up' ? "Got them, heading home →" :
+             nextStage.phase === 'arrived'   ? "We're home →"            :
+             `${nextStage.label} →`}
+          </Text>
+        </Pressable>
+      )}
+
+      {/* Direct complete — skip remaining phases */}
+      {trip.phase !== 'arrived' && (
+        <Pressable
+          onPress={async () => {
+            await advancePhase(trip.id, 'arrived', etaNote || undefined);
+            onClose();
+          }}
+          style={{
+            backgroundColor: colors.surface, borderRadius: RADIUS.md,
+            paddingVertical: 14, alignItems: 'center',
+            borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
+          }}
+        >
+          <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: '600' }}>
+            Mark as complete
+          </Text>
+        </Pressable>
+      )}
 
       <View style={{ height: 20 }} />
     </ScrollView>

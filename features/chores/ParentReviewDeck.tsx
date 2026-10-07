@@ -115,7 +115,7 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
             this card didn't. */}
         {!isGP && task.basePoints > 0 && (
           <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? colors.amber : '#D97706' }}>+{task.basePoints} pts</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>+{task.basePoints} pts</Text>
           </View>
         )}
         {task.requiresPhotoProof && <Text style={{ fontSize: 14 }}>📸</Text>}
@@ -148,7 +148,7 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
         </View>
       )}
       {(task.redoCount ?? 0) > 0 && (
-        <Text style={{ fontSize: TYPO.caption, color: '#D97706', fontWeight: '600', marginBottom: 8 }}>
+        <Text style={{ fontSize: TYPO.caption, color: colors.amber, fontWeight: '600', marginBottom: 8 }}>
           ↩ Submitted {task.redoCount} time{task.redoCount === 1 ? '' : 's'} — next redo auto-approves
         </Text>
       )}
@@ -264,7 +264,7 @@ function BountyClaimReviewCard({ chore, claim, members, colors, isDark, onApprov
           </View>
         )}
         <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.amber : '#D97706' }}>Bounty · +{coins} pts</Text>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.amber }}>Bounty · +{coins} pts</Text>
         </View>
       </View>
 
@@ -462,7 +462,7 @@ function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
 
         {(task.redoCount ?? 0) >= 1 && (
           <View style={{ backgroundColor: isDark ? colors.amberLight : '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 16 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.amber : '#D97706' }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.amber }}>
               ⚠️ This has already been sent back once. Next rejection will auto-approve.
             </Text>
           </View>

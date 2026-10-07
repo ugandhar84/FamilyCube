@@ -55,7 +55,7 @@ export default function FamilyAvatar({
   avatarUrl,
   siblings = [],
   size = 44,
-  ringColor = '#9261C7',
+  ringColor = '#DF613C',
   ringWidth = 2,
   bgColor,
 }: AvatarProps) {

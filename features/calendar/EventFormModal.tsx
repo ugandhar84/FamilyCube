@@ -1520,7 +1520,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
                   borderWidth: 1.5,
-                  borderColor: openToTeens ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                  borderColor: openToTeens ? colors.sky : colors.border,
                   backgroundColor: openToTeens
                     ? (isDark ? '#1E1B4B' : '#EEF2FF')
                     : (isDark ? colors.surface : '#F9FAFB'),
@@ -1537,7 +1537,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                   </Text>
                 </View>
                 <View style={{ width: 44, height: 26, borderRadius: 13,
-                  backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                  backgroundColor: openToTeens ? colors.sky : colors.surface,
                   justifyContent: 'center', paddingHorizontal: 3 }}>
                   <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                     alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
@@ -2807,7 +2807,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                        borderColor: editTeenOpen ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                        borderColor: editTeenOpen ? colors.sky : colors.border,
                         backgroundColor: editTeenOpen ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
                       }}>
                       <View style={{ flex: 1, gap: 2 }}>
@@ -2821,7 +2821,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         </Text>
                       </View>
                       <View style={{ width: 44, height: 26, borderRadius: 13,
-                        backgroundColor: editTeenOpen ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                        backgroundColor: editTeenOpen ? colors.sky : colors.surface,
                         justifyContent: 'center', paddingHorizontal: 3 }}>
                         <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                           alignSelf: editTeenOpen ? 'flex-end' : 'flex-start' }} />
@@ -2832,7 +2832,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
                       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
                       <TextInput
-                        style={[f.input, { flex: 0, width: 80, textAlign: 'center', color: colors.textPrimary, backgroundColor: colors.surface, borderColor: '#6366F1' }]}
+                        style={[f.input, { flex: 0, width: 80, textAlign: 'center', color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.sky }]}
                         keyboardType="numeric" maxLength={4}
                         placeholder="0" placeholderTextColor={colors.textTertiary}
                         value={editRideCoins} onChangeText={setEditRideCoins}

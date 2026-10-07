@@ -254,7 +254,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
                       return (
                         <TouchableOpacity key={k.id} style={{ alignItems: 'center' }} onPress={() => setSelectedKidId(k.id)}>
                           <View style={{ position: 'relative' }}>
-                            <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={kids.map(x => x.name)} size={40} ringColor={sel ? BRAND.purple : colors.border} ringWidth={sel ? 2.5 : 1} bgColor={sel ? BRAND.purple + '20' : undefined} />
+                            <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={kids.map(x => x.name)} size={40} ringColor={sel ? BRAND.amber : colors.border} ringWidth={sel ? 2.5 : 1} bgColor={sel ? BRAND.amber + '20' : undefined} />
                             {sel && (
                               <View style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
                                 <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>

@@ -166,15 +166,15 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
           <Text style={[s.overline, { color: colors.textTertiary }]}>PEOPLE</Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>{driverInitial}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{driverName}</Text>
               <Text style={{ fontSize: 12, color: colors.textSecondary }}>Taking them</Text>
             </View>
-            <View style={{ backgroundColor: colors.primaryLight, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.primary }}>Driver</Text>
+            <View style={{ backgroundColor: colors.tealLight, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>Driver</Text>
             </View>
           </View>
 
@@ -218,7 +218,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
         {nextStage && (
           <TouchableOpacity
             onPress={handleAdvance}
-            style={[s.btnPrimary, { backgroundColor: colors.primary }]}
+            style={[s.btnPrimary, { backgroundColor: colors.pink }]}
             activeOpacity={0.85}
           >
             <Text style={s.btnPrimaryText}>

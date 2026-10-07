@@ -135,7 +135,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
 
         {/* Action buttons */}
         <View style={{ gap: 12, marginTop: 4 }}>
-          <TouchableOpacity onPress={handleApprove} style={[s.btnPrimary, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
+          <TouchableOpacity onPress={handleApprove} style={[s.btnPrimary, { backgroundColor: colors.pink }]} activeOpacity={0.85}>
             <Text style={[s.btnText, { color: '#FFFFFF' }]}>Approve redemption →</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleDecline} style={[s.btnOutline, { backgroundColor: colors.surface, borderColor }]} activeOpacity={0.85}>

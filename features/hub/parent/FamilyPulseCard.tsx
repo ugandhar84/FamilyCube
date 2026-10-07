@@ -98,8 +98,12 @@ export function FamilyPulseCard({
 
       <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
         {members.slice(0, 5).map((m, i) => (
-          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, borderWidth: 3, borderColor: colors.tealLight, borderRadius: 999 }}>
-            <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32} />
+          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, borderWidth: 3, borderColor: colors.card, borderRadius: 999 }}>
+            <FamilyAvatar
+              name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32}
+              ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}
+              ringWidth={2}
+            />
           </View>
         ))}
         {mostRecent && (

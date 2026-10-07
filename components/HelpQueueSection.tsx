@@ -298,7 +298,7 @@ function OfferModal({ visible, candidates, allNames, onOffer, onClose, colors, i
                     <FamilyAvatar
                       name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
                       siblings={allNames} size={68}
-                      ringColor={sel ? BRAND.purple : ring}
+                      ringColor={sel ? BRAND.amber : ring}
                       ringWidth={sel ? 3.5 : 2}
                       bgColor={sel ? BRAND.purple + '20' : undefined}
                     />

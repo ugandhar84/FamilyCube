@@ -1535,7 +1535,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                           {(() => {
                             const all = ev.memberIds?.length ? members.filter(m => ev.memberIds!.includes(m.id)) : assignee ? [assignee] : [];
                             return all.length > 0 ? all.map(m => (
-                              <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.purple} ringWidth={1.5} />
+                              <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.teal} ringWidth={1.5} />
                             )) : null;
                           })()}
                           {ev.location ? (
@@ -1546,11 +1546,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                           ) : null}
                         </View>
                         {ev.helper ? (() => {
-                          const stColor = ev.helperStatus === 'confirmed' ? '#10B981' : ev.helperStatus === 'rejected' ? '#EF4444' : '#D97706';
+                          const stColor = ev.helperStatus === 'confirmed' ? colors.teal : ev.helperStatus === 'rejected' ? colors.danger : colors.amber;
                           return (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: stColor + '15', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
                               <Text style={{ fontSize: 12 }}>{helperEmoji}</Text>
-                              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
+                              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>{ev.helper.split(' ')[0]}</Text>
                               <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: stColor }} />
                             </View>
                           );

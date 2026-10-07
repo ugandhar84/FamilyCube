@@ -144,7 +144,7 @@ export function QuestReviewScreen({ choreId, onClose }: Props) {
 
         {/* Action buttons */}
         <View style={{ gap: 12, marginTop: 4 }}>
-          <TouchableOpacity onPress={handleComplete} style={[s.btnPrimary, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
+          <TouchableOpacity onPress={handleComplete} style={[s.btnPrimary, { backgroundColor: colors.pink }]} activeOpacity={0.85}>
             <Text style={[s.btnText, { color: '#FFFFFF' }]}>Complete quest &amp; award coins →</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleMoreProof} style={[s.btnOutline, { backgroundColor: colors.surface, borderColor }]} activeOpacity={0.85}>

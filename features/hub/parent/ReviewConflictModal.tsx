@@ -112,7 +112,7 @@ export function ReviewConflictModal({
           </AnimatedPressable>
           <AnimatedPressable
             onPress={() => { onApprove(); onClose(); }}
-            style={{ flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.primary }}
+            style={{ flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.pink }}
           >
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#FFFFFF' }}>Approve plan →</Text>
           </AnimatedPressable>

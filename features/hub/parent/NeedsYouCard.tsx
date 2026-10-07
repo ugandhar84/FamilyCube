@@ -55,7 +55,7 @@ export function NeedsYouCard({
           width: '100%', minHeight: 46,
           alignItems: 'center', justifyContent: 'center',
           borderRadius: 14,
-          backgroundColor: colors.primary,
+          backgroundColor: colors.pink,
         }}
       >
         <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>

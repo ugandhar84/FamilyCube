@@ -1119,7 +1119,7 @@ export default function SmartTaskComposer({
                     </Text>
                   </View>
                   <View style={{ width: 44, height: 26, borderRadius: 13,
-                    backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
+                    backgroundColor: openToGrandparents ? colors.warning : (colors.surface),
                     justifyContent: 'center', paddingHorizontal: 3 }}>
                     <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
                       alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
@@ -1131,7 +1131,7 @@ export default function SmartTaskComposer({
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: RADIUS.md,
                       borderWidth: 1.5,
-                      borderColor: openToTeens ? '#6366F1' : colors.border,
+                      borderColor: openToTeens ? colors.sky : colors.border,
                       backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : colors.inputBg) }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
@@ -1142,7 +1142,7 @@ export default function SmartTaskComposer({
                       </Text>
                     </View>
                     <View style={{ width: 44, height: 26, borderRadius: 13,
-                      backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                      backgroundColor: openToTeens ? colors.sky : colors.surface,
                       justifyContent: 'center', paddingHorizontal: 3 }}>
                       <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
                         alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
@@ -1155,7 +1155,7 @@ export default function SmartTaskComposer({
                     <TextInput
                       style={{ width: 80, textAlign: 'center', fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
                         backgroundColor: isDark ? colors.surface : colors.inputBg, borderRadius: RADIUS.md,
-                        paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#6366F1' }}
+                        paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: colors.sky }}
                       keyboardType="numeric" maxLength={4}
                       placeholder="0" placeholderTextColor={colors.textTertiary}
                       value={rideCoinsTeen} onChangeText={setRideCoinsTeen}

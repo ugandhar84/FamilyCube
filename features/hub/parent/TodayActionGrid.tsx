@@ -34,7 +34,7 @@ export function TodayActionGrid({
       key: 'capture',
       icon: ClipboardCheck,
       tint: colors.pink,
-      bg: isDark ? 'rgba(119,136,204,0.14)' : '#EEEBF9',   // .lavender
+      bg: colors.pinkLight,
       title: 'Add a task',
       subtitle: 'Capture it quickly',
       onPress: onCapture,
@@ -43,7 +43,7 @@ export function TodayActionGrid({
       key: 'groceries',
       icon: ShoppingCart,
       tint: colors.teal,
-      bg: isDark ? 'rgba(100,139,125,0.14)' : '#E5F3ED',   // .mint
+      bg: colors.tealLight,
       title: 'Groceries',
       subtitle: groceryCount > 0 ? `${groceryCount} item${groceryCount === 1 ? '' : 's'} open` : 'List is clear',
       onPress: () => router.push('/(tabs)/grocery' as any),
@@ -51,8 +51,8 @@ export function TodayActionGrid({
     {
       key: 'rides',
       icon: Car,
-      tint: colors.primary,
-      bg: isDark ? 'rgba(102,119,189,0.14)' : '#E8F1F8',   // .sky
+      tint: colors.sky,
+      bg: colors.skyLight,
       title: 'Arrange a ride',
       subtitle: ridesCount > 0 ? `${ridesCount} active today` : (nextRideLabel ?? 'Nothing active'),
       onPress: onRides ?? (() => router.push('/(tabs)/calendar' as any)),
@@ -61,7 +61,7 @@ export function TodayActionGrid({
       key: 'askfam',
       icon: Sparkles,
       tint: colors.amber,
-      bg: isDark ? 'rgba(213,139,123,0.14)' : '#F9EBE7',   // .peach
+      bg: colors.amberLight,
       title: 'Send a cheer',
       subtitle: 'Appreciate someone',
       onPress: onAppreciation ?? (() => router.push('/(tabs)/index' as any)),
@@ -100,7 +100,7 @@ export function TodayActionGrid({
               <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginTop: 15 }} numberOfLines={1}>
                 {t.title}
               </Text>
-              <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : '#707688', marginTop: 3 }} numberOfLines={1}>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
                 {t.subtitle}
               </Text>
             </AnimatedPressable>

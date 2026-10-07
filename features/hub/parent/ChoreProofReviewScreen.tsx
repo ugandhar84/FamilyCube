@@ -101,7 +101,7 @@ export function ChoreProofReviewScreen({ choreId, onClose }: Props) {
       {/* Assignee card */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor }]}>
         <View style={styles.assigneeRow}>
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+          <View style={[styles.avatar, { backgroundColor: colors.teal }]}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
           <View style={styles.assigneeInfo}>
@@ -175,7 +175,7 @@ export function ChoreProofReviewScreen({ choreId, onClose }: Props) {
       <View style={styles.buttonsWrapper}>
         <TouchableOpacity
           onPress={handleApprove}
-          style={[styles.btn, { backgroundColor: colors.primary }]}
+          style={[styles.btn, { backgroundColor: colors.pink }]}
           activeOpacity={0.85}
         >
           <Text style={[styles.btnText, { color: '#FFFFFF' }]}>Approve &amp; award coins</Text>

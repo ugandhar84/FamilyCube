@@ -196,7 +196,7 @@ export function CollapsibleCard({
   defaultExpanded?: boolean; children?: React.ReactNode; flat?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const bg = accent ? (isDark ? accent + '18' : accent + '10') : (isDark ? colors.surface : '#F8FAFC');
+  const bg = accent ? (isDark ? accent + '18' : accent + '10') : (colors.surface);
   const border = accent ? accent + '40' : colors.border;
 
   if (flat) {
@@ -249,7 +249,7 @@ export function SubCard({ children, accent, colors, isDark, style }: {
   return (
     <View style={[{
       borderRadius: 16, borderWidth: 1, padding: 12,
-      backgroundColor: accent ? (isDark ? accent + '18' : accent + '10') : (isDark ? colors.surface : '#F8FAFC'),
+      backgroundColor: accent ? (isDark ? accent + '18' : accent + '10') : (colors.surface),
       borderColor: accent ? accent + '40' : colors.border,
     }, style]}>
       {children}
@@ -608,7 +608,7 @@ function ConflictClusterCard({ reason, events, members, colors, isDark, activeNa
                   )}
                   {otherParents.map(m => (
                     <Pressable key={m.id} onPress={() => doReassign(ev, m.name, m.id)}
-                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
                     </Pressable>
                   ))}
@@ -782,7 +782,7 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, activeMemberId
       <Pressable key={key} onPress={onPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9,
           borderRadius: 999, borderWidth: 1.5,
-          backgroundColor: sel ? colors.parent : isOpenTone ? colors.warning + '18' : tone === 'primary' ? colors.parent + '14' : (isDark ? colors.surface : '#F8FAFC'),
+          backgroundColor: sel ? colors.parent : isOpenTone ? colors.warning + '18' : tone === 'primary' ? colors.parent + '14' : (colors.surface),
           borderColor: sel ? colors.parent : isOpenTone ? colors.warning : tone === 'primary' ? colors.parent + '50' : colors.border,
           borderStyle: isOpenTone ? 'dashed' : 'solid' }}>
         <Icon size={14} color={fg} />
@@ -803,7 +803,7 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, activeMemberId
       </ScrollView>
       {picked && (
         <>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: isDark ? colors.card : '#F1F5F9',
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.surface,
             borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1.5, borderColor: colors.border }}>
             <Pencil size={13} color={colors.textTertiary} style={{ marginTop: 3 }} />
             <View style={{ flex: 1, gap: 2 }}>
@@ -976,12 +976,12 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               {onEditFull && isViewerParent && (
                 <Pressable onPress={onEditFull} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                   style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginRight: 8 }}>
+                    backgroundColor: colors.surface, marginRight: 8 }}>
                   <Pencil size={16} color={colors.textSecondary} />
                 </Pressable>
               )}
               <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
                 <X size={18} color={colors.textSecondary} />
               </Pressable>
             </View>
@@ -1121,8 +1121,8 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
           {/* Location */}
           {ev.location && !isHomeLocation(ev.location) && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MapPin size={14} color={isDark ? '#34D399' : '#059669'} />
-              <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} />
+              <MapPin size={14} color={colors.teal} />
+              <LocationLink addr={ev.location} color={colors.teal} fontSize={TYPO.caption} />
             </View>
           )}
 
@@ -1195,16 +1195,16 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
             <View style={{ gap: 4 }}>
               {ev.pickupLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MapPin size={13} color={isDark ? '#34D399' : '#059669'} />
+                  <MapPin size={13} color={colors.teal} />
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>From: </Text>
-                  <LocationLink addr={ev.pickupLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} />
+                  <LocationLink addr={ev.pickupLocation} color={colors.teal} fontSize={TYPO.label} />
                 </View>
               )}
               {ev.dropLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MapPin size={13} color={isDark ? '#34D399' : '#059669'} />
+                  <MapPin size={13} color={colors.teal} />
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>To: </Text>
-                  <LocationLink addr={ev.dropLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} />
+                  <LocationLink addr={ev.dropLocation} color={colors.teal} fontSize={TYPO.label} />
                 </View>
               )}
             </View>
@@ -1223,7 +1223,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
             // treatment gets the red/danger styling, "!" badge, and reason.
             const showAlarm  = isRejected && isViewerParent;
             const borderCol  = showAlarm ? colors.danger + '40' : isPending ? colors.warning : isRejected ? colors.border : colors.success;
-            const bgCol      = showAlarm ? (isDark ? colors.danger + '14' : colors.dangerLight) : isPending ? (isDark ? colors.warning + '14' : colors.warningLight) : (isDark ? colors.surface : '#F8FAFC');
+            const bgCol      = showAlarm ? (isDark ? colors.danger + '14' : colors.dangerLight) : isPending ? (isDark ? colors.warning + '14' : colors.warningLight) : (colors.surface);
             return (
             <View style={{ backgroundColor: bgCol, borderRadius: 14, borderWidth: 1, borderColor: borderCol, paddingHorizontal: 14, paddingVertical: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1351,9 +1351,9 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
               sheet gives no cue the other half exists (QA sweep UI pass,
               High Finding #4). */}
           {!!ev.linkedLegId && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#6366F118', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.skyLight, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
               <Repeat size={13} color="#6366F1" />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#6366F1' }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.pink }}>
                 {ev.title.includes('Pickup') ? 'This is the Pickup half of a both-ways ride — there\'s a Drop-off event too.'
                   : ev.title.includes('Drop-off') ? 'This is the Drop-off half of a both-ways ride — there\'s a Pickup event too.'
                   : 'This is paired with another ride leg.'}
@@ -1363,8 +1363,8 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
 
           {/* Notes */}
           {ev.notes && (
-            <View style={{ backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#4338CA50' : '#C7D2FE', padding: 12 }}>
-              <Text style={{ fontSize: TYPO.caption, color: isDark ? '#C4B5FD' : '#4338CA', lineHeight: 20 }}>
+            <View style={{ backgroundColor: colors.pinkLight, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 }}>
+              <Text style={{ fontSize: TYPO.caption, color: colors.pink, lineHeight: 20 }}>
                 📝 "{ev.notes}"
               </Text>
             </View>

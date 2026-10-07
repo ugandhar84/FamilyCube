@@ -56,12 +56,12 @@ export function TonightMealCard({
       borderRadius: 22, overflow: 'hidden',
       backgroundColor: colors.card,
       borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
-      shadowColor: '#2C3244', shadowOffset: { width: 0, height: 7 }, shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
+      shadowColor: colors.navy, shadowOffset: { width: 0, height: 7 }, shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
     }}>
       <View style={{
         width: 110, minHeight: 145,
         alignItems: 'center', justifyContent: 'center',
-        backgroundColor: isDark ? colors.tealLight : '#D8EDE4',
+        backgroundColor: colors.tealLight,
       }}>
         <Text style={{ fontSize: 40 }}>{meal?.emoji ?? '🍽️'}</Text>
       </View>
@@ -77,11 +77,11 @@ export function TonightMealCard({
           {meal?.title ?? 'No dinner planned yet'}
         </Text>
         {detailParts.length > 0 && (
-          <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : '#777D8F', lineHeight: 15 }} numberOfLines={1}>
+          <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15 }} numberOfLines={1}>
             {detailParts.join(' · ')}
           </Text>
         )}
-        <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.primary : '#5C6EB5', marginTop: 10 }}>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, marginTop: 10 }}>
           {meal ? 'See meal plan →' : 'Plan dinner →'}
         </Text>
       </AnimatedPressable>

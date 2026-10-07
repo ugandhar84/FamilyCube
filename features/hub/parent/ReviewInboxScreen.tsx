@@ -83,7 +83,7 @@ function FilterPills({ active, pendingCount, onSelect, colors }: FilterPillsProp
               borderRadius: 11,
               paddingVertical: 5,
               paddingHorizontal: 12,
-              backgroundColor: isActive ? '#FFFFFF' : 'transparent',
+              backgroundColor: isActive ? colors.card : 'transparent',
               opacity: pressed ? 0.75 : 1,
               ...(isActive && Platform.OS === 'ios' ? {
                 shadowColor: '#000',
@@ -238,13 +238,13 @@ export function ReviewInboxScreen({ onSelectItem, onClose }: {
 
       {/* ── "Ready for your review" card ────────────────────────────── */}
       <View style={{
-        backgroundColor: isDark ? colors.card : '#FFFFFF',
+        backgroundColor: colors.card,
         borderRadius: 22,
         padding: 18,
         gap: 12,
         ...Platform.select({
           ios: {
-            shadowColor: isDark ? '#000' : '#2C2722',
+            shadowColor: colors.navy,
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: isDark ? 0.18 : 0.07,
             shadowRadius: 8,

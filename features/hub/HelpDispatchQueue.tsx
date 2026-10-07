@@ -239,12 +239,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     setProcessingWithdraw(p => ({ ...p, [id]: false }));
   };
 
-  const cardBg   = isDark ? '#131927' : '#FFFFFF';
-  const divider  = isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9';
+  const cardBg   = colors.card;
+  const divider = colors.border;
   const allReqs  = [...pending, ...assigned, ...completed];
 
   return (
-    <View style={[q.card, { backgroundColor: cardBg, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+    <View style={[q.card, { backgroundColor: cardBg, borderColor: colors.surface }]}>
       {/* Header */}
       <View style={[q.header, { borderBottomColor: divider }]}>
         <View style={[q.iconWrap, { backgroundColor: BRAND.amber + '25' }]}>
@@ -264,7 +264,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
 
       {/* Empty state */}
       {allReqs.length === 0 && (
-        <View style={[q.emptyBox, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}>
+        <View style={[q.emptyBox, { backgroundColor: colors.surface }]}>
           <Text style={[q.emptyText, { color: colors.textTertiary }]}>
             No active help requests. Kids can click "Ask for Help" anytime!
           </Text>
@@ -286,19 +286,19 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
             <View style={q.reqTop}>
               <View style={{ flex: 1 }}>
                 <View style={q.badges}>
-                  <Text style={[q.reqName, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                  <Text style={[q.reqName, { color: colors.amber }]}>
                     🙋 {requester?.name ?? 'Member'} needs help:
                   </Text>
-                  <View style={[q.badge, { backgroundColor: isDark ? '#78350F' : '#FDE68A' }]}>
-                    <Text style={[q.badgeText, { color: isDark ? '#FCD34D' : '#92400E' }]}>{meta.label}</Text>
+                  <View style={[q.badge, { backgroundColor: colors.amberLight }]}>
+                    <Text style={[q.badgeText, { color: colors.amber }]}>{meta.label}</Text>
                   </View>
                   {req.urgency === 'urgent' || req.urgency === 'emergency' ? (
-                    <View style={[q.badge, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2' }]}>
-                      <Text style={[q.badgeText, { color: '#EF4444' }]}>🔴 Urgent</Text>
+                    <View style={[q.badge, { backgroundColor: colors.dangerLight ?? colors.surface }]}>
+                      <Text style={[q.badgeText, { color: colors.danger }]}>🔴 Urgent</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{humanDetail(req)}"</Text>
+                <Text style={[q.reqDetail, { color: colors.textPrimary }]}>"{humanDetail(req)}"</Text>
               </View>
               {req.rewardCoins ? (
                 <View style={[q.coinBadge, { backgroundColor: BRAND.amber + '33' }]}>
@@ -312,7 +312,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '33', paddingTop: 10, gap: 8 }}>
                 {/* Bulk actions header */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: isDark ? '#FCD34D' : '#B45309' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: colors.amber }}>
                     📦 {req.items.length} items requested by {memberName(req.fromMemberId)}:
                   </Text>
                   <TouchableOpacity onPress={() => setItemExpanded(p => ({ ...p, [req.id]: !p[req.id] }))}>
@@ -332,7 +332,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                       return (
                         <View key={item.id} style={{
                           borderRadius: 10, borderWidth: 1.5, padding: 8, gap: 4,
-                          backgroundColor: isApproved ? '#10B98112' : isRejected ? '#EF444412' : (isDark ? colors.surface : '#FAFAFA'),
+                          backgroundColor: isApproved ? '#10B98112' : isRejected ? '#EF444412' : (colors.surface),
                           borderColor: isApproved ? '#10B98150' : isRejected ? '#EF444450' : colors.border,
                         }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -347,12 +347,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                               <View style={{ flexDirection: 'row', gap: 6 }}>
                                 <TouchableOpacity
                                   onPress={() => { approveItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore({ ...req, items: [item] }); }}
-                                  style={{ borderRadius: 8, backgroundColor: '#10B981', paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  style={{ borderRadius: 8, backgroundColor: colors.teal, paddingHorizontal: 10, paddingVertical: 5 }}>
                                   <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✓ OK</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                   onPress={() => rejectItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id])}
-                                  style={{ borderRadius: 8, backgroundColor: '#EF4444', paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  style={{ borderRadius: 8, backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 5 }}>
                                   <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✗ No</Text>
                                 </TouchableOpacity>
                               </View>
@@ -376,7 +376,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
 
                     {/* Comment for this batch */}
                     <TextInput
-                      style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4B2E00' : '#D97706', backgroundColor: isDark ? '#0F172A' : '#fff' }]}
+                      style={[q.noteInput, { color: colors.textPrimary, borderColor: colors.amber, backgroundColor: colors.surface }]}
                       placeholder="Comment for all items (optional)…"
                       placeholderTextColor={colors.textTertiary}
                       maxLength={150}
@@ -389,12 +389,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity
                           onPress={() => { approveAllItems(req.id, activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore(req, new Set(req.items!.filter(i => i.status === 'pending').map(i => i.id))); }}
-                          style={{ flex: 1, borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 10, alignItems: 'center' }}>
+                          style={{ flex: 1, borderRadius: 12, backgroundColor: colors.teal, paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✓ Approve All</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => rejectAllItems(req.id, activeMemberId ?? '', itemNote[req.id])}
-                          style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF4444', paddingVertical: 10, alignItems: 'center' }}>
+                          style={{ flex: 1, borderRadius: 12, backgroundColor: colors.danger, paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✗ Reject All</Text>
                         </TouchableOpacity>
                       </View>
@@ -409,8 +409,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33' }]}>
                 <View style={q.actionHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <ShieldCheck color={isDark ? '#FCD34D' : '#92400E'} />
-                    <Text style={[q.actionHeaderText, { color: isDark ? '#FCD34D' : '#B45309' }]}>
+                    <ShieldCheck color={colors.amber} />
+                    <Text style={[q.actionHeaderText, { color: colors.amber }]}>
                       Assign Tutor / Helper or Decline:
                     </Text>
                   </View>
@@ -421,8 +421,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
 
                 {/* Decline panel */}
                 {isDeclineOpen && (
-                  <View style={[q.declinePanel, { backgroundColor: isDark ? '#450A0A' : '#FFF1F2', borderColor: isDark ? '#7F1D1D' : '#FDA4AF' }]}>
-                    <Text style={[q.declinePanelTitle, { color: isDark ? '#FCA5A5' : '#9F1239' }]}>
+                  <View style={[q.declinePanel, { backgroundColor: colors.dangerLight ?? colors.surface, borderColor: colors.border }]}>
+                    <Text style={[q.declinePanelTitle, { color: colors.danger }]}>
                       Select or Type Reason to Decline:
                     </Text>
                     <View style={q.presets}>
@@ -431,8 +431,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                           key={preset}
                           style={[q.presetChip,
                             declineReason[req.id] === preset
-                              ? { backgroundColor: '#EF4444', borderColor: '#EF4444' }
-                              : { backgroundColor: isDark ? '#0F172A' : '#fff', borderColor: isDark ? '#374151' : '#D1D5DB' }
+                              ? { backgroundColor: colors.danger, borderColor: '#EF4444' }
+                              : { backgroundColor: colors.surface, borderColor: isDark ? '#374151' : '#D1D5DB' }
                           ]}
                           onPress={() => setDeclineReason(p => ({ ...p, [req.id]: preset }))}
                         >
@@ -443,7 +443,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                       ))}
                     </View>
                     <TextInput
-                      style={[q.declineInput, { color: colors.textPrimary, borderColor: isDark ? '#374151' : '#D1D5DB', backgroundColor: isDark ? '#0F172A' : '#fff' }]}
+                      style={[q.declineInput, { color: colors.textPrimary, borderColor: isDark ? '#374151' : '#D1D5DB', backgroundColor: colors.surface }]}
                       placeholder="Custom reason (max 150 chars)..."
                       placeholderTextColor={colors.textTertiary}
                       maxLength={150}
@@ -452,13 +452,13 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                     />
                     <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
                       <TouchableOpacity
-                        style={[q.declineBtn, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }]}
+                        style={[q.declineBtn, { backgroundColor: colors.surface }]}
                         onPress={() => setDeclineOpen(p => ({ ...p, [req.id]: false }))}
                       >
                         <Text style={[q.declineBtnText, { color: colors.textSecondary }]}>Cancel</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[q.declineBtn, { backgroundColor: '#EF4444', opacity: processingDecline[req.id] ? 0.5 : 1 }]}
+                        style={[q.declineBtn, { backgroundColor: colors.danger, opacity: processingDecline[req.id] ? 0.5 : 1 }]}
                         onPress={() => doDecline(req.id)}
                         disabled={processingDecline[req.id]}
                       >
@@ -487,7 +487,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                     <View style={{ position: 'relative' }}>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity
-                          style={[q.helperTrigger, { borderColor: isDark ? '#78350F' : '#F59E0B', backgroundColor: isDark ? '#0F172A' : '#fff', flex: 1 }]}
+                          style={[q.helperTrigger, { borderColor: isDark ? '#78350F' : '#F59E0B', backgroundColor: colors.surface, flex: 1 }]}
                           onPress={() => setHelperOpen(p => ({ ...p, [req.id]: !p[req.id] }))}
                         >
                           <Text style={[q.helperTriggerText, { color: selHelper ? colors.textPrimary : colors.textTertiary }]} numberOfLines={1}>
@@ -507,7 +507,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                       </View>
 
                       {helperOpen[req.id] && (
-                        <View style={withAndroidShadowFix([q.helperDropdown, { backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }])}>
+                        <View style={withAndroidShadowFix([q.helperDropdown, { backgroundColor: isDark ? '#131927' : '#fff', borderColor: colors.surface }])}>
                           {adultHelpers
                             .filter(h => h.id !== req.assignedHelper)
                             .map(h => (
@@ -529,7 +529,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                     {selHelper && selHelper !== activeMemberId && (
                       <View>
                         <TextInput
-                          style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4B2E00' : '#D97706', backgroundColor: isDark ? '#0F172A' : '#fff' }]}
+                          style={[q.noteInput, { color: colors.textPrimary, borderColor: colors.amber, backgroundColor: colors.surface }]}
                           placeholder={`Reason / Note for ${helperName(selHelper)} (optional)...`}
                           placeholderTextColor={colors.textTertiary}
                           maxLength={150}
@@ -548,8 +548,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
             {!isParentOrSenior && (
               <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <ClockIcon color={isDark ? '#FCD34D' : '#92400E'} />
-                  <Text style={[q.waitText, { color: isDark ? '#FCD34D' : '#B45309' }]}>Waiting for parent approval...</Text>
+                  <ClockIcon color={colors.amber} />
+                  <Text style={[q.waitText, { color: colors.amber }]}>Waiting for parent approval...</Text>
                 </View>
                 {req.fromMemberId === activeMemberId && (
                   <TouchableOpacity
@@ -580,20 +580,20 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
             <View style={q.reqTop}>
               <View style={{ flex: 1 }}>
                 <View style={q.badges}>
-                  <Text style={[q.reqName, { color: isDark ? '#C4B5FD' : '#5B21B6' }]}>
+                  <Text style={[q.reqName, { color: colors.pink }]}>
                     🤝 {requester?.name ?? 'Member'}'s Request
                   </Text>
-                  <View style={[q.badge, { backgroundColor: isDark ? '#4C1D95' : '#EDE9FE' }]}>
-                    <Text style={[q.badgeText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>In Progress</Text>
+                  <View style={[q.badge, { backgroundColor: colors.pinkLight }]}>
+                    <Text style={[q.badgeText, { color: colors.pink }]}>In Progress</Text>
                   </View>
                 </View>
-                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{humanDetail(req)}"</Text>
+                <Text style={[q.reqDetail, { color: colors.textPrimary }]}>"{humanDetail(req)}"</Text>
               </View>
             </View>
 
             {req.parentNote ? (
               <View style={[q.noteBox, { backgroundColor: BRAND.purple + '20' }]}>
-                <Text style={[q.noteBoxText, { color: isDark ? '#C4B5FD' : '#5B21B6' }]}>📝 Note: "{req.parentNote}"</Text>
+                <Text style={[q.noteBoxText, { color: colors.pink }]}>📝 Note: "{req.parentNote}"</Text>
               </View>
             ) : null}
 
@@ -603,7 +603,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                   <UserCheckIcon color="#10B981" />
                   <Text style={[q.assignedText, { color: colors.textSecondary }]}>
                     Assigned:{' '}
-                    <Text style={{ fontWeight: '900', color: isDark ? '#C4B5FD' : '#5B21B6' }}>
+                    <Text style={{ fontWeight: '900', color: colors.pink }}>
                       {aHelper ? helperName(aHelper) : 'Parent'}
                     </Text>
                   </Text>
@@ -625,10 +625,10 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               {isParentOrSenior && (
                 <View style={[q.reassignBox, { backgroundColor: BRAND.purple + '15', borderRadius: 12, padding: 10, gap: 8 }]}>
                   <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                    <Text style={[q.reassignLabel, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>Reassign Tutor:</Text>
+                    <Text style={[q.reassignLabel, { color: colors.pink }]}>Reassign Tutor:</Text>
                     <View style={{ flex: 1, position: 'relative' }}>
                       <TouchableOpacity
-                        style={[q.helperTrigger, { borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: isDark ? '#0F172A' : '#fff', flex: 1 }]}
+                        style={[q.helperTrigger, { borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: colors.surface, flex: 1 }]}
                         onPress={() => setHelperOpen(p => ({ ...p, [req.id]: !p[req.id] }))}
                       >
                         <Text style={[q.helperTriggerText, { color: selHelper ? colors.textPrimary : colors.textTertiary, flex: 1 }]} numberOfLines={1}>
@@ -637,7 +637,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                         <Text style={{ color: colors.textTertiary }}>▾</Text>
                       </TouchableOpacity>
                       {helperOpen[req.id] && (
-                        <View style={withAndroidShadowFix([q.helperDropdown, { top: 36, backgroundColor: isDark ? '#131927' : '#fff', borderColor: isDark ? '#1E293B' : '#E2E8F0' }])}>
+                        <View style={withAndroidShadowFix([q.helperDropdown, { top: 36, backgroundColor: isDark ? '#131927' : '#fff', borderColor: colors.surface }])}>
                           {adultHelpers.filter(h => h.id !== aHelper).map(h => (
                             <TouchableOpacity
                               key={h.id}
@@ -663,7 +663,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                   {selHelper && selHelper !== aHelper && (
                     <View>
                       <TextInput
-                        style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: isDark ? '#0F172A' : '#fff' }]}
+                        style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: colors.surface }]}
                         placeholder={`Reason / Note for ${helperName(selHelper)} (optional)...`}
                         placeholderTextColor={colors.textTertiary}
                         maxLength={150}
@@ -684,15 +684,15 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
       {completed.map(req => {
         const requester = members.find(m => m.id === req.fromMemberId);
         return (
-          <View key={req.id} style={[q.completedRow, { backgroundColor: '#10B981' + '18', borderColor: '#10B981' + '30' }]}>
+          <View key={req.id} style={[q.completedRow, { backgroundColor: colors.teal + '18', borderColor: colors.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <CheckCircle color="#10B981" size={14} />
-              <Text style={[q.completedText, { color: isDark ? '#6EE7B7' : '#065F46' }]} numberOfLines={1}>
+              <Text style={[q.completedText, { color: colors.teal }]} numberOfLines={1}>
                 <Text style={{ fontWeight: '800' }}>{requester?.name ?? 'Member'}:</Text>
                 {' '}"{humanDetail(req)}"
               </Text>
             </View>
-            <Text style={[q.helperTag, { color: '#10B981' }]}>
+            <Text style={[q.helperTag, { color: colors.teal }]}>
               ✓ Helper: {req.assignedHelper ? helperName(req.assignedHelper) : '—'}
             </Text>
           </View>
@@ -728,7 +728,7 @@ const q = StyleSheet.create({
   actionsWrap: { borderTopWidth: 1, paddingTop: 10, gap: 8 },
   actionHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   actionHeaderText: { fontSize: 10, fontWeight: '900' },
-  declineLink: { fontSize: 10, fontWeight: '900', color: '#F43F5E' },
+  declineLink: { fontSize: 10, fontWeight: '900', color: '#C54A27' },
 
   declinePanel:{ borderRadius: 14, borderWidth: 1, padding: 10, gap: 8, marginTop: 4 },
   declinePanelTitle: { fontSize: 10, fontWeight: '900' },
@@ -739,7 +739,7 @@ const q = StyleSheet.create({
   declineBtn:  { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   declineBtnText: { fontSize: 10, fontWeight: '900' },
 
-  selfAssignBtn:  { borderRadius: 14, padding: 10, backgroundColor: '#059669', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  selfAssignBtn:  { borderRadius: 14, padding: 10, backgroundColor: '#3D7A5A', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   selfAssignText: { color: '#fff', fontSize: 12, fontWeight: '900' },
 
   helperTrigger:     { borderWidth: 1, borderRadius: 14, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -764,7 +764,7 @@ const q = StyleSheet.create({
   noteInput:   { borderWidth: 1, borderRadius: 10, padding: 8, fontSize: 11, marginTop: 2 },
   charCount:   { fontSize: 9, textAlign: 'right', marginTop: 2, fontWeight: '500' },
   waitText:    { fontSize: 10, fontWeight: '700' },
-  withdrawText:{ fontSize: 10, fontWeight: '700', color: '#EF4444' },
+  withdrawText:{ fontSize: 10, fontWeight: '700', color: '#C54A27' },
 
   noteBox:     { borderRadius: 12, padding: 10 },
   noteBoxText: { fontSize: 11, fontWeight: '600', fontStyle: 'italic' },

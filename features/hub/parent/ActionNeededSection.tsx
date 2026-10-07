@@ -23,7 +23,7 @@ import { dedupeRideSeries } from '../lib/dedupeRideSeries';
 const MONEY_GREEN = '#10B981';
 // Indigo — "school supplies" accent, distinct from brand purple; kept as
 // one local constant instead of a repeated bare hex.
-const INDIGO_ACCENT = '#6366F1';
+const INDIGO_ACCENT = '#4A7FA5' // sky;
 
 // ─── Priority ranking ───────────────────────────────────────────────────────
 // A parent glances at this list for seconds between tasks — it has to read

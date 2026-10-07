@@ -294,7 +294,7 @@ export function TodayView({
             <View style={{ gap: 4, marginBottom: 2 }}>
               {otherParentsWorkToday.map(w => (
                 <View key={w.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-                  backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 10,
+                  backgroundColor: colors.surface, borderRadius: 10,
                   paddingHorizontal: 10, paddingVertical: 6 }}>
                   <Briefcase size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>

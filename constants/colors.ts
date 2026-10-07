@@ -103,6 +103,11 @@ export const lightColors = {
   skeleton:          '#EDE7DE',
   skeletonHighlight: '#FAF8F4',
 
+  // ── Sky blue — Figma "Arrange a ride" / informational ───────────────────
+  sky:         '#4A7FA5',
+  skyLight:    '#E8F1F8',
+  skyDark:     '#2E5F80',
+
   // ── Legacy compat ───────────────────────────────────────────────────────
   purple:      '#7B5EA7',
   purpleLight: '#EFE8F8',
@@ -184,6 +189,10 @@ export const darkColors: typeof lightColors = {
 
   skeleton:          '#1D1A24',
   skeletonHighlight: '#252030',
+
+  sky:         '#6FA8CC',
+  skyLight:    'rgba(111,168,204,0.18)',
+  skyDark:     '#4A85AA',
 
   purple:      '#A78BC9',
   purpleLight: 'rgba(167,139,201,0.18)',

@@ -34,9 +34,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ListChecks, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
+import { CalendarDays, ListChecks, Layers, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
@@ -51,6 +51,7 @@ import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -59,7 +60,7 @@ import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal'
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
-type Segment = 'schedule' | 'chores';
+type Segment = 'schedule' | 'chores' | 'queue';
 
 export default function TasksScreen() {
   const { colors, isDark } = useTheme();
@@ -218,6 +219,15 @@ export default function TasksScreen() {
     return { pending, active };
   }, [chores, activeMemberId, activeMember?.role]);
 
+  // Work queue counts — parent-only. Unassigned + pending review = needs action.
+  const queueCounts = useMemo(() => {
+    if (!isParent) return { pending: 0, active: 0 };
+    const unassigned = chores.filter(c => c.status === 'todo' && !c.assignedToId && c.isPool !== false).length;
+    const pendingReview = chores.filter(c => c.status === 'pending_approval' || c.status === 'pending_parent_approval').length;
+    const locked = chores.filter(c => c.status === 'in_progress').length;
+    return { pending: unassigned + pendingReview, active: locked };
+  }, [chores, isParent]);
+
   // Smart creator — one "+" regardless of segment. SmartTaskComposer
   // classifies free text live as the user types (via extractResponsibility)
   // into Event vs Quest, auto-fills category/assignee/coins, and creates
@@ -299,6 +309,7 @@ export default function TasksScreen() {
         {([
           { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
           { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
+          ...(isParent ? [{ key: 'queue' as const, label: 'Queue', Icon: Layers, counts: queueCounts, accent: colors.primary, accentLight: colors.primaryLight }] : []),
         ]).map(({ key, label, Icon, counts, accent, accentLight }) => {
           const active = segment === key;
           const needsAttention = !active && counts.pending > 0;
@@ -468,6 +479,13 @@ export default function TasksScreen() {
 
       {segment === 'schedule'
         ? <CalendarScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
+        : segment === 'queue'
+        ? (
+          <ScrollView>
+            {tasksHeader}
+            <HouseholdWorkQueue activeMemberId={activeMemberId ?? ''} />
+          </ScrollView>
+        )
         : (
           <QuestsScreen
             hideHeader hideCreateButton hideSearchBar hideAiTrigger

@@ -21,27 +21,25 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, withDelay, withSpring, Easing,
 } from 'react-native-reanimated';
 
-// Mirrors constants/colors.ts's light-mode Kinfolk palette — kept as a
-// plain literal (not theme-aware) for the many call sites that reach for
+// Mirrors constants/colors.ts's light-mode palette — kept as a plain
+// literal (not theme-aware) for the many call sites that reach for
 // BRAND.* directly instead of useTheme(), e.g. plain functions like
 // hubUtils.ts's catColor() that can't call hooks. Components that CAN use
 // useTheme() should prefer colors.primary/colors.parent/etc. over BRAND.*
 // so they get the correct value per light/dark theme.
+//
+// Synced to the Figma Make reskin (constants/colors.ts, session covering
+// ParentView first) — *2 variants mirror that same file's dark-mode values.
 export const BRAND = {
-  // "Bold tiles" palette — see constants/colors.ts's matching light-mode
-  // update (session 2026-08-28: dusty/washed-out tones darkened+saturated
-  // after live mock comparison). *2 variants (used for dark-mode gradients
-  // elsewhere) intentionally left at their original softer values — no
-  // dark-mode mock was reviewed/approved this round, only light mode.
-  amber:  '#BF7600',
-  amber2: '#D9AF74',
-  teal:   '#3C805B',
-  teal2:  '#86AC97',
-  purple: '#BF4E12',
-  purple2:'#DB9270',
-  pink:   '#6C519F',
-  pink2:  '#AC9BC7',
-  navy:   '#2C2722',
+  amber:  '#D58B7B',
+  amber2: '#E0A696',
+  teal:   '#648B7D',
+  teal2:  '#8FB0A3',
+  purple: '#6677BD',
+  purple2:'#8E9BD4',
+  pink:   '#7788CC',
+  pink2:  '#9CA9DC',
+  navy:   '#2C3244',
   white:  '#FFFFFF',
 } as const;
 

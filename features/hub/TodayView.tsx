@@ -15,7 +15,7 @@ import {
 import { Clock, Briefcase, CheckCircle2 } from 'lucide-react-native';
 import { SectionCard, LiveDot } from './hubComponents';
 import { TimelineCard } from './hubComponents';
-import { TYPO, LETTER_SPACING } from '@/constants/theme';
+import { TYPO } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
@@ -29,7 +29,7 @@ import { FamilyPhotoFrameCard } from './parent/FamilyPhotoFrameCard';
 
 // ── Greeting header — sits on the page background, no card boundary ────────
 
-export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCount = 0 }: {
+export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCount = 0, showPhotoFrame = true }: {
   colors: any; isDark: boolean; activeMember: FamilyMember;
   // Action Needed + Household Backlog + Chore Reviews counts, lifted from
   // ParentView — without this, "All clear" only looked at today's calendar
@@ -38,6 +38,12 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
   // useQuestStore directly, since ParentView's own pendingReviews figure
   // reads the exact same underlying chores array and would double-count.
   otherAttentionCount?: number;
+  // Figma Make "Scrollable Content Design" reskin's Home page has no photo
+  // frame element at all — hidden for the parent Hub per explicit direction
+  // ("to make the rythem of figma"), without touching the underlying
+  // setFamilyPhotoFrameEnabled preference itself (a parent who turned it on
+  // keeps that choice; it just doesn't render on this specific screen).
+  showPhotoFrame?: boolean;
 }) {
   const { events } = useEventStore();
   const chores = useChoreStore(s => s.chores);
@@ -111,25 +117,43 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
   const [frameEnabled, setFrameEnabled] = useState(false);
 
   return (
-    <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8,
+    // paddingHorizontal 20 matches Figma's .page side gutter exactly (was
+    // 16, the same gap found across every Home-page card this pass —
+    // see FamilyPulseCard.tsx etc.).
+    <View style={{ paddingHorizontal: 20, marginTop: 4,
       flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-      <View style={{ flex: 1, paddingRight: frameEnabled ? 12 : 0 }}>
+      <View style={{ flex: 1, paddingRight: (frameEnabled && showPhotoFrame) ? 12 : 0 }}>
         <Text style={{
-          fontSize: 24, fontWeight: '800',
+          // Exact match to the Figma reskin source's .topbar h1 (design/
+          // Scrollable Content Design/src/index.css:136-142): font-size
+          // clamp(27,7vw,38)≈34px, font-weight 720 (RN has no 720 — '700'
+          // is the nearest valid value), letter-spacing -0.035em, line-
+          // height 1.12 — halved to 17 per explicit direction ("reduce the
+          // Greeting Size to half"), so letter-spacing/line-height are
+          // scaled down proportionally with it rather than left at the
+          // 34px-tuned values. Previously split into 2 lines with the name
+          // in a LIGHTER weight (600 vs 800 prefix) — Figma's h1 is ONE
+          // line, UNIFORM weight throughout ("Good afternoon, Maya" — no
+          // name emphasis at all); corrected to match. Still allowed to
+          // wrap on narrow devices/long names, but no longer forces a line
+          // break or re-weights the name.
+          fontSize: 17, fontWeight: '700',
           color: colors.textPrimary,
-          letterSpacing: LETTER_SPACING.display,
+          letterSpacing: -0.6,
+          lineHeight: 19,
         }}>
-          {getGreetingPrefix()}
-          {'\n'}
-          <Text style={{ fontWeight: '600' }}>{firstName}</Text>
+          {getGreetingPrefix()} {firstName}
         </Text>
         {/* Family name already shown in AppHeader right above (tied to the
             "Switch Profile" action there) — repeating it here was pure
-            duplication with no distinct purpose, flagged in UI review. */}
+            duplication with no distinct purpose, flagged in UI review.
+            Exact match to .date-line (index.css:150-156): 13px, no explicit
+            font-weight (normal/400) — was TYPO.label (12px) at weight 600. */}
         <Text style={{
-          fontSize: TYPO.label, fontWeight: '600',
+          fontSize: 13, fontWeight: '400',
           color: colors.textSecondary,
-          marginTop: 4,
+          marginTop: 8,
+          lineHeight: 19,
         }}>
           {weekday}, {monthDay}
         </Text>
@@ -152,8 +176,11 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
           and report frameEnabled via onFrameStateChange), but visually
           collapsed to zero width/height when the toggle is off — a plain
           conditional unmount here would never get the chance to report
-          "still off" back on a later check. */}
-      <View style={frameEnabled ? undefined : { width: 0, height: 0, overflow: 'hidden' }}>
+          "still off" back on a later check. showPhotoFrame=false (parent
+          Hub, matching the Figma reskin) collapses it the same way
+          regardless of the stored preference — hidden on this screen only,
+          preference untouched. */}
+      <View style={(frameEnabled && showPhotoFrame) ? undefined : { width: 0, height: 0, overflow: 'hidden' }}>
         <FamilyPhotoFrameCard colors={colors} isDark={isDark} width={196} height={132} onFrameStateChange={setFrameEnabled} />
       </View>
     </View>

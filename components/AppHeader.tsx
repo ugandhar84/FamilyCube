@@ -185,6 +185,17 @@ interface AppHeaderProps {
   // features/profile), which every role reaches through the same gear icon
   // regardless of whether they also have a dedicated Profile tab slot.
   onSettingsPress?: () => void;
+  // Figma Make "Scrollable Content Design" reskin's compact TopBar
+  // (design/Scrollable Content Design/src/App.tsx — avatar + "family /
+  // name" two-line text + a single round "+" button, no role badge, no
+  // "Switch Profile" text row) — parent role only, per explicit direction.
+  // Switcher/notification FUNCTION is unchanged (same handlePersonaPress,
+  // same PersonaSwitcherDropdown, same bell) — only the visual chrome
+  // shrinks; nothing here is removed for the roles that don't pass this.
+  compact?: boolean;
+  // "+" button press in compact mode — HubScreen wires this to the Smart
+  // Task Composer, matching Figma's own "+" opening quick-capture.
+  onAddPress?: () => void;
   // Real rendered height of this header instance, measured via onLayout —
   // NotificationPanel (a screen-independent Modal with no knowledge of any
   // particular screen's layout) uses this to sit its top edge exactly below
@@ -214,6 +225,8 @@ export default function AppHeader({
   onBellPress,
   onSettingsPress,
   onHeightChange,
+  compact = false,
+  onAddPress,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
   const { familyName, members } = useFamilyStore();
@@ -224,6 +237,65 @@ export default function AppHeader({
     setShowSwitcher(v => !v);
     onPersonaPress?.();
   };
+
+  if (compact) {
+    const greeting = (() => {
+      const h = new Date().getHours();
+      if (h < 12) return 'Good morning';
+      if (h < 17) return 'Good afternoon';
+      return 'Good evening';
+    })();
+    const firstName = memberName.split(' ')[0];
+
+    return (
+      <View style={{ position: 'relative', zIndex: 30 }}
+        onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
+        {/* Main row: avatar + greeting/name + actions */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: colors.background }}>
+          <TouchableOpacity
+            onPress={handlePersonaPress} activeOpacity={0.75}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <FamilyAvatar
+              name={memberName} emoji={memberEmoji} avatarUrl={memberAvatarUrl}
+              siblings={members.map(m => m.name)} size={42}
+            />
+            <View>
+              <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {onAddPress && (
+              <TouchableOpacity
+                onPress={onAddPress} activeOpacity={0.8}
+                style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: colors.card,
+                  shadowColor: '#2C3244', shadowOffset: { width: 0, height: 5 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 16 }}
+              >
+                <Text style={{ fontSize: 22, color: colors.primary, fontWeight: '300', lineHeight: 26 }}>+</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
+              onPress={onBellPress} activeOpacity={0.8}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 2 }}
+            >
+              <BellIcon color={BRAND.amber} />
+              {notifCount > 0 && (
+                <View style={[s.badge, notifCount > 9 ? s.badgeWide : null]}>
+                  <Text style={s.badgeText} numberOfLines={1}>{notifCount > 99 ? '99+' : String(notifCount)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+        <PersonaSwitcherDropdown visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ position: 'relative', zIndex: 30 }}

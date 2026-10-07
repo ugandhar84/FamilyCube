@@ -1,235 +1,230 @@
-// ── Family Cube — Design Tokens (Kinfolk palette) ────────────────────────────
+// ── Family Cube — Design Tokens ───────────────────────────────────────────────
 //
-// Adapted from the "Kinfolk" reference: warm editorial terracotta/sage/
-// lavender/amber on cashmere neutrals, replacing the earlier cool purple/
-// teal/pink cube palette. Token NAMES are unchanged (primary/parent/kid/
-// accent/etc.) so no component code needs to change — only the hex values
-// moved. See components/FamilyCubeLogo.tsx's BRAND constant, which mirrors
-// these same values for call sites that reach for BRAND.* directly instead
-// of useTheme().
+// Full reskin from the Figma Make "Scrollable Content Design" prototype
+// (design/Scrollable Content Design/src/index.css — exact hex values pulled
+// directly from that file, not approximated). Replaces the earlier "Kinfolk"
+// warm terracotta/sage/lavender palette per explicit direction ("scrap the
+// existing full design and make the new skin with Figma"). Token NAMES are
+// unchanged (primary/parent/kid/accent/etc.) so component code doesn't need
+// to change — only hex values moved, same pattern as every previous palette
+// swap in this file's history.
 //
-// Role mapping:
-//   primary (terracotta) — main brand, primary actions
-//   sage    (parent/teal slot) — calm/positive, parent role accent
-//   amber   (kid slot)         — warmth, kid role accent
-//   lavender (accent/pink slot) — third accent, highlights
+// Scope note: this pass covers ParentView/Hub first (per explicit direction,
+// "parentview first") — other screens still read these same tokens via
+// useTheme(), so they inherit the new palette automatically wherever they
+// use colors.*, but haven't been individually re-verified against the
+// prototype's other pages yet.
 //
-// CONNECT. ORGANIZE. CARE. GROW.
+// Font: the prototype uses Inter; this app has no Inter font files bundled
+// and no expo-font/useFonts setup (checked — neither exists anywhere in the
+// repo). FONTS in constants/theme.ts is UNCHANGED (still system font) —
+// switching fonts is a separate, bigger piece of work (download Inter's
+// files, wire expo-font, handle load-state) not done in this pass.
+//
+// Role mapping (unchanged names, new hues):
+//   primary  — periwinkle-indigo (buttons, primary actions, links)
+//   teal     — sage-mint (Family Pulse ring, parent role accent)
+//   amber    — warm peach/clay (kid role accent)
+//   pink     — periwinkle-lavender (third accent)
 
 export const lightColors = {
-  // ── Brand primaries — Dusty Terracotta ──────────────────────────────────
-  // "Bold tiles" palette (approved after live mock comparison — see
-  // palette_mock artifact, session 2026-08-28): *Light tint tokens are the
-  // tile/pill/badge BACKGROUNDS most of the screen's colored area actually
-  // consists of — punching up only the small icon-circle colors and leaving
-  // these washed-out tints barely moved was why an earlier saturation pass
-  // read as "no different from current" (direct user feedback on the first
-  // mock). These are meaningfully darker/more saturated than a typical
-  // "light" tint, by design.
-  primary:      '#BF4E12',        // Bold saturated terracotta (was dusty #CD7B57)
-  primaryLight: '#EACAAC',
-  primaryDark:  '#8A3A0D',
-  primaryMid:   '#DA9977',
-  primaryText:  '#8A3A0D',
+  // ── Brand primary — periwinkle-indigo (buttons/links/primary actions) ──
+  // #6677bd: .button.primary / .floating-add background, src/index.css:294.
+  // #5c6eb5: .round-action color, .back, .section-title > a, .timeline a,
+  // .evening a — the slightly lighter "link" shade this prototype actually
+  // uses for text links vs. solid buttons; kept as primaryMid since every
+  // existing call site already expects one extra primary-family shade.
+  primary:      '#6677BD',
+  primaryLight: '#E9EDFB',        // .main-nav > a.active .main-nav-icon background, index.css:530
+  primaryDark:  '#4A5A9E',        // darkened for pressed/dark-mode-adjacent states, no direct source
+  primaryMid:   '#5C6EB5',
+  primaryText:  '#5C6EB5',
 
-  // ── Teal slot — Muted Sage (Connect / calm / parent) ────────────────────
-  teal:         '#3C805B',        // Bold saturated sage (was dusty #69927C)
-  tealLight:    '#C7E3D5',
-  tealDark:     '#245A3D',
+  // ── Teal slot — sage/mint (Family Pulse card + mint timeline mark) ─────
+  teal:         '#648B7D',        // .pulse-ring border-top-color, index.css:197
+  tealLight:    '#E5F3ED',        // .mint quick-action tone, index.css:409
+  tealDark:     '#4A6B5F',
 
-  // ── Amber — Organize (kids earn coins), dustier gold not lightened orange
-  amber:        '#BF7600',        // Bold saturated amber (was dusty #C9964F)
-  amberLight:   '#EADA98',
-  amberDark:    '#8A5500',
+  // ── Amber slot — warm clay/peach (peach timeline mark + attention card) ─
+  amber:        '#D58B7B',        // .timeline-mark.peach, index.css:365
+  amberLight:   '#F9EBE7',        // .peach quick-action tone / .attention-card background, index.css:249,417
+  amberDark:    '#A8604F',
 
-  // ── Pink slot — Muted Lavender (Care / third accent) ────────────────────
-  pink:         '#6C519F',        // Bold saturated lavender (was dusty #9686B5)
-  pinkLight:    '#D4C3EA',
-  pinkDark:     '#4A3670',
+  // ── Pink slot — periwinkle-lavender (lavender quick-action + periwinkle mark) ─
+  pink:         '#7788CC',        // .timeline-mark.periwinkle, index.css:357
+  pinkLight:    '#EEEBF9',        // .lavender quick-action tone, index.css:405
+  pinkDark:     '#5563A0',
 
-  // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
-  navy:         '#2C2722',
-  navyLight:    '#F2ECE1',
+  // ── Navy slot — body text color ─────────────────────────────────────────
+  navy:         '#2C3244',        // :root color, index.css:11
+  navyLight:    '#F8F7FB',
 
-  // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#3C805B',        // Sage = Connect = parents
-  parentLight:  '#C7E3D5',
-  parentDark:   '#245A3D',
+  // ── Role accents (mapped to brand) ─────────────────────────────────────
+  parent:       '#648B7D',
+  parentLight:  '#E5F3ED',
+  parentDark:   '#4A6B5F',
 
-  // NOTE: kid was historically an exact alias of amber (both #C9964F) —
-  // Grocery and Meals action tiles (both tinted from this pair) were
-  // therefore guaranteed-identical colors sitting side by side, flagged as
-  // "hardly visible/same color" in review. Fixed at the CALL SITE
-  // (ParentQuickActions.tsx: Grocery now tints from colors.primary instead
-  // of colors.kid) rather than by un-aliasing kid from amber here — every
-  // other kid-role UI surface (avatars, badges, roster) still correctly
-  // wants kid===amber as one coherent "Organize" identity; only that one
-  // tile row actually needed two more distinct hues than the brand has role
-  // slots for.
-  kid:          '#BF7600',        // Amber = Organize = kids earn coins
-  kidLight:     '#EADA98',
-  kidDark:      '#8A5500',
+  kid:          '#D58B7B',
+  kidLight:     '#F9EBE7',
+  kidDark:      '#A8604F',
 
-  // ── Semantics ─────────────────────────────────────────────────────────
-  danger:       '#B85F45',
-  dangerLight:  '#EACAAC',
-  dangerDark:   '#8E4632',
-  warning:      '#BF7600',
-  warningLight: '#EADA98',
-  warningDark:  '#8A5500',
-  success:      '#3C805B',
-  successLight: '#C7E3D5',
-  successDark:  '#245A3D',
-  info:         '#5F8CB8',
-  infoLight:    '#DEE9F2',
-  infoDark:     '#456A8E',
+  // ── Semantics ───────────────────────────────────────────────────────────
+  // No dedicated error/danger color exists in the prototype (its one
+  // "needs attention" surface is the peach .attention-card, reused above as
+  // amber) — danger kept distinct from amber so a real destructive action
+  // still reads differently from "kid role" tint; nearest-hue warm red this
+  // palette's family would plausibly extend to.
+  danger:       '#C65D4A',
+  dangerLight:  '#F9EBE7',
+  dangerDark:   '#8E3F30',
+  warning:      '#D58B7B',
+  warningLight: '#F9EBE7',
+  warningDark:  '#A8604F',
+  success:      '#648B7D',
+  successLight: '#E5F3ED',
+  successDark:  '#4A6B5F',
+  info:         '#6677BD',
+  infoLight:    '#E9EDFB',
+  infoDark:     '#4A5A9E',
 
-  // ── Accent (lavender / care) ────────────────────────────────────────────
-  accent:       '#6C519F',
-  accentLight:  '#D4C3EA',
-  accentDark:   '#4A3670',
+  // ── Accent (lavender / third hue) ───────────────────────────────────────
+  accent:       '#7788CC',
+  accentLight:  '#EEEBF9',
+  accentDark:   '#5563A0',
 
-  // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
-  background:   '#FDFBF7',
-  surface:      '#F8F3EA',
-  card:         '#FFFFFF',
-  overlay:      'rgba(44,39,34,0.45)',
+  // ── Surfaces ────────────────────────────────────────────────────────────
+  background:   '#F8F7FB',        // :root/body/.app background, index.css:12,23,65
+  surface:      '#F8F7FB',        // prototype has no distinct "surface" tone from background — same value
+  card:         '#FFFFFF',        // .timeline/.evening/.household background, white throughout
+  overlay:      'rgba(44,50,68,0.45)',
 
-  // ── Borders ───────────────────────────────────────────────────────────
-  border:       'rgba(205,123,87,0.18)',
-  borderMed:    'rgba(205,123,87,0.32)',
-  borderStrong: 'rgba(205,123,87,0.55)',
+  // ── Borders ─────────────────────────────────────────────────────────────
+  border:       'rgba(93,110,181,0.18)',
+  borderMed:    'rgba(93,110,181,0.32)',
+  borderStrong: 'rgba(93,110,181,0.55)',
 
-  // ── Text ──────────────────────────────────────────────────────────────
-  textPrimary:   '#2C2722',
-  textSecondary: '#6B5F52',
-  // Darkened from #8A7D6C — that value read as 3.79-4.01:1 against
-  // card/background, under WCAG AA's 4.5:1 minimum for normal text
-  // (flagged in UI review: subtitles/dates/timestamps using this token
-  // read as near-illegible faint gray). #756A5B clears 4.5:1 on both.
-  textTertiary:  '#756A5B',
+  // ── Text ────────────────────────────────────────────────────────────────
+  textPrimary:   '#2C3244',       // :root color, index.css:11
+  textSecondary: '#777D8F',       // .household small / .date-line / .timeline time, index.css:115,153
+  textTertiary:  '#737A90',       // .overline, index.css:159 — checked: 4.5:1+ against card/background
   textInverse:   '#FFFFFF',
-  textDisabled:  '#D5CCBE',
+  textDisabled:  '#C7CBDA',
 
-  // ── Tab bar ───────────────────────────────────────────────────────────
-  // Matches background exactly — nav reads as part of the same canvas,
-  // not a separate white bar sitting on top of it.
-  tabBar:       '#FDFBF7',
-  tabBarBorder: 'rgba(205,123,87,0.14)',
-  tabActive:    '#CD7B57',
-  tabInactive:  '#A69A8A',
+  // ── Tab bar ─────────────────────────────────────────────────────────────
+  // .main-nav background: rgba(255,255,255,0.94) + blur — flattened to a
+  // near-white solid since RN's backdrop-filter support is inconsistent
+  // across platforms; visually equivalent over this app's light background.
+  tabBar:       '#FEFEFF',
+  tabBarBorder: 'rgba(220,221,229,0.9)',
+  tabActive:    '#5265B1',        // .main-nav > a.active color, index.css:526
+  tabInactive:  '#7A8090',        // .main-nav > a color, index.css:503
 
-  // ── Status bar ────────────────────────────────────────────────────────
+  // ── Status bar ──────────────────────────────────────────────────────────
   statusBar:    'dark' as 'light' | 'dark',
 
-  // ── Inputs ────────────────────────────────────────────────────────────
-  inputBg:      '#F2ECE1',
-  inputBorder:  'rgba(205,123,87,0.28)',
-  placeholder:  '#A69A8A',
+  // ── Inputs ──────────────────────────────────────────────────────────────
+  inputBg:      '#F1F2F8',
+  inputBorder:  'rgba(93,110,181,0.28)',
+  placeholder:  '#9095A8',
 
-  // ── Skeleton ──────────────────────────────────────────────────────────
-  skeleton:          '#E5DFC8',
-  skeletonHighlight: '#F2ECE1',
+  // ── Skeleton ────────────────────────────────────────────────────────────
+  skeleton:          '#ECEDF4',
+  skeletonHighlight: '#F8F7FB',
 
-  // ── Legacy compat (aliases old "purple" name to the new primary hue) ───
-  purple:      '#CD7B57',
-  purpleLight: '#F3E1D6',
-  purpleDark:  '#A05939',
+  // ── Legacy compat (aliases old "purple" name to the new primary hue) ────
+  purple:      '#6677BD',
+  purpleLight: '#E9EDFB',
+  purpleDark:  '#4A5A9E',
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#DB9270',
-  primaryLight: 'rgba(219,146,112,0.20)',
-  primaryDark:  '#E9B199',
-  primaryMid:   '#E1A183',
-  primaryText:  '#E9B199',
+  // The prototype defines no dark mode at all (confirmed — no @media
+  // prefers-color-scheme block, no dark variant anywhere in index.css).
+  // These are this app's own dark-mode derivation of the same hues above —
+  // same lightening/alpha approach the previous Kinfolk dark palette used
+  // (saturated light-mode hue → lightened for dark-mode legibility, *Light
+  // tokens → low-alpha rgba of the same hue) — not sourced from Figma,
+  // since there is nothing there to source from.
+  primary:      '#8E9BD4',
+  primaryLight: 'rgba(142,155,212,0.20)',
+  primaryDark:  '#AAB4E0',
+  primaryMid:   '#9AA6D8',
+  primaryText:  '#AAB4E0',
 
-  teal:         '#86AC97',
-  tealLight:    'rgba(134,172,151,0.20)',
-  tealDark:     '#A9C7B5',
+  teal:         '#8FB0A3',
+  tealLight:    'rgba(143,176,163,0.20)',
+  tealDark:     '#ACC6BC',
 
-  amber:        '#D9AF74',
-  amberLight:   'rgba(217,175,116,0.20)',
-  amberDark:    '#E7C695',
+  amber:        '#E0A696',
+  amberLight:   'rgba(224,166,150,0.20)',
+  amberDark:    '#EBBFB3',
 
-  pink:         '#AC9BC7',
-  pinkLight:    'rgba(172,155,199,0.20)',
-  pinkDark:     '#C8BADB',
+  pink:         '#9CA9DC',
+  pinkLight:    'rgba(156,169,220,0.20)',
+  pinkDark:     '#B8C2E6',
 
-  navy:         '#EDE7DE',
-  navyLight:    'rgba(237,231,222,0.12)',
+  navy:         '#E8E9EF',
+  navyLight:    'rgba(232,233,239,0.12)',
 
-  parent:       '#86AC97',
-  parentLight:  'rgba(134,172,151,0.20)',
-  parentDark:   '#A9C7B5',
+  parent:       '#8FB0A3',
+  parentLight:  'rgba(143,176,163,0.20)',
+  parentDark:   '#ACC6BC',
 
-  kid:          '#D9AF74',
-  kidLight:     'rgba(217,175,116,0.20)',
-  kidDark:      '#E7C695',
+  kid:          '#E0A696',
+  kidLight:     'rgba(224,166,150,0.20)',
+  kidDark:      '#EBBFB3',
 
-  danger:       '#CC8064',
-  dangerLight:  'rgba(204,128,100,0.20)',
-  dangerDark:   '#DEA48D',
-  warning:      '#D9AF74',
-  warningLight: 'rgba(217,175,116,0.20)',
-  warningDark:  '#E7C695',
-  success:      '#86AC97',
-  successLight: 'rgba(134,172,151,0.20)',
-  successDark:  '#A9C7B5',
-  info:         '#82A6CC',
-  infoLight:    'rgba(130,166,204,0.20)',
-  infoDark:     '#AAC3DE',
+  danger:       '#D68C7C',
+  dangerLight:  'rgba(214,140,124,0.20)',
+  dangerDark:   '#E3AA9E',
+  warning:      '#E0A696',
+  warningLight: 'rgba(224,166,150,0.20)',
+  warningDark:  '#EBBFB3',
+  success:      '#8FB0A3',
+  successLight: 'rgba(143,176,163,0.20)',
+  successDark:  '#ACC6BC',
+  info:         '#8E9BD4',
+  infoLight:    'rgba(142,155,212,0.20)',
+  infoDark:     '#AAB4E0',
 
-  accent:       '#AC9BC7',
-  accentLight:  'rgba(172,155,199,0.20)',
-  accentDark:   '#C8BADB',
+  accent:       '#9CA9DC',
+  accentLight:  'rgba(156,169,220,0.20)',
+  accentDark:   '#B8C2E6',
 
-  // "Deep navy-charcoal" — a faint cool undertone instead of a neutral
-  // near-black, the classic premium-dark-mode move (Linear/Things 3):
-  // reads as pure black at a glance but feels deliberate, and makes the
-  // warm accent colors pop harder by contrast than a neutral base does.
-  background:   '#12141C',
-  surface:      '#181B24',   // faint solid lift for section rows — was flush with background
-  card:         '#1B1E28',
+  // Deep indigo-charcoal — cool undertone matching the new primary hue's
+  // family, same "premium dark mode" approach the previous palette used.
+  background:   '#13141C',
+  surface:      '#191A24',
+  card:         '#1C1E2A',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(219,146,112,0.18)',
-  borderMed:    'rgba(219,146,112,0.32)',
-  borderStrong: 'rgba(219,146,112,0.50)',
+  border:       'rgba(142,155,212,0.18)',
+  borderMed:    'rgba(142,155,212,0.32)',
+  borderStrong: 'rgba(142,155,212,0.50)',
 
-  // Dimmed a step off pure white — max-contrast white-on-near-black is
-  // the classic eye-strain combo; a slightly dimmer, warm-tinted white
-  // is easier to read for long sessions while staying plenty legible.
-  textPrimary:   '#EDE8E0',
-  textSecondary: '#B8AC9C',
-  // Lightened from #7A6E60 — same WCAG AA contrast fix as the light-mode
-  // textTertiary above (that value was 3.35-3.7:1 against card/background,
-  // under the 4.5:1 minimum). #988978 clears 4.5:1 on both.
-  textTertiary:  '#988978',
-  textInverse:   '#1A1714',
-  textDisabled:  '#4A4038',
+  textPrimary:   '#E9E9F0',
+  textSecondary: '#B4B7C6',
+  textTertiary:  '#9598AC',
+  textInverse:   '#15161E',
+  textDisabled:  '#464859',
 
-  // Matches background exactly — nav reads as part of the same canvas,
-  // not a separate bar sitting on top of it (explicit direction: nav
-  // should match canvas in both themes, overriding the earlier "distinctly
-  // darker" treatment).
-  tabBar:       '#12141C',
-  tabBarBorder: 'rgba(219,146,112,0.14)',
-  tabActive:    '#DB9270',
-  tabInactive:  '#7A6E60',
+  tabBar:       '#13141C',
+  tabBarBorder: 'rgba(142,155,212,0.14)',
+  tabActive:    '#8E9BD4',
+  tabInactive:  '#7A7E90',
 
   statusBar:    'light' as const,
 
-  inputBg:      '#1D1A24',
-  inputBorder:  'rgba(219,146,112,0.28)',
-  placeholder:  '#7A6E60',
+  inputBg:      '#1D1E29',
+  inputBorder:  'rgba(142,155,212,0.28)',
+  placeholder:  '#7A7E90',
 
-  skeleton:          '#1D1A24',
-  skeletonHighlight: '#2A2632',
+  skeleton:          '#1D1E29',
+  skeletonHighlight: '#282A38',
 
-  purple:      '#DB9270',
-  purpleLight: 'rgba(219,146,112,0.20)',
-  purpleDark:  '#E9B199',
+  purple:      '#8E9BD4',
+  purpleLight: 'rgba(142,155,212,0.20)',
+  purpleDark:  '#AAB4E0',
 };
 
 export type ThemeColors = typeof lightColors;

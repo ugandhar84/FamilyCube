@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -6,26 +7,21 @@ import { localDateStr, todayLocal } from '@/lib/dates';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
-import { MedicationsCard } from './senior/MedicationsCard';
-import { useMedications } from '@/features/vault/tabs/health/useMedications';
-import { today as medsToday } from '@/features/vault/tabs/health/types';
+import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { AlertBanner, PickupRadarStatus } from './hubComponents';
+import { AlertBanner } from './hubComponents';
 import { localToday, hoursUntilEvent } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
-import { TodayView, GreetingHeader } from './TodayView';
 import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
-import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
-import { HomeownerNotesSection } from './parent/HomeownerNotesSection';
-import { SchoolTodaySection } from './parent/SchoolTodaySection';
-import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
-import { EnRouteBanner } from './parent/EnRouteBanner';
-import { ActionNeededSection } from './parent/ActionNeededSection';
-import { GpCanHelpSection } from './parent/GpCanHelpSection';
-import { HouseholdBacklogSection } from './parent/HouseholdBacklogSection';
-import { ChoreReviewSection } from './parent/ChoreReviewSection';
+import { TodayActionGrid } from './parent/TodayActionGrid';
+import { NextUpTimeline } from './parent/NextUpCard';
+import { FamilyPulseCard } from './parent/FamilyPulseCard';
+import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
+import { NeedsYouCard, type NeedsYouItem } from './parent/NeedsYouCard';
+import { TonightMealCard } from './parent/TonightMealCard';
+import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { TrialNagBanner } from './parent/TrialNagBanner';
@@ -58,6 +54,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
   onUpdateEta?: (tripId: string, etaMinutes: number) => void;
 }) {
+  const { familyName } = useFamilyStore();
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
   // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
@@ -115,15 +112,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   } = useParentEventClassification(active, members, events, activeTrip, otherActiveTrips, kidRequests);
 
   const familyId = (active as any).familyId ?? 'family-1';
-
-  // Parent's own medication tracking — same real dosage/frequency/schedule
-  // form and shared useMedications hook Grandparent's Hub and the Health
-  // tab use (single source of truth across all three). Parent's Hub
-  // previously had no medication card at all.
-  const { meds: parentMeds, addMed: addParentMed, toggleMed: toggleParentMed, deleteMed: deleteParentMed } = useMedications(familyId, active.id);
-  const parentMedsTaken = Object.fromEntries(
-    parentMeds.map(m => [m.id, m.taken_date === medsToday()])
-  ) as Record<string, boolean>;
 
   // Scenario 1.4 — approving a kid's quest_proposal request must create a
   // real, live pool quest (not just flip the request's own status the way
@@ -335,6 +323,58 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // underlying chores array; including it here would double-count.
   const otherAttentionCount = actionCount + backlogCount;
 
+  // "Next up" — today's not-yet-passed events (NextUpTimeline shows up to
+  // 3). Same source/filter as TodayView's own `upcoming` list (today's
+  // non-work events, sorted, hoursUntilEvent > -0.5 so something
+  // just-started still counts as "up next" rather than vanishing early).
+  const nextUpDateStr = localToday();
+  const upcomingTodayEvents = events
+    .filter(e => e.date === nextUpDateStr && hoursUntilEvent(e.date, e.time) > -0.5)
+    .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+
+  // Single most-urgent item for NeedsYouCard — priority: scheduling
+  // conflict → overdue trip → pending chore approval → backlog task.
+  // Conflict/trip use the existing event classification; approval and
+  // backlog are fallbacks so the card is almost always visible when
+  // there's genuinely something to act on.
+  const conflictEvent = conflictEvents[0] ?? neverDispatchedOverdue[0];
+  const pendingApprovalChore = pendingReviews[0] as any;
+  const pendingKidRequest = (kidRequests as any[]).find(r => r.status === 'pending');
+  const pendingRideEvent = pendingRideRequiredEvents[0];
+  // myHelperEvents: events where THIS parent is the assigned driver/helper
+  // but hasn't confirmed yet (status 'pending'). These are the most
+  // action-required items for the parent — they're assigned to them
+  // specifically and awaiting their "Confirm I'll do it" response.
+  const myPendingHelperEvent = myHelperEvents[0];
+  const backlogTask = questPool[0] ?? myAdultQuests[0];
+
+  const needsYouItem: NeedsYouItem | null = conflictEvent
+    ? { kind: 'conflict', title: conflictEvent.title, reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.' }
+    : pendingApprovalChore
+    ? { kind: 'approval', title: pendingApprovalChore.title ?? 'Chore awaiting review', reason: 'A family member completed this and is waiting for your approval.' }
+    : pendingKidRequest
+    ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid', reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.` }
+    : myPendingHelperEvent
+    ? { kind: 'approval', title: myPendingHelperEvent.title, reason: `You're assigned${myPendingHelperEvent.time ? ` at ${myPendingHelperEvent.time}` : ''}${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.` }
+    : pendingRideEvent
+    ? { kind: 'approval', title: pendingRideEvent.title, reason: 'Ride needs a driver assigned before it starts.' }
+    : backlogTask
+    ? { kind: 'backlog', title: (backlogTask as any).title, reason: (backlogTask as any).dueDate ? `Due ${(backlogTask as any).dueDate}` : 'In your household backlog' }
+    : null;
+
+  // ReviewConflictModal's context rows — only relevant for conflict kind.
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const needsYouRelatedContext = conflictEvent
+    ? conflictEvents
+        .filter(e => e.id !== conflictEvent.id)
+        .slice(0, 2)
+        .map(e => ({
+          title: e.title,
+          detail: e.time ? `${e.time}${e.location ? ` · ${e.location}` : ''}` : (e.location ?? ''),
+          meta: conflictReasons?.get(e.id) ?? 'Also today',
+        }))
+    : [];
+
   const handlePullTask = (chore: ChoreTask) => {
     addParentQuest(chore.id, active.id, active.id, 'PULL');
   };
@@ -361,28 +401,71 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   const pad = { paddingHorizontal: 16 };
 
-  // Order matches the reference mock's Hub sequence — Greeting → Quick
-  // Actions → Today's Timeline → Action Needed → Household Backlog →
-  // Pick-up Radar — with Family Cube's own sections (not present in the
-  // mock at all) placed next to whichever mock section they're closest
-  // to in spirit: AlertBanner right after Greeting (urgency-first, same
-  // position it already had), HouseholdSnapshotCard right after Quick
-  // Actions (a stats/summary block), GpCanHelpSection right after Action
-  // Needed (both are "needs a decision" sections), ChoreReviewSection
-  // right after Household Backlog (both are chore/task related).
+  // Parent Hub is now a pixel-faithful rebuild of the Figma Make
+  // "Scrollable Content Design" prototype's HomePage (design/Scrollable
+  // Content Design/src/App.tsx — see that folder's own CSS for every exact
+  // value used): Greeting → Family Pulse → Needs You → Next Up timeline →
+  // Quick Actions → Tonight → (urgent AlertBanner, if anything's actually
+  // time-sensitive).
+  //
+  // Per explicit direction, every pre-reskin Hub section NOT in the Figma
+  // source — ParentQuickActions, the old Timeline/Approve-strip TodayView,
+  // ActionNeededSection, HouseholdBacklogSection, ChoreReviewSection,
+  // GpCanHelpSection, Pick-up Radar/EnRouteBanner, MedicationsCard,
+  // TemporaryApproverCard, FamilyGamesSection, HomeownerNotesSection,
+  // SchoolTodaySection — has been REMOVED (not hidden) from this screen.
+  // That real, working functionality (chore approvals, household backlog,
+  // GP help requests, ride dispatch, medications, temp-approver grants,
+  // games, homeowner notes, school overview) is no longer reachable from
+  // the parent Hub as of this pass. PushbackSheet/DelegateSheet below are
+  // now unreachable too (their only triggers lived in the removed
+  // HouseholdBacklogSection) — left rendered/wired rather than deleted
+  // since removing them risked missing some other trigger path.
   return (
     <>
-      <GreetingHeader colors={colors} isDark={isDark} activeMember={active} otherAttentionCount={otherAttentionCount} />
-
       {showTrialNag && <TrialNagBanner colors={colors} isDark={isDark} />}
 
-      {/* rejectedEvents/pendingNoResponseEvents/unassignedUrgentEvents were
-          dropped from here — those 3 card types duplicated
-          ActionNeededSection's own RideRequestCard/RideRequiredEventCard
-          (same unconfirmed/unassigned ride, shown twice with two different
-          card designs and two different action sets). AlertBanner now only
-          covers what ActionNeededSection doesn't: scheduling conflicts and
-          confirmed-but-never-dispatched trips. */}
+      <FamilyPulseCard colors={colors} isDark={isDark} members={members} hasUrgentItem={!!needsYouItem} familyName={familyName || undefined} />
+
+      {/* "Viewing as" card — matches the Figma prototype's own
+          .profile-switcher position exactly (between Family Pulse and
+          Needs You). Opens the real PersonaSwitcherDropdown, same
+          mechanism AppHeader's compact mode already uses. */}
+      <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
+
+      {needsYouItem && (
+        <NeedsYouCard colors={colors} isDark={isDark} item={needsYouItem} onReview={() => {
+          if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
+          else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) router.push('/(tabs)/calendar' as any);
+          else if (needsYouItem.kind === 'approval') router.push('/(tabs)/quests' as any);
+          else router.push('/(tabs)/quests' as any);
+        }} />
+      )}
+
+      {/* "NEXT UP" — up to 3 upcoming events today, matching the Figma
+          prototype's own multi-row timeline exactly (not a single event). */}
+      <NextUpTimeline
+        colors={colors} isDark={isDark}
+        events={upcomingTodayEvents}
+        conflictReasons={conflictReasons}
+      />
+
+      <TodayActionGrid
+        colors={colors} isDark={isDark}
+        groceryCount={groceryItems.length}
+        ridesCount={pendingRideRequiredEvents.length}
+        nextRideLabel={activeTrip ? `${activeTrip.kidName} · ETA ${activeTrip.etaMinutes} min` : undefined}
+        onCapture={() => setShowTaskComposer(true)}
+      />
+
+      {/* "TONIGHT" — dinner preview, matching the Figma prototype's own
+          .evening card. Renders nothing when there's no dinner planned. */}
+      <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
+
+      {/* AlertBanner stays — it carries real action buttons
+          (Dismiss/Assign/Dispatch) for scheduling conflicts and
+          confirmed-but-never-dispatched trips, genuinely time-sensitive,
+          not routine display like NextUpTimeline above it. */}
       {showBanner && (
         <AlertBanner
           conflictEvents={conflictEvents}
@@ -394,151 +477,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         />
       )}
 
-      <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
-        onAddTask={() => setShowTaskComposer(true)} />
-
-      <TodayView
-        colors={colors}
-        isDark={isDark}
-        activeMember={active}
-        members={members}
-        onAddQuest={() => setShowAddTask(true)}
-        onAddEvent={() => setShowAddEvent(true)}
-        onAddGrocery={() => router.push('/(tabs)/grocery' as any)}
-        conflictReasons={conflictReasons}
-        otherParentsWorkToday={otherParentsWorkToday}
+      <ReviewConflictModal
+        colors={colors} isDark={isDark}
+        visible={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        conflictEvent={conflictEvent ?? null}
+        relatedContext={needsYouRelatedContext}
+        onApprove={() => {
+          if (conflictEvent) updateEvent(conflictEvent.id, { conflictAcknowledged: true });
+        }}
       />
-
-      <ActionNeededSection
-        actionCount={actionCount}
-        pendingRequests={pendingRequests}
-        pendingRideRequiredEvents={pendingRideRequiredEvents}
-        awaitingApproval={[]}
-        pendingKidRequests={pendingKidRequests}
-        events={events}
-        active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped}
-        approveQuest={approveQuest} declineQuest={declineQuest}
-        approveRequest={approveRequest} declineRequest={declineRequest}
-        toggleGPWelcome={toggleGPWelcome}
-        approveItemsAndSync={approveItemsAndSync} rejectItems={rejectItems}
-        approveQuestProposal={approveQuestProposalHandler} declineQuestProposal={declineQuestProposalHandler}
-      />
-
-      <GpCanHelpSection requests={approvedRideRequests} members={members} colors={colors} isDark={isDark} toggleGPWelcome={toggleGPWelcome} />
-
-      <HouseholdBacklogSection
-        active={active} members={members} colors={colors} isDark={isDark}
-        questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
-        myDirectPending={myDirectPending} myLockedItems={myLockedItems}
-        myOutgoingPending={myOutgoingPending}
-        myHelperEvents={myHelperEvents} coParentHelperEvents={coParentHelperEvents}
-        systemBIds={systemBIds} parentAssignments={parentAssignments}
-        updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
-        completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
-        cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}
-        appreciationPing={appreciationPing} handlePullTask={handlePullTask}
-        onAddTask={() => setShowAddTask(true)}
-        onDelegate={(choreId, choreTitle) => setDelegateSheet({ choreId, choreTitle })}
-        onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })}
-      />
-
-      <ChoreReviewSection
-        active={active} members={members} colors={colors} isDark={isDark}
-        chores={chores} pendingReviewsCount={pendingReviews.length}
-        approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
-        declineGrandparentQuestAsParent={declineGrandparentQuestAsParent}
-        grandparentApproveAndCheer={grandparentApproveAndCheer}
-        approveTeenReward={approveTeenReward}
-        adjustTeenReward={adjustTeenReward}
-        declineTeenReward={declineTeenReward}
-        acceptGPOffer={acceptGPOffer}
-        declineGPOffer={declineGPOffer}
-        approveKidProposedChore={approveKidProposedChore}
-        declineKidProposedChore={declineKidProposedChore}
-        resolveRedoDispute={resolveRedoDispute}
-        flagApprovalForDiscussion={flagApprovalForDiscussion}
-        standByApproval={standByApproval}
-        requestApprovalReversal={requestApprovalReversal}
-        coSignReversal={coSignReversal}
-        acknowledgeRecentApproval={acknowledgeRecentApproval}
-      />
-
-      {/* Only the driver gets editable controls (ETA slider, Pickup Done) —
-          another parent sees the same read-only status view kids/teens/GP
-          get, so two parents can't fight over the same trip. */}
-      {activeTrip && activeTrip.driverMemberId !== active.id ? (
-        <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />
-      ) : (
-        <EnRouteBanner
-          colors={colors} isDark={isDark}
-          members={members} activeMemberId={active.id}
-          onDispatchRide={(etaMinutes, memberId) => onDispatchDirect(memberId ?? nextRide?.memberId, etaMinutes, nextRide?.id)}
-          onPickupDone={() => activeTrip && onPickupDone(activeTrip.tripId)}
-          onCancelTrip={() => activeTrip && onCancelTrip(activeTrip.tripId)}
-          nextRide={nextRide ? {
-            kidName: members.find(m => m.id === nextRide.memberId)?.name.split(' ')[0] ?? 'Family',
-            kidEmoji: members.find(m => m.id === nextRide.memberId)?.emoji,
-            title: nextRide.title,
-            time: nextRide.time,
-            location: nextRide.location,
-            hoursUntil: hoursUntilEvent(nextRide.date, nextRide.time),
-          } : null}
-          activeTrip={activeTrip}
-          onUpdateEta={(etaMinutes) => activeTrip && onUpdateEta?.(activeTrip.tripId, etaMinutes)}
-        />
-      )}
-
-      {/* Every OTHER family member's concurrently-active trip — e.g. the
-          other parent driving a different pickup right now. Always
-          read-only here regardless of who's driving it, since the slot
-          above already covers this parent's own trip (interactive) or the
-          single most-relevant other trip (read-only); this covers however
-          many MORE trips are active beyond that one. */}
-      {otherActiveTrips?.map(trip => (
-        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
-      ))}
-
-      {/* Family Radar hidden from the Hub — now its own top-level tab
-          (FindFam, app/(tabs)/gps.tsx) for parents specifically, so it no
-          longer needs a permanent slot on the Hub too. Component/data left
-          fully intact, just not rendered here — one-line revert if ever
-          wanted back alongside the tab. */}
-
-      {/* Family Leaderboard (HouseholdSnapshotCard) hidden from the Hub per
-          explicit request — component/data left fully intact, just not
-          rendered, so this is a one-line revert if it's ever wanted back. */}
-
-      <MedicationsCard
-        meds={parentMeds} medsTaken={parentMedsTaken} toggleMed={toggleParentMed}
-        onAddMed={addParentMed} onRemoveMed={deleteParentMed}
-        colors={colors} isDark={isDark} active={active} allMembers={members}
-      />
-
-      {/* Scenarios 9.2/9.3 — temporary-approver / caregiver-mode grants. */}
-      <View style={pad}>
-        <TemporaryApproverCard
-          active={active} members={members} colors={colors} isDark={isDark}
-          activeGrants={activeApproverGrants}
-          grantTemporaryApprover={grantTemporaryApprover}
-          revokeTemporaryApprover={revokeTemporaryApprover}
-        />
-      </View>
-
-      {/* Family Games + Homeowner Notes moved to the end of the page —
-          [live-requested: "move family game and this one to the end of
-          the page"] — everything above is daily-driver family-management
-          content; these two are lower-frequency side features. */}
-      <FamilyGamesSection colors={colors} isDark={isDark} />
-
-      <HomeownerNotesSection colors={colors} />
-
-      {/* Parent-facing overview of every kid/teen's school day, separate
-          from the general today's timeline above — [live-requested: "add
-          the different section at the end of the hub and overview with
-          the school schedule if available for all kids with happening
-          now badge"]. */}
-      <SchoolTodaySection members={members} colors={colors} isDark={isDark} activeName={active.name} activeMemberId={active.id} />
 
       <PushbackSheet
         target={pushbackSheet} colors={colors} isDark={isDark}

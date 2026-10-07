@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
@@ -40,6 +41,10 @@ export default function HubScreen() {
           updateEta: updateTripEta, markOverdueAlertSent, complete: completeTrip } = useTripStore();
 
   const [refreshing, setRefreshing]        = useState(false);
+  // Parent Hub only — hides the system status bar once the user starts
+  // scrolling down, shows it again back at the top. 12px threshold so a
+  // tiny rubber-band bounce at rest doesn't flicker it.
+  const [statusBarHidden, setStatusBarHidden] = useState(false);
   const [pinTarget, setPinTarget]          = useState<FamilyMember | null>(null);
   const [clock, setClock]                  = useState(fmtClock());
   const [helpModalVisible, setHelpModal]   = useState(false);
@@ -297,22 +302,77 @@ export default function HubScreen() {
   const primaryTripView = myTripView ?? tripViews[0] ?? null;
   const otherTripViews = tripViews.filter(v => v.tripId !== primaryTripView?.tripId);
 
+  // Figma Make reskin's .page is ONE scrollable container, header included
+  // (src/index.css — .topbar carries no sticky/fixed positioning, it's just
+  // the first child of .page) — per explicit direction ("keep everything
+  // under a scrollable view including the page header"), AppHeader moves
+  // INSIDE the ScrollView for parent specifically, scrolling away with the
+  // rest of the content instead of staying pinned above it. kid/teen/senior
+  // keep the existing fixed-header layout (this work hasn't touched those
+  // views) — same header component/props either way, just where it renders.
+  const headerEl = (
+    <AppHeader
+      memberName={active.name.split(' ')[0]}
+      memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
+      memberEmoji={active.emoji}
+      memberAvatarUrl={active.avatarUrl}
+      notifCount={unreadNotifCount}
+      onBellPress={() => setNotifPanelOpen(true)}
+      // Header gear icon removed — the new Profile pill in
+      // AppsQuickAccessPills (leads the default row) is the sole entry
+      // point to /profile-settings for every role now.
+      //
+      // Parent role gets the Figma Make reskin's compact TopBar (avatar +
+      // family/name + "+" button, no role badge/Switch-Profile text row) —
+      // per explicit direction, follow the mock for the parent Hub
+      // specifically; kid/teen/senior keep the existing full header
+      // unchanged (this work hasn't touched those views).
+      compact={isParent}
+      // ParentView owns its own Smart Task Composer internally (its own
+      // showTaskComposer state via useParentModals) — not reachable from
+      // here across the component boundary, unlike composerVisible (which
+      // only Kid/Teen/Senior views are wired to). Routes to the Tasks tab
+      // instead, same destination TodayActionGrid's own "Add a task" tile
+      // already offers.
+      onAddPress={isParent ? () => router.push('/(tabs)/tasks' as any) : undefined}
+    />
+  );
+
+  // Figma Make reskin's .page has no top safe-area inset at all — content
+  // (including .topbar) starts flush at the very top of the viewport, no
+  // status-bar clearance (src/index.css — .page's only padding is
+  // "22px 20px 116px", no env(safe-area-inset-top) anywhere). Per explicit
+  // direction ("remove that as well just it should flow the page"), the top
+  // SafeAreaView edge is dropped for parent specifically — the header now
+  // scrolls up under the status bar/notch area on a real device instead of
+  // staying clear of it. kid/teen/senior keep the existing SafeAreaView
+  // top inset unchanged (this work hasn't touched those views).
+  const RootContainer = isParent ? View : SafeAreaView;
+  const rootProps = isParent
+    ? { style: { flex: 1, backgroundColor: colors.background } }
+    : { style: { flex: 1, backgroundColor: colors.background }, edges: ['top'] as const };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={active.name.split(' ')[0]}
-        memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
-        memberEmoji={active.emoji}
-        memberAvatarUrl={active.avatarUrl}
-        notifCount={unreadNotifCount}
-        onBellPress={() => setNotifPanelOpen(true)}
-        // Header gear icon removed — the new Profile pill in
-        // AppsQuickAccessPills (leads the default row) is the sole entry
-        // point to /profile-settings for every role now.
-      />
+    <RootContainer {...rootProps}>
+      {/* Scroll-driven status bar — visible at rest/near the top (same
+          app-wide config as every other screen), hides once the user
+          starts scrolling down (statusBarHidden, set by the ScrollView's
+          onScroll below), reappears back near the top. An earlier flat
+          "always hidden" pass was reverted (the real notch/Dynamic Island
+          still physically covers content either way — the 59px top
+          padding on the ScrollView is what actually clears the hardware
+          cutout); this only hides the icons themselves, and only while
+          actively scrolled away from the top. Parent Hub only. */}
+      {isParent && <StatusBar hidden={statusBarHidden} animated />}
+      {!isParent && headerEl}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-      <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />
+      {/* AppsQuickAccessPills (Profile/Memories/School/Health row) isn't
+          part of the Figma mock's TopBar at all — skipped for parent only,
+          same "follow the mock" direction as the header above. Those
+          destinations are still reachable via Profile → Apps grid for
+          parents; this only removes the always-visible shortcut row. */}
+      {!isParent && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -331,8 +391,29 @@ export default function HubScreen() {
         // line of Household Backlog) end up directly underneath and
         // obscured by it (flagged in UI review). 140 clears the FAB's full
         // span with room to spare regardless of device inset.
-        contentContainerStyle={{ paddingTop: 2, paddingBottom: 140 }}
+        // Figma's own .page padding-top is 22px (src/index.css:71), but
+        // that's a browser mock with no notch/Dynamic Island to clear — at
+        // 22px real content was covered by the hardware cutout on a real
+        // device (live-reported: "the notch is covering"). Per explicit
+        // direction, fixed at 59px (iPhone Pro-class notch/Dynamic Island
+        // height) rather than reading the device's own real inset — clears
+        // the cutout on current Pro-class devices; won't be pixel-exact on
+        // older/non-notch iPhones (undershoots are impossible here since
+        // this is now MORE than Figma's 22px, never less). kid/teen/senior
+        // keep the original 2px (unaffected — their SafeAreaView top inset
+        // still sits above their ScrollView).
+        contentContainerStyle={{ paddingTop: isParent ? 59 : 2, paddingBottom: 140 }}
+        onScroll={isParent ? (e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          setStatusBarHidden(prev => {
+            if (!prev && y > 12) return true;
+            if (prev && y <= 12) return false;
+            return prev;
+          });
+        } : undefined}
+        scrollEventThrottle={isParent ? 100 : undefined}
       >
+        {isParent && headerEl}
         {isParent && (
           <ParentView
             active={active} members={members} colors={colors} isDark={isDark}
@@ -424,7 +505,7 @@ export default function HubScreen() {
         onSuccess={() => { if (pinTarget) setActiveMember(pinTarget.id); setPinTarget(null); }}
         onCancel={() => setPinTarget(null)}
       />
-    </SafeAreaView>
+    </RootContainer>
   );
 }
 

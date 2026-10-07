@@ -646,13 +646,16 @@ const styles = StyleSheet.create({
 
   // Card / field wrapper
   card: {
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
 
   // Member chip (child selector, helper selector)

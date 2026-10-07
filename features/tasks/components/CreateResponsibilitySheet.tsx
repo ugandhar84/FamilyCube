@@ -550,7 +550,7 @@ const s = StyleSheet.create({
   // Filter pills
   pillsRow: {
     flexDirection: 'row',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 4,
     gap: 4,
   },
@@ -558,8 +558,8 @@ const s = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    borderRadius: 11,
+    paddingVertical: 7,
+    borderRadius: 12,
   },
   pillText: {
     fontSize: 13,
@@ -567,17 +567,19 @@ const s = StyleSheet.create({
 
   // Field cards
   fieldCard: {
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 8,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    marginBottom: 10,
   },
   textInput: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '400',
     minHeight: 36,
     paddingVertical: Platform.OS === 'ios' ? 0 : 4,

@@ -31,15 +31,15 @@ import Animated, {
 // Synced to the Figma Make reskin (constants/colors.ts, session covering
 // ParentView first) — *2 variants mirror that same file's dark-mode values.
 export const BRAND = {
-  amber:  '#D58B7B',
-  amber2: '#E0A696',
-  teal:   '#648B7D',
-  teal2:  '#8FB0A3',
-  purple: '#6677BD',
-  purple2:'#8E9BD4',
-  pink:   '#7788CC',
-  pink2:  '#9CA9DC',
-  navy:   '#2C3244',
+  amber:  '#D97706',
+  amber2: '#F5A85A',
+  teal:   '#3D7A5A',
+  teal2:  '#5FA37D',
+  purple: '#7B5EA7',
+  purple2:'#A78BC9',
+  pink:   '#7B5EA7',
+  pink2:  '#A78BC9',
+  navy:   '#2C2722',
   white:  '#FFFFFF',
 } as const;
 

@@ -291,16 +291,18 @@ export default function TasksScreen() {
   useEffect(() => {
     if (openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      setShowComposer(true);
+      if (isParent) setShowFlowChooser(true);
+      else setShowComposer(true);
     }
-  }, [openTaskComposerRequested]);
+  }, [openTaskComposerRequested, isParent]);
 
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      setShowComposer(true);
+      if (isParent) setShowFlowChooser(true);
+      else setShowComposer(true);
     }
-  }, []));
+  }, [isParent]));
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;

@@ -1054,17 +1054,6 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name}
-          memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={switchMember}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
 
       {/* ── Main Scroll: title + AI + member filter + timeline ──
@@ -1084,54 +1073,51 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
         {headerContent}
 
-        {/* [0] Scrollable: Title row + AI banner + AI panel */}
+        {/* [0] Scrollable: Figma TopBar + AI banner + AI panel */}
         <View>
-          <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }, hideHeader && { paddingTop: 0, paddingBottom: 2 }]}>
-            <View style={{ flex: 1 }}>
-              {!hideHeader && (
-                <>
-                  {/* Figma eyebrow: family name + active member */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-                      {(familyName ?? 'FAMILY').toUpperCase()}
-                    </Text>
-                    {activeMember && (
-                      <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-                        {activeMember.name.split(' ')[0]} · {activeMember.role}
-                      </Text>
-                    )}
-                  </View>
-                  {/* Figma h1: "Family calendar" fs=29 fw=700 ls=-0.5 */}
-                  <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
-                    {isKid ? 'My Schedule' : 'Family calendar'}
-                  </Text>
-                </>
-              )}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                {!hideHeader && (
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-                    {selectedDateLabel}
-                  </Text>
-                )}
+          {!hideHeader && (
+            <>
+              {/* Figma TopBar — same compact AppHeader the Hub uses:
+                  avatar + greeting/name left, bell + "+" right */}
+              <AppHeader
+                memberName={activeMember?.name ?? ''}
+                memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
+                memberEmoji={activeMember?.emoji}
+                memberAvatarUrl={activeMember?.avatarUrl}
+                notifCount={unreadNotifCount}
+                onPersonaPress={switchMember}
+                onBellPress={() => setNotifPanelOpen(true)}
+                compact={isParentOrSenior}
+                onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAdd(true) : undefined}
+              />
+
+              {/* Figma h1 block below the TopBar */}
+              <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 6 }}>
+                {/* "‹ Today" back link — Figma .back, shown when not on today */}
                 {selectedDate !== todayStr && (
-                  <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Today" pill [features/calendar/CalendarScreen.tsx:984]`); goToToday(); }}
-                    style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: colors.pinkLight }}>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: colors.pink }}>Today</Text>
+                  <TouchableOpacity onPress={goToToday} style={{ marginBottom: 4 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>‹ Today</Text>
                   </TouchableOpacity>
                 )}
+                {/* Figma .topbar h1 */}
+                <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginTop: 2 }}>
+                  {isKid ? 'My schedule' : 'The family plan'}
+                </Text>
+                {/* Date subtitle */}
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                  {selectedDateLabel}
+                </Text>
               </View>
-            </View>
-            {/* Figma "+" round action button — parent/senior only */}
-            {!hideCreateButton && isParentOrSenior && !hideHeader && (
-              <TouchableOpacity
-                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+" title FAB → open AddEventModal`); setShowAdd(true); }}
-                style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
-                  shadowColor: colors.navy, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 5 },
-                  borderWidth: 1, borderColor: colors.border }}>
-                <I.Plus c={colors.pink} size={18} />
-              </TouchableOpacity>
-            )}
-          </View>
+            </>
+          )}
+
+          {hideHeader && selectedDate !== todayStr && (
+            <TouchableOpacity onPress={goToToday}
+              style={{ marginHorizontal: 20, marginTop: 4, alignSelf: 'flex-start',
+                borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: colors.pinkLight }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.pink }}>Today</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Shared wrapping toolbar row — mirrors QuestsScreen's AI-pill +
               search + "+Quest" pill composition: AI conflict pill (parent

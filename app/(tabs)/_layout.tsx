@@ -24,7 +24,7 @@ import { useDeviceClass } from '@/lib/useDeviceClass';
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid-outline',
-  tasks:    'checkmark-done-outline',
+  tasks:    'calendar-outline',
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
@@ -33,7 +33,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
-  tasks:    'checkmark-done',
+  tasks:    'calendar',
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
@@ -60,15 +60,15 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // this array) since the pills still navigate to it — only the always-
 // visible tab-bar entry point is gone.
 const TABS_DEFAULT = [
-  { name: 'index',    label: 'Hub'    },
-  { name: 'tasks',    label: 'Tasks'  },
-  { name: 'store',    label: 'Store'  },
-  { name: 'chat',     label: 'Chat'   },
-  { name: 'gps',      label: 'FindFam' },
+  { name: 'index',    label: 'Hub'      },
+  { name: 'tasks',    label: 'Calendar' },
+  { name: 'store',    label: 'Store'    },
+  { name: 'chat',     label: 'Chat'     },
+  { name: 'gps',      label: 'FindFam'  },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'tasks',    label: 'Tasks'    },
+  { name: 'tasks',    label: 'Calendar' },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
 ] as const;

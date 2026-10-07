@@ -314,7 +314,7 @@ export default function TasksScreen() {
   const tasksHeader = (
     <View>
       <Text style={{ fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary, paddingHorizontal: 14, paddingTop: 10 }}>
-        Tasks
+        Calendar
       </Text>
 
       {/* Two square tab-cards. Each reads as a small stat tile (big count,

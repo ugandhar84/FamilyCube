@@ -52,6 +52,7 @@ import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
 import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
 import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
 import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
@@ -268,23 +269,22 @@ export default function TasksScreen() {
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [choreProposalModal, setChoreProposalModal] = useState(false);
 
-  // Figma .quick-capture — real text input; on submit opens composer pre-filled
+  // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
+  const [showJustDescribe, setShowJustDescribe] = useState(false);
+
+  // Figma .quick-capture — real text input; on submit opens JustDescribeIt screen
   const [quickText, setQuickText] = useState('');
   const submitQuickCapture = () => {
     const text = quickText.trim();
     setQuickText('');
     if (isKidCreator) { setShowAskParentSheet(true); return; }
-    if (text) {
-      setManualQuestPrefill({ title: text });
-      setShowManualQuest(true);
-    } else {
-      openCreator();
-    }
+    // Always open the dedicated "Just describe it" screen (Figma flow)
+    setShowJustDescribe(true);
   };
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => {
     if (isKidCreator) setShowAskParentSheet(true);
-    else if (isParent) setShowFlowChooser(true);
+    else if (isParent || isSenior) setShowJustDescribe(true);
     else setShowComposer(true);
   };
 
@@ -306,18 +306,18 @@ export default function TasksScreen() {
   useEffect(() => {
     if (openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      if (isParent) setShowFlowChooser(true);
+      if (isParent || isSenior) setShowJustDescribe(true);
       else setShowComposer(true);
     }
-  }, [openTaskComposerRequested, isParent]);
+  }, [openTaskComposerRequested, isParent, isSenior]);
 
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      if (isParent) setShowFlowChooser(true);
+      if (isParent || isSenior) setShowJustDescribe(true);
       else setShowComposer(true);
     }
-  }, [isParent]));
+  }, [isParent, isSenior]));
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
@@ -456,7 +456,7 @@ export default function TasksScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       {/* Figma TopBar — PageTopBar, no legacy AppHeader */}
       <PageTopBar
-        onAddPress={(isParent || isSenior) ? () => { if (isParent) setShowFlowChooser(true); else setShowComposer(true); } : undefined}
+        onAddPress={(isParent || isSenior) ? () => setShowJustDescribe(true) : undefined}
         onBellPress={() => setNotifPanelOpen(true)}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
@@ -486,6 +486,22 @@ export default function TasksScreen() {
           QuestsScreen, hideCreateButton removed) and their own dedicated
           buttons elsewhere (Hub's Ask Parent flow, etc.) instead of a
           floating FAB here. */}
+
+      {/* Figma "Just describe it" — dedicated Tasks-tab creation flow */}
+      <JustDescribeItScreen
+        visible={showJustDescribe}
+        onClose={() => setShowJustDescribe(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowJustDescribe(false);
+          if (kind === 'quest') {
+            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+            setShowManualQuest(true);
+          } else {
+            setManualEventPrefill(prefill as typeof manualEventPrefill);
+            setShowManualEvent(true);
+          }
+        }}
+      />
 
       <AskParentSheet
         visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}

@@ -24,7 +24,6 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { TYPO, RADIUS } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { EventCardRow } from './EventCard';
@@ -143,8 +142,8 @@ export default function AgendaView({
 
   if (grouped.length === 0) {
     return (
-      <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
-        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 28, alignItems: 'center' }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', backgroundColor: colors.card, padding: 28, alignItems: 'center' }}>
           <Text style={{ fontSize: 26, marginBottom: 6 }}>📋</Text>
           <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No upcoming events in this window</Text>
         </View>
@@ -154,24 +153,36 @@ export default function AgendaView({
 
   return (
     <View style={{ paddingTop: 4 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 14, marginBottom: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, marginBottom: 4 }}>
         <TouchableOpacity onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.pink }}>
             {selectMode ? 'Cancel' : 'Select'}
           </Text>
         </TouchableOpacity>
       </View>
 
-      <View style={{ paddingHorizontal: 14, gap: 14, paddingBottom: selectMode ? 72 : 0 }}>
+      <View style={{ paddingHorizontal: 20, gap: 14, paddingBottom: selectMode ? 72 : 0 }}>
         {grouped.map(group => {
           const date = parseDate(group.date);
           const isToday = group.date === todayStr;
           return (
-            <View key={group.date} style={{ gap: 6 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isToday ? BRAND.purple : colors.textSecondary }}>
-                  {isToday ? 'TODAY · ' : ''}{date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                </Text>
+            <View key={group.date} style={{ gap: 8 }}>
+              {/* Figma agenda date header: today pill vs normal label */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2 }}>
+                {isToday ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ backgroundColor: colors.pinkLight, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.pink }}>Today</Text>
+                    </View>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textTertiary }}>
+                      {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
+                    {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </Text>
+                )}
                 <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
                   {group.events.length} event{group.events.length === 1 ? '' : 's'}
                 </Text>
@@ -217,12 +228,12 @@ export default function AgendaView({
                         style={{
                           marginLeft: selectMode ? 32 : 0, flexDirection: 'row', alignItems: 'center', gap: 6,
                           paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12,
-                          backgroundColor: isDark ? colors.surface : '#F5F3FA',
-                          borderWidth: 1, borderColor: isDark ? colors.border : '#E9E5F5', alignSelf: 'flex-start',
+                          backgroundColor: colors.pinkLight,
+                          borderWidth: 1, borderColor: colors.pink + '30', alignSelf: 'flex-start',
                         }}
                       >
                         <Text style={{ fontSize: 14 }}>🔁</Text>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.pink }}>
                           +{hiddenCount} more · {seriesMeta.total} total in series
                         </Text>
                         <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>Manage →</Text>
@@ -241,7 +252,7 @@ export default function AgendaView({
           position: 'absolute', left: 0, right: 0, bottom: 0,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           paddingHorizontal: 16, paddingVertical: 12,
-          backgroundColor: isDark ? colors.card : '#fff',
+          backgroundColor: colors.card,
           borderTopWidth: 1, borderTopColor: colors.border,
         }}>
           <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>

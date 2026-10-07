@@ -18,13 +18,15 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 export function TodayActionGrid({
   colors, isDark,
   groceryCount, ridesCount, nextRideLabel,
-  onCapture,
+  onCapture, onRides, onAppreciation,
 }: {
   colors: any; isDark: boolean;
   groceryCount: number;
   ridesCount: number;
   nextRideLabel?: string;
   onCapture: () => void;
+  onRides?: () => void;
+  onAppreciation?: () => void;
 }) {
   // Exact Figma background colors from index.css (.lavender/.mint/.sky/.peach)
   const tiles = [
@@ -53,16 +55,16 @@ export function TodayActionGrid({
       bg: isDark ? 'rgba(102,119,189,0.14)' : '#E8F1F8',   // .sky
       title: 'Arrange a ride',
       subtitle: ridesCount > 0 ? `${ridesCount} active today` : (nextRideLabel ?? 'Nothing active'),
-      onPress: () => router.push('/(tabs)/calendar' as any),
+      onPress: onRides ?? (() => router.push('/(tabs)/calendar' as any)),
     },
     {
       key: 'askfam',
       icon: Sparkles,
       tint: colors.amber,
       bg: isDark ? 'rgba(213,139,123,0.14)' : '#F9EBE7',   // .peach
-      title: 'AskFam AI',
-      subtitle: 'Plan, decide, remember',
-      onPress: () => router.push('/(tabs)/index' as any),
+      title: 'Send a cheer',
+      subtitle: 'Appreciate someone',
+      onPress: onAppreciation ?? (() => router.push('/(tabs)/index' as any)),
     },
   ];
 

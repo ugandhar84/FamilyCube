@@ -25,6 +25,15 @@ import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { TrialNagBanner } from './parent/TrialNagBanner';
+import { ReviewInboxScreen } from './parent/ReviewInboxScreen';
+import { ChoreProofReviewScreen } from './parent/ChoreProofReviewScreen';
+import { QuestReviewScreen } from './parent/QuestReviewScreen';
+import { RewardReviewScreen } from './parent/RewardReviewScreen';
+import { KidProposalReviewScreen } from './parent/KidProposalReviewScreen';
+import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
+import { ActiveTripDetailScreen } from './parent/ActiveTripDetailScreen';
+import { SendAppreciationScreen } from './parent/SendAppreciationScreen';
+import { Modal } from 'react-native';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 
 import { useParentStores } from './parent/hooks/useParentStores';
@@ -93,6 +102,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     pushbackSheet, setPushbackSheet,
     delegateSheet, setDelegateSheet,
   } = useParentModals();
+
+  // Review + rides screens
+  const [showReviewInbox, setShowReviewInbox] = useState(false);
+  const [reviewChoreId, setReviewChoreId] = useState<string | null>(null);
+  const [reviewQuestId, setReviewQuestId] = useState<string | null>(null);
+  const [reviewRedemptionId, setReviewRedemptionId] = useState<string | null>(null);
+  const [showKidProposals, setShowKidProposals] = useState(false);
+  const [showRidesRoom, setShowRidesRoom] = useState(false);
+  const [activeTripDetailId, setActiveTripDetailId] = useState<string | null>(null);
+  const [showSendAppreciation, setShowSendAppreciation] = useState(false);
 
   const allNames  = members.map(m => m.name);
   const today     = localToday();
@@ -437,8 +456,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         <NeedsYouCard colors={colors} isDark={isDark} item={needsYouItem} onReview={() => {
           if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
           else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) router.push('/(tabs)/calendar' as any);
-          else if (needsYouItem.kind === 'approval') router.push('/(tabs)/quests' as any);
-          else router.push('/(tabs)/quests' as any);
+          else if (needsYouItem.kind === 'approval') setShowReviewInbox(true);
+          else setShowReviewInbox(true);
         }} />
       )}
 
@@ -456,6 +475,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         ridesCount={pendingRideRequiredEvents.length}
         nextRideLabel={activeTrip ? `${activeTrip.kidName} · ETA ${activeTrip.etaMinutes} min` : undefined}
         onCapture={() => setShowTaskComposer(true)}
+        onRides={() => setShowRidesRoom(true)}
+        onAppreciation={() => setShowSendAppreciation(true)}
       />
 
       {/* "TONIGHT" — dinner preview, matching the Figma prototype's own
@@ -559,6 +580,52 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
       />
+
+      {/* ── Review inbox ─────────────────────────────────────────────── */}
+      <Modal visible={showReviewInbox} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReviewInbox(false)}>
+        <ReviewInboxScreen
+          onSelectItem={(choreId) => {
+            setShowReviewInbox(false);
+            setTimeout(() => setReviewChoreId(choreId), 300);
+          }}
+        />
+      </Modal>
+
+      <Modal visible={!!reviewChoreId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewChoreId(null)}>
+        {reviewChoreId ? <ChoreProofReviewScreen choreId={reviewChoreId} onClose={() => setReviewChoreId(null)} /> : null}
+      </Modal>
+
+      <Modal visible={!!reviewQuestId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewQuestId(null)}>
+        {reviewQuestId ? <QuestReviewScreen choreId={reviewQuestId} onClose={() => setReviewQuestId(null)} /> : null}
+      </Modal>
+
+      <Modal visible={!!reviewRedemptionId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewRedemptionId(null)}>
+        {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
+      </Modal>
+
+      <Modal visible={showKidProposals} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowKidProposals(false)}>
+        <KidProposalReviewScreen onClose={() => setShowKidProposals(false)} />
+      </Modal>
+
+      {/* ── Rides control room + active trip detail ───────────────── */}
+      <Modal visible={showRidesRoom} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRidesRoom(false)}>
+        <RidesControlRoomScreen
+          onClose={() => setShowRidesRoom(false)}
+          onSelectTrip={(tripId) => {
+            setShowRidesRoom(false);
+            setTimeout(() => setActiveTripDetailId(tripId), 300);
+          }}
+        />
+      </Modal>
+
+      <Modal visible={!!activeTripDetailId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setActiveTripDetailId(null)}>
+        {activeTripDetailId ? <ActiveTripDetailScreen tripId={activeTripDetailId} onClose={() => setActiveTripDetailId(null)} /> : null}
+      </Modal>
+
+      {/* ── Send appreciation ─────────────────────────────────────── */}
+      <Modal visible={showSendAppreciation} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSendAppreciation(false)}>
+        <SendAppreciationScreen onClose={() => setShowSendAppreciation(false)} />
+      </Modal>
     </>
   );
 }

@@ -47,15 +47,20 @@ export default function WeekView({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={() => onNavigateWeek(-1)} style={{ padding: 8 }}>
+    <View style={{ paddingHorizontal: 20, paddingTop: 8, gap: 9 }}>
+      {/* Figma week nav: ← 5–11 October → */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <TouchableOpacity onPress={() => onNavigateWeek(-1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronLeft c={colors.textSecondary} size={16} />
         </TouchableOpacity>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
+        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
           {fmtDateShort(toDateStr(weekStart))} – {fmtDateShort(toDateStr(weekEnd))}
         </Text>
-        <TouchableOpacity onPress={() => onNavigateWeek(1)} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={() => onNavigateWeek(1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronRight c={colors.textSecondary} size={16} />
         </TouchableOpacity>
       </View>
@@ -68,26 +73,23 @@ export default function WeekView({
 
         return (
           <View key={dateKey} style={{
-            borderRadius: 18, padding: 12, gap: 8,
-            backgroundColor: isToday ? (isDark ? BRAND.purple + '18' : BRAND.purple + '0C') : (isDark ? colors.card : '#fff'),
-            borderWidth: 1, borderColor: isToday ? BRAND.purple + '50' : (isDark ? colors.border : '#F1F5F9'),
+            borderRadius: 19, padding: 12, gap: 8,
+            backgroundColor: isToday ? colors.pinkLight : colors.card,
+            borderWidth: 1, borderColor: isToday ? colors.pink + '50' : (isDark ? colors.border : 'rgba(223,97,60,0.08)'),
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* Figma week-day: "MON" + circle date */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isToday ? BRAND.purple : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  {DAY_SHORT[(day.getDay() + 6) % 7]}
-                </Text>
-                {isToday ? (
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>{day.getDate()}</Text>
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{day.getDate()}</Text>
-                )}
+                <View style={{ minWidth: 48, minHeight: 48, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#F4F3F7', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isToday ? colors.pink : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                    {DAY_SHORT[(day.getDay() + 6) % 7]}
+                  </Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? colors.pink : colors.textPrimary, marginTop: 2 }}>{day.getDate()}</Text>
+                </View>
               </View>
               {onAddDay ? (
                 <TouchableOpacity onPress={() => onAddDay(dateKey)}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>+ Add</Text>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.pink }}>+ Add</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>

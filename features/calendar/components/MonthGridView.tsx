@@ -61,13 +61,13 @@ export function DayEventsSummaryCard({
 }) {
   const shown = events.filter(ev => ev.category !== 'Holiday');
   return (
-    <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 14, gap: 10 }}>
+    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)', backgroundColor: colors.card, padding: 14, gap: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
           Events for {dateLabel}
         </Text>
         {!loading && (
-          <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
               {shown.length} item{shown.length === 1 ? '' : 's'}
             </Text>
@@ -78,7 +78,7 @@ export function DayEventsSummaryCard({
       {loading && shown.length === 0 ? (
         <View style={{ gap: 8 }}>
           {[48, 48].map((h, i) => (
-            <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: isDark ? '#1E293B' : '#E8E6F0', opacity: 0.5 + i * 0.15 }} />
+            <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: colors.surface, opacity: 0.5 + i * 0.15 }} />
           ))}
         </View>
       ) : shown.length === 0 ? (
@@ -109,7 +109,7 @@ export function DayEventsSummaryCard({
                   paddingHorizontal: 10, paddingVertical: 9 }}>
                 <View style={{ width: 3, height: 30, borderRadius: 2, backgroundColor: rs.dot }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
                     {ev.title}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
@@ -192,57 +192,68 @@ export default function MonthGridView({
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
 
   return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4 }}>
+    <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+      {/* Figma month title row: ← October 2026 → */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <TouchableOpacity onPress={() => onChangeMonth(-1)} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={() => onChangeMonth(-1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronLeft c={colors.textSecondary} size={18} />
         </TouchableOpacity>
-        <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
           {MONTH_LABELS[month]} {year}
         </Text>
-        <TouchableOpacity onPress={() => onChangeMonth(1)} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={() => onChangeMonth(1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronRight c={colors.textSecondary} size={18} />
         </TouchableOpacity>
       </View>
 
-      <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+      {/* Figma: MTWTFSS header — 10px 700 uppercase */}
+      <View style={{ flexDirection: 'row', marginBottom: 4 }}>
         {DAY_SHORT.map(d => (
-          <Text key={d} style={{ flex: 1, textAlign: 'center', fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, letterSpacing: 0.4 }}>
+          <Text key={d} style={{ flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.5 }}>
             {d[0]}
           </Text>
         ))}
       </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {cells.map((d, i) => {
-          if (!d) return <View key={i} style={{ width: `${100/7}%`, aspectRatio: 1 }} />;
-          const date = parseDate(d);
-          const isSel = d === selected;
-          const isToday = d === todayStr;
-          const cats = stripMap[d] ?? [];
-          const dotColors = cats.map(c => CAT_DOT[c] ?? '#10B981').filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
-          return (
-            <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
-              style={{ width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <View style={{
-                width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '18' : 'transparent',
-              }}>
-                <Text style={{
-                  fontSize: TYPO.body, fontWeight: isToday || isSel ? '900' : '600',
-                  color: isSel ? '#fff' : isToday ? BRAND.purple : (isDark ? colors.textPrimary : '#1E2D6B'),
+      {/* Figma: white card containing the grid */}
+      <View style={{ borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', padding: 12 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {cells.map((d, i) => {
+            if (!d) return <View key={i} style={{ width: `${100/7}%`, height: 46 }} />;
+            const date = parseDate(d);
+            const isSel = d === selected;
+            const isToday = d === todayStr;
+            const cats = stripMap[d] ?? [];
+            const dotColors = cats.map(c => CAT_DOT[c] ?? colors.teal).filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
+            return (
+              <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
+                style={{ width: `${100/7}%`, height: 46, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <View style={{
+                  width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isSel ? colors.pink : isToday ? colors.pinkLight : 'transparent',
                 }}>
-                  {date.getDate()}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 3, height: 8, marginTop: 2, alignItems: 'center' }}>
-                {dotColors.map((c, idx) => (
-                  <View key={idx} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: c }} />
-                ))}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+                  <Text style={{
+                    fontSize: 13, fontWeight: isToday || isSel ? '700' : '400',
+                    color: isSel ? '#fff' : isToday ? colors.pink : colors.textPrimary,
+                  }}>
+                    {date.getDate()}
+                  </Text>
+                </View>
+                {dotColors.length > 0 && (
+                  <View style={{ flexDirection: 'row', gap: 2, position: 'absolute', bottom: 3, alignItems: 'center' }}>
+                    {dotColors.map((c, idx) => (
+                      <View key={idx} style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: c }} />
+                    ))}
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );

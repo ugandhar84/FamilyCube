@@ -46,6 +46,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
 import AppHeader from '@/components/AppHeader';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
@@ -311,195 +312,69 @@ export default function TasksScreen() {
   // that drops down from whichever card is active — passed into
   // CalendarScreen/QuestsScreen as headerContent so it scrolls away with
   // the rest of the page instead of staying pinned above it.
+  // Figma: segmented pill below h1 — Calendar / Tasks / Queue
+  // Injected into CalendarScreen's own ScrollView so it scrolls with content.
   const tasksHeader = (
-    <View>
-      <Text style={{ fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary, paddingHorizontal: 14, paddingTop: 10 }}>
-        Calendar
+    <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 2 }}>
+      {/* Figma h1 */}
+      <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginBottom: 4 }}>
+        {(activeMember?.role === 'kid' || activeMember?.role === 'teen') ? 'My schedule' : 'The family plan'}
       </Text>
 
-      {/* Two square tab-cards. Each reads as a small stat tile (big count,
-          not a sentence) so "does anything need me right now" is
-          answerable at a glance, with a dot on the inactive tab when it's
-          carrying pending items the parent hasn't switched over to see
-          yet. The active card's own search icon sits bottom-right; tapping
-          it drops the search bar down directly beneath the card row. */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 2 }}>
+      {/* Figma .tabs — segmented control: Calendar · Tasks · Queue */}
+      <View style={{
+        flexDirection: 'row', gap: 4, marginTop: 10, marginBottom: 2,
+        padding: 4, borderRadius: 14,
+        backgroundColor: isDark ? colors.surface : '#EEEDF3',
+      }}>
         {([
-          { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
-          { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
-          ...(isParent ? [{ key: 'queue' as const, label: 'Queue', Icon: Layers, counts: queueCounts, accent: colors.primary, accentLight: colors.primaryLight }] : []),
-        ]).map(({ key, label, Icon, counts, accent, accentLight }) => {
+          { key: 'schedule' as const, label: 'Calendar' },
+          { key: 'chores' as const, label: 'Tasks' },
+          ...(isParent ? [{ key: 'queue' as const, label: 'Queue' }] : []),
+        ] as { key: Segment; label: string }[]).map(({ key, label }) => {
           const active = segment === key;
-          const needsAttention = !active && counts.pending > 0;
+          const needsAttention = !active && (key === 'chores' ? choreCounts.pending : queueCounts.pending) > 0;
           return (
             <TouchableOpacity
               key={key}
-              onPress={() => {
-                setSegment(key);
-                if (searchOpen) toggleSearch(false);
-                // AI dropdown lives in QuestsScreen (only mounted while
-                // segment === 'chores') — leaving it open across a switch
-                // to Schedule left a stale row on screen whose buttons
-                // called into runAIRef pointing at an unmounted screen's
-                // runAI (found live: ultrareview Angle A, finding #2).
-                if (aiOpen) setAiOpen(false);
-              }}
+              onPress={() => { setSegment(key); if (searchOpen) toggleSearch(false); if (aiOpen) setAiOpen(false); }}
               activeOpacity={0.85}
-              style={withAndroidShadowFix([
-                styles.tabCard,
-                {
-                  backgroundColor: active ? accent : (isDark ? colors.card : '#FFFFFF'),
-                  borderColor: active ? accent : colors.border,
-                },
-              ])}
+              style={{
+                flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center',
+                borderRadius: 10, flexDirection: 'row', gap: 5,
+                backgroundColor: active ? colors.card : 'transparent',
+                shadowColor: active ? 'rgba(44,39,34,0.10)' : 'transparent',
+                shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 6,
+              }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{
-                  width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: active ? 'rgba(255,255,255,0.22)' : accentLight,
-                }}>
-                  <Icon size={14} color={active ? '#fff' : accent} />
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {key === 'chores' && active && isParent && (
-                    <TouchableOpacity
-                      onPress={() => { setAiOpen(v => !v); if (searchOpen) toggleSearch(false); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{
-                        width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: aiOpen ? '#fff' : 'rgba(255,255,255,0.22)',
-                      }}
-                    >
-                      {aiState.isAiLoading
-                        ? <ActivityIndicator size="small" color={aiOpen ? accent : '#fff'} />
-                        : <Bot size={13} color={aiOpen ? accent : '#fff'} />}
-                    </TouchableOpacity>
-                  )}
-                  {needsAttention && (
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
-                  )}
-                </View>
-              </View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 8, color: active ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
+              <Text style={{ fontSize: 12, fontWeight: active ? '700' : '500',
+                color: active ? colors.pink : colors.textSecondary }}>
                 {label}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '900', color: active ? '#fff' : colors.textPrimary }}>
-                    {counts.pending}
-                  </Text>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary }}>
-                    pending
-                  </Text>
-                  {counts.active > 0 && (
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary, marginLeft: 2 }}>
-                      · {counts.active} active
-                    </Text>
-                  )}
-                </View>
-                {active && (
-                  <TouchableOpacity
-                    onPress={() => { toggleSearch(!searchOpen); if (aiOpen) setAiOpen(false); }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={{
-                      width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: searchOpen ? '#fff' : 'rgba(255,255,255,0.22)',
-                    }}
-                  >
-                    {searchOpen
-                      ? <X size={13} color={accent} />
-                      : <Search size={13} color="#fff" />}
-                  </TouchableOpacity>
-                )}
-              </View>
+              {needsAttention && (
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.danger }} />
+              )}
             </TouchableOpacity>
           );
         })}
       </View>
-
-      {searchOpen && (
-        <Animated.View style={{
-          marginHorizontal: 14, marginTop: 10, marginBottom: 6,
-          opacity: searchAnim,
-          transform: [{ translateY: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
-        }}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 8,
-            borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: isDark ? colors.surface : '#F8FAFC',
-            paddingHorizontal: 12, paddingVertical: 13,
-          }}>
-            <Search size={15} color={colors.textTertiary} />
-            <TextInput
-              value={activeQuery}
-              onChangeText={setActiveQuery}
-              placeholder={segment === 'schedule' ? 'Search events…' : 'Search chores…'}
-              placeholderTextColor={colors.textTertiary}
-              autoFocus
-              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
-            />
-            {activeQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setActiveQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={15} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </Animated.View>
-      )}
-
-      {/* CubeAI tool dropdown — opens directly under the card row when the
-          Chores card's bot icon is tapped, mirroring the search bar's own
-          drop-down pattern. Same 3 tools/tints as the inline pill this
-          replaces (AiEngineBanner), just relocated. */}
-      {aiOpen && (
-        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 14, marginTop: 10, marginBottom: 6 }}>
-          {([
-            { key: 'autobalance' as const, label: 'Balance', Icon: Sparkles, tint: colors.primary },
-            { key: 'spark' as const, label: 'Spark', Icon: Flame, tint: colors.kid },
-            { key: 'advice' as const, label: 'Advice', Icon: Award, tint: colors.pink },
-          ]).map(({ key, label, Icon, tint }) => {
-            const toolActive = aiState.showAiTool === key;
-            return (
-              <TouchableOpacity key={key}
-                onPress={() => runAiTool(key)}
-                activeOpacity={0.8}
-                style={{
-                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  paddingVertical: 13, borderRadius: RADIUS.lg,
-                  backgroundColor: toolActive ? tint : tint + '18',
-                  borderWidth: 1, borderColor: tint + (toolActive ? '' : '40'),
-                }}
-              >
-                <Icon size={13} color={toolActive ? '#fff' : tint} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: toolActive ? '#fff' : tint }}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
     </View>
   );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-        memberEmoji={activeMember?.emoji}
-        memberAvatarUrl={activeMember?.avatarUrl}
-        notifCount={unreadNotifCount}
-        onPersonaPress={undefined}
+      {/* Figma TopBar — PageTopBar, no legacy AppHeader */}
+      <PageTopBar
+        onAddPress={(isParent || isSenior) ? () => { if (isParent) setShowFlowChooser(true); else setShowComposer(true); } : undefined}
         onBellPress={() => setNotifPanelOpen(true)}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {segment === 'schedule'
-        ? <CalendarScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
+        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
         : segment === 'queue'
         ? (
-          <ScrollView>
+          <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
             {tasksHeader}
             <HouseholdWorkQueue activeMemberId={activeMemberId ?? ''} />
           </ScrollView>

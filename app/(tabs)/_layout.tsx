@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tabs, router } from 'expo-router';
 import {
-  View, Text, StyleSheet, Pressable, Animated, Easing,
+  View, Text, StyleSheet, Pressable, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
@@ -123,39 +122,20 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
 function CustomTabBar({ state, navigation }: any) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  // Kitchen-hub kiosk mode (features/kiosk/) replaces the Hub tab's content
-  // with its own full-screen nav rail — but this tab bar lives one level
-  // up, outside HubScreen's control, so it kept rendering underneath/
-  // alongside the rail regardless (live-reported: "I see bottom bar for
-  // kiosk"). The rail is the ONLY navigation kiosk mode should show.
   const { deviceClass } = useDeviceClass();
   const isKioskMode = deviceClass === 'kitchenHub';
-  // Chat tab shows a plain unread DOT, not a count — distinct from the
-  // AppHeader bell's numeric badge (general app notifications: quest
-  // posted/approved/etc.). Reads chatStore's own per-channel unread
-  // tracking, not notifStore's unreadCount — those used to be the same
-  // number, conflating "you have an app notification" with "you have an
-  // unread chat message," which are genuinely different things.
   const chatUnreadCounts = useChatStore(s => s.unreadCounts);
   const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
   const lastNavTime = useRef(0);
   const { members, activeMemberId } = useFamilyStore();
   const activeRole = members.find(m => m.id === activeMemberId)?.role;
   const isSenior = activeRole === 'senior';
-  // Pending redemption count — parent-only signal (only a parent approves
-  // a kid's coin redemption); a kid/teen/senior sees the Store tab with no
-  // badge even if redemptions happen to be pending, same as Chat's badge
-  // logic only counting UNREAD (not "any message exists").
   const pendingRedemptions = useRewardStore(s => s.redemptions).filter(r => r.status === 'pending').length;
   const showStoreBadge = activeRole === 'parent' && pendingRedemptions > 0;
-  // FindFam (gps) is now in TABS_DEFAULT for everyone except senior
-  // (who gets Memories in that slot instead) — kid/teen/parent all share
-  // the same bar shape now that kids also get direct FindFam access.
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
   const activeColor   = colors.primary;
-  const inactiveColor = colors.tabInactive;
-  const TAB_COUNT     = TABS.length;
+  const inactiveColor = isDark ? colors.textTertiary : colors.textSecondary;
 
   const activeTabIndex = TABS.findIndex(t => t.name === state.routes[state.index]?.name);
   const activeRouteName: string | undefined = state.routes[state.index]?.name;
@@ -163,72 +143,50 @@ function CustomTabBar({ state, navigation }: any) {
     useUIStore.getState().setActiveTabName(activeRouteName);
   }, [activeRouteName]);
 
-  const [barWidth, setBarWidth] = useState(0);
-  const tabWidth = barWidth / TAB_COUNT;
-
-  const pillAnim = useRef(new Animated.Value(activeTabIndex >= 0 ? activeTabIndex : 0)).current;
   useEffect(() => {
     if (activeTabIndex < 0) return;
-    Animated.timing(pillAnim, {
-      toValue: activeTabIndex,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
     showTabBar();
   }, [activeTabIndex]);
 
-  // Matches colors.background exactly so the nav reads as part of the same
-  // canvas, not a separate bar sitting on top of it — was hardcoded to
-  // stale pre-Kinfolk-rebrand hex (#1A1428/#FFFFFF, purple border) that
-  // never tracked the real theme tokens.
-  const bgColor = colors.background;
-
+  const floatBottom = (insets.bottom || 16) + 10;
   const [barHeight, setBarHeight] = useState(0);
-  const totalHeight = barHeight + (insets.bottom || 16);
+  const totalHeight = barHeight + floatBottom + 10;
 
-  // Placed after every hook above (Rules of Hooks) so a live device-class
-  // change (rotation/resize) never skips a hook on some renders but not
-  // others — same ordering rule HubScreen's own kiosk guard follows.
   if (isKioskMode) return null;
 
-  return (
-    <Animated.View style={{
-      backgroundColor: bgColor,
-      transform: [{
-        translateY: tabBarAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [totalHeight, 0],
-        }),
-      }],
-    }}>
-      <View
-        style={[styles.bar, { backgroundColor: bgColor }]}
-        onLayout={e => { setBarWidth(e.nativeEvent.layout.width); setBarHeight(e.nativeEvent.layout.height); }}
-      >
-        {/* Sliding gradient pill */}
-        {tabWidth > 0 && (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.pillWrap, {
-              width: tabWidth,
-              transform: [{
-                translateX: pillAnim.interpolate({
-                  inputRange: TABS.map((_, i) => i),
-                  outputRange: TABS.map((_, i) => i * tabWidth),
-                  extrapolate: 'clamp',
-                }),
-              }],
-            }]}
-          >
-            <LinearGradient
-              colors={[colors.primary + '22', colors.accent + '14']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={styles.pill}
-            />
-          </Animated.View>
-        )}
+  // Floating pill bar — detached from screen edges, rounded, with shadow
+  const pillBg = isDark ? colors.card : '#FFFFFF';
 
+  return (
+    <Animated.View
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        paddingBottom: floatBottom,
+        paddingHorizontal: 20,
+        transform: [{
+          translateY: tabBarAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [totalHeight, 0],
+          }),
+        }],
+      }}
+    >
+      <View
+        style={[styles.bar, {
+          backgroundColor: pillBg,
+          shadowColor: isDark ? '#000' : '#2C2722',
+          shadowOpacity: isDark ? 0.35 : 0.12,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 12,
+        }]}
+        onLayout={e => setBarHeight(e.nativeEvent.layout.height)}
+      >
         {TABS.map(({ name, label }, index) => {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
@@ -247,34 +205,36 @@ function CustomTabBar({ state, navigation }: any) {
               }}
               style={styles.tabItem}
             >
-              <View style={{ position: 'relative' }}>
-                <AnimatedTabIcon
-                  name={name}
-                  focused={focused}
-                  activeColor={activeColor}
-                  inactiveColor={inactiveColor}
-                />
-                {showBadge && (
-                  <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />
-                )}
-                {showStoreCount && (
-                  <View style={[styles.countBadge, { backgroundColor: colors.danger }]}>
-                    <Text style={styles.countBadgeText}>{pendingRedemptions > 9 ? '9+' : pendingRedemptions}</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={[
-                styles.label,
-                { color: focused ? activeColor : inactiveColor, fontWeight: focused ? '700' : '500' },
+              {/* All tabs: icon + label stacked; active tab gets a pill highlight */}
+              <View style={[
+                styles.tabInner,
+                focused && { backgroundColor: isDark ? colors.primary + '30' : colors.primaryLight },
               ]}>
-                {label}
-              </Text>
+                <View style={{ position: 'relative' }}>
+                  <AnimatedTabIcon
+                    name={name}
+                    focused={focused}
+                    activeColor={activeColor}
+                    inactiveColor={inactiveColor}
+                  />
+                  {showBadge && <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />}
+                  {showStoreCount && (
+                    <View style={[styles.countBadge, { backgroundColor: colors.danger }]}>
+                      <Text style={styles.countBadgeText}>{pendingRedemptions > 9 ? '9+' : pendingRedemptions}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[
+                  styles.tabLabel,
+                  { color: focused ? activeColor : inactiveColor, fontWeight: focused ? '700' : '500' },
+                ]}>
+                  {label}
+                </Text>
+              </View>
             </Pressable>
           );
         })}
       </View>
-
-      <View style={{ height: insets.bottom || 16, backgroundColor: bgColor }} />
     </Animated.View>
   );
 }
@@ -527,7 +487,9 @@ export default function TabLayout() {
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: colors.background },
+          // sceneStyle paddingBottom reserves space for the floating nav bar
+          // (bar ~56px + 10px gap + typical safe-area = ~86px total)
+          sceneStyle: { backgroundColor: colors.background, paddingBottom: 90 },
           lazy: true,
           freezeOnBlur: true,
         }}
@@ -612,7 +574,7 @@ export default function TabLayout() {
                   else setAskCubeOpen(true);
                 }}
                 style={{
-                  position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
+                  position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 92,
                   width: 52, height: 52, borderRadius: 26, backgroundColor: fabColor,
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: fabColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
@@ -636,36 +598,36 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   bar: {
-    // Flush with the canvas — no border/shadow/elevation seam. Nav should
-    // read as part of the same surface as the page above it, not a
-    // separate lifted bar (explicit direction, plus this shadowColor was
-    // leftover pre-Kinfolk-rebrand purple that never matched anything).
     flexDirection: 'row',
-    paddingTop: 8,
-    position: 'relative',
-  },
-  pillWrap: {
-    position: 'absolute',
-    top: 6,
-    left: 0,
-    height: 56,
-    paddingHorizontal: 4,
-  },
-  pill: {
-    flex: 1,
-    borderRadius: 14,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 100,
+    gap: 2,
+    width: '100%',
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    paddingTop: 2,
-    gap: 2,
   },
-  label: {
-    fontSize: 12,
+  /* Icon + label column, pill highlight on active */
+  tabInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
+  tabLabel: {
+    fontSize: 11,
+    letterSpacing: -0.1,
+  },
+  /* Legacy aliases kept so any stray ref compiles */
+  activePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100 },
+  activeLabel: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
+  inactiveIcon: { alignItems: 'center', justifyContent: 'center', padding: 9 },
   dotBadge: {
     position: 'absolute',
     top: -2,

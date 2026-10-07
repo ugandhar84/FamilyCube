@@ -52,6 +52,9 @@ import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
+import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
+import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
+import { DispatchRideSheet } from '@/features/hub/parent/DispatchRideSheet';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -245,6 +248,15 @@ export default function TasksScreen() {
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);
 
+  // Parent creation: chooser → then either CreateResponsibilitySheet or DispatchRideSheet
+  const [showFlowChooser, setShowFlowChooser] = useState(false);
+  const [showResponsibilitySheet, setShowResponsibilitySheet] = useState(false);
+  const [showRideSheet, setShowRideSheet] = useState(false);
+  const [rideSeedMemberId, setRideSeedMemberId] = useState<string | undefined>();
+  const [rideSeedTitle, setRideSeedTitle] = useState<string | undefined>();
+  const [choreConvertTitle, setChoreConvertTitle] = useState<string | undefined>();
+  const [choreConvertMemberId, setChoreConvertMemberId] = useState<string | undefined>();
+
   // Kid gets the same stacked "Ask Parent" picker the Hub's FAB opens
   // (AskParentSheet) instead of the unrestricted SmartTaskComposer —
   // routes to each dedicated modal below, no free-text guessing.
@@ -255,7 +267,11 @@ export default function TasksScreen() {
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [choreProposalModal, setChoreProposalModal] = useState(false);
   const [rideRequestModal, setRideRequestModal] = useState(false);
-  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
+  const openCreator = () => {
+    if (isKidCreator) setShowAskParentSheet(true);
+    else if (isParent) setShowFlowChooser(true);
+    else setShowComposer(true);
+  };
 
   // Set by the shared FAB in app/(tabs)/_layout.tsx when tapped while
   // showing its Tasks-tab "+" face — opens SmartTaskComposer directly
@@ -562,14 +578,44 @@ export default function TasksScreen() {
           onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
           activeMemberId={activeMemberId ?? ''}
           prefill={manualEventPrefill as any}
-          // The composer only ever hands off here once it's already detected
-          // title/category/when/who/recurrence — restarting at step 0 threw
-          // all of that context away and made the user re-click through the
-          // whole wizard just to see what it already knew. Opening on
-          // Review lets them confirm/adjust in place instead.
           initialStep="review"
         />
       )}
+
+      {/* Parent creation flow: chooser → responsibility or ride */}
+      <TaskFlowChooser
+        visible={showFlowChooser}
+        onClose={() => setShowFlowChooser(false)}
+        onChooseResponsibility={() => setShowResponsibilitySheet(true)}
+        onChooseRide={() => setShowRideSheet(true)}
+      />
+
+      <CreateResponsibilitySheet
+        visible={showResponsibilitySheet}
+        onClose={() => { setShowResponsibilitySheet(false); setChoreConvertTitle(undefined); setChoreConvertMemberId(undefined); }}
+        prefillTitle={choreConvertTitle}
+        prefillMemberId={choreConvertMemberId}
+        onCreated={() => setShowResponsibilitySheet(false)}
+        onConvertToRide={(seed) => {
+          setShowResponsibilitySheet(false);
+          setRideSeedTitle(seed.title);
+          setRideSeedMemberId(seed.memberId);
+          setTimeout(() => setShowRideSheet(true), 300);
+        }}
+      />
+
+      <DispatchRideSheet
+        visible={showRideSheet}
+        onClose={() => { setShowRideSheet(false); setRideSeedMemberId(undefined); setRideSeedTitle(undefined); }}
+        seedMemberId={rideSeedMemberId}
+        onDispatched={() => setShowRideSheet(false)}
+        onConvertToChore={(seed) => {
+          setShowRideSheet(false);
+          setChoreConvertTitle(seed.title);
+          setChoreConvertMemberId(seed.memberId);
+          setTimeout(() => setShowResponsibilitySheet(true), 300);
+        }}
+      />
     </SafeAreaView>
   );
 }

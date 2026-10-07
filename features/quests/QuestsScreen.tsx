@@ -828,13 +828,15 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && (
         <AppHeader
-          memberName={activeMember?.name}
+          memberName={activeMember?.name ?? ''}
           memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
           memberEmoji={activeMember?.emoji}
           memberAvatarUrl={activeMember?.avatarUrl}
           notifCount={unreadNotifCount}
           onPersonaPress={undefined}
           onBellPress={() => setNotifPanelOpen(true)}
+          compact={isParentOrSenior}
+          onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAddModal(true) : undefined}
         />
       )}
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
@@ -864,48 +866,17 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           ).size;
 
           return (
-            <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-              {/* Eyebrow row */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-                  {(familyName ?? 'FAMILY').toUpperCase()}
+            <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
+              {/* h1 — compact AppHeader above already shows avatar+greeting+name */}
+              <View style={{ marginBottom: 6 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
+                  {isKid ? 'My chores' : 'Tasks, shared'}
                 </Text>
-                {activeMember && (
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-                    {activeMember.name.split(' ')[0]} · {activeMember.role}
-                  </Text>
-                )}
-              </View>
-
-              {/* h1 */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 6 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
-                    {isKid ? 'My chores' : 'Tasks, shared'}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
-                    {stillOpen > 0
-                      ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
-                      : 'All done for now — great work!'}
-                  </Text>
-                </View>
-                {/* Round + FAB */}
-                {(isParent || isTeen) && !hideCreateButton && (
-                  <TouchableOpacity
-                    onPress={() => setShowAddModal(true)}
-                    style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 1, borderColor: colors.border, shadowColor: 'rgba(44,39,34,0.12)', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 8 }}>
-                    <Text style={{ fontSize: 22, color: colors.pink, lineHeight: 26 }}>+</Text>
-                  </TouchableOpacity>
-                )}
-                {isSenior && !hideCreateButton && (
-                  <TouchableOpacity
-                    onPress={() => setShowSponsorModal(true)}
-                    style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 1, borderColor: colors.border }}>
-                    <Text style={{ fontSize: 22, color: colors.teal, lineHeight: 26 }}>+</Text>
-                  </TouchableOpacity>
-                )}
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                  {stillOpen > 0
+                    ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
+                    : 'All done for now — great work!'}
+                </Text>
               </View>
 
               {/* Quick-capture bar */}

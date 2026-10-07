@@ -33,6 +33,9 @@ import { KidProposalReviewScreen } from './parent/KidProposalReviewScreen';
 import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
 import { ActiveTripDetailScreen } from './parent/ActiveTripDetailScreen';
 import { SendAppreciationScreen } from './parent/SendAppreciationScreen';
+import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
+import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
+import { DispatchRideSheet } from './parent/DispatchRideSheet';
 import { Modal } from 'react-native';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 
@@ -102,6 +105,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     pushbackSheet, setPushbackSheet,
     delegateSheet, setDelegateSheet,
   } = useParentModals();
+
+  // Flow chooser + creation sheets (same as Tasks tab)
+  const [showFlowChooser, setShowFlowChooser] = useState(false);
+  const [showResponsibilitySheet, setShowResponsibilitySheet] = useState(false);
+  const [showRideSheet, setShowRideSheet] = useState(false);
+  const [rideSeedMemberId, setRideSeedMemberId] = useState<string | undefined>();
+  const [rideSeedTitle, setRideSeedTitle] = useState<string | undefined>();
+  const [choreConvertTitle, setChoreConvertTitle] = useState<string | undefined>();
+  const [choreConvertMemberId, setChoreConvertMemberId] = useState<string | undefined>();
 
   // Review + rides screens
   const [showReviewInbox, setShowReviewInbox] = useState(false);
@@ -474,7 +486,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         groceryCount={groceryItems.length}
         ridesCount={pendingRideRequiredEvents.length}
         nextRideLabel={activeTrip ? `${activeTrip.kidName} · ETA ${activeTrip.etaMinutes} min` : undefined}
-        onCapture={() => setShowTaskComposer(true)}
+        onCapture={() => setShowFlowChooser(true)}
         onRides={() => setShowRidesRoom(true)}
         onAppreciation={() => setShowSendAppreciation(true)}
       />
@@ -579,6 +591,41 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         onClose={() => setDelegateSheet(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
+      />
+
+      {/* ── Task creation (chooser → responsibility or ride) ─────────── */}
+      <TaskFlowChooser
+        visible={showFlowChooser}
+        onClose={() => setShowFlowChooser(false)}
+        onChooseResponsibility={() => setShowResponsibilitySheet(true)}
+        onChooseRide={() => setShowRideSheet(true)}
+      />
+
+      <CreateResponsibilitySheet
+        visible={showResponsibilitySheet}
+        onClose={() => { setShowResponsibilitySheet(false); setChoreConvertTitle(undefined); setChoreConvertMemberId(undefined); }}
+        prefillTitle={choreConvertTitle}
+        prefillMemberId={choreConvertMemberId}
+        onCreated={() => setShowResponsibilitySheet(false)}
+        onConvertToRide={(seed) => {
+          setShowResponsibilitySheet(false);
+          setRideSeedTitle(seed.title);
+          setRideSeedMemberId(seed.memberId);
+          setTimeout(() => setShowRideSheet(true), 300);
+        }}
+      />
+
+      <DispatchRideSheet
+        visible={showRideSheet}
+        onClose={() => { setShowRideSheet(false); setRideSeedMemberId(undefined); setRideSeedTitle(undefined); }}
+        seedMemberId={rideSeedMemberId}
+        onDispatched={() => setShowRideSheet(false)}
+        onConvertToChore={(seed) => {
+          setShowRideSheet(false);
+          setChoreConvertTitle(seed.title);
+          setChoreConvertMemberId(seed.memberId);
+          setTimeout(() => setShowResponsibilitySheet(true), 300);
+        }}
       />
 
       {/* ── Review inbox ─────────────────────────────────────────────── */}

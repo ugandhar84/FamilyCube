@@ -37,18 +37,18 @@ export function ProfileSwitcherCard({
         style={{
           marginHorizontal: 20, marginTop: 12,
           padding: 8,
-          borderWidth: 1, borderColor: isDark ? colors.border : '#E0E1E8', borderRadius: 20,
+          borderWidth: 1, borderColor: colors.border, borderRadius: 20,
           backgroundColor: colors.card,
-          shadowColor: '#2C3244', shadowOffset: { width: 0, height: 6 }, shadowOpacity: isDark ? 0 : 0.045, shadowRadius: 20,
+          shadowColor: colors.navy, shadowOffset: { width: 0, height: 6 }, shadowOpacity: isDark ? 0 : 0.045, shadowRadius: 20,
           flexDirection: 'row', alignItems: 'center', gap: 11,
           minHeight: 58,
         }}
       >
         <FamilyAvatar name={active.name} emoji={active.emoji} avatarUrl={active.avatarUrl} size={42} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 9, color: '#7A8090' }}>Viewing as</Text>
+          <Text style={{ fontSize: 9, color: colors.textTertiary }}>Viewing as</Text>
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginTop: 1 }}>{active.name.split(' ')[0]}</Text>
-          <Text style={{ fontSize: 10, color: '#6F7586', marginTop: 2 }}>{roleLabel}</Text>
+          <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>{roleLabel}</Text>
         </View>
         <Text style={{ fontSize: 12, color: colors.primary, textAlign: 'center' }}>↓</Text>
       </AnimatedPressable>

@@ -47,7 +47,7 @@ export function FamilyPulseCard({
   }, []);
 
   // Show a low-height placeholder while loading so cards below it still render
-  if (sharingIds === null) return <View style={{ marginHorizontal: 20, marginTop: 18, height: 120, borderRadius: 24, backgroundColor: isDark ? colors.card : '#EDF3EF', opacity: 0.5 }} />;
+  if (sharingIds === null) return <View style={{ marginHorizontal: 20, marginTop: 18, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
 
   const sharingCount = members.filter(m => sharingIds.has(m.id)).length;
   const mostRecent = members.find(m => sharingIds.has(m.id));
@@ -61,12 +61,12 @@ export function FamilyPulseCard({
       marginHorizontal: 20, marginTop: 18,
       flexDirection: 'row', flexWrap: 'wrap',
       gap: 16, padding: 20,
-      borderWidth: 1, borderColor: '#D9E8DF', borderRadius: 24,
+      borderWidth: 1, borderColor: colors.border, borderRadius: 24,
       // Pastel intensity bumped per explicit direction ("increase the
       // pastel color intensity lil bit 20%") — was the exact Figma source
       // value #E8F4EF, now a more saturated step toward the same hue.
-      backgroundColor: isDark ? colors.card : '#DCEEE7',
-      shadowColor: '#485E52', shadowOffset: { width: 0, height: 12 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 30,
+      backgroundColor: colors.tealLight,
+      shadowColor: colors.teal, shadowOffset: { width: 0, height: 12 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 30,
     }}>
       <View style={{ flex: 1, minWidth: 180 }}>
         <View style={{ alignSelf: 'flex-start' }}>
@@ -76,7 +76,7 @@ export function FamilyPulseCard({
         <Text style={{ color: colors.textPrimary, fontSize: 21, fontWeight: '700', letterSpacing: -0.5, marginTop: 6, marginBottom: 6 }}>
           {familyName ? `Welcome to ${familyName}` : "You’re on top of today"}
         </Text>
-        <Text style={{ color: isDark ? colors.textSecondary : '#667168', fontSize: 13, lineHeight: 19 }}>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 19 }}>
           {hasUrgentItem
             ? 'Everyone is accounted for. One thing needs your decision.'
             : 'Everyone is accounted for.'}
@@ -91,19 +91,19 @@ export function FamilyPulseCard({
         <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary, textAlign: 'center' }}>
           {sharingCount}/{members.length}
         </Text>
-        <Text style={{ fontSize: 10, color: isDark ? colors.textSecondary : '#6C786F', textAlign: 'center' }}>
+        <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center' }}>
           sharing
         </Text>
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
         {members.slice(0, 5).map((m, i) => (
-          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, borderWidth: 3, borderColor: isDark ? colors.card : '#EDF3EF', borderRadius: 999 }}>
+          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, borderWidth: 3, borderColor: colors.tealLight, borderRadius: 999 }}>
             <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32} />
           </View>
         ))}
         {mostRecent && (
-          <Text style={{ marginLeft: 8, color: isDark ? colors.textSecondary : '#667168', fontSize: 11 }}>
+          <Text style={{ marginLeft: 8, color: colors.textSecondary, fontSize: 11 }}>
             {mostRecent.name.split(' ')[0]} checked in
           </Text>
         )}

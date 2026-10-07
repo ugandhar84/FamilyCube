@@ -11,17 +11,21 @@ import {
   Text,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
-import { TYPO, RADIUS } from '@/constants/theme';
+import { RADIUS } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type FilterKey = 'pending' | 'decided' | 'all';
+
+export type ReviewItemType = 'chore' | 'quest';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -106,12 +110,14 @@ function FilterPills({ active, pendingCount, onSelect, colors }: FilterPillsProp
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ReviewInboxScreen({ onSelectItem }: {
-  onSelectItem?: (choreId: string) => void;
+export function ReviewInboxScreen({ onSelectItem, onClose }: {
+  onSelectItem?: (choreId: string, type: ReviewItemType) => void;
+  onClose?: () => void;
 }) {
   const { colors, isDark } = useTheme();
   const { getParentReviewDeck, chores } = useChoreStore();
-  const { members } = useFamilyStore();
+  const { members, activeMemberId, familyName } = useFamilyStore();
+  const activeMember = members.find(m => m.id === activeMemberId);
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
 
@@ -134,46 +140,64 @@ export function ReviewInboxScreen({ onSelectItem }: {
   const firstItem = pendingReviews[0];
   const firstItemTitle = firstItem?.title ?? 'the first submission';
 
-  const navigateToQuests = () => {
-    router.push('/(tabs)/quests' as any);
+  const openFirstItem = () => {
+    if (!firstItem) return;
+    const type: ReviewItemType = firstItem.categoryType === 'bounty' ? 'quest' : 'chore';
+    onSelectItem?.(firstItem.id, type);
   };
 
-  return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 40 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Page intro ─────────────────────────────────────────────── */}
-      <View style={{ gap: 6 }}>
-        <Pressable
-          onPress={navigateToQuests}
-          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, alignSelf: 'flex-start' })}
-          accessibilityRole="link"
-          accessibilityLabel="Back to quests"
-        >
-          <Text style={{
-            fontSize: 13,
-            fontWeight: '500',
-            color: colors.teal,
-            letterSpacing: 0.3,
-          }}>
-            REVIEW / PARENT DECISIONS
-          </Text>
-        </Pressable>
+  const navigateToQuests = () => {
+    openFirstItem();
+  };
 
-        <Text style={{
-          fontSize: 29,
-          fontWeight: '700',
-          lineHeight: 40.6,
-          color: colors.textPrimary,
-          marginTop: 2,
-        }}>
-          Notice the effort
-        </Text>
+  const fieldBorder = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+      {/* ── Fixed page header ── */}
+      <View style={{
+        paddingHorizontal: 24,
+        paddingTop: 12,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        gap: 8,
+      }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
+            {familyName?.toUpperCase() ?? 'FAMILY'}
+          </Text>
+          {activeMember ? (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+              {activeMember.name} · {activeMember.role}
+            </Text>
+          ) : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+              Review inbox
+            </Text>
+          </View>
+          <Pressable
+            onPress={onClose}
+            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
+          >
+            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+          </Pressable>
+        </View>
       </View>
 
-      {/* ── Supporting text ─────────────────────────────────────────── */}
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+      showsVerticalScrollIndicator={false}
+    >
+
+      {/* ── Pending count ───────────────────────────────────────────── */}
       <Text style={{
         fontSize: 13,
         fontWeight: '500',
@@ -258,11 +282,8 @@ export function ReviewInboxScreen({ onSelectItem }: {
               <React.Fragment key={chore.id}>
                 <Pressable
                   onPress={() => {
-                    if (onSelectItem) {
-                      onSelectItem(chore.id);
-                    } else {
-                      navigateToQuests();
-                    }
+                    const type: ReviewItemType = chore.categoryType === 'bounty' ? 'quest' : 'chore';
+                    onSelectItem?.(chore.id, type);
                   }}
                   style={({ pressed }) => ({
                     gap: 2,
@@ -432,5 +453,6 @@ export function ReviewInboxScreen({ onSelectItem }: {
         Connect. Organize. Care. Grow.
       </Text>
     </ScrollView>
+    </SafeAreaView>
   );
 }

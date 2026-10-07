@@ -4,10 +4,12 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
-import { TYPO, RADIUS } from '@/constants/theme';
 import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 
@@ -23,32 +25,31 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
   const approveRedemption = useRewardStore(s => s.approveRedemption);
   const members = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  const familyName = useFamilyStore(s => s.familyName);
 
   const redemption = redemptions.find(r => r.id === redemptionId);
   const reward = rewards.find(r => r.id === redemption?.rewardId);
   const member = members.find(m => m.id === redemption?.memberId);
+  const activeMember = members.find(m => m.id === activeMemberId);
   const initial = (member?.name ?? '?')[0].toUpperCase();
+  const firstName = member?.name?.split(' ')[0] ?? 'them';
 
   const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
 
   const handleApprove = () => {
-    if (activeMemberId) {
-      approveRedemption(redemptionId, activeMemberId);
-    }
+    if (activeMemberId) approveRedemption(redemptionId, activeMemberId);
     onClose();
   };
 
-  const handleDecline = () => {
-    onClose();
-  };
+  const handleDecline = () => { onClose(); };
 
   if (!redemption) {
     return (
-      <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
-        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-          Redemption not found.
-        </Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: colors.textSecondary, fontSize: 15 }}>Redemption not found.</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -60,131 +61,107 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
   const categoryLabel = isCashout ? 'Cash out' : 'Store reward';
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Back link */}
-      <TouchableOpacity onPress={onClose} style={styles.backRow}>
-        <Text style={[styles.backText, { color: colors.teal }]}>{'← Reward Review'}</Text>
-      </TouchableOpacity>
-
-      {/* Title */}
-      <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Reward request</Text>
-
-      {/* Status pill */}
-      <View style={[styles.pill, { backgroundColor: colors.amberLight }]}>
-        <Text style={[styles.pillText, { color: colors.amber }]}>Pending approval</Text>
-      </View>
-
-      {/* Requester card */}
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor }]}>
-        <View style={styles.assigneeRow}>
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>{initial}</Text>
-          </View>
-          <View style={styles.assigneeInfo}>
-            <Text style={[styles.assigneeName, { color: colors.textPrimary }]}>
-              {member?.name ?? 'Unknown'}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+      {/* ── Fixed page header ── */}
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
+            {familyName?.toUpperCase() ?? 'FAMILY'}
+          </Text>
+          {activeMember ? (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+              {activeMember.name} · {activeMember.role}
             </Text>
-            <Text style={[styles.assigneeSub, { color: colors.textSecondary }]}>
-              wants to redeem a reward
+          ) : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Review inbox</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+              Reward request
             </Text>
           </View>
+          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+          </Pressable>
         </View>
       </View>
 
-      {/* Reward card */}
-      <View style={[styles.rewardCard, { backgroundColor: colors.amberLight }]}>
-        <Text style={[styles.rewardTitle, { color: colors.textPrimary }]}>{rewardTitle}</Text>
-        {rewardDescription ? (
-          <Text style={[styles.rewardDescription, { color: colors.textSecondary }]}>
-            {rewardDescription}
-          </Text>
-        ) : null}
-        <View style={styles.coinsRow}>
-          <View style={[styles.coinIcon, { backgroundColor: colors.amber }]}>
-            <Text style={styles.coinIconText}>₵</Text>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Status pill */}
+        <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: colors.amberLight }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber }}>Pending approval</Text>
+        </View>
+
+        {/* Requester card */}
+        <View style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+          <Text style={[s.overline, { color: colors.textTertiary }]}>REQUESTED BY</Text>
+          <View style={s.memberRow}>
+            <View style={[s.avatar, { backgroundColor: colors.amber }]}>
+              <Text style={s.avatarText}>{initial}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.memberName, { color: colors.textPrimary }]}>{member?.name ?? 'Unknown'}</Text>
+              <Text style={[s.memberSub, { color: colors.textSecondary }]}>wants to redeem a reward</Text>
+            </View>
           </View>
-          <Text style={[styles.coinsText, { color: colors.textPrimary }]}>
-            {coinCost} coins
+        </View>
+
+        {/* Reward card */}
+        <View style={[s.card, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
+          <Text style={[s.overline, { color: colors.amber }]}>REWARD</Text>
+          <Text style={[s.rewardTitle, { color: colors.textPrimary }]}>{rewardTitle}</Text>
+          {rewardDescription ? (
+            <Text style={[s.bodyText, { color: colors.textSecondary }]}>{rewardDescription}</Text>
+          ) : null}
+          <View style={[s.coinsBadge, { backgroundColor: colors.card, alignSelf: 'flex-start' }]}>
+            <Text style={[s.coinsBadgeText, { color: colors.amber }]}>₵ {coinCost} coins · {categoryLabel}</Text>
+          </View>
+        </View>
+
+        {/* What happens next */}
+        <View style={[s.card, { backgroundColor: colors.tealLight, borderColor: 'transparent' }]}>
+          <Text style={[s.cardTitle, { color: colors.textPrimary }]}>What happens on approval</Text>
+          <Text style={[s.bodyText, { color: colors.textSecondary }]}>
+            {coinCost} coins are deducted from {firstName}'s balance. The redemption is marked fulfilled.
           </Text>
         </View>
-      </View>
 
-      {/* Category pill */}
-      <View style={[styles.categoryPill, { backgroundColor: colors.card, borderColor }]}>
-        <Text style={[styles.categoryPillText, { color: colors.textSecondary }]}>
-          {categoryLabel}
-        </Text>
-      </View>
+        {/* Action buttons */}
+        <View style={{ gap: 12, marginTop: 4 }}>
+          <TouchableOpacity onPress={handleApprove} style={[s.btnPrimary, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
+            <Text style={[s.btnText, { color: '#FFFFFF' }]}>Approve redemption →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDecline} style={[s.btnOutline, { backgroundColor: colors.surface, borderColor }]} activeOpacity={0.85}>
+            <Text style={[s.btnText, { color: colors.danger }]}>Decline</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Action buttons */}
-      <View style={styles.buttonsWrapper}>
-        <TouchableOpacity
-          onPress={handleApprove}
-          style={[styles.btn, { backgroundColor: colors.primary }]}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.btnText, { color: '#FFFFFF' }]}>Approve redemption</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={handleDecline}
-          style={[styles.btn, styles.btnOutline, { backgroundColor: colors.surface, borderColor }]}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.btnText, { color: colors.danger }]}>Decline</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+        <Text style={[s.signature, { color: colors.textTertiary }]}>Connect. Organize. Care. Grow.</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-    gap: 20,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyText: {
-    fontSize: TYPO.body,
-  },
-  backRow: {
-    marginBottom: 0,
-  },
-  backText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  screenTitle: {
-    fontSize: 29,
-    fontWeight: '700',
-    lineHeight: 34,
-  },
-  pill: {
-    alignSelf: 'flex-start',
-    borderRadius: 100,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  pillText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
+const s = StyleSheet.create({
   card: {
-    borderRadius: RADIUS.xxl,
+    borderRadius: 22,
     padding: 18,
     borderWidth: 1,
+    gap: 12,
   },
-  assigneeRow: {
+  overline: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+  },
+  memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -197,81 +174,60 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  assigneeInfo: {
-    flex: 1,
-  },
-  assigneeName: {
     fontSize: 16,
-    fontWeight: '600',
-  },
-  assigneeSub: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  rewardCard: {
-    borderRadius: RADIUS.xxl,
-    padding: 20,
-  },
-  rewardTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  rewardDescription: {
-    fontSize: 13,
-    fontWeight: '400',
-    marginTop: 6,
-  },
-  coinsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 12,
-  },
-  coinIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  coinIconText: {
-    color: '#FFFFFF',
-    fontSize: 13,
     fontWeight: '700',
+    color: '#FFFFFF',
   },
-  coinsText: {
+  memberName: {
     fontSize: 15,
     fontWeight: '600',
   },
-  categoryPill: {
-    alignSelf: 'flex-start',
+  memberSub: {
+    fontSize: 12,
+    fontWeight: '400',
+    marginTop: 1,
+  },
+  rewardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  bodyText: {
+    fontSize: 13,
+    fontWeight: '400',
+    lineHeight: 20,
+  },
+  coinsBadge: {
     borderRadius: 100,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderWidth: 1,
   },
-  categoryPillText: {
-    fontSize: 12,
+  coinsBadgeText: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  buttonsWrapper: {
-    gap: 12,
-  },
-  btn: {
+  btnPrimary: {
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   btnOutline: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
     borderWidth: 1,
   },
   btnText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  signature: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });

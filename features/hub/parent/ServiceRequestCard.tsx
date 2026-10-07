@@ -73,8 +73,8 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${typeLabel}" for ${kidName} (id=${req.id}) → toggleGPWelcome [features/hub/parent/ServiceRequestCard.tsx:60]`); toggleGPWelcome(req.id, !isGPOpen); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
-          backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F1F5F9'),
-          borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : (isDark ? colors.border : '#CBD5E1') }}>
+          backgroundColor: isGPOpen ? colors.tealLight : colors.surface,
+          borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : colors.border }}>
         <HeartHandshake size={14} color={isGPOpen ? GP_GREEN : colors.textSecondary} />
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
           color: isGPOpen ? GP_GREEN : colors.textSecondary }}>
@@ -85,7 +85,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       {canOfferCoins && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
-          backgroundColor: isDark ? colors.surface2 : '#F1F5F9', borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+          backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
           <Coins size={14} color={colors.kid} />
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Offer coins (optional):</Text>
           <TextInput

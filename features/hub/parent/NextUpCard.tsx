@@ -43,7 +43,7 @@ export function NextUpTimeline({
           </Text>
         </View>
         <Pressable onPress={() => router.push('/(tabs)/calendar' as any)}>
-          <Text style={{ color: isDark ? colors.primary : '#5C6EB5', fontSize: 12, fontWeight: '600' }}>Full day →</Text>
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Full day →</Text>
         </Pressable>
       </View>
 
@@ -52,7 +52,7 @@ export function NextUpTimeline({
         paddingHorizontal: 16, paddingVertical: shown.length === 0 ? 18 : 5, borderRadius: 22,
         backgroundColor: colors.card,
         borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
-        shadowColor: '#2C3244', shadowOffset: { width: 0, height: 7 }, shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
+        shadowColor: colors.navy, shadowOffset: { width: 0, height: 7 }, shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
       }}>
         {shown.length === 0 ? (
           <Text style={{ color: colors.textTertiary, fontSize: 13, textAlign: 'center' }}>Nothing scheduled — enjoy the clear afternoon</Text>
@@ -77,7 +77,7 @@ export function NextUpTimeline({
                 {conflictReasons?.get(ev.id) ?? (ev.location ?? '')}
               </Text>
             </View>
-            <Text style={{ color: isDark ? colors.primary : '#6677BD' }}>→</Text>
+            <Text style={{ color: colors.primary }}>→</Text>
           </AnimatedPressable>
         ))}
       </View>

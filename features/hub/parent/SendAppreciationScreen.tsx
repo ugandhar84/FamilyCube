@@ -1,23 +1,18 @@
-/**
- * SendAppreciationScreen — parent sends a warm chat message to a family member.
- *
- * Sends via useChatStore().sendMessage to the 'all' group channel.
- * No coins are transferred — this is encouragement, not payment.
- */
 import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   TextInput,
+  StyleSheet,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
-import { TYPO, RADIUS } from '@/constants/theme';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function memberInitial(m: FamilyMember): string {
   return (m.name[0] ?? '?').toUpperCase();
@@ -34,294 +29,233 @@ function roleLabel(m: FamilyMember): string {
   }
 }
 
-// ─── Preset chips ─────────────────────────────────────────────────────────────
-
 const MESSAGE_PRESETS = [
   'Amazing work!',
   'You made today easier',
   'So proud of you',
+  'Thank you for helping',
 ] as const;
 
-// ─── Member selector card ─────────────────────────────────────────────────────
-
-interface MemberCardProps {
-  member: FamilyMember;
-  selected: boolean;
-  onPress: () => void;
-}
-
-function MemberCard({ member, selected, onPress }: MemberCardProps) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: RADIUS.lg,
-        backgroundColor: selected ? colors.tealLight : colors.card,
-        borderWidth: 1.5,
-        borderColor: selected ? colors.teal : colors.border,
-        minWidth: 72,
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      <View style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: colors.teal,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>
-          {memberInitial(member)}
-        </Text>
-      </View>
-      <Text style={{
-        fontSize: TYPO.caption,
-        fontWeight: '600',
-        color: colors.textPrimary,
-        marginTop: 4,
-        textAlign: 'center',
-      }}>
-        {member.name.split(' ')[0] ?? member.name}
-      </Text>
-      <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center' }}>
-        {roleLabel(member)}
-      </Text>
-    </Pressable>
-  );
-}
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
-
-interface SendAppreciationScreenProps {
+interface Props {
   memberId?: string;
   onClose: () => void;
 }
 
-export function SendAppreciationScreen({ memberId, onClose }: SendAppreciationScreenProps) {
-  const { colors } = useTheme();
+export function SendAppreciationScreen({ memberId, onClose }: Props) {
+  const { colors, isDark } = useTheme();
   const members        = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  const familyName     = useFamilyStore(s => s.familyName);
   const sendMessage    = useChatStore(s => s.sendMessage);
 
+  const activeMember = members.find(m => m.id === activeMemberId);
   const [selectedId, setSelectedId] = useState<string | undefined>(memberId);
   const [preset, setPreset]         = useState<string | undefined>(undefined);
   const [text, setText]             = useState('');
+  const [sending, setSending]       = useState(false);
 
   const selectedMember = useMemo(
     () => members.find(m => m.id === selectedId),
     [members, selectedId],
   );
 
+  const canSend = !!selectedId && !!(text.trim() || preset);
+
   async function handleSend() {
-    const senderId = activeMemberId;
-    if (!senderId) return;
-    const finalText = text.trim() || preset;
-    if (!finalText) return;
-    await sendMessage('all', senderId, finalText);
+    if (!activeMemberId || !canSend) return;
+    setSending(true);
+    const finalText = text.trim() || preset!;
+    await sendMessage('all', activeMemberId, finalText);
+    setSending(false);
     onClose();
   }
 
+  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Back link */}
-      <Pressable onPress={onClose} hitSlop={12}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '500', color: colors.teal }}>
-          ← Send appreciation
-        </Text>
-      </Pressable>
-
-      {/* Title */}
-      <Text style={{ fontSize: 29, fontWeight: '700', color: colors.textPrimary }}>
-        Send appreciation
-      </Text>
-
-      {/* Member selector */}
-      {memberId ? (
-        /* Single pre-selected member */
-        selectedMember ? (
-          <View style={{
-            backgroundColor: colors.tealLight,
-            borderRadius: RADIUS.xxl,
-            padding: 20,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-          }}>
-            <View style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: colors.teal,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>
-                {memberInitial(selectedMember)}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>
-                {selectedMember.name}
-              </Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '400', color: colors.textSecondary }}>
-                {roleLabel(selectedMember)}
-              </Text>
-            </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+      {/* ── Fixed page header ── */}
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
+            {familyName?.toUpperCase() ?? 'FAMILY'}
+          </Text>
+          {activeMember ? (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+              {activeMember.name} · {activeMember.role}
+            </Text>
+          ) : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+              Send a cheer
+            </Text>
           </View>
-        ) : null
-      ) : (
-        /* Full member selector */
-        <View style={{ gap: 12 }}>
+          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+          </Pressable>
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Member selector */}
+        <View style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+          <Text style={[s.overline, { color: colors.textTertiary }]}>WHO ARE YOU CHEERING?</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingRight: 8 }}
+            contentContainerStyle={{ gap: 10, paddingTop: 4 }}
           >
-            {members.map(m => (
-              <MemberCard
-                key={m.id}
-                member={m}
-                selected={m.id === selectedId}
-                onPress={() => setSelectedId(m.id)}
-              />
-            ))}
+            {members.filter(m => m.id !== activeMemberId).map(m => {
+              const selected = m.id === selectedId;
+              const roleColor = m.role === 'parent' ? colors.teal : colors.amber;
+              const roleBg = m.role === 'parent' ? colors.tealLight : colors.amberLight;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => setSelectedId(m.id)}
+                  style={{ alignItems: 'center', gap: 4, minWidth: 56 }}
+                >
+                  <View style={{
+                    width: 44, height: 44, borderRadius: 22,
+                    backgroundColor: selected ? roleColor : colors.surface,
+                    borderWidth: selected ? 2 : 1,
+                    borderColor: selected ? roleColor : borderColor,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ fontSize: 17, fontWeight: '700', color: selected ? '#FFFFFF' : colors.textSecondary }}>
+                      {memberInitial(m)}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: selected ? roleColor : colors.textSecondary, fontWeight: selected ? '600' : '400', textAlign: 'center', maxWidth: 52 }} numberOfLines={1}>
+                    {m.name.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
-          {/* Hero card for selected member */}
           {selectedMember && (
-            <View style={{
-              backgroundColor: colors.tealLight,
-              borderRadius: RADIUS.xxl,
-              padding: 20,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-            }}>
-              <View style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: colors.teal,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>
-                  {memberInitial(selectedMember)}
-                </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, backgroundColor: colors.tealLight, borderRadius: 14, padding: 12 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>{memberInitial(selectedMember)}</Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>
-                  {selectedMember.name}
-                </Text>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '400', color: colors.textSecondary }}>
-                  {roleLabel(selectedMember)}
-                </Text>
+              <View>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{selectedMember.name}</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{roleLabel(selectedMember)}</Text>
               </View>
             </View>
           )}
         </View>
-      )}
 
-      {/* Message presets */}
-      <View style={{ gap: 8 }}>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {MESSAGE_PRESETS.map(p => {
-            const isSelected = preset === p;
-            return (
-              <Pressable
-                key={p}
-                onPress={() => {
-                  setPreset(isSelected ? undefined : p);
-                  if (!isSelected) setText('');
-                }}
-                style={({ pressed }) => ({
-                  borderRadius: 100,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  backgroundColor: isSelected ? colors.primaryLight : colors.surface,
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Text style={{
-                  fontSize: TYPO.caption,
-                  fontWeight: '500',
-                  color: isSelected ? colors.primary : colors.textPrimary,
-                }}>
-                  {p}
-                </Text>
-              </Pressable>
-            );
-          })}
+        {/* Message presets */}
+        <View style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+          <Text style={[s.overline, { color: colors.textTertiary }]}>QUICK PHRASES</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {MESSAGE_PRESETS.map(p => {
+              const isSelected = preset === p;
+              return (
+                <Pressable
+                  key={p}
+                  onPress={() => {
+                    setPreset(isSelected ? undefined : p);
+                    if (!isSelected) setText('');
+                  }}
+                  style={({ pressed }) => ({
+                    borderRadius: 100, paddingHorizontal: 14, paddingVertical: 8,
+                    backgroundColor: isSelected ? colors.primaryLight : colors.surface,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: isSelected ? colors.primary : colors.textPrimary }}>
+                    {p}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
 
-      {/* Message field */}
-      <View style={{ gap: 6 }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '500', color: colors.textSecondary }}>
-          Your message
-        </Text>
-        <TextInput
-          value={text}
-          onChangeText={t => {
-            setText(t);
-            if (t.length > 0) setPreset(undefined);
-          }}
-          multiline
-          style={{
-            backgroundColor: colors.surface,
-            borderRadius: RADIUS.md,
-            padding: 14,
-            fontSize: TYPO.body,
-            color: colors.textPrimary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            height: 100,
-            textAlignVertical: 'top',
-          }}
-          placeholder="Write something kind..."
-          placeholderTextColor={colors.textTertiary}
-        />
-      </View>
+        {/* Custom message */}
+        <View style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+          <Text style={[s.overline, { color: colors.textTertiary }]}>YOUR MESSAGE</Text>
+          <TextInput
+            value={text}
+            onChangeText={t => {
+              setText(t);
+              if (t.length > 0) setPreset(undefined);
+            }}
+            multiline
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 14,
+              padding: 14,
+              fontSize: 15,
+              color: colors.textPrimary,
+              minHeight: 90,
+              textAlignVertical: 'top',
+            }}
+            placeholder="Write something kind..."
+            placeholderTextColor={colors.textTertiary}
+          />
+        </View>
 
-      {/* Info card */}
-      <View style={{
-        backgroundColor: colors.amberLight,
-        borderRadius: RADIUS.xxl,
-        padding: 16,
-        gap: 4,
-      }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: colors.textPrimary }}>
-          Encouragement, not payment
-        </Text>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '400', color: colors.textSecondary }}>
-          This sends a warm message, not coins — for that, use the Quests tab.
-        </Text>
-      </View>
+        {/* Info card */}
+        <View style={[s.card, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
+          <Text style={[s.cardTitle, { color: colors.textPrimary }]}>Encouragement, not payment</Text>
+          <Text style={{ fontSize: 13, fontWeight: '400', color: colors.textSecondary, lineHeight: 20 }}>
+            This sends a warm message to the family chat — no coins are transferred. Use Quests to award coins.
+          </Text>
+        </View>
 
-      {/* Send button */}
-      <Pressable
-        onPress={handleSend}
-        style={({ pressed }) => ({
-          borderRadius: 14,
-          paddingVertical: 16,
-          backgroundColor: colors.primary,
-          alignItems: 'center',
-          opacity: pressed ? 0.7 : 1,
-        })}
-      >
-        <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: '#FFFFFF' }}>
-          Send appreciation →
+        {/* Send CTA */}
+        <TouchableOpacity
+          onPress={handleSend}
+          disabled={!canSend || sending}
+          style={[s.btnPrimary, { backgroundColor: canSend ? colors.primary : colors.border }]}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
+            {sending ? 'Sending…' : 'Send cheer →'}
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, textAlign: 'center', letterSpacing: 0.3 }}>
+          Connect. Organize. Care. Grow.
         </Text>
-      </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const s = StyleSheet.create({
+  card: {
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    gap: 12,
+  },
+  overline: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  btnPrimary: {
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+});

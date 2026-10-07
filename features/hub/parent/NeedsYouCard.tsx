@@ -1,6 +1,7 @@
 import { View, Text } from 'react-native';
 import { ClipboardCheck } from 'lucide-react-native';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { useTheme } from '@/lib/ThemeContext';
 
 export type NeedsYouItem =
   | { kind: 'conflict'; title: string; reason: string }
@@ -8,12 +9,13 @@ export type NeedsYouItem =
   | { kind: 'backlog'; title: string; reason: string };
 
 export function NeedsYouCard({
-  colors, isDark, item, onReview,
+  item, onReview,
 }: {
-  colors: any; isDark: boolean;
   item: NeedsYouItem;
   onReview: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+
   const ctaLabel =
     item.kind === 'conflict' ? 'Review options' :
     item.kind === 'approval' ? 'Review & approve' :
@@ -23,9 +25,10 @@ export function NeedsYouCard({
     <View style={{
       marginHorizontal: 20, marginTop: 14,
       flexDirection: 'row', flexWrap: 'wrap', gap: 12,
-      padding: 16,
-      borderWidth: 1, borderColor: '#F0DDD8', borderRadius: 22,
-      backgroundColor: isDark ? colors.amberLight : '#F9E2DC',
+      padding: 18,
+      borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.12)',
+      borderRadius: 22,
+      backgroundColor: colors.amberLight,
     }}>
       <View style={{
         width: 42, height: 42, borderRadius: 14,
@@ -42,7 +45,7 @@ export function NeedsYouCard({
         <Text style={{ color: colors.textPrimary, fontSize: 17, fontWeight: '700', marginTop: 5, marginBottom: 2 }} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={{ color: isDark ? colors.textSecondary : '#7E6863', fontSize: 12, lineHeight: 17 }} numberOfLines={2}>
+        <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 17 }} numberOfLines={2}>
           {item.reason}
         </Text>
       </View>

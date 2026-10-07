@@ -7,7 +7,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   Image,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
@@ -24,10 +27,11 @@ export function ChoreProofReviewScreen({ choreId, onClose }: Props) {
   const approveChore = useChoreStore(s => s.approveChore);
   const members = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  const familyName = useFamilyStore(s => s.familyName);
   const [note, setNote] = useState('');
-
   const chore = chores.find(c => c.id === choreId);
   const assignee = members.find(m => m.id === chore?.assignedToId);
+  const activeMember = members.find(m => m.id === activeMemberId);
   const initial = (assignee?.name ?? '?')[0].toUpperCase();
 
   const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
@@ -56,19 +60,39 @@ export function ChoreProofReviewScreen({ choreId, onClose }: Props) {
   }
 
   return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+      {/* ── Fixed page header ── */}
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
+            {familyName?.toUpperCase() ?? 'FAMILY'}
+          </Text>
+          {activeMember ? (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+              {activeMember.name} · {activeMember.role}
+            </Text>
+          ) : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Review inbox</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+              {chore.title}
+            </Text>
+          </View>
+          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+          </Pressable>
+        </View>
+      </View>
+
     <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={styles.container}
+      style={{ flex: 1 }}
+      contentContainerStyle={[styles.container, { paddingTop: 20 }]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Back link */}
-      <TouchableOpacity onPress={onClose} style={styles.backRow}>
-        <Text style={[styles.backText, { color: colors.teal }]}>{'← Chore Review'}</Text>
-      </TouchableOpacity>
-
-      {/* Title */}
-      <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>{chore.title}</Text>
-
       {/* Status pill */}
       <View style={[styles.pill, { backgroundColor: colors.primaryLight }]}>
         <Text style={[styles.pillText, { color: colors.primary }]}>Pending review</Text>
@@ -174,6 +198,7 @@ export function ChoreProofReviewScreen({ choreId, onClose }: Props) {
         </TouchableOpacity>
       </View>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 

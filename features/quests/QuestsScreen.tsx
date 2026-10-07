@@ -1245,14 +1245,14 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       />
 
       <PushbackSheet
-        target={pushbackSheet} colors={colors} isDark={isDark}
+        target={pushbackSheet}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
       />
 
       {activeMember && (
         <DelegateSheet
-          target={delegateFromLocked} colors={colors} isDark={isDark}
+          target={delegateFromLocked}
           questPool={chores}
           members={members} active={activeMember}
           onClose={() => setDelegateFromLocked(null)}

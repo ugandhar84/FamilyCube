@@ -1625,7 +1625,6 @@ export function KioskOverviewTab({
           applied to KioskEventEditor et al. */}
       <PushbackSheet
         target={pushbackTarget}
-        colors={colors} isDark={phoneDark}
         onClose={() => setPushbackTarget(null)}
         respondToParentQuest={respondToParentQuest}
       />
@@ -1633,7 +1632,7 @@ export function KioskOverviewTab({
       <DelegateSheet
         target={delegateTarget}
         questPool={questPool}
-        members={members} active={active} colors={colors} isDark={phoneDark}
+        members={members} active={active}
         onClose={() => setDelegateTarget(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}

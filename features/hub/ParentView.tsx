@@ -25,7 +25,7 @@ import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { TrialNagBanner } from './parent/TrialNagBanner';
-import { ReviewInboxScreen } from './parent/ReviewInboxScreen';
+import { ReviewInboxScreen, type ReviewItemType } from './parent/ReviewInboxScreen';
 import { ChoreProofReviewScreen } from './parent/ChoreProofReviewScreen';
 import { QuestReviewScreen } from './parent/QuestReviewScreen';
 import { RewardReviewScreen } from './parent/RewardReviewScreen';
@@ -465,7 +465,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
 
       {needsYouItem && (
-        <NeedsYouCard colors={colors} isDark={isDark} item={needsYouItem} onReview={() => {
+        <NeedsYouCard item={needsYouItem} onReview={() => {
           if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
           else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) router.push('/(tabs)/calendar' as any);
           else if (needsYouItem.kind === 'approval') setShowReviewInbox(true);
@@ -511,7 +511,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       )}
 
       <ReviewConflictModal
-        colors={colors} isDark={isDark}
         visible={reviewModalOpen}
         onClose={() => setReviewModalOpen(false)}
         conflictEvent={conflictEvent ?? null}
@@ -522,7 +521,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       />
 
       <PushbackSheet
-        target={pushbackSheet} colors={colors} isDark={isDark}
+        target={pushbackSheet}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
       />
@@ -587,7 +586,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       />
 
       <DelegateSheet
-        target={delegateSheet} questPool={questPool} members={members} active={active} colors={colors} isDark={isDark}
+        target={delegateSheet} questPool={questPool} members={members} active={active}
         onClose={() => setDelegateSheet(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
@@ -631,9 +630,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       {/* ── Review inbox ─────────────────────────────────────────────── */}
       <Modal visible={showReviewInbox} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReviewInbox(false)}>
         <ReviewInboxScreen
-          onSelectItem={(choreId) => {
+          onClose={() => setShowReviewInbox(false)}
+          onSelectItem={(choreId, type: ReviewItemType) => {
             setShowReviewInbox(false);
-            setTimeout(() => setReviewChoreId(choreId), 300);
+            setTimeout(() => {
+              if (type === 'quest') setReviewQuestId(choreId);
+              else setReviewChoreId(choreId);
+            }, 300);
           }}
         />
       </Modal>

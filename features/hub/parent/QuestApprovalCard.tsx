@@ -67,7 +67,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           <TouchableOpacity onPress={() => setPhotoOpen(true)} style={{ borderRadius: 10, overflow: 'hidden' }}>
             <Image
               source={{ uri: q.photoUrl }}
-              style={{ width: 56, height: 56, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
+              style={{ width: 56, height: 56, backgroundColor: colors.surface }}
               resizeMode="cover"
             />
           </TouchableOpacity>

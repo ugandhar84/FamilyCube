@@ -13,9 +13,12 @@ import {
   ScrollView,
   StyleSheet,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AppBottomSheet from '@/components/AppBottomSheet';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useTripStore } from '@/store/tripStore';
@@ -266,28 +269,40 @@ export function DispatchRideSheet({
   );
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={onClose}
-      title="Get the right help"
-      subtitle="← Rides"
-      accentColor={colors.teal}
-      minHeight="100%"
-      maxHeight="100%"
-      footer={footer}
-      bodyPaddingBottom={24}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
 
-      {/* ── Household chrome ── */}
-      <View style={styles.householdRow}>
-        <Text style={[styles.householdFamily, { color: colors.textTertiary }]}>
-          {familyName}
-        </Text>
-        {activeMember ? (
-          <Text style={[styles.householdMember, { color: colors.teal }]}>
-            {activeMember.name} · {activeMember.role}
-          </Text>
-        ) : null}
-      </View>
+        {/* ── Fixed page header ── */}
+        <View style={[styles.pageHeader, { borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)' }]}>
+          <View style={styles.householdRow}>
+            <Text style={[styles.householdFamily, { color: colors.textTertiary }]}>
+              {familyName?.toUpperCase() ?? 'FAMILY'}
+            </Text>
+            {activeMember ? (
+              <Text style={[styles.householdMember, { color: colors.teal }]}>
+                {activeMember.name} · {activeMember.role}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.titleRow}>
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
+                <Text style={[styles.backLink, { color: colors.teal }]}>← Rides</Text>
+              </TouchableOpacity>
+              <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>Arrange a ride</Text>
+            </View>
+            <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surface }]}>
+              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
       {/* ── Field 1: Who needs a ride? ── */}
       <View style={[cardStyle, { marginTop: 8 }]}>
@@ -568,19 +583,57 @@ export function DispatchRideSheet({
       <Text style={[styles.signature, { color: colors.textSecondary }]}>
         Connect. Organize. Care. Grow.
       </Text>
-    </AppBottomSheet>
+
+      {/* ── Footer CTAs (inline at bottom of scroll) ── */}
+      {footer}
+
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  // Page header
+  pageHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  pageTitle: {
+    fontSize: 29,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    lineHeight: 34,
+    marginTop: 4,
+  },
+  backLink: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+
   // Household chrome
   householdRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
   },
   householdFamily: {
     fontSize: 11,

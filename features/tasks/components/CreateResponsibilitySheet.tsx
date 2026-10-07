@@ -16,12 +16,15 @@ import {
   ScrollView,
   StyleSheet,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreCategoryType } from '@/store/choreStore';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { todayLocal } from '@/lib/dates';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 
@@ -161,35 +164,40 @@ export function CreateResponsibilitySheet({
     : new Date(dueDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={handleClose}
-      title="Create a responsibility"
-      subtitle="← Tasks"
-      accentColor={colors.teal}
-      minHeight="100%"
-      maxHeight="100%"
-      bodyPaddingBottom={48}
-    >
-      <View style={{ gap: 20 }}>
-
-        {/* ── Household chrome row ────────────────────────────────────────── */}
-        <View style={s.chromeRow}>
-          <Text style={[s.chromeFamilyName, { color: colors.textTertiary }]}>
-            {familyName.toUpperCase()}
-          </Text>
-          {activeMember ? (
-            <Text style={[s.chromeMember, { color: colors.teal }]}>
-              {activeMember.name} · {activeMember.role}
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+        {/* ── Fixed page header ───────────────────────────────────────────── */}
+        <View style={[s.pageHeader, { borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)' }]}>
+          <View style={s.chromeRow}>
+            <Text style={[s.chromeFamilyName, { color: colors.textTertiary }]}>
+              {familyName?.toUpperCase() ?? 'FAMILY'}
             </Text>
-          ) : null}
+            {activeMember ? (
+              <Text style={[s.chromeMember, { color: colors.teal }]}>
+                {activeMember.name} · {activeMember.role}
+              </Text>
+            ) : null}
+          </View>
+          <View style={s.titleRow}>
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity onPress={handleClose} style={{ alignSelf: 'flex-start' }}>
+                <Text style={[s.backLinkText, { color: colors.teal }]}>← Tasks</Text>
+              </TouchableOpacity>
+              <Text style={[s.pageTitle, { color: colors.textPrimary }]}>Assign a task</Text>
+            </View>
+            <Pressable onPress={handleClose} style={[s.closeBtn, { backgroundColor: colors.surface }]}>
+              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            </Pressable>
+          </View>
         </View>
 
-        {/* ── Back link (the title row is in the AppBottomSheet header; this
-            mirrors Figma's "← Tasks" link that precedes the main title) */}
-        <TouchableOpacity onPress={handleClose} style={s.backLink}>
-          <Text style={[s.backLinkText, { color: colors.teal }]}>← Tasks</Text>
-        </TouchableOpacity>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+      <View style={{ gap: 20 }}>
 
         {/* ── Category filter pills ────────────────────────────────────────── */}
         <View style={[s.pillsRow, { backgroundColor: colors.surface }]}>
@@ -444,56 +452,79 @@ export function CreateResponsibilitySheet({
         </Text>
 
       </View>
+        </ScrollView>
 
-      {/* ── Date pickers (platform-native via AppDateTimePicker) ──────────── */}
-      {showDatePicker ? (
-        <AppDateTimePicker
-          mode="date"
-          value={new Date(dueDate + 'T00:00:00')}
-          visible={showDatePicker}
-          onConfirm={(date: Date) => {
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            setDueDate(`${y}-${m}-${d}`);
-            setShowDatePicker(false);
-          }}
-          onCancel={() => setShowDatePicker(false)}
-        />
-      ) : null}
-
-      {showTimePicker ? (
-        <AppDateTimePicker
-          mode="time"
-          value={(() => {
-            if (dueTime) {
-              const [h, min] = dueTime.split(':').map(Number);
-              const d = new Date();
-              d.setHours(h, min, 0, 0);
-              return d;
-            }
-            const d = new Date();
-            d.setHours(9, 0, 0, 0);
-            return d;
-          })()}
-          visible={showTimePicker}
-          onConfirm={(date: Date) => {
-            const h = String(date.getHours()).padStart(2, '0');
-            const min = String(date.getMinutes()).padStart(2, '0');
-            setDueTime(`${h}:${min}`);
-            setShowTimePicker(false);
-          }}
-          onCancel={() => setShowTimePicker(false)}
-        />
-      ) : null}
-
-    </AppBottomSheet>
+        {/* Date pickers rendered outside ScrollView but inside SafeAreaView */}
+        {showDatePicker && (
+          <AppDateTimePicker
+            mode="date"
+            value={new Date(dueDate + 'T00:00:00')}
+            visible={showDatePicker}
+            onConfirm={(date: Date) => {
+              const y = date.getFullYear();
+              const m = String(date.getMonth() + 1).padStart(2, '0');
+              const d = String(date.getDate()).padStart(2, '0');
+              setDueDate(`${y}-${m}-${d}`);
+              setShowDatePicker(false);
+            }}
+            onCancel={() => setShowDatePicker(false)}
+          />
+        )}
+        {showTimePicker && (
+          <AppDateTimePicker
+            mode="time"
+            value={(() => {
+              if (dueTime) {
+                const [h, min] = dueTime.split(':').map(Number);
+                const d = new Date(); d.setHours(h, min, 0, 0); return d;
+              }
+              const d = new Date(); d.setHours(9, 0, 0, 0); return d;
+            })()}
+            visible={showTimePicker}
+            onConfirm={(date: Date) => {
+              setDueTime(`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`);
+              setShowTimePicker(false);
+            }}
+            onCancel={() => setShowTimePicker(false)}
+          />
+        )}
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
+  // Page header (fixed, above scroll)
+  pageHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  pageTitle: {
+    fontSize: 29,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    lineHeight: 34,
+    marginTop: 4,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+
   // Household chrome
   chromeRow: {
     flexDirection: 'row',
@@ -511,10 +542,6 @@ const s = StyleSheet.create({
   },
 
   // Back link
-  backLink: {
-    alignSelf: 'flex-start',
-    marginBottom: -8,
-  },
   backLinkText: {
     fontSize: 13,
     fontWeight: '500',

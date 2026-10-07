@@ -267,6 +267,20 @@ export default function TasksScreen() {
   const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [choreProposalModal, setChoreProposalModal] = useState(false);
+
+  // Figma .quick-capture — real text input; on submit opens composer pre-filled
+  const [quickText, setQuickText] = useState('');
+  const submitQuickCapture = () => {
+    const text = quickText.trim();
+    setQuickText('');
+    if (isKidCreator) { setShowAskParentSheet(true); return; }
+    if (text) {
+      setManualQuestPrefill({ title: text });
+      setShowManualQuest(true);
+    } else {
+      openCreator();
+    }
+  };
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => {
     if (isKidCreator) setShowAskParentSheet(true);
@@ -368,41 +382,49 @@ export default function TasksScreen() {
               : 'All clear! Nothing left to do.'}
           </Text>
 
-          {/* Figma .quick-capture */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={openCreator}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              marginTop: 14, marginBottom: 2,
-              height: 48, borderRadius: 14,
-              backgroundColor: colors.card,
-              borderWidth: 1, borderColor: colors.border,
-              paddingHorizontal: 14,
-            }}
-          >
-            <Text style={{ flex: 1, fontSize: 14, color: colors.textTertiary }}>What needs doing?</Text>
-            <View style={{
-              width: 36, height: 36, borderRadius: 10,
-              backgroundColor: colors.pink, alignItems: 'center', justifyContent: 'center',
-            }}>
+          {/* Figma .quick-capture — real TextInput + + button (exact Figma model) */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
+            <TextInput
+              value={quickText}
+              onChangeText={setQuickText}
+              placeholder="What needs doing?"
+              placeholderTextColor={colors.textTertiary}
+              returnKeyType="done"
+              onSubmitEditing={submitQuickCapture}
+              style={{
+                flex: 1, height: 48, paddingHorizontal: 14,
+                borderWidth: 1, borderColor: isDark ? colors.border : '#dddfea',
+                borderRadius: 14,
+                backgroundColor: colors.card,
+                fontSize: 14, color: colors.textPrimary,
+              }}
+            />
+            <TouchableOpacity
+              onPress={submitQuickCapture}
+              activeOpacity={0.8}
+              style={{
+                width: 46, height: 48, borderRadius: 14,
+                backgroundColor: isDark ? 'rgba(102,119,189,0.35)' : '#6677bd',
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
               <Text style={{ fontSize: 22, color: '#fff', fontWeight: '300', lineHeight: 26, marginTop: -1 }}>+</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
 
-          {/* Figma .task-summary — 3 tiles */}
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+          {/* Figma .task-summary — 3 tiles (exact Figma colors) */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
             {[
-              { val: doneToday, label: 'done today',    bg: isDark ? 'rgba(123,94,167,0.18)' : '#EFE8F8', color: '#7B5EA7' },
-              { val: stillOpen, label: 'still open',    bg: isDark ? 'rgba(223,97,60,0.18)' : '#FBEADF', color: '#DF613C' },
-              { val: helpers,   label: 'people helping',bg: isDark ? 'rgba(61,122,90,0.18)' : '#E1EFE7', color: '#3D7A5A' },
+              { val: doneToday, label: 'done today',    bg: isDark ? 'rgba(102,119,189,0.18)' : '#eeebf9', color: isDark ? '#A89CD0' : '#5265b1' },
+              { val: stillOpen, label: 'still open',    bg: isDark ? 'rgba(223,97,60,0.18)'  : '#f9ebe7', color: isDark ? '#EE8058' : '#8c5045' },
+              { val: helpers,   label: 'people helping',bg: isDark ? 'rgba(61,122,90,0.18)'  : '#e5f3ed', color: isDark ? '#5FA37D' : '#527d6d' },
             ].map(({ val, label, bg, color }) => (
               <View key={label} style={{
-                flex: 1, borderRadius: 16, backgroundColor: bg,
-                paddingVertical: 12, paddingHorizontal: 12, alignItems: 'flex-start',
+                flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: bg,
+                paddingVertical: 10, paddingHorizontal: 10, justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 24, fontWeight: '800', color, lineHeight: 28 }}>{val}</Text>
-                <Text style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8 }}>{label}</Text>
+                <Text style={{ fontSize: 19, fontWeight: '700', color }}>{val}</Text>
+                <Text style={{ fontSize: 10, color, marginTop: 2, opacity: 0.85 }}>{label}</Text>
               </View>
             ))}
           </View>

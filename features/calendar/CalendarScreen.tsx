@@ -1385,16 +1385,16 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 }
               }}>
 
-              {/* Figma .day-summary — AT A GLANCE card */}
+              {/* Figma .day-summary — AT A GLANCE card (exact bg: #e9edfb) */}
               <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}>
                 <View style={{
                   marginHorizontal: 20, marginTop: 4, marginBottom: 12,
                   borderRadius: 22, padding: 18,
-                  backgroundColor: isDark ? 'rgba(123,94,167,0.18)' : '#EFE8F8',
+                  backgroundColor: isDark ? 'rgba(102,119,189,0.18)' : '#e9edfb',
                 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.pink, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#A89CD0' : '#5265b1', letterSpacing: 1.1, textTransform: 'uppercase' }}>
                         AT A GLANCE
                       </Text>
                       <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginTop: 4 }}>
@@ -1410,20 +1410,20 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                         ) : null;
                       })()}
                     </View>
-                    {/* .day-status badge */}
+                    {/* .day-status badge — Figma: white pill / #527d6d text */}
                     {(() => {
                       const pending = dayEvents.filter(ev => ev.approvalPending || ev.helperStatus === 'pending' || ev.driverStatus === 'pending');
                       const allCovered = pending.length === 0 && dayEvents.filter(ev => ev.category !== 'Holiday').length > 0;
                       return (
                         <View style={{
-                          borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
+                          borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7,
                           backgroundColor: allCovered
-                            ? (isDark ? 'rgba(61,122,90,0.25)' : '#E5F3ED')
+                            ? (isDark ? 'rgba(255,255,255,0.12)' : 'white')
                             : (isDark ? 'rgba(217,119,6,0.25)' : '#FDF1D6'),
                         }}>
                           <Text style={{
-                            fontSize: 11, fontWeight: '700',
-                            color: allCovered ? (isDark ? '#5FA37D' : '#527D6D') : (isDark ? '#F5A85A' : '#92600A'),
+                            fontSize: 10, fontWeight: '700',
+                            color: allCovered ? (isDark ? '#A0C4B4' : '#527d6d') : (isDark ? '#F5A85A' : '#92600A'),
                           }}>
                             {allCovered ? 'All covered' : `${pending.length} pending`}
                           </Text>
@@ -1431,17 +1431,17 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                       );
                     })()}
                   </View>
-                  {/* Day nav arrows */}
+                  {/* Day nav arrows — Figma periwinkle #5c6eb5 */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
                     <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <I.ChevronLeft c={colors.pink} size={14} />
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Previous</Text>
+                      <I.ChevronLeft c={isDark ? '#A89CD0' : '#5c6eb5'} size={14} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#A89CD0' : '#5c6eb5' }}>Previous</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Next</Text>
-                      <I.ChevronRight c={colors.pink} size={14} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#A89CD0' : '#5c6eb5' }}>Next</Text>
+                      <I.ChevronRight c={isDark ? '#A89CD0' : '#5c6eb5'} size={14} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1466,18 +1466,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 onAddAtTime={(_hourTimeKey) => { setShowAdd(true); }}
               />
 
-              {/* Figma .floating-add button at bottom of day timeline */}
+              {/* Figma .floating-add — full-width button, bg #6677bd (periwinkle) */}
               {isParentOrSenior && !hideCreateButton && (
                 <TouchableOpacity
                   onPress={() => setShowAdd(true)}
                   style={{
                     marginHorizontal: 20, marginTop: 14, marginBottom: 8,
                     height: 48, borderRadius: 14,
-                    backgroundColor: colors.pink,
+                    backgroundColor: isDark ? 'rgba(102,119,189,0.5)' : '#6677bd',
                     alignItems: 'center', justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>+ Add event</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 0.1 }}>+ Add event</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>

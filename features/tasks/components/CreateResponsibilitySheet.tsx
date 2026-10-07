@@ -30,13 +30,13 @@ import AppDateTimePicker from '@/components/AppDateTimePicker';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type PillCategory = 'Chore' | 'Quest' | 'Errand' | 'Care';
+// Quest/Bounty is a separate flow — this sheet is for direct assignment only
+type PillCategory = 'Chore' | 'Errand' | 'Care';
 
-const PILL_CATEGORIES: PillCategory[] = ['Chore', 'Quest', 'Errand', 'Care'];
+const PILL_CATEGORIES: PillCategory[] = ['Chore', 'Errand', 'Care'];
 
 const CATEGORY_TYPE_MAP: Record<PillCategory, ChoreCategoryType> = {
   Chore:  'routine',
-  Quest:  'bounty',
   Errand: 'shopping',
   Care:   'citizenship',
 };
@@ -49,7 +49,6 @@ function detectCategory(title: string): PillCategory | null {
   if (/\b(wash|clean|vacuum|sweep|mop|tidy|dishes|laundry|trash|wipe|dust)\b/.test(t)) return 'Chore';
   if (/\b(buy|pick up|store|groceries|errand|shop|get|fetch)\b/.test(t)) return 'Errand';
   if (/\b(help|care|read|walk|feed|water|pet|assist|check|remind)\b/.test(t)) return 'Care';
-  if (/\b(quest|challenge|mission|earn|bonus|special)\b/.test(t)) return 'Quest';
   return null;
 }
 
@@ -257,32 +256,52 @@ export function CreateResponsibilitySheet({
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={s.memberChipRow}
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 10 }}
           >
+            {/* "Anyone" = open pool chip */}
+            <TouchableOpacity
+              onPress={() => setAssignedMemberId(undefined)}
+              style={s.memberChipOuter}
+            >
+              <View
+                style={[
+                  s.memberChipAvatar,
+                  assignedMemberId === undefined
+                    ? { backgroundColor: colors.primaryLight, borderColor: colors.primary, borderWidth: 2 }
+                    : { backgroundColor: colors.surface, borderColor: fieldBorder, borderWidth: 1 },
+                ]}
+              >
+                <Text style={[s.memberChipInitial, { color: assignedMemberId === undefined ? colors.primary : colors.textSecondary }]}>
+                  ★
+                </Text>
+              </View>
+              <Text style={[s.memberChipName, { color: colors.textSecondary }]} numberOfLines={1}>
+                Anyone
+              </Text>
+            </TouchableOpacity>
             {members.map(member => {
               const selected = member.id === assignedMemberId;
               const initial  = (member.name ?? '?')[0].toUpperCase();
+              const roleColor = member.role === 'parent' ? colors.teal : colors.amber;
               return (
                 <TouchableOpacity
                   key={member.id}
-                  onPress={() =>
-                    setAssignedMemberId(prev => prev === member.id ? undefined : member.id)
-                  }
+                  onPress={() => setAssignedMemberId(member.id)}
                   style={s.memberChipOuter}
                 >
                   <View
                     style={[
                       s.memberChipAvatar,
                       selected
-                        ? { backgroundColor: colors.primaryLight, borderColor: colors.primary, borderWidth: 2 }
+                        ? { backgroundColor: roleColor, borderColor: roleColor, borderWidth: 2 }
                         : { backgroundColor: colors.surface, borderColor: fieldBorder, borderWidth: 1 },
                     ]}
                   >
-                    <Text style={[s.memberChipInitial, { color: selected ? colors.primary : colors.textSecondary }]}>
+                    <Text style={[s.memberChipInitial, { color: selected ? '#FFFFFF' : colors.textSecondary }]}>
                       {initial}
                     </Text>
                   </View>
-                  <Text style={[s.memberChipName, { color: colors.textSecondary }]} numberOfLines={1}>
+                  <Text style={[s.memberChipName, { color: selected ? roleColor : colors.textSecondary }]} numberOfLines={1}>
                     {member.name?.split(' ')[0] ?? '?'}
                   </Text>
                 </TouchableOpacity>
@@ -361,47 +380,56 @@ export function CreateResponsibilitySheet({
           </View>
         </View>
 
-        {/* ── Eligibility card ─────────────────────────────────────────────── */}
+        {/* ── Assignment summary card ──────────────────────────────────────── */}
         <View style={[s.detailCard, { backgroundColor: colors.card, borderColor: fieldBorder }]}>
-          <Text style={[s.detailCardTitle, { color: colors.textPrimary }]}>Eligibility</Text>
+          <Text style={[s.detailCardTitle, { color: colors.textPrimary }]}>
+            {assignedMemberId ? 'Assigned to' : 'Open to everyone'}
+          </Text>
           {members.map(member => {
             const isAssigned = member.id === assignedMemberId;
+            const roleColor = member.role === 'parent' ? colors.teal : colors.amber;
+            const roleLightBg = member.role === 'parent' ? colors.tealLight : colors.amberLight;
+            if (!isAssigned && assignedMemberId) return null;
             return (
               <View key={member.id} style={s.eligibilityRow}>
                 <View style={[
                   s.eligibilityAvatar,
-                  { backgroundColor: isAssigned ? colors.primaryLight : colors.surface },
+                  { backgroundColor: isAssigned ? roleColor : colors.surface },
                 ]}>
                   <Text style={[
                     s.eligibilityInitial,
-                    { color: isAssigned ? colors.primary : colors.textTertiary },
+                    { color: isAssigned ? '#FFFFFF' : colors.textTertiary },
                   ]}>
                     {(member.name ?? '?')[0].toUpperCase()}
                   </Text>
                 </View>
-                <Text style={[s.eligibilityName, { color: colors.textPrimary }]}>
-                  {member.name?.split(' ')[0] ?? '?'}
-                </Text>
-                <View style={{ flex: 1 }} />
-                {isAssigned ? (
-                  <>
-                    <Text style={[s.eligibilityTick, { color: colors.teal }]}>✓</Text>
-                    <Text style={[s.eligibilityStatus, { color: colors.textSecondary }]}>Available</Text>
-                  </>
-                ) : (
-                  <Text style={[s.eligibilityStatus, { color: colors.textTertiary }]}>
-                    {assignedMemberId ? 'Not assigned' : 'Available'}
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.eligibilityName, { color: colors.textPrimary }]}>
+                    {member.name?.split(' ')[0] ?? '?'}
                   </Text>
-                )}
+                  <Text style={[s.eligibilityStatus, { color: colors.textTertiary }]}>
+                    {member.role === 'parent' ? 'Parent' : 'Kid'}
+                  </Text>
+                </View>
+                {isAssigned ? (
+                  <View style={[s.eligibilityBadge, { backgroundColor: roleLightBg }]}>
+                    <Text style={[s.eligibilityBadgeText, { color: roleColor }]}>Assigned ✓</Text>
+                  </View>
+                ) : null}
               </View>
             );
           })}
+          {!assignedMemberId && (
+            <Text style={[s.eligibilityNote, { color: colors.textTertiary }]}>
+              Any family member can claim this task
+            </Text>
+          )}
         </View>
 
         {/* ── Explanation text ─────────────────────────────────────────────── */}
         {assignedMember ? (
           <Text style={[s.explanationText, { color: colors.textSecondary }]}>
-            "{firstName} is best placed for this. Others can be swapped in later."
+            {firstName} can be swapped for someone else before the due date.
           </Text>
         ) : null}
 
@@ -416,9 +444,11 @@ export function CreateResponsibilitySheet({
           activeOpacity={0.8}
         >
           <Text style={s.primaryBtnText}>
-            {assignedMember
-              ? `Create & assign to ${firstName} →`
-              : 'Create responsibility →'}
+            {submitting
+              ? 'Creating…'
+              : assignedMember
+              ? `Assign to ${firstName} →`
+              : 'Add to family queue →'}
           </Text>
         </TouchableOpacity>
 
@@ -702,14 +732,24 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  eligibilityTick: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 2,
+  eligibilityBadge: {
+    borderRadius: 100,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  eligibilityStatus: {
+  eligibilityBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  eligibilityNote: {
     fontSize: 13,
     fontWeight: '400',
+    marginTop: 4,
+  },
+  eligibilityStatus: {
+    fontSize: 11,
+    fontWeight: '400',
+    marginTop: 1,
   },
 
   // Explanation

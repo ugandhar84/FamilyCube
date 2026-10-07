@@ -8,11 +8,21 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { TYPO } from '@/constants/theme';
 import { fmtDateShort } from '@/lib/dates';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { EventCardRow } from './EventCard';
 import { toDateStr, addDays, DAY_SHORT } from './calendarDateHelpers';
+
+// Figma .week-events span color palette — matches .mint/.lavender/.peach/.sky/.butter
+const WEEK_EVENT_BG: Record<string, { light: string; dark: string }> = {
+  Sports:  { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)'   }, // mint
+  Medical: { light: '#f9ebe7', dark: 'rgba(223,97,60,0.25)'   }, // peach
+  Ride:    { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)'   }, // mint
+  Work:    { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)'  }, // lavender
+  Study:   { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)'  }, // sky
+  School:  { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)'  }, // sky
+  Event:   { light: '#fff2cf', dark: 'rgba(217,119,6,0.25)'   }, // butter
+  default: { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)'  }, // lavender
+};
 
 import Svg, { Path } from 'react-native-svg';
 const ChevronLeft = ({ c, size = 16 }: { c: string; size?: number }) => (
@@ -98,24 +108,30 @@ export default function WeekView({
               )}
             </View>
 
-            {/* Reference's per-event row: border + light tint together
-                (not just a tinted background), same role-color pairing —
-                now the shared EventCardRow('inline') component. */}
+            {/* Figma .week-events span — minHeight 34, borderRadius 10, colored bg pill */}
             {dayEvs.length === 0 ? (
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontStyle: 'italic' }}>No events</Text>
             ) : (
-              <View style={{ gap: 6 }}>
-                {dayEvs.map(ev => (
-                  <EventCardRow
-                    key={ev.id}
-                    ev={ev}
-                    members={members}
-                    colors={colors} isDark={isDark}
-                    onPress={() => onSelectEvent(ev)}
-                    onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
-                    timeStyle="inline"
-                  />
-                ))}
+              <View style={{ gap: 5 }}>
+                {dayEvs.map(ev => {
+                  const cat = ev.category ?? 'default';
+                  const palette = WEEK_EVENT_BG[cat] ?? WEEK_EVENT_BG.default;
+                  const bg = isDark ? palette.dark : palette.light;
+                  const timeStr = ev.time ? ev.time.slice(0, 5) : '';
+                  return (
+                    <TouchableOpacity
+                      key={ev.id}
+                      onPress={() => onSelectEvent(ev)}
+                      onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
+                      activeOpacity={0.78}
+                      style={{ minHeight: 34, borderRadius: 10, backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#FDFCF9' : '#2C2722' }} numberOfLines={1}>
+                        {timeStr ? `${timeStr} · ${ev.title}` : ev.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </View>

@@ -7,14 +7,10 @@
  */
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
 import { fmtTimeParts } from '@/lib/dates';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import FamilyAvatar from '@/components/FamilyAvatar';
-import { assigneeStyle, MultiPersonTimeFill } from './EventCard';
 import { toDateStr, parseDate, DAY_SHORT, CAT_DOT, MONTH_LABELS, buildMonthGrid } from './calendarDateHelpers';
 import { eventAssignee } from '@/store/eventStore';
 
@@ -32,144 +28,126 @@ const ChevronRight = ({ c, size = 18 }: { c: string; size?: number }) => (
   </Svg>
 );
 
-// Compact "Events for X" card — used both as Month's selected-day summary
-// below the grid, and as the Day-first intro shown above the grid when
-// Month opens on today (before the user has scrolled into the full grid).
+// Figma color class → bg hex (light mode). Maps event category to the
+// Figma .mint/.lavender/.peach/.sky/.butter palette.
+// Module-level safe — no hooks, just a lookup table.
+const AGENDA_BG: Record<string, { light: string; dark: string; text: string }> = {
+  Sports:   { light: '#e5f3ed', dark: 'rgba(61,122,90,0.22)',  text: '#3D7A5A' }, // mint
+  Medical:  { light: '#f9ebe7', dark: 'rgba(223,97,60,0.20)',  text: '#965F54' }, // peach
+  Ride:     { light: '#e5f3ed', dark: 'rgba(61,122,90,0.22)',  text: '#3D7A5A' }, // mint
+  Work:     { light: '#eeebf9', dark: 'rgba(123,94,167,0.22)', text: '#7B5EA7' }, // lavender
+  Study:    { light: '#e8f1f8', dark: 'rgba(59,130,246,0.20)', text: '#2563EB' }, // sky
+  School:   { light: '#e8f1f8', dark: 'rgba(59,130,246,0.20)', text: '#2563EB' }, // sky
+  Event:    { light: '#fff2cf', dark: 'rgba(217,119,6,0.20)',  text: '#92600A' }, // butter
+  default:  { light: '#eeebf9', dark: 'rgba(123,94,167,0.22)', text: '#7B5EA7' }, // lavender
+};
+
+// Figma .agenda-list below the month grid.
+// Layout: .section-title (OVERLINE + h2) then .agenda-list articles:
+//   grid 48px time | 1fr content | auto action — minHeight 76 — borderRadius 18 — colored bg
 export function DayEventsSummaryCard({
   dateLabel, events, members, colors, isDark, onSelectEvent, onLongPressEvent, loading, isViewerParent,
 }: {
   dateLabel: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelectEvent: (ev: FamilyEvent) => void;
-  // Same parent-only sync-source gate EventCard.tsx and hubComponents.tsx's
-  // EventDetailSheet already use for their own "synced from" badge/row.
   isViewerParent?: boolean;
-  // Long-press → edit (date/time/recurrence/driver/delete). This card had
-  // NO long-press at all — a parent's actual default view (compact
-  // defaults to isKid, so a parent lands here, not the compact time-grid
-  // that DOES have long-press-to-edit wired) meant tapping only ever
-  // reached the read-only detail sheet, with no way to edit or delete any
-  // event, including a kid-created one, from the view parents actually use.
   onLongPressEvent?: (ev: FamilyEvent) => void;
-  // Tapping a day never visited this session has no _dayCache/disk-cache
-  // entry to paint from (eventStore.ts selectDate), so `events` still holds
-  // the PREVIOUS day's stale list while the DB fetch is in flight — without
-  // this flag the card rendered that stale/empty list as a confirmed "No
-  // scheduled events," matching the Day-view timeline's dayLoading gate
-  // just below this card (CalendarScreen.tsx) so both stop flashing a false
-  // empty state.
   loading?: boolean;
 }) {
   const shown = events.filter(ev => ev.category !== 'Holiday');
+
+  // Figma .section-title: "TUESDAY 6 OCTOBER" overline + "N things today" h2
+  const count = shown.length;
+  const countLabel = count === 0 ? 'Nothing scheduled'
+    : count === 1 ? 'One thing today'
+    : count === 2 ? 'Two things today'
+    : count === 3 ? 'Three things today'
+    : count === 4 ? 'Four things today'
+    : `${count} things today`;
+
   return (
-    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)', backgroundColor: colors.card, padding: 14, gap: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-          Events for {dateLabel}
+    <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
+      {/* Figma .section-title */}
+      <View style={{ marginTop: 22, marginBottom: 0 }}>
+        <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: colors.textTertiary, textTransform: 'uppercase' }}>
+          {dateLabel.toUpperCase()}
         </Text>
-        {!loading && (
-          <View style={{ backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
-              {shown.length} item{shown.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-        )}
+        <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.4, color: colors.textPrimary, marginTop: 4 }}>
+          {loading ? '…' : countLabel}
+        </Text>
       </View>
 
-      {loading && shown.length === 0 ? (
-        <View style={{ gap: 8 }}>
-          {[48, 48].map((h, i) => (
-            <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: colors.surface, opacity: 0.5 + i * 0.15 }} />
-          ))}
-        </View>
-      ) : shown.length === 0 ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 }}>
-          No scheduled events for this day. Tap + to add one.
-        </Text>
-      ) : (
-        <View style={{ gap: 8 }}>
-          {shown.map(ev => {
-            const assignee = members.find(m => m.id === ev.memberId);
-            const rs = assigneeStyle(assignee, colors, isDark);
-            const multiPersonColors = (ev.memberIds?.length ?? 0) > 1
-              ? ev.memberIds!.map(id => assigneeStyle(members.find(m => m.id === id), colors, isDark).dot)
-              : null;
+      {/* Figma .agenda-list */}
+      <View style={{ gap: 9, marginTop: 11 }}>
+        {loading && shown.length === 0 ? (
+          [76, 76].map((h, i) => (
+            <View key={i} style={{ height: h, borderRadius: 18, backgroundColor: colors.surface, opacity: 0.5 + i * 0.15 }} />
+          ))
+        ) : shown.length === 0 ? (
+          <View style={{ borderRadius: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', padding: 20, alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: colors.textTertiary }}>No scheduled events. Tap + to add one.</Text>
+          </View>
+        ) : (
+          shown.map(ev => {
             const { time, ampm } = fmtTimeParts(ev.time);
-            // This card previously showed zero ride/driver context at all —
-            // a "needs a ride" or "driver confirmed" event looked identical
-            // to any other event here (QA sweep UI pass, Medium finding).
+            const cat = ev.category ?? 'default';
+            const palette = AGENDA_BG[cat] ?? AGENDA_BG.default;
+            const bg = isDark ? palette.dark : palette.light;
+
+            // subtitle: assignee names + location + driver
+            const assigneeNames = ev.memberIds?.length
+              ? ev.memberIds.map(id => members.find(m => m.id === id)?.name?.split(' ')[0]).filter(Boolean).join(' + ')
+              : members.find(m => m.id === ev.memberId)?.name?.split(' ')[0] ?? '';
             const driver = eventAssignee(ev);
-            const driverStatusColor = driver.status === 'confirmed' ? colors.success
-              : driver.status === 'rejected' ? colors.danger : colors.warning;
+            const driverPart = driver.name ? `· ${driver.name.split(' ')[0]} driving` : '';
+            const locationPart = ev.location ? `· ${ev.location}` : '';
+            const subtitle = [assigneeNames, locationPart, driverPart].filter(Boolean).join(' ').trim();
+
+            const hasConflict = ev.conflict || ev.approvalPending || ev.helperStatus === 'pending';
+
             return (
-              <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
+              <TouchableOpacity
+                key={ev.id}
+                onPress={() => onSelectEvent(ev)}
                 onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
-                  borderWidth: 1, borderColor: rs.dot + '35',
-                  backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
-                  paddingHorizontal: 10, paddingVertical: 9 }}>
-                <View style={{ width: 3, height: 30, borderRadius: 2, backgroundColor: rs.dot }} />
+                activeOpacity={0.78}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                  minHeight: 76, padding: 13, borderRadius: 18,
+                  backgroundColor: bg,
+                }}
+              >
+                {/* 48px time column */}
+                <View style={{ width: 48, alignItems: 'flex-start' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: palette.text, lineHeight: 14 }}>
+                    {time || '—'}
+                  </Text>
+                  {ampm ? (
+                    <Text style={{ fontSize: 9, fontWeight: '600', color: palette.text, opacity: 0.7 }}>{ampm}</Text>
+                  ) : null}
+                </View>
+
+                {/* Content column */}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
                     {ev.title}
                   </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textSecondary }}>{time}{ampm.toLowerCase()}</Text>
-                    {ev.location && (
-                      <>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
-                      </>
-                    )}
-                    {(ev.rideRequired || ev.category === 'Ride') && (
-                      <>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: driverStatusColor }} />
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: driverStatusColor }} numberOfLines={1}>
-                          {driver.name ? (driver.status === 'confirmed' ? driver.name.split(' ')[0] : `${driver.name.split(' ')[0]} pending`) : 'needs a ride'}
-                        </Text>
-                      </>
-                    )}
-                  </View>
-                  {/* Synced-from badge — icon + tiny avatar for "whose",
-                      matching the compact treatment EventCard.tsx's Agenda
-                      row and hubComponents.tsx's EventDetailSheet row use
-                      (a spelled-out "Name's calendar" text ran too long
-                      next to this card's other pills, and fell back to a
-                      bare provider name whenever the member lookup
-                      missed). */}
-                  {(() => {
-                    // sourceProvider (write-once) preferred over the
-                    // mutable lastExternalSyncProvider — see comment on
-                    // FamilyEvent.sourceProvider in store/eventStore.ts.
-                    const badgeProvider = ev.sourceProvider ?? ev.lastExternalSyncProvider;
-                    if (!badgeProvider || badgeProvider === 'app' || !isViewerParent) return null;
-                    const syncMember = members.find(m => m.id === ev.lastExternalSyncMemberId);
-                    const iconName = badgeProvider === 'google' ? 'logo-google'
-                      : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
-                    return (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
-                        <Ionicons name={iconName as any} size={10} color={colors.textTertiary} />
-                        {syncMember && (
-                          <FamilyAvatar name={syncMember.name} emoji={syncMember.emoji} avatarUrl={(syncMember as any).avatarUrl}
-                            siblings={members.map(m => m.name)} size={12} ringWidth={0} />
-                        )}
-                      </View>
-                    );
-                  })()}
+                  {subtitle ? (
+                    <Text style={{ fontSize: 11, color: '#707688', marginTop: 3 }} numberOfLines={1}>
+                      {subtitle}
+                    </Text>
+                  ) : null}
                 </View>
-                {assignee && (
-                  <View style={{ backgroundColor: multiPersonColors ? colors.card : (isDark ? colors.card : '#fff'), borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40', overflow: 'hidden' }}>
-                    {multiPersonColors && (
-                      <MultiPersonTimeFill hexColors={multiPersonColors} scrimColor={colors.card} size={20} radius={8} />
-                    )}
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: multiPersonColors ? colors.textPrimary : rs.text }}>{assignee.name.split(' ')[0]}</Text>
-                  </View>
+
+                {/* Action column — "Review" link for conflicts */}
+                {hasConflict && (
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#5C6EB5' }}>Review</Text>
                 )}
               </TouchableOpacity>
             );
-          })}
-        </View>
-      )}
+          })
+        )}
+      </View>
     </View>
   );
 }

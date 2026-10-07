@@ -1327,22 +1327,17 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             style detail card kept appearing under Agenda/Week). */}
         {(viewMode === 'month' || viewMode === 'day') && (<React.Fragment>
         {viewMode === 'month' ? (
-          // Selected-day card below the month grid — matches the reference
-          // exactly: white rounded card, title + count badge header, each
-          // event a colored-left-bar + light-tint row (role color, not
-          // category) with the member's name as a pill on the right.
-          <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
-            <DayEventsSummaryCard
-              dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
-              events={dayEvents}
-              loading={dayLoading}
-              isViewerParent={isParent}
-              members={members}
-              colors={colors} isDark={isDark}
-              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Month day-summary card → open detail sheet [features/calendar/CalendarScreen.tsx:1230]`); setDetailEv(ev); }}
-              onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Month day-summary card → routeLongPress [features/calendar/CalendarScreen.tsx:1231]`); routeLongPress(ev); }}
-            />
-          </View>
+          // Figma .section-title + .agenda-list below the month grid
+          <DayEventsSummaryCard
+            dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
+            events={dayEvents}
+            loading={dayLoading}
+            isViewerParent={isParent}
+            members={members}
+            colors={colors} isDark={isDark}
+            onSelectEvent={(ev) => { setDetailEv(ev); }}
+            onLongPressEvent={(ev) => { routeLongPress(ev); }}
+          />
         ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
           // Figma Day view: .day-summary (AT A GLANCE card) + .section-title + .day-timeline
           <View ref={dayWrapperRef} style={{ paddingTop: 8, height: dayViewportHeight, position: 'relative' }}

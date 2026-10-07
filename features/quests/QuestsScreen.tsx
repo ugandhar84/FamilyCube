@@ -30,6 +30,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -827,16 +828,9 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name ?? ''}
-          memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={undefined}
-          onBellPress={() => setNotifPanelOpen(true)}
-          compact={isParentOrSenior}
+        <PageTopBar
           onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAddModal(true) : undefined}
+          onBellPress={() => setNotifPanelOpen(true)}
         />
       )}
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}

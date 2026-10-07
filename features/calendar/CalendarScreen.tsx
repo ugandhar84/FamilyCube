@@ -33,6 +33,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility, eventAssignee } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -1077,18 +1078,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         <View>
           {!hideHeader && (
             <>
-              {/* Figma TopBar — same compact AppHeader the Hub uses:
-                  avatar + greeting/name left, bell + "+" right */}
-              <AppHeader
-                memberName={activeMember?.name ?? ''}
-                memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
-                memberEmoji={activeMember?.emoji}
-                memberAvatarUrl={activeMember?.avatarUrl}
-                notifCount={unreadNotifCount}
-                onPersonaPress={switchMember}
-                onBellPress={() => setNotifPanelOpen(true)}
-                compact={isParentOrSenior}
+              {/* Figma TopBar — inlined PageTopBar, no legacy AppHeader */}
+              <PageTopBar
                 onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAdd(true) : undefined}
+                onBellPress={() => setNotifPanelOpen(true)}
+                onAvatarPress={switchMember}
               />
 
               {/* Figma h1 block below the TopBar */}

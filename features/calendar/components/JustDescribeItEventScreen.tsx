@@ -416,8 +416,13 @@ export default function JustDescribeItEventScreen({
 
             <View style={{ gap: 14 }}>
 
-              {/* ── Natural-language composer — bare input on canvas ── */}
-              <View style={{ gap: 10 }}>
+              {/* ── Natural-language composer ── */}
+              <View style={{
+                backgroundColor: colors.card, borderRadius: 20,
+                borderWidth: inputFocused || isListening ? 2 : 1,
+                borderColor: inputFocused || isListening ? activeBlue : colors.border,
+                padding: 20, gap: 12,
+              }}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   {isListening ? 'Editable transcript · listening' : 'What\'s coming up?'}
                 </Text>
@@ -431,9 +436,8 @@ export default function JustDescribeItEventScreen({
                   placeholder="Something on the calendar?"
                   placeholderTextColor={colors.textTertiary}
                   multiline
-                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 40 }}
+                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
                 />
-                <View style={{ height: inputFocused || isListening ? 2 : 1, backgroundColor: inputFocused || isListening ? activeBlue : colors.border, borderRadius: 1 }} />
                 {/* Tools row */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                   <Text style={{ fontSize: 12, color: colors.textTertiary }}>
@@ -448,7 +452,7 @@ export default function JustDescribeItEventScreen({
                       : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
                   </TouchableOpacity>
                 </View>
-              </View>  {/* end composer gap View */}
+              </View>
 
               {/* ── Voice dictation card ── */}
               {isListening && (

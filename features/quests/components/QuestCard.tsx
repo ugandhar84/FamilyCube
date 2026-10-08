@@ -106,7 +106,7 @@ export function QuestCard({
   // matching the original inline consts' behavior of evaluating false in
   // that same edge case.
   const {
-    canClaim, canSubmit, canResubmit, canKidDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canKidDecline, canAdultDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   } = deriveQuestActions(
     q,
@@ -136,7 +136,7 @@ export function QuestCard({
     !!q.pendingTerms ||
     canClaim || canAcceptGp || canGpClaimPool || canGpDone ||
     (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
-    canResubmit || canKidDecline || canGiveBack ||
+    canResubmit || canKidDecline || canAdultDecline || canGiveBack ||
     (canApprove && q.participants.length <= 1) ||
     (isPoolCard && isParentOrSenior) ||
     (isParent && q.isAdultTask && isTodoCard && !q.assignedToId) ||
@@ -147,8 +147,8 @@ export function QuestCard({
   const claimantIds    = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
   const claimants      = claimantIds.map(id => members.find(m => m.id === id)).filter((m): m is typeof members[0] => !!m);
   const avatarSiblings = members.map(m => m.name);
-  const AVSIZE    = 30;
-  const AVOVERLAP = 16;
+  const AVSIZE    = 24;
+  const AVOVERLAP = 14;
   const stackW    = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
 
   // Normalise dueDate — may be full ISO ("2026-10-06T22:30:00Z") or plain "YYYY-MM-DD"
@@ -175,9 +175,12 @@ export function QuestCard({
   // not a personal judgment on whoever's looking at it.
   const isMultiSlot = (q.maxClaimants ?? 1) > 1;
   // Due label — "Today · 8:00 AM" / "Oct 6" / "⚠ Oct 6"
-  const dueTimeStr = q.dueTime
-    ? ` · ${new Date(`2000-01-01T${q.dueTime}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
-    : '';
+  const dueTimeStr = (() => {
+    if (!q.dueTime) return '';
+    const d = new Date(`2000-01-01T${q.dueTime}`);
+    if (isNaN(d.getTime())) return '';
+    return ` · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+  })();
   const dueLabel = isOverdue
     ? `⚠ ${dueDateStr ? fmtDateShort(dueDateStr) : 'Overdue'}${dueTimeStr}`
     : isDueToday
@@ -268,6 +271,18 @@ export function QuestCard({
 
   const cardHeader = (
     <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56 }}>
+      {/* Assignee avatar(s) — overlapping stack to the left of title */}
+      {claimants.length > 0 && (
+        <View style={{ position: 'relative', height: AVSIZE, width: stackW, marginRight: 8, flexShrink: 0 }}>
+          {claimants.slice(0, 3).map((m, i) => (
+            <View key={m.id} style={{ position: 'absolute', left: i * AVOVERLAP,
+              borderWidth: 1.5, borderColor: isDark ? '#1D1A24' : '#fff', borderRadius: AVSIZE / 2 }}>
+              <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={AVSIZE} />
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Left: title + one-line status */}
       <View style={{ flex: 1, paddingRight: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -381,6 +396,7 @@ export function QuestCard({
       initiallyExpanded={q.id === questId}
       header={cardHeader}
       dimmed={isDoneCard}
+      isOverdue={isOverdue}
     >
       {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 
@@ -902,8 +918,11 @@ export function QuestCard({
         )}
 
         {/* Kid: Decline / refuse an assigned quest — same label as the Hub's
-            GP-quest card ("Decline") when this is that same choice */}
-        {!q.pendingTerms && canKidDecline && (
+            GP-quest card ("Decline") when this is that same choice.
+            Previously kid/teen-only (canKidDecline) — an adult assigned a
+            parent_only_quest/isAdultTask by someone ELSE had no decline
+            path at all; canAdultDecline covers that same shape. */}
+        {!q.pendingTerms && (canKidDecline || canAdultDecline) && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
             onPress={() => {
@@ -920,7 +939,7 @@ export function QuestCard({
             — kids/teens had to go through the heavier Can't-Make-It flow
             (pick a reason, optionally hand it to someone) even for a
             plain change of mind on their own pool claim. */}
-        {!q.pendingTerms && canGiveBack && !canKidDecline && (
+        {!q.pendingTerms && canGiveBack && !canKidDecline && !canAdultDecline && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.textTertiary }]}
             onPress={() => useChoreStore.getState().giveBackChore(q.id, myId ?? '')}

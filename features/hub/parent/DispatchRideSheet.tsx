@@ -24,6 +24,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useTripStore } from '@/store/tripStore';
 import { useEventStore } from '@/store/eventStore';
 import { TYPO, RADIUS } from '@/constants/theme';
+import { PinStoreLocationSheet } from '@/features/grocery/components/PinStoreLocationSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,12 @@ export function DispatchRideSheet({
   const [etaMins, setEtaMins] = useState('15');
   const [notes, setNotes] = useState('');
   const [dispatching, setDispatching] = useState(false);
+  // Optional pinned pickup point — enables real GPS-driven automation
+  // (lib/tripGeofencing.ts auto-advances phase on arrival, lib/tripEta.ts
+  // computes a live ETA) instead of the fully-manual tap flow. Entirely
+  // optional: dispatching with no pin set behaves exactly as before.
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [showPinSheet, setShowPinSheet] = useState(false);
 
   // Seed defaults when props change
   useEffect(() => {
@@ -150,6 +157,7 @@ export function DispatchRideSheet({
       setFromText('');
       setEtaMins('15');
       setNotes('');
+      setPickupCoords(null);
     }
   }, [visible, seedMemberId, seedEventId]);
 
@@ -180,6 +188,9 @@ export function DispatchRideSheet({
         pickupMemberId: selectedChildId ?? undefined,
         etaMinutes: isNaN(parsedEta) ? 15 : parsedEta,
         eventId: seedEventId,
+        pickupLat: pickupCoords?.lat,
+        pickupLng: pickupCoords?.lng,
+        pickupLabel: pickupCoords ? (fromText.trim() || undefined) : undefined,
       });
       // Get the newly created trip id (most recent for this driver)
       const createdTrip = useTripStore.getState().activeTrips
@@ -365,16 +376,37 @@ export function DispatchRideSheet({
         <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
           Where and when?
         </Text>
-        <TextInput
-          value={fromText}
-          onChangeText={setFromText}
-          placeholder="Pickup location"
-          placeholderTextColor={colors.textTertiary}
-          style={[
-            styles.locationInput,
-            { color: colors.textPrimary, borderColor: colors.border },
-          ]}
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TextInput
+            value={fromText}
+            onChangeText={setFromText}
+            placeholder="Pickup location"
+            placeholderTextColor={colors.textTertiary}
+            style={[
+              styles.locationInput,
+              { flex: 1, color: colors.textPrimary, borderColor: colors.border },
+            ]}
+          />
+          {/* Optional exact-coordinates pin — enables real GPS auto-advance
+              (lib/tripGeofencing.ts) and a live ETA instead of the typed-in
+              static number. Text address alone isn't geocoded anywhere in
+              this app, so a real lat/lng needs this explicit pin step. */}
+          <Pressable
+            onPress={() => setShowPinSheet(true)}
+            style={{
+              width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: pickupCoords ? colors.tealLight : colors.surface,
+              borderWidth: 1, borderColor: pickupCoords ? colors.teal : colors.border,
+            }}
+          >
+            <Ionicons name={pickupCoords ? 'location' : 'location-outline'} size={18} color={pickupCoords ? colors.teal : colors.textTertiary} />
+          </Pressable>
+        </View>
+        {pickupCoords && (
+          <Text style={{ fontSize: 11, color: colors.teal, marginTop: 4, fontWeight: '600' }}>
+            📍 Pinned — live ETA + auto-arrival detection on
+          </Text>
+        )}
         <View style={styles.arrowRow}>
           <Ionicons name="arrow-forward" size={16} color={colors.textTertiary} />
         </View>
@@ -589,6 +621,12 @@ export function DispatchRideSheet({
 
         </ScrollView>
       </SafeAreaView>
+      <PinStoreLocationSheet
+        visible={showPinSheet}
+        store={fromText.trim() || 'Pickup location'}
+        onClose={() => setShowPinSheet(false)}
+        onPin={(lat, lng) => setPickupCoords({ lat, lng })}
+      />
     </Modal>
   );
 }

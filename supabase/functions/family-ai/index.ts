@@ -552,11 +552,12 @@ Return JSON: {
       a single named person -> that one name only, still as a one-item array. Empty
       array if nobody specific was named or implied.)
     recurrenceFrequency: "once" | "daily" | "weekly" | "monthly" — "once" unless the
-      input names a repeating pattern ("every Wednesday", "every day", "daily", "weekly",
-      "every week", "monthly", "every weekday", "weekdays"). "Pick up Maya from soccer
-      every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct from
-      "every day" which is all 7) is ALSO "weekly", not "daily" — "School drop-off every
-      weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
+      input names a repeating pattern ("every Wednesday", "every day", "everyday", "daily",
+      "weekly", "every week", "monthly", "every weekday", "weekdays"). Note: "everyday"
+      (one word) means the same as "every day" — treat it as "daily". "Pick up Maya from
+      soccer every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct
+      from "every day"/"everyday" which is all 7) is ALSO "weekly", not "daily" —
+      "School drop-off every weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
     recurrenceDays: number[] — weekly recurrence only, which weekdays it repeats on,
       0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4],
       "every weekday"/"weekdays" -> [1,2,3,4,5]). Empty array unless recurrenceFrequency

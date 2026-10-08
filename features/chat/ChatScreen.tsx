@@ -854,24 +854,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Was a scroll-direction-collapsing header (hide on scroll-up toward
-          older messages, reveal on scroll-down) — removed entirely rather
-          than fixed a third time. It had already gone through two live-
-          reported bug rounds (janky JS-thread animation, then getting
-          permanently stuck collapsed at the top of history with no way
-          back) before this; a fixed, always-visible header can't glitch,
-          bounce, or get stuck, because there's no collapse state machine
-          left to misbehave. */}
       <View>
-        <AppHeader
-          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-          memberRole={activeMember?.role ?? 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={() => setSwitcherOpen(true)}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
         {couplePinModal && (

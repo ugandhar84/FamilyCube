@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -9,13 +9,16 @@ import { AddEventModal } from '@/features/calendar/EventFormModal';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useUIStore } from '@/store/uiStore';
 import { AlertBanner } from './hubComponents';
 import { localToday, hoursUntilEvent } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
-import type { ChoreTask } from '@/store/choreStore';
+import { useChoreStore, type ChoreTask } from '@/store/choreStore';
+import { useRewardStore } from '@/store/rewardStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { TodayActionGrid } from './parent/TodayActionGrid';
+import { RidesStatusCard } from './parent/RidesStatusCard';
 import { NextUpTimeline } from './parent/NextUpCard';
 import { FamilyPulseCard } from './parent/FamilyPulseCard';
 import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
@@ -25,17 +28,12 @@ import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { TrialNagBanner } from './parent/TrialNagBanner';
-import { ReviewInboxScreen, type ReviewItemType } from './parent/ReviewInboxScreen';
-import { ChoreProofReviewScreen } from './parent/ChoreProofReviewScreen';
-import { QuestReviewScreen } from './parent/QuestReviewScreen';
-import { RewardReviewScreen } from './parent/RewardReviewScreen';
 import { KidProposalReviewScreen } from './parent/KidProposalReviewScreen';
-import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
-import { ActiveTripDetailScreen } from './parent/ActiveTripDetailScreen';
 import { SendAppreciationScreen } from './parent/SendAppreciationScreen';
 import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
 import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
 import { DispatchRideSheet } from './parent/DispatchRideSheet';
+import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
 import { Modal } from 'react-native';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 
@@ -43,10 +41,40 @@ import { useParentStores } from './parent/hooks/useParentStores';
 import { useParentEventClassification } from './parent/hooks/useParentEventClassification';
 import { useParentModals } from './parent/hooks/useParentModals';
 
-export function ParentView({ active, members, colors, isDark, onScanFlyer, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
+export function ParentView({ active, members, colors, isDark, onScanFlyer, onDescribeTask, onDescribeEvent, describeFullFormRef, onReviewOpen, onRidesOpen, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
+  // TodayActionGrid's "Add a task"/"Schedule" tiles open JustDescribeItScreen
+  // / JustDescribeItEventScreen — both lifted up to HubScreen (same pattern
+  // as AddEventModal/FlyerScannerModal below) and rendered OUTSIDE HubScreen's
+  // own ScrollView, not inline here. Rendering them as a conditional block
+  // inside ParentView's own returned fragment — which HubScreen mounts
+  // INSIDE its ScrollView, right after its own avatar header — nested the
+  // Describe It screen's full-page layout inside that scroll content
+  // instead of replacing it: live-reported as "already scrolled to top"
+  // and showing a stray avatar header that real Describe It screens never
+  // have (TasksScreen/CalendarScreen both early-return it as their entire
+  // screen, never nest it under another header).
+  onDescribeTask: () => void;
+  onDescribeEvent: () => void;
+  // A Describe It screen's own "adjust in full form" handoff needs to reach
+  // back into ParentView's own AddQuestModal/AddEventModal pair + shared
+  // addPrefill state (useParentModals()) — rather than duplicating that
+  // pair up in HubScreen too, HubScreen hands ParentView a ref and calls
+  // .openFullForm(kind, prefill) on it once its Describe It screen closes.
+  describeFullFormRef?: React.MutableRefObject<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>;
+  // Opens the Review inbox — lifted to HubScreen for the same reason as
+  // onDescribeTask/onDescribeEvent above: it must be a true full-page
+  // screen (slide/fade/swipe, stacked outside the ScrollView), not a
+  // pageSheet Modal nested inside ParentView's own returned fragment.
+  onReviewOpen: () => void;
+  // Same lift-up, same reason — RidesControlRoomScreen/ActiveTripDetailScreen
+  // were still plain pageSheet Modals (no swipe/full-bleed/hidden-tab-bar
+  // treatment the Review inbox stack already got) — live-reported: "why
+  // didn't we make that page similar to the review inbox ... all swipers
+  // and full screen and figma rhythm."
+  onRidesOpen: () => void;
   // Dispatches immediately, no modal — memberId is nextRide's kid when one
   // is linked, else undefined for a generic "family" broadcast. Matches the
   // mock's plain in-card toggle exactly (no picker ever). eventId links the
@@ -57,18 +85,19 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   onDispatchDirect: (memberId: string | undefined, etaMinutes: number, eventId?: string) => void;
   onPickupDone: (tripId: string) => void;
   onCancelTrip: (tripId: string) => void;
-  activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number } | null;
+  activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase } | null;
   // Every OTHER concurrently-active trip besides `activeTrip` (e.g. a
   // different parent's own trip, running at the same time as this parent's)
   // — rendered read-only below `activeTrip`'s own card so a trip started by
   // someone else is never invisible just because this parent's Hub is
   // showing their own dispatch UI in the primary slot.
-  otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase }[];
   onUpdateEta?: (tripId: string, etaMinutes: number) => void;
 }) {
   const { familyName } = useFamilyStore();
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
+  const { getParentReviewDeck } = useChoreStore();
   // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
   // trial ended, not subscribed yet — a dismissible nag, not a lock.
   // trialDaysLeft === -1 means "family data hasn't loaded yet" (computeTrial's
@@ -106,6 +135,22 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     delegateSheet, setDelegateSheet,
   } = useParentModals();
 
+  // See describeFullFormRef's own doc above — HubScreen's lifted Describe
+  // It screens call this after closing themselves, to fall through to this
+  // component's own AddQuestModal/AddEventModal pair with the detected
+  // prefill, same handoff the old inline (pre-lift) version did directly.
+  useEffect(() => {
+    if (!describeFullFormRef) return;
+    describeFullFormRef.current = (kind, prefill) => {
+      setAddPrefill(prefill as typeof addPrefill);
+      setTimeout(() => {
+        if (kind === 'quest') setShowAddTask(true);
+        else setShowAddEvent(true);
+      }, 350);
+    };
+    return () => { describeFullFormRef.current = null; };
+  }, [describeFullFormRef, setAddPrefill, setShowAddTask, setShowAddEvent]);
+
   // Flow chooser + creation sheets (same as Tasks tab)
   const [showFlowChooser, setShowFlowChooser] = useState(false);
   const [showResponsibilitySheet, setShowResponsibilitySheet] = useState(false);
@@ -115,14 +160,23 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const [choreConvertTitle, setChoreConvertTitle] = useState<string | undefined>();
   const [choreConvertMemberId, setChoreConvertMemberId] = useState<string | undefined>();
 
-  // Review + rides screens
-  const [showReviewInbox, setShowReviewInbox] = useState(false);
-  const [reviewChoreId, setReviewChoreId] = useState<string | null>(null);
-  const [reviewQuestId, setReviewQuestId] = useState<string | null>(null);
-  const [reviewRedemptionId, setReviewRedemptionId] = useState<string | null>(null);
+  // Review inbox + its sub-screens (ChoreProofReview/QuestReview/
+  // RewardReview/HelpDispatchQueue) all live in HubScreen now, not here —
+  // live direction: they must be true full-page screens (slide/fade/swipe,
+  // stacked outside the ScrollView) same as the Describe It screens, not
+  // pageSheet Modals, AND the inbox must stay mounted underneath its
+  // detail screens instead of closing itself first ("real page handling,"
+  // not close-then-reopen). Same lift-up-to-HubScreen pattern as
+  // onDescribeTask/onDescribeEvent above — see onReviewOpen below.
+  // "Needs You" card's backlog-task CTA ("See task") previously fell
+  // through to the chore-APPROVAL inbox (ReviewInboxScreen) — a screen for
+  // items awaiting review, which has nothing to do with an unclaimed
+  // backlog task and never even named the specific task the card pointed
+  // at. Opens that task's own real detail page instead (QuestDetailModal —
+  // the same full command-center used everywhere else: claim, submit,
+  // approve, reassign, edit, call reminder).
+  const [backlogTaskDetailId, setBacklogTaskDetailId] = useState<string | null>(null);
   const [showKidProposals, setShowKidProposals] = useState(false);
-  const [showRidesRoom, setShowRidesRoom] = useState(false);
-  const [activeTripDetailId, setActiveTripDetailId] = useState<string | null>(null);
   const [showSendAppreciation, setShowSendAppreciation] = useState(false);
 
   const allNames  = members.map(m => m.name);
@@ -353,6 +407,35 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // already counts those itself via useQuestStore, which reads the same
   // underlying chores array; including it here would double-count.
   const otherAttentionCount = actionCount + backlogCount;
+  // Review inbox's true combined total — chores/quests awaiting approval,
+  // reward redemptions pending approval, AND kid requests (ride/tutor/
+  // permission/emergency/etc. via kidRequestStore) — live-requested fold-
+  // in. Kid requests previously had a fully-built review UI
+  // (HelpDispatchQueue) that was completely orphaned/unreachable from any
+  // screen (the Household Backlog section that used to host it was
+  // removed); reconnecting it here instead of rebuilding its approve/
+  // decline/assign logic a second time. getParentReviewDeck() is the exact
+  // same source ReviewInboxScreen itself reads, so this count and that
+  // screen's list can't structurally diverge.
+  const pendingRedemptionsCount = useRewardStore(s => s.redemptions.filter(r => r.status === 'pending').length);
+  const pendingKidRequestsCount = kidRequests.filter((r: any) => r.status === 'pending').length;
+  const pendingReviewCount = getParentReviewDeck().length + actionCount + pendingRedemptionsCount + pendingKidRequestsCount;
+  // "Add a task" tile's own status counters — pending (todo, assigned but
+  // not started), in-progress (claimed/started), unassigned (open pool) —
+  // computed straight off the live quests array so they can't drift from
+  // whatever ReviewInbox/ChoreReview elsewhere derive from the same data.
+  const tasksPendingCount    = quests.filter(q => q.status === 'todo' && !!q.assignedToId).length;
+  const tasksInProgressCount = quests.filter(q => q.status === 'in_progress' || q.status === 'claimed').length;
+  const tasksUnassignedCount = quests.filter(q => q.status === 'todo' && !q.assignedToId).length;
+  // Completed today — approved/done chores whose approvedAt falls on
+  // today's date, so this count resets each day instead of accumulating
+  // every chore ever finished (matches the rest of this tile's counters,
+  // which are all "right now, today" snapshots, not all-time totals).
+  const tasksCompletedTodayStr = new Date().toISOString().slice(0, 10);
+  const tasksCompletedCount  = quests.filter(q =>
+    (q.status === 'done' || q.status === 'approved') &&
+    !!q.approvedAt && q.approvedAt.slice(0, 10) === tasksCompletedTodayStr
+  ).length;
 
   // "Next up" — today's not-yet-passed events (NextUpTimeline shows up to
   // 3). Same source/filter as TodayView's own `upcoming` list (today's
@@ -365,32 +448,84 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   // Single most-urgent item for NeedsYouCard — priority: scheduling
   // conflict → overdue trip → pending chore approval → backlog task.
-  // Conflict/trip use the existing event classification; approval and
-  // backlog are fallbacks so the card is almost always visible when
-  // there's genuinely something to act on.
+  //
+  // Live direction: "is it good to show here? or we can reserve this for
+  // very urgent tasks?" — this used to surface the FIRST pending item in
+  // each category unconditionally, so a chore a kid submitted 30 seconds
+  // ago occupied the same top-of-Hub slot as a genuine scheduling
+  // conflict, every single time the Hub opened. A parent habituates to
+  // ignoring a banner that fires on routine events, which defeats the
+  // point of having an urgent-attention slot at all. Each non-conflict
+  // branch now needs a real urgency signal (overdue, waiting a while, or
+  // starting soon) before it's allowed to claim this slot — a fresh,
+  // ordinary pending item instead counts toward the Review inbox's badge
+  // and (once built) the evening wrap-up card, not this one.
+  const URGENT_WAIT_MS = 2 * 60 * 60_000;     // 2h — a submission/request sitting unanswered this long is genuinely stale, not just "new"
+  const URGENT_RIDE_WINDOW_MS = 2 * 60 * 60_000; // 2h — a ride without a driver starting this soon is a real problem, not routine planning
+  const minsAgo = (iso?: string) => iso ? Date.now() - new Date(iso).getTime() : 0;
+
   const conflictEvent = conflictEvents[0] ?? neverDispatchedOverdue[0];
-  const pendingApprovalChore = pendingReviews[0] as any;
-  const pendingKidRequest = (kidRequests as any[]).find(r => r.status === 'pending');
-  const pendingRideEvent = pendingRideRequiredEvents[0];
+
+  const pendingApprovalChore = (() => {
+    const c = pendingReviews[0] as any;
+    if (!c) return null;
+    const overdue = c.dueDate && c.dueDate < localDateStr(new Date());
+    const stale = minsAgo(c.submittedAt) > URGENT_WAIT_MS;
+    return (overdue || stale) ? c : null;
+  })();
+
+  const pendingKidRequest = (() => {
+    const r = (kidRequests as any[]).find(req => req.status === 'pending');
+    if (!r) return null;
+    const flagged = r.urgency === 'urgent' || r.urgency === 'emergency';
+    const stale = minsAgo(r.requestedAt) > URGENT_WAIT_MS;
+    return (flagged || stale) ? r : null;
+  })();
+
   // myHelperEvents: events where THIS parent is the assigned driver/helper
   // but hasn't confirmed yet (status 'pending'). These are the most
   // action-required items for the parent — they're assigned to them
-  // specifically and awaiting their "Confirm I'll do it" response.
+  // specifically and awaiting their "Confirm I'll do it" response. Always
+  // urgent regardless of timing — it's a direct ask of this specific
+  // parent, not a general household item.
   const myPendingHelperEvent = myHelperEvents[0];
-  const backlogTask = questPool[0] ?? myAdultQuests[0];
 
+  const pendingRideEvent = (() => {
+    const e = pendingRideRequiredEvents[0];
+    if (!e) return null;
+    return hoursUntilEvent(e.date, e.time) * 60 * 60_000 <= URGENT_RIDE_WINDOW_MS ? e : null;
+  })();
+
+  // Backlog was never a real "urgent" signal (it's explicitly the
+  // household's routine, un-time-boxed queue) — dropped from this slot
+  // entirely rather than gated, since there's no timing field that would
+  // ever make it genuinely urgent. (backlogTask itself removed — its only
+  // consumer was the needsYouItem 'backlog' branch, also removed.)
+
+  // dueDate/dueTime now carried as their own fields (see NeedsYouCard's own
+  // comment) instead of interpolated raw into reason — conflictEvent's own
+  // date/time, myPendingHelperEvent's raw 24h time string, and the backlog
+  // task's raw ISO dueDate were all previously baked straight into the
+  // reason text with no formatting, violating the app's 12h/human-date rule.
   const needsYouItem: NeedsYouItem | null = conflictEvent
-    ? { kind: 'conflict', title: conflictEvent.title, reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.' }
+    ? { kind: 'conflict', title: conflictEvent.title,
+        reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.',
+        dueDate: conflictEvent.date, dueTime: conflictEvent.time }
     : pendingApprovalChore
-    ? { kind: 'approval', title: pendingApprovalChore.title ?? 'Chore awaiting review', reason: 'A family member completed this and is waiting for your approval.' }
+    ? { kind: 'approval', title: pendingApprovalChore.title ?? 'Chore awaiting review',
+        reason: (pendingApprovalChore.dueDate && pendingApprovalChore.dueDate < localDateStr(new Date()))
+          ? 'Overdue — a family member completed this and is waiting for your approval.'
+          : 'Waiting a while — a family member completed this and is waiting for your approval.',
+        dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime }
     : pendingKidRequest
     ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid', reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.` }
     : myPendingHelperEvent
-    ? { kind: 'approval', title: myPendingHelperEvent.title, reason: `You're assigned${myPendingHelperEvent.time ? ` at ${myPendingHelperEvent.time}` : ''}${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.` }
+    ? { kind: 'approval', title: myPendingHelperEvent.title,
+        reason: `You're assigned${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.`,
+        dueDate: myPendingHelperEvent.date, dueTime: myPendingHelperEvent.time }
     : pendingRideEvent
-    ? { kind: 'approval', title: pendingRideEvent.title, reason: 'Ride needs a driver assigned before it starts.' }
-    : backlogTask
-    ? { kind: 'backlog', title: (backlogTask as any).title, reason: (backlogTask as any).dueDate ? `Due ${(backlogTask as any).dueDate}` : 'In your household backlog' }
+    ? { kind: 'approval', title: pendingRideEvent.title, reason: "Starting soon — who's driving?",
+        dueDate: pendingRideEvent.date, dueTime: pendingRideEvent.time }
     : null;
 
   // ReviewConflictModal's context rows — only relevant for conflict kind.
@@ -467,11 +602,33 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       {needsYouItem && (
         <NeedsYouCard item={needsYouItem} onReview={() => {
           if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
-          else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) router.push('/(tabs)/calendar' as any);
-          else if (needsYouItem.kind === 'approval') setShowReviewInbox(true);
-          else setShowReviewInbox(true);
+          else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) {
+            // Same stale-route fix as NextUpCard's own goToSchedule — /calendar
+            // is a disused standalone route outside the real tab bar; the
+            // actual Schedule view lives in the Tasks tab's embedded segment.
+            useUIStore.getState().setRequestedTasksSegment('schedule');
+            useUIStore.getState().setRequestedEventDetailId(myPendingHelperEvent.id);
+            router.push('/(tabs)/tasks' as any);
+          }
+          // 'backlog' branch removed — backlogTask was dropped from
+          // needsYouItem's own possible kinds (never a real urgency
+          // signal, see the computation above's own comment), so this
+          // callback no longer needs to route for it.
+          else onReviewOpen();
         }} />
       )}
+      {backlogTaskDetailId && (() => {
+        const fullQuest = quests.find(q => q.id === backlogTaskDetailId);
+        if (!fullQuest) { setBacklogTaskDetailId(null); return null; }
+        return (
+          <QuestDetailModal
+            quest={fullQuest}
+            onClose={() => setBacklogTaskDetailId(null)}
+            canEdit
+            isParent
+          />
+        );
+      })()}
 
       {/* "NEXT UP" — up to 3 upcoming events today, matching the Figma
           prototype's own multi-row timeline exactly (not a single event). */}
@@ -484,12 +641,56 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <TodayActionGrid
         colors={colors} isDark={isDark}
         groceryCount={groceryItems.length}
-        ridesCount={pendingRideRequiredEvents.length}
-        nextRideLabel={activeTrip ? `${activeTrip.kidName} · ETA ${activeTrip.etaMinutes} min` : undefined}
-        onCapture={() => setShowFlowChooser(true)}
-        onRides={() => setShowRidesRoom(true)}
-        onAppreciation={() => setShowSendAppreciation(true)}
+        reviewCount={pendingReviewCount}
+        tasksPendingCount={tasksPendingCount}
+        tasksInProgressCount={tasksInProgressCount}
+        tasksUnassignedCount={tasksUnassignedCount}
+        tasksCompletedCount={tasksCompletedCount}
+        todayEventsCount={todayEvents.length}
+        pendingRidesCount={pendingRideRequiredEvents.length}
+        onCapture={onDescribeTask}
+        onCreateEvent={onDescribeEvent}
+        onReview={onReviewOpen}
       />
+
+      {/* Rides status — live-requested Hub-home entry point into
+          RidesControlRoomScreen (already built, was unreachable from
+          anywhere). Headlines whichever ride is furthest along (an active
+          dispatched trip beats a merely-requested one with no driver yet),
+          using the trip's REAL phase (tripViews now carries it through —
+          see HubScreen.tsx) so this card's progress bar matches
+          RidesControlRoomScreen's own PHASE_STAGES exactly instead of
+          guessing a stage from elapsed time. */}
+      {(() => {
+        // Live-reported bug (still present after fixing RidesStatusCard's
+        // OWN idle-return): this wrapping IIFE had its own separate
+        // `if (!headlineTrip && !headlineRideEvent) return null` — even
+        // once the component itself was made to always render when
+        // called, this outer check meant it was never CALLED at all
+        // whenever there was no active trip and no pending ride. "I
+        // asked you to add the full width card ... I still didn't see it
+        // home" — this was why. Removed; RidesStatusCard now always
+        // mounts and handles its own idle state.
+        const allActiveTrips = [...(activeTrip ? [activeTrip] : []), ...(otherActiveTrips ?? [])];
+        const headlineTrip = allActiveTrips[0];
+        const headlineRideEvent = !headlineTrip ? pendingRideEvent : undefined;
+        const label = headlineTrip
+          ? `${headlineTrip.driverName.split(' ')[0]} driving ${headlineTrip.kidName.split(' ')[0]}`
+          : headlineRideEvent?.title;
+        const otherCount = (allActiveTrips.length + pendingRideRequiredEvents.length)
+          - (headlineTrip ? 1 : 0) - (headlineRideEvent ? 1 : 0);
+        return (
+          <RidesStatusCard
+            colors={colors} isDark={isDark}
+            pendingCount={Math.max(0, otherCount)}
+            withoutDriverCount={pendingRideRequiredEvents.length}
+            ongoingCount={allActiveTrips.length}
+            activeTripLabel={label}
+            activePhase={headlineTrip?.phase}
+            onPress={onRidesOpen}
+          />
+        );
+      })()}
 
       {/* "TONIGHT" — dinner preview, matching the Figma prototype's own
           .evening card. Renders nothing when there's no dinner planned. */}
@@ -627,50 +828,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         }}
       />
 
-      {/* ── Review inbox ─────────────────────────────────────────────── */}
-      <Modal visible={showReviewInbox} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReviewInbox(false)}>
-        <ReviewInboxScreen
-          onClose={() => setShowReviewInbox(false)}
-          onSelectItem={(choreId, type: ReviewItemType) => {
-            setShowReviewInbox(false);
-            setTimeout(() => {
-              if (type === 'quest') setReviewQuestId(choreId);
-              else setReviewChoreId(choreId);
-            }, 300);
-          }}
-        />
-      </Modal>
-
-      <Modal visible={!!reviewChoreId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewChoreId(null)}>
-        {reviewChoreId ? <ChoreProofReviewScreen choreId={reviewChoreId} onClose={() => setReviewChoreId(null)} /> : null}
-      </Modal>
-
-      <Modal visible={!!reviewQuestId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewQuestId(null)}>
-        {reviewQuestId ? <QuestReviewScreen choreId={reviewQuestId} onClose={() => setReviewQuestId(null)} /> : null}
-      </Modal>
-
-      <Modal visible={!!reviewRedemptionId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReviewRedemptionId(null)}>
-        {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
-      </Modal>
-
       <Modal visible={showKidProposals} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowKidProposals(false)}>
         <KidProposalReviewScreen onClose={() => setShowKidProposals(false)} />
       </Modal>
 
-      {/* ── Rides control room + active trip detail ───────────────── */}
-      <Modal visible={showRidesRoom} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRidesRoom(false)}>
-        <RidesControlRoomScreen
-          onClose={() => setShowRidesRoom(false)}
-          onSelectTrip={(tripId) => {
-            setShowRidesRoom(false);
-            setTimeout(() => setActiveTripDetailId(tripId), 300);
-          }}
-        />
-      </Modal>
-
-      <Modal visible={!!activeTripDetailId} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setActiveTripDetailId(null)}>
-        {activeTripDetailId ? <ActiveTripDetailScreen tripId={activeTripDetailId} onClose={() => setActiveTripDetailId(null)} /> : null}
-      </Modal>
 
       {/* ── Send appreciation ─────────────────────────────────────── */}
       <Modal visible={showSendAppreciation} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSendAppreciation(false)}>

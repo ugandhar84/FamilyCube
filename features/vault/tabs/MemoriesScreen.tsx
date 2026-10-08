@@ -93,7 +93,7 @@ export default function MemoriesScreen({ hideHeader = false }: { hideHeader?: bo
           }
         }}
         scrollEventThrottle={200}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 140, paddingTop: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 100, paddingTop: 14 }}>
         <MemoriesTabComp colors={colors} isDark={isDark} readOnly={readOnly}
           focusMemoryId={memoryId}
           onLoadMoreReady={(fn) => { loadMoreRef.current = fn; }}

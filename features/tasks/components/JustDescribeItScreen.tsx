@@ -27,6 +27,7 @@ import { todayLocal, nextHourRoundedStr } from '@/lib/dates';
 import { familyAi } from '@/lib/familyAiService';
 import { Mic, Square } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
+import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 const MIN_CHARS = 3;
 
@@ -102,7 +103,7 @@ function Waveform({ color }: { color: string }) {
 }
 
 export default function JustDescribeItScreen({
-  visible, onClose, onOpenFullForm,
+  visible, onClose, onOpenFullForm, backLabel = 'Today',
 }: {
   visible: boolean;
   onClose: () => void;
@@ -111,6 +112,14 @@ export default function JustDescribeItScreen({
     notes?: string; coins?: number; photoRequired?: boolean;
     pickupLocation?: string; dropLocation?: string; returnTime?: string;
   }) => void;
+  // Nav-row back label — this screen is a `flex: 1` early-return
+  // replacement of whoever calls it (TasksScreen/CalendarScreen's own
+  // "Today" segment, or HubScreen for the Hub's own Quick Actions), and
+  // "‹ Today" was hardcoded assuming the Tasks tab was always the origin.
+  // Wrong from HubScreen's "Add a task" tile — closing it correctly
+  // returns to Hub, but the label still said "Today". Defaults to the
+  // original "Today" so the two pre-existing call sites need no change.
+  backLabel?: string;
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -118,6 +127,25 @@ export default function JustDescribeItScreen({
   const { familyName = 'Family' } = useFamilyStore() as any;
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const { addQuest } = useQuestStore();
+
+  // ── Slide-up / slide-down entrance animation + edge-swipe-to-dismiss —
+  // ported from JustDescribeItEventScreen (the Schedule equivalent), which
+  // had both and this screen had neither. Mounted as a plain sibling
+  // inside HubScreen's RootContainer (not a real RN <Modal>), this screen
+  // gets none of iOS's native interactive pop gesture for free — same
+  // reasoning as SwipeBackWrapper's own doc comment. ──
+  const slideAnim = useRef(new Animated.Value(visible ? 0 : 60)).current;
+  const fadeAnim  = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  useEffect(() => {
+    if (visible) {
+      slideAnim.setValue(60);
+      fadeAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 220, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
 
   // ── Composer state ──
   const [aiAutoFilling, setAiAutoFilling] = useState(false);
@@ -226,10 +254,9 @@ export default function JustDescribeItScreen({
         members.map(m => ({ id: m.id, name: m.name, role: m.role }))
       );
       if (result?.task?.title) {
-        // If the inline form is already open, update the chore title field directly;
-        // otherwise refine the input so openInlineQuestForm picks it up.
-        if (questFormOpen) setQuestTitle(result.task.title);
-        else setInput(result.task.title);
+        // Always fill the form — never overwrite what the user typed in the composer
+        setQuestTitle(result.task.title);
+        if (!questFormOpen) openInlineQuestForm();
       }
     } catch { /* silently fail */ }
     finally { setAiAutoFilling(false); }
@@ -326,6 +353,8 @@ export default function JustDescribeItScreen({
   if (!visible) return null;
 
   return (
+    <SwipeBackWrapper onDismiss={handleClose}>
+    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
     <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
@@ -342,7 +371,7 @@ export default function JustDescribeItScreen({
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={{ fontSize: 17, color: activeBlue }}>‹</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>Today</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>{backLabel}</Text>
                 </TouchableOpacity>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 }}>
                   {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
@@ -472,6 +501,16 @@ export default function JustDescribeItScreen({
                           <Text style={{ fontSize: 13 }}>👤</Text>
                           <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>
                             {displayAssignee}{suggestion && !detectedMemberName ? ' · Suggested' : ''}
+                          </Text>
+                        </View>
+                      )}
+                      {detected.recurrence && detected.recurrence !== 'once' && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                          backgroundColor: colors.amberLight, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                          borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ fontSize: 13 }}>🔁</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.amber }}>
+                            {detected.recurrence.charAt(0).toUpperCase() + detected.recurrence.slice(1)}
                           </Text>
                         </View>
                       )}
@@ -998,5 +1037,7 @@ export default function JustDescribeItScreen({
 
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </Animated.View>
+    </SwipeBackWrapper>
   );
 }

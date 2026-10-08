@@ -127,7 +127,7 @@ export default function HealthRecordsScreen({ hideHeader = false }: { hideHeader
           for Health & Records' composer) — same overlap risk fixed on
           Hub/Quests/School. */}
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 140, paddingTop: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 100, paddingTop: 14 }}>
         {tab === 'records'
           ? <RecordsTabComp colors={colors} isDark={isDark} />
           : <HealthTabComp colors={colors} isDark={isDark} kidView={kidView}

@@ -601,18 +601,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-          memberRole={activeMember?.role ?? 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={() => setSwitcherOpen(true)}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <ScrollView showsVerticalScrollIndicator={false}

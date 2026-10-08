@@ -829,20 +829,14 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <PageTopBar
-          onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAddModal(true) : undefined}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
-      {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {/* The shared Ask Cube FAB (app/(tabs)/_layout.tsx) is visible on
           this tab too (morphs to a "+" for Tasks) and floats at
           bottom: insets.bottom + 74, ~52px tall — same overlap risk Hub's
           own scroll padding had before that fix. 40px wasn't enough
           clearance; 140 matches Hub's fix. */}
-      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
         {headerContent}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Pressable, Platform, StyleSheet, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/ThemeContext';
@@ -14,26 +14,19 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 // sits under the blur for the "glass over color" premium look, and a thin
 // top highlight hairline stands in for a glass edge catching light.
 export function CollapsibleQuestCard({
-  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress, onSingleTap, initiallyExpanded = false, dimmed = false, pinnedFooter,
+  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress, onSingleTap, initiallyExpanded = false, dimmed = false, pinnedFooter, isOverdue = false,
 }: {
   accentColor: string; cardBg: string; cardBord: string;
   header: React.ReactNode; children: React.ReactNode;
   onDoubleTap?: () => void;
   onLongPress?: () => void;
-  // When provided, single tap fires this instead of toggling expand.
   onSingleTap?: () => void;
   initiallyExpanded?: boolean;
-  // Final-approved quests read as settled, past business — everything about
-  // them is locked except the parent's private note, so the card itself
-  // should look done, not equally "live" as an in-progress one.
   dimmed?: boolean;
-  // Rendered inside the card but OUTSIDE the dimmed wrapper — RN opacity
-  // cascades to every descendant with no per-child override, so anything
-  // that must stay fully legible on a dimmed card (the parent's private
-  // note) has to live in its own sibling section, not inside `children`.
   pinnedFooter?: React.ReactNode;
+  isOverdue?: boolean;
 }) {
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const lastTap = React.useRef(0);
   const handlePress = () => {
@@ -65,6 +58,14 @@ export function CollapsibleQuestCard({
       {/* Glass edge highlight — thin light line along the top, the one cue
           that most reads as "glass" rather than a flat tinted card. */}
       <View style={{ height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)' }} pointerEvents="none" />
+
+      {isOverdue && (
+        <View style={{ position: 'absolute', top: 8, right: 8, zIndex: 10,
+          backgroundColor: colors.danger, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 3,
+          flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>⚠ Overdue</Text>
+        </View>
+      )}
 
       <View style={{ opacity: dimmed ? 0.55 : 1 }}>
         <Pressable onPress={handlePress} onLongPress={onLongPress}

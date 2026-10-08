@@ -167,7 +167,7 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140, gap: 14 }}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100, gap: 14 }}>
       <SCard colors={colors} isDark={isDark} accent={colors.teal}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <CardHeader

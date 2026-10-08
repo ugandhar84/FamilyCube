@@ -43,6 +43,14 @@ export interface Trip {
   // this unset, same as before; the "Up Next" ride-linked dispatch sets
   // it to the real calendar event id.
   eventId?: string;
+  // Optional pinned pickup point — when set, lib/tripGeofencing.ts
+  // registers a real geofence there and auto-advances phase to
+  // 'picked_up' on arrival instead of waiting for a manual driver tap
+  // (see 20260987000000_trips_pickup_coordinates.sql). Undefined = fully
+  // manual trip, same as before this column existed.
+  pickupLat?: number;
+  pickupLng?: number;
+  pickupLabel?: string;
 }
 
 interface TripRow {
@@ -57,6 +65,9 @@ interface TripRow {
   event_id: string | null;
   phase: TripPhase | null;
   driver_notes: string | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  pickup_label: string | null;
 }
 
 function fromRow(row: TripRow): Trip {
@@ -72,6 +83,9 @@ function fromRow(row: TripRow): Trip {
     phase: row.phase ?? 'assigned',
     driverNotes: row.driver_notes ?? undefined,
     eventId: row.event_id ?? undefined,
+    pickupLat: row.pickup_lat ?? undefined,
+    pickupLng: row.pickup_lng ?? undefined,
+    pickupLabel: row.pickup_label ?? undefined,
   };
 }
 
@@ -94,6 +108,7 @@ interface TripState {
   dispatch: (params: {
     familyId: string; driverMemberId: string;
     pickupMemberId?: string; etaMinutes: number; eventId?: string;
+    pickupLat?: number; pickupLng?: number; pickupLabel?: string;
   }) => Promise<void>;
   updateEta: (tripId: string, etaMinutes: number) => Promise<void>;
   markOverdueAlertSent: (tripId: string) => Promise<void>;
@@ -229,7 +244,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     persist(trips);
   },
 
-  dispatch: async ({ familyId, driverMemberId, pickupMemberId, etaMinutes, eventId }) => {
+  dispatch: async ({ familyId, driverMemberId, pickupMemberId, etaMinutes, eventId, pickupLat, pickupLng, pickupLabel }) => {
     // Same-driver guard only: one person can't sanely be "en route" to two
     // places simultaneously. A DIFFERENT driver dispatching their own trip
     // while this one is active is a normal two-parent scenario and must NOT
@@ -239,12 +254,29 @@ export const useTripStore = create<TripState>((set, get) => ({
 
     const id = `trip_${Date.now()}`;
     const startedAt = new Date().toISOString();
+    // Live direction: "as parent starts a trip ... it should automatically
+    // do all its own" — dispatching a trip already means the driver is
+    // starting to drive right now, so there's no real "assigned, not yet
+    // moving" moment to represent; inserting at 'assigned' then requiring
+    // a separate manual tap to flip to 'en_route' made every trip start
+    // one stage behind reality until the driver remembered to advance it.
+    // This first transition is true by construction, so it's set directly
+    // instead of waiting on a tap. The LATER stages (picked_up/arrived)
+    // now also auto-advance for real when a pickup point was pinned — see
+    // lib/tripGeofencing.ts, which registers a geofence at (pickupLat,
+    // pickupLng) once this insert lands and calls advance_trip_phase on
+    // enter, reusing the exact pattern lib/storeGeofencing.ts already
+    // proved for grocery-store arrival. No pickup point pinned (the
+    // common case today — DispatchRideSheet's location step is optional)
+    // falls back to the existing fully-manual tap flow, unchanged.
+    const startPhase: TripPhase = 'en_route';
     // DB-is-truth: await the insert before reflecting the trip locally —
     // was optimistic (set immediately, no rollback on failure).
     const { error } = await supabase.from('trips').insert({
       id, family_id: familyId, driver_member_id: driverMemberId,
       pickup_member_id: pickupMemberId ?? null, eta_minutes: etaMinutes,
-      started_at: startedAt, event_id: eventId ?? null,
+      started_at: startedAt, event_id: eventId ?? null, phase: startPhase,
+      pickup_lat: pickupLat ?? null, pickup_lng: pickupLng ?? null, pickup_label: pickupLabel ?? null,
     });
     if (error) {
       console.warn('[tripStore] dispatch insert failed', error.message);
@@ -252,11 +284,24 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
     const trip: Trip = {
       id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
-      overdueAlertSent: false, phase: 'assigned', eventId,
+      overdueAlertSent: false, phase: startPhase, eventId,
+      pickupLat, pickupLng, pickupLabel,
     };
     const nextTrips = [...get().activeTrips, trip];
     set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
     persist(nextTrips);
+
+    // Register the real geofence for this trip — no-op (resolves
+    // immediately) when no pickup point was pinned.
+    if (pickupLat != null && pickupLng != null) {
+      try {
+        const { registerTripGeofence } = require('@/lib/tripGeofencing');
+        registerTripGeofence(id, pickupLat, pickupLng).catch((e: unknown) =>
+          console.warn('[tripStore] registerTripGeofence failed', e));
+      } catch (e) {
+        console.warn('[tripStore] tripGeofencing unavailable', e);
+      }
+    }
 
     notifyTrip('trip_started', familyId, driverMemberId, {
       tripId: id,

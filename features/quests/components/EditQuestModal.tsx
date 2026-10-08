@@ -27,6 +27,7 @@ import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 // ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
 export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full' }: {
@@ -96,11 +97,21 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   // at CREATE time; this edit form had no equivalent, so toggling Invite
   // Grandparents on for an EXISTING chore left whatever coin amount was
   // already there in place, and approveChore has no assignee-role check —
-  // a real, live path for a grandparent to be paid coins. Mirrors
-  // AddQuestModal's isAdultTask||inviteGrandparent||assignedToAdultsOnly
-  // shape (no assignedToAdultsOnly concept in this edit form, so just the
-  // two that apply here).
-  const coinsDisabled = isAdultTask || inviteGrandparent;
+  // a real, live path for a grandparent to be paid coins.
+  //
+  // Live-reported gap, now closed: assignedToAdultsOnly was missing here —
+  // the assignee picker below lets you pick a parent/senior on an ordinary
+  // kid-eligible (isAdultTask: false) chore, independent of the isAdultTask
+  // toggle. Reassigning an existing coin-bearing chore to a parent left the
+  // coins live with zero warning, since only isAdultTask/inviteGrandparent
+  // were checked. Mirrors AddQuestModal's own
+  // isAdultTask||inviteGrandparent||assignedToAdultsOnly shape exactly now.
+  const assignedToAdultsOnly = assignIds.length > 0 &&
+    assignIds.every(id => {
+      const role = members.find(m => m.id === id)?.role;
+      return role === 'parent' || role === 'senior';
+    });
+  const coinsDisabled = isAdultTask || inviteGrandparent || assignedToAdultsOnly;
   const [dueDate,           setDueDate]           = useState<Date>(parseDue);
   // Spec 8.2 — optional tie to a calendar event this quest logistically
   // supports. Display-only, no cascading behavior.
@@ -301,6 +312,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={dismiss}>
+      <SwipeBackWrapper onDismiss={dismiss}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
@@ -491,13 +503,31 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </View>
               )}
 
-              {/* ── REWARD section ── */}
-              {!isAdultTask && (
+              {/* ── REWARD section — was gated on the static isAdultTask flag
+                  (hidden whenever that toggle was on), while the coin
+                  VALUES below already reacted dynamically to assignee role
+                  via coinsDisabled. Inconsistent: toggling isAdultTask on
+                  hid the section outright, but picking a parent/senior
+                  assignee on an ordinary (isAdultTask: false) chore left it
+                  visible and simply dimmed. Always show it now — coinsDisabled
+                  (which folds in isAdultTask, inviteGrandparent, AND
+                  assignedToAdultsOnly) is the one dynamic source of truth
+                  for whether coins apply, consistent in both places. ── */}
+              {(
                 <>
                   <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 28 }} />
                   <Text style={{ fontSize: 13, fontWeight: '800', color: colors.pink, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16, marginTop: 0 }}>
                     Reward
                   </Text>
+                  {coinsDisabled && (
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: 12, marginTop: -8 }}>
+                      {inviteGrandparent
+                        ? 'No coins — grandparent-done work is never paid in coins.'
+                        : isAdultTask
+                          ? 'No coins — this is an adult-only task.'
+                          : 'No coins — only kids/teens earn coins. Assigned to a parent/senior, this task pays nothing.'}
+                    </Text>
+                  )}
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12, opacity: coinsDisabled ? 0.4 : 1 }}>
                     {[10, 20, 30, 50, 75, 100].map(c => {
                       const coinNum = parseInt(coins) || 0;
@@ -932,6 +962,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
             </View>
         </KeyboardAvoidingView>
       </View>
+      </SwipeBackWrapper>
     </Modal>
   );
 }

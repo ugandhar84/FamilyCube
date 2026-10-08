@@ -56,6 +56,21 @@ interface UIState {
   // "+" on Hub/Apps and sparkle on Tasks — backwards).
   activeTabName: string | undefined;
   setActiveTabName: (name: string | undefined) => void;
+  // One-shot pattern, same as openTaskComposerRequested above — set by a
+  // screen outside Tasks (e.g. the Hub's Next Up timeline) before
+  // navigating to the Tasks tab, so TasksScreen opens on a specific segment
+  // (Schedule/Chores/Queue) instead of always defaulting to Chores. Read
+  // once on focus, then cleared immediately so a later plain remount
+  // doesn't re-trigger it.
+  requestedTasksSegment: 'schedule' | 'chores' | 'queue' | undefined;
+  setRequestedTasksSegment: (v: 'schedule' | 'chores' | 'queue' | undefined) => void;
+  // Same one-shot pattern — set by the Hub's Next Up timeline before
+  // navigating to Tasks so tapping an event opens its full detail page
+  // directly (EventDetailScreen) instead of just landing on the Schedule
+  // segment's own default day view, leaving the user to find and tap the
+  // event again themselves.
+  requestedEventDetailId: string | undefined;
+  setRequestedEventDetailId: (v: string | undefined) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -67,6 +82,10 @@ export const useUIStore = create<UIState>((set) => ({
   setOpenMemoryComposerRequested: (v) => set({ openMemoryComposerRequested: v }),
   openHealthRecordsComposerRequested: false,
   setOpenHealthRecordsComposerRequested: (v) => set({ openHealthRecordsComposerRequested: v }),
+  requestedTasksSegment: undefined,
+  setRequestedTasksSegment: (v) => set({ requestedTasksSegment: v }),
+  requestedEventDetailId: undefined,
+  setRequestedEventDetailId: (v) => set({ requestedEventDetailId: v }),
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,

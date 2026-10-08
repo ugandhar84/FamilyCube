@@ -54,6 +54,8 @@ import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
+import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
+import type { FamilyEvent } from '@/store/eventStore';
 import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
 import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
 import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
@@ -273,20 +275,36 @@ export default function TasksScreen() {
   // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
   const [showJustDescribe, setShowJustDescribe] = useState(false);
   const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
+  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string }>({});
+  const [detailEvent, setDetailEvent] = useState<FamilyEvent | null>(null);
+  const { deleteEvent } = useEventStore();
   useEffect(() => {
-    useUIStore.getState().setFullBleedScreenActive(showJustDescribe || showJustDescribeEvent);
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribe || showJustDescribeEvent || !!detailEvent);
     return () => { useUIStore.getState().setFullBleedScreenActive(false); };
-  }, [showJustDescribe, showJustDescribeEvent]);
+  }, [showJustDescribe, showJustDescribeEvent, detailEvent]);
+
+  // Deep-link support — other screens (e.g. the Hub's Next Up timeline) set
+  // uiStore's requestedTasksSegment/requestedEventDetailId before navigating
+  // here. requestedEventDetailId opens that event's full detail page
+  // directly — previously tapping a Next Up card only landed on Schedule's
+  // own default day view, leaving the user to find and tap the event again
+  // themselves. Same one-shot pattern as openTaskComposerRequested above.
+  useFocusEffect(useCallback(() => {
+    const requestedSegment = useUIStore.getState().requestedTasksSegment;
+    if (requestedSegment) {
+      useUIStore.getState().setRequestedTasksSegment(undefined);
+      setSegment(requestedSegment);
+    }
+    const requestedEventId = useUIStore.getState().requestedEventDetailId;
+    if (requestedEventId) {
+      useUIStore.getState().setRequestedEventDetailId(undefined);
+      const found = useEventStore.getState().events.find(e => e.id === requestedEventId);
+      if (found) setDetailEvent(found);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
 
   // Figma .quick-capture — real text input; on submit opens JustDescribeIt screen
-  const [quickText, setQuickText] = useState('');
-  const submitQuickCapture = () => {
-    const text = quickText.trim();
-    setQuickText('');
-    if (isKidCreator) { setShowAskParentSheet(true); return; }
-    // Always open the dedicated "Just describe it" screen (Figma flow)
-    setShowJustDescribe(true);
-  };
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => {
     if (isKidCreator) setShowAskParentSheet(true);
@@ -330,39 +348,45 @@ export default function TasksScreen() {
 
   // Figma TasksPage header — injected into QuestsScreen/CalendarScreen's own
   // ScrollView via headerContent so it scrolls with content.
-  const doneToday = chores.filter(c => c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed').length;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const doneToday = chores.filter(c =>
+    (c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed') &&
+    ((c.approvedAt ?? c.createdAt ?? '').slice(0, 10) === todayISO)
+  ).length;
   const stillOpen = choreCounts.pending + choreCounts.active;
   const helpers = chores.filter(c => c.status === 'in_progress' || c.status === 'pending_approval').length;
 
-  const tasksHeader = (
-    <View>
-      {/* Figma .tabs — Calendar / Tasks / Queue — at very top of injected content */}
+  // Fixed header — title + tab switcher, never scrolls
+  const fixedHeader = (
+    <View style={{ backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', paddingBottom: 8 }}>
+      <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginHorizontal: 20, marginTop: 14, marginBottom: 12 }}>
+        Family calendar
+      </Text>
       <View style={{
-        flexDirection: 'row', gap: 4, marginHorizontal: 20, marginTop: 8, marginBottom: 2,
+        flexDirection: 'row', gap: 4, marginHorizontal: 20,
         padding: 4, borderRadius: 14,
         backgroundColor: isDark ? colors.surface : '#EEEDF3',
       }}>
         {([
           { key: 'schedule' as const, label: 'Calendar' },
           { key: 'chores' as const, label: 'Tasks' },
-          ...(isParent ? [{ key: 'queue' as const, label: 'Queue' }] : []),
         ] as { key: Segment; label: string }[]).map(({ key, label }) => {
           const active = segment === key;
-          const needsAttention = !active && (key === 'chores' ? choreCounts.pending > 0 : queueCounts.pending > 0);
+          const needsAttention = !active && key === 'chores' && choreCounts.pending > 0;
           return (
             <TouchableOpacity
               key={key}
               onPress={() => { setSegment(key); if (searchOpen) toggleSearch(false); if (aiOpen) setAiOpen(false); }}
               activeOpacity={0.85}
               style={{
-                flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center',
+                flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center',
                 borderRadius: 10, flexDirection: 'row', gap: 5,
                 backgroundColor: active ? colors.card : 'transparent',
                 shadowColor: active ? 'rgba(44,39,34,0.10)' : 'transparent',
                 shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 6,
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: active ? '700' : '500',
+              <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500',
                 color: active ? colors.pink : colors.textSecondary }}>
                 {label}
               </Text>
@@ -373,90 +397,110 @@ export default function TasksScreen() {
           );
         })}
       </View>
+    </View>
+  );
 
-      {/* Only show tasks chrome when on the chores segment */}
-      {segment === 'chores' && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
-          {/* Figma TopBar title equivalent — h1 "Tasks, shared" */}
-          <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginBottom: 2 }}>
-            Tasks, shared
-          </Text>
-          {/* Figma .intro */}
-          <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 2 }}>
-            {stillOpen > 0
-              ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
-              : 'All clear! Nothing left to do.'}
-          </Text>
-
-          {/* Figma .quick-capture — real TextInput + + button (exact Figma model) */}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
+  // Scrollable per-segment chrome injected into each child screen's ScrollView
+  const tasksHeader = (
+    <View>
+      {/* CTA / Search bar — scrolls with content */}
+      <View style={{ marginHorizontal: 20, marginTop: 6, marginBottom: 4, height: 52 }}>
+        {searchOpen ? (
+          <View style={{
+            flex: 1, flexDirection: 'row', alignItems: 'center',
+            borderRadius: 16, paddingHorizontal: 14, gap: 10,
+            backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
+          }}>
+            <Search size={18} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2} />
             <TextInput
-              value={quickText}
-              onChangeText={setQuickText}
-              placeholder="What needs doing?"
-              placeholderTextColor={colors.textTertiary}
-              returnKeyType="done"
-              onSubmitEditing={submitQuickCapture}
-              style={{
-                flex: 1, height: 48, paddingHorizontal: 14,
-                borderWidth: 1, borderColor: isDark ? colors.border : '#dddfea',
-                borderRadius: 14,
-                backgroundColor: colors.card,
-                fontSize: 14, color: colors.textPrimary,
-              }}
+              autoFocus
+              value={segment === 'schedule' ? scheduleQuery : choreQuery}
+              onChangeText={segment === 'schedule' ? setScheduleQuery : setChoreQuery}
+              placeholder={segment === 'schedule' ? 'Search events…' : 'Search tasks…'}
+              placeholderTextColor={segment === 'schedule' ? colors.teal + '80' : colors.primary + '80'}
+              style={{ flex: 1, fontSize: 15, fontWeight: '500', color: segment === 'schedule' ? colors.teal : colors.primary }}
+              returnKeyType="search"
             />
+            <TouchableOpacity onPress={() => toggleSearch(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={18} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
-              onPress={submitQuickCapture}
-              activeOpacity={0.8}
+              onPress={segment === 'schedule' ? () => setShowJustDescribeEvent(true) : () => setShowJustDescribe(true)}
+              activeOpacity={0.88}
               style={{
-                width: 46, height: 48, borderRadius: 14,
-                backgroundColor: isDark ? 'rgba(102,119,189,0.35)' : '#6677bd',
+                flex: 1, height: 52, borderRadius: 16,
+                backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Text style={{ fontSize: 22, color: '#fff', fontWeight: '300', lineHeight: 26, marginTop: -1 }}>+</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: segment === 'schedule' ? colors.teal : colors.primary, letterSpacing: 0.2 }}>
+                {segment === 'schedule' ? '+ Add event' : '+ Add task'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => toggleSearch(true)}
+              activeOpacity={0.88}
+              style={{
+                width: 52, height: 52, borderRadius: 16,
+                backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Search size={20} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2} />
             </TouchableOpacity>
           </View>
+        )}
+      </View>
 
-          {/* Figma .task-summary — 3 tiles (exact Figma colors) */}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+      {/* Tasks segment chrome */}
+      {segment === 'chores' && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+          {/* Status line */}
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+            {stillOpen > 0
+              ? `${stillOpen} task${stillOpen === 1 ? '' : 's'} open · everyone sees what they own`
+              : 'All clear — nothing left to do'}
+          </Text>
+
+          {/* Summary tiles */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
             {[
-              { val: doneToday, label: 'done today',    bg: isDark ? 'rgba(102,119,189,0.18)' : '#eeebf9', color: isDark ? '#A89CD0' : '#5265b1' },
-              { val: stillOpen, label: 'still open',    bg: isDark ? 'rgba(223,97,60,0.18)'  : '#f9ebe7', color: isDark ? '#EE8058' : '#8c5045' },
-              { val: helpers,   label: 'people helping',bg: isDark ? 'rgba(61,122,90,0.18)'  : '#e5f3ed', color: isDark ? '#5FA37D' : '#527d6d' },
+              { val: doneToday, label: 'done today',     bg: isDark ? 'rgba(61,122,90,0.18)'   : colors.tealLight,    color: colors.teal },
+              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(223,97,60,0.18)'   : colors.primaryLight, color: colors.primary },
+              { val: helpers,   label: 'in progress',    bg: isDark ? 'rgba(123,94,167,0.18)'  : colors.pinkLight,    color: colors.pink },
             ].map(({ val, label, bg, color }) => (
               <View key={label} style={{
-                flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: bg,
-                paddingVertical: 10, paddingHorizontal: 10, justifyContent: 'center',
+                flex: 1, borderRadius: 16, backgroundColor: bg,
+                paddingVertical: 12, paddingHorizontal: 12,
               }}>
-                <Text style={{ fontSize: 19, fontWeight: '700', color }}>{val}</Text>
-                <Text style={{ fontSize: 10, color, marginTop: 2, opacity: 0.85 }}>{label}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color }}>{val}</Text>
+                <Text style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8, fontWeight: '600' }}>{label}</Text>
               </View>
             ))}
           </View>
-
-          {/* Figma .section-title */}
-          <View style={{ marginTop: 20, marginBottom: 4 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-              TODAY &amp; THIS WEEK
-            </Text>
-            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginTop: 3, letterSpacing: -0.3 }}>
-              Household tasks
-            </Text>
-          </View>
         </View>
       )}
 
-      {/* Calendar segment gets its own h1 injected — Figma: "Family calendar" */}
-      {segment === 'schedule' && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 2 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
-            {(activeMember?.role === 'kid' || activeMember?.role === 'teen') ? 'My schedule' : 'Family calendar'}
-          </Text>
-        </View>
-      )}
     </View>
   );
+
+  // Full-page overlay — event detail. EventDetailScreen owns its own full-page
+  // edit flow internally (swaps to JustDescribeItEventScreen in edit mode), so
+  // no separate EditEventModal/editEvent plumbing is needed here.
+  if (detailEvent) {
+    return (
+      <>
+        <EventDetailScreen
+          ev={detailEvent}
+          onClose={() => setDetailEvent(null)}
+          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); }}
+        />
+      </>
+    );
+  }
 
   // Full-page overlay — renders instead of the tab content, same pattern as hub review screens
   if (showJustDescribeEvent) {
@@ -464,7 +508,9 @@ export default function TasksScreen() {
       <JustDescribeItEventScreen
         visible
         activeMemberId={activeMemberId ?? ''}
-        onClose={() => setShowJustDescribeEvent(false)}
+        prefillDate={justDescribeEventPrefill.date}
+        prefillTime={justDescribeEventPrefill.time}
+        onClose={() => { setShowJustDescribeEvent(false); setJustDescribeEventPrefill({}); }}
       />
     );
   }
@@ -491,19 +537,15 @@ export default function TasksScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Figma TopBar — PageTopBar, no legacy AppHeader */}
-      <PageTopBar
-        onAddPress={(isParent || isSenior) ? () => setShowJustDescribe(true) : undefined}
-        onBellPress={() => setNotifPanelOpen(true)}
-      />
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+      {fixedHeader}
 
       {segment === 'schedule'
-        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} onRequestJustDescribe={() => setShowJustDescribeEvent(true)} />
+        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} onRequestJustDescribe={(prefill) => { setJustDescribeEventPrefill(prefill ?? {}); setShowJustDescribeEvent(true); }} onRequestEventDetail={(ev) => setDetailEvent(ev)} />
         : segment === 'queue'
         ? (
-          <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
             {tasksHeader}
             <HouseholdWorkQueue activeMemberId={activeMemberId ?? ''} />
           </ScrollView>

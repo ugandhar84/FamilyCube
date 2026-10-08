@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tabs, router } from 'expo-router';
 import {
-  View, Text, StyleSheet, Pressable, Animated,
+  View, Text, StyleSheet, Pressable, Animated, Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -154,9 +155,6 @@ function CustomTabBar({ state, navigation }: any) {
 
   if (isKioskMode) return null;
 
-  // Floating pill bar — detached from screen edges, rounded, with shadow
-  const pillBg = isDark ? colors.card : '#FFFFFF';
-
   return (
     <Animated.View
       pointerEvents="box-none"
@@ -176,14 +174,16 @@ function CustomTabBar({ state, navigation }: any) {
         }],
       }}
     >
-      <View
+      <BlurView
+        intensity={isDark ? 55 : 65}
+        tint={isDark ? 'dark' : 'extraLight'}
         style={[styles.bar, {
-          backgroundColor: pillBg,
+          overflow: 'hidden',
           shadowColor: isDark ? '#000' : '#2C2722',
-          shadowOpacity: isDark ? 0.35 : 0.12,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 12,
+          shadowOpacity: isDark ? 0.45 : 0.18,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 16,
         }]}
         onLayout={e => setBarHeight(e.nativeEvent.layout.height)}
       >
@@ -234,7 +234,7 @@ function CustomTabBar({ state, navigation }: any) {
             </Pressable>
           );
         })}
-      </View>
+      </BlurView>
     </Animated.View>
   );
 }
@@ -487,9 +487,9 @@ export default function TabLayout() {
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{
           headerShown: false,
-          // sceneStyle paddingBottom reserves space for the floating nav bar
-          // (bar ~56px + 10px gap + typical safe-area = ~86px total)
-          sceneStyle: { backgroundColor: colors.background, paddingBottom: 90 },
+          // No paddingBottom — content scrolls under the floating tab bar,
+          // which is position:absolute and floats above the scene.
+          sceneStyle: { backgroundColor: colors.background },
           lazy: true,
           freezeOnBlur: true,
         }}
@@ -551,7 +551,7 @@ export default function TabLayout() {
               both are focused, single-purpose screens (redeem/approve
               perks; check the family map) where a household-wide AI
               launcher doesn't add anything and just clutters the corner. */}
-          {!onChatTab && !onStoreTab && !onGpsTab && !fullBleedScreenActive
+          {!onChatTab && !onStoreTab && !onGpsTab && !onTasksTab && !fullBleedScreenActive
             && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (() => {
             // Health & Records has its own inner segmented switch (Health/
             // Immunizations/Records) nested inside one route — the FAB

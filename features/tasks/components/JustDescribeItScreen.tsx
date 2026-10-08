@@ -960,14 +960,6 @@ export default function JustDescribeItScreen({
             </View>
           </ScrollView>
 
-          {/* ── Bottom bar — only shown when no inline form open ── */}
-          {!questFormOpen && (
-            <View style={{ backgroundColor: fieldBg, paddingHorizontal: 24, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) + 4, gap: 10, borderTopWidth: 1, borderTopColor: fieldBorder }}>
-              <TouchableOpacity onPress={handleClose} style={{ height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Close · return unchanged</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Date pickers */}
           <AppDateTimePicker

@@ -14,7 +14,7 @@
  *   preview card + save button + ‹ Back
  *   date pickers rendered outside ScrollView
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   Animated, Easing, ActivityIndicator,
@@ -30,6 +30,7 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { todayLocal } from '@/lib/dates';
 import { Mic, Square } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
+import { supabase } from '@/lib/supabase';
 
 const MIN_CHARS = 3;
 
@@ -152,6 +153,15 @@ export default function JustDescribeItEventScreen({
   const [showEndDatePick, setShowEndDatePick] = useState(false);
   const [saving, setSaving]             = useState(false);
 
+  // ── Conflict detection state ───────────────────────────────────────────
+  // Map of memberId → conflict description (null = no conflict, undefined = not checked yet)
+  const [memberConflicts, setMemberConflicts] = useState<Record<string, string | null>>({});
+  const [checkingConflicts, setCheckingConflicts] = useState<Record<string, boolean>>({});
+
+  // ── Listening timer ───────────────────────────────────────────────────
+  const [listenSecs, setListenSecs] = useState(0);
+  const listenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const dictation = useVoiceDictation();
   const inputRef  = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -178,10 +188,78 @@ export default function JustDescribeItEventScreen({
     setShowEndTimePick(false);
     setShowEndDatePick(false);
     setSaving(false);
+    setMemberConflicts({});
+    setCheckingConflicts({});
+    setListenSecs(0);
     dictation.reset();
   };
 
   const handleClose = () => { reset(); onClose(); };
+
+  // ── Listening timer ───────────────────────────────────────────────────
+  const isListeningRef = useRef(false);
+  useEffect(() => {
+    const listening = dictation.state === 'listening';
+    if (listening && !isListeningRef.current) {
+      isListeningRef.current = true;
+      setListenSecs(0);
+      listenTimerRef.current = setInterval(() => setListenSecs(s => s + 1), 1000);
+    } else if (!listening && isListeningRef.current) {
+      isListeningRef.current = false;
+      if (listenTimerRef.current) { clearInterval(listenTimerRef.current); listenTimerRef.current = null; }
+    }
+    return () => { if (listenTimerRef.current) clearInterval(listenTimerRef.current); };
+  }, [dictation.state]);
+
+  // ── Conflict detection ────────────────────────────────────────────────
+  const checkMemberConflict = useCallback(async (memberId: string, date: string, startHhmm: string, endHhmm: string) => {
+    setCheckingConflicts(prev => ({ ...prev, [memberId]: true }));
+    try {
+      const member = members.find(m => m.id === memberId);
+      if (!member?.familyId) { setCheckingConflicts(prev => ({ ...prev, [memberId]: false })); return; }
+
+      const { data } = await supabase
+        .from('calendar_events')
+        .select('title, time, end_time')
+        .eq('family_id', member.familyId)
+        .eq('date', date)
+        .or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+
+      if (!data?.length) {
+        setMemberConflicts(prev => ({ ...prev, [memberId]: null }));
+        return;
+      }
+
+      const toMins = (hhmm: string) => {
+        const [h, m] = hhmm.split(':').map(Number);
+        return h * 60 + (m || 0);
+      };
+      const newStart = toMins(startHhmm);
+      const newEnd   = toMins(endHhmm);
+
+      let conflict: string | null = null;
+      for (const ev of data) {
+        if (!ev.time) continue;
+        const evStart = toMins(ev.time);
+        const evEnd   = ev.end_time ? toMins(ev.end_time) : evStart + 60;
+        if (newStart < evEnd && newEnd > evStart) {
+          conflict = `Conflicts with "${ev.title}" at ${fmt12h(ev.time)}`;
+          break;
+        }
+      }
+      setMemberConflicts(prev => ({ ...prev, [memberId]: conflict }));
+    } catch {
+      setMemberConflicts(prev => ({ ...prev, [memberId]: null }));
+    } finally {
+      setCheckingConflicts(prev => ({ ...prev, [memberId]: false }));
+    }
+  }, [members]);
+
+  // Re-check all selected members when date or time changes
+  useEffect(() => {
+    if (!formOpen || evAllDay || evMemberIds.length === 0) return;
+    evMemberIds.forEach(id => checkMemberConflict(id, evDate, evTime, evEndTime));
+  }, [evDate, evTime, evEndTime, evAllDay, formOpen]);
 
   // Live detection
   useEffect(() => {
@@ -257,7 +335,8 @@ export default function JustDescribeItEventScreen({
     }
   };
 
-  const isListening  = dictation.state === 'listening';
+  const isListening = dictation.state === 'listening';
+  const fmtListenTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
   const hasInput     = input.trim().length >= MIN_CHARS;
   const detected     = detection;
   const catLabel     = detected?.category.kind === 'event' ? detected.category.eventCategory : null;
@@ -340,7 +419,7 @@ export default function JustDescribeItEventScreen({
                 {/* Tools row */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                   <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                    {isListening ? 'Recording…' : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
+                    {isListening ? `Listening · ${fmtListenTime(listenSecs)}` : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                   </Text>
                   <TouchableOpacity
                     onPress={isListening ? handleStopVoice : () => dictation.start()}
@@ -643,23 +722,45 @@ export default function JustDescribeItEventScreen({
                         const sel = evMemberIds.includes(m.id);
                         const isAdult = m.role === 'parent';
                         const accentColor = isAdult ? colors.teal : colors.amber;
+                        const conflict = memberConflicts[m.id];
+                        const checking = checkingConflicts[m.id];
+                        const hasConflict = sel && conflict != null;
                         return (
                           <TouchableOpacity
                             key={m.id}
-                            onPress={() => setEvMemberIds(prev => sel ? prev.filter(id => id !== m.id) : [...prev, m.id])}
-                            style={{ alignItems: 'center', gap: 4 }}
+                            onPress={() => {
+                              const next = sel
+                                ? evMemberIds.filter(id => id !== m.id)
+                                : [...evMemberIds, m.id];
+                              setEvMemberIds(next);
+                              if (!sel && !evAllDay) {
+                                checkMemberConflict(m.id, evDate, evTime, evEndTime);
+                              }
+                            }}
+                            style={{ alignItems: 'center', gap: 4, maxWidth: 72 }}
                           >
                             <View style={{
                               width: 52, height: 52, borderRadius: 26,
-                              backgroundColor: sel ? accentColor : colors.card,
+                              backgroundColor: sel ? (hasConflict ? colors.danger : accentColor) : colors.card,
                               alignItems: 'center', justifyContent: 'center',
-                              borderWidth: sel ? 0 : 1.5, borderColor: colors.border,
+                              borderWidth: sel ? 0 : 1.5,
+                              borderColor: hasConflict ? colors.danger : colors.border,
                             }}>
-                              <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
-                                {m.name[0].toUpperCase()}
-                              </Text>
+                              {checking
+                                ? <ActivityIndicator size="small" color={sel ? '#FFFFFF' : accentColor} />
+                                : <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
+                                    {m.name[0].toUpperCase()}
+                                  </Text>
+                              }
+                              {hasConflict && (
+                                <View style={{ position: 'absolute', top: -2, right: -2, width: 18, height: 18, borderRadius: 9,
+                                  backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center',
+                                  borderWidth: 2, borderColor: colors.pinkLight }}>
+                                  <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '800' }}>!</Text>
+                                </View>
+                              )}
                             </View>
-                            <Text style={{ fontSize: 11, color: sel ? accentColor : colors.textSecondary, fontWeight: sel ? '700' : '400' }}>
+                            <Text style={{ fontSize: 11, color: hasConflict ? colors.danger : sel ? accentColor : colors.textSecondary, fontWeight: sel ? '700' : '400', textAlign: 'center' }}>
                               {m.name.split(' ')[0]}
                             </Text>
                           </TouchableOpacity>
@@ -669,6 +770,30 @@ export default function JustDescribeItEventScreen({
                         <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center', paddingTop: 8 }}>Tap to add family members</Text>
                       )}
                     </View>
+                    {/* Conflict warnings */}
+                    {evMemberIds.some(id => memberConflicts[id]) && (
+                      <View style={{ gap: 6 }}>
+                        {evMemberIds.filter(id => memberConflicts[id]).map(id => {
+                          const m = members.find(mb => mb.id === id);
+                          return m ? (
+                            <View key={id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+                              backgroundColor: isDark ? colors.danger + '22' : '#FEF2F2',
+                              borderRadius: 12, padding: 10,
+                              borderLeftWidth: 3, borderLeftColor: colors.danger }}>
+                              <Text style={{ fontSize: 13 }}>⚠️</Text>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>
+                                  {m.name.split(' ')[0]} has a conflict
+                                </Text>
+                                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                                  {memberConflicts[id]}
+                                </Text>
+                              </View>
+                            </View>
+                          ) : null;
+                        })}
+                      </View>
+                    )}
                   </View>
 
                   {/* ── NOTES — surface card ── */}
@@ -756,6 +881,19 @@ export default function JustDescribeItEventScreen({
                       ) : null}
                     </View>
                   </View>
+
+                  {/* Conflict summary above save */}
+                  {evMemberIds.some(id => memberConflicts[id]) && (
+                    <View style={{ backgroundColor: isDark ? colors.danger + '22' : '#FEF2F2',
+                      borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.danger + '40' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger, marginBottom: 4 }}>
+                        ⚠️ Schedule conflicts detected
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                        You can still save — conflicts are flagged but not blocked. Consider adjusting the time or who's involved.
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Save button */}
                   <TouchableOpacity

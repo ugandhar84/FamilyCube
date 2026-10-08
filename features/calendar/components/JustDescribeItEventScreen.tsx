@@ -136,6 +136,7 @@ export default function JustDescribeItEventScreen({
 
   // ── Inline event form state ────────────────────────────────────────────
   const [formOpen, setFormOpen]         = useState(false);
+  const [activeStep, setActiveStep]     = useState<0|1|2>(0); // 0=WHAT 1=WHEN 2=WHO
   const [evTitle, setEvTitle]           = useState('');
   const [evCategory, setEvCategory]     = useState('Event');
   const [evDate, setEvDate]             = useState(shiftDate(todayLocal(), 1));
@@ -318,6 +319,7 @@ export default function JustDescribeItEventScreen({
       if (m) setEvMemberIds([m.id]);
     }
     setFormOpen(true);
+    setActiveStep(0);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   };
 
@@ -381,7 +383,7 @@ export default function JustDescribeItEventScreen({
   if (!visible) return null;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
         <ScrollView
@@ -416,13 +418,8 @@ export default function JustDescribeItEventScreen({
 
             <View style={{ gap: 14 }}>
 
-              {/* ── Natural-language composer card ── */}
-              <View style={{
-                backgroundColor: colors.card, borderRadius: 20,
-                borderWidth: inputFocused || isListening ? 2 : 1,
-                borderColor: inputFocused || isListening ? activeBlue : colors.border,
-                padding: 20, gap: 12,
-              }}>
+              {/* ── Natural-language composer — bare input on canvas ── */}
+              <View style={{ gap: 10 }}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   {isListening ? 'Editable transcript · listening' : 'What\'s coming up?'}
                 </Text>
@@ -436,8 +433,9 @@ export default function JustDescribeItEventScreen({
                   placeholder="Something on the calendar?"
                   placeholderTextColor={colors.textTertiary}
                   multiline
-                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
+                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 40 }}
                 />
+                <View style={{ height: inputFocused || isListening ? 2 : 1, backgroundColor: inputFocused || isListening ? activeBlue : colors.border, borderRadius: 1 }} />
                 {/* Tools row */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                   <Text style={{ fontSize: 12, color: colors.textTertiary }}>
@@ -452,7 +450,7 @@ export default function JustDescribeItEventScreen({
                       : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
                   </TouchableOpacity>
                 </View>
-              </View>
+              </View>  {/* end composer gap View */}
 
               {/* ── Voice dictation card ── */}
               {isListening && (
@@ -565,359 +563,398 @@ export default function JustDescribeItEventScreen({
               )}
 
               {/* ══════════════════════════════════════════════════════
-                  ── Inline event form (expands below detection chips) ──
+                  ── Inline event form — accordion stepper ──
                   ══════════════════════════════════════════════════════ */}
-              {formOpen && (
-                <View style={{ gap: 16 }}>
+              {formOpen && (() => {
+                // Summary helpers for collapsed headers
+                const whatSummary = evTitle.trim()
+                  ? `${catEntry?.emoji ?? '📅'} ${evTitle.trim()}${evLocation.trim() ? `  ·  📍 ${evLocation.trim()}` : ''}`
+                  : null;
+                const whenSummary = evAllDay
+                  ? `📅 ${fmtDate(evDate)}  ·  All day`
+                  : `📅 ${fmtDate(evDate)}  ·  ${fmt12h(evTime)} – ${fmt12h(evEndTime)}`;
+                const whoSummary = evMemberIds.length > 0
+                  ? evMemberIds.map(id => members.find(m => m.id === id)?.name.split(' ')[0] ?? '').filter(Boolean).join(', ')
+                  : null;
 
-                  {/* ── WHAT — tealLight section ── */}
-                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
-                    backgroundColor: colors.tealLight,
-                    borderWidth: 1, borderColor: colors.border,
-                    shadowColor: colors.teal, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
-                    <View style={{ gap: 6 }}>
-                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.teal, opacity: 0.6 }} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHAT'S THE EVENT</Text>
-                    </View>
+                const stepAccent = [colors.teal, colors.amber, colors.pink];
 
-                    {/* Title */}
-                    <TextInput
-                      value={evTitle}
-                      onChangeText={setEvTitle}
-                      placeholder="Event title"
-                      placeholderTextColor={colors.textTertiary}
-                      style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
-                    />
-
-                    {/* Category chips */}
-                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Category</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {EVENT_CATEGORIES.map(c => (
-                        <TouchableOpacity
-                          key={c.value}
-                          onPress={() => setEvCategory(c.value)}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-                            paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14,
-                            backgroundColor: evCategory === c.value ? colors.teal : colors.card,
-                            borderWidth: 1, borderColor: evCategory === c.value ? colors.teal : colors.border }}
-                        >
-                          <Text style={{ fontSize: 14 }}>{c.emoji}</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: evCategory === c.value ? '#FFFFFF' : colors.textPrimary }}>{c.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* Location */}
-                    <TextInput
-                      value={evLocation}
-                      onChangeText={setEvLocation}
-                      placeholder="📍 Location (optional)"
-                      placeholderTextColor={colors.textTertiary}
-                      style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary }}
-                    />
-                  </View>
-
-                  {/* ── WHEN — amberLight section ── */}
-                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
-                    backgroundColor: colors.amberLight,
-                    borderWidth: 1, borderColor: colors.border,
-                    shadowColor: colors.amber, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
-                    <View style={{ gap: 6 }}>
-                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.amber, opacity: 0.6 }} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHEN</Text>
-                    </View>
-
-                    {/* All-day toggle */}
+                const StepHeader = ({ idx, label, summary, emoji }: { idx: 0|1|2; label: string; summary: string|null; emoji: string }) => {
+                  const isActive = activeStep === idx;
+                  const isDone = !isActive && summary != null;
+                  const accent = stepAccent[idx];
+                  return (
                     <TouchableOpacity
-                      onPress={() => setEvAllDay(v => !v)}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                        backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
-                        borderColor: evAllDay ? colors.amber : colors.border,
-                        paddingHorizontal: 16, paddingVertical: 14 }}
+                      onPress={() => setActiveStep(idx)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                      activeOpacity={0.7}
                     >
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>All day</Text>
-                      <View style={{ width: 36, height: 22, borderRadius: 11,
-                        backgroundColor: evAllDay ? colors.amber : colors.surface,
-                        alignItems: evAllDay ? 'flex-end' : 'flex-start',
-                        paddingHorizontal: 2, justifyContent: 'center' }}>
-                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evAllDay ? '#FFFFFF' : colors.textTertiary }} />
+                      {/* Step dot */}
+                      <View style={{ width: 28, height: 28, borderRadius: 14,
+                        backgroundColor: isActive ? accent : isDone ? accent : colors.surface,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: isActive || isDone ? 0 : 1.5, borderColor: colors.border }}>
+                        {isDone
+                          ? <Text style={{ fontSize: 14, color: '#FFFFFF' }}>✓</Text>
+                          : <Text style={{ fontSize: 13, fontWeight: '700', color: isActive ? '#FFFFFF' : colors.textTertiary }}>{idx + 1}</Text>
+                        }
                       </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: isActive ? '700' : '500',
+                          color: isActive ? accent : isDone ? colors.textPrimary : colors.textSecondary }}>
+                          {label}
+                        </Text>
+                        {!isActive && summary && (
+                          <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 1 }} numberOfLines={1}>{summary}</Text>
+                        )}
+                      </View>
+                      {!isActive && (
+                        <Text style={{ fontSize: 15, color: colors.textTertiary }}>{isActive ? '∧' : '›'}</Text>
+                      )}
                     </TouchableOpacity>
+                  );
+                };
 
-                    {/* Date + time row */}
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TouchableOpacity
-                        onPress={() => setShowDatePick(true)}
-                        style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                      >
-                        <Text style={{ fontSize: 15 }}>📅</Text>
-                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(evDate)}</Text>
-                      </TouchableOpacity>
-                      {!evAllDay && (
-                        <TouchableOpacity
-                          onPress={() => setShowTimePick(true)}
-                          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                        >
-                          <Text style={{ fontSize: 15 }}>🕐</Text>
-                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(evTime)}</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                const Divider = () => (
+                  <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: 4 }} />
+                );
 
-                    {/* End time (non-all-day) */}
-                    {!evAllDay && (
-                      <TouchableOpacity
-                        onPress={() => setShowEndTimePick(true)}
-                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                      >
-                        <Text style={{ fontSize: 15 }}>🏁</Text>
-                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>Ends {fmt12h(evEndTime)}</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {/* Repeat chips */}
-                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeat</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {RECUR_OPTIONS.map(opt => (
-                        <TouchableOpacity
-                          key={opt.value}
-                          onPress={() => setEvRecurrence(opt.value)}
-                          style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
-                            backgroundColor: evRecurrence === opt.value ? colors.amber : colors.card,
-                            borderWidth: 1, borderColor: evRecurrence === opt.value ? colors.amber : colors.border }}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: evRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* Day-of-week chips — weekly only */}
-                    {evRecurrence === 'weekly' && (
-                      <>
-                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeats on</Text>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          {['S','M','T','W','T','F','S'].map((label, idx) => {
-                            const sel = evRecurDays.includes(idx);
-                            return (
-                              <TouchableOpacity
-                                key={idx}
-                                onPress={() => setEvRecurDays(prev => sel ? prev.filter(d => d !== idx) : [...prev, idx])}
-                                style={{ flex: 1, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                                  backgroundColor: sel ? colors.amber : colors.card,
-                                  borderWidth: 1, borderColor: sel ? colors.amber : colors.border }}
-                              >
-                                <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{label}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </>
-                    )}
-
-                    {evRecurrence !== 'once' && (
-                      <>
-                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Ends on (optional)</Text>
-                        <TouchableOpacity
-                          onPress={() => setShowEndDatePick(true)}
-                          style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                        >
-                          <Text style={{ fontSize: 15 }}>🏁</Text>
-                          <Text style={{ fontSize: 14, color: evEndDate ? colors.textPrimary : colors.textTertiary }}>
-                            {evEndDate ? fmtDate(evEndDate) : 'No end date'}
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-
-                  {/* ── WHO — pinkLight section ── */}
-                  <View style={{ borderRadius: 24, padding: 20, gap: 18,
-                    backgroundColor: colors.pinkLight,
+                return (
+                  <View style={{ borderRadius: 24, backgroundColor: colors.card,
                     borderWidth: 1, borderColor: colors.border,
-                    shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
-                    <View style={{ gap: 6 }}>
-                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO</Text>
-                    </View>
+                    shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+                    overflow: 'hidden' }}>
 
-                    {/* ── Participant emoji chips ── */}
-                    <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Who's coming?</Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                        {members.map(m => {
-                          const sel = evMemberIds.includes(m.id);
-                          const isAdult = m.role === 'parent' || m.role === 'senior';
-                          const accentColor = isAdult ? colors.teal : colors.amber;
-                          const conflict = memberConflicts[m.id];
-                          const checking = checkingConflicts[m.id];
-                          const hasConflict = sel && conflict != null;
-                          return (
-                            <TouchableOpacity
-                              key={m.id}
-                              onPress={() => {
-                                const next = sel ? evMemberIds.filter(id => id !== m.id) : [...evMemberIds, m.id];
-                                setEvMemberIds(next);
-                                if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
-                              }}
-                              style={{ alignItems: 'center', gap: 5, minWidth: 56 }}
-                            >
-                              <View style={{
-                                width: 52, height: 52, borderRadius: 26,
-                                borderWidth: sel ? 2.5 : 1.5,
-                                borderColor: hasConflict ? colors.danger : sel ? accentColor : colors.border,
-                                overflow: 'hidden',
-                                opacity: sel ? 1 : 0.55,
-                              }}>
-                                {checking
-                                  ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
-                                      <ActivityIndicator size="small" color={accentColor} />
-                                    </View>
-                                  : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={52} />
-                                }
-                              </View>
-                              <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
-                                color: hasConflict ? colors.danger : sel ? accentColor : colors.textSecondary,
-                                textAlign: 'center' }}>
-                                {m.name.split(' ')[0]}
-                              </Text>
-                              {hasConflict && (
-                                <Text style={{ fontSize: 10, color: colors.danger, textAlign: 'center', marginTop: -2 }}>⚠️ busy</Text>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                      {/* Conflict warnings inline */}
-                      {evMemberIds.some(id => memberConflicts[id]) && (
-                        <View style={{ gap: 6, marginTop: 2 }}>
-                          {evMemberIds.filter(id => memberConflicts[id]).map(id => {
-                            const m = members.find(mb => mb.id === id);
-                            return m ? (
-                              <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                                backgroundColor: isDark ? colors.danger + '18' : '#FFF0EE',
-                                borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
-                                borderLeftWidth: 3, borderLeftColor: colors.danger }}>
-                                <Text style={{ fontSize: 12 }}>⚠️</Text>
-                                <Text style={{ fontSize: 12, color: colors.danger, flex: 1 }}>
-                                  <Text style={{ fontWeight: '700' }}>{m.name.split(' ')[0]}</Text>
-                                  {' · '}{memberConflicts[id]}
-                                </Text>
-                              </View>
-                            ) : null;
-                          })}
+                    {/* ── WHAT step ── */}
+                    <View style={{ padding: 20, gap: activeStep === 0 ? 16 : 0 }}>
+                      <StepHeader idx={0} label="What's the event?" summary={whatSummary} emoji="📅" />
+                      {activeStep === 0 && (
+                        <View style={{ gap: 12 }}>
+                          <TextInput
+                            value={evTitle}
+                            onChangeText={setEvTitle}
+                            placeholder="Event title"
+                            placeholderTextColor={colors.textTertiary}
+                            style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 13, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                          />
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                            {EVENT_CATEGORIES.map(c => (
+                              <TouchableOpacity
+                                key={c.value}
+                                onPress={() => setEvCategory(c.value)}
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14,
+                                  backgroundColor: evCategory === c.value ? colors.teal : colors.surface,
+                                  borderWidth: 1, borderColor: evCategory === c.value ? colors.teal : colors.border }}
+                              >
+                                <Text style={{ fontSize: 14 }}>{c.emoji}</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: evCategory === c.value ? '#FFFFFF' : colors.textPrimary }}>{c.label}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          <TextInput
+                            value={evLocation}
+                            onChangeText={setEvLocation}
+                            placeholder="📍 Location (optional)"
+                            placeholderTextColor={colors.textTertiary}
+                            style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: colors.textPrimary }}
+                          />
+                          <TouchableOpacity
+                            onPress={() => setActiveStep(1)}
+                            disabled={!evTitle.trim()}
+                            style={{ height: 48, borderRadius: 14, backgroundColor: evTitle.trim() ? colors.teal : colors.surface,
+                              alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: evTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>
+                              Next: When? →
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                       )}
                     </View>
 
-                    {/* ── Ride needed? (hidden when category is Ride) ── */}
-                    {evCategory !== 'Ride' && (
-                      <View style={{ gap: 10 }}>
-                        <TouchableOpacity
-                          onPress={() => setEvRideNeeded(v => !v)}
-                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Text style={{ fontSize: 16 }}>🚗</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Ride needed?</Text>
-                          </View>
-                          <View style={{ width: 36, height: 22, borderRadius: 11,
-                            backgroundColor: evRideNeeded ? colors.amber : colors.surface,
-                            alignItems: evRideNeeded ? 'flex-end' : 'flex-start',
-                            paddingHorizontal: 2, justifyContent: 'center' }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evRideNeeded ? '#FFFFFF' : colors.border }} />
-                          </View>
-                        </TouchableOpacity>
+                    <Divider />
 
-                        {evRideNeeded && (
-                          <View style={{ gap: 10 }}>
-                            <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TextInput
-                                value={evPickupFrom}
-                                onChangeText={setEvPickupFrom}
-                                placeholder="From"
-                                placeholderTextColor={colors.textTertiary}
-                                style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
-                              />
-                              <TextInput
-                                value={evDropTo}
-                                onChangeText={setEvDropTo}
-                                placeholder="To"
-                                placeholderTextColor={colors.textTertiary}
-                                style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
-                              />
+                    {/* ── WHEN step ── */}
+                    <View style={{ padding: 20, gap: activeStep === 1 ? 14 : 0 }}>
+                      <StepHeader idx={1} label="When is it?" summary={whenSummary} emoji="🗓️" />
+                      {activeStep === 1 && (
+                        <View style={{ gap: 10 }}>
+                          {/* All-day toggle */}
+                          <TouchableOpacity
+                            onPress={() => setEvAllDay(v => !v)}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                              paddingVertical: 4 }}
+                          >
+                            <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>All day</Text>
+                            <View style={{ width: 36, height: 22, borderRadius: 11,
+                              backgroundColor: evAllDay ? colors.amber : colors.surface,
+                              alignItems: evAllDay ? 'flex-end' : 'flex-start',
+                              paddingHorizontal: 2, justifyContent: 'center' }}>
+                              <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evAllDay ? '#FFFFFF' : colors.border }} />
                             </View>
-                            {/* Driver emoji chips */}
-                            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '500' }}>Who's driving?</Text>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                              {driverCandidates.map(m => {
-                                const sel = evDriverId === m.id;
-                                const conflict = memberConflicts[m.id];
-                                const checking = checkingConflicts[m.id];
-                                const hasConflict = sel && conflict != null;
+                          </TouchableOpacity>
+                          {/* Date + time */}
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => setShowDatePick(true)}
+                              style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                            >
+                              <Text style={{ fontSize: 15 }}>📅</Text>
+                              <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(evDate)}</Text>
+                            </TouchableOpacity>
+                            {!evAllDay && (
+                              <TouchableOpacity
+                                onPress={() => setShowTimePick(true)}
+                                style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                              >
+                                <Text style={{ fontSize: 15 }}>🕐</Text>
+                                <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(evTime)}</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                          {!evAllDay && (
+                            <TouchableOpacity
+                              onPress={() => setShowEndTimePick(true)}
+                              style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                            >
+                              <Text style={{ fontSize: 15 }}>🏁</Text>
+                              <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>Ends {fmt12h(evEndTime)}</Text>
+                            </TouchableOpacity>
+                          )}
+                          {/* Repeat */}
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            {RECUR_OPTIONS.map(opt => (
+                              <TouchableOpacity
+                                key={opt.value}
+                                onPress={() => setEvRecurrence(opt.value)}
+                                style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
+                                  backgroundColor: evRecurrence === opt.value ? colors.amber : colors.surface,
+                                  borderWidth: 1, borderColor: evRecurrence === opt.value ? colors.amber : colors.border }}
+                              >
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: evRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          {evRecurrence === 'weekly' && (
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              {['S','M','T','W','T','F','S'].map((lbl, idx) => {
+                                const sel = evRecurDays.includes(idx);
                                 return (
                                   <TouchableOpacity
-                                    key={m.id}
-                                    onPress={() => {
-                                      setEvDriverId(sel ? undefined : m.id);
-                                      if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
-                                    }}
-                                    style={{ alignItems: 'center', gap: 5, minWidth: 56 }}
+                                    key={idx}
+                                    onPress={() => setEvRecurDays(prev => sel ? prev.filter(d => d !== idx) : [...prev, idx])}
+                                    style={{ flex: 1, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                                      backgroundColor: sel ? colors.amber : colors.surface,
+                                      borderWidth: 1, borderColor: sel ? colors.amber : colors.border }}
                                   >
-                                    <View style={{
-                                      width: 48, height: 48, borderRadius: 24,
-                                      borderWidth: sel ? 2.5 : 1.5,
-                                      borderColor: hasConflict ? colors.danger : sel ? colors.amber : colors.border,
-                                      overflow: 'hidden',
-                                      opacity: sel ? 1 : 0.55,
-                                    }}>
-                                      {checking
-                                        ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
-                                            <ActivityIndicator size="small" color={colors.amber} />
-                                          </View>
-                                        : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={48} />
-                                      }
-                                    </View>
-                                    <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
-                                      color: hasConflict ? colors.danger : sel ? colors.amber : colors.textSecondary,
-                                      textAlign: 'center' }}>
-                                      {m.name.split(' ')[0]}
-                                    </Text>
+                                    <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{lbl}</Text>
                                   </TouchableOpacity>
                                 );
                               })}
-                              {driverCandidates.length === 0 && (
-                                <Text style={{ fontSize: 12, color: colors.textTertiary }}>No eligible drivers</Text>
+                            </View>
+                          )}
+                          {evRecurrence !== 'once' && (
+                            <TouchableOpacity
+                              onPress={() => setShowEndDatePick(true)}
+                              style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                            >
+                              <Text style={{ fontSize: 15 }}>🏁</Text>
+                              <Text style={{ fontSize: 14, color: evEndDate ? colors.textPrimary : colors.textTertiary }}>
+                                {evEndDate ? fmtDate(evEndDate) : 'No end date'}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            onPress={() => setActiveStep(2)}
+                            style={{ height: 48, borderRadius: 14, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Next: Who? →</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+
+                    <Divider />
+
+                    {/* ── WHO step ── */}
+                    <View style={{ padding: 20, gap: activeStep === 2 ? 16 : 0 }}>
+                      <StepHeader idx={2} label="Who's involved?" summary={whoSummary} emoji="👥" />
+                      {activeStep === 2 && (
+                        <View style={{ gap: 14 }}>
+                          {/* Participant emoji chips */}
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                            {members.map(m => {
+                              const sel = evMemberIds.includes(m.id);
+                              const isAdult = m.role === 'parent' || m.role === 'senior';
+                              const accentColor = isAdult ? colors.teal : colors.amber;
+                              const conflict = memberConflicts[m.id];
+                              const checking = checkingConflicts[m.id];
+                              const hasConflict = sel && conflict != null;
+                              return (
+                                <TouchableOpacity
+                                  key={m.id}
+                                  onPress={() => {
+                                    const next = sel ? evMemberIds.filter(id => id !== m.id) : [...evMemberIds, m.id];
+                                    setEvMemberIds(next);
+                                    if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
+                                  }}
+                                  style={{ alignItems: 'center', gap: 5, minWidth: 56 }}
+                                >
+                                  <View style={{
+                                    width: 52, height: 52, borderRadius: 26,
+                                    borderWidth: sel ? 2.5 : 1.5,
+                                    borderColor: hasConflict ? colors.danger : sel ? accentColor : colors.border,
+                                    overflow: 'hidden', opacity: sel ? 1 : 0.5,
+                                  }}>
+                                    {checking
+                                      ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+                                          <ActivityIndicator size="small" color={accentColor} />
+                                        </View>
+                                      : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={52} />
+                                    }
+                                  </View>
+                                  <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
+                                    color: hasConflict ? colors.danger : sel ? accentColor : colors.textSecondary, textAlign: 'center' }}>
+                                    {m.name.split(' ')[0]}
+                                  </Text>
+                                  {hasConflict && <Text style={{ fontSize: 10, color: colors.danger, textAlign: 'center', marginTop: -2 }}>⚠️</Text>}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                          {/* Conflict banners */}
+                          {evMemberIds.some(id => memberConflicts[id]) && (
+                            <View style={{ gap: 6 }}>
+                              {evMemberIds.filter(id => memberConflicts[id]).map(id => {
+                                const m = members.find(mb => mb.id === id);
+                                return m ? (
+                                  <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                                    backgroundColor: isDark ? colors.danger + '18' : '#FFF0EE',
+                                    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+                                    borderLeftWidth: 3, borderLeftColor: colors.danger }}>
+                                    <Text style={{ fontSize: 12, color: colors.danger, flex: 1 }}>
+                                      <Text style={{ fontWeight: '700' }}>⚠️ {m.name.split(' ')[0]}</Text>
+                                      {' · '}{memberConflicts[id]}
+                                    </Text>
+                                  </View>
+                                ) : null;
+                              })}
+                            </View>
+                          )}
+                          {/* Ride toggle */}
+                          {evCategory !== 'Ride' && (
+                            <View style={{ gap: 10 }}>
+                              <TouchableOpacity
+                                onPress={() => setEvRideNeeded(v => !v)}
+                                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text style={{ fontSize: 16 }}>🚗</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Ride needed?</Text>
+                                </View>
+                                <View style={{ width: 36, height: 22, borderRadius: 11,
+                                  backgroundColor: evRideNeeded ? colors.amber : colors.surface,
+                                  alignItems: evRideNeeded ? 'flex-end' : 'flex-start',
+                                  paddingHorizontal: 2, justifyContent: 'center' }}>
+                                  <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evRideNeeded ? '#FFFFFF' : colors.border }} />
+                                </View>
+                              </TouchableOpacity>
+                              {evRideNeeded && (
+                                <View style={{ gap: 10 }}>
+                                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                                    <TextInput
+                                      value={evPickupFrom}
+                                      onChangeText={setEvPickupFrom}
+                                      placeholder="From"
+                                      placeholderTextColor={colors.textTertiary}
+                                      style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
+                                    />
+                                    <TextInput
+                                      value={evDropTo}
+                                      onChangeText={setEvDropTo}
+                                      placeholder="To"
+                                      placeholderTextColor={colors.textTertiary}
+                                      style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
+                                    />
+                                  </View>
+                                  <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '500' }}>Who's driving?</Text>
+                                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                                    {driverCandidates.map(m => {
+                                      const sel = evDriverId === m.id;
+                                      const conflict = memberConflicts[m.id];
+                                      const checking = checkingConflicts[m.id];
+                                      const hasConflict = sel && conflict != null;
+                                      return (
+                                        <TouchableOpacity
+                                          key={m.id}
+                                          onPress={() => {
+                                            setEvDriverId(sel ? undefined : m.id);
+                                            if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
+                                          }}
+                                          style={{ alignItems: 'center', gap: 5, minWidth: 52 }}
+                                        >
+                                          <View style={{ width: 48, height: 48, borderRadius: 24,
+                                            borderWidth: sel ? 2.5 : 1.5,
+                                            borderColor: hasConflict ? colors.danger : sel ? colors.amber : colors.border,
+                                            overflow: 'hidden', opacity: sel ? 1 : 0.5 }}>
+                                            {checking
+                                              ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+                                                  <ActivityIndicator size="small" color={colors.amber} />
+                                                </View>
+                                              : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={48} />
+                                            }
+                                          </View>
+                                          <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
+                                            color: hasConflict ? colors.danger : sel ? colors.amber : colors.textSecondary, textAlign: 'center' }}>
+                                            {m.name.split(' ')[0]}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                </View>
                               )}
                             </View>
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    {/* ── Private toggle ── */}
-                    <TouchableOpacity
-                      onPress={() => setEvIsPrivate(v => !v)}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ fontSize: 16 }}>{evIsPrivate ? '🔒' : '👁️'}</Text>
-                        <View>
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
-                            {evIsPrivate ? 'Private event' : 'Visible to family'}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
-                            {evIsPrivate ? 'Only participants can see this' : 'All family members can see this'}
-                          </Text>
+                          )}
+                          {/* Private toggle */}
+                          <TouchableOpacity
+                            onPress={() => setEvIsPrivate(v => !v)}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <Text style={{ fontSize: 16 }}>{evIsPrivate ? '🔒' : '👁️'}</Text>
+                              <View>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+                                  {evIsPrivate ? 'Private' : 'Visible to family'}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
+                                  {evIsPrivate ? 'Only participants will see this' : 'All family members can see this'}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={{ width: 36, height: 22, borderRadius: 11,
+                              backgroundColor: evIsPrivate ? colors.pink : colors.surface,
+                              alignItems: evIsPrivate ? 'flex-end' : 'flex-start',
+                              paddingHorizontal: 2, justifyContent: 'center' }}>
+                              <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evIsPrivate ? '#FFFFFF' : colors.border }} />
+                            </View>
+                          </TouchableOpacity>
+                          {/* Notes */}
+                          <TextInput
+                            value={evNotes}
+                            onChangeText={setEvNotes}
+                            placeholder="Notes (optional)"
+                            placeholderTextColor={colors.textTertiary}
+                            multiline
+                            style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary, minHeight: 60 }}
+                          />
                         </View>
-                      </View>
-                      <View style={{ width: 36, height: 22, borderRadius: 11,
-                        backgroundColor: evIsPrivate ? colors.pink : colors.surface,
-                        alignItems: evIsPrivate ? 'flex-end' : 'flex-start',
-                        paddingHorizontal: 2, justifyContent: 'center' }}>
-                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evIsPrivate ? '#FFFFFF' : colors.border }} />
-                      </View>
-                    </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
+                );
+              })()}
 
                   {/* ── NOTES — surface card ── */}
                   <View style={{ borderRadius: 24, padding: 20, gap: 14,
@@ -1034,9 +1071,6 @@ export default function JustDescribeItEventScreen({
                   <TouchableOpacity onPress={() => setFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
                     <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>‹ Back · edit description</Text>
                   </TouchableOpacity>
-
-                </View>
-              )}
 
             </View>
           </View>

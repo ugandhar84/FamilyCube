@@ -13,8 +13,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Modal, Animated, Easing, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Switch,
+  StyleSheet, Animated, Easing, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
@@ -322,10 +322,11 @@ export default function JustDescribeItScreen({
     { label: 'Monthly', value: 'monthly' },
   ];
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top']}>
-        <KeyboardAvoidingView style={{ flex: 1, backgroundColor: canvasBg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView style={[StyleSheet.absoluteFillObject, { backgroundColor: canvasBg, zIndex: 999 }]} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
           <ScrollView
             ref={scrollRef}
@@ -991,8 +992,7 @@ export default function JustDescribeItScreen({
             onCancel={() => setQuestShowEndDatePick(false)}
           />
 
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

@@ -373,6 +373,9 @@ export function useQuestStore() {
       if (updates.title         !== undefined) choreUpdates.title             = updates.title;
       if (updates.description   !== undefined) choreUpdates.description       = updates.description;
       if (updates.coins         !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
+      if (updates.bonusCoins    !== undefined) choreUpdates.bonusCoins        = updates.bonusCoins;
+      if (updates.maxClaimants  !== undefined) choreUpdates.maxClaimants      = updates.maxClaimants;
+      if (updates.category      !== undefined) choreUpdates.category          = updates.category as any;
       if (updates.dueDate       !== undefined) choreUpdates.dueDate           = updates.dueDate;
       if (updates.dueTime       !== undefined) choreUpdates.dueTime           = updates.dueTime;
       if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
@@ -554,25 +557,24 @@ useQuestStore.getState = () => {
     quests: store.chores.map(choreToQuest),
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {
       const choreUpdates: Partial<ChoreTask> = {};
+      if (updates.title          !== undefined) choreUpdates.title             = updates.title;
+      if (updates.description    !== undefined) choreUpdates.description       = updates.description;
       if (updates.coins          !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
-      // Was a no-op — "up to N kids" already had a full built UI
-      // (AddQuestAssignSection's picker, QuestCard's "Full — X/Y claimed"
-      // copy) but the value was never actually persisted anywhere, so
-      // every multi-slot bounty setting silently did nothing and every
-      // pool chore behaved as first-come-single-claimant regardless of
-      // what the parent picked. Now wired through to chore_tasks.max_claimants.
-      if (updates.maxClaimants   !== undefined) choreUpdates.maxClaimants  = updates.maxClaimants;
-      if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins    = updates.bonusCoins;
-      if (updates.difficulty     !== undefined) choreUpdates.difficulty    = updates.difficulty;
-      if (updates.dueDate        !== undefined) choreUpdates.dueDate       = updates.dueDate;
-      if (updates.dueTime        !== undefined) choreUpdates.dueTime       = updates.dueTime;
+      if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins        = updates.bonusCoins;
+      if (updates.maxClaimants   !== undefined) choreUpdates.maxClaimants      = updates.maxClaimants;
+      if (updates.category       !== undefined) choreUpdates.category          = updates.category as any;
+      if (updates.difficulty     !== undefined) choreUpdates.difficulty        = updates.difficulty;
+      if (updates.photoRequired  !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
+      if (updates.assignedToId   !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
+      if (updates.linkedEventId  !== undefined) choreUpdates.linkedEventId     = updates.linkedEventId;
+      if (updates.dueDate        !== undefined) choreUpdates.dueDate           = updates.dueDate;
+      if (updates.dueTime        !== undefined) choreUpdates.dueTime           = updates.dueTime;
       if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
       if (updates.alertCallLeadMinutes !== undefined) choreUpdates.alertCallLeadMinutes = updates.alertCallLeadMinutes;
       if (updates.recurrence && ['once', 'daily', 'weekly', 'monthly'].includes(updates.recurrence)) {
         choreUpdates.recurrenceRule = { frequency: updates.recurrence as 'once' | 'daily' | 'weekly' | 'monthly' };
       }
-      if (updates.assignedToId   !== undefined) choreUpdates.assignedToId  = updates.assignedToId;
-      if ((updates as any).isPool !== undefined) choreUpdates.isPool       = (updates as any).isPool;
+      if ((updates as any).isPool !== undefined) choreUpdates.isPool           = (updates as any).isPool;
       if ((updates as any).isAdultTask !== undefined) {
         const adult = (updates as any).isAdultTask as boolean;
         choreUpdates.isPrivateParent = adult;

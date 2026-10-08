@@ -252,7 +252,7 @@ export default function AppHeader({
         onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
         {/* Main row: avatar + greeting/name + actions */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: colors.background }}>
+          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
           <TouchableOpacity
             onPress={handlePersonaPress} activeOpacity={0.75}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
@@ -300,7 +300,7 @@ export default function AppHeader({
   return (
     <View style={{ position: 'relative', zIndex: 30 }}
       onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
-    <View style={[s.bar, { backgroundColor: colors.background }]}>
+    <View style={[s.bar, { backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }]}>
 
       {/* LEFT: persona header (two-line: name+mode, family+switch) — the
           animated cube mark used to live here; it's reserved for loading

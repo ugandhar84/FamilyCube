@@ -43,7 +43,7 @@ export function PageTopBar({
     <View style={{
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4,
-      backgroundColor: colors.background,
+      backgroundColor: isDark ? '#0E0C13' : '#FFFFFF',
     }}>
       {/* Left: avatar + eyebrow/name */}
       <TouchableOpacity

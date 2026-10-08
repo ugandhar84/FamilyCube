@@ -212,11 +212,11 @@ export default function MonthGridView({
                 style={{ width: `${100/7}%`, height: 46, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                 <View style={{
                   width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isSel ? (isDark ? '#5265b1' : '#5265b1') : isToday ? (isDark ? 'rgba(102,119,189,0.25)' : '#e9edfb') : 'transparent',
+                  backgroundColor: isSel ? '#345de3' : isToday ? (isDark ? '#253862' : '#e9efff') : 'transparent',
                 }}>
                   <Text style={{
                     fontSize: 13, fontWeight: isToday || isSel ? '700' : '400',
-                    color: isSel ? '#fff' : isToday ? (isDark ? '#A89CD0' : '#5265b1') : colors.textPrimary,
+                    color: isSel ? (isDark ? '#102a6b' : '#fff') : isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textPrimary,
                   }}>
                     {date.getDate()}
                   </Text>

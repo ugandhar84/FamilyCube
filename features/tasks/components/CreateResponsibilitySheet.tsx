@@ -164,7 +164,7 @@ export function CreateResponsibilitySheet({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={['top', 'bottom']}>
         {/* ── Fixed page header ───────────────────────────────────────────── */}
         <View style={[s.pageHeader, { borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)' }]}>
           <View style={s.chromeRow}>

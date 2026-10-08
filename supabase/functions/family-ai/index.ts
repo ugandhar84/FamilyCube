@@ -513,7 +513,12 @@ Input: "${text}"
 
 Return JSON: {
   task: null | {
-    title: string,
+    title: string — a short, clean, action-verb task name (2–5 words). Strip all scheduling
+      details (times, dates, days, "every Monday", "by Friday"), filler words, and any
+      person's name unless the name IS the task identity (e.g. "Call Grandma"). Start with
+      an imperative verb. Examples: "Water the plants", "Take out the trash", "Finish math
+      homework", "Clean the garage", "Walk the dog", "Pay electricity bill". Never return
+      the raw input text — always distil it into a crisp, board-ready task title.
     category: one of ${JSON.stringify(taskDomains)} (pick the closest match, never invent a new value),
     kind: "event" | "quest" — decide using this rule, in order:
       1. Does the input mention a driver, ride, pickup, or drop-off ("pick up X from Y",

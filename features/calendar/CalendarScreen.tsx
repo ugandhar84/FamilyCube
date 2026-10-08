@@ -1385,16 +1385,16 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 }
               }}>
 
-              {/* Figma .day-summary — AT A GLANCE card (exact bg: #e9edfb) */}
+              {/* Figma .day-summary — AT A GLANCE card */}
               <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}>
                 <View style={{
                   marginHorizontal: 20, marginTop: 4, marginBottom: 12,
                   borderRadius: 22, padding: 18,
-                  backgroundColor: isDark ? 'rgba(102,119,189,0.18)' : '#e9edfb',
+                  backgroundColor: isDark ? '#253862' : '#e9efff',
                 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#A89CD0' : '#5265b1', letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#b1c4ff' : '#294fc7', letterSpacing: 1.1, textTransform: 'uppercase' }}>
                         AT A GLANCE
                       </Text>
                       <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginTop: 4 }}>
@@ -1431,17 +1431,17 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                       );
                     })()}
                   </View>
-                  {/* Day nav arrows — Figma periwinkle #5c6eb5 */}
+                  {/* Day nav arrows */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
                     <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <I.ChevronLeft c={isDark ? '#A89CD0' : '#5c6eb5'} size={14} />
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#A89CD0' : '#5c6eb5' }}>Previous</Text>
+                      <I.ChevronLeft c={isDark ? '#b1c4ff' : '#294fc7'} size={14} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#b1c4ff' : '#294fc7' }}>Previous</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#A89CD0' : '#5c6eb5' }}>Next</Text>
-                      <I.ChevronRight c={isDark ? '#A89CD0' : '#5c6eb5'} size={14} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#b1c4ff' : '#294fc7' }}>Next</Text>
+                      <I.ChevronRight c={isDark ? '#b1c4ff' : '#294fc7'} size={14} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1466,18 +1466,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 onAddAtTime={(_hourTimeKey) => { setShowAdd(true); }}
               />
 
-              {/* Figma .floating-add — full-width button, bg #6677bd (periwinkle) */}
+              {/* Figma .floating-add — primary action button */}
               {isParentOrSenior && !hideCreateButton && (
                 <TouchableOpacity
                   onPress={() => setShowAdd(true)}
                   style={{
                     marginHorizontal: 20, marginTop: 14, marginBottom: 8,
                     height: 48, borderRadius: 14,
-                    backgroundColor: isDark ? 'rgba(102,119,189,0.5)' : '#6677bd',
+                    backgroundColor: isDark ? '#99b3ff' : '#345de3',
                     alignItems: 'center', justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 0.1 }}>+ Add event</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#102a6b' : '#fff', letterSpacing: 0.1 }}>+ Add event</Text>
                 </TouchableOpacity>
               )}
             </ScrollView>

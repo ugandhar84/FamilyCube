@@ -493,13 +493,15 @@ export default function TasksScreen() {
         onClose={() => setShowJustDescribe(false)}
         onOpenFullForm={(kind, prefill) => {
           setShowJustDescribe(false);
-          if (kind === 'quest') {
-            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
-            setShowManualQuest(true);
-          } else {
-            setManualEventPrefill(prefill as typeof manualEventPrefill);
-            setShowManualEvent(true);
-          }
+          setTimeout(() => {
+            if (kind === 'quest') {
+              setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+              setShowManualQuest(true);
+            } else {
+              setManualEventPrefill(prefill as typeof manualEventPrefill);
+              setShowManualEvent(true);
+            }
+          }, 350);
         }}
       />
 

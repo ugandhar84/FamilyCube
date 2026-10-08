@@ -1,114 +1,57 @@
 /**
  * ReviewInboxScreen — "Notice the effort"
  *
- * Pixel-faithful port of Figma node 90:8860, re-skinned in the Kinfolk palette.
- * Shows the parent's pending chore-submission review deck with filter pills,
- * a primary CTA that deep-links into the Quests tab, and supporting context cards.
+ * Pixel-faithful port of the Figma review-inbox spec:
+ *   • White card — "Ready for your review" list
+ *   • Mint card — workflow status pill + explanation + secondary nav
+ *   • Peach card — primary + secondary CTA buttons
+ *   • White card — recently decided items
+ *   • Full-width primary CTA
+ *   • Mint domain-module footer
  */
 import React, { useState, useMemo } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  TouchableOpacity,
-  Platform,
+  View, Text, ScrollView, Pressable, TouchableOpacity, Platform, StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
-import { RADIUS } from '@/constants/theme';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type FilterKey = 'pending' | 'decided' | 'all';
 
 export type ReviewItemType = 'chore' | 'quest';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
-function memberFirstName(memberId: string | undefined, members: FamilyMember[]): string {
+function firstName(memberId: string | undefined, members: FamilyMember[]): string {
   if (!memberId) return 'Someone';
-  const m = members.find((m: FamilyMember) => m.id === memberId);
-  if (!m) return 'Someone';
-  return m.name.split(' ')[0] ?? m.name;
+  const m = members.find(m => m.id === memberId);
+  return m ? (m.name.split(' ')[0] ?? m.name) : 'Someone';
 }
 
-function choreTypeLabel(categoryType: string): string {
+function typeLabel(categoryType: string): string {
   switch (categoryType) {
-    case 'bounty':             return 'Quest';
-    case 'grandparent_quest':  return 'GP Quest';
-    case 'parent_only_quest':  return 'Task';
-    case 'shopping':           return 'Shopping';
-    case 'routine':            return 'Chore';
-    case 'citizenship':        return 'Chore';
-    default:                   return 'Chore';
+    case 'bounty':            return 'Quest';
+    case 'grandparent_quest': return 'GP Quest';
+    case 'parent_only_quest': return 'Task';
+    case 'shopping':          return 'Shopping';
+    default:                  return 'Chore';
   }
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-interface FilterPillsProps {
-  active: FilterKey;
-  pendingCount: number;
-  onSelect: (key: FilterKey) => void;
-  colors: any;
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'pending_approval': return 'Awaiting review';
+    case 'approved':         return 'Approved';
+    case 'auto_approved':    return 'Auto-approved';
+    case 'declined':         return 'Declined';
+    case 'redo_requested':   return 'Redo requested';
+    case 'completed':        return 'Completed';
+    default:                 return status;
+  }
 }
 
-function FilterPills({ active, pendingCount, onSelect, colors }: FilterPillsProps) {
-  const pills: { key: FilterKey; label: string }[] = [
-    { key: 'pending', label: `Pending · ${pendingCount}` },
-    { key: 'decided', label: 'Decided' },
-    { key: 'all',     label: 'All' },
-  ];
-
-  return (
-    <View style={{
-      flexDirection: 'row',
-      backgroundColor: colors.amberLight,
-      borderRadius: 14,
-      padding: 4,
-      gap: 4,
-      alignSelf: 'flex-start',
-    }}>
-      {pills.map(pill => {
-        const isActive = pill.key === active;
-        return (
-          <Pressable
-            key={pill.key}
-            onPress={() => onSelect(pill.key)}
-            style={({ pressed }) => ({
-              borderRadius: 11,
-              paddingVertical: 5,
-              paddingHorizontal: 12,
-              backgroundColor: isActive ? colors.card : 'transparent',
-              opacity: pressed ? 0.75 : 1,
-              ...(isActive && Platform.OS === 'ios' ? {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.08,
-                shadowRadius: 3,
-              } : {}),
-              ...(isActive && Platform.OS === 'android' ? { elevation: 1 } : {}),
-            })}
-          >
-            <Text style={{
-              fontSize: 13,
-              fontWeight: '400',
-              color: isActive ? colors.primary : colors.textSecondary,
-            }}>
-              {pill.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── main ─────────────────────────────────────────────────────────────────────
 
 export function ReviewInboxScreen({ onSelectItem, onClose }: {
   onSelectItem?: (choreId: string, type: ReviewItemType) => void;
@@ -118,341 +61,286 @@ export function ReviewInboxScreen({ onSelectItem, onClose }: {
   const { getParentReviewDeck, chores } = useChoreStore();
   const { members, activeMemberId, familyName } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId);
+  const insets = useSafeAreaInsets();
 
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
-
-  // Pending = pending_approval
   const pendingReviews = useMemo(() => getParentReviewDeck(), [chores]);
-
-  // Decided = approved / auto_approved / completed / declined / redo_requested
   const decidedReviews = useMemo(() =>
     chores.filter(c =>
       ['approved', 'auto_approved', 'completed', 'declined', 'redo_requested'].includes(c.status)
-    ).slice(0, 10), // cap for display
+    ).slice(0, 6),
   [chores]);
 
-  const visibleItems = useMemo(() => {
-    if (activeFilter === 'pending') return pendingReviews;
-    if (activeFilter === 'decided') return decidedReviews;
-    return [...pendingReviews, ...decidedReviews];
-  }, [activeFilter, pendingReviews, decidedReviews]);
-
   const firstItem = pendingReviews[0];
-  const firstItemTitle = firstItem?.title ?? 'the first submission';
 
-  const openFirstItem = () => {
-    if (!firstItem) return;
-    const type: ReviewItemType = firstItem.categoryType === 'bounty' ? 'quest' : 'chore';
-    onSelectItem?.(firstItem.id, type);
+  const open = (id: string, cat: string) => {
+    const t: ReviewItemType = cat === 'bounty' ? 'quest' : 'chore';
+    onSelectItem?.(id, t);
   };
 
-  const navigateToQuests = () => {
-    openFirstItem();
-  };
+  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
 
-  const fieldBorder = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  // Figma tones → brand tokens
+  const cardWhiteBg   = isDark ? colors.card    : '#FFFFFF';
+  const cardMintBg    = isDark ? '#0D1F18'      : '#DDF5EC';  // tealLight equivalent
+  const cardPeachBg   = isDark ? '#1E1210'      : '#FFE8E3';  // primaryLight equivalent
+  const mintText      = isDark ? colors.teal    : '#16705F';
+  const mintPillBg    = isDark ? '#133328'      : '#C8EEE1';
+  const linkBlue      = isDark ? colors.teal    : colors.teal;
+  const primaryBtnBg  = colors.primary;
+  const secondaryBtnBg  = isDark ? colors.surface : '#FFFFFF';
+  const secondaryBorder = isDark ? colors.border  : '#DFE5EF';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
-      {/* ── Fixed page header ── */}
+    <View style={{ flex: 1, backgroundColor: canvas }}>
+
+      {/* ── Header ── */}
       <View style={{
-        paddingHorizontal: 24,
-        paddingTop: 12,
+        paddingHorizontal: 20,
+        paddingTop: insets.top + 12,
         paddingBottom: 16,
-        borderBottomWidth: 1,
+        borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        backgroundColor: canvas,
         gap: 8,
       }}>
+        {/* Household chrome */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-            {familyName?.toUpperCase() ?? 'FAMILY'}
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary, lineHeight: 15 }}>
+            {familyName?.toUpperCase() ?? 'FAMILY SPACE'}
           </Text>
-          {activeMember ? (
-            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-              {activeMember.name} · {activeMember.role}
+          {activeMember && (
+            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>
+              {activeMember.name}
             </Text>
-          ) : null}
+          )}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+
+        {/* Page introduction */}
+        <View style={{ gap: 4 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Hub</Text>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
               Review inbox
             </Text>
+            <Pressable
+              onPress={onClose}
+              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
+            >
+              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            </Pressable>
           </View>
-          <Pressable
-            onPress={onClose}
-            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-          >
-            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
-          </Pressable>
         </View>
       </View>
 
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
-      showsVerticalScrollIndicator={false}
-    >
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: 48 }}
+        showsVerticalScrollIndicator={false}
+      >
 
-      {/* ── Pending count ───────────────────────────────────────────── */}
-      <Text style={{
-        fontSize: 13,
-        fontWeight: '500',
-        color: colors.textPrimary,
-        lineHeight: 18.2,
-        marginTop: -8,
-      }}>
-        {pendingReviews.length} submission{pendingReviews.length !== 1 ? 's' : ''} awaiting a decision.
-      </Text>
-
-      {/* ── Filter pills + sort chip row ────────────────────────────── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: -4 }}>
-        <FilterPills
-          active={activeFilter}
-          pendingCount={pendingReviews.length}
-          onSelect={setActiveFilter}
-          colors={colors}
-        />
-
-        <Pressable
-          style={({ pressed }) => ({
-            borderRadius: 100,
-            paddingVertical: 5,
-            paddingHorizontal: 10,
-            backgroundColor: colors.primaryLight,
-            opacity: pressed ? 0.75 : 1,
-          })}
-        >
-          <Text style={{
-            fontSize: 12,
-            fontWeight: '600',
-            color: colors.primary,
-          }}>
-            All members · all categories
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* ── "Ready for your review" card ────────────────────────────── */}
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 22,
-        padding: 18,
-        gap: 12,
-        ...Platform.select({
-          ios: {
-            shadowColor: colors.navy,
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: isDark ? 0.18 : 0.07,
-            shadowRadius: 8,
-          },
-          android: { elevation: 2 },
-        }),
-      }}>
-        <Text style={{
-          fontSize: 20,
-          fontWeight: '600',
-          color: colors.textPrimary,
+        {/* ── Card 1: white — "Ready for your review" ── */}
+        <View style={{
+          backgroundColor: cardWhiteBg, borderRadius: 22, padding: 18, gap: 12,
+          ...Platform.select({
+            ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
+            android: { elevation: 2 },
+          }),
         }}>
-          Ready for your review
-        </Text>
-
-        {visibleItems.length === 0 ? (
-          <Text style={{
-            fontSize: 13,
-            fontWeight: '400',
-            color: colors.textSecondary,
-            lineHeight: 18.2,
-          }}>
-            {activeFilter === 'pending'
-              ? 'No pending submissions right now. Check back when the kids finish something!'
-              : 'Nothing to show here yet.'}
+          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+            Ready for your review
           </Text>
-        ) : (
-          visibleItems.map((chore, index) => {
-            const assigneeName = memberFirstName(chore.assignedToId, members);
-            const typeLabel = choreTypeLabel(chore.categoryType);
-            const reviewLinkLabel = `${typeLabel} review →`;
-            const isLast = index === visibleItems.length - 1;
 
-            return (
-              <React.Fragment key={chore.id}>
+          {pendingReviews.length === 0 ? (
+            <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary, lineHeight: 25 }}>
+              Nothing pending right now. Check back when the kids finish something!
+            </Text>
+          ) : (
+            pendingReviews.map((chore, i) => {
+              const assignee = firstName(chore.assignedToId, members);
+              const tl = typeLabel(chore.categoryType);
+              return (
                 <Pressable
-                  onPress={() => {
-                    const type: ReviewItemType = chore.categoryType === 'bounty' ? 'quest' : 'chore';
-                    onSelectItem?.(chore.id, type);
-                  }}
-                  style={({ pressed }) => ({
-                    gap: 2,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Review ${chore.title}`}
+                  key={chore.id}
+                  onPress={() => open(chore.id, chore.categoryType)}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, gap: 1 })}
                 >
-                  {/* Line 1: title */}
-                  <Text style={{
-                    fontSize: 13,
-                    fontWeight: '600',
-                    color: colors.textPrimary,
-                    lineHeight: 18.2,
-                  }}>
+                  {/* Item title + detail + link all in one text block per Figma */}
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 25 }}>
                     {chore.title}
                   </Text>
-
-                  {/* Line 2: assignee · category · coins */}
-                  <Text style={{
-                    fontSize: 13,
-                    fontWeight: '400',
-                    color: colors.textSecondary,
-                    lineHeight: 18.2,
-                  }}>
-                    {assigneeName} · {typeLabel} · {chore.coinsReward} coins
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+                    {assignee} · {tl} · {chore.coinsReward ?? 0} coins
                   </Text>
-
-                  {/* Line 3: review link */}
-                  <Text style={{
-                    fontSize: 13,
-                    fontWeight: '500',
-                    color: colors.teal,
-                    lineHeight: 18.2,
-                  }}>
-                    {reviewLinkLabel}
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>
+                    Open for review →
                   </Text>
+                  {i < pendingReviews.length - 1 && (
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />
+                  )}
                 </Pressable>
-
-                {!isLast && (
-                  <View style={{
-                    height: 1,
-                    backgroundColor: colors.border,
-                    marginVertical: 2,
-                  }} />
-                )}
-              </React.Fragment>
-            );
-          })
-        )}
-      </View>
-
-      {/* ── "Separate from new submissions" info card ───────────────── */}
-      <View style={{
-        backgroundColor: colors.tealLight,
-        borderRadius: 22,
-        padding: 18,
-        gap: 12,
-      }}>
-        <Text style={{
-          fontSize: 20,
-          fontWeight: '600',
-          color: colors.textPrimary,
-        }}>
-          Separate from new submissions
-        </Text>
-
-        <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-            <Text style={{
-              fontSize: 13,
-              fontWeight: '400',
-              color: colors.textSecondary,
-              lineHeight: 18.2,
-              flex: 1,
-            }}>
-              Each submission here is a completed task waiting on your approval or a redo request.
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-            <Text style={{
-              fontSize: 13,
-              fontWeight: '400',
-              color: colors.textSecondary,
-              lineHeight: 18.2,
-              flex: 1,
-            }}>
-              Coins are awarded immediately on approval — a quick tap keeps momentum going for everyone.
-            </Text>
-          </View>
+              );
+            })
+          )}
         </View>
-      </View>
 
-      {/* ── Primary CTA ─────────────────────────────────────────────── */}
-      {pendingReviews.length > 0 && (
-        <Pressable
-          onPress={navigateToQuests}
-          style={({ pressed }) => ({
-            borderRadius: 14,
-            paddingVertical: 16,
-            backgroundColor: colors.primary,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.85 : 1,
-          })}
-          accessibilityRole="button"
-          accessibilityLabel={`Start with ${firstItemTitle}`}
-        >
-          <Text style={{
-            fontSize: 15,
-            fontWeight: '600',
-            color: '#FFFFFF',
-          }}>
-            Start with {firstItemTitle} →
+        {/* ── Card 2: mint — workflow status + explanation + secondary nav ── */}
+        <View style={{ backgroundColor: cardMintBg, borderRadius: 22, padding: 18, gap: 12 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+            How approvals work
           </Text>
-        </Pressable>
-      )}
 
-      {pendingReviews.length === 0 && (
-        <Pressable
-          onPress={navigateToQuests}
-          style={({ pressed }) => ({
-            borderRadius: 14,
-            paddingVertical: 16,
-            backgroundColor: colors.surface,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: 1,
-            borderColor: colors.border,
-            opacity: pressed ? 0.85 : 1,
-          })}
-          accessibilityRole="button"
-          accessibilityLabel="Go to Quests"
-        >
-          <Text style={{
-            fontSize: 15,
-            fontWeight: '600',
-            color: colors.textSecondary,
+          {/* Workflow status pill */}
+          <View style={{
+            alignSelf: 'flex-start',
+            backgroundColor: mintPillBg,
+            borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10,
           }}>
-            Go to Quests
+            <Text style={{ fontSize: 12, fontWeight: '600', color: mintText, lineHeight: 15 }}>
+              Instant payout
+            </Text>
+          </View>
+
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+            Coins land in the kid's wallet the moment you approve — no extra steps needed.
           </Text>
-        </Pressable>
-      )}
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+            If the work doesn't meet the standard, request a redo with a note. The quest goes back to the kid's queue.
+          </Text>
 
-      {/* ── Footer text ─────────────────────────────────────────────── */}
-      <Text style={{
-        fontSize: 13,
-        fontWeight: '500',
-        color: colors.textSecondary,
-        textAlign: 'center',
-        lineHeight: 18.2,
-        marginTop: 4,
-      }}>
-        Approvals are permanent — take a moment before you decide.
-      </Text>
+          {/* Secondary destination button */}
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => ({
+              flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+              paddingHorizontal: 16, height: 48,
+              backgroundColor: secondaryBtnBg,
+              borderWidth: 1, borderColor: secondaryBorder,
+              borderRadius: 14, opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: linkBlue }}>
+              Back to Hub
+            </Text>
+          </Pressable>
+        </View>
 
-      {/* ── Signature ───────────────────────────────────────────────── */}
-      <Text style={{
-        fontSize: 11,
-        fontWeight: '600',
-        color: colors.textSecondary,
-        textAlign: 'center',
-        letterSpacing: 0.5,
-        marginTop: -8,
-      }}>
-        Connect. Organize. Care. Grow.
-      </Text>
-    </ScrollView>
-    </SafeAreaView>
+        {/* ── Card 3: peach — primary + secondary CTAs ── */}
+        <View style={{ backgroundColor: cardPeachBg, borderRadius: 22, padding: 18, gap: 12 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+            {pendingReviews.length > 0
+              ? `Start with "${firstItem?.title ?? 'first submission'}"`
+              : 'All caught up'}
+          </Text>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+            {pendingReviews.length > 0
+              ? `${pendingReviews.length} submission${pendingReviews.length !== 1 ? 's' : ''} waiting. A quick decision keeps the momentum going.`
+              : 'No pending reviews right now. Great work staying on top of it!'}
+          </Text>
+
+          {/* Primary destination */}
+          {pendingReviews.length > 0 && firstItem && (
+            <Pressable
+              onPress={() => open(firstItem.id, firstItem.categoryType)}
+              style={({ pressed }) => ({
+                flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+                paddingHorizontal: 16, height: 48, backgroundColor: primaryBtnBg,
+                borderRadius: 14, opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
+                Review now →
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Secondary destination */}
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => ({
+              flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+              paddingHorizontal: 16, height: 48,
+              backgroundColor: secondaryBtnBg,
+              borderWidth: 1, borderColor: secondaryBorder,
+              borderRadius: 14, opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: linkBlue }}>
+              {pendingReviews.length > 0 ? 'Maybe later' : 'Go to Quests'}
+            </Text>
+          </Pressable>
+
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+            Approvals are permanent — take a moment before you decide.
+          </Text>
+        </View>
+
+        {/* ── Card 4: white — recently decided ── */}
+        {decidedReviews.length > 0 && (
+          <View style={{
+            backgroundColor: cardWhiteBg, borderRadius: 22, padding: 18, gap: 12,
+            ...Platform.select({
+              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
+              android: { elevation: 2 },
+            }),
+          }}>
+            <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+              Recently decided
+            </Text>
+            {decidedReviews.map((chore, i) => {
+              const assignee = firstName(chore.assignedToId, members);
+              const tl = typeLabel(chore.categoryType);
+              const sl = statusLabel(chore.status);
+              return (
+                <Pressable
+                  key={chore.id}
+                  onPress={() => open(chore.id, chore.categoryType)}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, gap: 1 })}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 25 }}>
+                    {chore.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+                    {assignee} · {tl} · {sl}
+                  </Text>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>
+                    View details →
+                  </Text>
+                  {i < decidedReviews.length - 1 && (
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Full-width primary CTA ── */}
+        {pendingReviews.length > 0 && firstItem && (
+          <Pressable
+            onPress={() => open(firstItem.id, firstItem.categoryType)}
+            style={({ pressed }) => ({
+              flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+              height: 48, backgroundColor: primaryBtnBg,
+              borderRadius: 14, opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
+              Start with {firstItem.title} →
+            </Text>
+          </Pressable>
+        )}
+
+        {/* ── Domain module footer (mint) ── */}
+        <View style={{ backgroundColor: cardMintBg, borderRadius: 22, padding: 20, minHeight: 134, justifyContent: 'center' }}>
+          <Text style={{ fontSize: 15, fontWeight: '500', color: mintText, lineHeight: 26 }}>
+            Every approval is a signal to the family.{'\n'}
+            It shows that effort is seen, work is valued, and trust is being built — one task at a time.
+          </Text>
+        </View>
+
+      </ScrollView>
+    </View>
   );
 }

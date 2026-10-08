@@ -58,13 +58,14 @@ export interface ActivityLogRow {
   createdAt: string;
 }
 
-export async function fetchActivityLog(entityType: ActivityEntityType, entityId: string): Promise<ActivityLogRow[]> {
+export async function fetchActivityLog(entityType: ActivityEntityType, entityId: string, limit = 50): Promise<ActivityLogRow[]> {
   const { data, error } = await supabase
     .from('activity_log')
     .select('*')
     .eq('entity_type', entityType)
     .eq('entity_id', entityId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (error) { console.warn('[activityLog] fetch failed', error.message); return []; }
   return (data ?? []).map((row: any) => ({
     id: row.id,

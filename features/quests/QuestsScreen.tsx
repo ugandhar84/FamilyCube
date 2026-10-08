@@ -48,6 +48,7 @@ import { DeclineModal } from './components/DeclineModal';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AddQuestModal } from './components/AddQuestModal';
 import { EditQuestModal } from './components/EditQuestModal';
+import { QuestDetailModal } from './components/QuestDetailModal';
 import { CreateQuestModal } from '../hub/senior/CreateQuestModal';
 import { AutoBalanceCard, FomoCard, AdviceCard } from './components/AiFeatureCards';
 import {
@@ -192,6 +193,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   // comment for why this is separate from declineTarget/DeclineModal.
   const [cantMakeItTarget, setCantMakeItTarget] = useState<ChoreTask | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
+  const [detailTarget,   setDetailTarget]   = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string;
@@ -826,7 +828,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   const cardBord = colors.border;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && (
         <PageTopBar
           onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAddModal(true) : undefined}
@@ -989,18 +991,6 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         ) : (
           <>
 
-            {/* ── Figma section-title: overline + h2 ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 20, marginBottom: 4 }}>
-              <View>
-                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>
-                  TODAY & THIS WEEK
-                </Text>
-                <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, marginTop: 4 }}>
-                  {isKid ? 'My chores' : 'Household tasks'}
-                </Text>
-              </View>
-            </View>
-
             {/* ── Quest Cards — keyed by activeMemberId so expanded state resets on persona switch ── */}
             <View key={activeMemberId ?? 'default'} style={{ paddingHorizontal: 14, gap: 10, marginTop: 4 }}>
               {filteredQuests.length === 0 && (
@@ -1161,6 +1151,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                   setEditTarget={setEditTarget}
                   setDelegateTarget={setDelegateTarget}
                   setProofPhotoViewerUri={setProofPhotoViewerUri}
+                  onCardPress={q => setDetailTarget(q)}
                 />
               ))}
             </View>
@@ -1281,6 +1272,27 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
             showToast('Chore deleted');
             setEditTarget(null);
           }}
+        />
+      )}
+
+      {/* Readonly detail view — single tap on any quest card */}
+      {detailTarget && (
+        <QuestDetailModal
+          quest={detailTarget}
+          onClose={() => setDetailTarget(null)}
+          canEdit={isParent}
+          isParent={isParent}
+          onDelete={isParent ? () => {
+            const q = detailTarget;
+            Alert.alert(
+              'Delete Chore',
+              `Remove "${q.title}"? This cannot be undone.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => { deleteQuest(q.id); setDetailTarget(null); } },
+              ],
+            );
+          } : undefined}
         />
       )}
 

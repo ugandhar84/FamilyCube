@@ -84,22 +84,22 @@ export default function WeekView({
         return (
           <View key={dateKey} style={{
             borderRadius: 19, padding: 12, gap: 8,
-            backgroundColor: isToday ? (isDark ? 'rgba(102,119,189,0.18)' : '#e9edfb') : colors.card,
-            borderWidth: 1, borderColor: isToday ? (isDark ? 'rgba(102,119,189,0.35)' : '#d6dcf2') : (isDark ? colors.border : 'rgba(223,97,60,0.08)'),
+            backgroundColor: isToday ? (isDark ? '#253862' : '#e9efff') : colors.card,
+            borderWidth: 1, borderColor: isToday ? (isDark ? '#344a7a' : '#c5d0f5') : (isDark ? colors.border : 'rgba(223,97,60,0.08)'),
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               {/* Figma week-day: "MON" + circle date */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={{ minWidth: 48, minHeight: 48, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#F4F3F7', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isToday ? (isDark ? '#A89CD0' : '#5265b1') : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                     {DAY_SHORT[(day.getDay() + 6) % 7]}
                   </Text>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? (isDark ? '#A89CD0' : '#5265b1') : colors.textPrimary, marginTop: 2 }}>{day.getDate()}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textPrimary, marginTop: 2 }}>{day.getDate()}</Text>
                 </View>
               </View>
               {onAddDay ? (
                 <TouchableOpacity onPress={() => onAddDay(dateKey)}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#A89CD0' : '#5c6eb5' }}>+ Add</Text>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#99b3ff' : '#294fc7' }}>+ Add</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>

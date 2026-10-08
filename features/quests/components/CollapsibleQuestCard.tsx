@@ -14,12 +14,14 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 // sits under the blur for the "glass over color" premium look, and a thin
 // top highlight hairline stands in for a glass edge catching light.
 export function CollapsibleQuestCard({
-  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress, initiallyExpanded = false, dimmed = false, pinnedFooter,
+  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress, onSingleTap, initiallyExpanded = false, dimmed = false, pinnedFooter,
 }: {
   accentColor: string; cardBg: string; cardBord: string;
   header: React.ReactNode; children: React.ReactNode;
   onDoubleTap?: () => void;
   onLongPress?: () => void;
+  // When provided, single tap fires this instead of toggling expand.
+  onSingleTap?: () => void;
   initiallyExpanded?: boolean;
   // Final-approved quests read as settled, past business — everything about
   // them is locked except the parent's private note, so the card itself
@@ -38,6 +40,8 @@ export function CollapsibleQuestCard({
     const now = Date.now();
     if (onDoubleTap && now - lastTap.current < 320) {
       onDoubleTap();
+    } else if (onSingleTap) {
+      onSingleTap();
     } else {
       setExpanded(e => !e);
     }
@@ -70,7 +74,7 @@ export function CollapsibleQuestCard({
               chunky color block. */}
           <View style={{ width: 3, height: 28, borderRadius: 2, backgroundColor: accentColor, opacity: 0.85 }} />
           <View style={{ flex: 1 }}>{header}</View>
-          {expanded ? <I.ChevronUp c={accentColor} /> : <I.ChevronDown c={accentColor} />}
+          {!onSingleTap && (expanded ? <I.ChevronUp c={accentColor} /> : <I.ChevronDown c={accentColor} />)}
         </Pressable>
         {expanded && (
           <Pressable onLongPress={onLongPress} style={{ paddingHorizontal: 16, paddingBottom: 16, paddingTop: 2 }}>

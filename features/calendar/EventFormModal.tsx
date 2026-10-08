@@ -989,6 +989,13 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const catColor = CATEGORIES.find(c => c.key === category)?.color ?? BRAND.purple;
   const catEmoji = CATEGORIES.find(c => c.key === category)?.emoji ?? '📅';
 
+  // Figma field tokens — white bg + light border (inactive), catColor 2px border (active)
+  const fieldBg      = isDark ? colors.surface : '#FFFFFF';
+  const fieldBorder  = isDark ? colors.border  : '#DFE5EF';
+  const fieldBorderActive = catColor;
+  // Figma "Content group" tip card: lavender tint
+  const tipCardBg    = isDark ? colors.surface : colors.pinkLight;
+
   return (
     <TaskFormShell
       visible={visible}
@@ -1006,6 +1013,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
           ? 'Let the family know what you need'
           : `${catEmoji} ${category} — ${isParent ? 'full access' : 'senior view'}`
       }
+      stepLabels={['What', 'When', 'Who', 'Review']}
+      hasDraft={title.trim().length > 0 || notes.trim().length > 0}
     >
             {currentStepId === 'what' && <>
             {/* ── Category selector ── */}
@@ -1021,8 +1030,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                       style={{
                         borderRadius: 16, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 8,
                         alignItems: 'center', gap: 3, minWidth: 64,
-                        backgroundColor: active ? c.color + '18' : (isDark ? colors.surface : colors.inputBg),
-                        borderColor: active ? c.color : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: active ? c.color + '18' : fieldBg,
+                        borderColor: active ? c.color : fieldBorder,
                       }}
                     >
                       <Text style={{ fontSize: 20, opacity: active ? 1 : 0.6 }}>{c.emoji}</Text>
@@ -1051,8 +1060,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                           onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${sc.subcategoryLabel}" for "subcategory" [features/calendar/EventFormModal.tsx:667]`); setSubcategoryId(active ? null : sc.id); }}
                           style={{
                             borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                            backgroundColor: active ? catColor + '18' : (isDark ? colors.surface : colors.inputBg),
-                            borderColor: active ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                            backgroundColor: active ? catColor + '18' : fieldBg,
+                            borderColor: active ? catColor : fieldBorder,
                           }}
                         >
                           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: active ? catColor : colors.textSecondary }}>
@@ -1078,8 +1087,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             {/* ── Title ── */}
             <Text style={[f.label, { color: colors.textSecondary }]}>Title *</Text>
             <TextInput
-              style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
-                borderColor: finalTitle ? colors.borderMed : colors.danger + '60' }]}
+              style={[f.input, { color: colors.textPrimary, backgroundColor: fieldBg,
+                borderColor: finalTitle ? fieldBorderActive : colors.danger + '60',
+                borderWidth: finalTitle ? 2 : 1 }]}
               placeholder={autoTitle || `e.g. ${SUGGESTIONS[category]?.[0]?.title ?? 'Event title'}`}
               placeholderTextColor={colors.textTertiary}
               value={title}
@@ -1114,8 +1124,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                           onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${s.title}" for "title suggestion" [features/calendar/EventFormModal.tsx:720]`); selected ? setTitle('') : applySuggestion(s); }}
                           style={[f.suggPill, {
                             flexDirection: 'row', alignItems: 'center',
-                            backgroundColor: selected ? catColor + '20' : (isDark ? colors.surface : colors.inputBg),
-                            borderColor: selected ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                            backgroundColor: selected ? catColor + '20' : fieldBg,
+                            borderColor: selected ? catColor : fieldBorder,
                           }]}
                         >
                           <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: selected ? catColor : colors.textPrimary }} numberOfLines={1}>
@@ -1162,7 +1172,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
               <TouchableOpacity
-                style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? catColor + '20' : colors.surface, borderColor: showDatePick ? catColor : colors.border }]}
+                style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? catColor + '20' : fieldBg, borderColor: showDatePick ? catColor : fieldBorder, borderWidth: showDatePick ? 2 : 1 }]}
                 onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Date" field on AddEventModal [features/calendar/EventFormModal.tsx:770]`); setShowDatePick(p => !p); setShowTimePick(false); }}
               >
                 <Text style={{ fontSize: 13 }}>📅</Text>
@@ -1172,7 +1182,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               </TouchableOpacity>
               {!allDay && (
                 <TouchableOpacity
-                  style={[f.dateBtn, { flex: 2, backgroundColor: showTimePick ? catColor + '20' : colors.surface, borderColor: showTimePick ? catColor : colors.border }]}
+                  style={[f.dateBtn, { flex: 2, backgroundColor: showTimePick ? catColor + '20' : fieldBg, borderColor: showTimePick ? catColor : fieldBorder, borderWidth: showTimePick ? 2 : 1 }]}
                   onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Time" field on AddEventModal [features/calendar/EventFormModal.tsx:780]`); setShowTimePick(p => !p); setShowDatePick(false); }}
                 >
                   <Text style={{ fontSize: 13 }}>🕐</Text>
@@ -1242,8 +1252,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                     onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Repeat end date" field on AddEventModal [features/calendar/EventFormModal.tsx:865]`); setShowRepeatEndDatePick(p => !p); }}
                     activeOpacity={0.8}
                     style={[f.dateBtn, { justifyContent: 'space-between',
-                      backgroundColor: showRepeatEndDatePick ? catColor + '20' : colors.surface,
-                      borderColor: repeatEndDate ? catColor + '80' : (showRepeatEndDatePick ? catColor : colors.border) }]}>
+                      backgroundColor: showRepeatEndDatePick ? catColor + '20' : fieldBg,
+                      borderColor: repeatEndDate ? catColor + '80' : (showRepeatEndDatePick ? catColor : fieldBorder),
+                      borderWidth: showRepeatEndDatePick ? 2 : 1 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 13 }}>🏁</Text>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: repeatEndDate ? catColor : colors.textPrimary }}>
@@ -1410,10 +1421,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
                     borderWidth: 1.5,
-                    borderColor: needsPickup ? catColor : (isDark ? colors.border : '#E2E8F0'),
-                    backgroundColor: needsPickup
-                      ? (isDark ? catColor + '20' : catColor + '14')
-                      : (isDark ? colors.surface : '#F9FAFB'),
+                    borderColor: needsPickup ? catColor : fieldBorder,
+                    backgroundColor: needsPickup ? catColor + '14' : fieldBg,
                   }}>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
@@ -1435,7 +1444,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 {needsPickup && (
                   <TouchableOpacity
                     onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup time" field on AddEventModal [features/calendar/EventFormModal.tsx]`); setShowPickupTimePick(true); }}
-                    style={[f.dateBtn, { marginBottom: 14, backgroundColor: showPickupTimePick ? catColor + '20' : colors.surface, borderColor: showPickupTimePick ? catColor : (pickupTime ? catColor + '80' : colors.border) }]}
+                    style={[f.dateBtn, { marginBottom: 14, backgroundColor: showPickupTimePick ? catColor + '20' : fieldBg, borderColor: showPickupTimePick ? catColor : (pickupTime ? catColor + '80' : fieldBorder), borderWidth: showPickupTimePick ? 2 : 1 }]}
                   >
                     <Text style={{ fontSize: 13 }}>🕐</Text>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showPickupTimePick ? catColor : (pickupTime ? colors.textPrimary : colors.textTertiary) }}>
@@ -1477,10 +1486,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
                   borderWidth: 1.5,
-                  borderColor: openToGrandparents ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
+                  borderColor: openToGrandparents ? colors.warning : fieldBorder,
                   backgroundColor: openToGrandparents
                     ? (isDark ? '#2D1800' : colors.warningLight)
-                    : (isDark ? colors.surface : '#F9FAFB'),
+                    : fieldBg,
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
@@ -1520,10 +1529,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
                   borderWidth: 1.5,
-                  borderColor: openToTeens ? colors.sky : colors.border,
+                  borderColor: openToTeens ? colors.sky : fieldBorder,
                   backgroundColor: openToTeens
                     ? (isDark ? '#1E1B4B' : '#EEF2FF')
-                    : (isDark ? colors.surface : '#F9FAFB'),
+                    : fieldBg,
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
@@ -1606,7 +1615,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 : 'Monthly';
               return (
                 <View style={{ gap: 10 }}>
-                  <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 14, gap: 10 }}>
+                  <View style={[f.summaryCard, { backgroundColor: fieldBg, borderColor: fieldBorder, gap: 10 }]}>
                     <View>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Event</Text>
                       <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }} numberOfLines={2}>
@@ -1681,7 +1690,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                       added length without adding information. */}
                   <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
                   <TextInput
-                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder }]}
                     placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
                     placeholderTextColor={colors.textTertiary}
                     value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
@@ -1703,9 +1712,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                     onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${isKid ? 'Send Request to Parent' : 'Add to Family Schedule'}" title="${finalTitle}" category=${category} → submit/addEvent [features/calendar/EventFormModal.tsx:1123]`); submit(); }} disabled={!canSubmit || saving}
                   >
                     {saving
-                      ? <ActivityIndicator color={colors.textInverse} size="small" />
-                      : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>
-                          {isKid ? 'Send Request to Parent 🙋' : `Add to Family Schedule ${catEmoji}`}
+                      ? <ActivityIndicator color="#FFFFFF" size="small" />
+                      : <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>
+                          {isKid ? 'Send Request to Parent 🙋' : `Add to Schedule ${catEmoji}`}
                         </Text>}
                   </TouchableOpacity>
                 </View>
@@ -1732,6 +1741,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   onDelete?: (scope?: 'this' | 'following' | 'all') => void;
 }) {
   const { colors, isDark } = useTheme();
+  const fieldBg      = isDark ? colors.surface : '#FFFFFF';
+  const fieldBorder  = isDark ? colors.border  : '#DFE5EF';
+  const tipCardBg    = isDark ? colors.surface : colors.pinkLight;
   // f.sheet's maxHeight: '75%' (eventForm/styles.ts, shared with
   // AddQuestModal via TaskFormShell) is static against the full screen —
   // clamp it once the keyboard opens so it can't get pushed past the top
@@ -2400,7 +2412,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   <Text style={[f.label, { color: colors.textSecondary }]}>Date & Time</Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <TouchableOpacity
-                      style={[f.dateBtn, { flex: 3, backgroundColor: showEditDatePick ? catColor + '20' : colors.surface, borderColor: showEditDatePick ? catColor : colors.border }]}
+                      style={[f.dateBtn, { flex: 3, backgroundColor: showEditDatePick ? catColor + '20' : fieldBg, borderColor: showEditDatePick ? catColor : fieldBorder, borderWidth: showEditDatePick ? 2 : 1 }]}
                       onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Date" field on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1522]`); setShowEditDatePick(p => !p); setShowEditTimePick(false); }}
                     >
                       <Text style={{ fontSize: 13 }}>📅</Text>
@@ -2410,7 +2422,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     </TouchableOpacity>
                     {!editAllDay && (
                       <TouchableOpacity
-                        style={[f.dateBtn, { flex: 2, backgroundColor: showEditTimePick ? catColor + '20' : colors.surface, borderColor: showEditTimePick ? catColor : colors.border }]}
+                        style={[f.dateBtn, { flex: 2, backgroundColor: showEditTimePick ? catColor + '20' : fieldBg, borderColor: showEditTimePick ? catColor : fieldBorder, borderWidth: showEditTimePick ? 2 : 1 }]}
                         onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Time" field on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1532]`); setShowEditTimePick(p => !p); setShowEditDatePick(false); }}
                       >
                         <Text style={{ fontSize: 13 }}>🕐</Text>
@@ -2518,7 +2530,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   />
                   {!helperId && (
                     <TextInput
-                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginTop: -4 }]}
+                      style={[f.input, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder, marginTop: -4 }]}
                       placeholder="Or type a name (e.g. external tutor)"
                       placeholderTextColor={colors.textTertiary}
                       value={helperName}
@@ -2584,8 +2596,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                      borderColor: editRideRequired ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: editRideRequired ? (isDark ? '#0D2A2A' : '#ECFDF5') : (isDark ? colors.surface : '#F9FAFB'),
+                      borderColor: editRideRequired ? BRAND.teal : fieldBorder,
+                      backgroundColor: editRideRequired ? (isDark ? '#0D2A2A' : '#ECFDF5') : fieldBg,
                     }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editRideRequired ? BRAND.teal : colors.textPrimary }}>
@@ -2613,7 +2625,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       />
                       {!editDriverId && (
                         <TextInput
-                          style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                          style={[f.input, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder }]}
                           placeholder="Or type a name (e.g. external driver)"
                           placeholderTextColor={colors.textTertiary}
                           value={editDriverName}
@@ -2703,8 +2715,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                      borderColor: needsPickup ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: needsPickup ? (isDark ? '#0D2A2A' : '#ECFDF5') : (isDark ? colors.surface : '#F9FAFB'),
+                      borderColor: needsPickup ? BRAND.teal : fieldBorder,
+                      backgroundColor: needsPickup ? (isDark ? '#0D2A2A' : '#ECFDF5') : fieldBg,
                     }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: needsPickup ? BRAND.teal : colors.textPrimary }}>
@@ -2726,7 +2738,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   {needsPickup && (
                     <TouchableOpacity
                       onPress={() => setShowEditPickupTimePick(true)}
-                      style={[f.dateBtn, { backgroundColor: showEditPickupTimePick ? BRAND.teal + '20' : colors.surface, borderColor: showEditPickupTimePick ? BRAND.teal : (editPickupTime ? BRAND.teal + '80' : colors.border) }]}
+                      style={[f.dateBtn, { backgroundColor: showEditPickupTimePick ? BRAND.teal + '20' : fieldBg, borderColor: showEditPickupTimePick ? BRAND.teal : (editPickupTime ? BRAND.teal + '80' : fieldBorder), borderWidth: showEditPickupTimePick ? 2 : 1 }]}
                     >
                       <Text style={{ fontSize: 13 }}>🕐</Text>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditPickupTimePick ? BRAND.teal : (editPickupTime ? colors.textPrimary : colors.textTertiary) }}>
@@ -2771,8 +2783,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                      borderColor: editGPOpen ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: editGPOpen ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : '#F9FAFB'),
+                      borderColor: editGPOpen ? colors.warning : fieldBorder,
+                      backgroundColor: editGPOpen ? (isDark ? '#2D1800' : colors.warningLight) : fieldBg,
                     }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editGPOpen ? '#92400E' : colors.textPrimary }}>
@@ -2807,8 +2819,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                        borderColor: editTeenOpen ? colors.sky : colors.border,
-                        backgroundColor: editTeenOpen ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
+                        borderColor: editTeenOpen ? colors.sky : fieldBorder,
+                        backgroundColor: editTeenOpen ? (isDark ? '#1E1B4B' : '#EEF2FF') : fieldBg,
                       }}>
                       <View style={{ flex: 1, gap: 2 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editTeenOpen ? '#3730A3' : colors.textPrimary }}>
@@ -2821,7 +2833,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         </Text>
                       </View>
                       <View style={{ width: 44, height: 26, borderRadius: 13,
-                        backgroundColor: editTeenOpen ? colors.sky : colors.surface,
+                        backgroundColor: editTeenOpen ? colors.sky : (isDark ? colors.surface : '#D1D5DB'),
                         justifyContent: 'center', paddingHorizontal: 3 }}>
                         <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                           alignSelf: editTeenOpen ? 'flex-end' : 'flex-start' }} />
@@ -2864,7 +2876,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {[0, 10, 15, 30].map(mins => (
                         <TouchableOpacity key={mins} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${mins} min" for "call reminder lead time" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1785]`); setAlertCallLeadMinutes(mins); }}
-                          style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? colors.primary + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? colors.primary : colors.border }]}>
+                          style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? colors.primary + '20' : fieldBg, borderColor: alertCallLeadMinutes === mins ? colors.primary : fieldBorder }]}>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? colors.primary : colors.textPrimary }}>
                             {mins === 0 ? 'On time' : `${mins} min before`}
                           </Text>
@@ -2906,7 +2918,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📝 Notes</Text>
                   <TextInput
-                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder }]}
                     placeholder="Add or update notes…"
                     placeholderTextColor={colors.textTertiary}
                     value={notes} onChangeText={t => setNotes(t.slice(0, 200))}

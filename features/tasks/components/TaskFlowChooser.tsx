@@ -56,7 +56,7 @@ export function TaskFlowChooser({
       >
         <Pressable onPress={e => e.stopPropagation()}>
           <View style={{
-            backgroundColor: colors.background,
+            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF',
             borderTopLeftRadius: RADIUS.xxl,
             borderTopRightRadius: RADIUS.xxl,
             padding: 24,

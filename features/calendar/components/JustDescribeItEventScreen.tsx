@@ -28,6 +28,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 import { detectLocalTask } from '@/features/tasks/lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { todayLocal } from '@/lib/dates';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { Mic, Square } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import { supabase } from '@/lib/supabase';
@@ -147,6 +148,11 @@ export default function JustDescribeItEventScreen({
   const [evMemberIds, setEvMemberIds]   = useState<string[]>([]);
   const [evNotes, setEvNotes]           = useState('');
   const [evLocation, setEvLocation]     = useState('');
+  const [evRideNeeded, setEvRideNeeded] = useState(false);
+  const [evPickupFrom, setEvPickupFrom] = useState('');
+  const [evDropTo, setEvDropTo]         = useState('');
+  const [evDriverId, setEvDriverId]     = useState<string | undefined>();
+  const [evIsPrivate, setEvIsPrivate]   = useState(false);
   const [showDatePick, setShowDatePick]     = useState(false);
   const [showTimePick, setShowTimePick]     = useState(false);
   const [showEndTimePick, setShowEndTimePick] = useState(false);
@@ -188,6 +194,11 @@ export default function JustDescribeItEventScreen({
     setShowEndTimePick(false);
     setShowEndDatePick(false);
     setSaving(false);
+    setEvRideNeeded(false);
+    setEvPickupFrom('');
+    setEvDropTo('');
+    setEvDriverId(undefined);
+    setEvIsPrivate(false);
     setMemberConflicts({});
     setCheckingConflicts({});
     setListenSecs(0);
@@ -326,6 +337,12 @@ export default function JustDescribeItEventScreen({
         memberId: evMemberIds[0],
         notes: evNotes.trim() || undefined,
         location: evLocation.trim() || undefined,
+        rideRequired: evRideNeeded || undefined,
+        pickupLocation: evRideNeeded && evPickupFrom.trim() ? evPickupFrom.trim() : undefined,
+        dropLocation: evRideNeeded && evDropTo.trim() ? evDropTo.trim() : undefined,
+        driverId: evDriverId,
+        driverName: evDriverId ? members.find(m => m.id === evDriverId)?.name : undefined,
+        driverStatus: evDriverId ? 'pending' : undefined,
         familyId: activeMember?.familyId ?? '',
         createdBy: activeMemberId ?? '',
       } as Omit<FamilyEvent, 'id'>);
@@ -355,6 +372,11 @@ export default function JustDescribeItEventScreen({
   const activeBlue  = colors.teal;   // Schedule accent = sage/teal (CONNECT)
 
   const catEntry = EVENT_CATEGORIES.find(c => c.value === evCategory);
+
+  // Driver-eligible: parents + seniors + teens with hasCar, excluding event participants
+  const driverCandidates = members.filter(m =>
+    (m.role === 'parent' || m.role === 'senior' || (m.role === 'teen' && (m as any).hasCar))
+  );
 
   if (!visible) return null;
 
@@ -709,91 +731,192 @@ export default function JustDescribeItEventScreen({
                   </View>
 
                   {/* ── WHO — pinkLight section ── */}
-                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                  <View style={{ borderRadius: 24, padding: 20, gap: 18,
                     backgroundColor: colors.pinkLight,
                     borderWidth: 1, borderColor: colors.border,
                     shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
                     <View style={{ gap: 6 }}>
                       <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO'S INVOLVED</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                      {members.map(m => {
-                        const sel = evMemberIds.includes(m.id);
-                        const isAdult = m.role === 'parent';
-                        const accentColor = isAdult ? colors.teal : colors.amber;
-                        const conflict = memberConflicts[m.id];
-                        const checking = checkingConflicts[m.id];
-                        const hasConflict = sel && conflict != null;
-                        return (
-                          <TouchableOpacity
-                            key={m.id}
-                            onPress={() => {
-                              const next = sel
-                                ? evMemberIds.filter(id => id !== m.id)
-                                : [...evMemberIds, m.id];
-                              setEvMemberIds(next);
-                              if (!sel && !evAllDay) {
-                                checkMemberConflict(m.id, evDate, evTime, evEndTime);
-                              }
-                            }}
-                            style={{ alignItems: 'center', gap: 4, maxWidth: 72 }}
-                          >
-                            <View style={{
-                              width: 52, height: 52, borderRadius: 26,
-                              backgroundColor: sel ? (hasConflict ? colors.danger : accentColor) : colors.card,
-                              alignItems: 'center', justifyContent: 'center',
-                              borderWidth: sel ? 0 : 1.5,
-                              borderColor: hasConflict ? colors.danger : colors.border,
-                            }}>
-                              {checking
-                                ? <ActivityIndicator size="small" color={sel ? '#FFFFFF' : accentColor} />
-                                : <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
-                                    {m.name[0].toUpperCase()}
-                                  </Text>
-                              }
-                              {hasConflict && (
-                                <View style={{ position: 'absolute', top: -2, right: -2, width: 18, height: 18, borderRadius: 9,
-                                  backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center',
-                                  borderWidth: 2, borderColor: colors.pinkLight }}>
-                                  <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '800' }}>!</Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text style={{ fontSize: 11, color: hasConflict ? colors.danger : sel ? accentColor : colors.textSecondary, fontWeight: sel ? '700' : '400', textAlign: 'center' }}>
-                              {m.name.split(' ')[0]}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {evMemberIds.length === 0 && (
-                        <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center', paddingTop: 8 }}>Tap to add family members</Text>
-                      )}
-                    </View>
-                    {/* Conflict warnings */}
-                    {evMemberIds.some(id => memberConflicts[id]) && (
-                      <View style={{ gap: 6 }}>
-                        {evMemberIds.filter(id => memberConflicts[id]).map(id => {
-                          const m = members.find(mb => mb.id === id);
-                          return m ? (
-                            <View key={id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-                              backgroundColor: isDark ? colors.danger + '22' : '#FEF2F2',
-                              borderRadius: 12, padding: 10,
-                              borderLeftWidth: 3, borderLeftColor: colors.danger }}>
-                              <Text style={{ fontSize: 13 }}>⚠️</Text>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>
-                                  {m.name.split(' ')[0]} has a conflict
-                                </Text>
-                                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                                  {memberConflicts[id]}
-                                </Text>
+
+                    {/* ── Participant emoji chips ── */}
+                    <View style={{ gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Who's coming?</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                        {members.map(m => {
+                          const sel = evMemberIds.includes(m.id);
+                          const isAdult = m.role === 'parent' || m.role === 'senior';
+                          const accentColor = isAdult ? colors.teal : colors.amber;
+                          const conflict = memberConflicts[m.id];
+                          const checking = checkingConflicts[m.id];
+                          const hasConflict = sel && conflict != null;
+                          return (
+                            <TouchableOpacity
+                              key={m.id}
+                              onPress={() => {
+                                const next = sel ? evMemberIds.filter(id => id !== m.id) : [...evMemberIds, m.id];
+                                setEvMemberIds(next);
+                                if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
+                              }}
+                              style={{ alignItems: 'center', gap: 5, minWidth: 56 }}
+                            >
+                              <View style={{
+                                width: 52, height: 52, borderRadius: 26,
+                                borderWidth: sel ? 2.5 : 1.5,
+                                borderColor: hasConflict ? colors.danger : sel ? accentColor : colors.border,
+                                overflow: 'hidden',
+                                opacity: sel ? 1 : 0.55,
+                              }}>
+                                {checking
+                                  ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+                                      <ActivityIndicator size="small" color={accentColor} />
+                                    </View>
+                                  : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={52} />
+                                }
                               </View>
-                            </View>
-                          ) : null;
+                              <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
+                                color: hasConflict ? colors.danger : sel ? accentColor : colors.textSecondary,
+                                textAlign: 'center' }}>
+                                {m.name.split(' ')[0]}
+                              </Text>
+                              {hasConflict && (
+                                <Text style={{ fontSize: 10, color: colors.danger, textAlign: 'center', marginTop: -2 }}>⚠️ busy</Text>
+                              )}
+                            </TouchableOpacity>
+                          );
                         })}
                       </View>
+                      {/* Conflict warnings inline */}
+                      {evMemberIds.some(id => memberConflicts[id]) && (
+                        <View style={{ gap: 6, marginTop: 2 }}>
+                          {evMemberIds.filter(id => memberConflicts[id]).map(id => {
+                            const m = members.find(mb => mb.id === id);
+                            return m ? (
+                              <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                                backgroundColor: isDark ? colors.danger + '18' : '#FFF0EE',
+                                borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+                                borderLeftWidth: 3, borderLeftColor: colors.danger }}>
+                                <Text style={{ fontSize: 12 }}>⚠️</Text>
+                                <Text style={{ fontSize: 12, color: colors.danger, flex: 1 }}>
+                                  <Text style={{ fontWeight: '700' }}>{m.name.split(' ')[0]}</Text>
+                                  {' · '}{memberConflicts[id]}
+                                </Text>
+                              </View>
+                            ) : null;
+                          })}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* ── Ride needed? (hidden when category is Ride) ── */}
+                    {evCategory !== 'Ride' && (
+                      <View style={{ gap: 10 }}>
+                        <TouchableOpacity
+                          onPress={() => setEvRideNeeded(v => !v)}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ fontSize: 16 }}>🚗</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Ride needed?</Text>
+                          </View>
+                          <View style={{ width: 36, height: 22, borderRadius: 11,
+                            backgroundColor: evRideNeeded ? colors.amber : colors.surface,
+                            alignItems: evRideNeeded ? 'flex-end' : 'flex-start',
+                            paddingHorizontal: 2, justifyContent: 'center' }}>
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evRideNeeded ? '#FFFFFF' : colors.border }} />
+                          </View>
+                        </TouchableOpacity>
+
+                        {evRideNeeded && (
+                          <View style={{ gap: 10 }}>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TextInput
+                                value={evPickupFrom}
+                                onChangeText={setEvPickupFrom}
+                                placeholder="From"
+                                placeholderTextColor={colors.textTertiary}
+                                style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
+                              />
+                              <TextInput
+                                value={evDropTo}
+                                onChangeText={setEvDropTo}
+                                placeholder="To"
+                                placeholderTextColor={colors.textTertiary}
+                                style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }}
+                              />
+                            </View>
+                            {/* Driver emoji chips */}
+                            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '500' }}>Who's driving?</Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                              {driverCandidates.map(m => {
+                                const sel = evDriverId === m.id;
+                                const conflict = memberConflicts[m.id];
+                                const checking = checkingConflicts[m.id];
+                                const hasConflict = sel && conflict != null;
+                                return (
+                                  <TouchableOpacity
+                                    key={m.id}
+                                    onPress={() => {
+                                      setEvDriverId(sel ? undefined : m.id);
+                                      if (!sel && !evAllDay) checkMemberConflict(m.id, evDate, evTime, evEndTime);
+                                    }}
+                                    style={{ alignItems: 'center', gap: 5, minWidth: 56 }}
+                                  >
+                                    <View style={{
+                                      width: 48, height: 48, borderRadius: 24,
+                                      borderWidth: sel ? 2.5 : 1.5,
+                                      borderColor: hasConflict ? colors.danger : sel ? colors.amber : colors.border,
+                                      overflow: 'hidden',
+                                      opacity: sel ? 1 : 0.55,
+                                    }}>
+                                      {checking
+                                        ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+                                            <ActivityIndicator size="small" color={colors.amber} />
+                                          </View>
+                                        : <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={48} />
+                                      }
+                                    </View>
+                                    <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
+                                      color: hasConflict ? colors.danger : sel ? colors.amber : colors.textSecondary,
+                                      textAlign: 'center' }}>
+                                      {m.name.split(' ')[0]}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                              {driverCandidates.length === 0 && (
+                                <Text style={{ fontSize: 12, color: colors.textTertiary }}>No eligible drivers</Text>
+                              )}
+                            </View>
+                          </View>
+                        )}
+                      </View>
                     )}
+
+                    {/* ── Private toggle ── */}
+                    <TouchableOpacity
+                      onPress={() => setEvIsPrivate(v => !v)}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 16 }}>{evIsPrivate ? '🔒' : '👁️'}</Text>
+                        <View>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+                            {evIsPrivate ? 'Private event' : 'Visible to family'}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
+                            {evIsPrivate ? 'Only participants can see this' : 'All family members can see this'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ width: 36, height: 22, borderRadius: 11,
+                        backgroundColor: evIsPrivate ? colors.pink : colors.surface,
+                        alignItems: evIsPrivate ? 'flex-end' : 'flex-start',
+                        paddingHorizontal: 2, justifyContent: 'center' }}>
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evIsPrivate ? '#FFFFFF' : colors.border }} />
+                      </View>
+                    </TouchableOpacity>
                   </View>
 
                   {/* ── NOTES — surface card ── */}

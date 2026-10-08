@@ -57,6 +57,8 @@ import AgendaView from './components/AgendaView';
 import SwipeableEventCard from './components/SwipeableEventCard';
 import DaySlotView from './components/DaySlotView';
 import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
+import { useUIStore } from '@/store/uiStore';
+import JustDescribeItEventScreen from './components/JustDescribeItEventScreen';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 // Minutes until a today-dated event starts; Infinity for other days / no time set
@@ -549,6 +551,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // Parents keep the pre-existing behavior — see everyone by default, filter
   // per family member. My Schedule/All is only a kid/teen/senior concept.
   const [scheduleFilter, setScheduleFilter] = useState<'mine' | 'all'>(isParent ? 'all' : 'mine');
+  const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
   const [showAdd,       setShowAdd]       = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string; notes?: string;
@@ -587,6 +590,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     setFilterMember(null);
     setScheduleFilter(isParent ? 'all' : 'mine');
     setCompact(false);
+    setShowJustDescribeEvent(false);
     setShowAdd(false);
     setShowAskHelp(false);
     setEditEv(null);
@@ -1053,6 +1057,23 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   const cardBg   = colors.card;
   const cardBord = isDark ? colors.border : 'rgba(223,97,60,0.10)';
 
+  // Hide shared FAB when JustDescribeItEventScreen is open
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribeEvent);
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [showJustDescribeEvent]);
+
+  // Early-return: full-page event composer
+  if (showJustDescribeEvent) {
+    return (
+      <JustDescribeItEventScreen
+        visible
+        activeMemberId={activeMember?.id ?? ''}
+        onClose={() => setShowJustDescribeEvent(false)}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
@@ -1080,7 +1101,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <>
               {/* Figma TopBar — inlined PageTopBar, no legacy AppHeader */}
               <PageTopBar
-                onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowAdd(true) : undefined}
+                onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowJustDescribeEvent(true) : undefined}
                 onBellPress={() => setNotifPanelOpen(true)}
                 onAvatarPress={switchMember}
               />
@@ -1134,7 +1155,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
             {isKid ? null : (
               isParentOrSenior && !hideCreateButton && (
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: colors.pink }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open AddEventModal [features/calendar/CalendarScreen.tsx:1027]`); setShowAdd(true); }}>
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: colors.pink }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open JustDescribeItEventScreen [features/calendar/CalendarScreen.tsx:1027]`); setShowJustDescribeEvent(true); }}>
                   <I.Plus c="#fff" size={14} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
                 </TouchableOpacity>

@@ -389,7 +389,7 @@ export default function JustDescribeItEventScreen({
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 80 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

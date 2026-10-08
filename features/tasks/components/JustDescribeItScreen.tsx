@@ -138,8 +138,14 @@ export default function JustDescribeItScreen({
   const [questShowDatePick, setQuestShowDatePick] = useState(false);
   const [questShowTimePick, setQuestShowTimePick] = useState(false);
   const [questRecurrence, setQuestRecurrence] = useState<'once'|'daily'|'weekly'|'monthly'>('once');
+  const [questRecurrenceDays, setQuestRecurrenceDays] = useState<number[]>([]);
   const [questEndDate, setQuestEndDate] = useState('');
   const [questShowEndDatePick, setQuestShowEndDatePick] = useState(false);
+  const [questIsPool, setQuestIsPool] = useState(false);
+  const [questCustomCoins, setQuestCustomCoins] = useState('');
+  const [questBonusEnabled, setQuestBonusEnabled] = useState(false);
+  const [questBonusCoins, setQuestBonusCoins] = useState('25');
+  const [showPreview, setShowPreview] = useState(false);
   const [savingQuest, setSavingQuest] = useState(false);
 
   const dictation = useVoiceDictation();
@@ -163,7 +169,13 @@ export default function JustDescribeItScreen({
     setQuestShowDatePick(false);
     setQuestShowTimePick(false);
     setQuestRecurrence('once');
+    setQuestRecurrenceDays([]);
     setQuestEndDate('');
+    setQuestIsPool(false);
+    setQuestCustomCoins('');
+    setQuestBonusEnabled(false);
+    setQuestBonusCoins('25');
+    setShowPreview(false);
     setSavingQuest(false);
     dictation.reset();
   };
@@ -230,6 +242,9 @@ export default function JustDescribeItScreen({
     if (detected?.recurrence && detected.recurrence !== 'once') {
       setQuestRecurrence(detected.recurrence);
     }
+    if (detected?.recurrenceDays?.length) {
+      setQuestRecurrenceDays(detected.recurrenceDays);
+    }
     // Pre-select suggested assignee
     if (assigneeMember) setQuestAssigneeIds([assigneeMember.id]);
     setQuestFormOpen(true);
@@ -240,14 +255,19 @@ export default function JustDescribeItScreen({
     if (!questTitle.trim() || savingQuest) return;
     setSavingQuest(true);
     try {
+      const finalCoins = questCustomCoins ? parseInt(questCustomCoins) || questCoins : questCoins;
+      const bonusAmt = questBonusEnabled ? (parseInt(questBonusCoins) || 0) : 0;
       await addQuest({
         title: questTitle.trim(),
         description: questDescription.trim() || undefined,
-        coins: questCoins,
-        assignedToIds: questAssigneeIds.length > 0 ? questAssigneeIds : undefined,
+        coins: finalCoins,
+        bonusCoins: bonusAmt > 0 ? bonusAmt : undefined,
+        assignedToIds: !questIsPool && questAssigneeIds.length > 0 ? questAssigneeIds : undefined,
+        isPool: questIsPool || questAssigneeIds.length === 0,
         dueDate: questDueDate || undefined,
         dueTime: questDueTime || undefined,
         recurrence: questRecurrence !== 'once' ? questRecurrence : undefined,
+        recurrenceDays: questRecurrence === 'weekly' && questRecurrenceDays.length > 0 ? questRecurrenceDays : undefined,
         recurrenceEndDate: questEndDate || undefined,
         familyId: activeMember?.familyId ?? '',
         createdBy: activeMemberId ?? '',
@@ -465,7 +485,7 @@ export default function JustDescribeItScreen({
                       onPress={openInlineQuestForm}
                       style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
                     >
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up quest →</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up chore →</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -505,36 +525,29 @@ export default function JustDescribeItScreen({
                 {questFormOpen && (
                   <View style={{ gap: 20 }}>
 
-                    {/* WHAT'S THE QUEST? */}
+                    {/* WHAT'S THE CHORE? */}
                     <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                        What's the quest?
-                      </Text>
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginBottom: 2 }}>Quest title</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>What's the chore?</Text>
                       <TextInput
                         value={questTitle}
                         onChangeText={setQuestTitle}
-                        placeholder="Quest title"
+                        placeholder="Chore title"
                         placeholderTextColor={colors.textTertiary}
                         style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
                       />
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginTop: 4 }}>What does done look like?</Text>
                       <TextInput
                         value={questDescription}
                         onChangeText={setQuestDescription}
-                        placeholder="Describe what counts as complete..."
+                        placeholder="What does done look like? (optional)"
                         placeholderTextColor={colors.textTertiary}
                         multiline
-                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 14, color: colors.textPrimary, minHeight: 88, textAlignVertical: 'top' }}
+                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
                       />
                     </View>
 
                     {/* MAKE ROOM FOR IT */}
                     <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                        Make room for it
-                      </Text>
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Deadline & time</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal, letterSpacing: 0.5, textTransform: 'uppercase' }}>Make room for it</Text>
                       <View style={{ flexDirection: 'row', gap: 10 }}>
                         <TouchableOpacity
                           onPress={() => setQuestShowDatePick(true)}
@@ -552,24 +565,44 @@ export default function JustDescribeItScreen({
                         </TouchableOpacity>
                       </View>
 
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginTop: 4 }}>Repeat</Text>
-                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      {/* Repeat */}
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Repeat</Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
                         {RECUR_OPTIONS.map(opt => (
                           <TouchableOpacity
                             key={opt.value}
                             onPress={() => setQuestRecurrence(opt.value)}
-                            style={{
-                              paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14,
+                            style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
                               backgroundColor: questRecurrence === opt.value ? colors.teal : fieldBg,
-                              borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : fieldBorder,
-                            }}
+                              borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : fieldBorder }}
                           >
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>
-                              {opt.label}
-                            </Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
+
+                      {/* Day-of-week picker — shown for Weekly */}
+                      {questRecurrence === 'weekly' && (
+                        <>
+                          <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Repeats on</Text>
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            {['S','M','T','W','T','F','S'].map((label, idx) => {
+                              const sel = questRecurrenceDays.includes(idx);
+                              return (
+                                <TouchableOpacity
+                                  key={idx}
+                                  onPress={() => setQuestRecurrenceDays(prev => sel ? prev.filter(d => d !== idx) : [...prev, idx])}
+                                  style={{ flex: 1, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                                    backgroundColor: sel ? colors.teal : fieldBg,
+                                    borderWidth: 1, borderColor: sel ? colors.teal : fieldBorder }}
+                                >
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{label}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </>
+                      )}
 
                       {questRecurrence !== 'once' && (
                         <>
@@ -587,66 +620,220 @@ export default function JustDescribeItScreen({
                       )}
                     </View>
 
-                    {/* WHO'S ON IT? */}
+                    {/* WHO'S ON IT? — avatar chips only */}
                     <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                        Who's on it?
-                      </Text>
-                      {members.map(m => {
-                        const sel = questAssigneeIds.includes(m.id);
-                        const isAdult = m.role === 'parent';
-                        return (
-                          <TouchableOpacity
-                            key={m.id}
-                            onPress={() => setQuestAssigneeIds(prev => sel ? prev.filter(id => id !== m.id) : [...prev, m.id])}
-                            style={{
-                              flexDirection: 'row', alignItems: 'center', gap: 12,
-                              backgroundColor: sel ? (isAdult ? colors.tealLight : colors.amberLight) : fieldBg,
-                              borderRadius: 14, padding: 12,
-                              borderWidth: 1, borderColor: sel ? (isAdult ? colors.teal : colors.amber) : fieldBorder,
-                            }}
-                          >
-                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isAdult ? colors.tealLight : colors.amberLight, alignItems: 'center', justifyContent: 'center' }}>
-                              <Text style={{ fontSize: 15, fontWeight: '700', color: isAdult ? colors.teal : colors.amber }}>{m.name[0].toUpperCase()}</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
-                              <Text style={{ fontSize: 11, color: colors.textSecondary }}>{isAdult ? 'Parent' : 'Kid'}{m.id === assigneeMember?.id ? ' · Suggested' : ''}</Text>
-                            </View>
-                            {sel && <Text style={{ fontSize: 14, color: isAdult ? colors.teal : colors.amber }}>✓</Text>}
-                          </TouchableOpacity>
-                        );
-                      })}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, letterSpacing: 0.5, textTransform: 'uppercase' }}>Who's on it?</Text>
+                        {/* Pool toggle */}
+                        <TouchableOpacity
+                          onPress={() => { setQuestIsPool(!questIsPool); if (!questIsPool) setQuestAssigneeIds([]); }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+                            backgroundColor: questIsPool ? colors.amberLight : fieldBg,
+                            borderWidth: 1, borderColor: questIsPool ? colors.amber : fieldBorder }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: questIsPool ? colors.amber : colors.textSecondary }}>
+                            {questIsPool ? '🏊 Pool' : 'Pool'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {questIsPool ? (
+                        <View style={{ backgroundColor: colors.amberLight, borderRadius: 14, padding: 12 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.amber }}>Anyone can claim this quest</Text>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>First to claim it gets the coins</Text>
+                        </View>
+                      ) : (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                          {members.map(m => {
+                            const sel = questAssigneeIds.includes(m.id);
+                            const isAdult = m.role === 'parent';
+                            const accentColor = isAdult ? colors.teal : colors.amber;
+                            const lightBg = isAdult ? colors.tealLight : colors.amberLight;
+                            return (
+                              <TouchableOpacity
+                                key={m.id}
+                                onPress={() => setQuestAssigneeIds(prev => sel ? prev.filter(id => id !== m.id) : [...prev, m.id])}
+                                style={{ alignItems: 'center', gap: 4 }}
+                              >
+                                <View style={{
+                                  width: 52, height: 52, borderRadius: 26,
+                                  backgroundColor: sel ? accentColor : lightBg,
+                                  alignItems: 'center', justifyContent: 'center',
+                                  borderWidth: sel ? 0 : 1.5, borderColor: fieldBorder,
+                                }}>
+                                  <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
+                                    {m.name[0].toUpperCase()}
+                                  </Text>
+                                </View>
+                                {m.id === assigneeMember?.id && !sel && (
+                                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accentColor }} />
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                          {questAssigneeIds.length === 0 && (
+                            <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center' }}>Tap to assign · or enable Pool</Text>
+                          )}
+                        </View>
+                      )}
                     </View>
 
                     {/* REWARD */}
                     <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                        Reward
-                      </Text>
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Coins earned on completion</Text>
-                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>Reward</Text>
+
+                      {/* Coin presets */}
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
                         {COIN_OPTIONS.map(c => (
                           <TouchableOpacity
                             key={c}
-                            onPress={() => setQuestCoins(c)}
-                            style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: questCoins === c ? colors.amber : fieldBg, borderWidth: 1, borderColor: questCoins === c ? colors.amber : fieldBorder }}
+                            onPress={() => { setQuestCoins(c); setQuestCustomCoins(''); }}
+                            style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
+                              backgroundColor: questCoins === c && !questCustomCoins ? colors.amber : fieldBg,
+                              borderWidth: 1, borderColor: questCoins === c && !questCustomCoins ? colors.amber : fieldBorder }}
                           >
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: questCoins === c ? '#FFFFFF' : colors.textPrimary }}>🪙 {c}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: questCoins === c && !questCustomCoins ? '#FFFFFF' : colors.textPrimary }}>🪙{c}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
+
+                      {/* Custom coins */}
+                      <TextInput
+                        value={questCustomCoins}
+                        onChangeText={setQuestCustomCoins}
+                        placeholder="Custom amount…"
+                        placeholderTextColor={colors.textTertiary}
+                        keyboardType="number-pad"
+                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: questCustomCoins ? colors.amber : fieldBorder, padding: 14, fontSize: 14, color: colors.textPrimary }}
+                      />
+
+                      {/* Bonus reward toggle */}
+                      <TouchableOpacity
+                        onPress={() => setQuestBonusEnabled(!questBonusEnabled)}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                          backgroundColor: questBonusEnabled ? colors.amberLight : fieldBg,
+                          borderRadius: 14, padding: 14, borderWidth: 1,
+                          borderColor: questBonusEnabled ? colors.amber : fieldBorder }}
+                      >
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>⭐ Bonus reward</Text>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Extra coins for early / exceptional finish</Text>
+                        </View>
+                        <View style={{ width: 28, height: 28, borderRadius: 14,
+                          backgroundColor: questBonusEnabled ? colors.amber : fieldBorder,
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 14, color: '#FFFFFF' }}>{questBonusEnabled ? '✓' : '+'}</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {questBonusEnabled && (
+                        <TextInput
+                          value={questBonusCoins}
+                          onChangeText={setQuestBonusCoins}
+                          placeholder="Bonus coins amount"
+                          placeholderTextColor={colors.textTertiary}
+                          keyboardType="number-pad"
+                          style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: colors.amber, padding: 14, fontSize: 14, color: colors.textPrimary }}
+                        />
+                      )}
                     </View>
+
+                    {/* PREVIEW CARD */}
+                    <TouchableOpacity
+                      onPress={() => setShowPreview(!showPreview)}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: fieldBg, borderRadius: 14, padding: 14,
+                        borderWidth: 1, borderColor: fieldBorder }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>👁 Preview card</Text>
+                      <Text style={{ fontSize: 12, color: activeBlue }}>{showPreview ? 'Hide' : 'Show'}</Text>
+                    </TouchableOpacity>
+
+                    {showPreview && questTitle.trim() && (
+                      <View style={{ backgroundColor: fieldBg, borderRadius: 16, padding: 16, gap: 10,
+                        borderWidth: 1, borderColor: fieldBorder,
+                        shadowColor: '#172337', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
+                        {/* Header */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={{ flexDirection: 'row' }}>
+                            {(!questIsPool && questAssigneeIds.length > 0 ? questAssigneeIds : []).slice(0,3).map((id, i) => {
+                              const m = members.find(mb => mb.id === id);
+                              if (!m) return null;
+                              const isAdult = m.role === 'parent';
+                              return (
+                                <View key={id} style={{ width: 32, height: 32, borderRadius: 16, marginLeft: i > 0 ? -8 : 0,
+                                  backgroundColor: isAdult ? colors.tealLight : colors.amberLight,
+                                  alignItems: 'center', justifyContent: 'center',
+                                  borderWidth: 2, borderColor: fieldBg }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '700', color: isAdult ? colors.teal : colors.amber }}>{m.name[0]}</Text>
+                                </View>
+                              );
+                            })}
+                            {questIsPool && (
+                              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.amberLight, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 14 }}>🏊</Text>
+                              </View>
+                            )}
+                            {!questIsPool && questAssigneeIds.length === 0 && (
+                              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 14, color: colors.textTertiary }}>?</Text>
+                              </View>
+                            )}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{questTitle}</Text>
+                            <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                              {questIsPool ? 'Open pool' : questAssigneeIds.length > 1 ? `${questAssigneeIds.length} people` : questAssigneeIds.length === 1 ? members.find(m => m.id === questAssigneeIds[0])?.name.split(' ')[0] ?? 'Assigned' : 'Unassigned'}
+                              {catLabel ? ` · ${catEmoji} ${catLabel}` : ''}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>🪙 {questCustomCoins || questCoins}</Text>
+                            {questBonusEnabled && parseInt(questBonusCoins) > 0 && (
+                              <Text style={{ fontSize: 11, color: colors.pink }}>⭐ +{questBonusCoins}</Text>
+                            )}
+                          </View>
+                        </View>
+                        {/* Date/recurrence strip */}
+                        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                          {questDueDate && (
+                            <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.surface }}>
+                              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>
+                                📅 {fmtDate(questDueDate)} · {fmt12h(questDueTime)}
+                              </Text>
+                            </View>
+                          )}
+                          {questRecurrence !== 'once' && (
+                            <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.tealLight }}>
+                              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+                                🔁 {questRecurrence === 'weekly' && questRecurrenceDays.length > 0
+                                  ? `Weekly · ${questRecurrenceDays.map(d => ['S','M','T','W','T','F','S'][d]).join('/')}`
+                                  : questRecurrence.charAt(0).toUpperCase() + questRecurrence.slice(1)}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        {questDescription.trim() && (
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }} numberOfLines={2}>{questDescription}</Text>
+                        )}
+                        {/* Status chip */}
+                        <View style={{ alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.pinkLight }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink }}>Preview · not saved yet</Text>
+                        </View>
+                      </View>
+                    )}
 
                     {/* Save button */}
                     <TouchableOpacity
                       onPress={handleSaveQuest}
                       disabled={!questTitle.trim() || savingQuest}
-                      style={{ height: 52, borderRadius: 14, backgroundColor: questTitle.trim() ? activeBlue : (isDark ? colors.surface : '#E6EAF1'), alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
+                      style={{ height: 52, borderRadius: 14,
+                        backgroundColor: questTitle.trim() ? activeBlue : (isDark ? colors.surface : '#E6EAF1'),
+                        alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
                     >
                       {savingQuest
                         ? <ActivityIndicator color="#FFFFFF" />
-                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>Save quest</Text>}
+                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>Save chore</Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => setQuestFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
